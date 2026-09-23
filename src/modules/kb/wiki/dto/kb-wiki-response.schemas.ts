@@ -209,3 +209,14 @@ export const kbPublicPageSchema = z.object({
   content: kbPageContentSchema,
   updatedAt: wireDate(),
 });
+
+export const kbBulkPageResultItemSchema = z.object({
+  pageId: z.number().int(),
+  result: z.enum(["succeeded", "denied", "conflict", "notFound"]),
+});
+
+export const kbBulkPageResultSchema = z.object({
+  results: z.array(kbBulkPageResultItemSchema),
+});
+
+export const kbTrashPageListSchema = cursorPageSchema(kbPageListItemSchema);

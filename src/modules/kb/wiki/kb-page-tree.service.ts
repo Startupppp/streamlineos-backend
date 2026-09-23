@@ -6,15 +6,34 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  isNotNull,
+  lt,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { kbPages, kbArticleChunks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { MovePageInput } from "./dto/kb-pages.schemas";
-import { KB_PAGE_COLUMNS, KB_PAGE_LIST_COLUMNS, type KbPageListItem, type KbPageRow } from "./kb-page-columns";
+import type {
+  BulkPageIdsInput,
+  MovePageInput,
+  TrashPagesQuery,
+} from "./dto/kb-pages.schemas";
+import {
+  KB_PAGE_COLUMNS,
+  KB_PAGE_LIST_COLUMNS,
+  type KbPageListItem,
+  type KbPageRow,
+} from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { StorageService } from "../../storage/storage.service";
 import {
@@ -24,10 +43,23 @@ import {
 } from "./kb-page-attachment-purge";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
+import {
+  buildCursorPage,
+  decodeTimestampCursor,
+  type CursorPage,
+} from "../../../common/pagination/cursor";
+import {
+  keysetBeforeMicros,
+  microsecondCursorValue,
+} from "../../../common/pagination/keyset";
+
+export interface BulkPageResult {
+  pageId: number;
+  result: "succeeded" | "denied" | "conflict" | "notFound";
+}
 
 type PageRow = KbPageRow;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
 
 const MAX_TREE_NODES = 2000;
 const EXPIRED_PURGE_BATCH_SIZE = 500;
@@ -61,24 +93,33 @@ export class KbPageTreeService {
     private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
-  async getTree(user: CurrentUserContext, projectId?: number): Promise<{
-    id: number;
-    parentPageId: number | null;
-    spaceId: number | null;
-    projectId: number | null;
-    title: string;
-    icon: string | null;
-    coverImage: string | null;
-    sortOrder: number;
-    visibility: string;
-    createdById: string | null;
-    status: string;
-    updatedAt: Date;
-    hasChildren: boolean;
-  }[]> {
+  async getTree(
+    user: CurrentUserContext,
+    projectId?: number,
+  ): Promise<
+    {
+      id: number;
+      parentPageId: number | null;
+      spaceId: number | null;
+      projectId: number | null;
+      title: string;
+      icon: string | null;
+      coverImage: string | null;
+      sortOrder: number;
+      visibility: string;
+      createdById: string | null;
+      status: string;
+      updatedAt: Date;
+      hasChildren: boolean;
+    }[]
+  > {
     const orgId = user.orgId;
     const predicate = await this.auth.visiblePagePredicate(user, "view");
-    const filters: SQL[] = [eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), predicate];
+    const filters: SQL[] = [
+      eq(kbPages.orgId, orgId),
+      isNull(kbPages.deletedAt),
+      predicate,
+    ];
     if (projectId !== undefined) {
       filters.push(eq(kbPages.projectId, projectId));
     }
@@ -102,11 +143,16 @@ export class KbPageTreeService {
       .orderBy(kbPages.sortOrder)
       .limit(MAX_TREE_NODES);
 
-    const childSet = new Set(rows.map((r) => r.parentPageId).filter((id): id is number => id !== null));
+    const childSet = new Set(
+      rows.map((r) => r.parentPageId).filter((id): id is number => id !== null),
+    );
     return rows.map((r) => ({ ...r, hasChildren: childSet.has(r.id) }));
   }
 
-  async softDelete(user: CurrentUserContext, pageId: number): Promise<{ deletedCount: number }> {
+  async softDelete(
+    user: CurrentUserContext,
+    pageId: number,
+  ): Promise<{ deletedCount: number }> {
     await this.auth.assertPageAccess(user, pageId, "manage");
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
@@ -127,13 +173,21 @@ export class KbPageTreeService {
         .where(
           and(
             eq(kbPages.orgId, orgId),
-            sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+            sql`${kbPages.id} = ANY(ARRAY[${sql.join(
+              ids.map((id) => sql`${id}`),
+              sql`, `,
+            )}]::int[])`,
           ),
         );
       if (ids.length > 0)
         await tx
           .delete(kbArticleChunks)
-          .where(and(eq(kbArticleChunks.orgId, orgId), inArray(kbArticleChunks.pageId, ids)));
+          .where(
+            and(
+              eq(kbArticleChunks.orgId, orgId),
+              inArray(kbArticleChunks.pageId, ids),
+            ),
+          );
       return ids.length;
     });
 
@@ -176,7 +230,10 @@ export class KbPageTreeService {
         .where(
           and(
             eq(kbPages.orgId, orgId),
-            sql`${kbPages.id} = ANY(ARRAY[${sql.join(subtreeIds.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+            sql`${kbPages.id} = ANY(ARRAY[${sql.join(
+              subtreeIds.map((id) => sql`${id}`),
+              sql`, `,
+            )}]::int[])`,
           ),
         );
 
@@ -207,7 +264,12 @@ export class KbPageTreeService {
             aggregateId: String(p.id),
             aggregateVersion: Date.now(),
             eventType: "kb.content.index",
-            payload: { contentType: "page", contentId: p.id, contentRevision: p.contentRevision, aclRevision: p.aclRevision },
+            payload: {
+              contentType: "page",
+              contentId: p.id,
+              contentRevision: p.contentRevision,
+              aclRevision: p.aclRevision,
+            },
             occurredAt: new Date(),
           })),
       );
@@ -216,7 +278,8 @@ export class KbPageTreeService {
         .select(KB_PAGE_COLUMNS)
         .from(kbPages)
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)));
-      if (!restoredPage) throw new NotFoundException("Page not found after restore");
+      if (!restoredPage)
+        throw new NotFoundException("Page not found after restore");
       return restoredPage;
     });
 
@@ -240,18 +303,25 @@ export class KbPageTreeService {
     });
     if (!page) throw new NotFoundException("Page not found");
 
-    const subtreeIds = await this.db.transaction((tx) => this.collectSubtreeIds(tx, orgId, pageId));
-    const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, subtreeIds);
+    const subtreeIds = await this.db.transaction((tx) =>
+      this.collectSubtreeIds(tx, orgId, pageId),
+    );
+    const purgeKeys = await recordPageAttachmentPurge(
+      this.db,
+      orgId,
+      subtreeIds,
+    );
 
     await this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbPages)
-        .where(
-          and(
-            eq(kbPages.orgId, orgId),
-            sql`${kbPages.id} = ANY(ARRAY[${sql.join(subtreeIds.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-          ),
-        );
+      await tx.delete(kbPages).where(
+        and(
+          eq(kbPages.orgId, orgId),
+          sql`${kbPages.id} = ANY(ARRAY[${sql.join(
+            subtreeIds.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::int[])`,
+        ),
+      );
     });
 
     await attemptPageAttachmentPurge(
@@ -339,14 +409,15 @@ export class KbPageTreeService {
 
       const ids = expired.map((p) => p.id);
       const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, ids);
-      await this.db
-        .delete(kbPages)
-        .where(
-          and(
-            eq(kbPages.orgId, orgId),
-            sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-          ),
-        );
+      await this.db.delete(kbPages).where(
+        and(
+          eq(kbPages.orgId, orgId),
+          sql`${kbPages.id} = ANY(ARRAY[${sql.join(
+            ids.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::int[])`,
+        ),
+      );
       await attemptPageAttachmentPurge(
         this.db,
         this.storage,
@@ -386,12 +457,20 @@ export class KbPageTreeService {
     return purgedCount;
   }
 
-  async move(user: CurrentUserContext, pageId: number, input: MovePageInput): Promise<PageRow> {
+  async move(
+    user: CurrentUserContext,
+    pageId: number,
+    input: MovePageInput,
+  ): Promise<PageRow> {
     await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
 
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      where: and(
+        eq(kbPages.id, pageId),
+        eq(kbPages.orgId, orgId),
+        isNull(kbPages.deletedAt),
+      ),
       columns: { id: true, parentPageId: true },
     });
     if (!page) throw new NotFoundException("Page not found");
@@ -399,12 +478,18 @@ export class KbPageTreeService {
     const targetParentId = input.parentPageId;
 
     if (targetParentId !== null) {
-      if (targetParentId === pageId) throw new BadRequestException("A page cannot be its own parent");
+      if (targetParentId === pageId)
+        throw new BadRequestException("A page cannot be its own parent");
       const targetParent = await this.db.query.kbPages.findFirst({
-        where: and(eq(kbPages.id, targetParentId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+        where: and(
+          eq(kbPages.id, targetParentId),
+          eq(kbPages.orgId, orgId),
+          isNull(kbPages.deletedAt),
+        ),
         columns: { id: true },
       });
-      if (!targetParent) throw new NotFoundException("Target parent page not found");
+      if (!targetParent)
+        throw new NotFoundException("Target parent page not found");
 
       const allPages = await this.db
         .select({ id: kbPages.id, parentPageId: kbPages.parentPageId })
@@ -412,7 +497,9 @@ export class KbPageTreeService {
         .where(and(eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)));
 
       if (isDescendant(allPages, pageId, targetParentId)) {
-        throw new BadRequestException("Cannot move a page into one of its own descendants");
+        throw new BadRequestException(
+          "Cannot move a page into one of its own descendants",
+        );
       }
     }
 
@@ -424,7 +511,9 @@ export class KbPageTreeService {
           and(
             eq(kbPages.orgId, orgId),
             isNull(kbPages.deletedAt),
-            targetParentId === null ? isNull(kbPages.parentPageId) : eq(kbPages.parentPageId, targetParentId),
+            targetParentId === null
+              ? isNull(kbPages.parentPageId)
+              : eq(kbPages.parentPageId, targetParentId),
             sql`${kbPages.id} != ${pageId}`,
           ),
         )
@@ -455,15 +544,131 @@ export class KbPageTreeService {
     });
   }
 
-  async getTrash(user: CurrentUserContext): Promise<KbPageListItem[]> {
+  async getTrash(
+    user: CurrentUserContext,
+    query: TrashPagesQuery,
+  ): Promise<CursorPage<KbPageListItem>> {
     const orgId = user.orgId;
     const predicate = await this.auth.visiblePagePredicate(user, "view");
-    return this.db
-      .select(KB_PAGE_LIST_COLUMNS)
+    const position = decodeTimestampCursor(query.cursor);
+    const filters: SQL[] = [
+      eq(kbPages.orgId, orgId),
+      isNotNull(kbPages.deletedAt),
+      predicate,
+    ];
+    if (position)
+      filters.push(keysetBeforeMicros(kbPages.deletedAt, kbPages.id, position));
+    if (query.spaceId !== undefined)
+      filters.push(eq(kbPages.spaceId, query.spaceId));
+    if (query.deletedByMembershipId !== undefined)
+      filters.push(
+        eq(kbPages.deletedByMembershipId, query.deletedByMembershipId),
+      );
+    if (query.q) {
+      const words = query.q
+        .trim()
+        .split(/\s+/)
+        .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
+        .filter((w) => w.length > 0)
+        .slice(0, 8);
+      if (words.length > 0) {
+        const prefixQuery = words.map((w) => `${w}:*`).join(" & ");
+        filters.push(
+          sql`${kbPages}.fts @@ to_tsquery('english', ${prefixQuery})`,
+        );
+      }
+    }
+    const rows = await this.db
+      .select({
+        ...KB_PAGE_LIST_COLUMNS,
+        deletedAtText: microsecondCursorValue(kbPages.deletedAt),
+      })
       .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt), predicate))
-      .orderBy(sql`${kbPages.deletedAt} desc`)
-      .limit(100);
+      .where(and(...filters))
+      .orderBy(desc(kbPages.deletedAt), desc(kbPages.id))
+      .limit(query.limit + 1);
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.deletedAtText ?? "",
+      id: String(row.id),
+    }));
+  }
+
+  async bulkRestore(
+    user: CurrentUserContext,
+    input: BulkPageIdsInput,
+  ): Promise<{ results: BulkPageResult[] }> {
+    const orgId = user.orgId;
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
+    const found = await this.db
+      .select({ id: kbPages.id, deletedAt: kbPages.deletedAt })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          inArray(kbPages.id, input.pageIds),
+          predicate,
+        ),
+      );
+    const foundMap = new Map(found.map((p) => [p.id, p.deletedAt]));
+    const results: BulkPageResult[] = [];
+    for (const pageId of input.pageIds) {
+      if (!foundMap.has(pageId)) {
+        results.push({ pageId, result: "notFound" });
+        continue;
+      }
+      if (foundMap.get(pageId) === null) {
+        results.push({ pageId, result: "succeeded" });
+        continue;
+      }
+      try {
+        await this.restore(user, pageId);
+      } catch (e) {
+        if (e instanceof ConflictException) {
+          results.push({ pageId, result: "succeeded" });
+          continue;
+        }
+        throw e;
+      }
+      results.push({ pageId, result: "succeeded" });
+    }
+    return { results };
+  }
+
+  async bulkPurge(
+    user: CurrentUserContext,
+    input: BulkPageIdsInput,
+  ): Promise<{ results: BulkPageResult[] }> {
+    const orgId = user.orgId;
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
+    const found = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          inArray(kbPages.id, input.pageIds),
+          predicate,
+        ),
+      );
+    const foundSet = new Set(found.map((p) => p.id));
+    const results: BulkPageResult[] = [];
+    for (const pageId of input.pageIds) {
+      if (!foundSet.has(pageId)) {
+        results.push({ pageId, result: "notFound" });
+        continue;
+      }
+      try {
+        await this.hardDelete(user, pageId);
+      } catch (e) {
+        if (e instanceof NotFoundException) {
+          results.push({ pageId, result: "notFound" });
+          continue;
+        }
+        throw e;
+      }
+      results.push({ pageId, result: "succeeded" });
+    }
+    return { results };
   }
 
   private async collectSubtreeIds(
@@ -486,5 +691,4 @@ export class KbPageTreeService {
     `);
     return rows.map((row) => Number(row.id));
   }
-
 }

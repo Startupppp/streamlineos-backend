@@ -25,6 +25,7 @@ import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import {
+  bulkPageIdsSchema,
   createPageSchema,
   updatePageSchema,
   movePageSchema,
@@ -32,8 +33,10 @@ import {
   searchPagesSchema,
   listPagesSchema,
   setVisibilitySchema,
+  trashPagesQuerySchema,
   verifyPageSchema,
   listVersionsQuerySchema,
+  type BulkPageIdsInput,
   type CreatePageInput,
   type UpdatePageInput,
   type MovePageInput,
@@ -41,12 +44,14 @@ import {
   type SearchPagesInput,
   type ListPagesInput,
   type SetVisibilityInput,
+  type TrashPagesQuery,
   type VerifyPageInput,
   type ListVersionsQuery,
 } from "./dto/kb-pages.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
 import {
+  kbBulkPageResultSchema,
   kbPageTreeSchema,
   kbPageSchema,
   kbPageListSchema,
@@ -58,6 +63,7 @@ import {
   kbPageBacklinkSchema,
   kbPageVersionListSchema,
   kbPageVersionSchema,
+  kbTrashPageListSchema,
 } from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
@@ -111,9 +117,37 @@ export class KbPagesController {
 
   @Get("pages/trash")
   @RequirePermission("kb:pages:view")
-  @ResponseSchema(kbPageListSchema)
-  async getTrash(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.tree.getTrash(u);
+  @Validate({ query: trashPagesQuerySchema })
+  @ResponseSchema(kbTrashPageListSchema)
+  async getTrash(
+    @Query() query: TrashPagesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.tree.getTrash(u, query);
+  }
+
+  @Post("pages/trash/restore")
+  @HttpCode(200)
+  @RequirePermission("kb:pages:update")
+  @Validate({ body: bulkPageIdsSchema })
+  @ResponseSchema(kbBulkPageResultSchema)
+  async bulkRestoreFromTrash(
+    @Body() body: BulkPageIdsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.tree.bulkRestore(u, body);
+  }
+
+  @Delete("pages/trash/purge")
+  @HttpCode(200)
+  @RequirePermission("kb:pages:purge")
+  @Validate({ body: bulkPageIdsSchema })
+  @ResponseSchema(kbBulkPageResultSchema)
+  async bulkPurgeFromTrash(
+    @Body() body: BulkPageIdsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.tree.bulkPurge(u, body);
   }
 
   @Get("pages/search")
