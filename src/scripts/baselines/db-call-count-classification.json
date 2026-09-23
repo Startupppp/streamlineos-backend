@@ -139,6 +139,10 @@
       "verdict": "N+1-FIXED",
       "note": "Ticket 21 third pass, verified by reading: `allocateTicketNumbers` is called once for the whole submission with `ticketActions.length`, and the tickets are one multi-row INSERT. The remaining `for (const [index, ticket] of inserted.entries())` only fills two in-memory arrays."
     },
+    "/build/import-export/ticket-import.service.ts": {
+      "verdict": "BATCHED",
+      "note": "First seen 2026-09-23. Both detected sites are `for (const batch of batches)` over `chunkRows(preview.rows, IMPORT_BATCH_SIZE=100)` — the same CHUNK_SIZE=100 bounded batch insert shape as /build/core/projects-tickets-transfer.service.ts. Site 1, runAtomic (:207-208): `insertTicketBatch(tx, actor, projectId, number, batch)` issues exactly ONE `tx.insert(tickets).values(values).returning(...)` multi-row statement per call (ticket-import-batches.ts:26-58) — statement count is O(rows / 100), never O(rows), and the whole loop already runs inside one outer `this.db.transaction` (:203) for atomic-mode all-or-nothing semantics. Site 2, runPartial (:237-239): the same `insertTicketBatch` call, but each batch gets its OWN `this.db.transaction`, which is deliberate: partial mode's contract is that one bad batch fails independently while the rest still import (see the FAILED-row handling in the catch block, :251-260), so batch-level transaction isolation cannot be collapsed into the single grouped statement atomic mode uses. Neither site issues a per-row round trip."
+    },
     "/build/qa/test-runs.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "sql.join id list replaced with inArray; the second flagged site is sql fragments inside a count() aggregate, not a per-row query"
