@@ -220,6 +220,31 @@ describe("unified inbox — two approval adapters sharing one id space", () => {
     expect(source?.included).toBe(true);
     expect(source?.error ?? "").not.toContain("unsupported: ");
   });
+
+  it("still reports a cursor-less adapter as unsupported once a cursor is in play", async () => {
+    const { db, registry } = makeServices(leaveOnly(TIED_SEEDS));
+    registry.register({
+      module: "legacy",
+      kindLabel: "legacy",
+      permission: "hr:leaves:approve",
+      supportsAfterCursor: false,
+      fetch: () => Promise.resolve([]),
+    });
+    const svc = makeInbox(db, registry);
+
+    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false }, makeUserCtx());
+    const second = await svc.list(
+      ORG,
+      "u",
+      { limit: 2, kinds: ["build_approval"], unreadOnly: false, cursor: first.nextCursor ?? undefined },
+      makeUserCtx(),
+    );
+
+    expect(first.sources.find((s) => s.kind === "build_approval")?.error).toBeNull();
+    expect(second.sources.find((s) => s.kind === "build_approval")?.error).toContain(
+      "unsupported: legacy adapters have no cursor",
+    );
+  });
 });
 
 function makeUserCtx() {
