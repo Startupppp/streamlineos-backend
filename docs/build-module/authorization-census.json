@@ -12118,7 +12118,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:58",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:75",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12161,7 +12161,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:102",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:119",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12200,7 +12200,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:155",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:174",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -12247,7 +12247,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:181",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:204",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12292,7 +12292,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:207",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:242",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12337,7 +12337,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:223",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:263",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12384,9 +12384,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:241",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:286",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/portfolios/portfolios.service.ts:241",
+      "parentEvidence": "src/modules/build/portfolios/portfolios.service.ts:286",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12425,7 +12425,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:65",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:87",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12468,7 +12468,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:101",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:125",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12507,7 +12507,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:122",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:148",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12552,7 +12552,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:150",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:180",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12597,7 +12597,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:178",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:220",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12642,7 +12642,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:194",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:241",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12689,9 +12689,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:212",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:264",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/portfolios/programs.service.ts:212",
+      "parentEvidence": "src/modules/build/portfolios/programs.service.ts:264",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"

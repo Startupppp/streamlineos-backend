@@ -1,5 +1,5 @@
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
-import type { PgSelectBase } from "drizzle-orm/pg-core";
+import type { PgSelectBase, SelectedFields } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PortfoliosService } from "./portfolios.service";
@@ -17,7 +17,7 @@ function renderingDb(): RenderedDb {
   const qb = new QueryBuilder();
   let rendered = "";
   const db = {
-    select: (projection: Record<string, unknown>) => {
+    select: (projection: SelectedFields) => {
       let q = qb.select(projection) as unknown as AnySelect;
       const chain: Record<string, unknown> = {
         from: (table: unknown) => {
