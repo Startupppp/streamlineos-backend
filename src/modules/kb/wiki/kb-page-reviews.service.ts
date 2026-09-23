@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   kbPageReviews,
@@ -22,9 +22,11 @@ import type {
   CreatePageReviewInput,
   ApproveReviewInput,
   RejectReviewInput,
+  BulkDecidePageReviewsInput,
 } from "./dto/kb-page-reviews.schemas";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
 
@@ -41,6 +43,11 @@ export async function reviewerCanSeeAllReviews(
   return access.holds(user, "kb:reviews:manage");
 }
 
+export interface BulkDecideResultItem {
+  id: number;
+  outcome: "succeeded" | "denied" | "conflict" | "notFound";
+}
+
 @Injectable()
 export class KbPageReviewsService {
   constructor(
@@ -48,6 +55,7 @@ export class KbPageReviewsService {
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
     private readonly access: AccessService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   private actorMembershipId(user: CurrentUserContext): number {
@@ -254,11 +262,94 @@ export class KbPageReviewsService {
     return this.loadWithContext(user.orgId, reviewId);
   }
 
-  private async loadWithContext(orgId: string, reviewId: number): Promise<ReviewWithContext> {
+  async bulkDecide(
+    user: CurrentUserContext,
+    input: BulkDecidePageReviewsInput,
+  ): Promise<{ results: BulkDecideResultItem[] }> {
+    const visibilityPredicate = await this.auth.visiblePagePredicate(
+      user,
+      "view",
+    );
+
+    const visibleReviews = await this.db
+      .select({
+        id: kbPageReviews.id,
+        status: kbPageReviews.status,
+      })
+      .from(kbPageReviews)
+      .innerJoin(
+        kbPages,
+        and(
+          eq(kbPageReviews.pageId, kbPages.id),
+          eq(kbPageReviews.orgId, kbPages.orgId),
+          isNull(kbPages.deletedAt),
+          visibilityPredicate,
+        ),
+      )
+      .where(
+        and(
+          eq(kbPageReviews.orgId, user.orgId),
+          inArray(kbPageReviews.id, input.ids),
+        ),
+      );
+
+    const visibleMap = new Map(visibleReviews.map((r) => [r.id, r.status]));
+    const membershipId = actingMembershipId(user.principal);
+    const results: BulkDecideResultItem[] = [];
+
+    for (const id of input.ids) {
+      const currentStatus = visibleMap.get(id);
+      if (currentStatus === undefined) {
+        results.push({ id, outcome: "notFound" });
+        continue;
+      }
+      if (currentStatus !== "pending") {
+        results.push({ id, outcome: "conflict" });
+        continue;
+      }
+      if (membershipId === null) {
+        results.push({ id, outcome: "denied" });
+        continue;
+      }
+
+      const [updated] = await this.db
+        .update(kbPageReviews)
+        .set({
+          status: input.decision,
+          reviewerId: user.userId,
+          reviewerMembershipId: membershipId,
+          decidedAt: new Date(),
+          decisionNote: input.note ?? null,
+        })
+        .where(
+          and(
+            eq(kbPageReviews.id, id),
+            eq(kbPageReviews.orgId, user.orgId),
+            eq(kbPageReviews.status, "pending"),
+          ),
+        )
+        .returning({ id: kbPageReviews.id });
+
+      results.push({ id, outcome: updated ? "succeeded" : "conflict" });
+    }
+
+    return { results };
+  }
+
+  private async loadWithContext(
+    orgId: string,
+    reviewId: number,
+  ): Promise<ReviewWithContext> {
     const requester = alias(users, "requester");
     const reviewer = alias(users, "reviewer");
-    const requesterMembership = alias(organizationMembers, "reviewer_requester_membership");
-    const reviewerMembership = alias(organizationMembers, "reviewer_assignee_membership");
+    const requesterMembership = alias(
+      organizationMembers,
+      "reviewer_requester_membership",
+    );
+    const reviewerMembership = alias(
+      organizationMembers,
+      "reviewer_assignee_membership",
+    );
     const [row] = await this.db
       .select({
         id: kbPageReviews.id,
@@ -281,12 +372,21 @@ export class KbPageReviewsService {
       })
       .from(kbPageReviews)
       .leftJoin(kbPages, eq(kbPageReviews.pageId, kbPages.id))
-      .leftJoin(requesterMembership, eq(kbPageReviews.requestedByMembershipId, requesterMembership.id))
-      .leftJoin(reviewerMembership, eq(kbPageReviews.reviewerMembershipId, reviewerMembership.id))
+      .leftJoin(
+        requesterMembership,
+        eq(kbPageReviews.requestedByMembershipId, requesterMembership.id),
+      )
+      .leftJoin(
+        reviewerMembership,
+        eq(kbPageReviews.reviewerMembershipId, reviewerMembership.id),
+      )
       .leftJoin(requester, eq(requesterMembership.userId, requester.id))
       .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
-      .where(and(eq(kbPageReviews.id, reviewId), eq(kbPageReviews.orgId, orgId)));
-    if (!row) throw new InternalServerErrorException("Review not found after save");
+      .where(
+        and(eq(kbPageReviews.id, reviewId), eq(kbPageReviews.orgId, orgId)),
+      );
+    if (!row)
+      throw new InternalServerErrorException("Review not found after save");
     return row;
   }
 }

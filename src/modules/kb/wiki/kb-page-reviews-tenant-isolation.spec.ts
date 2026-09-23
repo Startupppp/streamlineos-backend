@@ -24,8 +24,6 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
     } as never;
   }
 
-  const audit = { log: jest.fn() } as never;
-  const dispatch = { dispatch: jest.fn() } as never;
   const holdsMock = jest.fn().mockResolvedValue(true);
   const access = { holds: holdsMock } as never;
   const auth = {
@@ -35,23 +33,29 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
 
   function makeDb() {
     const wheres: unknown[] = [];
-    const leftJoinChain: Record<string, jest.Mock> = {};
-    const makeLeftJoin = (): object => {
+    const makeChain = (): object => {
       const chain: Record<string, jest.Mock> = {
         where: jest.fn().mockImplementation((w: unknown) => {
           wheres.push(w);
-          return Object.assign(Promise.resolve([]), {
-            orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([]) })),
-          });
+          const tailChain = {
+            orderBy: jest.fn().mockImplementation(() =>
+              Object.assign(Promise.resolve([]), {
+                limit: jest.fn().mockResolvedValue([]),
+              }),
+            ),
+          };
+          return tailChain;
         }),
       };
-      chain["leftJoin"] = jest.fn().mockImplementation(() => makeLeftJoin());
+      for (const m of ["innerJoin", "leftJoin"]) {
+        chain[m] = jest.fn().mockImplementation(() => makeChain());
+      }
       return chain;
     };
     return {
       db: {
         select: jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockReturnValue(makeLeftJoin()),
+          from: jest.fn().mockReturnValue(makeChain()),
         })),
       } as unknown as Db,
       wheres,
@@ -65,7 +69,7 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
     holdsMock.mockResolvedValue(true);
     const svc = new KbPageReviewsQueryService(db, access, auth as never);
 
-    await svc.list(makeUser(ATTACKER), undefined, undefined);
+    await svc.list(makeUser(ATTACKER), { limit: 50, sortDir: "asc" });
 
     expect(wheres.length).toBeGreaterThan(0);
     const vals = wheres.flatMap(w => sqlValues(w));
@@ -73,13 +77,13 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
     expect(vals).not.toContain(OWNER);
   });
 
-  it("returns reviews for the owning org (same-tenant control)", async () => {
+  it("returns a cursor page for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
     holdsMock.mockResolvedValue(true);
     const svc = new KbPageReviewsQueryService(db, access, auth as never);
 
-    const result = await svc.list(makeUser(OWNER), undefined, undefined);
+    const result = await svc.list(makeUser(OWNER), { limit: 50, sortDir: "asc" });
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(result).toMatchObject({ data: expect.any(Array), pagination: expect.any(Object) });
   });
 });

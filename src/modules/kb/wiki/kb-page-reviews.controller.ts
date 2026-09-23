@@ -19,26 +19,31 @@ import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 import {
   approveReviewSchema,
+  bulkDecidePageReviewsSchema,
   createPageReviewSchema,
-  listDueReviewsQuerySchema,
-  listReviewsQuerySchema,
+  listPageReviewsQuerySchema,
   rejectReviewSchema,
   type ApproveReviewInput,
+  type BulkDecidePageReviewsInput,
   type CreatePageReviewInput,
-  type ListDueReviewsQuery,
-  type ListReviewsQuery,
+  type ListPageReviewsQuery,
   type RejectReviewInput,
 } from "./dto/kb-page-reviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
-  kbPageReviewListSchema,
+  bulkDecideResultSchema,
+  kbPageReviewListPageSchema,
   kbPageReviewWithContextSchema,
 } from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
-const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
-const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }).strict();
+const pageIdParams = z
+  .object({ pageId: z.coerce.number().int().positive() })
+  .strict();
+const reviewIdParams = z
+  .object({ reviewId: z.coerce.number().int().positive() })
+  .strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -50,28 +55,36 @@ export class KbPageReviewsController {
 
   @Get("page-reviews")
   @RequirePermission("kb:reviews:view")
-  @Validate({ query: listReviewsQuerySchema })
-  @ResponseSchema(kbPageReviewListSchema)
+  @Validate({ query: listPageReviewsQuerySchema })
+  @ResponseSchema(kbPageReviewListPageSchema)
   async list(
-    @Query() query: ListReviewsQuery,
+    @Query() query: ListPageReviewsQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.reviewsQuery.list(u, query.status, query.type);
+    return this.reviewsQuery.list(u, query);
   }
 
   @Get("page-reviews/due")
   @RequirePermission("kb:reviews:view")
-  @Validate({ query: listDueReviewsQuerySchema })
-  @ResponseSchema(kbPageReviewListSchema)
+  @Validate({ query: listPageReviewsQuerySchema })
+  @ResponseSchema(kbPageReviewListPageSchema)
   async listDue(
-    @Query() query: ListDueReviewsQuery,
+    @Query() query: ListPageReviewsQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const cursor =
-      query.afterDueAt && query.afterId
-        ? { sortValue: query.afterDueAt, id: query.afterId }
-        : undefined;
-    return this.reviewsQuery.listDue(u, cursor);
+    return this.reviewsQuery.list(u, { ...query, status: "overdue" });
+  }
+
+  @Post("page-reviews/bulk-decide")
+  @RequirePermission("kb:reviews:manage")
+  @HttpCode(200)
+  @Validate({ body: bulkDecidePageReviewsSchema })
+  @ResponseSchema(bulkDecideResultSchema)
+  async bulkDecide(
+    @Body() body: BulkDecidePageReviewsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.reviews.bulkDecide(u, body);
   }
 
   @Post("pages/:pageId/reviews")

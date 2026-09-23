@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  listDueReviewsQuerySchema,
-  listReviewsQuerySchema,
+  listPageReviewsQuerySchema,
 } from "./dto/kb-page-reviews.schemas";
 import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 import { KbAnalyticsService } from "../help-centre/kb-analytics.service";
@@ -34,77 +33,49 @@ function makeUser(orgId = "org-1") {
   return { orgId, userId: "user-1", isOrgOwner: false, principal: undefined } as never;
 }
 
-describe("listReviewsQuerySchema", () => {
+describe("listPageReviewsQuerySchema", () => {
   it("accepts valid status and type values", () => {
     expect(() =>
-      listReviewsQuerySchema.parse({ status: "pending", type: "approval" }),
+      listPageReviewsQuerySchema.parse({ status: "pending", type: "approval" }),
     ).not.toThrow();
   });
 
-  it("accepts all valid status values", () => {
-    for (const s of ["pending", "approved", "rejected", "expired"]) {
-      expect(() => listReviewsQuerySchema.parse({ status: s })).not.toThrow();
+  it("accepts all valid status values including overdue", () => {
+    for (const s of ["pending", "approved", "rejected", "overdue"]) {
+      expect(() => listPageReviewsQuerySchema.parse({ status: s })).not.toThrow();
     }
   });
 
   it("rejects an unknown status value", () => {
-    expect(() => listReviewsQuerySchema.parse({ status: "unknown" })).toThrow();
+    expect(() => listPageReviewsQuerySchema.parse({ status: "expired" })).toThrow();
   });
 
   it("rejects an unknown type value", () => {
-    expect(() => listReviewsQuerySchema.parse({ type: "invalid" })).toThrow();
+    expect(() => listPageReviewsQuerySchema.parse({ type: "invalid" })).toThrow();
   });
 
   it("rejects extra keys (.strict())", () => {
-    expect(() => listReviewsQuerySchema.parse({ extra: "field" })).toThrow();
+    expect(() => listPageReviewsQuerySchema.parse({ extra: "field" })).toThrow();
   });
 
   it("accepts an empty object — all fields optional", () => {
-    expect(() => listReviewsQuerySchema.parse({})).not.toThrow();
+    expect(() => listPageReviewsQuerySchema.parse({})).not.toThrow();
   });
-});
 
-describe("listDueReviewsQuerySchema", () => {
-  it("accepts a valid cursor pair", () => {
+  it("accepts a cursor string", () => {
     expect(() =>
-      listDueReviewsQuerySchema.parse({
-        afterDueAt: "2026-09-01T00:00:00.000Z",
-        afterId: "42",
-      }),
+      listPageReviewsQuerySchema.parse({ cursor: "some-opaque-cursor" }),
     ).not.toThrow();
   });
 
-  it("accepts an empty object — no cursor", () => {
-    expect(() => listDueReviewsQuerySchema.parse({})).not.toThrow();
+  it("applies default sortDir of asc", () => {
+    const result = listPageReviewsQuerySchema.parse({});
+    expect(result.sortDir).toBe("asc");
   });
 
-  it("rejects afterDueAt without afterId", () => {
-    expect(() =>
-      listDueReviewsQuerySchema.parse({ afterDueAt: "2026-09-01T00:00:00.000Z" }),
-    ).toThrow();
-  });
-
-  it("rejects afterId without afterDueAt", () => {
-    expect(() => listDueReviewsQuerySchema.parse({ afterId: "42" })).toThrow();
-  });
-
-  it("rejects an invalid datetime for afterDueAt", () => {
-    expect(() =>
-      listDueReviewsQuerySchema.parse({ afterDueAt: "not-a-date", afterId: "42" }),
-    ).toThrow();
-  });
-
-  it("rejects extra keys (.strict())", () => {
-    expect(() => listDueReviewsQuerySchema.parse({ extra: "field" })).toThrow();
-  });
-
-  it("rejects an empty afterId string", () => {
-    expect(() =>
-      listDueReviewsQuerySchema.parse({
-        afterDueAt: "2026-09-01T00:00:00.000Z",
-        afterId: "",
-      }),
-    ).toThrow();
+  it("applies default limit of 50", () => {
+    const result = listPageReviewsQuerySchema.parse({});
+    expect(result.limit).toBe(50);
   });
 });
 
@@ -114,13 +85,13 @@ describe("KbPageReviewsQueryService — canonical authorization seam", () => {
     authMock.assertPageAccess.mockClear();
   });
 
-  it("consults visiblePagePredicate with action 'view' so space and grant pages appear in due-review queue", async () => {
+  it("consults visiblePagePredicate with action 'view' so space and grant pages appear in review list", async () => {
     const { chain } = makeChain();
     const db = { select: jest.fn().mockReturnValue(chain) } as never;
     const accessMock = {} as never;
     const svc = new KbPageReviewsQueryService(db, accessMock, authMock as never);
 
-    await svc.listDue(makeUser());
+    await svc.list(makeUser(), { limit: 50, sortDir: "asc" });
 
     expect(authMock.visiblePagePredicate).toHaveBeenCalledWith(
       expect.objectContaining({ orgId: "org-1" }),
