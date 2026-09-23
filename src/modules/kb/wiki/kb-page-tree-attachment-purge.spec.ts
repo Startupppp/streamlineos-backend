@@ -23,7 +23,7 @@ let mockCalls: string[] = [];
 let mockRecordThrows = false;
 let mockOrphanCount = 0;
 
-import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 
 const ORG = "org-1";
 
@@ -92,8 +92,9 @@ const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "manage", via: "admin" }),
 });
+const makeTreeMock = () => ({ restore: jest.fn().mockResolvedValue({ id: 10 }) });
 
-describe("KbPageTreeService — every path that cascades kb_page_attachments records the objects first", () => {
+describe("KbPageTrashService — every path that cascades kb_page_attachments records the objects first", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCalls = [];
@@ -101,24 +102,26 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
     mockOrphanCount = 0;
   });
 
-  function makeTree(db: unknown, audit: unknown = makeAudit()) {
-    return new KbPageTreeService(
+  function makeTrash(db: unknown, audit: unknown = makeAudit()) {
+    return new KbPageTrashService(
       db as never,
       audit as never,
       makeStorage() as never,
       makeConfig() as never,
       makeAuth() as never,
+      makeTreeMock() as never,
     );
   }
 
   it("emptyTrash records the purge before it deletes the pages", async () => {
     const db = makeTreeDb({ trashedIds: [10, 11] });
-    const svc = new KbPageTreeService(
+    const svc = new KbPageTrashService(
       db as never,
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
       makeAuth() as never,
+      makeTreeMock() as never,
     );
 
     await svc.emptyTrash(makeUser());
@@ -128,7 +131,7 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
 
   it("purgeExpired records the purge before it deletes each batch, then sweeps page-less media", async () => {
     const db = makeTreeDb({ expiredBatches: [[20, 21], []] });
-    const svc = makeTree(db);
+    const svc = makeTrash(db);
 
     await svc.purgeExpired(ORG, new Date("2026-01-01"));
 
@@ -139,7 +142,7 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
     const db = makeTreeDb({ expiredBatches: [[]] });
     const audit = makeAudit();
     mockOrphanCount = 3;
-    const svc = makeTree(db, audit);
+    const svc = makeTrash(db, audit);
 
     await expect(svc.purgeExpired(ORG, new Date("2026-01-01"))).resolves.toBe(0);
 
@@ -155,7 +158,7 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
   it("emptyTrash keeps asking while a batch comes back full, and stops on a short one", async () => {
     const full = Array.from({ length: 500 }, (_, i) => i + 1);
     const db = makeTreeDb({ trashedBatches: [full, [777]] });
-    const svc = makeTree(db);
+    const svc = makeTrash(db);
 
     await svc.emptyTrash(makeUser());
 
@@ -172,12 +175,13 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
 
   it("hardDelete records the purge for the whole subtree before it deletes the pages", async () => {
     const db = makeTreeDb({ subtreeIds: [10, 12, 13] });
-    const svc = new KbPageTreeService(
+    const svc = new KbPageTrashService(
       db as never,
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
       makeAuth() as never,
+      makeTreeMock() as never,
     );
 
     await svc.hardDelete(makeUser(), 10);
@@ -188,12 +192,13 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
   it("bites: when the write-ahead record fails, no page is deleted", async () => {
     mockRecordThrows = true;
     const db = makeTreeDb({ trashedIds: [10] });
-    const svc = new KbPageTreeService(
+    const svc = new KbPageTrashService(
       db as never,
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
       makeAuth() as never,
+      makeTreeMock() as never,
     );
 
     await expect(svc.emptyTrash(makeUser())).rejects.toThrow("write-ahead failed");
@@ -202,12 +207,13 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
 
   it("empties nothing and records nothing when the trash is empty", async () => {
     const db = makeTreeDb({ trashedIds: [] });
-    const svc = new KbPageTreeService(
+    const svc = new KbPageTrashService(
       db as never,
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
       makeAuth() as never,
+      makeTreeMock() as never,
     );
 
     await expect(svc.emptyTrash(makeUser())).resolves.toEqual({ purgedCount: 0 });

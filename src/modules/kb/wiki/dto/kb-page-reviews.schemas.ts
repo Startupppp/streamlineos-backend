@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listPageReviewsQuerySchema = z
   .object({

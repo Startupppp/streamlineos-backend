@@ -49,7 +49,7 @@ const mockDeleteTx = {
   update: () => ({ set: () => ({ where: async () => [] }) }),
 };
 
-import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 import { KbSpacesService } from "./kb-spaces.service";
 
 const actualPurge: typeof import("./kb-page-attachment-purge") = jest.requireActual(
@@ -101,12 +101,13 @@ function makeTreeDb() {
 
 function makeTree() {
   const { db, deleted } = makeTreeDb();
-  const service = new KbPageTreeService(
+  const service = new KbPageTrashService(
     db as never,
     { log: jest.fn() } as never,
     { deleteFileIfPresent: jest.fn().mockResolvedValue(true) } as never,
     { R2_KB_BUCKET_NAME: KB_BUCKET } as never,
     auth as never,
+    { restore: jest.fn().mockResolvedValue({ id: PAGE_ID }) } as never,
   );
   return { service, deleted };
 }

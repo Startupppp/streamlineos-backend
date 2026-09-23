@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { ConflictException, NotFoundException } from "@nestjs/common";
-import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 import { trashPagesQuerySchema, bulkPageIdsSchema } from "./dto/kb-pages.schemas";
 import { decodeTimestampCursor } from "../../../common/pagination/cursor";
 import type { Db } from "../../../db/drizzle.module";
@@ -23,13 +23,6 @@ const auth = {
 const auditMock = { log: jest.fn() };
 const storageMock = {} as never;
 const configMock = { R2_KB_BUCKET_NAME: "test-bucket" } as never;
-
-function makePurgeHelpers() {
-  return {
-    recordPageAttachmentPurge: jest.fn().mockResolvedValue([]),
-    attemptPageAttachmentPurge: jest.fn().mockResolvedValue(undefined),
-  };
-}
 
 jest.mock("./kb-page-attachment-purge", () => ({
   recordPageAttachmentPurge: jest.fn().mockResolvedValue([]),
@@ -76,46 +69,32 @@ function makeTrashDb(rows: Array<Record<string, unknown>>): {
   return { db, limits };
 }
 
-function makeBulkDb(
+function makeSelectOnlyDb(
   visibleRows: Array<{ id: number; deletedAt: Date | null }>,
-  pageForFind: { id: number; deletedAt: Date | null; parentPageId: number | null; title: string } | null,
 ): Db {
-  let selectCallCount = 0;
   return {
     select: jest.fn().mockImplementation(() => ({
       from: () => ({
-        where: () => {
-          selectCallCount += 1;
-          if (selectCallCount === 1) {
-            return Promise.resolve(visibleRows);
-          }
-          return { orderBy: () => ({ limit: async () => [] }) };
-        },
+        where: () => Promise.resolve(visibleRows),
       }),
     })),
-    query: {
-      kbPages: {
-        findFirst: jest.fn().mockResolvedValue(pageForFind),
-      },
-    },
-    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-      cb({
-        execute: jest.fn().mockResolvedValue([{ id: pageForFind?.id ?? 1 }]),
-        query: { kbPages: { findFirst: jest.fn().mockResolvedValue(null) } },
-        update: () => ({ set: () => ({ where: jest.fn().mockResolvedValue([]) }) }),
-        delete: () => ({ where: jest.fn().mockResolvedValue([]) }),
-        select: () => ({ from: () => ({ where: jest.fn().mockResolvedValue([{ id: 1, orgId: ORG_ID, title: "T", status: "draft", visibility: "org", contentType: "note", trustState: "unverified", isLocked: false, icon: null, coverImage: null, sortOrder: 0, spaceId: null, parentPageId: null, projectId: null, publicToken: null, publicSlug: null, deletedAt: null, deletedById: null, createdAt: new Date(), updatedAt: new Date(), createdById: null, lastEditedById: null, ownerUserId: null, verifiedById: null, verifiedUntil: null, nextReviewAt: null, aclRevision: 0, contentRevision: 1, sourceArticleId: null, createdByMembershipId: null, lastEditedByMembershipId: null, deletedByMembershipId: null, ownerMembershipId: null, verifiedByMembershipId: null }]) }) }),
-      })),
   } as unknown as Db;
 }
 
-function service(db: Db): KbPageTreeService {
-  return new KbPageTreeService(
+function makeTreeMock(restoreImpl?: () => Promise<unknown>) {
+  return {
+    restore: jest.fn().mockImplementation(restoreImpl ?? (() => Promise.resolve({ id: 1 }))),
+  };
+}
+
+function service(db: Db, treeMock?: ReturnType<typeof makeTreeMock>): KbPageTrashService {
+  return new KbPageTrashService(
     db,
     auditMock as never,
     storageMock,
     configMock,
     auth as never,
+    (treeMock ?? makeTreeMock()) as never,
   );
 }
 
@@ -171,8 +150,8 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`false`),
       assertPageAccess: jest.fn(),
     };
-    const { db } = makeTrashDb([makeRow(1)]);
-    const svc = new KbPageTreeService(db, auditMock as never, storageMock, configMock, restrictedAuth as never);
+    const { db } = makeTrashDb([]);
+    const svc = new KbPageTrashService(db, auditMock as never, storageMock, configMock, restrictedAuth as never, makeTreeMock() as never);
     const page = await svc.getTrash(userInOrg, trashQuery());
     expect(page.data).toHaveLength(0);
     expect(restrictedAuth.visiblePagePredicate).toHaveBeenCalledWith(userInOrg, "view");
@@ -245,12 +224,9 @@ describe("POST /kb/pages/trash/restore — bulk restore", () => {
 
   it("a hidden page returns notFound and visible deleted page returns succeeded", async () => {
     const now = new Date();
-    const db = makeBulkDb(
-      [{ id: 1, deletedAt: now }],
-      { id: 1, deletedAt: now, parentPageId: null, title: "P1" },
-    );
-    const svc = service(db);
-    const result = await svc.bulkRestore(userInOrg, { pageIds: [1, 99] });
+    const db = makeSelectOnlyDb([{ id: 1, deletedAt: now }]);
+    const tree = makeTreeMock(() => Promise.resolve({ id: 1 }));
+    const result = await service(db, tree).bulkRestore(userInOrg, { pageIds: [1, 99] });
     const r1 = result.results.find((r) => r.pageId === 1);
     const r99 = result.results.find((r) => r.pageId === 99);
     expect(r1?.result).toBe("succeeded");
@@ -258,7 +234,7 @@ describe("POST /kb/pages/trash/restore — bulk restore", () => {
   });
 
   it("a hidden page and a missing page produce the identical result shape", async () => {
-    const db = makeBulkDb([], null);
+    const db = makeSelectOnlyDb([]);
     const result = await service(db).bulkRestore(userInOrg, { pageIds: [1, 2] });
     const shapes = result.results.map((r) => ({ result: r.result }));
     expect(shapes[0]).toEqual(shapes[1]);
@@ -266,26 +242,16 @@ describe("POST /kb/pages/trash/restore — bulk restore", () => {
   });
 
   it("restoring an already-live page is succeeded — idempotent", async () => {
-    const db = makeBulkDb(
-      [{ id: 5, deletedAt: null }],
-      { id: 5, deletedAt: null, parentPageId: null, title: "Live" },
-    );
+    const db = makeSelectOnlyDb([{ id: 5, deletedAt: null }]);
     const result = await service(db).bulkRestore(userInOrg, { pageIds: [5] });
     expect(result.results[0]?.result).toBe("succeeded");
   });
 
   it("a ConflictException from restore is treated as succeeded — race-condition idempotence", async () => {
     const now = new Date();
-    const db = {
-      select: jest.fn().mockImplementation(() => ({
-        from: () => ({
-          where: () => Promise.resolve([{ id: 7, deletedAt: now }]),
-        }),
-      })),
-      query: { kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 7, deletedAt: now, parentPageId: null, title: "X" }) } },
-      transaction: jest.fn().mockRejectedValue(new ConflictException("Page is not in trash")),
-    } as unknown as Db;
-    const result = await service(db).bulkRestore(userInOrg, { pageIds: [7] });
+    const db = makeSelectOnlyDb([{ id: 7, deletedAt: now }]);
+    const tree = makeTreeMock(() => Promise.reject(new ConflictException("Page is not in trash")));
+    const result = await service(db, tree).bulkRestore(userInOrg, { pageIds: [7] });
     expect(result.results[0]?.result).toBe("succeeded");
   });
 });

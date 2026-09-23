@@ -20,8 +20,6 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
   }
 
   const audit = {} as never;
-  const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) }) as never;
-  const makeConfig = () => ({ R2_KB_BUCKET_NAME: "kb-files" }) as never;
   const makeAuth = () => ({
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
     assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "edit", via: "admin" }),
@@ -61,7 +59,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("scopes page tree query to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbPageTreeService(db, audit, makeStorage(), makeConfig(), makeAuth() as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never);
 
     await svc.getTree(makeUser(ATTACKER));
 
@@ -73,7 +71,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("returns page tree for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbPageTreeService(db, audit, makeStorage(), makeConfig(), makeAuth() as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never);
 
     const result = await svc.getTree(makeUser(OWNER));
 
@@ -98,7 +96,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     } as unknown as Db;
     const auth = makeAuth();
     const auditWithLog = { log: jest.fn() } as never;
-    const svc = new KbPageTreeService(db, auditWithLog, makeStorage(), makeConfig(), auth as never);
+    const svc = new KbPageTreeService(db, auditWithLog, auth as never);
 
     await svc.softDelete(makeUser(orgId), PAGE_ID);
 
@@ -121,7 +119,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
       transaction: jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx)),
     } as unknown as Db;
     const auth = makeAuth();
-    const svc = new KbPageTreeService(db, audit, makeStorage(), makeConfig(), auth as never);
+    const svc = new KbPageTreeService(db, audit, auth as never);
 
     await svc.move(makeUser(orgId), PAGE_ID, { parentPageId: null, index: 0 });
 

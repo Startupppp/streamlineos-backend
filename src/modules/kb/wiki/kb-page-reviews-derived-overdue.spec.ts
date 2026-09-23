@@ -137,8 +137,8 @@ describe("derived isOverdue — query service", () => {
     const page = await svc.list(makeUser(), { limit: 1, sortDir: "asc" });
     const cursor = page.pagination.nextCursor;
     expect(typeof cursor).toBe("string");
-    expect(cursor).not.toContain("T");
-    expect(cursor?.length).toBeGreaterThan(0);
+    expect(cursor?.length).toBeGreaterThan(8);
+    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
 
