@@ -121,6 +121,23 @@ describe("derived isOverdue — query service", () => {
     expect(page.data).toHaveLength(0);
   });
 
+  it("returns a review whose page IS visible, so the hidden-page test above is not passing merely because the fixture is empty", async () => {
+    const row = {
+      id: 1, orgId: "org-1", pageId: 10,
+      type: "approval", status: "pending",
+      requestedById: null, reviewerId: null,
+      requestedByMembershipId: null, reviewerMembershipId: null,
+      dueAt: new Date(Date.now() + 86_400_000), decidedAt: null, decisionNote: null,
+      createdAt: new Date(), updatedAt: new Date(),
+      pageTitle: "Visible", requestedByName: null, reviewerName: null,
+    };
+    const db = makeQueryDb([row]);
+    const svc = new KbPageReviewsQueryService(db, accessMock, authMock as never);
+    const page = await svc.list(makeUser(), { limit: 50, sortDir: "asc" });
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]?.pageTitle).toBe("Visible");
+  });
+
   it("cursor stability — opaque cursor is an encoded string, not a raw date", async () => {
     const pastDue = new Date(Date.now() - 3600_000);
     const rows = Array.from({ length: 2 }, (_, i) => ({
@@ -207,6 +224,56 @@ describe("KbPageReviewsService.bulkDecide", () => {
     const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock, authSvcMock);
     const result = await svc.bulkDecide(makeUser(), { ids: [404], decision: "approved" });
     expect(result.results[0]).toMatchObject({ id: 404, outcome: "notFound" });
+  });
+
+  it("actually decides a pending review, so the notFound and conflict cases above are not the only reachable outcomes", async () => {
+    const db = makeServiceDb([{ id: 5, status: "pending" }]);
+    const auditMock = { log: jest.fn() } as never;
+    const dispatchMock = { emit: jest.fn() } as never;
+    const authSvcMock = { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never;
+    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock, authSvcMock);
+    const result = await svc.bulkDecide(makeUser(), { ids: [5], decision: "approved" });
+    expect(result.results[0]).toMatchObject({ id: 5, outcome: "succeeded" });
+  });
+
+  it("decides the reachable rows and reports the rest per id, so one failure does not roll back the others", async () => {
+    const db = makeServiceDb([
+      { id: 5, status: "pending" },
+      { id: 7, status: "approved" },
+    ]);
+    const auditMock = { log: jest.fn() } as never;
+    const dispatchMock = { emit: jest.fn() } as never;
+    const authSvcMock = { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never;
+    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock, authSvcMock);
+
+    const result = await svc.bulkDecide(makeUser(), {
+      ids: [5, 7, 404],
+      decision: "approved",
+    });
+
+    const byId = new Map(result.results.map((r) => [r.id, r.outcome]));
+    expect(byId.get(5)).toBe("succeeded");
+    expect(byId.get(7)).toBe("conflict");
+    expect(byId.get(404)).toBe("notFound");
+  });
+
+  it("reports a hidden review and a missing review identically, so a bulk response cannot confirm that a hidden review exists", async () => {
+    const auditMock = { log: jest.fn() } as never;
+    const dispatchMock = { emit: jest.fn() } as never;
+
+    const hidden = new KbPageReviewsService(
+      makeServiceDb([]), auditMock, dispatchMock, accessMock,
+      { visiblePagePredicate: jest.fn().mockResolvedValue(sql`false`) } as never,
+    );
+    const missing = new KbPageReviewsService(
+      makeServiceDb([]), auditMock, dispatchMock, accessMock,
+      { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never,
+    );
+
+    const hiddenResult = await hidden.bulkDecide(makeUser(), { ids: [42], decision: "approved" });
+    const missingResult = await missing.bulkDecide(makeUser(), { ids: [42], decision: "approved" });
+
+    expect(hiddenResult.results).toEqual(missingResult.results);
   });
 
   it("returns conflict for an already-decided review", async () => {

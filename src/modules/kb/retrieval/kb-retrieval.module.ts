@@ -21,6 +21,7 @@ import {
 import { KbPageBackfillService } from "./kb-page-backfill.service";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
+import { KbPageSearchQueryService } from "./kb-page-search-query.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
@@ -52,6 +53,7 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbPageBackfillService,
     KbCandidateService,
     KbSearchService,
+    KbPageSearchQueryService,
     KbAskService,
     KbCitationVisibilityService,
     KbChatHistoryService,
