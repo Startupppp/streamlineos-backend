@@ -12,6 +12,8 @@ import { AccountingKernelModule } from "../accounting/kernel/accounting-kernel.m
 import { NotificationsModule } from "../notifications/notifications.module";
 import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../billing/core/billing.module";
+import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
+import { InvoicesFromTimesheetsService } from "./invoices-from-timesheets.service";
 
 /**
  * The customer invoice lifecycle on `/invoices`.
@@ -30,6 +32,7 @@ import { BillingModule } from "../billing/core/billing.module";
     NotificationsModule,
     CrmAutomationStudioModule,
     BillingModule,
+    TimesheetsCoreModule,
   ],
   controllers: [InvoicesController, InvoicesWriteController],
   providers: [
@@ -39,6 +42,7 @@ import { BillingModule } from "../billing/core/billing.module";
     InvoicesPaymentService,
     InvoicesLifecycleService,
     InvoicesPostingService,
+    InvoicesFromTimesheetsService,
   ],
   exports: [InvoicesWriteService],
 })

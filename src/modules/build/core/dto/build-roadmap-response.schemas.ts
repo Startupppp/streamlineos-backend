@@ -2,6 +2,12 @@ import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 import { roadmapStatusEnum, feedbackStatusEnum } from "../../../../db/schema";
+import {
+  RICE_INPUT_NAMES,
+  RICE_METHOD,
+  RICE_SCORE_UNAVAILABLE_REASONS,
+} from "../roadmap-prioritization";
+import { ROADMAP_DELIVERY_SOURCES } from "../roadmap-delivery";
 
 export const roadmapItemSchema = z.object({
   id: z.number().int(),
@@ -34,6 +40,51 @@ export const roadmapPageSchema = z.object({
     nextCursor: z.string().nullable(),
   }),
   total: z.number().int().optional(),
+});
+
+export const roadmapPrioritizationSchema = z.object({
+  method: z.literal(RICE_METHOD),
+  score: z.number().nullable(),
+  isComplete: z.boolean(),
+  missingInputs: z.array(z.enum(RICE_INPUT_NAMES)),
+  unavailableReason: z.enum(RICE_SCORE_UNAVAILABLE_REASONS).nullable(),
+});
+
+export const roadmapScoredItemSchema = roadmapItemSchema.extend({
+  prioritization: roadmapPrioritizationSchema,
+});
+
+export const roadmapScoredPageSchema = z.object({
+  data: z.array(roadmapScoredItemSchema),
+  pagination: z.object({
+    limit: z.number().int(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+  total: z.number().int().optional(),
+});
+
+export const roadmapDemandSchema = z.object({
+  votes: z.number().int(),
+  linkedFeedbackCount: z.number().int(),
+  openLinkedFeedbackCount: z.number().int(),
+});
+
+export const roadmapDeliverySchema = z.object({
+  projectId: z.number().int().nullable(),
+  epicTicketId: z.number().int().nullable(),
+  source: z.enum(ROADMAP_DELIVERY_SOURCES),
+  linkedTicketCount: z.number().int(),
+  countedTicketCount: z.number().int(),
+  completedTicketCount: z.number().int(),
+  progressPercent: z.number().int().nullable(),
+});
+
+export const roadmapSignalsSchema = z.object({
+  itemId: z.number().int(),
+  prioritization: roadmapPrioritizationSchema,
+  demand: roadmapDemandSchema,
+  delivery: roadmapDeliverySchema,
 });
 
 export const feedbackPostSchema = z.object({

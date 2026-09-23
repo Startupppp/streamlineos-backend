@@ -20,6 +20,18 @@ import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { ProjectsChangelogService } from "./projects-changelog.service";
 import { ProjectsFeedbackService } from "./projects-feedback.service";
 import { assertRoadmapTargetsInOrg } from "./roadmap-references";
+import {
+  computeRoadmapPrioritization,
+  type RiceInputs,
+  type RoadmapPrioritization,
+} from "./roadmap-prioritization";
+import { loadRoadmapDeliveryProgress, loadRoadmapDemandSignals } from "./roadmap-delivery";
+
+function withPrioritization<T extends RiceInputs>(
+  row: T,
+): T & { prioritization: RoadmapPrioritization } {
+  return { ...row, prioritization: computeRoadmapPrioritization(row) };
+}
 
 @Injectable()
 export class ProjectsRoadmapService {
@@ -77,6 +89,11 @@ export class ProjectsRoadmapService {
     };
   }
 
+  async listRoadmapWithPrioritization(orgId: string, query: RoadmapListQuery) {
+    const page = await this.listRoadmap(orgId, query);
+    return { ...page, data: page.data.map(withPrioritization) };
+  }
+
   async createRoadmap(orgId: string, userId: string, input: CreateRoadmapInput) {
     await assertRoadmapTargetsInOrg(this.db, orgId, input);
     const [item] = await this.db
@@ -92,10 +109,14 @@ export class ProjectsRoadmapService {
         epicTicketId: input.epicTicketId ?? null,
         targetQuarter: input.targetQuarter ?? null,
         sortOrder: input.sortOrder,
+        reach: input.reach ?? null,
+        impact: input.impact ?? null,
+        confidence: input.confidence ?? null,
+        effort: input.effort ?? null,
         createdBy: userId,
       })
       .returning();
-    return item;
+    return withPrioritization(item);
   }
 
   async getRoadmap(orgId: string, itemId: number) {
@@ -103,7 +124,7 @@ export class ProjectsRoadmapService {
       where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
     });
     if (!item) throw new NotFoundException("Roadmap item not found");
-    return item;
+    return withPrioritization(item);
   }
 
   async updateRoadmap(orgId: string, itemId: number, input: UpdateRoadmapInput) {
@@ -114,7 +135,19 @@ export class ProjectsRoadmapService {
       .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Roadmap item not found");
-    return updated;
+    return withPrioritization(updated);
+  }
+
+  async getRoadmapSignals(orgId: string, itemId: number) {
+    const item = await this.getRoadmap(orgId, itemId);
+    const [demand, delivery] = await Promise.all([
+      loadRoadmapDemandSignals(this.db, orgId, item.id, item.votes),
+      loadRoadmapDeliveryProgress(this.db, orgId, {
+        projectId: item.projectId,
+        epicTicketId: item.epicTicketId,
+      }),
+    ]);
+    return { itemId: item.id, prioritization: item.prioritization, demand, delivery };
   }
 
   async deleteRoadmap(orgId: string, itemId: number) {

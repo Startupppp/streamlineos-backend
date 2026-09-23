@@ -47,12 +47,12 @@ describe("buildTicketImportPreview valid rows", () => {
   });
 
   it("matches a supplied status case-insensitively and stores the configured spelling", () => {
-    expect(preview("title,status\nA,in_progress").rows[0]?.values.status).toBe("IN_PROGRESS");
+    expect(preview("title,status\nAlpha,in_progress").rows[0]?.values.status).toBe("IN_PROGRESS");
   });
 
   it("treats an empty cell as an absent field rather than a null write", () => {
-    const result = preview("title,description,points\nA,,");
-    expect(result.rows[0]?.values).toEqual({ title: "A", status: "TODO" });
+    const result = preview("title,description,points\nAlpha,,");
+    expect(result.rows[0]?.values).toEqual({ title: "Alpha", status: "TODO" });
   });
 });
 
@@ -66,28 +66,28 @@ describe("buildTicketImportPreview invalid rows", () => {
   });
 
   it("names the row and the field for a bad enum", () => {
-    const issue = preview("title,priority\nA,SOMEDAY").issues[0];
+    const issue = preview("title,priority\nAlpha,SOMEDAY").issues[0];
     expect(issue?.rowNumber).toBe(2);
     expect(issue?.field).toBe("priority");
     expect(issue?.kind).toBe("INVALID");
   });
 
   it("names the row and the field for a non-numeric number", () => {
-    expect(preview("title,points\nA,soon").issues).toEqual([
+    expect(preview("title,points\nAlpha,soon").issues).toEqual([
       { rowNumber: 2, field: "points", kind: "INVALID", message: '"soon" is not a number' },
     ]);
   });
 
   it("names the row and the field for a non-boolean flag", () => {
-    expect(preview("title,clientVisible\nA,maybe").issues[0]?.field).toBe("clientVisible");
+    expect(preview("title,clientVisible\nAlpha,maybe").issues[0]?.field).toBe("clientVisible");
   });
 
   it("rejects a calendar date that does not exist", () => {
-    expect(preview("title,dueDate\nA,2026-02-31").issues[0]?.field).toBe("dueDate");
+    expect(preview("title,dueDate\nAlpha,2026-02-31").issues[0]?.field).toBe("dueDate");
   });
 
   it("refuses a field that is not on the import allowlist", () => {
-    const issue = preview("title,assigneeMembershipId\nA,9").issues[0];
+    const issue = preview("title,assigneeMembershipId\nAlpha,9").issues[0];
     expect(issue).toEqual({
       rowNumber: 2,
       field: "assigneeMembershipId",
@@ -97,7 +97,7 @@ describe("buildTicketImportPreview invalid rows", () => {
   });
 
   it("refuses a status the project has not configured", () => {
-    expect(preview("title,status\nA,ARCHIVED").issues).toEqual([
+    expect(preview("title,status\nAlpha,ARCHIVED").issues).toEqual([
       {
         rowNumber: 2,
         field: "status",
@@ -121,7 +121,7 @@ describe("buildTicketImportPreview invalid rows", () => {
   });
 
   it("refuses to preview against a project with no configured statuses", () => {
-    const result = preview("title\nA", { statuses: [] });
+    const result = preview("title\nAlpha", { statuses: [] });
     expect(result.fileError).toBe("The project has no configured statuses to import into");
     expect(result.confirmationToken).toBeNull();
   });
@@ -160,19 +160,26 @@ describe("confirmation token", () => {
   });
 
   it("is stable for the same rows in the same project", () => {
-    expect(preview("title\nA").confirmationToken).toBe(preview("title\nA").confirmationToken);
+    expect(preview("title\nAlpha").confirmationToken).toBe(
+      preview("title\nAlpha").confirmationToken,
+    );
+    expect(preview("title\nAlpha").confirmationToken).not.toBeNull();
   });
 
   it("changes when a value changes", () => {
-    expect(preview("title\nA").confirmationToken).not.toBe(
-      preview("title\nB").confirmationToken,
+    expect(preview("title\nAlpha").confirmationToken).not.toBe(
+      preview("title\nBravo").confirmationToken,
     );
+    expect(preview("title\nBravo").confirmationToken).not.toBeNull();
   });
 
   it("changes when the tenant changes, so a token cannot cross organisations", () => {
-    expect(preview("title\nA").confirmationToken).not.toBe(
-      preview("title\nA", { orgId: OTHER_ORG }).confirmationToken,
+    expect(preview("title\nAlpha").confirmationToken).not.toBe(
+      preview("title\nAlpha", { orgId: OTHER_ORG }).confirmationToken,
     );
+    expect(
+      preview("title\nAlpha", { orgId: OTHER_ORG }).confirmationToken,
+    ).not.toBeNull();
   });
 });
 

@@ -7,6 +7,7 @@ import { BuildCommentDraftsModule } from "./comment-drafts/build-comment-drafts.
 import { BuildExecutionModule } from "./execution/build-execution.module";
 import { BuildFormsModule } from "./forms/build-forms.module";
 import { BuildGovernanceModule } from "./governance/build-governance.module";
+import { BuildImportExportModule } from "./import-export/build-import-export.module";
 import { BuildIncidentsModule } from "./incidents/build-incidents.module";
 import { BuildManagedProductsModule } from "./managed-products/managed-products.module";
 import { BuildMeetingsModule } from "./meetings/build-meetings.module";
@@ -29,6 +30,7 @@ export const BUILD_MODULES = [
   BuildExecutionModule,
   BuildFormsModule,
   BuildGovernanceModule,
+  BuildImportExportModule,
   BuildIncidentsModule,
   BuildManagedProductsModule,
   BuildMeetingsModule,

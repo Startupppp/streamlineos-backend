@@ -16,13 +16,16 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { BillingService } from "./billing.service";
+import { TimesheetInvoicingService } from "./timesheet-invoicing.service";
 import { resolveRatePreviewSubject } from "./timesheets-core-scope";
 import {
   uninvoicedQuerySchema,
+  uninvoicedEntriesQuerySchema,
   exportBillingSchema,
   createInvoiceDraftSchema,
   ratePreviewQuerySchema,
   type UninvoicedQuery,
+  type UninvoicedEntriesQuery,
   type ExportBillingInput,
   type CreateInvoiceDraftInput,
   type RatePreviewQuery,
@@ -31,6 +34,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   billingUninvoicedResponseSchema,
+  billingUninvoicedEntriesResponseSchema,
   billingExportResponseSchema,
   billingInvoiceDraftResponseSchema,
   billingRatePreviewResponseSchema,
@@ -42,6 +46,7 @@ import {
 export class TimesheetBillingController {
   constructor(
     private readonly billing: BillingService,
+    private readonly timesheetInvoicing: TimesheetInvoicingService,
     private readonly access: AccessService,
   ) {}
 
@@ -54,6 +59,21 @@ export class TimesheetBillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.getUninvoiced(u, query);
+  }
+
+  @Get("uninvoiced-entries")
+  @RequirePermission("timesheets:billing:view")
+  @Validate({ query: uninvoicedEntriesQuerySchema })
+  @ResponseSchema(billingUninvoicedEntriesResponseSchema)
+  async getUninvoicedEntries(
+    @Query() query: UninvoicedEntriesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const items = await this.timesheetInvoicing.listUninvoicedEntries(
+      u.orgId,
+      query,
+    );
+    return { items };
   }
 
   @Post("export")

@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   changeRequests,
+  portalMemberships,
   projectClientGrants,
   projectMilestones,
   projects,
@@ -15,6 +16,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type { CreatePortalCrInput } from "./dto/client-portal.schemas";
 import { assertProjectAccess } from "../core/project-access";
 
@@ -76,13 +78,31 @@ export class ClientPortalService {
     return cr;
   }
 
-  async listPortalProjects(orgId: string) {
+  private async portalMembershipIdsFor(orgId: string, membershipId: number) {
+    const rows = await this.db
+      .select({ id: portalMemberships.portalMembershipId })
+      .from(portalMemberships)
+      .where(
+        and(
+          eq(portalMemberships.organizationId, orgId),
+          eq(portalMemberships.userMembershipId, membershipId),
+        ),
+      )
+      .limit(50);
+    return rows.map((r) => r.id);
+  }
+
+  async listPortalProjects(orgId: string, membershipId: number) {
+    const portalMembershipIds = await this.portalMembershipIdsFor(orgId, membershipId);
+    if (portalMembershipIds.length === 0) return [];
+
     const grants = await this.db
       .select({ projectId: projectClientGrants.projectId })
       .from(projectClientGrants)
       .where(
         and(
           eq(projectClientGrants.organizationId, orgId),
+          inArray(projectClientGrants.portalMembershipId, portalMembershipIds),
           eq(projectClientGrants.status, "ACTIVE"),
         ),
       )
@@ -251,7 +271,23 @@ export class ClientPortalService {
   }
 
   async listPortalChangeRequests(u: CurrentUserContext, projectId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId === null) throw new NotFoundException("Project not found");
+    const portalMembershipIds = await this.portalMembershipIdsFor(u.orgId, membershipId);
+    if (portalMembershipIds.length === 0) throw new NotFoundException("Project not found");
+    const [grant] = await this.db
+      .select({ projectId: projectClientGrants.projectId })
+      .from(projectClientGrants)
+      .where(
+        and(
+          eq(projectClientGrants.organizationId, u.orgId),
+          eq(projectClientGrants.projectId, projectId),
+          inArray(projectClientGrants.portalMembershipId, portalMembershipIds),
+          eq(projectClientGrants.status, "ACTIVE"),
+        ),
+      )
+      .limit(1);
+    if (!grant) throw new NotFoundException("Project not found");
     return this.db
       .select({
         id: changeRequests.id,

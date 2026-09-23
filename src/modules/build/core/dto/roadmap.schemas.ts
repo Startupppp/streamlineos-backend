@@ -1,6 +1,21 @@
 import { z } from "zod";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import {
+  RICE_CONFIDENCE_MAX,
+  RICE_CONFIDENCE_MIN,
+  RICE_EFFORT_MAX,
+  RICE_EFFORT_MIN,
+  RICE_IMPACT_MAX,
+  RICE_IMPACT_MIN,
+  RICE_REACH_MAX,
+  RICE_REACH_MIN,
+} from "../roadmap-prioritization";
+
+const riceReachField = z.number().int().min(RICE_REACH_MIN).max(RICE_REACH_MAX);
+const riceImpactField = z.number().int().min(RICE_IMPACT_MIN).max(RICE_IMPACT_MAX);
+const riceConfidenceField = z.number().int().min(RICE_CONFIDENCE_MIN).max(RICE_CONFIDENCE_MAX);
+const riceEffortField = z.number().int().min(RICE_EFFORT_MIN).max(RICE_EFFORT_MAX);
 
 export const roadmapListQuerySchema = z.object({
   status: z
@@ -24,6 +39,10 @@ export const createRoadmapSchema = z.object({
   epicTicketId: z.number().int().positive().optional(),
   targetQuarter: z.string().trim().max(20).optional(),
   sortOrder: z.number().int().default(0),
+  reach: riceReachField.optional(),
+  impact: riceImpactField.optional(),
+  confidence: riceConfidenceField.optional(),
+  effort: riceEffortField.optional(),
 }).strict();
 
 export const updateRoadmapSchema = z.object({
@@ -38,6 +57,10 @@ export const updateRoadmapSchema = z.object({
   epicTicketId: z.number().int().positive().nullable().optional(),
   targetQuarter: z.string().trim().max(20).nullable().optional(),
   sortOrder: z.number().int().optional(),
+  reach: riceReachField.nullable().optional(),
+  impact: riceImpactField.nullable().optional(),
+  confidence: riceConfidenceField.nullable().optional(),
+  effort: riceEffortField.nullable().optional(),
 }).strict();
 
 export const feedbackListQuerySchema = z.object({

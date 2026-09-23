@@ -220,14 +220,14 @@ describe("BSN-04-042 — cross-organization isolation: managed-products direct a
 describe("BSN-04-042 — cross-organization isolation: portal project list", () => {
   it("listPortalProjects binds the caller's orgId so org-B's projects are never returned", async () => {
     const { db, capturedWhere } = makePortalDb(undefined, []);
-    await new ClientPortalService(db, accessStub, audit).listPortalProjects(ORG_A);
+    await new ClientPortalService(db, accessStub, audit).listPortalProjects(ORG_A, MEMBERSHIP_A);
     expect(renderParams(capturedWhere[0])).toContain(ORG_A);
     expect(renderParams(capturedWhere[0])).not.toContain(ORG_B);
   });
 
   it("listPortalProjects returns an empty result when the mock returns nothing (cross-tenant miss)", async () => {
     const { db } = makePortalDb(undefined, []);
-    const result = await new ClientPortalService(db, accessStub, audit).listPortalProjects(ORG_B);
+    const result = await new ClientPortalService(db, accessStub, audit).listPortalProjects(ORG_B, MEMBERSHIP_A);
     expect(result).toEqual([]);
   });
 });

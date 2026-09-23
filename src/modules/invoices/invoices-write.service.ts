@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, lte, sql } from "drizzle-orm";
-import { invoices, invoiceItems } from "../../db/schema";
+import { and, eq, lte } from "drizzle-orm";
+import { invoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
@@ -17,6 +17,7 @@ import {
   resolveSupplierStateCode,
 } from "./lib/invoice-helpers";
 import { assertTimesheetEntriesLinkable } from "./lib/timesheet-line-link";
+import { insertInvoiceWithItems } from "./lib/invoice-insert";
 import { InvoicesPaymentService } from "./invoices-payment.service";
 import { InvoicesUpdateService } from "./invoices-update.service";
 import { buildCloneInput } from "./lib/invoice-recurring-helpers";
@@ -83,63 +84,30 @@ export class InvoicesWriteService {
     const split = gstSplit(taxPool, supplierStateCode, placeOfSupplyStateCode);
 
     const invoice = await this.db.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${orgId} || 'invoice'))`,
-      );
-
-      const countRows = await tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(invoices)
-        .where(eq(invoices.orgId, orgId));
-      const nextNum = (countRows[0]?.count ?? 0) + 1;
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${String(nextNum).padStart(4, "0")}`;
-
-      const [inserted] = await tx
-        .insert(invoices)
-        .values({
-          orgId,
+      const inserted = await insertInvoiceWithItems(
+        tx,
+        orgId,
+        userId,
+        {
           clientId: input.clientId,
           projectId: input.projectId,
-          invoiceNumber,
           status,
-          subtotal: subtotal.toFixed(2),
-          taxRate: "0",
-          taxAmount: taxPool.toFixed(2),
-          discount: discount.toFixed(2),
-          total: total.toFixed(2),
+          subtotal,
+          taxPool,
+          discount,
+          total,
           currency: input.currency,
           dueDate: input.dueDate,
           notes: input.notes,
-          placeOfSupply: placeOfSupplyStateCode || null,
-          customerGstin: input.customerGstin ?? null,
-          supplierGstin: input.supplierGstin ?? null,
-          reverseCharge: input.reverseCharge ?? false,
-          taxInclusive: input.taxInclusive ?? false,
-          cgstAmount: split.cgst.toFixed(4),
-          sgstAmount: split.sgst.toFixed(4),
-          igstAmount: split.igst.toFixed(4),
-          sentAt: status === "ISSUED" ? new Date() : undefined,
-          createdBy: userId,
-        })
-        .returning();
-
-      if (!inserted) throw new Error("Invoice insert returned no rows");
-
-      if (itemsWithAmounts.length > 0) {
-        await tx.insert(invoiceItems).values(
-          itemsWithAmounts.map((it) => ({
-            invoiceId: inserted.id,
-            description: it.description,
-            hsnSacCode: it.hsnSacCode ?? null,
-            quantity: it.quantity.toFixed(4),
-            rate: it.rate.toFixed(4),
-            gstRate: it.gstRate.toFixed(2),
-            amount: it.amount.toFixed(4),
-            lineOrder: it.lineOrder,
-            timesheetEntryId: it.timesheetEntryId ?? null,
-          })),
-        );
-      }
+          placeOfSupply: placeOfSupplyStateCode,
+          customerGstin: input.customerGstin,
+          supplierGstin: input.supplierGstin,
+          reverseCharge: input.reverseCharge,
+          taxInclusive: input.taxInclusive,
+          split,
+        },
+        itemsWithAmounts,
+      );
 
       if (status === "ISSUED") {
         const invoiceDate = (inserted.createdAt ?? new Date())

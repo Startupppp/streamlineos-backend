@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-23T04:02:01.404Z",
+  "generatedAt": "2026-09-23T05:59:14.087Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -4263,6 +4263,39 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /build/{projectId}/import-export/tickets": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TicketImportExportController_commitImport",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/{projectId}/import-export/tickets/export": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TicketImportExportController_exportTickets",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/import-export/tickets/preview": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TicketImportExportController_previewImport",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/{projectId}/incidents": {
       "classification": "internal",
       "classificationOverride": null,
@@ -6600,6 +6633,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ProjectsRoadmapController_deleteRoadmap",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/roadmap/{itemId}/signals": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsRoadmapController_getRoadmapSignals",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -14763,6 +14807,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "FeedbucketController_deleteSubmissionMedia",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /feedbucket/submissions/bulk": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "FeedbucketController_bulkUpdateSubmissions",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -29845,6 +29900,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /invoices/from-timesheets": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "InvoicesWriteController_createFromTimesheets",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /invoices/recurring": {
       "classification": "internal",
       "classificationOverride": null,
@@ -43421,6 +43487,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "TimesheetBillingController_getUninvoiced",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /timesheets/billing/uninvoiced-entries": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TimesheetBillingController_getUninvoicedEntries",
       "owner": null,
       "version": "1",
       "consumers": [],

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { refineDueOnOrAfterStart } from "../../core/dto/project-core.schemas";
 
 export const TICKET_IMPORT_FIELDS = [
   "title",
@@ -46,7 +47,15 @@ const isoDate = z
 
 export const ticketImportRowSchema = z
   .object({
-    title: z.string({ error: "Title is required" }).trim().min(1, "Title is required").max(500),
+    title: z
+      .string({ error: "Title is required" })
+      .trim()
+      .min(1, "Title is required")
+      .min(3, "Title must be at least 3 characters")
+      .max(500)
+      .refine((value) => /[a-zA-Z0-9]/.test(value), {
+        message: "Title must contain at least one letter or number",
+      }),
     description: z.string().max(10_000).nullable().optional(),
     type: z.enum(["EPIC", "STORY", "TASK", "BUG"]).optional(),
     status: z.string().trim().min(1).max(100).optional(),
@@ -60,7 +69,10 @@ export const ticketImportRowSchema = z
     clientVisible: z.boolean().optional(),
     link: z.string().url().max(2000).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    refineDueOnOrAfterStart(data, ctx);
+  });
 
 export type TicketImportRow = z.infer<typeof ticketImportRowSchema>;
 
