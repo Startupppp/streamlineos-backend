@@ -89,3 +89,73 @@ it("correlates the program project count to the outer program row", async () => 
   expect(sql).not.toMatch(/"program_id"\s*=\s*"id"/);
   expect(sql).not.toMatch(/"org_id"\s*=\s*"org_id"/);
 });
+
+it("declares the outer portfolio alias that the project count correlates against", async () => {
+  const { db, render } = renderingDb();
+
+  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+
+  expect(render()).toMatch(/"project_portfolios"\s+"portfolio"/);
+});
+
+it("declares the outer program alias that the project count correlates against", async () => {
+  const { db, render } = renderingDb();
+
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+
+  expect(render()).toMatch(/"project_programs"\s+"program"/);
+});
+
+it("joins the schema-qualified projects relation when counting portfolio projects", async () => {
+  const { db, render } = renderingDb();
+
+  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+
+  expect(render()).toContain('"build"."projects"');
+});
+
+it("joins the schema-qualified projects relation when counting program projects", async () => {
+  const { db, render } = renderingDb();
+
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+
+  expect(render()).toContain('"build"."projects"');
+});
+
+it("qualifies both portfolio correlation columns with their own relation", async () => {
+  const { db, render } = renderingDb();
+
+  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+
+  const sql = render();
+  expect(sql).toContain("link.portfolio_id = portfolio.id");
+  expect(sql).toContain("link.org_id = portfolio.org_id");
+  expect(sql).not.toContain("link.org_id = link.org_id");
+});
+
+it("qualifies both program correlation columns with their own relation", async () => {
+  const { db, render } = renderingDb();
+
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+
+  const sql = render();
+  expect(sql).toContain("link.program_id = program.id");
+  expect(sql).toContain("link.org_id = program.org_id");
+  expect(sql).not.toContain("link.org_id = link.org_id");
+});
+
+it("keeps the soft-delete fence qualified in both project count subqueries", async () => {
+  const portfolios = renderingDb();
+  const programs = renderingDb();
+
+  await new PortfoliosService(portfolios.db, {} as AuditService).listPortfolios("org-1", {
+    limit: 20,
+  });
+  await new ProgramsService(programs.db, {} as AuditService).listPrograms("org-1", {});
+
+  for (const sql of [portfolios.render(), programs.render()]) {
+    expect(sql).toContain("linked_project.id = link.project_id");
+    expect(sql).toContain("linked_project.deleted_at IS NULL");
+    expect(sql).not.toMatch(/\bAND\s+"deleted_at"\s+IS\s+NULL/);
+  }
+});
