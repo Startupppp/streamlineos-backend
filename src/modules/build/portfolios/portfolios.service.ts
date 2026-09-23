@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   portfolioProjects,
   projectPortfolios,
@@ -55,39 +56,43 @@ export class PortfoliosService {
   }
 
   async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
+    const portfolio = alias(projectPortfolios, "portfolio");
+    const link = alias(portfolioProjects, "portfolio_project");
+    const linkedProject = alias(projects, "portfolio_linked_project");
     const { cursor, limit, status } = query;
     const pos = decodeCursor(cursor);
     const conds = [
-      eq(projectPortfolios.orgId, orgId),
-      isNull(projectPortfolios.deletedAt),
-      status ? eq(projectPortfolios.status, status) : undefined,
+      eq(portfolio.orgId, orgId),
+      isNull(portfolio.deletedAt),
+      status ? eq(portfolio.status, status) : undefined,
     ];
-    if (pos) conds.push(keysetBeforeId(projectPortfolios.createdAt, projectPortfolios.id, pos));
+    if (pos) conds.push(keysetBeforeId(portfolio.createdAt, portfolio.id, pos));
 
     const rows = await this.db
       .select({
-        id: projectPortfolios.id,
-        orgId: projectPortfolios.orgId,
-        name: projectPortfolios.name,
-        description: projectPortfolios.description,
-        ownerId: projectPortfolios.ownerId,
-        status: projectPortfolios.status,
-        health: projectPortfolios.health,
-        strategicGoal: projectPortfolios.strategicGoal,
-        createdBy: projectPortfolios.createdBy,
-        createdAt: projectPortfolios.createdAt,
-        updatedAt: projectPortfolios.updatedAt,
+        id: portfolio.id,
+        orgId: portfolio.orgId,
+        name: portfolio.name,
+        description: portfolio.description,
+        ownerId: portfolio.ownerId,
+        status: portfolio.status,
+        health: portfolio.health,
+        strategicGoal: portfolio.strategicGoal,
+        createdBy: portfolio.createdBy,
+        createdAt: portfolio.createdAt,
+        updatedAt: portfolio.updatedAt,
         projectCount: sql<number>`(
           SELECT CAST(COUNT(*) AS INT)
-          FROM ${portfolioProjects}
-          INNER JOIN ${projects} ON ${projects.id} = ${portfolioProjects.projectId}
-            AND ${projects.deletedAt} IS NULL
-          WHERE ${portfolioProjects.portfolioId} = ${projectPortfolios.id}
+          FROM ${link}
+          INNER JOIN ${linkedProject} ON ${linkedProject.id} = ${link.projectId}
+            AND ${linkedProject.deletedAt} IS NULL
+          WHERE ${link.portfolioId} = ${portfolio.id}
+            AND ${link.orgId} = ${portfolio.orgId}
         )`,
       })
-      .from(projectPortfolios)
+      .from(portfolio)
       .where(and(...conds))
-      .orderBy(desc(projectPortfolios.createdAt), desc(projectPortfolios.id))
+      .orderBy(desc(portfolio.createdAt), desc(portfolio.id))
       .limit(limit + 1);
 
     return buildCursorPage(rows, limit, (r) => ({

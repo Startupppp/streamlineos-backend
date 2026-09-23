@@ -32,7 +32,9 @@ import {
   type SourceRead,
 } from "./unified-inbox-sources";
 import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
+import { ApprovalAdapterRegistry } from "../attention/approval-adapter.registry";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { InboxSourcePosition } from "./dto/unified-inbox.schemas";
 import {
   decodeInboxCursor,
   encodeInboxCursor,
@@ -131,6 +133,39 @@ function mailSourceStatus(outcome: SourceRead<MailSourceBatch>): SourceStatus {
   };
 }
 
+type AdapterFetchResult = {
+  items: BuildApprovalInboxItem[];
+  errors: string[];
+  permDenied: string[];
+  unsupportedOnPage2: string[];
+  allAdapters: readonly ApprovalSourceAdapter[];
+};
+
+function buildApprovalSourceStatus(
+  wants: boolean,
+  approvalsSupport: boolean,
+  result: AdapterFetchResult | null,
+): SourceStatus {
+  if (!wants) return skippedSource("build_approval", null);
+  if (!approvalsSupport)
+    return skippedSource("build_approval", "unsupported: triage (approvals have no archive state)");
+  if (result === null) return skippedSource("build_approval", null);
+  const { allAdapters, permDenied, errors, unsupportedOnPage2 } = result;
+  if (allAdapters.length > 0 && permDenied.length === allAdapters.length)
+    return skippedSource("build_approval", `no permission: ${permDenied.join(", ")}`);
+  const errParts: string[] = [];
+  if (errors.length > 0) errParts.push(errors.join("; "));
+  if (unsupportedOnPage2.length > 0)
+    errParts.push(`unsupported: ${unsupportedOnPage2.join(", ")} adapters have no cursor`);
+  return {
+    kind: "build_approval",
+    included: true,
+    reason: null,
+    available: errors.length === 0,
+    error: errParts.length > 0 ? errParts.join("; ") : null,
+  };
+}
+
 @Injectable()
 export class UnifiedInboxService {
   constructor(
@@ -139,10 +174,48 @@ export class UnifiedInboxService {
     private readonly mail: MailService,
     private readonly broadcasts: BroadcastsService,
     private readonly buildApprovals: BuildApprovalsInboxService,
+    private readonly registry: ApprovalAdapterRegistry,
   ) {}
 
   private buildApprovalAdapters(): ApprovalSourceAdapter[] {
-    return [buildApprovalAdapter(this.buildApprovals)];
+    return [buildApprovalAdapter(this.buildApprovals), ...this.registry.list()];
+  }
+
+  private async fetchAllAdapters(
+    orgId: string,
+    userId: string,
+    membershipId: number | null,
+    user: CurrentUserContext,
+    limit: number,
+    cursor: InboxSourcePosition | null,
+  ): Promise<AdapterFetchResult> {
+    const allAdapters = this.buildApprovalAdapters();
+    const items: BuildApprovalInboxItem[] = [];
+    const errors: string[] = [];
+    const permDenied: string[] = [];
+    const unsupportedOnPage2: string[] = [];
+    await Promise.all(
+      allAdapters.map(async (adapter) => {
+        if (cursor !== null && !adapter.supportsAfterCursor) {
+          unsupportedOnPage2.push(adapter.kindLabel);
+          return;
+        }
+        const canView = await this.access.holds(user, adapter.permission);
+        if (!canView) {
+          permDenied.push(adapter.permission);
+          return;
+        }
+        const outcome = await readSource(() =>
+          adapter.fetch(orgId, userId, membershipId, limit, cursor),
+        );
+        if (!outcome.ok) {
+          errors.push(`${adapter.kindLabel}: ${outcome.error}`);
+          return;
+        }
+        items.push(...outcome.value);
+      }),
+    );
+    return { items, errors, permDenied, unsupportedOnPage2, allAdapters };
   }
 
   async list(
@@ -194,15 +267,6 @@ export class UnifiedInboxService {
       mailSupport &&
       canViewMail &&
       (!unreadOnly || mailFreshForUnreadOnly === true);
-
-    const adapters = this.buildApprovalAdapters();
-    const canViewApproval =
-      wantsBuildApprovals && approvalsSupport
-        ? await this.access.holds(
-            user,
-            adapters[0]?.permission ?? "build:approvals:view",
-          )
-        : false;
 
     const membershipId = actingMembershipId(user.principal);
     const notifPosition = inboxSourcePosition(cursorState.n, cursorState.nt);

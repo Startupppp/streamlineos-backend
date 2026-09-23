@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { programProjects, projectPortfolios, projectPrograms, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -62,34 +63,38 @@ export class ProgramsService {
   }
 
   async listPrograms(orgId: string, query: ListProgramsQuery) {
+    const program = alias(projectPrograms, "program");
+    const link = alias(programProjects, "program_project");
+    const linkedProject = alias(projects, "program_linked_project");
     return this.db
       .select({
-        id: projectPrograms.id,
-        orgId: projectPrograms.orgId,
-        portfolioId: projectPrograms.portfolioId,
-        name: projectPrograms.name,
-        description: projectPrograms.description,
-        ownerId: projectPrograms.ownerId,
-        status: projectPrograms.status,
-        health: projectPrograms.health,
-        createdBy: projectPrograms.createdBy,
-        createdAt: projectPrograms.createdAt,
-        updatedAt: projectPrograms.updatedAt,
+        id: program.id,
+        orgId: program.orgId,
+        portfolioId: program.portfolioId,
+        name: program.name,
+        description: program.description,
+        ownerId: program.ownerId,
+        status: program.status,
+        health: program.health,
+        createdBy: program.createdBy,
+        createdAt: program.createdAt,
+        updatedAt: program.updatedAt,
         projectCount: sql<number>`(
           SELECT CAST(COUNT(*) AS INT)
-          FROM ${programProjects}
-          INNER JOIN ${projects} ON ${projects.id} = ${programProjects.projectId}
-            AND ${projects.deletedAt} IS NULL
-          WHERE ${programProjects.programId} = ${projectPrograms.id}
+          FROM ${link}
+          INNER JOIN ${linkedProject} ON ${linkedProject.id} = ${link.projectId}
+            AND ${linkedProject.deletedAt} IS NULL
+          WHERE ${link.programId} = ${program.id}
+            AND ${link.orgId} = ${program.orgId}
         )`,
       })
-      .from(projectPrograms)
+      .from(program)
       .where(
         and(
-          eq(projectPrograms.orgId, orgId),
-          isNull(projectPrograms.deletedAt),
-          query.status ? eq(projectPrograms.status, query.status) : undefined,
-          query.portfolioId ? eq(projectPrograms.portfolioId, query.portfolioId) : undefined,
+          eq(program.orgId, orgId),
+          isNull(program.deletedAt),
+          query.status ? eq(program.status, query.status) : undefined,
+          query.portfolioId ? eq(program.portfolioId, query.portfolioId) : undefined,
         ),
       )
       .limit(100);

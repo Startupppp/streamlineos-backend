@@ -30,6 +30,8 @@ import type {
   NotificationInboxItem,
 } from "./dto/unified-inbox.schemas";
 
+export type { ApprovalSourceAdapter } from "../attention/approval-adapter.registry";
+
 export type InboxTriage = "active" | "later" | "done";
 
 export type InboxFilters = {
@@ -44,19 +46,6 @@ export const DEFAULT_INBOX_FILTERS: InboxFilters = {
   q: undefined,
   category: undefined,
   priority: undefined,
-};
-
-export type ApprovalSourceAdapter = {
-  readonly module: string;
-  readonly permission: string;
-  readonly kindLabel: string;
-  fetch(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
-    limit: number,
-    cursor: InboxSourcePosition | null,
-  ): Promise<BuildApprovalInboxItem[]>;
 };
 
 export const SOURCE_TIMEOUT_MS = 5_000;
@@ -350,6 +339,7 @@ export function buildApprovalAdapter(
     module: "build",
     permission: "build:approvals:view",
     kindLabel: "build",
+    supportsAfterCursor: true,
     fetch: (orgId, userId, membershipId, limit, cursor) =>
       fetchBuildApprovalItems(
         buildApprovals,

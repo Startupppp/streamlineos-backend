@@ -11,7 +11,11 @@ import {
   type FanoutInput,
 } from "./message-fanout.interface";
 
-type FanoutChannel = "push" | "dm_notification" | "mention_notification";
+type FanoutChannel =
+  | "push"
+  | "dm_notification"
+  | "mention_notification"
+  | "thread_reply_inbox";
 
 export interface FanoutDeferredDeps {
   db: Db;
@@ -49,11 +53,6 @@ function recordFanoutFailure(
   }
 }
 
-/**
- * Push and notification delivery is intentionally retryable. The chat message outbox consumer
- * calls this function, so a rejected task causes the event to be retried or dead-lettered by the
- * common relay instead of being lost behind a log line.
- */
 export async function runDeferredFanout(
   input: FanoutInput,
   context: FanoutDeliveryContext | undefined,
@@ -173,6 +172,38 @@ export async function runDeferredFanout(
           input.senderUserId ?? "",
           message.id,
           "mention_notification",
+          err,
+          audit,
+        );
+        failures.push(err);
+      }),
+    );
+
+  if (message.replyToId !== null)
+    tasks.push(
+      runEffect("thread_reply_inbox", () =>
+        notifications.publishThreadReplyInboxNotification(
+          orgId,
+          channelId,
+          {
+            id: message.id,
+            replyToId: message.replyToId,
+            senderUserId: input.senderUserId ?? null,
+          },
+          `${idempotencyKey}:thread_reply_inbox`,
+        ),
+      ).catch((err: unknown) => {
+        logger.error("chat: thread reply inbox notification failed", {
+          orgId,
+          channelId,
+          error: err instanceof Error ? err.message : "unknown",
+        });
+        recordFanoutFailure(
+          orgId,
+          channelId,
+          input.senderUserId ?? "",
+          message.id,
+          "thread_reply_inbox",
           err,
           audit,
         );

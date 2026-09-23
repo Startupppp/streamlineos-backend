@@ -102,6 +102,9 @@ describe("PortfoliosService.listPortfolios — projectCount subquery excludes so
     const expr = captured.projection["projectCount"];
     const rendered = render(expr);
     expect(rendered.toLowerCase()).toContain("deleted_at");
+    expect(rendered).toContain('"portfolio_project"."portfolio_id" = "portfolio"."id"');
+    expect(rendered).toContain('"portfolio_linked_project"."id" = "portfolio_project"."project_id"');
+    expect(rendered).not.toMatch(/\b"portfolio_id"\s*=\s*"id"\b/);
   });
 
   it("bite proof: a subquery without deleted_at does not filter soft-deleted projects", () => {

@@ -68,6 +68,18 @@ export const ticketDetailSchema = ticketRowSchema.extend({
   epic: z.object({ id: z.number().int(), name: z.string() }).nullable(),
   assignee: z.object({ user: userSummarySchema }).nullable(),
   reporter: userSummarySchema,
+  assignees: z.array(
+    z.object({
+      id: z.number().int(),
+      ticketId: z.number().int(),
+      assignedAt: wireDate(),
+      assignedBy: z.string().nullable(),
+      user: z.object({
+        userId: z.string(),
+        user: userSummarySchema,
+      }),
+    }),
+  ),
   members: z.array(z.object({ user: z.object({ user: userSummarySchema }) })),
   watchers: z.array(z.object({ user: userSummarySchema })),
   attachments: z.array(

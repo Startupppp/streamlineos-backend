@@ -84,7 +84,7 @@ describe("PortalClientService.submitChangeRequest — internal fields not writte
     });
     return {
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: grantWhere }) }),
-      transaction: jest.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+      transaction: jest.fn().mockImplementation(async (fn: (value: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
   }
 
