@@ -1,7 +1,13 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { incidentUpdates, projectIncidents, users } from "../../../db/schema";
+import {
+  incidentUpdates,
+  incidentDecisions,
+  incidentFollowUpActions,
+  projectIncidents,
+  users,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -10,9 +16,12 @@ import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type {
+  AddIncidentDecisionInput,
   AddIncidentUpdateInput,
+  CreateFollowUpActionInput,
   CreateIncidentInput,
   ListIncidentsQuery,
+  UpdateFollowUpActionInput,
   UpdateIncidentInput,
 } from "./dto/incidents.schemas";
 
@@ -87,8 +96,27 @@ export class IncidentsService {
       .from(incidentUpdates)
       .leftJoin(users, eq(users.id, incidentUpdates.createdBy))
       .where(and(eq(incidentUpdates.incidentId, incidentId), eq(incidentUpdates.orgId, u.orgId)))
-      .orderBy(desc(incidentUpdates.createdAt));
-    return { ...incident, updates };
+      .orderBy(desc(incidentUpdates.createdAt))
+      .limit(100);
+    const decisions = await this.db
+      .select()
+      .from(incidentDecisions)
+      .where(and(eq(incidentDecisions.incidentId, incidentId), eq(incidentDecisions.orgId, u.orgId)))
+      .orderBy(desc(incidentDecisions.createdAt))
+      .limit(100);
+    const followUpActions = await this.db
+      .select()
+      .from(incidentFollowUpActions)
+      .where(
+        and(
+          eq(incidentFollowUpActions.incidentId, incidentId),
+          eq(incidentFollowUpActions.orgId, u.orgId),
+          isNull(incidentFollowUpActions.deletedAt),
+        ),
+      )
+      .orderBy(desc(incidentFollowUpActions.createdAt))
+      .limit(100);
+    return { ...incident, updates, decisions, followUpActions };
   }
 
   async createIncident(u: CurrentUserContext, projectId: number, input: CreateIncidentInput) {
@@ -116,6 +144,7 @@ export class IncidentsService {
         responseDueAt: input.responseDueAt ?? null,
         resolutionDueAt: input.resolutionDueAt ?? null,
         linkedTicketId: input.linkedTicketId ?? null,
+        releaseId: input.releaseId ?? null,
         createdBy: u.userId,
       }).returning();
     });
@@ -150,6 +179,7 @@ export class IncidentsService {
     if (input.responseDueAt !== undefined) patch.responseDueAt = input.responseDueAt ?? null;
     if (input.resolutionDueAt !== undefined) patch.resolutionDueAt = input.resolutionDueAt ?? null;
     if (input.linkedTicketId !== undefined) patch.linkedTicketId = input.linkedTicketId ?? null;
+    if (input.releaseId !== undefined) patch.releaseId = input.releaseId ?? null;
     if (input.status !== undefined) {
       patch.status = input.status;
       Object.assign(patch, this.computeSla(current, input.status));
@@ -312,5 +342,121 @@ export class IncidentsService {
       metadata: { projectId, incidentId, updateId: update?.id },
     });
     return update;
+  }
+
+  /**
+   * Postmortem field: decisions. An append-only log — insert + list, same
+   * shape as `addUpdate` above minus the status-transition side effects,
+   * because a decision does not itself move the incident's lifecycle state.
+   */
+  async addDecision(
+    u: CurrentUserContext,
+    projectId: number,
+    incidentId: number,
+    input: AddIncidentDecisionInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    await this.loadIncident(u.orgId, projectId, incidentId);
+
+    const [decision] = await this.db
+      .insert(incidentDecisions)
+      .values({
+        orgId: u.orgId,
+        incidentId,
+        decision: input.decision,
+        rationale: input.rationale ?? null,
+        decidedBy: u.userId,
+      })
+      .returning();
+
+    this.audit.log({
+      action: "incident.decision_added",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "project_incident",
+      resourceId: String(incidentId),
+      metadata: { projectId, incidentId, decisionId: decision?.id },
+    });
+    return decision;
+  }
+
+  /**
+   * Postmortem field: follow-up actions. No closed-incident guard — the
+   * normal time to record these is the postmortem itself, which runs after
+   * the incident is closed.
+   */
+  async addFollowUpAction(
+    u: CurrentUserContext,
+    projectId: number,
+    incidentId: number,
+    input: CreateFollowUpActionInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    await this.loadIncident(u.orgId, projectId, incidentId);
+
+    const [action] = await this.db
+      .insert(incidentFollowUpActions)
+      .values({
+        orgId: u.orgId,
+        incidentId,
+        title: input.title,
+        description: input.description ?? null,
+        ownerId: input.ownerId ?? null,
+        dueAt: input.dueAt ?? null,
+        createdBy: u.userId,
+      })
+      .returning();
+
+    this.audit.log({
+      action: "incident.follow_up_action_added",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "project_incident",
+      resourceId: String(incidentId),
+      metadata: { projectId, incidentId, followUpActionId: action?.id },
+    });
+    return action;
+  }
+
+  async updateFollowUpAction(
+    u: CurrentUserContext,
+    projectId: number,
+    incidentId: number,
+    followUpActionId: number,
+    input: UpdateFollowUpActionInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    await this.loadIncident(u.orgId, projectId, incidentId);
+
+    const patch: Partial<typeof incidentFollowUpActions.$inferInsert> = {};
+    if (input.title !== undefined) patch.title = input.title;
+    if (input.description !== undefined) patch.description = input.description ?? null;
+    if (input.ownerId !== undefined) patch.ownerId = input.ownerId ?? null;
+    if (input.status !== undefined) patch.status = input.status;
+    if (input.dueAt !== undefined) patch.dueAt = input.dueAt ?? null;
+
+    const [updated] = await this.db
+      .update(incidentFollowUpActions)
+      .set(patch)
+      .where(
+        and(
+          eq(incidentFollowUpActions.id, followUpActionId),
+          eq(incidentFollowUpActions.orgId, u.orgId),
+          eq(incidentFollowUpActions.incidentId, incidentId),
+          isNull(incidentFollowUpActions.deletedAt),
+        ),
+      )
+      .returning();
+    if (!updated) throw new NotFoundException("Follow-up action not found");
+
+    this.audit.log({
+      action: "incident.follow_up_action_updated",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "project_incident",
+      resourceId: String(incidentId),
+      metadata: { projectId, incidentId, followUpActionId },
+    });
+    return updated;
   }
 }
