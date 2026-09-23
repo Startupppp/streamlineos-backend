@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { and, eq, desc, gt, inArray, isNull, lte, or } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { descKeyset, type DescKeysetPosition } from "../../../common/pagination/desc-keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -36,6 +37,26 @@ function isResolvedStepArray(steps: unknown[]): steps is ResolvedStep[] {
     (s) => typeof s === "object" && s !== null && "stepOrder" in s && "approverType" in s,
   );
 }
+
+const WORKFLOW_INBOX_OVERFETCH = 5;
+const WORKFLOW_INBOX_MAX_BATCHES = 5;
+
+export type WorkflowInboxCandidate = {
+  id: number;
+  orgId: string;
+  definitionId: number;
+  objectType: string;
+  objectId: string;
+  requestedBy: string | null;
+  subjectEmployeeId: string;
+  context: typeof hrWorkflowInstances.$inferSelect.context;
+  status: typeof hrWorkflowInstances.$inferSelect.status;
+  currentStepOrder: number;
+  dueAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  definitionSnapshot: typeof hrWorkflowInstances.$inferSelect.definitionSnapshot;
+};
 
 @Injectable()
 export class HrWorkflowInstancesService {
@@ -236,10 +257,7 @@ export class HrWorkflowInstancesService {
     return { data: rows, pagination: page.pagination };
   }
 
-  async getInbox(u: CurrentUserContext, page: number, limit: number) {
-    const membershipId = actingMembershipId(u.principal);
-    if (membershipId == null) throw new BadRequestException("Organization membership required");
-    const { orgId } = u;
+  private async actingAndDelegatedMembershipIds(orgId: string, membershipId: number): Promise<number[]> {
     const now = new Date();
     const delegations = await this.db
       .select({
@@ -257,14 +275,21 @@ export class HrWorkflowInstancesService {
       )
       .limit(50);
 
-    const allMembershipIds = [
+    return [
       membershipId,
       ...delegations
         .filter((d): d is typeof d & { delegatorMembershipId: number } => d.endsAt >= now && d.delegatorMembershipId != null)
         .map((d) => d.delegatorMembershipId),
     ];
+  }
 
-    const candidates = await this.db
+  private async readInboxCandidates(
+    orgId: string,
+    limit: number,
+    cursor: DescKeysetPosition | null,
+    tieBreakById: boolean,
+  ): Promise<WorkflowInboxCandidate[]> {
+    return this.db
       .select({
         id: hrWorkflowInstances.id,
         orgId: hrWorkflowInstances.orgId,
@@ -289,11 +314,23 @@ export class HrWorkflowInstancesService {
             eq(hrWorkflowInstances.status, "in_progress"),
             eq(hrWorkflowInstances.status, "pending"),
           ),
+          descKeyset(hrWorkflowInstances.createdAt, hrWorkflowInstances.id, cursor),
         ),
       )
-      .orderBy(desc(hrWorkflowInstances.createdAt))
-      .limit(limit * 5);
+      .orderBy(
+        ...(tieBreakById
+          ? [desc(hrWorkflowInstances.createdAt), desc(hrWorkflowInstances.id)]
+          : [desc(hrWorkflowInstances.createdAt)]),
+      )
+      .limit(limit);
+  }
 
+  private async routedToMembershipIds(
+    orgId: string,
+    candidates: WorkflowInboxCandidate[],
+    allMembershipIds: readonly number[],
+    stopAt: number,
+  ): Promise<WorkflowInboxCandidate[]> {
     const cache = await this.buildApproverCache(
       orgId,
       candidates.map((i) => i.subjectEmployeeId),
@@ -325,7 +362,7 @@ export class HrWorkflowInstancesService {
         .limit(approverUserIds.length);
     const membershipIdByUserId = new Map(approverMembers.map((member) => [member.userId, member.membershipId]));
 
-    const myInstances: (typeof candidates)[number][] = [];
+    const myInstances: WorkflowInboxCandidate[] = [];
     for (const instance of candidates) {
       const approvers = approversByInstance.get(instance.id) ?? [];
       if (approvers.some((userId) => {
@@ -333,8 +370,18 @@ export class HrWorkflowInstancesService {
         return approverMembershipId != null && allMembershipIds.includes(approverMembershipId);
       }))
         myInstances.push(instance);
-      if (myInstances.length >= limit * page) break;
+      if (myInstances.length >= stopAt) break;
     }
+    return myInstances;
+  }
+
+  async getInbox(u: CurrentUserContext, page: number, limit: number) {
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new BadRequestException("Organization membership required");
+    const { orgId } = u;
+    const allMembershipIds = await this.actingAndDelegatedMembershipIds(orgId, membershipId);
+    const candidates = await this.readInboxCandidates(orgId, limit * 5, null, false);
+    const myInstances = await this.routedToMembershipIds(orgId, candidates, allMembershipIds, limit * page);
 
     const offset = (page - 1) * limit;
     return {
@@ -343,6 +390,37 @@ export class HrWorkflowInstancesService {
       page,
       limit,
     };
+  }
+
+  async pendingRoutedToPage(
+    orgId: string,
+    membershipId: number,
+    limit: number,
+    cursor: DescKeysetPosition | null,
+  ): Promise<WorkflowInboxCandidate[]> {
+    const allMembershipIds = await this.actingAndDelegatedMembershipIds(orgId, membershipId);
+    const batchSize = Math.max(limit, 1) * WORKFLOW_INBOX_OVERFETCH;
+    const delivered: WorkflowInboxCandidate[] = [];
+    let position = cursor;
+
+    for (let batch = 0; batch < WORKFLOW_INBOX_MAX_BATCHES; batch++) {
+      const candidates = await this.readInboxCandidates(orgId, batchSize, position, true);
+      if (candidates.length === 0) break;
+      delivered.push(
+        ...(await this.routedToMembershipIds(
+          orgId,
+          candidates,
+          allMembershipIds,
+          limit - delivered.length,
+        )),
+      );
+      const last = candidates[candidates.length - 1];
+      if (last === undefined) break;
+      position = { id: last.id, t: last.createdAt.toISOString() };
+      if (delivered.length >= limit || candidates.length < batchSize) break;
+    }
+
+    return delivered.slice(0, limit);
   }
 
   private async buildApproverCache(orgId: string, subjectIds: string[]) {

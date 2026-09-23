@@ -2,7 +2,10 @@ import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
 import { LeavesService } from "./leaves.service";
 import { WfhService } from "./wfh.service";
-import type { BuildApprovalInboxItem } from "../../notifications/dto/unified-inbox.schemas";
+import type {
+  BuildApprovalInboxItem,
+  InboxSourcePosition,
+} from "../../notifications/dto/unified-inbox.schemas";
 
 function displayName(
   name: string | null | undefined,
@@ -27,18 +30,18 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
       module: "hr",
       kindLabel: "leave",
       permission: "hr:leaves:approve",
-      supportsAfterCursor: false,
-      fetch: (orgId, _userId, membershipId, limit) =>
-        this.fetchLeaves(orgId, membershipId, limit),
+      supportsAfterCursor: true,
+      fetch: (orgId, _userId, membershipId, limit, cursor) =>
+        this.fetchLeaves(orgId, membershipId, limit, cursor),
     });
 
     this.registry.register({
       module: "hr",
       kindLabel: "wfh",
       permission: "hr:attendance:manage",
-      supportsAfterCursor: false,
-      fetch: (orgId, _userId, membershipId, limit) =>
-        this.fetchWfh(orgId, membershipId, limit),
+      supportsAfterCursor: true,
+      fetch: (orgId, _userId, membershipId, limit, cursor) =>
+        this.fetchWfh(orgId, membershipId, limit, cursor),
     });
   }
 
@@ -46,9 +49,15 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
     orgId: string,
     membershipId: number | null,
     limit: number,
+    cursor: InboxSourcePosition | null,
   ): Promise<BuildApprovalInboxItem[]> {
     if (membershipId === null) return [];
-    const rows = await this.leaves.pendingRoutedTo(orgId, membershipId, limit);
+    const rows = await this.leaves.pendingRoutedToPage(
+      orgId,
+      membershipId,
+      limit,
+      cursor,
+    );
     return rows.map(
       (row): BuildApprovalInboxItem => ({
         kind: "build_approval",
@@ -60,19 +69,19 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
         dueAt: null,
         dedupKey: `approval:leave:${String(row.id)}`,
         sourceModule: "hr",
-        subject: `${row.leaveType?.name ?? "Leave"} · ${row.startDate} to ${row.endDate}`,
+        subject: `${row.leaveTypeName ?? "Leave"} · ${row.startDate} to ${row.endDate}`,
         timestamp: row.createdAt.toISOString(),
         isRead: false,
         deepLink: null,
-        actor: row.user
+        actor: row.userId
           ? {
-              id: row.user.id,
+              id: row.userId,
               name: displayName(
-                row.user.name,
-                row.user.firstName,
-                row.user.lastName,
+                row.userName,
+                row.userFirstName,
+                row.userLastName,
               ),
-              image: row.user.image ?? null,
+              image: row.userImage ?? null,
             }
           : null,
       }),
@@ -83,9 +92,15 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
     orgId: string,
     membershipId: number | null,
     limit: number,
+    cursor: InboxSourcePosition | null,
   ): Promise<BuildApprovalInboxItem[]> {
     if (membershipId === null) return [];
-    const rows = await this.wfh.pendingRoutedTo(orgId, membershipId, limit);
+    const rows = await this.wfh.pendingRoutedToPage(
+      orgId,
+      membershipId,
+      limit,
+      cursor,
+    );
     return rows.map(
       (row): BuildApprovalInboxItem => ({
         kind: "build_approval",

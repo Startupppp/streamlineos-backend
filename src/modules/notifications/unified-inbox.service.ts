@@ -13,6 +13,7 @@ import { assertNever } from "../../common/types/assert-never";
 import { MailService } from "../mail/mail.service";
 import {
   deduplicate,
+  lastDeliveredAdapterPositions,
   lastDeliveredPosition,
   stableSortItems,
 } from "./unified-inbox-projections";
@@ -32,7 +33,10 @@ import {
   type SourceRead,
 } from "./unified-inbox-sources";
 import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
-import { ApprovalAdapterRegistry } from "../attention/approval-adapter.registry";
+import {
+  ApprovalAdapterRegistry,
+  approvalAdapterKey,
+} from "../attention/approval-adapter.registry";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { InboxSourcePosition } from "./dto/unified-inbox.schemas";
 import {
@@ -54,6 +58,11 @@ import {
 } from "./dto/unified-inbox.schemas";
 
 const MAIL_COUNT_SCAN_LIMIT = 100;
+
+const LEGACY_APPROVAL_ADAPTER_KEY = approvalAdapterKey({
+  module: "build",
+  kindLabel: "build",
+});
 
 const EMPTY_MAIL_BATCH: MailSourceBatch = {
   items: [],
@@ -139,6 +148,7 @@ type AdapterFetchResult = {
   permDenied: string[];
   unsupportedOnPage2: string[];
   allAdapters: readonly ApprovalSourceAdapter[];
+  adapterByDedupKey: Map<string, string>;
 };
 
 function buildApprovalSourceStatus(
@@ -187,16 +197,18 @@ export class UnifiedInboxService {
     membershipId: number | null,
     user: CurrentUserContext,
     limit: number,
-    cursor: InboxSourcePosition | null,
+    resuming: boolean,
+    positionOf: (adapter: ApprovalSourceAdapter) => InboxSourcePosition | null,
   ): Promise<AdapterFetchResult> {
     const allAdapters = this.buildApprovalAdapters();
     const items: BuildApprovalInboxItem[] = [];
     const errors: string[] = [];
     const permDenied: string[] = [];
     const unsupportedOnPage2: string[] = [];
+    const adapterByDedupKey = new Map<string, string>();
     await Promise.all(
       allAdapters.map(async (adapter) => {
-        if (cursor !== null && !adapter.supportsAfterCursor) {
+        if (resuming && !adapter.supportsAfterCursor) {
           unsupportedOnPage2.push(adapter.kindLabel);
           return;
         }
@@ -206,16 +218,18 @@ export class UnifiedInboxService {
           return;
         }
         const outcome = await readSource(() =>
-          adapter.fetch(orgId, userId, membershipId, limit, cursor),
+          adapter.fetch(orgId, userId, membershipId, limit, positionOf(adapter)),
         );
         if (!outcome.ok) {
           errors.push(outcome.error);
           return;
         }
+        const key = approvalAdapterKey(adapter);
+        for (const item of outcome.value) adapterByDedupKey.set(item.dedupKey, key);
         items.push(...outcome.value);
       }),
     );
-    return { items, errors, permDenied, unsupportedOnPage2, allAdapters };
+    return { items, errors, permDenied, unsupportedOnPage2, allAdapters, adapterByDedupKey };
   }
 
   async list(
@@ -274,7 +288,16 @@ export class UnifiedInboxService {
       cursorState.b,
       cursorState.bt,
     );
-    const approvalPosition = inboxSourcePosition(cursorState.a, cursorState.at);
+    const legacyApprovalPosition = inboxSourcePosition(
+      cursorState.a,
+      cursorState.at,
+    );
+    const resuming = typeof query.cursor === "string" && query.cursor.length > 0;
+    const positionOf = (adapter: ApprovalSourceAdapter): InboxSourcePosition | null =>
+      cursorState.ap[approvalAdapterKey(adapter)] ??
+      (approvalAdapterKey(adapter) === LEGACY_APPROVAL_ADAPTER_KEY
+        ? legacyApprovalPosition
+        : null);
 
     const [notifOutcome, broadcastOutcome, mailOutcome, adapterResult] =
       await Promise.all([
@@ -324,7 +347,8 @@ export class UnifiedInboxService {
               membershipId,
               user,
               limit + 1,
-              approvalPosition,
+              resuming,
+              positionOf,
             )
           : null,
       ]);
@@ -435,6 +459,11 @@ export class UnifiedInboxService {
       ),
       a: approvalNext?.id ?? cursorState.a,
       at: approvalNext?.t ?? cursorState.at,
+      ap: lastDeliveredAdapterPositions(
+        page,
+        cursorState.ap,
+        adapterResult?.adapterByDedupKey ?? new Map<string, string>(),
+      ),
     };
 
     const advanced = !sameInboxCursorState(nextState, cursorState);

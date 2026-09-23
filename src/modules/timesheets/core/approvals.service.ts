@@ -1,4 +1,11 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from "@nestjs/common";
 import {
   assertOrganizationActor,
   OrganizationActorError,
@@ -16,15 +23,31 @@ import {
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveApprovalScope, approvalQueueScope, TS_APPROVALS_MANAGE_PERMISSION } from "./timesheets-core-scope";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  resolveApprovalScope,
+  approvalQueueScope,
+  TS_APPROVALS_MANAGE_PERMISSION,
+} from "./timesheets-core-scope";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { canActOnPeriod } from "./lib/approval-guard";
-import { membershipUserIds, periodOwnerUserIdOrWarn } from "./lib/approval-lifecycle";
-import { listApprovalRows, readApprovedPeriod } from "./lib/approval-period-reads";
+import {
+  membershipUserIds,
+  periodOwnerUserIdOrWarn,
+} from "./lib/approval-lifecycle";
+import {
+  listApprovalInboxRows,
+  listApprovalRows,
+  readApprovedPeriod,
+  type TimesheetInboxRow,
+} from "./lib/approval-period-reads";
+import type { DescKeysetPosition } from "../../../common/pagination/desc-keyset";
 import { applyApproval } from "./lib/approval-transition";
 import type { ApprovalsQuery } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -64,14 +87,19 @@ export class ApprovalsService {
     if (wanted.length === 0) return new Set<number>();
     const now = new Date();
     const rows = await this.db
-      .selectDistinct({ delegatorMembershipId: userDelegations.delegatorMembershipId })
+      .selectDistinct({
+        delegatorMembershipId: userDelegations.delegatorMembershipId,
+      })
       .from(userDelegations)
       .innerJoin(
         userDelegationPermissions,
         and(
           eq(userDelegationPermissions.orgId, userDelegations.orgId),
           eq(userDelegationPermissions.delegationId, userDelegations.id),
-          eq(userDelegationPermissions.permissionKey, TS_APPROVALS_MANAGE_PERMISSION),
+          eq(
+            userDelegationPermissions.permissionKey,
+            TS_APPROVALS_MANAGE_PERMISSION,
+          ),
         ),
       )
       .where(
@@ -90,7 +118,10 @@ export class ApprovalsService {
 
   async assertCanActOnPeriod(
     u: CurrentUserContext,
-    period: { userMembershipId: number | null; currentApproverMembershipId: number | null },
+    period: {
+      userMembershipId: number | null;
+      currentApproverMembershipId: number | null;
+    },
     resolvedDelegations?: ReadonlySet<number>,
   ): Promise<void> {
     const membershipId = actingMembershipId(u.principal);
@@ -149,10 +180,22 @@ export class ApprovalsService {
         scope: approvalQueueScope(membershipId),
         and: [
           eq(timesheetPeriods.status, query.status),
-          requestedMembershipId !== undefined ? eq(timesheetPeriods.userMembershipId, requestedMembershipId) : undefined,
-          query.startDate ? gte(timesheetPeriods.periodStart, query.startDate) : undefined,
-          query.endDate ? lte(timesheetPeriods.periodEnd, query.endDate) : undefined,
-          pos ? keysetBeforeId(timesheetPeriods.submittedAt, timesheetPeriods.id, pos) : undefined,
+          requestedMembershipId !== undefined
+            ? eq(timesheetPeriods.userMembershipId, requestedMembershipId)
+            : undefined,
+          query.startDate
+            ? gte(timesheetPeriods.periodStart, query.startDate)
+            : undefined,
+          query.endDate
+            ? lte(timesheetPeriods.periodEnd, query.endDate)
+            : undefined,
+          pos
+            ? keysetBeforeId(
+                timesheetPeriods.submittedAt,
+                timesheetPeriods.id,
+                pos,
+              )
+            : undefined,
         ],
       },
       async ({ sql: where }) => {
@@ -175,11 +218,18 @@ export class ApprovalsService {
           pagination: page.pagination,
         };
       },
-      () => ({ data: [], pagination: { limit, hasMore: false, nextCursor: null } }),
+      () => ({
+        data: [],
+        pagination: { limit, hasMore: false, nextCursor: null },
+      }),
     );
   }
 
-  async pendingRoutedTo(orgId: string, approverMembershipId: number, limit: number) {
+  async pendingRoutedTo(
+    orgId: string,
+    approverMembershipId: number,
+    limit: number,
+  ) {
     const rows = await listApprovalRows(
       this.db,
       [
@@ -203,12 +253,28 @@ export class ApprovalsService {
     }));
   }
 
+  async pendingRoutedToPage(
+    orgId: string,
+    approverMembershipId: number,
+    limit: number,
+    cursor: DescKeysetPosition | null,
+  ): Promise<TimesheetInboxRow[]> {
+    return listApprovalInboxRows(
+      this.db,
+      orgId,
+      approverMembershipId,
+      Math.min(limit, 100),
+      cursor,
+    );
+  }
+
   async approveSinglePeriod(u: CurrentUserContext, periodId: number) {
     const [period] = await this.db
       .select({
         status: timesheetPeriods.status,
         userMembershipId: timesheetPeriods.userMembershipId,
-        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+        currentApproverMembershipId:
+          timesheetPeriods.currentApproverMembershipId,
         periodStart: timesheetPeriods.periodStart,
         periodEnd: timesheetPeriods.periodEnd,
         totalHours: timesheetPeriods.totalHours,
@@ -243,12 +309,18 @@ export class ApprovalsService {
     const lockAfterApproval = settings?.lockAfterApproval ?? true;
     const now = new Date();
 
-    const owners = await membershipUserIds(this.db, u.orgId, [period.userMembershipId]);
-    const ownerUserId = periodOwnerUserIdOrWarn(owners, period.userMembershipId, {
-      orgId: u.orgId,
-      periodId,
-      operation: "approve",
-    });
+    const owners = await membershipUserIds(this.db, u.orgId, [
+      period.userMembershipId,
+    ]);
+    const ownerUserId = periodOwnerUserIdOrWarn(
+      owners,
+      period.userMembershipId,
+      {
+        orgId: u.orgId,
+        periodId,
+        operation: "approve",
+      },
+    );
 
     const emitCount = lockAfterApproval ? 2 : 1;
 
@@ -281,7 +353,8 @@ export class ApprovalsService {
   async approvePeriod(u: CurrentUserContext, periodId: number) {
     await this.approveSinglePeriod(u, periodId);
     const row = await readApprovedPeriod(this.db, u.orgId, periodId);
-    if (!row) throw new InternalServerErrorException("Period not found after approval");
+    if (!row)
+      throw new InternalServerErrorException("Period not found after approval");
     return {
       ...row,
       user: {
