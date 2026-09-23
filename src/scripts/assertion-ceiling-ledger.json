@@ -657,10 +657,6 @@
       "as": 6,
       "nonNull": 0
     },
-    "src/modules/organization/setup/announcements.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/payroll/runs/runs.service.ts": {
       "as": 1,
       "nonNull": 0

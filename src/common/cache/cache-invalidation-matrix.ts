@@ -64,6 +64,10 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
       events: [
         "DashboardAnnouncementsService.create",
         "DashboardAnnouncementsService.delete",
+        "AnnouncementsService.create",
+        "AnnouncementsService.update",
+        "AnnouncementsService.remove",
+        "BroadcastsService (any write)",
       ],
     },
   },

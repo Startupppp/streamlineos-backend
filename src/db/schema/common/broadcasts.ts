@@ -19,6 +19,22 @@ import {
 } from "./enums";
 import { organizations, users } from "./auth";
 
+export type BroadcastAudienceShape = "all" | "roles" | "departments" | "users";
+
+export type BroadcastOrgAnnouncement = {
+  targetType: "ALL" | "DEPARTMENT" | "BRANCH" | "ROLE";
+  targetIds: string[];
+  attachmentUrls: string[];
+};
+
+export type BroadcastAudience = {
+  type: BroadcastAudienceShape;
+  roleIds?: string[];
+  departmentIds?: string[];
+  userIds?: string[];
+  orgAnnouncement?: BroadcastOrgAnnouncement;
+};
+
 export const broadcasts = pgTable(
   "broadcasts",
   {
@@ -32,14 +48,7 @@ export const broadcasts = pgTable(
     priority: notificationPriorityEnum("priority").default("NORMAL").notNull(),
     category: notificationCategoryEnum("category").default("SYSTEM").notNull(),
     channels: jsonb("channels").$type<string[]>().default(["IN_APP"]).notNull(),
-    audience: jsonb("audience")
-      .$type<{
-        type: "all" | "roles" | "departments" | "users";
-        roleIds?: string[];
-        departmentIds?: string[];
-        userIds?: string[];
-      }>()
-      .notNull(),
+    audience: jsonb("audience").$type<BroadcastAudience>().notNull(),
     audienceType: broadcastAudienceTypeEnum("audience_type")
       .default("all")
       .notNull(),
