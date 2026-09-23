@@ -15,6 +15,7 @@ import { CronLeaveService } from "./cron-leave.service";
 import { CronHrService } from "./cron-hr.service";
 import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
+import { CronHrWebhookDispatchService } from "./cron-hr-webhook-dispatch.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { CronHelpdeskRetentionService } from "./cron-helpdesk-retention.service";
@@ -32,6 +33,7 @@ import {
   hrPolicyRetentionSweepResponseSchema,
   helpdeskRetentionSweepResponseSchema,
   helpdeskEscalationSweepResponseSchema,
+  hrWebhookSweepResponseSchema,
 } from "./dto/cron-hr-response.schemas";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
@@ -46,6 +48,7 @@ export class CronHrController {
     private readonly recruitment: CronRecruitmentService,
     private readonly hr: CronHrService,
     private readonly hrEngines: CronHrEnginesService,
+    private readonly hrWebhookDispatch: CronHrWebhookDispatchService,
     private readonly cronLease: CronLeaseService,
     private readonly hrRetention: CronHrRetentionService,
     private readonly helpdeskRetention: CronHelpdeskRetentionService,
@@ -142,6 +145,35 @@ export class CronHrController {
     @Param("sweepName") sweepName?: string,
   ) {
     return this.runHrEnginesSweepByName(authorization, sweepName);
+  }
+
+  @Post("hr-webhook-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(hrWebhookSweepResponseSchema)
+  postHrWebhookSweep(@Headers("authorization") authorization?: string) {
+    return this.runHrWebhookSweep(authorization);
+  }
+
+  @Get("hr-webhook-sweep")
+  @ResponseSchema(hrWebhookSweepResponseSchema)
+  getHrWebhookSweep(@Headers("authorization") authorization?: string) {
+    return this.runHrWebhookSweep(authorization);
+  }
+
+  private async runHrWebhookSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("hr-webhook-dispatch-sweep", 300, () =>
+        this.hrWebhookDispatch.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "hr-webhook-dispatch-sweep already running" };
+      return { success: true, message: "HR webhook sweep complete" };
+    } catch (error) {
+      logger.error("HR webhook sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
   }
 
   private async runAutoCheckout(authorization?: string) {

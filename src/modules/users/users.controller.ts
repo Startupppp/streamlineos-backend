@@ -33,6 +33,9 @@ import {
 } from "./dto/users.schemas";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
+import { appUrl } from "../email/app-url";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { ApiOkResponse } from "@nestjs/swagger";
 import {
@@ -47,6 +50,7 @@ import {
   bulkUpdateResponseSchema,
   importUsersResponseSchema,
   invitationMutationResponseSchema,
+  invitationJoinLinkResponseSchema,
   userIdentityResponseSchema,
   userDetailResponseSchema,
   userMutationResponseSchema,
@@ -264,11 +268,40 @@ export class UsersController {
   @HttpCode(200)
   @Validate({ params: invitationIdParams })
   @BodylessAction()
-  resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.invitationsLifecycle.resend(u.orgId, invitationId, {
+  async resendInvite(
+    @Param("invitationId") invitationId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.invitationsLifecycle.resend(u.orgId, invitationId, {
       userId: u.userId,
       isOrgOwner: u.isOrgOwner,
     });
+    return { success: true as const };
+  }
+
+  @RequirePermission("settings:organization:manage")
+  @ResponseSchema(invitationJoinLinkResponseSchema)
+  @Post("invitations/:invitationId/join-link")
+  @HttpCode(200)
+  @Validate({ params: invitationIdParams })
+  @BodylessAction()
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("invite:reissue-link")
+  async reissueInvitationJoinLink(
+    @Param("invitationId") invitationId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const reissued = await this.invitationsLifecycle.resend(
+      u.orgId,
+      invitationId,
+      { userId: u.userId, isOrgOwner: u.isOrgOwner },
+      { deliverEmail: false },
+    );
+    return {
+      joinUrl: `${appUrl()}/invitation/${reissued.rawToken}`,
+      email: reissued.email,
+      expiresAt: reissued.expiresAt,
+    };
   }
 
   @RequirePermission("settings:organization:manage")

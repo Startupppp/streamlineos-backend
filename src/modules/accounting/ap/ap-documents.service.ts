@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { apDocumentLines, apDocuments } from "../../../db/schema";
+import { apDocumentLines, apDocuments, taxDocumentLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { BooksService } from "../kernel/books.service";
@@ -227,5 +227,27 @@ export class ApDocumentsService {
         documentId,
       ),
     );
+  }
+
+  /* ------------------------------------------------------------- frozen taxes */
+
+  /** Returns tax lines frozen at posting time. */
+  async frozenTaxLines(orgId: string, documentId: string) {
+    return this.db.transaction(async (tx) => {
+      const doc = await loadDocumentRow(tx, orgId, documentId);
+      const lines = await tx
+        .select()
+        .from(taxDocumentLines)
+        .where(
+          and(
+            eq(taxDocumentLines.orgId, orgId),
+            eq(taxDocumentLines.bookId, doc.bookId),
+            eq(taxDocumentLines.documentType, doc.documentType),
+            eq(taxDocumentLines.documentId, documentId),
+          )
+        )
+        .orderBy(taxDocumentLines.createdAt);
+      return lines;
+    });
   }
 }

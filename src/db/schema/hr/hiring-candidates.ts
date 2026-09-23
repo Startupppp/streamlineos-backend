@@ -68,6 +68,7 @@ export const candidateApplications = pgTable("candidate_applications", {
   status: applicationStatusEnum("status").default("APPLIED").notNull(),
   appliedAt: timestamp("applied_at").defaultNow().notNull(),
   coverLetter: text("cover_letter"),
+  consentAt: timestamp("consent_at"),
   notes: text("notes"),
   trackingToken: text("tracking_token").unique(),
   screeningAnswers: jsonb("screening_answers").$type<Record<string, string>>(),

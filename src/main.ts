@@ -119,6 +119,7 @@ async function bootstrap(): Promise<void> {
         }
       : config.corsOrigins,
     credentials: true,
+    exposedHeaders: ["x-correlation-id", "x-request-id", "traceparent"],
   });
 
   const admission = resolveAdmissionConfig(process.env);
