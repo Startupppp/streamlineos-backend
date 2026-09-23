@@ -8,6 +8,9 @@ export const applySchema = z.object({
   linkedinUrl: z.string().url().max(500).optional(),
   coverLetter: z.string().max(5000).optional(),
   resumeUrl: z.string().url().max(500).optional(),
+  consent: z.boolean().refine((val) => val === true, {
+    message: "Consent is required to apply.",
+  }),
   answers: z.record(z.string(), z.string().max(1000)).optional(),
 }).strict();
 
