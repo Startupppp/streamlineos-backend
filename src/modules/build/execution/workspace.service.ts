@@ -123,7 +123,7 @@ export class IntakeService {
       sortValue: (r.createdAt ?? new Date(0)).toISOString(),
       id: String(r.id),
     }));
-    return { items: page.data, pagination: page.pagination };
+    return { data: page.data, pagination: page.pagination };
   }
 
   async createIntake(orgId: string, projectId: number, input: CreateIntakeInput) {
