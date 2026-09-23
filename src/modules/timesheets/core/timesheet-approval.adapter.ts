@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
+import { approvalPriority } from "../../attention/approval-priority";
 import { ApprovalsService } from "./approvals.service";
 import type {
   BuildApprovalInboxItem,
@@ -47,6 +48,7 @@ export class TimesheetApprovalAdapter implements OnModuleInit {
         id: row.id,
         approvalKind: "timesheet",
         status: "pending",
+        priority: approvalPriority(row.approvalDueAt, "pending"),
         projectId: null,
         ticketId: null,
         dueAt: row.approvalDueAt ? row.approvalDueAt.toISOString() : null,

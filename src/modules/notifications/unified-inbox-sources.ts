@@ -32,6 +32,7 @@ import type {
 
 import type { ApprovalSourceAdapter } from "../attention/approval-adapter.registry";
 export type { ApprovalSourceAdapter } from "../attention/approval-adapter.registry";
+import { approvalPriority } from "../attention/approval-priority";
 
 export type InboxTriage = "active" | "later" | "done";
 
@@ -337,6 +338,7 @@ export async function fetchBuildApprovalItems(
       approvalKind: "build",
       ticketId: row.entityType === "task" ? row.entityId : null,
       status: row.status,
+      priority: approvalPriority(row.dueAt, row.status),
       subject: row.title,
       sourceModule: "build",
       actor: null,

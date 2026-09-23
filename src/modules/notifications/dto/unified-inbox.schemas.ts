@@ -94,6 +94,7 @@ export const buildApprovalInboxItemSchema = z.object({
   kind: z.literal("build_approval"),
   id: z.number().int(),
   status: z.string(),
+  priority: z.string(),
   projectId: z.number().int().nullable(),
   approvalKind: z.string(),
   ticketId: z.number().int().nullable(),

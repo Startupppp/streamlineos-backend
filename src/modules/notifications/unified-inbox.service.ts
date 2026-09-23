@@ -526,7 +526,8 @@ export class UnifiedInboxService {
 
     const notifItems = itemsOf(notifOutcome, emptyNotifications);
     const rawBroadcastItems = itemsOf(broadcastOutcome, emptyBroadcasts);
-    const approvalItems = applyQFilter(adapterResult?.items ?? [], filters.q);
+    const approvalItems = applyQFilter(adapterResult?.items ?? [], filters.q)
+      .filter((item) => !filters.priority || item.priority === filters.priority);
     const taskItems = applyQFilter(attentionResult?.items ?? [], filters.q);
     const mailBatch =
       mailOutcome !== null && mailOutcome.ok

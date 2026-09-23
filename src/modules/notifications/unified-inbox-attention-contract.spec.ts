@@ -29,6 +29,7 @@ function item(
     id,
     approvalKind,
     status: "pending",
+    priority: "NORMAL",
     projectId: null,
     ticketId: null,
     dueAt: null,

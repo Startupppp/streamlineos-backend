@@ -202,3 +202,52 @@ describe("TimesheetApprovalAdapter — countPending", () => {
     expect(approvals.countPendingRoutedTo).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("TimesheetApprovalAdapter — priority", () => {
+  it("BITE: item with approvalDueAt in the future returns NORMAL priority", async () => {
+    const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    const registry = makeRegistry();
+    const adapter = new TimesheetApprovalAdapter(
+      makeApprovals([makePeriodRow({ approvalDueAt: futureDate })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [ts] = registry.list();
+    const [item] = await ts!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("NORMAL");
+  });
+
+  it("BITE: item with approvalDueAt in the past returns HIGH priority (overdue)", async () => {
+    const pastDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const registry = makeRegistry();
+    const adapter = new TimesheetApprovalAdapter(
+      makeApprovals([makePeriodRow({ approvalDueAt: pastDate })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [ts] = registry.list();
+    const [item] = await ts!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("HIGH");
+  });
+
+  it("item with null approvalDueAt returns NORMAL priority", async () => {
+    const registry = makeRegistry();
+    const adapter = new TimesheetApprovalAdapter(
+      makeApprovals([makePeriodRow({ approvalDueAt: null })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [ts] = registry.list();
+    const [item] = await ts!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("NORMAL");
+  });
+
+  it("CONTROL: priority field is present on the returned item (not undefined)", async () => {
+    const registry = makeRegistry();
+    const adapter = new TimesheetApprovalAdapter(makeApprovals(), registry);
+    adapter.onModuleInit();
+    const [ts] = registry.list();
+    const [item] = await ts!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item).toHaveProperty("priority");
+  });
+});

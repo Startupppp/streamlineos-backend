@@ -389,3 +389,122 @@ describe("unified inbox — approval adapter seam", () => {
     expect(new Set(keys).size).toBe(3);
   });
 });
+
+function overdueApprovalRow(id: number, createdAt: Date): ApprovalInboxRow {
+  return {
+    id,
+    projectId: 10,
+    title: `Approval ${String(id)}`,
+    status: "pending",
+    entityType: "task",
+    entityId: 100 + id,
+    dueAt: new Date("2020-01-01T00:00:00Z"),
+    createdAt,
+  };
+}
+
+describe("unified inbox — priority filter on approvals", () => {
+  const user = makeUser();
+
+  it("BITE: priority=HIGH returns overdue approval items and excludes NORMAL ones", async () => {
+    const seeds: ApprovalInboxRow[] = [
+      overdueApprovalRow(1, new Date("2026-03-01T10:00:00Z")),
+      approvalRow(2, new Date("2026-03-01T09:00:00Z")),
+    ];
+    const svc = new UnifiedInboxService(
+      makeDb(),
+      makeAccess(),
+      makeMail(),
+      makeBroadcasts(),
+      makeBuildApprovals(seeds),
+      makeRegistry(),
+    );
+
+    const result = await svc.list(
+      ORG,
+      UID,
+      { limit: 10, kinds: ["build_approval"], unreadOnly: false, priority: "HIGH" },
+      user,
+    );
+
+    const keys = result.items.map((i) => i.dedupKey);
+    expect(keys).toContain("approval:build:1");
+    expect(keys).not.toContain("approval:build:2");
+  });
+
+  it("priority=NORMAL returns non-overdue items and excludes overdue HIGH ones", async () => {
+    const seeds: ApprovalInboxRow[] = [
+      overdueApprovalRow(3, new Date("2026-03-01T10:00:00Z")),
+      approvalRow(4, new Date("2026-03-01T09:00:00Z")),
+    ];
+    const svc = new UnifiedInboxService(
+      makeDb(),
+      makeAccess(),
+      makeMail(),
+      makeBroadcasts(),
+      makeBuildApprovals(seeds),
+      makeRegistry(),
+    );
+
+    const result = await svc.list(
+      ORG,
+      UID,
+      { limit: 10, kinds: ["build_approval"], unreadOnly: false, priority: "NORMAL" },
+      user,
+    );
+
+    const keys = result.items.map((i) => i.dedupKey);
+    expect(keys).not.toContain("approval:build:3");
+    expect(keys).toContain("approval:build:4");
+  });
+
+  it("no priority filter returns both HIGH and NORMAL approval items", async () => {
+    const seeds: ApprovalInboxRow[] = [
+      overdueApprovalRow(5, new Date("2026-03-01T10:00:00Z")),
+      approvalRow(6, new Date("2026-03-01T09:00:00Z")),
+    ];
+    const svc = new UnifiedInboxService(
+      makeDb(),
+      makeAccess(),
+      makeMail(),
+      makeBroadcasts(),
+      makeBuildApprovals(seeds),
+      makeRegistry(),
+    );
+
+    const result = await svc.list(
+      ORG,
+      UID,
+      { limit: 10, kinds: ["build_approval"], unreadOnly: false },
+      user,
+    );
+
+    const keys = result.items.map((i) => i.dedupKey);
+    expect(keys).toContain("approval:build:5");
+    expect(keys).toContain("approval:build:6");
+  });
+
+  it("category filter does not exclude approvals — approvals are left untouched by category (no category field)", async () => {
+    const seeds: ApprovalInboxRow[] = [
+      approvalRow(7, new Date("2026-03-01T10:00:00Z")),
+    ];
+    const svc = new UnifiedInboxService(
+      makeDb(),
+      makeAccess(),
+      makeMail(),
+      makeBroadcasts(),
+      makeBuildApprovals(seeds),
+      makeRegistry(),
+    );
+
+    const result = await svc.list(
+      ORG,
+      UID,
+      { limit: 10, kinds: ["build_approval"], unreadOnly: false, category: "SYSTEM" },
+      user,
+    );
+
+    const keys = result.items.map((i) => i.dedupKey);
+    expect(keys).toContain("approval:build:7");
+  });
+});

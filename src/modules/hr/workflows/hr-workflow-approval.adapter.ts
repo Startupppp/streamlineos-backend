@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
+import { approvalPriority } from "../../attention/approval-priority";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import type {
   BuildApprovalInboxItem,
@@ -61,6 +62,7 @@ export class HrWorkflowApprovalAdapter implements OnModuleInit {
         id: row.id,
         approvalKind: "workflow",
         status: row.status,
+        priority: approvalPriority(row.dueAt, row.status),
         projectId: null,
         ticketId: null,
         dueAt: row.dueAt ? row.dueAt.toISOString() : null,

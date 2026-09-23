@@ -544,3 +544,56 @@ describe("HrWorkflowApprovalAdapter — leave_request deduplication exclusion (c
     expect(nullCount).toBe(1);
   });
 });
+
+describe("HrWorkflowApprovalAdapter — priority", () => {
+  it("BITE: workflow item with future dueAt returns NORMAL priority", async () => {
+    const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(
+      makeWorkflows([makeWorkflowRow({ dueAt: futureDate, status: "in_progress" })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const [item] = await wf!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("NORMAL");
+  });
+
+  it("BITE: workflow item with dueAt in the past returns HIGH priority (overdue)", async () => {
+    const pastDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(
+      makeWorkflows([makeWorkflowRow({ dueAt: pastDate, status: "in_progress" })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const [item] = await wf!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("HIGH");
+  });
+
+  it("workflow item with status escalated returns HIGH priority regardless of dueAt", async () => {
+    const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(
+      makeWorkflows([makeWorkflowRow({ dueAt: futureDate, status: "escalated" })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const [item] = await wf!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("HIGH");
+  });
+
+  it("workflow item with null dueAt and non-escalated status returns NORMAL", async () => {
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(
+      makeWorkflows([makeWorkflowRow({ dueAt: null, status: "in_progress" })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const [item] = await wf!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("NORMAL");
+  });
+});

@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
+import { approvalPriority } from "../../attention/approval-priority";
 import { LeavesService } from "./leaves.service";
 import { WfhService } from "./wfh.service";
 import type {
@@ -72,6 +73,7 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
         id: row.id,
         approvalKind: "leave",
         status: "pending",
+        priority: approvalPriority(null, "pending"),
         projectId: null,
         ticketId: null,
         dueAt: null,
@@ -115,6 +117,7 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
         id: row.id,
         approvalKind: "wfh",
         status: "pending",
+        priority: approvalPriority(null, "pending"),
         projectId: null,
         ticketId: null,
         dueAt: null,

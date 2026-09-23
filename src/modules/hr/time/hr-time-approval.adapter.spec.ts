@@ -342,3 +342,47 @@ describe("HrTimeApprovalAdapter — wfh countPending", () => {
     expect(wfh.countPendingRoutedTo).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("HrTimeApprovalAdapter — leave priority", () => {
+  it("BITE: every leave item carries priority NORMAL (no dueAt, status pending)", async () => {
+    const leaves = makeLeaves([makeLeaveRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
+    adapter.onModuleInit();
+    const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
+    const [item] = await leaveAdapter.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("NORMAL");
+  });
+
+  it("CONTROL: priority field is present on the returned item (not undefined)", async () => {
+    const leaves = makeLeaves([makeLeaveRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
+    adapter.onModuleInit();
+    const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
+    const [item] = await leaveAdapter.fetch("org-1", "user-1", 5, 10, null);
+    expect(item).toHaveProperty("priority");
+  });
+});
+
+describe("HrTimeApprovalAdapter — wfh priority", () => {
+  it("BITE: every wfh item carries priority NORMAL (no dueAt, status pending)", async () => {
+    const wfh = makeWfh([makeWfhRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
+    adapter.onModuleInit();
+    const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
+    const [item] = await wfhAdapter.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.priority).toBe("NORMAL");
+  });
+
+  it("CONTROL: priority field is present on the returned wfh item (not undefined)", async () => {
+    const wfh = makeWfh([makeWfhRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
+    adapter.onModuleInit();
+    const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
+    const [item] = await wfhAdapter.fetch("org-1", "user-1", 5, 10, null);
+    expect(item).toHaveProperty("priority");
+  });
+});
