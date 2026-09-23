@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   changeRequests,
   portalMemberships,
@@ -96,6 +96,7 @@ export class ClientPortalService {
     const portalMembershipIds = await this.portalMembershipIdsFor(orgId, membershipId);
     if (portalMembershipIds.length === 0) return [];
 
+    const now = new Date();
     const grants = await this.db
       .select({ projectId: projectClientGrants.projectId })
       .from(projectClientGrants)
@@ -104,6 +105,7 @@ export class ClientPortalService {
           eq(projectClientGrants.organizationId, orgId),
           inArray(projectClientGrants.portalMembershipId, portalMembershipIds),
           eq(projectClientGrants.status, "ACTIVE"),
+          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
         ),
       )
       .limit(100);
@@ -144,6 +146,7 @@ export class ClientPortalService {
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
 
+    const now = new Date();
     const [grantRow] = await this.db
       .select({
         canViewMilestones: projectClientGrants.canViewMilestones,
@@ -157,6 +160,7 @@ export class ClientPortalService {
           eq(projectClientGrants.organizationId, u.orgId),
           eq(projectClientGrants.projectId, projectId),
           eq(projectClientGrants.status, "ACTIVE"),
+          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
         ),
       )
       .orderBy(desc(projectClientGrants.createdAt))
@@ -275,6 +279,7 @@ export class ClientPortalService {
     if (membershipId === null) throw new NotFoundException("Project not found");
     const portalMembershipIds = await this.portalMembershipIdsFor(u.orgId, membershipId);
     if (portalMembershipIds.length === 0) throw new NotFoundException("Project not found");
+    const now = new Date();
     const [grant] = await this.db
       .select({ projectId: projectClientGrants.projectId })
       .from(projectClientGrants)
@@ -284,6 +289,7 @@ export class ClientPortalService {
           eq(projectClientGrants.projectId, projectId),
           inArray(projectClientGrants.portalMembershipId, portalMembershipIds),
           eq(projectClientGrants.status, "ACTIVE"),
+          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
         ),
       )
       .limit(1);

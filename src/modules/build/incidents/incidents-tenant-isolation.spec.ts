@@ -41,9 +41,13 @@ describe("IncidentsService — cross-tenant isolation", () => {
   }
 
   function makeDb(incidentRow: unknown | null = null) {
-    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) });
+    const limit = jest.fn().mockResolvedValue([]);
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const where = jest.fn().mockReturnValue({ orderBy });
     const leftJoin = jest.fn().mockReturnValue({ where });
-    const from = jest.fn().mockReturnValue({ leftJoin });
+    // `from` serves both the updates query (…leftJoin().where().orderBy().limit())
+    // and the decisions/follow-up-actions queries (…where().orderBy().limit()).
+    const from = jest.fn().mockReturnValue({ leftJoin, where });
     return {
       query: {
         projectIncidents: {

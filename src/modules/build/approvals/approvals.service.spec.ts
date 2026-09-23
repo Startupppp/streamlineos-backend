@@ -364,6 +364,42 @@ describe("ApprovalsService — soft-delete TOCTOU", () => {
   });
 });
 
+describe("ApprovalsService.softDeleteApproval", () => {
+  it("audit-logs the delete, matching every other mutation in this service", async () => {
+    const svc = new ApprovalsService(mockDb, mockAudit, mockAccess, mockChatChannels, mockChatMessages);
+    (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(
+      makeApprovalRow({ id: 7 }),
+    );
+    (mockDb as unknown as { update: jest.Mock }).update = jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await svc.softDeleteApproval("org-1", "user-2", 1, 7);
+
+    expect(mockAudit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "approval.deleted",
+        userId: "user-2",
+        orgId: "org-1",
+        resourceType: "project_approval",
+        resourceId: "7",
+      }),
+    );
+  });
+
+  it("throws NotFoundException for a cross-tenant/cross-project approval and never writes or audits", async () => {
+    const svc = new ApprovalsService(mockDb, mockAudit, mockAccess, mockChatChannels, mockChatMessages);
+    (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(undefined);
+    const update = jest.fn();
+    (mockDb as unknown as { update: jest.Mock }).update = update;
+
+    await expect(svc.softDeleteApproval("org-1", "user-2", 1, 999)).rejects.toThrow(NotFoundException);
+    expect(update).not.toHaveBeenCalled();
+    expect(mockAudit.log).not.toHaveBeenCalled();
+  });
+});
+
 describe("approvalRowSchema — response contract enum coverage", () => {
   const validRow = {
     id: 1,

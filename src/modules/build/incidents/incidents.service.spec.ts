@@ -371,7 +371,8 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       from: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockResolvedValue(updates),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(updates),
     };
     const mockDb = {
       query: {
@@ -397,7 +398,8 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       from: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockResolvedValue([]),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
     };
     const mockDb = {
       query: {

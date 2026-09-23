@@ -182,7 +182,7 @@ describe("IntakeService — cross-tenant isolation", () => {
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
   });
 
-  it("listIntake returns items for the owning org (control — same-tenant access works)", async () => {
+  it("listIntake returns data for the owning org (control — same-tenant access works)", async () => {
     const fakeItem = { id: 1, orgId: OWNER_ORG, projectId: 1, title: "req", description: null, source: "manual", status: "pending", submitterEmail: null, submitterName: null, priority: null, requestType: null, linkedWorkItemId: null, declineReason: null, createdAt: new Date(), updatedAt: new Date() };
     const db = {
       query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
@@ -199,7 +199,8 @@ describe("IntakeService — cross-tenant isolation", () => {
     const svc = new IntakeService(db);
 
     const result = await svc.listIntake(OWNER_ORG, 1, { limit: 10 } as never);
-    expect(result.items).toHaveLength(1);
+    expect(result).not.toHaveProperty("items");
+    expect(result.data).toHaveLength(1);
     expect(result.pagination.hasMore).toBe(false);
   });
 });

@@ -256,11 +256,20 @@ export class ApprovalsService {
     return updated;
   }
 
-  async softDeleteApproval(orgId: string, projectId: number, approvalId: number) {
+  async softDeleteApproval(orgId: string, userId: string, projectId: number, approvalId: number) {
     await loadApproval(this.db, orgId, projectId, approvalId);
     await this.db
       .update(projectApprovals)
       .set({ deletedAt: new Date() })
       .where(and(eq(projectApprovals.id, approvalId), eq(projectApprovals.orgId, orgId), isNull(projectApprovals.deletedAt)));
+
+    this.audit.log({
+      action: "approval.deleted",
+      userId,
+      orgId,
+      resourceType: "project_approval",
+      resourceId: String(approvalId),
+      metadata: { projectId, approvalId },
+    });
   }
 }

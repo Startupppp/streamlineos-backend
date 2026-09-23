@@ -10,6 +10,7 @@ import { convertAmounts, type ConvertedTotals } from "./lib/fx-convert";
 import {
   createInvoiceDraft,
   exportBilling,
+  releaseInvoiceDraft,
   type BillingExportDeps,
 } from "./lib/billing-export";
 import { round2 } from "./lib/billing-money";
@@ -17,6 +18,7 @@ import type {
   UninvoicedQuery,
   ExportBillingInput,
   CreateInvoiceDraftInput,
+  ReleaseInvoiceDraftInput,
   RatePreviewQuery,
 } from "./dto/billing.schemas";
 import type { BillingNarrativeInput } from "./dto/ai.schemas";
@@ -271,6 +273,10 @@ export class BillingService {
 
   createInvoiceDraft(u: CurrentUserContext, input: CreateInvoiceDraftInput) {
     return createInvoiceDraft(this.exportDeps, u, input);
+  }
+
+  releaseInvoiceDraft(u: CurrentUserContext, input: ReleaseInvoiceDraftInput) {
+    return releaseInvoiceDraft(this.exportDeps, u, input);
   }
 
   private get exportDeps(): BillingExportDeps {

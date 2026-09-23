@@ -208,6 +208,48 @@ export const projectAutomationRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
+const automationRunOutcomeSchema = z.enum([
+  "matched_success",
+  "matched_partial_failure",
+  "matched_failed",
+  "not_matched",
+  "blocked_loop_guard",
+  "blocked_rate_limit",
+  "error",
+]);
+
+export const automationRunActionRowSchema = z.object({
+  id: z.number().int(),
+  actionIndex: z.number().int(),
+  actionType: z.string(),
+  outcome: z.enum(["success", "failure"]),
+  errorMessage: z.string().nullable(),
+  createdAt: wireDate(),
+});
+
+export const automationRunRowSchema = z.object({
+  id: z.number().int(),
+  orgId: z.string(),
+  projectId: z.number().int(),
+  automationId: z.number().int().nullable(),
+  ticketId: z.number().int().nullable(),
+  triggerEvent: z.string(),
+  matched: z.boolean(),
+  outcome: automationRunOutcomeSchema,
+  errorMessage: z.string().nullable(),
+  createdAt: wireDate(),
+  actions: z.array(automationRunActionRowSchema),
+});
+
+export const automationRunListSchema = z.object({
+  items: z.array(automationRunRowSchema),
+  pagination: z.object({
+    limit: z.number().int(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+});
+
 export const buildMemberItemSchema = z.object({
   id: z.string(),
   role: z.string(),

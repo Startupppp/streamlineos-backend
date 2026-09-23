@@ -33,12 +33,12 @@ describe(`${SEEDED_HARNESS} recruitment golden path`, () => {
     const candidateService = seeded.app.get(RecruitmentCandidatesService);
 
     // 1. Create Requisition
-    const req = await reqService.create(fixture.orgId, {
+    const req = await reqService.create(fixture.orgId, fixture.members["recruiter"]!.userId, {
       title: "Software Engineer",
       hiringManagerId: fixture.members["recruiter"]!.userId,
-      budget: 100000,
       headcount: 1,
-      notes: "Golden path req",
+      priority: "MEDIUM",
+      type: "FULL_TIME",
     });
     expect(req).toBeDefined();
 
@@ -47,7 +47,6 @@ describe(`${SEEDED_HARNESS} recruitment golden path`, () => {
       firstName: "John",
       lastName: "Doe",
       email: "john.doe@example.com",
-      status: "NEW",
     });
     expect(candidate).toBeDefined();
 

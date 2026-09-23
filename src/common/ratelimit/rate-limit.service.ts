@@ -182,6 +182,14 @@ const TIERS: Record<string, Tier> = {
   "public:form-view": { limit: 30, windowSecs: 60 },
   "public:lead-form-view": { limit: 30, windowSecs: 60 },
   "blog:public-read": { limit: 60, windowSecs: 60 },
+  // Build Phase 5: automation runner has no HTTP entry point of its own — it fires
+  // from ticket-write call sites via `runForTicketEvent` — so `BuildAutomationRunnerService`
+  // calls `RateLimitService.check` directly rather than through `@UseRateLimit`.
+  // Keyed per (org, project) rather than per actor, because a bulk import or a
+  // scripted client hammering one project's tickets is what would otherwise run
+  // every configured rule unbounded; 300/min is generous for real ticket traffic
+  // and bounded against a runaway loop the depth guard did not catch.
+  "build:automation-run": { limit: 300, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

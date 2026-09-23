@@ -46,3 +46,53 @@ describe("ProjectsAutomationsService — cross-tenant isolation", () => {
     expect(result).toHaveLength(1);
   });
 });
+
+describe("ProjectsAutomationsService — cross-project isolation (project-scoped manager, same org)", () => {
+  const ORG = "org-1";
+
+  const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never;
+  const members = { assertCanManageProject: jest.fn().mockResolvedValue(undefined) } as never;
+
+  function makeMutationDb(returningRows: unknown[]) {
+    const where = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(returningRows) });
+    const set = jest.fn().mockReturnValue({ where });
+    const update = jest.fn().mockReturnValue({ set });
+    const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(returningRows) });
+    const del = jest.fn().mockReturnValue({ where: deleteWhere });
+    return { db: { update, delete: del } as unknown as Db, where, deleteWhere };
+  }
+
+  it("updateAutomation cannot reach an automation belonging to a different project in the same org", async () => {
+    const { db, where } = makeMutationDb([]);
+    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const u = { orgId: ORG, userId: "u1" } as never;
+
+    await expect(svc.updateAutomation(u, 1, 99, { name: "renamed" } as never)).rejects.toThrow(
+      "Automation not found",
+    );
+
+    const predicate = where.mock.calls[0]?.[0];
+    expect(sqlValues(predicate)).toContain(1);
+  });
+
+  it("deleteAutomation cannot reach an automation belonging to a different project in the same org", async () => {
+    const { db, deleteWhere } = makeMutationDb([]);
+    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const u = { orgId: ORG, userId: "u1" } as never;
+
+    await expect(svc.deleteAutomation(u, 1, 99)).rejects.toThrow("Automation not found");
+
+    const predicate = deleteWhere.mock.calls[0]?.[0];
+    expect(sqlValues(predicate)).toContain(1);
+  });
+
+  it("updateAutomation still succeeds when the automation genuinely belongs to the named project", async () => {
+    const auto = { id: 99, orgId: ORG, projectId: 1, name: "renamed" };
+    const { db } = makeMutationDb([auto]);
+    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const u = { orgId: ORG, userId: "u1" } as never;
+
+    const result = await svc.updateAutomation(u, 1, 99, { name: "renamed" } as never);
+    expect(result).toEqual(auto);
+  });
+});

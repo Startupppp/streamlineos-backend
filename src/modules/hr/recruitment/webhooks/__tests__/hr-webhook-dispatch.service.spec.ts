@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { HrWebhookDispatchService } from "../hr-webhook-dispatch.service";
 import { DRIZZLE } from "../../../../../db/drizzle.constants";
 import { hrWebhookDeliveries } from "../../../../../db/schema/hr/webhooks";
+import type { ProviderDescriptor } from "../../../../../common/outbound/call-provider";
 
 jest.mock("../../../../../common/outbound/call-provider", () => ({
   callProvider: jest.fn(),
@@ -34,7 +35,6 @@ describe("HrWebhookDispatchService", () => {
       limit: jest.fn(),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -62,7 +62,7 @@ describe("HrWebhookDispatchService", () => {
     const { callProvider } = require("../../../../../common/outbound/call-provider");
     const { postSafeWebhook } = require("../../../../../common/outbound/safe-webhook-transport");
 
-    callProvider.mockImplementation(async (desc, fn) => {
+    callProvider.mockImplementation(async (desc: ProviderDescriptor, fn: () => Promise<unknown>) => {
       try {
         const res = await fn();
         return { ok: true, value: res, attempts: 1 };
@@ -117,7 +117,7 @@ describe("HrWebhookDispatchService", () => {
       const { callProvider } = require("../../../../../common/outbound/call-provider");
       const { postSafeWebhook } = require("../../../../../common/outbound/safe-webhook-transport");
 
-      callProvider.mockImplementation(async (desc, fn) => {
+      callProvider.mockImplementation(async (desc: ProviderDescriptor, fn: () => Promise<unknown>) => {
         try {
           await fn();
           return { ok: true, attempts: 5 };

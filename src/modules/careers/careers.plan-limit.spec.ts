@@ -63,7 +63,7 @@ describe("CareersService.apply — plan limit enforcement", () => {
     (runInTenantTransaction as jest.Mock).mockImplementation(
       async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
     );
-    const svc = new CareersService(makeDb(), cache as never, { assertWithinLimit } as never);
+    const svc = new CareersService(makeDb(), cache as never, { assertWithinLimit } as never, {} as never, {} as never);
 
     const result = await svc.apply(makeInput());
 
@@ -77,7 +77,7 @@ describe("CareersService.apply — plan limit enforcement", () => {
     (runInTenantTransaction as jest.Mock).mockImplementation(
       async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
     );
-    const svc = new CareersService(makeDb(), cache as never, { assertWithinLimit } as never);
+    const svc = new CareersService(makeDb(), cache as never, { assertWithinLimit } as never, {} as never, {} as never);
 
     await svc.apply(makeInput());
 
@@ -95,7 +95,7 @@ describe("CareersService.apply — plan limit enforcement", () => {
         }),
       }),
     } as unknown as Db;
-    const svc = new CareersService(db, cache as never, { assertWithinLimit } as never);
+    const svc = new CareersService(db, cache as never, { assertWithinLimit } as never, {} as never, {} as never);
 
     const result = await svc.apply(makeInput());
 
@@ -118,7 +118,7 @@ describe("CareersService.apply — plan limit enforcement", () => {
       (runInTenantTransaction as jest.Mock).mockImplementation(
         async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       );
-      const svc = new CareersService(makeDb(), cache as never, { assertWithinLimit } as never);
+      const svc = new CareersService(makeDb(), cache as never, { assertWithinLimit } as never, {} as never, {} as never);
       return { svc, tx, assertWithinLimit };
     }
 
@@ -164,7 +164,7 @@ describe("CareersService.apply — plan limit enforcement", () => {
       (runInTenantTransaction as jest.Mock).mockImplementation(
         async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       );
-      const svc = new CareersService(makeDb(), cache as never, { assertWithinLimit } as never);
+      const svc = new CareersService(makeDb(), cache as never, { assertWithinLimit } as never, {} as never, {} as never);
 
       await expect(svc.apply(makeInput())).rejects.toBe(unrelated);
     });

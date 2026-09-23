@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { CareersService } from '../careers.service';
+import { CareersService, isApplyJobNotFound } from '../careers.service';
 import { DRIZZLE } from '../../../db/drizzle.constants';
 import { CacheService } from '../../../common/cache/cache.service';
 import { PlanLimitsService } from '../../billing/core/plan-limits.service';
 import { RecruitmentWebhooksService } from '../../hr/recruitment/webhooks/recruitment-webhooks.service';
+import { StorageService } from '../../storage/storage.service';
 import { candidateApplications, candidates, jobPostings } from '../../../db/schema';
 import { OutboxWriter } from '../../../common/outbox/outbox-writer';
 
@@ -46,6 +47,10 @@ describe('CareersService - Apply', () => {
                     provide: RecruitmentWebhooksService,
                     useValue: { dispatch: jest.fn() }
                 },
+                {
+                    provide: StorageService,
+                    useValue: {}
+                },
             ],
         }).compile();
 
@@ -62,6 +67,9 @@ describe('CareersService - Apply', () => {
             consent: true,
         });
 
+        if (isApplyJobNotFound(result)) {
+            throw new Error("expected apply() to succeed, got job_not_found");
+        }
         expect(result.id).toBe(1);
         expect(db.insert).toHaveBeenCalledWith(candidateApplications);
     });

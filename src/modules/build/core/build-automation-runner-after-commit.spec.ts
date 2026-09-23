@@ -1,5 +1,8 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
+import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
+import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import {
   runWithTenantContext,
@@ -7,6 +10,9 @@ import {
   type TenantContext,
 } from "../../../common/tenant/tenant-context";
 import type { TenantTx } from "../../../db/drizzle.types";
+
+const noopHistory = { recordRun: jest.fn().mockResolvedValue(null), recordRunActions: jest.fn().mockResolvedValue(undefined) };
+const allowAllRateLimiter = { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) };
 
 const TICKET = {
   ticketId: 10,
@@ -63,7 +69,13 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
     mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [BuildAutomationRunnerService, { provide: DRIZZLE, useValue: mockDb }],
+      providers: [
+        BuildAutomationRunnerService,
+        BuildAutomationActionExecutor,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: BuildAutomationRunHistoryService, useValue: noopHistory },
+        { provide: RateLimitService, useValue: allowAllRateLimiter },
+      ],
     }).compile();
     service = module.get(BuildAutomationRunnerService);
   });

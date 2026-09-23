@@ -156,6 +156,6 @@ export class BuildApprovalsController {
     @Param("approvalId", ParseIntPipe) approvalId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.softDeleteApproval(u.orgId, projectId, approvalId);
+    return this.svc.softDeleteApproval(u.orgId, u.userId, projectId, approvalId);
   }
 }

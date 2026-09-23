@@ -124,6 +124,7 @@ export class ProjectsTicketSubresourcesService {
     emoji: string,
     membershipId: number | null,
     ticketId: number,
+    projectId: number,
   ) {
     return this.comments.addReaction(
       commentId,
@@ -132,6 +133,7 @@ export class ProjectsTicketSubresourcesService {
       emoji,
       membershipId,
       ticketId,
+      projectId,
     );
   }
 
@@ -142,6 +144,7 @@ export class ProjectsTicketSubresourcesService {
     emoji: string,
     membershipId: number | null,
     ticketId: number,
+    projectId: number,
   ) {
     return this.comments.removeReaction(
       commentId,
@@ -150,6 +153,7 @@ export class ProjectsTicketSubresourcesService {
       emoji,
       membershipId,
       ticketId,
+      projectId,
     );
   }
 
