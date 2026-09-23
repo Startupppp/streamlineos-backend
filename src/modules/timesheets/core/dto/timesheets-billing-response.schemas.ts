@@ -40,6 +40,7 @@ export const billingUninvoicedEntriesResponseSchema = z.object({
       currency: z.string().nullable(),
       description: z.string().nullable(),
       invoiceLineDetail: z.enum(invoiceLineDetailEnum.enumValues).nullable(),
+      invoicingStatus: z.enum(["UNINVOICED", "INVOICE_DRAFTED", "INVOICED"]),
     }),
   ),
 });
@@ -58,6 +59,10 @@ export const billingInvoiceDraftResponseSchema = z.object({
   exportId: z.number().int(),
   entryCount: z.number().int(),
   amount: z.number(),
+});
+
+export const billingReleaseDraftResponseSchema = z.object({
+  releasedEntryIds: z.array(z.number().int()),
 });
 
 export const billingRatePreviewResponseSchema = z.object({

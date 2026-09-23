@@ -1,4 +1,8 @@
-import { InternalServerErrorException } from "@nestjs/common";
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+} from "@nestjs/common";
 import {
   and,
   asc,
@@ -19,6 +23,7 @@ import {
   billingExportSnapshotSchema,
   type CreateInvoiceDraftInput,
   type ExportBillingInput,
+  type ReleaseInvoiceDraftInput,
 } from "../dto/billing.schemas";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { round2 } from "./billing-money";
@@ -283,6 +288,64 @@ export async function createInvoiceDraft(
       entryCount: snapshot.length,
       amount: round2(totalAmount),
     };
+  });
+}
+
+/**
+ * Reverses `createInvoiceDraft`: puts entries stuck at `INVOICE_DRAFTED`
+ * back to `UNINVOICED` when the draft never became a real invoice. Refuses
+ * an entry not currently drafted rather than silently no-op'ing, so a caller
+ * that names the wrong id finds out instead of nothing happening — the same
+ * choice `loadInvoiceableEntries` and `assertTimesheetEntriesLinkable` make
+ * for the other invoicing-status transitions.
+ */
+export async function releaseInvoiceDraft(
+  deps: BillingExportDeps,
+  u: CurrentUserContext,
+  input: ReleaseInvoiceDraftInput,
+) {
+  const wanted = [...new Set(input.timesheetEntryIds)];
+
+  return deps.db.transaction(async (tx) => {
+    const rows = await tx
+      .select({ id: timesheets.id, invoicingStatus: timesheets.invoicingStatus })
+      .from(timesheets)
+      .where(and(eq(timesheets.orgId, u.orgId), inArray(timesheets.id, wanted)));
+
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const missing = wanted.filter((id) => !byId.has(id));
+    if (missing.length > 0)
+      throw new NotFoundException(
+        `Timesheet entry not found: ${missing.join(", ")}`,
+      );
+
+    const notDrafted = wanted.filter(
+      (id) => byId.get(id)?.invoicingStatus !== "INVOICE_DRAFTED",
+    );
+    if (notDrafted.length > 0)
+      throw new BadRequestException(
+        `Timesheet entry is not an invoice draft and cannot be released: ${notDrafted.join(", ")}`,
+      );
+
+    const released = await tx
+      .update(timesheets)
+      .set({ invoicingStatus: "UNINVOICED", updatedAt: new Date() })
+      .where(and(eq(timesheets.orgId, u.orgId), inArray(timesheets.id, wanted)))
+      .returning({ id: timesheets.id });
+
+    const releasedEntryIds = released.map((row) => row.id);
+    const actorMembId = actingMembershipId(u.principal);
+
+    await deps.audit.record(tx, {
+      orgId: u.orgId,
+      actorMembershipId: actorMembId,
+      entityType: "billing",
+      entityId: releasedEntryIds.join(","),
+      action: "billing.invoice_draft_released",
+      after: { releasedEntryIds },
+    });
+
+    return { releasedEntryIds };
   });
 }
 

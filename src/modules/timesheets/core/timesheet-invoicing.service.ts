@@ -31,6 +31,17 @@ export interface InvoiceableTimesheetEntry {
 
 export interface UninvoicedTimesheetEntry extends InvoiceableTimesheetEntry {
   invoiceLineDetail: InvoiceLineDetail | null;
+  /**
+   * In practice `UNINVOICED` or `INVOICE_DRAFTED` — the query this populates
+   * from always excludes `INVOICED` — typed as the full column enum rather
+   * than narrowed, since narrowing it would need an assertion the query
+   * result can't back statically (root CLAUDE.md §6 bans `as X` outright).
+   * Surfaced so a caller (the billing queue UI) can tell a plain billable
+   * entry from one stranded at `INVOICE_DRAFTED` by a `createInvoiceDraft`
+   * export that never became a real invoice, and offer to release it
+   * (`POST /timesheets/billing/release-draft`).
+   */
+  invoicingStatus: "UNINVOICED" | "INVOICE_DRAFTED" | "INVOICED";
 }
 
 @Injectable()
@@ -155,6 +166,7 @@ export class TimesheetInvoicingService {
         currency: timesheets.currency,
         description: timesheets.description,
         invoiceLineDetail: projects.invoiceLineDetail,
+        invoicingStatus: timesheets.invoicingStatus,
       })
       .from(timesheets)
       .leftJoin(
@@ -220,5 +232,42 @@ export class TimesheetInvoicingService {
       .returning({ id: timesheets.id });
 
     return claimed.length;
+  }
+
+  /**
+   * Reverses `markEntriesInvoiced` and the `createInvoiceDraft` export path:
+   * puts entries stuck at `INVOICE_DRAFTED` or `INVOICED` back to
+   * `UNINVOICED` so they are billable again.
+   *
+   * The two callers are (1) `InvoicesLifecycleService.voidInvoice`, once its
+   * invoice is confirmed voided, for the entries `invoice_items` links to it,
+   * and (2) releasing an `INVOICE_DRAFTED` snapshot that never became a real
+   * invoice. Both are the fix for stranded `INVOICE_DRAFTED`/`INVOICED`
+   * entries: entry lifecycle status (`status`, `voidedAt`) is untouched, so a
+   * released entry lands back exactly where `listUninvoicedEntries` and
+   * `getUninvoiced` already look for billable work — no separate "undo" read
+   * path is needed.
+   */
+  async releaseEntriesToUninvoiced(
+    tx: TenantTx,
+    orgId: string,
+    entryIds: readonly number[],
+  ): Promise<number[]> {
+    const wanted = [...new Set(entryIds)];
+    if (wanted.length === 0) return [];
+
+    const released = await tx
+      .update(timesheets)
+      .set({ invoicingStatus: "UNINVOICED", updatedAt: new Date() })
+      .where(
+        and(
+          eq(timesheets.orgId, orgId),
+          inArray(timesheets.id, wanted),
+          ne(timesheets.invoicingStatus, "UNINVOICED"),
+        ),
+      )
+      .returning({ id: timesheets.id });
+
+    return released.map((row) => row.id);
   }
 }

@@ -18,6 +18,7 @@ export interface InvoiceLineToInsert {
 export interface InvoiceHeaderToInsert {
   clientId?: number | undefined;
   projectId?: number | undefined;
+  dealId?: number | null | undefined;
   status: "DRAFT" | "ISSUED";
   subtotal: number;
   taxPool: number;
@@ -58,6 +59,7 @@ export async function insertInvoiceWithItems(
       orgId,
       clientId: header.clientId,
       projectId: header.projectId,
+      dealId: header.dealId ?? null,
       invoiceNumber,
       status: header.status,
       subtotal: header.subtotal.toFixed(2),

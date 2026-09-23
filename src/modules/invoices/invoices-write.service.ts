@@ -17,6 +17,7 @@ import {
   resolveSupplierStateCode,
 } from "./lib/invoice-helpers";
 import { assertTimesheetEntriesLinkable } from "./lib/timesheet-line-link";
+import { assertDealBelongsToOrg, resolveProjectDealId } from "./lib/deal-link";
 import { insertInvoiceWithItems } from "./lib/invoice-insert";
 import { InvoicesPaymentService } from "./invoices-payment.service";
 import { InvoicesUpdateService } from "./invoices-update.service";
@@ -79,6 +80,10 @@ export class InvoicesWriteService {
 
     await assertTimesheetEntriesLinkable(this.db, orgId, itemsWithAmounts);
 
+    const dealId = input.dealId
+      ? await assertDealBelongsToOrg(this.db, orgId, input.dealId)
+      : await resolveProjectDealId(this.db, orgId, [input.projectId ?? null]);
+
     const supplierStateCode = await resolveSupplierStateCode(this.db, orgId);
     const placeOfSupplyStateCode = input.placeOfSupply ?? supplierStateCode;
     const split = gstSplit(taxPool, supplierStateCode, placeOfSupplyStateCode);
@@ -91,6 +96,7 @@ export class InvoicesWriteService {
         {
           clientId: input.clientId,
           projectId: input.projectId,
+          dealId,
           status,
           subtotal,
           taxPool,
@@ -182,10 +188,25 @@ export class InvoicesWriteService {
     userId: string,
     invoiceId: number,
   ): Promise<{ success: true }> {
-    const result = await this.lifecycle.voidInvoice(orgId, userId, invoiceId);
+    const { releasedTimesheetEntryIds } = await this.lifecycle.voidInvoice(
+      orgId,
+      userId,
+      invoiceId,
+    );
     const invalidate = () => this.cache.invalidateNamespaceForOrg(orgId, "invoices:list");
     if (!registerAfterCommit(invalidate)) await invalidate();
-    return result;
+
+    this.audit.log({
+      action: "accounting.invoice.voided",
+      userId,
+      orgId,
+      resourceType: "invoice",
+      resourceId: String(invoiceId),
+      result: "SUCCESS",
+      metadata: { releasedTimesheetEntryIds },
+    });
+
+    return { success: true };
   }
 
   markOverdueInvoices(orgId?: string): Promise<{ updated: number }> {

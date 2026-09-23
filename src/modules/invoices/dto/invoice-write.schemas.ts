@@ -36,6 +36,7 @@ export const createInvoiceSchema = z
   .object({
     clientId: z.number().optional(),
     projectId: z.number().optional(),
+    dealId: z.number().int().positive().optional(),
     lineItems: z.array(legacyLineItemSchema).min(1).optional(),
     items: z.array(itemSchema).min(1).optional(),
     taxRate: z.number().min(0).max(100).default(0),
@@ -98,6 +99,7 @@ export const createInvoiceFromTimesheetsSchema = z
       .max(INVOICEABLE_ENTRY_CAP),
     clientId: z.number().int().positive().optional(),
     projectId: z.number().int().positive().optional(),
+    dealId: z.number().int().positive().optional(),
     gstRate: z
       .number()
       .refine((v) => [0, 5, 12, 18, 28].includes(v), {

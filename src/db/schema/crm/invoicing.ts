@@ -35,6 +35,12 @@ export const invoices = pgTable("invoices", {
   */
   clientPartyId: text("client_party_id"),
   projectId: integer("project_id").references(() => projects.id),
+  /**
+   * The CRM deal this invoice traces back to, mirroring `quotes.deal_id`.
+   * Nullable: most invoices are not deal-sourced, and a project's own
+   * `projects.deal_id` is the default when one is not given explicitly.
+   */
+  dealId: integer("deal_id"),
   invoiceNumber: text("invoice_number").notNull(),
   status: invoiceStatusEnum("status").default("DRAFT").notNull(),
   subtotal: decimal("subtotal", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -73,9 +79,11 @@ export const invoices = pgTable("invoices", {
   recurringTemplateId: integer("recurring_template_id"),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_invoices_project_id_org" }),
+  foreignKey({ columns: [table.orgId, table.dealId], foreignColumns: [deals.orgId, deals.id], name: "fk_invoices_org_deal" }).onDelete("set null"),
   index("idx_invoices_org_status").on(table.orgId, table.status),
   index("idx_invoices_client").on(table.clientId),
   index("idx_invoices_project").on(table.projectId),
+  index("idx_invoices_deal").on(table.orgId, table.dealId).where(sql`${table.dealId} IS NOT NULL`),
   index("idx_invoices_due_date").on(table.dueDate),
   index("idx_invoices_collection_owner").on(table.collectionOwnerId),
   unique("uniq_invoices_org_id").on(table.orgId, table.id),
@@ -190,6 +198,7 @@ export const quoteLineItems = pgTable("quote_line_items", {
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   organization: one(organizations, { fields: [invoices.orgId], references: [organizations.id] }),
   project: one(projects, { fields: [invoices.projectId], references: [projects.id] }),
+  deal: one(deals, { fields: [invoices.dealId], references: [deals.id] }),
   creator: one(users, { fields: [invoices.createdBy], references: [users.id], relationName: "invoiceCreatedBy" }),
   collectionOwner: one(users, { fields: [invoices.collectionOwnerId], references: [users.id], relationName: "invoiceCollectionOwner" }),
   payments: many(payments),

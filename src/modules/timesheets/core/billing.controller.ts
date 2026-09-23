@@ -18,16 +18,19 @@ import { AccessService } from "../../access/access.service";
 import { BillingService } from "./billing.service";
 import { TimesheetInvoicingService } from "./timesheet-invoicing.service";
 import { resolveRatePreviewSubject } from "./timesheets-core-scope";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   uninvoicedQuerySchema,
   uninvoicedEntriesQuerySchema,
   exportBillingSchema,
   createInvoiceDraftSchema,
+  releaseInvoiceDraftSchema,
   ratePreviewQuerySchema,
   type UninvoicedQuery,
   type UninvoicedEntriesQuery,
   type ExportBillingInput,
   type CreateInvoiceDraftInput,
+  type ReleaseInvoiceDraftInput,
   type RatePreviewQuery,
 } from "./dto/billing.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -37,6 +40,7 @@ import {
   billingUninvoicedEntriesResponseSchema,
   billingExportResponseSchema,
   billingInvoiceDraftResponseSchema,
+  billingReleaseDraftResponseSchema,
   billingRatePreviewResponseSchema,
 } from "./dto/timesheets-response.schemas";
 
@@ -98,6 +102,19 @@ export class TimesheetBillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.createInvoiceDraft(u, body);
+  }
+
+  @Post("release-draft")
+  @HttpCode(200)
+  @RequirePermission("timesheets:billing:invoice")
+  @Idempotent("timesheets.billing.releaseDraft")
+  @Validate({ body: releaseInvoiceDraftSchema })
+  @ResponseSchema(billingReleaseDraftResponseSchema)
+  releaseInvoiceDraft(
+    @Body() body: ReleaseInvoiceDraftInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.billing.releaseInvoiceDraft(u, body);
   }
 
   @Get("rate-preview")

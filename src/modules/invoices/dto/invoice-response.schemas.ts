@@ -7,6 +7,7 @@ const invoiceBaseSchema = z.object({
   orgId: z.string(),
   clientId: z.number().int().nullable(),
   projectId: z.number().int().nullable(),
+  dealId: z.number().int().nullable(),
   invoiceNumber: z.string(),
   status: z.string(),
   subtotal: z.string(),

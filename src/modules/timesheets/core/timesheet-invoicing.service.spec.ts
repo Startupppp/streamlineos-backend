@@ -226,4 +226,53 @@ describe("TimesheetInvoicingService", () => {
       expect(tx.update).not.toHaveBeenCalled();
     });
   });
+
+  /**
+   * The reverse of `markEntriesInvoiced` and of `createInvoiceDraft` (the
+   * `INVOICE_DRAFTED` write in `lib/billing-export.ts`). This is the fix for
+   * the stranded-record bug: `InvoicesLifecycleService.voidInvoice` and the
+   * billing "release draft" endpoint both end here, and neither one had a
+   * way to get an entry back to `UNINVOICED` before this method existed —
+   * `voidEntry` (`entries.service.ts`) refuses to void `INVOICE_DRAFTED` or
+   * `INVOICED` directly, so this was the only path back to billable.
+   */
+  describe("releaseEntriesToUninvoiced", () => {
+    it("reports only the rows it actually released, mirroring markEntriesInvoiced's claim-count contract", async () => {
+      const returning = jest.fn().mockResolvedValue([{ id: 77 }, { id: 78 }]);
+      const where = jest.fn(() => ({ returning }));
+      const set = jest.fn(() => ({ where }));
+      const tx = { update: jest.fn(() => ({ set })) };
+
+      const released = await service.releaseEntriesToUninvoiced(
+        tx as never,
+        ORG,
+        [77, 78],
+      );
+
+      expect(released).toEqual([77, 78]);
+      expect(set).toHaveBeenCalledWith(
+        expect.objectContaining({ invoicingStatus: "UNINVOICED" }),
+      );
+    });
+
+    it("writes through the transaction handle it is given, so the release commits atomically with the invoice void that triggered it", async () => {
+      const returning = jest.fn().mockResolvedValue([{ id: 77 }]);
+      const tx = {
+        update: jest.fn(() => ({ set: () => ({ where: () => ({ returning }) }) })),
+      };
+
+      await service.releaseEntriesToUninvoiced(tx as never, ORG, [77]);
+
+      expect(tx.update).toHaveBeenCalledTimes(1);
+    });
+
+    it("releases nothing, and asks the database nothing, for an empty selection", async () => {
+      const tx = { update: jest.fn() };
+
+      const released = await service.releaseEntriesToUninvoiced(tx as never, ORG, []);
+
+      expect(released).toEqual([]);
+      expect(tx.update).not.toHaveBeenCalled();
+    });
+  });
 });
