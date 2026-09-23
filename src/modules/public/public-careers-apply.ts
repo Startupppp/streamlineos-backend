@@ -18,6 +18,7 @@ import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import type { ScreeningQuestion } from "../../db/schema/hr/hiring-core";
 import { evaluateScreening } from "./careers-screening";
 import { PUBLIC_APPLICANT, type ResumeIntake } from "./careers-resume-intake";
+import { splitName } from "../../common/hr/split-person-name";
 import type { ApplyInput } from "./dto/public.schemas";
 
 /**
@@ -50,12 +51,6 @@ export interface ApplyResult {
   readonly duplicate: boolean;
   readonly resumeStored: boolean;
   readonly resumeReason: string | null;
-}
-
-export function splitName(name: string): { firstName: string; lastName: string } {
-  const parts = name.trim().split(/\s+/);
-  const firstName = parts[0] ?? name.trim();
-  return { firstName, lastName: parts.length > 1 ? parts.slice(1).join(" ") : "-" };
 }
 
 /**

@@ -5,6 +5,15 @@ describe("RecruitmentHandoffService", () => {
     let insertCall = 0;
 
     const tx = {
+      /**
+       * Two different SELECT shapes reach this double, and the second one had
+       * no branch: the joined person lookups go `.from().innerJoin().where()`,
+       * while `resolveOrgSalaryCurrency` — reached once the employment exists
+       * and the offer carries a salary — goes `.from().where()` directly. With
+       * only the joined shape declared, the salary write threw
+       * "executor.select(...).from(...).where is not a function" and this suite
+       * was red before any of the hire work started.
+       */
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           innerJoin: jest.fn().mockReturnValue({
@@ -13,6 +22,9 @@ describe("RecruitmentHandoffService", () => {
                 .fn()
                 .mockResolvedValue([{ id: 7, userId: null, organizationPersonId: null }]),
             }),
+          }),
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([{ currency: "INR" }]),
           }),
         }),
       }),

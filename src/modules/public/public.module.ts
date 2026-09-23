@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../billing/core/billing.module";
+import { HrRecruitmentModule } from "../hr/recruitment/hr-recruitment.module";
 import { PublicController } from "./public.controller";
 import { PublicCareersService } from "./public-careers.service";
 import { PublicOffersService } from "./public-offers.service";
@@ -21,7 +22,7 @@ import { TurnstileService } from "../../common/security/turnstile.service";
 import { PublicPricingService } from "./pricing.service";
 
 @Module({
-  imports: [AuthModule, CrmAutomationStudioModule, BillingModule],
+  imports: [AuthModule, CrmAutomationStudioModule, BillingModule, HrRecruitmentModule],
   controllers: [WaitlistAdmissionController, PublicController],
   providers: [
     PublicCareersService,

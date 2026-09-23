@@ -26,6 +26,12 @@ import { AutomationService } from "../../automation/automation.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { AccessService } from "../../access/access.service";
 import { getCandidateRejectionEmail } from "../../email/templates/recruitment";
+import {
+  APPLICATION_STATUS_FOR_STAGE,
+  STAGE_TRANSITIONS,
+  UPDATE_TRANSITIONS,
+  type CandidateStage,
+} from "./recruitment-candidate-stages";
 import type {
   CandidateListInput,
   CreateCandidateInput,
@@ -33,27 +39,7 @@ import type {
   UpdateCandidateInput,
 } from "./dto/candidates.schemas";
 
-type CandidateStage = "NEW" | "SCREENING" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED";
-
 const CANDIDATE_SEARCH_CAP = 500;
-
-const UPDATE_TRANSITIONS: Record<string, CandidateStage[]> = {
-  NEW: ["SCREENING", "REJECTED"],
-  SCREENING: ["NEW", "INTERVIEW", "REJECTED"],
-  INTERVIEW: ["SCREENING", "OFFER", "REJECTED"],
-  OFFER: ["INTERVIEW", "HIRED", "REJECTED"],
-  HIRED: [],
-  REJECTED: ["SCREENING"],
-};
-
-const STAGE_TRANSITIONS: Record<CandidateStage, CandidateStage[]> = {
-  NEW: ["SCREENING", "REJECTED"],
-  SCREENING: ["INTERVIEW", "REJECTED"],
-  INTERVIEW: ["OFFER", "REJECTED"],
-  OFFER: ["HIRED", "REJECTED"],
-  HIRED: [],
-  REJECTED: ["SCREENING"],
-};
 
 interface RoleNotification {
   type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR";

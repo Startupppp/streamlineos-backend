@@ -1,11 +1,10 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { candidateOffers, candidates, type OfferNegotiationDirection } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { AutomationService } from "../../automation/automation.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { RecruitmentHandoffService } from "./recruitment-handoff.service";
+import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
 import {
   approveOffer,
   buildAcceptanceToken,
@@ -14,11 +13,6 @@ import {
 } from "./recruitment-offer-approvals";
 import { queryOrgOffers } from "./recruitment-offer-list-query";
 import { addOfferNegotiationEntry, listOfferNegotiations } from "./recruitment-offer-negotiations";
-import {
-  deferOfferEffect,
-  dispatchOfferAutomation,
-  type DispatchedOfferStatus,
-} from "./recruitment-offer-effects";
 import {
   listOfferVersions,
   recordInitialOfferVersion,
@@ -42,18 +36,18 @@ const COMP_FIELDS = ["offeredSalary", "offeredDesignation", "joiningDate", "vali
  * The three behaviours that change on their own schedules live beside this file rather than
  * in it: the approval state machine (`recruitment-offer-approvals`), the candidate-facing
  * negotiation (`recruitment-offer-negotiations`), the `offer_versions` write protocol
- * (`recruitment-offer-versions`) and the post-commit automation/handoff dispatch
- * (`recruitment-offer-effects`). Each is loaded here after the offer has been authorized, so
- * the tenant assertion stays in exactly one place.
+ * (`recruitment-offer-versions`) and the post-commit automation/handoff/onboarding dispatch
+ * (`RecruitmentOfferAcceptanceService`). Each is loaded here after the offer has been
+ * authorized, so the tenant assertion stays in exactly one place. The dispatch in
+ * particular is shared with the PUBLIC accept path, which is why it is a service and no
+ * longer a private method here.
  */
 @Injectable()
 export class RecruitmentOffersService {
-  private readonly logger = new Logger(RecruitmentOffersService.name);
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly automation: AutomationService,
     private readonly audit: AuditService,
-    private readonly handoff: RecruitmentHandoffService,
+    private readonly acceptance: RecruitmentOfferAcceptanceService,
   ) {}
 
   async listOffers(orgId: string, candidateId: number) {
@@ -106,9 +100,22 @@ export class RecruitmentOffersService {
     return submitOfferForApproval(this.db, this.audit, orgId, offer, userId);
   }
 
+  /**
+   * Approval IS the send. It sets `SENT` and mints the acceptance token, so it
+   * must fire `offer.sent` exactly as a manual status patch to `SENT` does —
+   * without this, the normal approval button left every "offer sent" automation
+   * (the email that carries the link) unfired, and only a recruiter who
+   * additionally patched the status by hand ever triggered one.
+   */
   async approveOffer(orgId: string, userId: string, offerId: number, remarks?: string) {
     const offer = await this.findOffer(orgId, offerId);
-    return approveOffer(this.db, this.audit, orgId, offer, userId, remarks);
+    const result = await approveOffer(this.db, this.audit, orgId, offer, userId, remarks);
+    this.acceptance.deferStatusEffects(orgId, offer.candidateId, offerId, "SENT", offer.offerStatus, {
+      offeredSalary: offer.offeredSalary,
+      joiningDate: offer.joiningDate,
+      validUntil: offer.validUntil,
+    });
+    return result;
   }
 
   async rejectApproval(orgId: string, offerId: number, remarks: string | undefined, userId: string) {
@@ -187,13 +194,26 @@ export class RecruitmentOffersService {
       .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)))
       .returning();
 
-    const dispatchedStatus: UpdateOfferInput["offerStatus"] = input.offerStatus;
+    /**
+     * An internal patch to `ACCEPTED` closes the seat exactly as the candidate
+     * clicking Accept does. `this.db` here IS the request transaction
+     * (`TenantContextInterceptor` holds it in AsyncLocalStorage), so this
+     * commits with the offer row.
+     */
+    if (input.offerStatus === "ACCEPTED" && existing.offerStatus !== "ACCEPTED")
+      await this.acceptance.completeAcceptedOffer(this.db, orgId, {
+        id: offerId,
+        candidateId,
+        jobPostingId: updated.jobPostingId,
+      });
+
+    const dispatchedStatus = input.offerStatus;
     if (
       dispatchedStatus === "SENT" ||
       dispatchedStatus === "ACCEPTED" ||
       dispatchedStatus === "DECLINED"
     ) {
-      this.dispatchStatusEffects(orgId, candidateId, offerId, dispatchedStatus, existing.offerStatus, {
+      this.acceptance.deferStatusEffects(orgId, candidateId, offerId, dispatchedStatus, existing.offerStatus, {
         offeredSalary: updated.offeredSalary,
         joiningDate: updated.joiningDate,
         validUntil: updated.validUntil,
@@ -201,27 +221,6 @@ export class RecruitmentOffersService {
     }
 
     return updated;
-  }
-
-  private dispatchStatusEffects(
-    orgId: string,
-    candidateId: number,
-    offerId: number,
-    newStatus: DispatchedOfferStatus,
-    previousStatus: string,
-    terms: { offeredSalary: string | null; joiningDate: string | null; validUntil: string | null },
-  ): void {
-    deferOfferEffect(this.logger, "offer automation dispatch", orgId, () =>
-      dispatchOfferAutomation(
-        { db: this.db, automation: this.automation, handoff: this.handoff },
-        orgId,
-        candidateId,
-        offerId,
-        newStatus,
-        previousStatus,
-        terms,
-      ),
-    );
   }
 
   async deleteOffer(orgId: string, candidateId: number, offerId: number, userId: string) {

@@ -41,9 +41,22 @@ import { HrWebhookDispatchService } from "./webhooks/hr-webhook-dispatch.service
 import { RecruitmentWebhookEmitter } from "./webhooks/webhook-emitter.service";
 import { RecruitmentOutboxConsumer } from "./webhooks/recruitment-outbox-consumer";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
+import { RecruitmentOnboardingStartService } from "./recruitment-onboarding-start.service";
+import { MembershipAdmissionModule } from "../../organization/core/membership-admission.module";
+import { OnboardingModule } from "../onboarding/core/onboarding.module";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, AiModule, BillingModule, AccessModule, OutboxModule],
+  imports: [
+    NotificationsModule,
+    AutomationModule,
+    AiModule,
+    BillingModule,
+    AccessModule,
+    OutboxModule,
+    MembershipAdmissionModule,
+    OnboardingModule,
+  ],
   controllers: [
     RecruitmentCandidateDocumentsController,
     RecruitmentCandidatesController,
@@ -79,11 +92,21 @@ import { OutboxModule } from "../../../common/outbox/outbox.module";
     RecruitmentJobBoardsService,
     RecruitmentTalentPoolsService,
     RecruitmentHandoffService,
+    RecruitmentOfferAcceptanceService,
+    RecruitmentOnboardingStartService,
     RecruitmentWebhooksService,
     HrWebhookDispatchService,
     RecruitmentWebhookEmitter,
     RecruitmentOutboxConsumer,
   ],
-  exports: [RecruitmentOffersService, RecruitmentRequisitionsService, RecruitmentWebhooksService, HrWebhookDispatchService, RecruitmentOutboxConsumer],
+  exports: [
+    RecruitmentOffersService,
+    RecruitmentRequisitionsService,
+    RecruitmentWebhooksService,
+    HrWebhookDispatchService,
+    RecruitmentOutboxConsumer,
+    /** The public offer page runs the same acceptance effect as the internal button. */
+    RecruitmentOfferAcceptanceService,
+  ],
 })
 export class HrRecruitmentModule {}

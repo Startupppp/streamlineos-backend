@@ -1,5 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { RecruitmentOffersService } from "./recruitment-offers.service";
+import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
 import { TenantContextService } from "../../../common/tenant/tenant-context";
 import type { AfterCommitHook } from "../../../common/tenant/tenant-context";
 
@@ -62,12 +63,23 @@ function build(handleOfferAccepted: jest.Mock) {
     }),
   };
 
-  const service = new RecruitmentOffersService(
+  const audit = { log: jest.fn(), logCritical: jest.fn().mockResolvedValue(undefined) };
+
+  /**
+   * The REAL acceptance service, with only its leaf collaborators doubled.
+   * Constructing a stand-in for it here would let the dispatch this suite exists
+   * to check be re-implemented by the test — the failure it was written for was
+   * a discarded promise, which a double would happily "succeed" at.
+   */
+  const acceptance = new RecruitmentOfferAcceptanceService(
     db as never,
     { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
-    { log: jest.fn(), logCritical: jest.fn().mockResolvedValue(undefined) } as never,
+    audit as never,
     { handleOfferAccepted } as never,
+    { startForCandidate: jest.fn().mockResolvedValue({ started: true, replay: true }) } as never,
   );
+
+  const service = new RecruitmentOffersService(db as never, audit as never, acceptance);
   return { service };
 }
 
