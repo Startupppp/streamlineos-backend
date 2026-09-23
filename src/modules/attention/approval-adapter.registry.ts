@@ -18,6 +18,12 @@ export type ApprovalSourceAdapter = {
   ): Promise<BuildApprovalInboxItem[]>;
 };
 
+export function approvalAdapterKey(
+  adapter: Pick<ApprovalSourceAdapter, "module" | "kindLabel">,
+): string {
+  return `${adapter.module}:${adapter.kindLabel}`;
+}
+
 @Injectable()
 export class ApprovalAdapterRegistry {
   private readonly adapters: ApprovalSourceAdapter[] = [];

@@ -2,16 +2,6 @@ import type { MembershipArtifact } from "../membership-artifact.types";
 
 export const BUILD_ARTIFACTS = [
   {
-    id: "pm_workspace_memberships",
-    mechanism: "database-cascade",
-    table: "pm_workspace_memberships",
-    keyedBy: "organization_membership_id",
-    onRemoval: "cascade",
-    onSuspension: "retain",
-    reason:
-      "Workspace membership cascades. The org membership gate already denies every request while suspended.",
-  },
-  {
     id: "managed_products",
     mechanism: "database-cascade",
     table: "managed_products",
@@ -162,14 +152,14 @@ export const BUILD_ARTIFACTS = [
       "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_project_team_members_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
-    id: "project_workspace_members",
+    id: "build_members",
     mechanism: "database-cascade",
-    table: "project_workspace_members",
+    table: "build_members",
     keyedBy: "membership_id",
     onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_project_workspace_members_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_build_members_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "feedbucket_submissions",

@@ -220,14 +220,6 @@
    "file": "src/modules/build/portfolios/programs.controller.ts"
   },
   {
-   "key": "PATCH /build/workspaces/:pmWorkspaceId [PmWorkspacesController.updateWorkspace]",
-   "verb": "PATCH",
-   "path": "/build/workspaces/:pmWorkspaceId",
-   "requestPath": "/build/workspaces/7bc51230-d220-4dc5-a3a3-f5b742a0c5a7",
-   "handler": "PmWorkspacesController.updateWorkspace",
-   "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts"
-  },
-  {
    "key": "PATCH /crm/assignment-rules/:ruleId [CrmRulesController.updateAssignmentRule]",
    "verb": "PATCH",
    "path": "/crm/assignment-rules/:ruleId",

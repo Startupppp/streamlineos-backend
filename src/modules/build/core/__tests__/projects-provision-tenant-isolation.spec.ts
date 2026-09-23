@@ -54,26 +54,20 @@ function makeServices() {
   const audit = { log: jest.fn() };
   const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
-  const pmWorkspaces = {
-    resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws-1"),
-    resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue("ws-1"),
-    assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
-  };
-  return { audit, planLimits, dispatch, pmWorkspaces };
+  return { audit, planLimits, dispatch };
 }
 
 describe("ProjectsProvisionService — cross-tenant isolation", () => {
   describe("createFromDeal", () => {
     it("DENY — deal belonging to a different org is not found → NotFoundException", async () => {
       const db = makeMockDb({ queryResult: null });
-      const { audit, planLimits, dispatch, pmWorkspaces } = makeServices();
+      const { audit, planLimits, dispatch } = makeServices();
 
       const svc = new ProjectsProvisionService(
         db as never,
         audit as never,
         planLimits as never,
         dispatch as never,
-        pmWorkspaces as never,
       );
 
       await expect(
@@ -105,14 +99,13 @@ describe("ProjectsProvisionService — cross-tenant isolation", () => {
         transactionRows: [{ id: 10, orgId: OWNER_ORG, key: "MYD-001", name: "My Deal Project" }],
       });
 
-      const { audit, planLimits, dispatch, pmWorkspaces } = makeServices();
+      const { audit, planLimits, dispatch } = makeServices();
 
       const svc = new ProjectsProvisionService(
         db as never,
         audit as never,
         planLimits as never,
         dispatch as never,
-        pmWorkspaces as never,
       );
 
       const result = await svc.createFromDeal(OWNER_ORG, USER_ID, {
@@ -154,13 +147,12 @@ describe("ProjectsProvisionService — cross-tenant isolation", () => {
         },
       );
 
-      const { audit, planLimits, dispatch, pmWorkspaces } = makeServices();
+      const { audit, planLimits, dispatch } = makeServices();
       const svc = new ProjectsProvisionService(
         db as never,
         audit as never,
         planLimits as never,
         dispatch as never,
-        pmWorkspaces as never,
       );
 
       const result = await svc.createProject(OWNER_ORG, USER_ID, { name: "New Project" });

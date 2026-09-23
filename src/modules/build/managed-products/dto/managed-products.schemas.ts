@@ -6,7 +6,6 @@ export const listManagedProductsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
   status: z.enum(managedProductStatusEnum.enumValues).optional(),
-  pmWorkspaceId: z.string().optional(),
   search: z.string().optional(),
 }).strict();
 
@@ -19,7 +18,6 @@ export const createManagedProductSchema = z.object({
     .regex(/^[A-Z0-9_-]+$/, "Key must be uppercase letters, digits, hyphens, or underscores"),
   description: z.string().optional(),
   ownerId: z.string().min(1).optional(),
-  pmWorkspaceId: z.string().optional(),
 }).strict();
 
 export const updateManagedProductSchema = z.object({

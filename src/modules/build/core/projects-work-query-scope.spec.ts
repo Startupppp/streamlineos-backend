@@ -31,7 +31,6 @@ function minimalQuery(scope: AllWorkQuery["scope"]): AllWorkQuery {
     dueDateTo: undefined,
     projectIds: undefined,
     excludeStatus: undefined,
-    pmWorkspaceId: undefined,
   };
 }
 

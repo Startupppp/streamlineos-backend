@@ -1,7 +1,10 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
 import { ApprovalsService } from "./approvals.service";
-import type { BuildApprovalInboxItem } from "../../notifications/dto/unified-inbox.schemas";
+import type {
+  BuildApprovalInboxItem,
+  InboxSourcePosition,
+} from "../../notifications/dto/unified-inbox.schemas";
 
 @Injectable()
 export class TimesheetApprovalAdapter implements OnModuleInit {
@@ -15,9 +18,9 @@ export class TimesheetApprovalAdapter implements OnModuleInit {
       module: "timesheets",
       kindLabel: "timesheet",
       permission: "timesheets:approvals:view",
-      supportsAfterCursor: false,
-      fetch: (orgId, _userId, membershipId, limit) =>
-        this.fetchTimesheets(orgId, membershipId, limit),
+      supportsAfterCursor: true,
+      fetch: (orgId, _userId, membershipId, limit, cursor) =>
+        this.fetchTimesheets(orgId, membershipId, limit, cursor),
     });
   }
 
@@ -25,12 +28,14 @@ export class TimesheetApprovalAdapter implements OnModuleInit {
     orgId: string,
     membershipId: number | null,
     limit: number,
+    cursor: InboxSourcePosition | null,
   ): Promise<BuildApprovalInboxItem[]> {
     if (membershipId === null) return [];
-    const rows = await this.approvals.pendingRoutedTo(
+    const rows = await this.approvals.pendingRoutedToPage(
       orgId,
       membershipId,
       limit,
+      cursor,
     );
     return rows.map(
       (row): BuildApprovalInboxItem => ({
@@ -44,11 +49,7 @@ export class TimesheetApprovalAdapter implements OnModuleInit {
         dedupKey: `approval:timesheet:${String(row.id)}`,
         sourceModule: "timesheets",
         subject: `Timesheet · ${row.periodStart} to ${row.periodEnd}`,
-        timestamp: (
-          row.submittedAt ??
-          row.approvalDueAt ??
-          new Date(0)
-        ).toISOString(),
+        timestamp: row.submittedAt.toISOString(),
         isRead: false,
         deepLink: null,
         actor: row.userEmail

@@ -1,33 +1,31 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import {
+  buildMembers,
   organizationMembers,
   projectTeamMembers,
   projectTeams,
-  projectWorkspaceMembers,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
 import { keysetAfter } from "../../../common/pagination/keyset";
 import type {
-  AddWorkspaceMemberInput,
-  ListWorkspaceMembersInput,
-} from "./dto/projects-workspace-members.schemas";
+  AddBuildMemberInput,
+  ListBuildMembersInput,
+} from "./dto/build-members.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
-export class ProjectsWorkspaceMembersService {
+export class BuildMembersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
-  async list(orgId: string, query: ListWorkspaceMembersInput) {
+  async list(orgId: string, query: ListBuildMembersInput) {
     const { cursor, limit } = query;
     const pos = decodeCursor(cursor);
     const search = query.search?.trim();
@@ -39,25 +37,25 @@ export class ProjectsWorkspaceMembersService {
           ilike(users.lastName, `%${search}%`),
         )
       : undefined;
-    const conds = [eq(projectWorkspaceMembers.orgId, orgId), searchCond];
-    if (pos) conds.push(keysetAfter(projectWorkspaceMembers.addedAt, organizationMembers.userId, pos));
+    const conds = [eq(buildMembers.orgId, orgId), searchCond];
+    if (pos) conds.push(keysetAfter(buildMembers.addedAt, organizationMembers.userId, pos));
 
     const rows = await this.db
       .select({
         id: organizationMembers.userId,
-        role: projectWorkspaceMembers.role,
-        addedAt: projectWorkspaceMembers.addedAt,
+        role: buildMembers.role,
+        addedAt: buildMembers.addedAt,
         name: users.name,
         firstName: users.firstName,
         lastName: users.lastName,
         email: users.email,
         image: users.image,
       })
-      .from(projectWorkspaceMembers)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectWorkspaceMembers.orgId), eq(organizationMembers.id, projectWorkspaceMembers.membershipId)))
+      .from(buildMembers)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, buildMembers.orgId), eq(organizationMembers.id, buildMembers.membershipId)))
       .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(and(...conds))
-      .orderBy(asc(projectWorkspaceMembers.addedAt), asc(organizationMembers.userId))
+      .orderBy(asc(buildMembers.addedAt), asc(organizationMembers.userId))
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
@@ -106,7 +104,7 @@ export class ProjectsWorkspaceMembersService {
     };
   }
 
-  async add(orgId: string, actorId: string, input: AddWorkspaceMemberInput) {
+  async add(orgId: string, actorId: string, input: AddBuildMemberInput) {
     const [orgMember] = await this.db
       .select({ id: organizationMembers.id, userId: organizationMembers.userId })
       .from(organizationMembers)
@@ -124,23 +122,22 @@ export class ProjectsWorkspaceMembersService {
     }
 
     try {
-      const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
       const [row] = await this.db
-        .insert(projectWorkspaceMembers)
-        .values({ orgId, pmWorkspaceId, membershipId: orgMember.id, role: input.role })
+        .insert(buildMembers)
+        .values({ orgId, membershipId: orgMember.id, role: input.role })
         .returning();
       this.audit.log({
-        action: "project_workspace.member_added",
+        action: "build_member.added",
         userId: actorId,
         orgId,
-        resourceType: "project_workspace_member",
+        resourceType: "build_member",
         resourceId: input.userId,
         metadata: { role: input.role },
       });
       return row;
     } catch (err: unknown) {
       if (isUniqueViolation(err)) {
-        throw new ConflictException("This user is already a workspace member.");
+        throw new ConflictException("This user is already a Build member.");
       }
       throw err;
     }
@@ -152,14 +149,14 @@ export class ProjectsWorkspaceMembersService {
       .from(organizationMembers)
       .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
       .limit(1);
-    if (!orgMember) throw new NotFoundException("Workspace member not found");
+    if (!orgMember) throw new NotFoundException("Build member not found");
     await this.db.transaction(async (tx) => {
       await tx
-        .delete(projectWorkspaceMembers)
+        .delete(buildMembers)
         .where(
           and(
-            eq(projectWorkspaceMembers.orgId, orgId),
-            eq(projectWorkspaceMembers.membershipId, orgMember.id),
+            eq(buildMembers.orgId, orgId),
+            eq(buildMembers.membershipId, orgMember.id),
           ),
         );
       await tx
@@ -172,15 +169,15 @@ export class ProjectsWorkspaceMembersService {
         );
     });
     this.audit.log({
-      action: "project_workspace.member_removed",
+      action: "build_member.removed",
       userId: actorId,
       orgId,
-      resourceType: "project_workspace_member",
+      resourceType: "build_member",
       resourceId: userId,
     });
   }
 
-  async isWorkspaceMember(orgId: string, userId: string): Promise<boolean> {
+  async isBuildMember(orgId: string, userId: string): Promise<boolean> {
     const [orgMember] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -188,12 +185,12 @@ export class ProjectsWorkspaceMembersService {
       .limit(1);
     if (!orgMember) return false;
     const [row] = await this.db
-      .select({ id: projectWorkspaceMembers.id })
-      .from(projectWorkspaceMembers)
+      .select({ id: buildMembers.id })
+      .from(buildMembers)
       .where(
         and(
-          eq(projectWorkspaceMembers.orgId, orgId),
-          eq(projectWorkspaceMembers.membershipId, orgMember.id),
+          eq(buildMembers.orgId, orgId),
+          eq(buildMembers.membershipId, orgMember.id),
         ),
       )
       .limit(1);

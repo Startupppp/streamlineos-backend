@@ -16,10 +16,17 @@ import {
   payrollRunEvents,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { JournalOutboxService } from "../insights/journal-outbox.service";
 import { parseBankReturnCsv } from "./lib/bank-return";
-import { checkRunCompletion, refreshBatchPaidStatus } from "./lib/payout-run-completion";
-import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
+import {
+  checkRunCompletion,
+  refreshBatchPaidStatus,
+} from "./lib/payout-run-completion";
+import {
+  PAYROLL_READ_CAP,
+  requirePayrollReadWithinCap,
+} from "../lib/query-bounds";
 
 @Injectable()
 export class BatchStatusService {
@@ -28,6 +35,7 @@ export class BatchStatusService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly dispatch: NotificationDispatchService,
     @Optional() private readonly journalOutbox?: JournalOutboxService,
   ) {}
 
@@ -42,7 +50,10 @@ export class BatchStatusService {
 
   async markSent(orgId: string, batchId: number, actorId: string) {
     const batch = await this.db.query.payrollBankBatches.findFirst({
-      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
+      where: and(
+        eq(payrollBankBatches.id, batchId),
+        eq(payrollBankBatches.orgId, orgId),
+      ),
       columns: { id: true, status: true, runId: true },
     });
     if (!batch) throw new NotFoundException("Batch not found");
@@ -58,7 +69,12 @@ export class BatchStatusService {
       await tx
         .update(payrollBankBatches)
         .set({ status: "SENT", sentAt: new Date() })
-        .where(and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)));
+        .where(
+          and(
+            eq(payrollBankBatches.id, batchId),
+            eq(payrollBankBatches.orgId, orgId),
+          ),
+        );
 
       await tx
         .update(payrollBankBatchItems)
@@ -92,7 +108,13 @@ export class BatchStatusService {
     return { success: true };
   }
 
-  async markItemPaid(orgId: string, batchId: number, itemId: number, transactionRef: string, actorId: string) {
+  async markItemPaid(
+    orgId: string,
+    batchId: number,
+    itemId: number,
+    transactionRef: string,
+    actorId: string,
+  ) {
     const item = await this.db.query.payrollBankBatchItems.findFirst({
       where: and(
         eq(payrollBankBatchItems.id, itemId),
@@ -101,10 +123,14 @@ export class BatchStatusService {
       ),
     });
     if (!item) throw new NotFoundException("Batch item not found");
-    if (item.status === "PAID") throw new ConflictException("Item already marked paid");
+    if (item.status === "PAID")
+      throw new ConflictException("Item already marked paid");
 
     const batchRow = await this.db.query.payrollBankBatches.findFirst({
-      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
+      where: and(
+        eq(payrollBankBatches.id, batchId),
+        eq(payrollBankBatches.orgId, orgId),
+      ),
       columns: { runId: true },
     });
 
@@ -113,7 +139,12 @@ export class BatchStatusService {
       await tx
         .update(payrollBankBatchItems)
         .set({ status: "PAID", transactionRef, paidAt: now })
-        .where(and(eq(payrollBankBatchItems.id, itemId), eq(payrollBankBatchItems.orgId, orgId)));
+        .where(
+          and(
+            eq(payrollBankBatchItems.id, itemId),
+            eq(payrollBankBatchItems.orgId, orgId),
+          ),
+        );
 
       if (batchRow?.runId) {
         await tx.insert(payrollRunEvents).values({
@@ -142,7 +173,13 @@ export class BatchStatusService {
     return { success: true };
   }
 
-  async markItemFailed(orgId: string, batchId: number, itemId: number, failureReason: string, actorId: string) {
+  async markItemFailed(
+    orgId: string,
+    batchId: number,
+    itemId: number,
+    failureReason: string,
+    actorId: string,
+  ) {
     const item = await this.db.query.payrollBankBatchItems.findFirst({
       where: and(
         eq(payrollBankBatchItems.id, itemId),
@@ -152,10 +189,15 @@ export class BatchStatusService {
     });
     if (!item) throw new NotFoundException("Batch item not found");
     if (item.status === "PAID")
-      throw new ConflictException("Item is already paid and cannot be marked failed");
+      throw new ConflictException(
+        "Item is already paid and cannot be marked failed",
+      );
 
     const batchRow = await this.db.query.payrollBankBatches.findFirst({
-      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
+      where: and(
+        eq(payrollBankBatches.id, batchId),
+        eq(payrollBankBatches.orgId, orgId),
+      ),
       columns: { runId: true },
     });
 
@@ -163,7 +205,12 @@ export class BatchStatusService {
       await tx
         .update(payrollBankBatchItems)
         .set({ status: "FAILED", failureReason })
-        .where(and(eq(payrollBankBatchItems.id, itemId), eq(payrollBankBatchItems.orgId, orgId)));
+        .where(
+          and(
+            eq(payrollBankBatchItems.id, itemId),
+            eq(payrollBankBatchItems.orgId, orgId),
+          ),
+        );
 
       if (batchRow?.runId) {
         await tx.insert(payrollRunEvents).values({
@@ -187,14 +234,42 @@ export class BatchStatusService {
       });
     }
 
+    if (item.userId) {
+      try {
+        await this.dispatch.emit({
+          orgId,
+          eventKey: "payroll.payment.failed",
+          actorUserId: actorId,
+          targetUserIds: [item.userId],
+          title: "Payroll payment failed",
+          message: `Your payroll payment could not be completed: ${failureReason}`,
+          link: "/payroll/me/payslips",
+          dedupeKey: `payroll-bank-item-failed:${itemId}`,
+          metadata: { batchId, itemId },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `payroll.payment.failed dispatch failed for batch item ${itemId}: ${String(error)}`,
+        );
+      }
+    }
+
     await refreshBatchPaidStatus(this.db, orgId, batchId);
     await checkRunCompletion(this.completionDeps, orgId, batchId, actorId);
     return { success: true };
   }
 
-  async markBatchPaid(orgId: string, batchId: number, transactionRef: string, actorId: string) {
+  async markBatchPaid(
+    orgId: string,
+    batchId: number,
+    transactionRef: string,
+    actorId: string,
+  ) {
     const batch = await this.db.query.payrollBankBatches.findFirst({
-      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
+      where: and(
+        eq(payrollBankBatches.id, batchId),
+        eq(payrollBankBatches.orgId, orgId),
+      ),
       columns: { id: true, status: true, runId: true },
     });
     if (!batch) throw new NotFoundException("Batch not found");
@@ -236,7 +311,12 @@ export class BatchStatusService {
       await tx
         .update(payrollBankBatches)
         .set({ status: newBatchStatus })
-        .where(and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)));
+        .where(
+          and(
+            eq(payrollBankBatches.id, batchId),
+            eq(payrollBankBatches.orgId, orgId),
+          ),
+        );
     });
 
     this.audit.log({
@@ -252,14 +332,24 @@ export class BatchStatusService {
     return { success: true };
   }
 
-  async importBankReturn(orgId: string, batchId: number, actorId: string, csvText: string) {
+  async importBankReturn(
+    orgId: string,
+    batchId: number,
+    actorId: string,
+    csvText: string,
+  ) {
     const batch = await this.db.query.payrollBankBatches.findFirst({
-      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
+      where: and(
+        eq(payrollBankBatches.id, batchId),
+        eq(payrollBankBatches.orgId, orgId),
+      ),
       columns: { id: true, status: true, runId: true },
     });
     if (!batch) throw new NotFoundException("Batch not found");
     if (batch.status === "GENERATED" || batch.status === "DRAFT") {
-      throw new BadRequestException("Mark the batch as sent before importing bank returns");
+      throw new BadRequestException(
+        "Mark the batch as sent before importing bank returns",
+      );
     }
 
     const parsed = parseBankReturnCsv(csvText);
@@ -271,15 +361,23 @@ export class BatchStatusService {
       });
     }
 
-    const items = requirePayrollReadWithinCap(await this.db
-      .select({
-        id: payrollBankBatchItems.id,
-        userId: payrollBankBatchItems.userId,
-        status: payrollBankBatchItems.status,
-      })
-      .from(payrollBankBatchItems)
-      .where(and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)))
-      .limit(PAYROLL_READ_CAP + 1), "import bank return items");
+    const items = requirePayrollReadWithinCap(
+      await this.db
+        .select({
+          id: payrollBankBatchItems.id,
+          userId: payrollBankBatchItems.userId,
+          status: payrollBankBatchItems.status,
+        })
+        .from(payrollBankBatchItems)
+        .where(
+          and(
+            eq(payrollBankBatchItems.batchId, batchId),
+            eq(payrollBankBatchItems.orgId, orgId),
+          ),
+        )
+        .limit(PAYROLL_READ_CAP + 1),
+      "import bank return items",
+    );
 
     const byId = new Map(items.map((i) => [i.id, i]));
     const byUser = new Map<string, typeof items>();
@@ -299,7 +397,10 @@ export class BatchStatusService {
       let target = line.itemId != null ? byId.get(line.itemId) : undefined;
       if (!target && line.userId) {
         const candidates = byUser.get(line.userId) ?? [];
-        target = candidates.find((c) => c.status !== "PAID" && c.status !== "FAILED") ?? candidates[0];
+        target =
+          candidates.find(
+            (c) => c.status !== "PAID" && c.status !== "FAILED",
+          ) ?? candidates[0];
       }
       if (!target) {
         applyErrors.push({
@@ -315,10 +416,22 @@ export class BatchStatusService {
       }
 
       if (line.status === "PAID") {
-        await this.markItemPaid(orgId, batchId, target.id, line.transactionRef ?? "RETURN", actorId);
+        await this.markItemPaid(
+          orgId,
+          batchId,
+          target.id,
+          line.transactionRef ?? "RETURN",
+          actorId,
+        );
         paid++;
       } else {
-        await this.markItemFailed(orgId, batchId, target.id, line.failureReason ?? "Bank return failed", actorId);
+        await this.markItemFailed(
+          orgId,
+          batchId,
+          target.id,
+          line.failureReason ?? "Bank return failed",
+          actorId,
+        );
         failed++;
       }
     }
@@ -332,7 +445,13 @@ export class BatchStatusService {
       orgId,
       targetId: String(batch.runId),
       targetType: "payroll_run",
-      metadata: { batchId, paid, failed, skipped, errorCount: applyErrors.length },
+      metadata: {
+        batchId,
+        paid,
+        failed,
+        skipped,
+        errorCount: applyErrors.length,
+      },
     });
 
     return {

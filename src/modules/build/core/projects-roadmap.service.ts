@@ -52,13 +52,6 @@ export class ProjectsRoadmapService {
       const match = or(ilike(roadmapItems.title, term), ilike(roadmapItems.description, term));
       if (match) conditions.push(match);
     }
-    if (query.pmWorkspaceId !== undefined) {
-      const sub = this.db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(and(eq(projects.orgId, orgId), eq(projects.pmWorkspaceId, query.pmWorkspaceId)));
-      conditions.push(inArray(roadmapItems.projectId, sub));
-    }
     if (query.managedProductId !== undefined) {
       const sub = this.db
         .select({ id: projects.id })

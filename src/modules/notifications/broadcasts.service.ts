@@ -1,5 +1,22 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, desc, exists, lt, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  eq,
+  and,
+  desc,
+  exists,
+  gt,
+  lt,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   broadcastAudienceTargets,
   broadcasts,
@@ -13,20 +30,31 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { broadcastReadReceipts } from "../../db/schema";
-import type { CreateBroadcastInput, UpdateBroadcastInput, ListBroadcastsInput } from "./dto/broadcast.schemas";
+import type {
+  CreateBroadcastInput,
+  UpdateBroadcastInput,
+  ListBroadcastsInput,
+} from "./dto/broadcast.schemas";
 import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
 } from "../directory/employment-query";
-import { pageBroadcastRecipients, replaceBroadcastAudienceTargets } from "./broadcasts-audience.queries";
+import {
+  pageBroadcastRecipients,
+  replaceBroadcastAudienceTargets,
+} from "./broadcasts-audience.queries";
 import type { InboxSourcePosition } from "./dto/unified-inbox.schemas";
 
 function broadcastOrderTime() {
   return sql`coalesce(${broadcasts.sentAt}, ${broadcasts.createdAt})`;
+}
+
+function broadcastNotExpired() {
+  return or(isNull(broadcasts.expiresAt), gt(broadcasts.expiresAt, new Date()));
 }
 
 function broadcastInboxKeyset(cursor: InboxSourcePosition | null) {
@@ -52,7 +80,7 @@ export class BroadcastsService {
 
   list(orgId: string, filters: ListBroadcastsInput) {
     return this.cache.cachedVersioned(
-      `broadcasts:list:${orgId}`,
+      CACHE_KEYS.broadcastsListNamespace(orgId),
       JSON.stringify(filters),
       () => this.queryBroadcasts(orgId, filters),
       CACHE_TTL.SHORT,
@@ -131,7 +159,12 @@ export class BroadcastsService {
     return created;
   }
 
-  async update(orgId: string, id: number, userId: string, dto: UpdateBroadcastInput) {
+  async update(
+    orgId: string,
+    id: number,
+    userId: string,
+    dto: UpdateBroadcastInput,
+  ) {
     const existing = await this.findOne(orgId, id);
     if (existing.status !== "DRAFT") {
       throw new BadRequestException("Only DRAFT broadcasts can be updated");
@@ -146,12 +179,18 @@ export class BroadcastsService {
           ...(dto.priority !== undefined && { priority: dto.priority }),
           ...(dto.category !== undefined && { category: dto.category }),
           ...(dto.channels !== undefined && { channels: dto.channels }),
-          ...(dto.audience !== undefined && { audience: dto.audience, audienceType: dto.audience.type }),
-          ...(dto.scheduledAt !== undefined && { scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null }),
+          ...(dto.audience !== undefined && {
+            audience: dto.audience,
+            audienceType: dto.audience.type,
+          }),
+          ...(dto.scheduledAt !== undefined && {
+            scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+          }),
         })
         .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
         .returning();
-      if (dto.audience !== undefined) await replaceBroadcastAudienceTargets(tx, orgId, id, dto.audience);
+      if (dto.audience !== undefined)
+        await replaceBroadcastAudienceTargets(tx, orgId, id, dto.audience);
       return row;
     });
     await this.invalidateCache(orgId);
@@ -177,21 +216,12 @@ export class BroadcastsService {
     return updated;
   }
 
-  /**
-   * C21-02. Fan-out-on-READ for IN_APP. Publish writes exactly one broadcast row
-   * (the status update) rather than one notification row per recipient. Unread state
-   * is the absence of a receipt in broadcast_read_receipts — queried lazily per user
-   * at the /inbox endpoint.
-   *
-   * Non-IN_APP channels (EMAIL, PUSH, SMS) go through the dispatch pipeline so
-   * preferences, quiet hours and provider delivery all apply. The pipeline writes to
-   * the outbox inside the current tenant transaction and drains after commit, so the
-   * HTTP request returns immediately regardless of audience size.
-   */
   async publish(orgId: string, userId: string, id: number) {
     const broadcast = await this.findOne(orgId, id);
     if (!["DRAFT", "SCHEDULED"].includes(broadcast.status)) {
-      throw new BadRequestException("Only DRAFT or SCHEDULED broadcasts can be published");
+      throw new BadRequestException(
+        "Only DRAFT or SCHEDULED broadcasts can be published",
+      );
     }
 
     if (broadcast.scheduledAt && new Date(broadcast.scheduledAt) > new Date()) {
@@ -207,7 +237,12 @@ export class BroadcastsService {
     const nonInAppChannels = broadcast.channels.filter((c) => c !== "IN_APP");
     let totalRecipients = 0;
 
-    for await (const page of pageBroadcastRecipients(this.db, orgId, broadcast.id, broadcast.audienceType)) {
+    for await (const page of pageBroadcastRecipients(
+      this.db,
+      orgId,
+      broadcast.id,
+      broadcast.audienceType,
+    )) {
       totalRecipients += page.length;
       if (nonInAppChannels.length > 0) {
         await this.dispatchService.emit({
@@ -242,19 +277,24 @@ export class BroadcastsService {
     return sent;
   }
 
-  /**
-   * C21-02. Records a user's dismissal of a broadcast. The unique index on
-   * (org_id, broadcast_id, membership_id) makes this idempotent: repeating the call
-   * produces exactly one receipt row.
-   */
-  async dismiss(orgId: string, userId: string, broadcastId: number, membershipId?: number | null) {
+  async dismiss(
+    orgId: string,
+    userId: string,
+    broadcastId: number,
+    membershipId?: number | null,
+  ) {
     await this.findOne(orgId, broadcastId);
-    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    if (membershipId == null)
+      throw new ForbiddenException("Organization membership required");
     await this.db
       .insert(broadcastReadReceipts)
       .values({ orgId, broadcastId, membershipId })
       .onConflictDoNothing({
-        target: [broadcastReadReceipts.orgId, broadcastReadReceipts.broadcastId, broadcastReadReceipts.membershipId],
+        target: [
+          broadcastReadReceipts.orgId,
+          broadcastReadReceipts.broadcastId,
+          broadcastReadReceipts.membershipId,
+        ],
       });
     return { success: true };
   }
@@ -276,7 +316,10 @@ export class BroadcastsService {
           organizationMembers,
           and(
             eq(organizationMembers.orgId, roleAssignments.orgId),
-            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+            eq(
+              organizationMembers.id,
+              roleAssignments.organizationMembershipId,
+            ),
             eq(organizationMembers.userId, userId),
           ),
         )
@@ -288,7 +331,10 @@ export class BroadcastsService {
     const userRoleIdStrs = roleRows.map((r) => String(r.roleId));
 
     const audienceKindConditions = [
-      and(eq(broadcastAudienceTargets.kind, "USER"), eq(broadcastAudienceTargets.targetId, userId)),
+      and(
+        eq(broadcastAudienceTargets.kind, "USER"),
+        eq(broadcastAudienceTargets.targetId, userId),
+      ),
       userRoleIdStrs.length > 0
         ? and(
             eq(broadcastAudienceTargets.kind, "ROLE"),
@@ -314,24 +360,24 @@ export class BroadcastsService {
         ),
       );
 
-    return or(eq(broadcasts.audienceType, "all"), exists(matchingTarget)) ?? sql`false`;
+    return (
+      or(eq(broadcasts.audienceType, "all"), exists(matchingTarget)) ??
+      sql`false`
+    );
   }
 
-  /**
-   * C21-02. Per-user inbox: SENT broadcasts this user is in the audience for and
-   * has not yet dismissed. Unread state is the absence of a receipt row — no per-user
-   * rows are written at publish time.
-   *
-   * The audience check runs a subquery against broadcast_audience_targets, filtering
-   * by the three possible kinds (USER / ROLE / DEPARTMENT). audienceType='all'
-   * bypasses the subquery and matches every org member.
-   */
   private receiptPredicate(membershipId: number | null | undefined) {
-    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    if (membershipId == null)
+      throw new ForbiddenException("Organization membership required");
     return eq(broadcastReadReceipts.membershipId, membershipId);
   }
 
-  async listInbox(orgId: string, userId: string, limit: number, membershipId?: number | null) {
+  async listInbox(
+    orgId: string,
+    userId: string,
+    limit: number,
+    membershipId?: number | null,
+  ) {
     const clampedLimit = Math.min(limit, 100);
     const audienceFilter = await this.resolveAudienceFilter(orgId, userId);
 
@@ -364,6 +410,7 @@ export class BroadcastsService {
           eq(broadcasts.status, "SENT"),
           isNull(broadcastReadReceipts.id),
           audienceFilter,
+          broadcastNotExpired(),
         ),
       )
       .orderBy(desc(broadcasts.sentAt))
@@ -407,6 +454,7 @@ export class BroadcastsService {
           eq(broadcasts.status, "SENT"),
           isNull(broadcastReadReceipts.id),
           audienceFilter,
+          broadcastNotExpired(),
           broadcastInboxKeyset(cursor),
         ),
       )
@@ -416,10 +464,6 @@ export class BroadcastsService {
     return rows;
   }
 
-  /**
-   * C21-02. How many org members have dismissed (seen) this broadcast. The count is
-   * the number of receipt rows — O(1) with the (org_id, broadcast_id) index.
-   */
   async viewerCount(orgId: string, broadcastId: number) {
     await this.findOne(orgId, broadcastId);
     const [result] = await this.db
@@ -437,7 +481,9 @@ export class BroadcastsService {
   async cancel(orgId: string, id: number, userId: string) {
     const broadcast = await this.findOne(orgId, id);
     if (!["DRAFT", "SCHEDULED"].includes(broadcast.status)) {
-      throw new BadRequestException("Only DRAFT or SCHEDULED broadcasts can be cancelled");
+      throw new BadRequestException(
+        "Only DRAFT or SCHEDULED broadcasts can be cancelled",
+      );
     }
     const [cancelled] = await this.db
       .update(broadcasts)
@@ -481,6 +527,12 @@ export class BroadcastsService {
   }
 
   private async invalidateCache(orgId: string) {
-    await this.cache.invalidateNamespace(`broadcasts:list:${orgId}`);
+    await this.cache.invalidateNamespace(
+      CACHE_KEYS.broadcastsListNamespace(orgId),
+    );
+    await this.cache.invalidateForOrg(
+      orgId,
+      CACHE_KEYS.announcementsList(orgId),
+    );
   }
 }

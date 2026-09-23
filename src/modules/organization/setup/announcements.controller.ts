@@ -13,6 +13,7 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Universal } from "../../../common/auth/universal.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AnnouncementsService } from "./announcements.service";
@@ -114,7 +115,7 @@ export class AnnouncementsController {
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
   ) {
-    await this.service.markRead(u.orgId, id, u.userId);
+    await this.service.markRead(u.orgId, id, actingMembershipId(u.principal));
     return { success: true as const };
   }
 }

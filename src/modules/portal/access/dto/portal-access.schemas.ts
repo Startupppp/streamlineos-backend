@@ -51,7 +51,6 @@ export const listGrantsQuerySchema = z.object({
 export const createGrantSchema = z.object({
   portalMembershipId: z.string().min(1),
   projectId: z.number().int().positive(),
-  pmWorkspaceId: z.string().optional(),
   canViewMilestones: z.boolean().optional(),
   canViewTasks: z.boolean().optional(),
   canViewAttachments: z.boolean().optional(),

@@ -5,19 +5,6 @@ function goalsInProjectsMatching(condition: SQL | undefined): SQL {
   return sql`${okrGoals.projectId} IN (SELECT ${projects.id} FROM ${projects} WHERE ${condition})`;
 }
 
-export function goalsInPmWorkspaceCondition(
-  orgId: string,
-  pmWorkspaceId: string,
-): SQL {
-  return goalsInProjectsMatching(
-    and(
-      eq(projects.orgId, orgId),
-      eq(projects.pmWorkspaceId, pmWorkspaceId),
-      isNull(projects.deletedAt),
-    ),
-  );
-}
-
 export function goalsInManagedProductCondition(
   orgId: string,
   managedProductId: number,

@@ -47,6 +47,21 @@ export function lastDeliveredPosition(
   return null;
 }
 
+export function lastDeliveredAdapterPositions(
+  page: UnifiedInboxItem[],
+  current: Record<string, InboxSourcePosition>,
+  adapterByDedupKey: ReadonlyMap<string, string>,
+): Record<string, InboxSourcePosition> {
+  const next: Record<string, InboxSourcePosition> = { ...current };
+  for (const item of page) {
+    if (item.kind !== "build_approval") continue;
+    const adapterKey = adapterByDedupKey.get(item.dedupKey);
+    if (adapterKey === undefined) continue;
+    next[adapterKey] = { id: item.id, t: item.timestamp };
+  }
+  return next;
+}
+
 export function deduplicate(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
   const seen = new Set<string>();
   const out: UnifiedInboxItem[] = [];

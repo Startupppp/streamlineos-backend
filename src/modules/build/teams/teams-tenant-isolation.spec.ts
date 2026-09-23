@@ -2,7 +2,6 @@ import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
-import type { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { TeamsService } from "./teams.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -28,10 +27,6 @@ describe("TeamsService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
 
   const audit = { log: jest.fn() } as never;
-  const pmWorkspaces = {
-    resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(1),
-    resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue(1),
-  } as never;
 
   function makeSelectDb(firstCallRows: unknown[], subsequentRows: unknown[] = []) {
     const limit = jest.fn()
@@ -47,14 +42,14 @@ describe("TeamsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for getTeam on a different org (cross-tenant isolation)", async () => {
     const { db } = makeSelectDb([]);
-    const svc = new TeamsService(db, audit, pmWorkspaces);
+    const svc = new TeamsService(db, audit);
     await expect(svc.getTeam(ATTACKER_ORG, 99)).rejects.toThrow(NotFoundException);
   });
 
   it("returns team for the owning org (same-tenant control)", async () => {
     const team = { id: 10, orgId: OWNER_ORG, name: "Eng" };
     const { db } = makeSelectDb([team], []);
-    const svc = new TeamsService(db, audit, pmWorkspaces);
+    const svc = new TeamsService(db, audit);
     const result = await svc.getTeam(OWNER_ORG, 10);
     expect(result).toMatchObject({ id: 10 });
   });
@@ -78,11 +73,7 @@ describe("TeamsService.listTeams — memberCount subquery orgId scope", () => {
       }),
     } as unknown as Db;
 
-    const pmWorkspaces = {
-      assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
-    } as unknown as PmWorkspacesService;
-
-    const svc = new TeamsService(db, {} as AuditService, pmWorkspaces);
+    const svc = new TeamsService(db, {} as AuditService);
     await svc.listTeams("org-1", { pageSize: 20 }, null);
 
     expect(capturedProjection).toBeDefined();

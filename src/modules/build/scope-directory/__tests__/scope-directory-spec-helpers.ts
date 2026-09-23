@@ -76,14 +76,11 @@ export function makeSvc(db: Db, access: AccessService = makeAccess()) {
   return new ScopeDirectoryService(db, access);
 }
 
-export const WS_ROW = { pmWorkspaceId: "ws-1", name: "Delivery", status: "active" };
-
 export const PROD_ROW = {
   id: 10,
   name: "Atlas",
   key: "ATL",
   status: "active",
-  pmWorkspaceId: "ws-1",
 };
 
 export const PROJ_ROW = {
@@ -92,6 +89,5 @@ export const PROJ_ROW = {
   key: "LAU",
   status: "ACTIVE",
   managedProductId: 10,
-  pmWorkspaceId: "ws-1",
   clientMembershipId: null,
 };

@@ -23,7 +23,6 @@ import {
 import { organizations, users, organizationMembers } from "../common/auth";
 import { deals } from "../crm/deals";
 import { managedProducts } from "./managed-products";
-import { pmWorkspaces } from "./pm-workspaces";
 
 export const projects = build.table(
   "projects",
@@ -43,7 +42,6 @@ export const projects = build.table(
     priority: text("priority"),
     dealId: integer("deal_id"),
     managedProductId: integer("managed_product_id"),
-    pmWorkspaceId: text("pm_workspace_id"),
     budget: decimal("budget", { precision: 15, scale: 2 }),
     budgetMinor: bigint("budget_minor", { mode: "number" }),
     budgetCurrency: text("budget_currency"),
@@ -77,11 +75,6 @@ export const projects = build.table(
     index("idx_projects_managed_product").on(table.managedProductId),
     index("idx_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
     unique("uniq_projects_org_id").on(table.orgId, table.id),
-    foreignKey({
-      columns: [table.orgId, table.pmWorkspaceId],
-      foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
-      name: "fk_projects_org_pm_workspace",
-    }),
     foreignKey({
       name: "fk_projects_manager_actor",
       columns: [table.orgId, table.managerMembershipId],

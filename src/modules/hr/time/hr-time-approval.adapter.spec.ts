@@ -6,16 +6,24 @@ function makeLeaveRow(overrides: Partial<{
   startDate: string;
   endDate: string;
   createdAt: Date;
-  user: { id: string; name: string | null; firstName: string | null; lastName: string | null; image: string | null } | null;
-  leaveType: { id: number; name: string } | null;
+  leaveTypeName: string | null;
+  userId: string | null;
+  userName: string | null;
+  userFirstName: string | null;
+  userLastName: string | null;
+  userImage: string | null;
 }> = {}) {
   return {
     id: 1,
     startDate: "2026-10-01",
     endDate: "2026-10-03",
     createdAt: new Date("2026-09-20T00:00:00Z"),
-    user: { id: "user-1", name: "Alice Smith", firstName: "Alice", lastName: "Smith", image: null },
-    leaveType: { id: 2, name: "Casual Leave" },
+    leaveTypeName: "Casual Leave",
+    userId: "user-1",
+    userName: "Alice Smith",
+    userFirstName: "Alice",
+    userLastName: "Smith",
+    userImage: null,
     ...overrides,
   };
 }
@@ -46,11 +54,11 @@ function makeWfhRow(overrides: Partial<{
 }
 
 function makeLeaves(rows: ReturnType<typeof makeLeaveRow>[] = [makeLeaveRow()]) {
-  return { pendingRoutedTo: jest.fn().mockResolvedValue(rows) } as unknown as import("./leaves.service").LeavesService;
+  return { pendingRoutedToPage: jest.fn().mockResolvedValue(rows) } as unknown as import("./leaves.service").LeavesService;
 }
 
 function makeWfh(rows: ReturnType<typeof makeWfhRow>[] = [makeWfhRow()]) {
-  return { pendingRoutedTo: jest.fn().mockResolvedValue(rows) } as unknown as import("./wfh.service").WfhService;
+  return { pendingRoutedToPage: jest.fn().mockResolvedValue(rows) } as unknown as import("./wfh.service").WfhService;
 }
 
 function makeRegistry() {
@@ -75,12 +83,13 @@ describe("HrTimeApprovalAdapter — onModuleInit", () => {
     expect(wfh?.permission).toBe("hr:attendance:manage");
   });
 
-  it("both adapters have supportsAfterCursor = false", () => {
+  it("both adapters have supportsAfterCursor = true so the merge keeps paging them past page 1", () => {
     const registry = makeRegistry();
     const adapter = new HrTimeApprovalAdapter(makeLeaves(), makeWfh(), registry);
     adapter.onModuleInit();
+    expect(registry.list()).toHaveLength(2);
     for (const a of registry.list()) {
-      expect(a.supportsAfterCursor).toBe(false);
+      expect(a.supportsAfterCursor).toBe(true);
     }
   });
 
@@ -102,7 +111,7 @@ describe("HrTimeApprovalAdapter — leave fetch", () => {
     const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
     const result = await leaveAdapter.fetch("org-1", "user-1", null, 10, null);
     expect(result).toHaveLength(0);
-    expect(leaves.pendingRoutedTo).not.toHaveBeenCalled();
+    expect(leaves.pendingRoutedToPage).not.toHaveBeenCalled();
   });
 
   it("maps leave row to BuildApprovalInboxItem with collision-free dedupKey", async () => {
@@ -128,7 +137,7 @@ describe("HrTimeApprovalAdapter — leave fetch", () => {
   });
 
   it("falls back to 'Leave' in subject when leaveType is null", async () => {
-    const leaves = makeLeaves([makeLeaveRow({ leaveType: null })]);
+    const leaves = makeLeaves([makeLeaveRow({ leaveTypeName: null })]);
     const registry = makeRegistry();
     const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
     adapter.onModuleInit();
@@ -137,14 +146,25 @@ describe("HrTimeApprovalAdapter — leave fetch", () => {
     expect(item?.subject).toMatch(/^Leave ·/);
   });
 
-  it("passes orgId and membershipId to pendingRoutedTo (tenant isolation)", async () => {
+  it("passes orgId and membershipId to pendingRoutedToPage (tenant isolation)", async () => {
     const leaves = makeLeaves();
     const registry = makeRegistry();
     const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
     adapter.onModuleInit();
     const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
     await leaveAdapter.fetch("org-99", "user-1", 42, 25, null);
-    expect(leaves.pendingRoutedTo).toHaveBeenCalledWith("org-99", 42, 25);
+    expect(leaves.pendingRoutedToPage).toHaveBeenCalledWith("org-99", 42, 25, null);
+  });
+
+  it("hands the leave cursor through to pendingRoutedToPage unchanged", async () => {
+    const leaves = makeLeaves();
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
+    adapter.onModuleInit();
+    const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
+    const cursor = { id: 7, t: "2026-09-20T00:00:00.000Z" };
+    await leaveAdapter.fetch("org-99", "user-1", 42, 25, cursor);
+    expect(leaves.pendingRoutedToPage).toHaveBeenCalledWith("org-99", 42, 25, cursor);
   });
 });
 
@@ -157,7 +177,7 @@ describe("HrTimeApprovalAdapter — wfh fetch", () => {
     const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
     const result = await wfhAdapter.fetch("org-1", "user-1", null, 10, null);
     expect(result).toHaveLength(0);
-    expect(wfh.pendingRoutedTo).not.toHaveBeenCalled();
+    expect(wfh.pendingRoutedToPage).not.toHaveBeenCalled();
   });
 
   it("maps wfh row to BuildApprovalInboxItem with collision-free dedupKey", async () => {
@@ -183,13 +203,24 @@ describe("HrTimeApprovalAdapter — wfh fetch", () => {
     expect(l?.dedupKey).not.toBe(w?.dedupKey);
   });
 
-  it("passes orgId and membershipId to pendingRoutedTo (tenant isolation)", async () => {
+  it("passes orgId and membershipId to pendingRoutedToPage (tenant isolation)", async () => {
     const wfh = makeWfh();
     const registry = makeRegistry();
     const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
     adapter.onModuleInit();
     const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
     await wfhAdapter.fetch("org-77", "user-1", 12, 25, null);
-    expect(wfh.pendingRoutedTo).toHaveBeenCalledWith("org-77", 12, 25);
+    expect(wfh.pendingRoutedToPage).toHaveBeenCalledWith("org-77", 12, 25, null);
+  });
+
+  it("hands the wfh cursor through to pendingRoutedToPage unchanged", async () => {
+    const wfh = makeWfh();
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
+    adapter.onModuleInit();
+    const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
+    const cursor = { id: 55, t: "2026-09-21T00:00:00.000Z" };
+    await wfhAdapter.fetch("org-77", "user-1", 12, 25, cursor);
+    expect(wfh.pendingRoutedToPage).toHaveBeenCalledWith("org-77", 12, 25, cursor);
   });
 });

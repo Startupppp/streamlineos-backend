@@ -38,7 +38,7 @@ describe("BatchStatusService — cross-tenant isolation", () => {
     } as unknown as Db;
     const audit = { log: jest.fn() } as never;
     const payrollPosting = {} as never;
-    const svc = new BatchStatusService(db, audit, payrollPosting);
+    const svc = new BatchStatusService(db, audit, { emit: jest.fn() } as never, payrollPosting);
     await expect(svc.markSent(ATTACKER, 1, "actor-1")).rejects.toThrow(NotFoundException);
     expect(findFirst).toHaveBeenCalled();
     const vals = sqlValues(findFirst.mock.calls[0]?.[0]?.where);
@@ -55,7 +55,7 @@ describe("BatchStatusService — cross-tenant isolation", () => {
     } as unknown as Db;
     const audit = { log: jest.fn() } as never;
     const payrollPosting = {} as never;
-    const svc = new BatchStatusService(db, audit, payrollPosting);
+    const svc = new BatchStatusService(db, audit, { emit: jest.fn() } as never, payrollPosting);
     const result = await svc.markSent(OWNER, 1, "actor-1");
     expect(result.success).toBe(true);
     const vals = sqlValues(findFirst.mock.calls[0]?.[0]?.where);

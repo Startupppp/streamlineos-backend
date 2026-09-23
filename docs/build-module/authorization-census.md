@@ -2,7 +2,7 @@
 
 GENERATED FILE. Do not hand-edit. Regenerate with `pnpm check:build-authz-census`; the generator is `scripts/build-authorization-census.mjs`.
 
-Scope: every `*.controller.ts` under `src/modules/build/`. 48 controller files, 322 HTTP handlers.
+Scope: every `*.controller.ts` under `src/modules/build/`. 47 controller files, 313 HTTP handlers.
 
 ## Counts
 
@@ -10,10 +10,10 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 48 controller files, 
 | --- | --- |
 | VULNERABLE | 0 |
 | CLOSED-IN-FLIGHT | 0 |
-| NEEDS-REVIEW | 113 |
+| NEEDS-REVIEW | 112 |
 | CLOSED | 34 |
-| VERIFIED | 175 |
-| **total** | **322** |
+| VERIFIED | 167 |
+| **total** | **313** |
 
 ## How to read a verdict
 
@@ -636,6 +636,7 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | PATCH | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:93` | `updateIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:106` | `deleteIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/:projectId/incidents/:incidentId/updates` | `src/modules/build/incidents/incidents.controller.ts:119` | `addUpdate` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| NEEDS-REVIEW | POST | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:65` | `createManagedProduct` | @RequirePermission("build:managed-products:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/:projectId/meetings/:meetingId/action-items` | `src/modules/build/meetings/action-items.controller.ts:39` | `createItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/meetings/:meetingId/action-items/:itemId` | `src/modules/build/meetings/action-items.controller.ts:53` | `updateItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId, itemId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/meetings/:meetingId/action-items/:itemId` | `src/modules/build/meetings/action-items.controller.ts:67` | `deleteItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId, itemId] | NO (mutating) |
@@ -646,9 +647,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | POST | `/build/:projectId/meetings/:meetingId/attendees` | `src/modules/build/meetings/meetings.controller.ts:118` | `addAttendee` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/meetings/:meetingId/attendees/:attendeeUserId` | `src/modules/build/meetings/meetings.controller.ts:132` | `removeAttendee` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId, attendeeUserId] | NO (mutating) |
 | NEEDS-REVIEW | PUT | `/build/:projectId/meetings/:meetingId/standup` | `src/modules/build/meetings/meetings.controller.ts:146` | `upsertStandup` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId] | NO (mutating) |
-| NEEDS-REVIEW | POST | `/build/workspaces` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:81` | `createWorkspace` | @RequirePermission("build:workspaces:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
-| NEEDS-REVIEW | PATCH | `/build/workspaces/:pmWorkspaceId/members/:pmWorkspaceMembershipId` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:142` | `updateMemberRole` | @RequirePermission("build:workspaces:members:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [pmWorkspaceId, pmWorkspaceMembershipId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/workspaces/:pmWorkspaceId/members/:pmWorkspaceMembershipId` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:162` | `removeMember` | @RequirePermission("build:workspaces:members:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [pmWorkspaceId, pmWorkspaceMembershipId] | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/portfolios` | `src/modules/build/portfolios/portfolios.controller.ts:72` | `createPortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/portfolios/:portfolioId/projects/:projectId` | `src/modules/build/portfolios/portfolios.controller.ts:121` | `unlinkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [portfolioId, projectId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/programs/:programId/projects/:projectId` | `src/modules/build/portfolios/programs.controller.ts:121` | `unlinkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [programId, projectId] | NO (mutating) |
@@ -666,6 +664,7 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | POST | `/build/:projectId/test-runs/:runId/results/:resultId/bug` | `src/modules/build/qa/test-runs.controller.ts:160` | `createBugFromResult` | @RequirePermission("build:bugs:create") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, runId, resultId] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/test-suites/:suiteId` | `src/modules/build/qa/test-suites.controller.ts:67` | `updateSuite` | @RequirePermission("build:qa:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, suiteId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/test-suites/:suiteId` | `src/modules/build/qa/test-suites.controller.ts:80` | `deleteSuite` | @RequirePermission("build:qa:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, suiteId] | NO (mutating) |
+| NEEDS-REVIEW | POST | `/build/teams` | `src/modules/build/teams/teams.controller.ts:90` | `createTeam` | @RequirePermission("build:teams:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/teams/:teamId/members/:memberUserId` | `src/modules/build/teams/teams.controller.ts:151` | `updateMemberRole` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [teamId, memberUserId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/teams/:teamId/members/:memberId` | `src/modules/build/teams/teams.controller.ts:170` | `removeMember` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [teamId, memberId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/teams/:teamId/projects/:projectId` | `src/modules/build/teams/teams.controller.ts:207` | `removeProject` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [teamId, projectId] | NO (mutating) |
@@ -730,6 +729,9 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | DELETE | `/build/comment-drafts/mine` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:107` | `deleteAll` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | NO (mutating) |
 | VERIFIED | DELETE | `/build/comment-drafts/tickets/:ticketId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:115` | `deleteByTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [ticketId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/comment-drafts/:draftId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:127` | `deleteOne` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [draftId] | NO (mutating) |
+| VERIFIED | GET | `/build/members` | `src/modules/build/core/build-members.controller.ts:41` | `list` | @RequirePermission("build:members:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | POST | `/build/members` | `src/modules/build/core/build-members.controller.ts:52` | `add` | @RequirePermission("build:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | DELETE | `/build/members/:userId` | `src/modules/build/core/build-members.controller.ts:64` | `remove` | @RequirePermission("build:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [userId] | NO (mutating) |
 | VERIFIED | GET | `/build/org-custom-states` | `src/modules/build/core/project-resources.controller.ts:62` | `listOrgCustomStates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | GET | `/build/:projectId/members` | `src/modules/build/core/project-resources.controller.ts:71` | `listMembers` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/roster` | `src/modules/build/core/project-resources.controller.ts:82` | `getRoster` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
@@ -787,9 +789,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | POST | `/build/:projectId/tickets/bulk` | `src/modules/build/core/projects-tickets.controller.ts:159` | `bulkUpdate` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
 | VERIFIED | GET | `/build/:projectId/webhooks` | `src/modules/build/core/projects-webhooks.controller.ts:34` | `listWebhooks` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/webhooks` | `src/modules/build/core/projects-webhooks.controller.ts:45` | `createWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | GET | `/build/members` | `src/modules/build/core/projects-workspace-members.controller.ts:41` | `list` | @RequirePermission("build:members:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | POST | `/build/members` | `src/modules/build/core/projects-workspace-members.controller.ts:52` | `add` | @RequirePermission("build:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | DELETE | `/build/members/:userId` | `src/modules/build/core/projects-workspace-members.controller.ts:64` | `remove` | @RequirePermission("build:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [userId] | NO (mutating) |
 | VERIFIED | GET | `/build` | `src/modules/build/core/projects.controller.ts:57` | `listProjects` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | POST | `/build` | `src/modules/build/core/projects.controller.ts:68` | `createProject` | @RequirePermission("build:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | yes |
 | VERIFIED | POST | `/build/from-deal` | `src/modules/build/core/projects.controller.ts:81` | `createFromDeal` | @RequirePermission("build:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | yes |
@@ -838,18 +837,11 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | POST | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:80` | `createIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
 | VERIFIED | GET | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:43` | `listManagedProducts` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:54` | `getManagedProduct` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | n/a |
-| VERIFIED | POST | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:65` | `createManagedProduct` | @RequirePermission("build:managed-products:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
 | VERIFIED | PATCH | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:77` | `updateManagedProduct` | @RequirePermission("build:managed-products:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | NO (mutating) |
 | VERIFIED | GET | `/build/managed-products/:managedProductId/insights` | `src/modules/build/managed-products/managed-products.controller.ts:89` | `getProductInsights` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | n/a |
 | VERIFIED | DELETE | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:100` | `deleteManagedProduct` | @RequirePermission("build:managed-products:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/meetings` | `src/modules/build/meetings/meetings.controller.ts:55` | `listMeetings` | @RequirePermission("build:meetings:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/meetings` | `src/modules/build/meetings/meetings.controller.ts:79` | `createMeeting` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/workspaces` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:59` | `listWorkspaces` | @RequirePermission("build:workspaces:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/workspaces/:pmWorkspaceId` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:70` | `getWorkspace` | @RequirePermission("build:workspaces:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [pmWorkspaceId] | n/a |
-| VERIFIED | PATCH | `/build/workspaces/:pmWorkspaceId` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:93` | `updateWorkspace` | @RequirePermission("build:workspaces:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [pmWorkspaceId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/workspaces/:pmWorkspaceId` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:105` | `deleteWorkspace` | @RequirePermission("build:workspaces:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [pmWorkspaceId] | NO (mutating) |
-| VERIFIED | GET | `/build/workspaces/:pmWorkspaceId/members` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:117` | `listMembers` | @RequirePermission("build:workspaces:members:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [pmWorkspaceId] | n/a |
-| VERIFIED | POST | `/build/workspaces/:pmWorkspaceId/members` | `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:129` | `addMember` | @RequirePermission("build:workspaces:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [pmWorkspaceId] | NO (mutating) |
 | VERIFIED | GET | `/build/portfolios` | `src/modules/build/portfolios/portfolios.controller.ts:50` | `listPortfolios` | @RequirePermission("build:portfolios:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:61` | `getPortfolio` | @RequirePermission("build:portfolios:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | n/a |
 | VERIFIED | PATCH | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:84` | `updatePortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | NO (mutating) |
@@ -873,7 +865,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | GET | `/build/scope-directory/search` | `src/modules/build/scope-directory/scope-directory.controller.ts:45` | `search` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/teams` | `src/modules/build/teams/teams.controller.ts:68` | `listTeams` | @RequirePermission("build:teams:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/teams/:teamId` | `src/modules/build/teams/teams.controller.ts:79` | `getTeam` | @RequirePermission("build:teams:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [teamId] | n/a |
-| VERIFIED | POST | `/build/teams` | `src/modules/build/teams/teams.controller.ts:90` | `createTeam` | @RequirePermission("build:teams:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
 | VERIFIED | PATCH | `/build/teams/:teamId` | `src/modules/build/teams/teams.controller.ts:102` | `updateTeam` | @RequirePermission("build:teams:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [teamId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/teams/:teamId` | `src/modules/build/teams/teams.controller.ts:114` | `deleteTeam` | @RequirePermission("build:teams:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [teamId] | NO (mutating) |
 | VERIFIED | GET | `/build/teams/:teamId/members` | `src/modules/build/teams/teams.controller.ts:126` | `listTeamMembers` | @RequirePermission("build:teams:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [teamId] | n/a |
@@ -961,6 +952,7 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 - `PATCH /build/:projectId/incidents/:incidentId` — `src/modules/build/incidents/incidents.controller.ts:93` (`updateIncident`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/:projectId/incidents/:incidentId` — `src/modules/build/incidents/incidents.controller.ts:106` (`deleteIncident`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/:projectId/incidents/:incidentId/updates` — `src/modules/build/incidents/incidents.controller.ts:119` (`addUpdate`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `POST /build/managed-products` — `src/modules/build/managed-products/managed-products.controller.ts:65` (`createManagedProduct`): org scoping: PASSED-UNBOUND
 - `POST /build/:projectId/meetings/:meetingId/action-items` — `src/modules/build/meetings/action-items.controller.ts:39` (`createItem`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `PATCH /build/:projectId/meetings/:meetingId/action-items/:itemId` — `src/modules/build/meetings/action-items.controller.ts:53` (`updateItem`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/:projectId/meetings/:meetingId/action-items/:itemId` — `src/modules/build/meetings/action-items.controller.ts:67` (`deleteItem`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
@@ -971,9 +963,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 - `POST /build/:projectId/meetings/:meetingId/attendees` — `src/modules/build/meetings/meetings.controller.ts:118` (`addAttendee`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/:projectId/meetings/:meetingId/attendees/:attendeeUserId` — `src/modules/build/meetings/meetings.controller.ts:132` (`removeAttendee`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `PUT /build/:projectId/meetings/:meetingId/standup` — `src/modules/build/meetings/meetings.controller.ts:146` (`upsertStandup`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `POST /build/workspaces` — `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:81` (`createWorkspace`): org scoping: PASSED-UNBOUND
-- `PATCH /build/workspaces/:pmWorkspaceId/members/:pmWorkspaceMembershipId` — `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:142` (`updateMemberRole`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/workspaces/:pmWorkspaceId/members/:pmWorkspaceMembershipId` — `src/modules/build/pm-workspaces/pm-workspaces.controller.ts:162` (`removeMember`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/portfolios` — `src/modules/build/portfolios/portfolios.controller.ts:72` (`createPortfolio`): org scoping: PASSED-UNBOUND
 - `DELETE /build/portfolios/:portfolioId/projects/:projectId` — `src/modules/build/portfolios/portfolios.controller.ts:121` (`unlinkProject`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/programs/:programId/projects/:projectId` — `src/modules/build/portfolios/programs.controller.ts:121` (`unlinkProject`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
@@ -991,6 +980,7 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 - `POST /build/:projectId/test-runs/:runId/results/:resultId/bug` — `src/modules/build/qa/test-runs.controller.ts:160` (`createBugFromResult`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `PATCH /build/:projectId/test-suites/:suiteId` — `src/modules/build/qa/test-suites.controller.ts:67` (`updateSuite`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/:projectId/test-suites/:suiteId` — `src/modules/build/qa/test-suites.controller.ts:80` (`deleteSuite`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `POST /build/teams` — `src/modules/build/teams/teams.controller.ts:90` (`createTeam`): org scoping: PASSED-UNBOUND
 - `PATCH /build/teams/:teamId/members/:memberUserId` — `src/modules/build/teams/teams.controller.ts:151` (`updateMemberRole`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/teams/:teamId/members/:memberId` — `src/modules/build/teams/teams.controller.ts:170` (`removeMember`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/teams/:teamId/projects/:projectId` — `src/modules/build/teams/teams.controller.ts:207` (`removeProject`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
@@ -1007,7 +997,7 @@ A note is recorded because the census must record it, but does not on its own ma
 
 | note | handlers |
 | --- | --- |
-| mutating verb without @Idempotent | 192 |
+| mutating verb without @Idempotent | 186 |
 | route params unvalidated (@Validate has no params key) | 23 |
 | route params unvalidated (no @Validate) | 2 |
 

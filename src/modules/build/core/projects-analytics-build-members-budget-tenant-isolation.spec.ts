@@ -2,10 +2,9 @@ import type { Db } from "../../../db/drizzle.module";
 import { NotFoundException } from "@nestjs/common";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
+import { BuildMembersService } from "./build-members.service";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import type { AuditService } from "../../../common/audit/audit.service";
-import type { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -194,7 +193,7 @@ describe("ProjectsAnalyticsService — resourceAllocation counts each open ticke
   });
 });
 
-describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
+describe("BuildMembersService — cross-tenant isolation", () => {
   it("list scopes WHERE to requesting org and returns empty for attacker (cross-tenant isolation)", async () => {
     const where = jest.fn().mockReturnValue({
       orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
@@ -205,8 +204,7 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;
-    const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(undefined) } as unknown as PmWorkspacesService;
-    const svc = new ProjectsWorkspaceMembersService(db, audit, pmWorkspaces);
+    const svc = new BuildMembersService(db, audit);
 
     const result = await svc.list(ATTACKER_ORG, { cursor: undefined, limit: 10 });
 
@@ -230,8 +228,7 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;
-    const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(undefined) } as unknown as PmWorkspacesService;
-    const svc = new ProjectsWorkspaceMembersService(db, audit, pmWorkspaces);
+    const svc = new BuildMembersService(db, audit);
 
     const result = await svc.list(OWNER_ORG, { cursor: undefined, limit: 10 });
     expect(result.data).toHaveLength(1);

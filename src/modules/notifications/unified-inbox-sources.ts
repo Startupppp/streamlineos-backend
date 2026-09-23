@@ -113,6 +113,21 @@ function triageConditions(
   return [isNull(notifications.archivedAt), notificationNotSnoozed(now)];
 }
 
+export function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+function notificationMatchesQ(q: string | undefined): SQL | undefined {
+  if (q === undefined) return undefined;
+  const trimmed = q.trim();
+  if (trimmed === "") return undefined;
+  const pattern = `%${escapeLikeTerm(trimmed)}%`;
+  return or(
+    sql`${notifications.title} ILIKE ${pattern}`,
+    sql`${notifications.message} ILIKE ${pattern}`,
+  );
+}
+
 export async function fetchNotificationItems(
   db: Db,
   orgId: string,
@@ -144,6 +159,7 @@ export async function fetchNotificationItems(
         filters.priority
           ? sql`${notifications.priority}::text = ${filters.priority}`
           : undefined,
+        notificationMatchesQ(filters.q),
       ),
     )
     .orderBy(desc(notifications.createdAt), desc(notifications.id))

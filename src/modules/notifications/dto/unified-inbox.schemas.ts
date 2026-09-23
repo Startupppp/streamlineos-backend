@@ -155,6 +155,7 @@ export type InboxCursorState = {
   m: string | null;
   a: number | null;
   at: string | null;
+  ap: Record<string, InboxSourcePosition>;
 };
 
 const EMPTY_CURSOR: InboxCursorState = {
@@ -165,13 +166,31 @@ const EMPTY_CURSOR: InboxCursorState = {
   m: null,
   a: null,
   at: null,
+  ap: {},
 };
+
+function emptyInboxCursor(): InboxCursorState {
+  return { ...EMPTY_CURSOR, ap: {} };
+}
 
 export function inboxSourcePosition(
   id: number | null,
   t: string | null,
 ): InboxSourcePosition | null {
   return id === null ? null : { id, t };
+}
+
+function sameAdapterPositions(
+  left: Record<string, InboxSourcePosition>,
+  right: Record<string, InboxSourcePosition>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  if (leftKeys.length !== Object.keys(right).length) return false;
+  return leftKeys.every((key) => {
+    const l = left[key];
+    const r = right[key];
+    return r !== undefined && l !== undefined && l.id === r.id && l.t === r.t;
+  });
 }
 
 export function sameInboxCursorState(
@@ -185,7 +204,8 @@ export function sameInboxCursorState(
     left.bt === right.bt &&
     left.m === right.m &&
     left.a === right.a &&
-    left.at === right.at
+    left.at === right.at &&
+    sameAdapterPositions(left.ap, right.ap)
   );
 }
 
@@ -198,6 +218,7 @@ export function encodeInboxCursor(state: InboxCursorState): string {
     m: typeof state.m === "string" ? state.m : null,
     a: typeof state.a === "number" ? state.a : null,
     at: typeof state.at === "string" ? state.at : null,
+    ap: decodeAdapterPositions(state.ap),
   };
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
@@ -206,14 +227,31 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function decodeAdapterPositions(
+  value: unknown,
+): Record<string, InboxSourcePosition> {
+  if (!isPlainRecord(value)) return {};
+  const out: Record<string, InboxSourcePosition> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!isPlainRecord(entry)) continue;
+    const id: unknown = entry["id"];
+    const t: unknown = entry["t"];
+    if (typeof id !== "number" || !Number.isSafeInteger(id)) continue;
+    if (typeof t !== "string" && t !== null) continue;
+    out[key] = { id, t };
+  }
+  return out;
+}
+
 export function decodeInboxCursor(
   cursor: string | undefined | null,
 ): InboxCursorState {
-  if (typeof cursor !== "string" || cursor.length === 0) return EMPTY_CURSOR;
+  if (typeof cursor !== "string" || cursor.length === 0)
+    return emptyInboxCursor();
   try {
     const raw = Buffer.from(cursor, "base64url").toString("utf8");
     const parsed: unknown = JSON.parse(raw);
-    if (!isPlainRecord(parsed)) return EMPTY_CURSOR;
+    if (!isPlainRecord(parsed)) return emptyInboxCursor();
     return {
       n: typeof parsed["n"] === "number" ? parsed["n"] : null,
       nt: typeof parsed["nt"] === "string" ? parsed["nt"] : null,
@@ -222,8 +260,9 @@ export function decodeInboxCursor(
       m: typeof parsed["m"] === "string" ? parsed["m"] : null,
       a: typeof parsed["a"] === "number" ? parsed["a"] : null,
       at: typeof parsed["at"] === "string" ? parsed["at"] : null,
+      ap: decodeAdapterPositions(parsed["ap"]),
     };
   } catch {
-    return EMPTY_CURSOR;
+    return emptyInboxCursor();
   }
 }

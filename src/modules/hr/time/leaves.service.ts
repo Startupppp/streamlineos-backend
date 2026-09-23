@@ -22,6 +22,8 @@ import { LeaveLedgerService } from "./leave-ledger.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
 import { boundHrReadLimit, HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 import type { ListTeamLeaveRequestsQuery } from "./dto/leaves.schemas";
+import { pendingLeavesRoutedToPage, type LeaveInboxRow } from "./leave-inbox-reads";
+import type { DescKeysetPosition } from "../../../common/pagination/desc-keyset";
 
 const TEAM_LEAVES_CAP = 500;
 
@@ -166,6 +168,21 @@ export class LeavesService {
       orderBy: [asc(leaveRequests.createdAt)],
       limit: Math.min(limit, TEAM_LEAVES_CAP),
     });
+  }
+
+  async pendingRoutedToPage(
+    orgId: string,
+    approverMembershipId: number,
+    limit: number,
+    cursor: DescKeysetPosition | null,
+  ): Promise<LeaveInboxRow[]> {
+    return pendingLeavesRoutedToPage(
+      this.db,
+      orgId,
+      approverMembershipId,
+      Math.min(limit, TEAM_LEAVES_CAP),
+      cursor,
+    );
   }
 
   private async directReportsPendingPredicate(orgId: string, userId: string): Promise<SQL | undefined> {

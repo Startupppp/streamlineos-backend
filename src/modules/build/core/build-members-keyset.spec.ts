@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { PmWorkspacesService } from "./pm-workspaces.service";
+import { BuildMembersService } from "./build-members.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { Db } from "../../../db/drizzle.module";
 import { encodeCursor } from "../../../common/pagination/cursor";
@@ -18,6 +18,7 @@ interface Captured {
 function buildDb(captured: Captured) {
   const builder: Record<string, unknown> = {
     from: jest.fn(),
+    innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn((cond: unknown) => {
       captured.where = cond;
       return builder;
@@ -34,21 +35,21 @@ function buildDb(captured: Captured) {
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new PmWorkspacesService(buildDb(captured), {} as AuditService);
-  await svc.listWorkspaces("org-1", { cursor, limit: 20 });
+  const svc = new BuildMembersService(buildDb(captured), {} as AuditService);
+  await svc.list("org-1", { cursor, limit: 20 });
   return captured;
 }
 
-describe("PmWorkspacesService.listWorkspaces — keyset matches the sort", () => {
-  it("orders by createdAt asc then slug asc", async () => {
+describe("BuildMembersService.list — keyset matches the sort", () => {
+  it("orders by addedAt asc then userId asc", async () => {
     const { orderBy } = await capture(undefined);
     const rendered = orderBy.map(render);
-    expect(rendered[0]).toContain('"created_at"');
-    expect(rendered[1]).toContain('"slug"');
+    expect(rendered[0]).toContain('"added_at"');
+    expect(rendered[1]).toContain('"user_id"');
   });
 
   it("applies a strict greater-than predicate when cursor is present", async () => {
-    const cursor = encodeCursor({ sortValue: new Date().toISOString(), id: "my-workspace" });
+    const cursor = encodeCursor({ sortValue: new Date().toISOString(), id: "user-uuid-here" });
     const { where } = await capture(cursor);
     const sql = render(where);
     expect(sql).toMatch(/>/);
@@ -58,11 +59,12 @@ describe("PmWorkspacesService.listWorkspaces — keyset matches the sort", () =>
   it("omits the cursor predicate on the first page", async () => {
     const { where } = await capture(undefined);
     const sql = render(where);
-    expect(sql).not.toMatch(/"created_at"\s*>/);
+    expect(sql).not.toMatch(/"added_at"\s*>/);
   });
 
-  it("bite proof: a uuid PK tiebreaker without slug is what this replaced", () => {
-    const oldSort = ['"pm_workspaces"."pm_workspace_id"'];
-    expect(oldSort[0]).not.toContain('"slug"');
+  it("bite proof: addedAt-only sort without tiebreaker was the old defect", () => {
+    const oldSort = ['"build_members"."added_at" asc'];
+    expect(oldSort).toHaveLength(1);
+    expect(oldSort[0]).not.toContain('"user_id"');
   });
 });

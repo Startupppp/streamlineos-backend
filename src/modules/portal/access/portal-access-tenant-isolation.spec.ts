@@ -88,7 +88,6 @@ const GRANT = {
   portalMembershipId: "pm-1",
   partyContactId: "pc-1",
   projectId: 10,
-  pmWorkspaceId: "ws-1",
   status: "ACTIVE",
 };
 

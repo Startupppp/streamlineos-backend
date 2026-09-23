@@ -208,7 +208,7 @@ export const projectAutomationRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
-export const workspaceMemberItemSchema = z.object({
+export const buildMemberItemSchema = z.object({
   id: z.string(),
   role: z.string(),
   addedAt: wireDate(),
@@ -220,14 +220,13 @@ export const workspaceMemberItemSchema = z.object({
   teams: z.array(z.string()),
 });
 
-export const workspaceMemberPageSchema = cursorPageSchema(workspaceMemberItemSchema);
+export const buildMemberPageSchema = cursorPageSchema(buildMemberItemSchema);
 
-export const workspaceMemberRowSchema = z.object({
+export const buildMemberRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   membershipId: z.number().int(),
   role: z.string(),
-  pmWorkspaceId: z.string(),
   addedAt: wireDate(),
 });
 
@@ -255,7 +254,6 @@ export const projectListItemSchema = z.object({
   startDate: wireDate().nullable(),
   endDate: wireDate().nullable(),
   managedProductId: z.number().int().nullable(),
-  pmWorkspaceId: z.string().nullable(),
   manager: projectManagerSchema.nullable(),
   progress: z.object({
     total: z.number().int(),

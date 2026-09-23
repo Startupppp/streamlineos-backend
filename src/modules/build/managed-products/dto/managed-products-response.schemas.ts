@@ -11,7 +11,6 @@ export const managedProductRowSchema = z.object({
   description: z.string().nullable(),
   status: z.enum(managedProductStatusEnum.enumValues),
   ownerId: z.string().nullable(),
-  pmWorkspaceId: z.string(),
   vision: z.string().nullable(),
   missionStatement: z.string().nullable(),
   targetCustomer: z.string().nullable(),

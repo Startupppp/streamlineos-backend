@@ -30,7 +30,7 @@ function makePeriodRow(overrides: Partial<{
 
 function makeApprovals(rows: ReturnType<typeof makePeriodRow>[] = [makePeriodRow()]) {
   return {
-    pendingRoutedTo: jest.fn().mockResolvedValue(rows),
+    pendingRoutedToPage: jest.fn().mockResolvedValue(rows),
   } as unknown as import("./approvals.service").ApprovalsService;
 }
 
@@ -48,11 +48,11 @@ describe("TimesheetApprovalAdapter — onModuleInit", () => {
     expect(ts?.kindLabel).toBe("timesheet");
   });
 
-  it("supportsAfterCursor is false", () => {
+  it("supportsAfterCursor is true so the merge keeps paging timesheets past page 1", () => {
     const registry = makeRegistry();
     const adapter = new TimesheetApprovalAdapter(makeApprovals(), registry);
     adapter.onModuleInit();
-    expect(registry.list()[0]?.supportsAfterCursor).toBe(false);
+    expect(registry.list()[0]?.supportsAfterCursor).toBe(true);
   });
 
   it("is idempotent: double init registers only once", () => {
@@ -73,7 +73,7 @@ describe("TimesheetApprovalAdapter — fetch", () => {
     const [ts] = registry.list();
     const result = await ts!.fetch("org-1", "user-1", null, 10, null);
     expect(result).toHaveLength(0);
-    expect(approvals.pendingRoutedTo).not.toHaveBeenCalled();
+    expect(approvals.pendingRoutedToPage).not.toHaveBeenCalled();
   });
 
   it("maps row to BuildApprovalInboxItem with approvalKind=timesheet", async () => {
@@ -112,13 +112,38 @@ describe("TimesheetApprovalAdapter — fetch", () => {
     expect(item?.dueAt).toBe(dueAt.toISOString());
   });
 
-  it("passes orgId and membershipId to pendingRoutedTo (tenant isolation)", async () => {
+  it("passes orgId and membershipId to pendingRoutedToPage (tenant isolation)", async () => {
     const approvals = makeApprovals();
     const registry = makeRegistry();
     const adapter = new TimesheetApprovalAdapter(approvals, registry);
     adapter.onModuleInit();
     const [ts] = registry.list();
     await ts!.fetch("org-55", "user-1", 99, 25, null);
-    expect(approvals.pendingRoutedTo).toHaveBeenCalledWith("org-55", 99, 25);
+    expect(approvals.pendingRoutedToPage).toHaveBeenCalledWith("org-55", 99, 25, null);
+  });
+
+  it("hands the adapter cursor through to pendingRoutedToPage unchanged", async () => {
+    const approvals = makeApprovals();
+    const registry = makeRegistry();
+    const adapter = new TimesheetApprovalAdapter(approvals, registry);
+    adapter.onModuleInit();
+    const [ts] = registry.list();
+    const cursor = { id: 42, t: "2026-09-15T09:00:00.000Z" };
+    await ts!.fetch("org-55", "user-1", 99, 25, cursor);
+    expect(approvals.pendingRoutedToPage).toHaveBeenCalledWith("org-55", 99, 25, cursor);
+  });
+
+  it("timestamps the item on submittedAt, the column the ORDER BY and the keyset both use", async () => {
+    const submittedAt = new Date("2026-09-15T09:00:00Z");
+    const registry = makeRegistry();
+    const adapter = new TimesheetApprovalAdapter(
+      makeApprovals([makePeriodRow({ submittedAt, approvalDueAt: new Date("2026-09-20T00:00:00Z") })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [ts] = registry.list();
+    const [item] = await ts!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.timestamp).toBe(submittedAt.toISOString());
+    expect(item?.timestamp).not.toBe(new Date("2026-09-20T00:00:00Z").toISOString());
   });
 });

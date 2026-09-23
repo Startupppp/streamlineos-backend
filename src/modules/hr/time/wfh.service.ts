@@ -11,6 +11,7 @@ import { AccessService } from "../../access/access.service";
 import { ApprovalAuthorityService } from "../../directory/approval-authority.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
 import { attendanceMemberScope, resolveAttendanceScope } from "./attendance-scope";
+import { descKeyset, type DescKeysetPosition } from "../../../common/pagination/desc-keyset";
 
 @Injectable()
 export class WfhService {
@@ -102,6 +103,38 @@ export class WfhService {
         ),
       )
       .orderBy(asc(wfhRequests.createdAt))
+      .limit(Math.min(limit, 100));
+  }
+
+  async pendingRoutedToPage(
+    orgId: string,
+    approverMembershipId: number,
+    limit: number,
+    cursor: DescKeysetPosition | null,
+  ) {
+    return this.db
+      .select({
+        id: wfhRequests.id,
+        userId: wfhRequests.userId,
+        date: wfhRequests.date,
+        reason: wfhRequests.reason,
+        createdAt: wfhRequests.createdAt,
+        userName: users.name,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+      })
+      .from(wfhRequests)
+      .innerJoin(users, eq(wfhRequests.userId, users.id))
+      .where(
+        and(
+          eq(wfhRequests.orgId, orgId),
+          eq(wfhRequests.status, "PENDING"),
+          eq(wfhRequests.approverMembershipId, approverMembershipId),
+          descKeyset(wfhRequests.createdAt, wfhRequests.id, cursor),
+        ),
+      )
+      .orderBy(desc(wfhRequests.createdAt), desc(wfhRequests.id))
       .limit(Math.min(limit, 100));
   }
 

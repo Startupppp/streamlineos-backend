@@ -18,7 +18,6 @@ export const projectClientGrants = pgTable(
     portalMembershipId: text("portal_membership_id").notNull(),
     partyContactId: text("party_contact_id").notNull(),
     projectId: integer("project_id").notNull(),
-    pmWorkspaceId: text("pm_workspace_id"),
     canViewMilestones: boolean("can_view_milestones").notNull().default(false),
     canViewTasks: boolean("can_view_tasks").notNull().default(false),
     canViewAttachments: boolean("can_view_attachments").notNull().default(false),

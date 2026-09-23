@@ -23,7 +23,6 @@ const COMMENT_DRAFT_MIN_CONFIDENCE = 50;
 interface AgentPulseScope {
   readonly projectId?: number;
   readonly managedProductId?: number;
-  readonly pmWorkspaceId?: string;
 }
 
 @Injectable()
@@ -77,13 +76,6 @@ export class AgentPulseService {
       if (!row) return null;
       return { type: "overdue_approval", entityId: row.entityId, projectId: row.projectId, title: row.title, dueAt: row.dueAt?.toISOString() ?? null };
     }
-    if (scope.pmWorkspaceId !== undefined) {
-      const [row] = await this.db.select(sel).from(projectApprovals)
-        .innerJoin(projects, and(eq(projects.orgId, orgId), eq(projects.id, projectApprovals.projectId), eq(projects.pmWorkspaceId, scope.pmWorkspaceId), isNull(projects.deletedAt)))
-        .where(actorCond).orderBy(asc(projectApprovals.dueAt), asc(projectApprovals.id)).limit(1);
-      if (!row) return null;
-      return { type: "overdue_approval", entityId: row.entityId, projectId: row.projectId, title: row.title, dueAt: row.dueAt?.toISOString() ?? null };
-    }
     const [row] = await this.db.select(sel).from(projectApprovals)
       .where(and(actorCond, scope.projectId !== undefined ? eq(projectApprovals.projectId, scope.projectId) : undefined))
       .orderBy(asc(projectApprovals.dueAt), asc(projectApprovals.id)).limit(1);
@@ -115,7 +107,6 @@ export class AgentPulseService {
           isNull(projects.deletedAt),
           scope.projectId !== undefined ? eq(projects.id, scope.projectId) : undefined,
           scope.managedProductId !== undefined ? eq(projects.managedProductId, scope.managedProductId) : undefined,
-          scope.pmWorkspaceId !== undefined ? eq(projects.pmWorkspaceId, scope.pmWorkspaceId) : undefined,
         ),
       )
       .where(
@@ -166,13 +157,6 @@ export class AgentPulseService {
       if (!row) return null;
       return { type: "delivery_risk", entityId: row.entityId, projectId: row.projectId, title: row.title, dueAt: null };
     }
-    if (scope.pmWorkspaceId !== undefined) {
-      const [row] = await this.db.select(sel).from(projectRisks)
-        .innerJoin(projects, and(eq(projects.orgId, orgId), eq(projects.id, projectRisks.projectId), eq(projects.pmWorkspaceId, scope.pmWorkspaceId), isNull(projects.deletedAt)))
-        .where(riskCond).orderBy(asc(projectRisks.createdAt), asc(projectRisks.id)).limit(1);
-      if (!row) return null;
-      return { type: "delivery_risk", entityId: row.entityId, projectId: row.projectId, title: row.title, dueAt: null };
-    }
     const [row] = await this.db.select(sel).from(projectRisks)
       .where(riskCond).orderBy(asc(projectRisks.createdAt), asc(projectRisks.id)).limit(1);
     if (!row) return null;
@@ -210,14 +194,6 @@ export class AgentPulseService {
       const [row] = await this.db.select(sel).from(workItemRelations)
         .innerJoin(tickets, ticketJoinCond)
         .innerJoin(projects, and(eq(projects.orgId, orgId), eq(projects.id, tickets.projectId), eq(projects.managedProductId, scope.managedProductId), isNull(projects.deletedAt)))
-        .where(relCond).orderBy(asc(workItemRelations.createdAt), asc(workItemRelations.id)).limit(1);
-      if (!row) return null;
-      return { type: "dependency_change", entityId: row.entityId, projectId: row.projectId ?? 0, title: row.title, dueAt: null };
-    }
-    if (scope.pmWorkspaceId !== undefined) {
-      const [row] = await this.db.select(sel).from(workItemRelations)
-        .innerJoin(tickets, ticketJoinCond)
-        .innerJoin(projects, and(eq(projects.orgId, orgId), eq(projects.id, tickets.projectId), eq(projects.pmWorkspaceId, scope.pmWorkspaceId), isNull(projects.deletedAt)))
         .where(relCond).orderBy(asc(workItemRelations.createdAt), asc(workItemRelations.id)).limit(1);
       if (!row) return null;
       return { type: "dependency_change", entityId: row.entityId, projectId: row.projectId ?? 0, title: row.title, dueAt: null };
@@ -326,14 +302,6 @@ export class AgentPulseService {
       const [row] = await this.db.select(sel).from(commentDrafts)
         .innerJoin(tickets, ticketJoinCond)
         .innerJoin(projects, and(eq(projects.orgId, orgId), eq(projects.id, tickets.projectId), eq(projects.managedProductId, scope.managedProductId), isNull(projects.deletedAt)))
-        .where(draftCond).orderBy(asc(commentDrafts.updatedAt), asc(commentDrafts.id)).limit(1);
-      if (!row) return null;
-      return { type: "comment_draft", entityId: row.entityId, projectId: row.projectId ?? 0, title: row.title, dueAt: null, evidence: row.evidence ?? null, proposedChange: row.proposedChange ?? null, impact: row.impact ?? null, confidence: row.confidence ?? null, affectedRecordIds: parseRecordIds(row.affectedRecordIds), retryCount: row.retryCount ?? 0 };
-    }
-    if (scope.pmWorkspaceId !== undefined) {
-      const [row] = await this.db.select(sel).from(commentDrafts)
-        .innerJoin(tickets, ticketJoinCond)
-        .innerJoin(projects, and(eq(projects.orgId, orgId), eq(projects.id, tickets.projectId), eq(projects.pmWorkspaceId, scope.pmWorkspaceId), isNull(projects.deletedAt)))
         .where(draftCond).orderBy(asc(commentDrafts.updatedAt), asc(commentDrafts.id)).limit(1);
       if (!row) return null;
       return { type: "comment_draft", entityId: row.entityId, projectId: row.projectId ?? 0, title: row.title, dueAt: null, evidence: row.evidence ?? null, proposedChange: row.proposedChange ?? null, impact: row.impact ?? null, confidence: row.confidence ?? null, affectedRecordIds: parseRecordIds(row.affectedRecordIds), retryCount: row.retryCount ?? 0 };

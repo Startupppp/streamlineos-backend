@@ -1,25 +1,10 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
-import { humanSessionPrincipal } from "../../../common/auth/principal";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { BuildApprovalInboxItem } from "../../notifications/dto/unified-inbox.schemas";
-
-function minimalContext(
-  orgId: string,
-  userId: string,
-  membershipId: number,
-): CurrentUserContext {
-  return {
-    orgId,
-    userId,
-    role: "member",
-    isOrgOwner: false,
-    sessionId: "",
-    tokenScopes: null,
-    principal: humanSessionPrincipal(membershipId, false),
-  };
-}
+import type {
+  BuildApprovalInboxItem,
+  InboxSourcePosition,
+} from "../../notifications/dto/unified-inbox.schemas";
 
 @Injectable()
 export class HrWorkflowApprovalAdapter implements OnModuleInit {
@@ -33,22 +18,26 @@ export class HrWorkflowApprovalAdapter implements OnModuleInit {
       module: "hr",
       kindLabel: "workflow",
       permission: "hr:workflows:approve",
-      supportsAfterCursor: false,
-      fetch: (orgId, userId, membershipId, limit) =>
-        this.fetchWorkflows(orgId, userId, membershipId, limit),
+      supportsAfterCursor: true,
+      fetch: (orgId, _userId, membershipId, limit, cursor) =>
+        this.fetchWorkflows(orgId, membershipId, limit, cursor),
     });
   }
 
   private async fetchWorkflows(
     orgId: string,
-    userId: string,
     membershipId: number | null,
     limit: number,
+    cursor: InboxSourcePosition | null,
   ): Promise<BuildApprovalInboxItem[]> {
     if (membershipId === null) return [];
-    const u = minimalContext(orgId, userId, membershipId);
-    const result = await this.workflows.getInbox(u, 1, limit);
-    return result.data.map((row): BuildApprovalInboxItem => ({
+    const rows = await this.workflows.pendingRoutedToPage(
+      orgId,
+      membershipId,
+      limit,
+      cursor,
+    );
+    return rows.map((row): BuildApprovalInboxItem => ({
       kind: "build_approval",
       id: row.id,
       approvalKind: "workflow",

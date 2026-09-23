@@ -14,7 +14,6 @@ import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
 import { managedProductStatusEnum } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { pmWorkspaces } from "./pm-workspaces";
 
 export const managedProducts = build.table(
   "managed_products",
@@ -30,7 +29,6 @@ export const managedProducts = build.table(
     ownerId: text("owner_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    pmWorkspaceId: text("pm_workspace_id").notNull(),
     vision: text("vision"),
     missionStatement: text("mission_statement"),
     targetCustomer: text("target_customer"),
@@ -51,19 +49,11 @@ export const managedProducts = build.table(
   (table) => [
     uniqueIndex("uniq_managed_products_org_key").on(table.orgId, table.key),
     index("idx_managed_products_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
-    index("idx_managed_products_org_workspace")
-      .on(table.orgId, table.pmWorkspaceId)
-      .where(sql`deleted_at IS NULL`),
     unique("uniq_managed_products_org_pk").on(table.orgId, table.id),
     foreignKey({
       columns: [table.orgId, table.ownerMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     }).onDelete("set null"),
-    foreignKey({
-      columns: [table.orgId, table.pmWorkspaceId],
-      foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
-      name: "fk_managed_products_org_pm_workspace",
-    }),
   ],
 );
 

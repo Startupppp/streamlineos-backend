@@ -29,6 +29,7 @@ const PAGE_SIZE = 500;
 const mockCache = {
   cachedVersioned: jest.fn(),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+  invalidateForOrg: jest.fn().mockResolvedValue(undefined),
 };
 const mockAudit = { log: jest.fn() };
 
@@ -49,6 +50,8 @@ function baseBroadcast(): typeof broadcasts.$inferSelect {
     audience: { type: "all" as const },
     audienceType: "all" as const,
     status: "DRAFT",
+    isPinned: false,
+    expiresAt: null,
     scheduledAt: null,
     sentAt: null,
     recipientCount: 0,
