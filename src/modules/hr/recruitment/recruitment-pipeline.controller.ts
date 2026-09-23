@@ -24,14 +24,14 @@ export class RecruitmentPipelineController {
 
   @Get("pipeline")
   @ResponseSchema(pipelineResponseSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   getPipeline(@CurrentUser() u: CurrentUserContext) {
     return this.pipeline.pipeline(u.orgId);
   }
 
   @Get("diversity-report")
   @ResponseSchema(diversityReportSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ query: diversityReportQuerySchema })
   diversityReport(
     @Query() query: DiversityReportQueryInput,

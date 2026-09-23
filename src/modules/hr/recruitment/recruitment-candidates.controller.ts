@@ -77,7 +77,7 @@ export class RecruitmentCandidatesController {
 
   @Get()
   @ResponseSchema(candidateListResponseSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ query: candidateListSchema })
   list(
     @Query() query: CandidateListInput,
@@ -88,7 +88,7 @@ export class RecruitmentCandidatesController {
 
   @Post()
   @ResponseSchema(candidateSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @HttpCode(201)
   @Validate({ body: createCandidateSchema })
   create(
@@ -101,7 +101,7 @@ export class RecruitmentCandidatesController {
   @Post("bulk-import")
   @HttpCode(201)
   @ResponseSchema(bulkImportResultSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: bulkImportSchema })
   bulkImport(
     @Body() body: BulkImportInput,
@@ -113,7 +113,7 @@ export class RecruitmentCandidatesController {
   @Post("import")
   @HttpCode(201)
   @ResponseSchema(candidateImportResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: importSchema })
   importCandidates(
     @Body() body: ImportInput,
@@ -124,7 +124,7 @@ export class RecruitmentCandidatesController {
 
   @Post("bulk-reject")
   @ResponseSchema(candidateBulkRejectResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: bulkRejectSchema })
   bulkReject(
     @Body() body: BulkRejectInput,
@@ -135,7 +135,7 @@ export class RecruitmentCandidatesController {
 
   @Post("bulk-shortlist")
   @ResponseSchema(candidateBulkShortlistResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: bulkShortlistSchema })
   bulkShortlist(
     @Body() body: BulkShortlistInput,
@@ -146,14 +146,14 @@ export class RecruitmentCandidatesController {
 
   @Get("duplicates")
   @ResponseSchema(z.array(candidateDuplicateGroupSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   findDuplicates(@CurrentUser() u: CurrentUserContext) {
     return this.candidates.findDuplicates(u.orgId);
   }
 
   @Get(":candidateId")
   @ResponseSchema(candidateDetailSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateIdParams })
   getOne(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -164,7 +164,7 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId")
   @ResponseSchema(successSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: updateCandidateSchema })
   update(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -177,7 +177,7 @@ export class RecruitmentCandidatesController {
   @Delete(":candidateId")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams })
   async remove(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -188,7 +188,7 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/stage")
   @ResponseSchema(candidateMoveStageResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: stageSchema })
   moveStage(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -200,7 +200,7 @@ export class RecruitmentCandidatesController {
 
   @Get(":candidateId/sla")
   @ResponseSchema(z.array(candidateSlaTrackingSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateIdParams })
   getSla(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -211,7 +211,7 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/sla")
   @ResponseSchema(candidateSlaTrackingSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: slaResetSchema })
   resetSla(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -223,7 +223,7 @@ export class RecruitmentCandidatesController {
 
   @Post(":candidateId/applications")
   @ResponseSchema(jobApplicationSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @HttpCode(201)
   @Validate({ params: candidateIdParams, body: createApplicationSchema })
   createApplication(
@@ -236,7 +236,7 @@ export class RecruitmentCandidatesController {
 
   @Post(":candidateId/link-duplicate")
   @ResponseSchema(successSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: linkDuplicateSchema })
   linkDuplicate(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -249,7 +249,7 @@ export class RecruitmentCandidatesController {
   @Post(":candidateId/unlink-duplicate")
   @BodylessAction()
   @ResponseSchema(successSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams })
   unlinkDuplicate(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -260,7 +260,7 @@ export class RecruitmentCandidatesController {
 
   @Patch(":candidateId/bgv-status")
   @ResponseSchema(successSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: bgvStatusSchema })
   updateBgvStatus(
     @Param("candidateId", ParseIntPipe) candidateId: number,

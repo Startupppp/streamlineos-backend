@@ -36,7 +36,7 @@ export class RecruitmentTalentPoolsController {
 
   @Get()
   @ResponseSchema(z.array(talentPoolSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.pools.list(u.orgId);
   }
@@ -44,7 +44,7 @@ export class RecruitmentTalentPoolsController {
   @Post()
   @HttpCode(201)
   @ResponseSchema(talentPoolSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: createTalentPoolSchema })
   create(
     @Body() body: CreateTalentPoolInput,
@@ -55,7 +55,7 @@ export class RecruitmentTalentPoolsController {
 
   @Patch(":poolId")
   @ResponseSchema(talentPoolSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: poolIdParams, body: updateTalentPoolSchema })
   update(
     @Param("poolId", ParseIntPipe) poolId: number,
@@ -68,7 +68,7 @@ export class RecruitmentTalentPoolsController {
   @Delete(":poolId")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: poolIdParams })
   remove(@Param("poolId", ParseIntPipe) poolId: number, @CurrentUser() u: CurrentUserContext) {
     return this.pools.remove(u.orgId, poolId);
@@ -76,7 +76,7 @@ export class RecruitmentTalentPoolsController {
 
   @Get(":poolId/members")
   @ResponseSchema(talentPoolMembersResponseSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: poolIdParams, query: listPoolMembersQuerySchema })
   listMembers(
     @Param("poolId", ParseIntPipe) poolId: number,
@@ -89,7 +89,7 @@ export class RecruitmentTalentPoolsController {
   @Post(":poolId/members")
   @HttpCode(201)
   @ResponseSchema(talentPoolMemberRowSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: poolIdParams, body: addPoolMemberSchema })
   addMember(
     @Param("poolId", ParseIntPipe) poolId: number,
@@ -102,7 +102,7 @@ export class RecruitmentTalentPoolsController {
   @Delete(":poolId/members/:candidateId")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: poolIdcandidateIdParams })
   async removeMember(
     @Param("poolId", ParseIntPipe) poolId: number,

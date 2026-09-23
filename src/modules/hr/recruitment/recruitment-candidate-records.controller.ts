@@ -86,7 +86,7 @@ export class RecruitmentCandidateRecordsController {
   @Post("ai-score")
   @BodylessAction()
   @ResponseSchema(aiScoreResultSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams })
   aiScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -98,7 +98,7 @@ export class RecruitmentCandidateRecordsController {
   @Post("composite-score")
   @BodylessAction()
   @ResponseSchema(compositeScoreResultSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams })
   compositeScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -109,7 +109,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("resume-parse")
   @ResponseSchema(resumeParseResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @MultipartAction({ file: "file", fields: { resumeText: "string" } })
   @Validate({ params: candidateIdParams, body: resumeParseRequestSchema })
   @UseInterceptors(
@@ -126,7 +126,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("rollout-documents")
   @ResponseSchema(z.array(rolloutDocumentItemSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateIdParams })
   listRolloutDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -138,7 +138,7 @@ export class RecruitmentCandidateRecordsController {
   @Post("rollout-documents")
   @HttpCode(201)
   @ResponseSchema(generateRolloutResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: rolloutDocumentsSchema })
   generateRolloutDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -156,7 +156,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("calibration")
   @ResponseSchema(z.array(calibrationSessionSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateIdParams })
   listCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -168,7 +168,7 @@ export class RecruitmentCandidateRecordsController {
   @Post("calibration")
   @HttpCode(201)
   @ResponseSchema(calibrationSessionSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: createCalibrationSchema })
   createCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -181,7 +181,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Patch("calibration")
   @ResponseSchema(calibrationSessionSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: updateCalibrationSchema })
   updateCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -194,7 +194,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("referral")
   @ResponseSchema(z.array(candidateReferralCandidateSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateIdParams })
   listReferrals(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -207,7 +207,7 @@ export class RecruitmentCandidateRecordsController {
   @Idempotent("hr.recruitment.referral.create")
   @HttpCode(201)
   @ResponseSchema(candidateReferralCandidateSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: createReferralSchema })
   createReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -220,7 +220,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Patch("referral")
   @ResponseSchema(candidateReferralCandidateSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: updateReferralSchema })
   updateReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -233,7 +233,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("reference-checks")
   @ResponseSchema(z.array(referenceCheckSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateIdParams })
   listReferenceChecks(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -245,7 +245,7 @@ export class RecruitmentCandidateRecordsController {
   @Post("reference-checks")
   @HttpCode(201)
   @ResponseSchema(referenceCheckSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: createReferenceCheckSchema })
   createReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -263,7 +263,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Patch("reference-checks/:checkId")
   @ResponseSchema(referenceCheckSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateAndCheckIdParams, body: updateReferenceCheckSchema })
   updateReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -283,7 +283,7 @@ export class RecruitmentCandidateRecordsController {
   @Delete("reference-checks/:checkId")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateAndCheckIdParams })
   async deleteReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -295,7 +295,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("documents")
   @ResponseSchema(z.array(candidateDocumentSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateIdParams })
   listDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -307,7 +307,7 @@ export class RecruitmentCandidateRecordsController {
   @Post("documents")
   @HttpCode(201)
   @ResponseSchema(candidateDocumentSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: generateDocumentSchema })
   generateDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -320,7 +320,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("documents/:documentId/view")
   @ApiOkResponse({ schema: { type: "string" }, description: "HTML document content" })
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateAndDocumentIdParams })
   async viewDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -345,7 +345,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("vault")
   @ResponseSchema(z.array(vaultDocumentSchema))
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams })
   listVault(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -357,7 +357,7 @@ export class RecruitmentCandidateRecordsController {
   @Post("vault")
   @HttpCode(201)
   @ResponseSchema(vaultDocumentSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams, body: addVaultDocumentSchema })
   addVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -371,7 +371,7 @@ export class RecruitmentCandidateRecordsController {
   @Delete("vault/:documentId")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateAndDocumentIdParams })
   async deleteVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -383,7 +383,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("vault/access-logs")
   @ResponseSchema(z.array(vaultAccessLogItemSchema))
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: candidateIdParams })
   listVaultAccessLogs(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -394,7 +394,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("activity")
   @ResponseSchema(z.array(candidateActivityEventSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: candidateIdParams })
   getActivity(
     @Param("candidateId", ParseIntPipe) candidateId: number,

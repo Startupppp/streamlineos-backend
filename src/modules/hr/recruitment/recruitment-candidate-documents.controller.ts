@@ -27,7 +27,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { Inject } from "@nestjs/common";
 import { type Db } from "../../../db/drizzle.module";
 import { z } from "zod";
-import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = [
@@ -47,10 +47,18 @@ export class RecruitmentCandidateDocumentsController {
     private readonly audit: AuditService,
   ) {}
 
+  /**
+   * The permission was `hr:recruitment:manage`, a key that is not in the
+   * permission catalog at all — so no role could hold it, `PermissionGuard`
+   * could never match a grant, and this route was unreachable for every user in
+   * every organisation. It now uses the key the Recruitment OS sidebar already
+   * assumes.
+   */
   @Post("upload")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:recruitment:manage")
+  @RequirePermission("hr:requisitions:manage")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
+  @MultipartAction({ file: "file", fields: { documentType: "string" } })
   async upload(
     @CurrentUser() u: CurrentUserContext,
     @Param("candidateId") candidateIdParam: string,

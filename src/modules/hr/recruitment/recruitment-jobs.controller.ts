@@ -59,7 +59,7 @@ export class RecruitmentJobsController {
 
   @Get("jobs")
   @ResponseSchema(jobPostingListResponseSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ query: jobListSchema })
   list(
     @Query() query: JobListInput,
@@ -71,7 +71,7 @@ export class RecruitmentJobsController {
   @Post("jobs")
   @HttpCode(201)
   @ResponseSchema(jobPostingSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: createJobSchema })
   create(
     @Body() body: CreateJobInput,
@@ -82,7 +82,7 @@ export class RecruitmentJobsController {
 
   @Get("jobs/:jobId")
   @ResponseSchema(jobPostingWithApplicationsSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: jobIdParams })
   getOne(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -93,7 +93,7 @@ export class RecruitmentJobsController {
 
   @Patch("jobs/:jobId")
   @ResponseSchema(successSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobIdParams, body: updateJobSchema })
   update(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -106,7 +106,7 @@ export class RecruitmentJobsController {
   @Delete("jobs/:jobId")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobIdParams })
   async remove(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -118,7 +118,7 @@ export class RecruitmentJobsController {
   @Post("jobs/:jobId/publish")
   @ResponseSchema(jobPublishResponseSchema)
   @Idempotent("hr.job.publish")
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobIdParams, body: publishJobSchema })
   publish(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -132,7 +132,7 @@ export class RecruitmentJobsController {
   @BodylessAction()
   @HttpCode(201)
   @ResponseSchema(jobPostingSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobIdParams })
   duplicate(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -143,7 +143,7 @@ export class RecruitmentJobsController {
 
   @Get("jobs/:jobId/recruiters")
   @ResponseSchema(z.array(jobRecruiterSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: jobIdParams })
   listRecruiters(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -155,7 +155,7 @@ export class RecruitmentJobsController {
   @Post("jobs/:jobId/recruiters")
   @HttpCode(201)
   @ResponseSchema(assignRecruiterResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobIdParams, body: assignRecruiterSchema })
   assignRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -168,7 +168,7 @@ export class RecruitmentJobsController {
   @Delete("jobs/:jobId/recruiters")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobIdParams, body: assignRecruiterSchema })
   async removeRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -180,7 +180,7 @@ export class RecruitmentJobsController {
 
   @Get("jobs/:jobId/share")
   @ResponseSchema(jobShareResponseSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: jobIdParams })
   share(
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -191,7 +191,7 @@ export class RecruitmentJobsController {
 
   @Get("internal-jobs")
   @ResponseSchema(z.array(internalJobSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   listInternalJobs(@CurrentUser() u: CurrentUserContext) {
     return this.jobs.listInternalJobs(u.orgId);
   }
@@ -199,7 +199,7 @@ export class RecruitmentJobsController {
   @Post("internal-jobs/:jobId/apply")
   @HttpCode(201)
   @ResponseSchema(jobApplicationSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: jobIdParams, body: internalApplySchema })
   internalApply(
     @Param("jobId", ParseIntPipe) jobId: number,

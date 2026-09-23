@@ -73,7 +73,7 @@ export class RecruitmentSourcingController {
 
   @Get("referrals")
   @ResponseSchema(z.array(candidateReferralWithRelationsSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   async listReferrals(@CurrentUser() u: CurrentUserContext) {
     const canManage = u.isOrgOwner
       || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
@@ -84,7 +84,7 @@ export class RecruitmentSourcingController {
   @Idempotent("hr.sourcing.referral-create")
   @HttpCode(201)
   @ResponseSchema(candidateReferralRowSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ body: createReferralSubmissionSchema })
   createReferral(
     @Body() body: CreateReferralSubmissionInput,
@@ -95,7 +95,7 @@ export class RecruitmentSourcingController {
 
   @Patch("referrals/:referralId")
   @ResponseSchema(candidateReferralRowSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: referralIdParams, body: updateReferralStatusSchema })
   updateReferral(
     @Param("referralId", ParseIntPipe) referralId: number,
@@ -107,7 +107,7 @@ export class RecruitmentSourcingController {
 
   @Get("vendors")
   @ResponseSchema(z.array(vendorListItemSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   listVendors(@CurrentUser() u: CurrentUserContext) {
     return this.sourcing.listVendors(u.orgId);
   }
@@ -115,7 +115,7 @@ export class RecruitmentSourcingController {
   @Post("vendors")
   @HttpCode(201)
   @ResponseSchema(vendorRowSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: createVendorSchema })
   createVendor(@Body() body: CreateVendorInput, @CurrentUser() u: CurrentUserContext) {
     return this.sourcing.createVendor(u.orgId, u.userId, body);
@@ -123,7 +123,7 @@ export class RecruitmentSourcingController {
 
   @Patch("vendors/:vendorId")
   @ResponseSchema(vendorRowSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: vendorIdParams, body: updateVendorSchema })
   updateVendor(
     @Param("vendorId", ParseIntPipe) vendorId: number,
@@ -136,7 +136,7 @@ export class RecruitmentSourcingController {
   @Delete("vendors/:vendorId")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: vendorIdParams })
   async deleteVendor(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
     await this.sourcing.deleteVendor(u.orgId, vendorId);
@@ -146,7 +146,7 @@ export class RecruitmentSourcingController {
   @BodylessAction()
   @HttpCode(201)
   @ResponseSchema(vendorPortalLinkSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: vendorIdParams })
   generateVendorPortalLink(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
     return this.sourcing.generateVendorPortalLink(u.orgId, vendorId);
@@ -154,18 +154,24 @@ export class RecruitmentSourcingController {
 
   @Get("vendors/:vendorId/submissions")
   @ResponseSchema(z.array(vendorSubmissionItemSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: vendorIdParams })
   async listSubmissions(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
+    /**
+     * Vendor fee and margin are money, so the narrower rung of the same family
+     * the rest of this desk uses decides it. It read `hr:employees:manage`,
+     * which nothing else on this controller checks any more and which the
+     * sidebar never grants.
+     */
     const canViewFinancials =
-      u.isOrgOwner || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:employees:manage");
+      u.isOrgOwner || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
     return this.sourcing.listSubmissions(u.orgId, vendorId, canViewFinancials);
   }
 
   @Post("vendors/:vendorId/submissions")
   @HttpCode(201)
   @ResponseSchema(vendorSubmissionRawSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: vendorIdParams, body: createSubmissionSchema })
   createSubmission(
     @Param("vendorId", ParseIntPipe) vendorId: number,
@@ -177,7 +183,7 @@ export class RecruitmentSourcingController {
 
   @Patch("vendors/:vendorId/submissions")
   @ResponseSchema(vendorSubmissionRawSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: vendorIdParams, query: submissionIdQuerySchema, body: updateSubmissionSchema })
   updateSubmission(
     @Param("vendorId", ParseIntPipe) vendorId: number,
@@ -190,14 +196,14 @@ export class RecruitmentSourcingController {
 
   @Get("external-referrals")
   @ResponseSchema(z.array(externalReferralWithRelationsSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   listExternalReferrals(@CurrentUser() u: CurrentUserContext) {
     return this.sourcing.listExternalReferrals(u.orgId);
   }
 
   @Patch("external-referrals/:referralId")
   @ResponseSchema(externalReferralRawSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: referralIdParams, body: updateExternalReferralSchema })
   updateExternalReferral(
     @Param("referralId", ParseIntPipe) referralId: number,
@@ -209,14 +215,14 @@ export class RecruitmentSourcingController {
 
   @Get("external-referrers")
   @ResponseSchema(z.array(externalReferrerListItemSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   listExternalReferrers(@CurrentUser() u: CurrentUserContext) {
     return this.sourcing.listExternalReferrers(u.orgId);
   }
 
   @Patch("external-referrers/:referrerId")
   @ResponseSchema(externalReferrerRowSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: referrerIdParams, body: updateExternalReferrerStatusSchema })
   updateExternalReferrerStatus(
     @Param("referrerId", ParseIntPipe) referrerId: number,

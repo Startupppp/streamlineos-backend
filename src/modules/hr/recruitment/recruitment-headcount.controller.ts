@@ -51,7 +51,7 @@ export class RecruitmentHeadcountController {
 
   @Get("headcount")
   @ResponseSchema(headcountListPageSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ query: headcountListSchema })
   async listHeadcount(
     @Query() query: HeadcountListInput,
@@ -64,7 +64,7 @@ export class RecruitmentHeadcountController {
 
   @Post("headcount")
   @ResponseSchema(headcountRowSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ body: createHeadcountSchema })
   createHeadcount(
     @Body() body: CreateHeadcountInput,
@@ -75,7 +75,7 @@ export class RecruitmentHeadcountController {
 
   @Patch("headcount/:requestId")
   @ResponseSchema(headcountRowSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: requestIdParams, body: updateHeadcountSchema })
   updateHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,
@@ -89,7 +89,7 @@ export class RecruitmentHeadcountController {
   @BodylessAction()
   @Idempotent("hr.headcount.approve")
   @ResponseSchema(headcountRowSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requestIdParams })
   approveHeadcount(@Param("requestId", ParseIntPipe) requestId: number, @CurrentUser() u: CurrentUserContext) {
     return this.sourcing.approveHeadcount(u.orgId, u.userId, requestId, actingMembershipId(u.principal));
@@ -98,7 +98,7 @@ export class RecruitmentHeadcountController {
   @Post("headcount/:requestId/reject")
   @Idempotent("hr.headcount.reject")
   @ResponseSchema(headcountRowSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requestIdParams, body: rejectHeadcountSchema })
   rejectHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,
@@ -111,7 +111,7 @@ export class RecruitmentHeadcountController {
   @Post("headcount/:requestId/create-job")
   @BodylessAction()
   @ResponseSchema(createJobFromRequisitionResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requestIdParams })
   createJobFromHeadcount(@Param("requestId", ParseIntPipe) requestId: number, @CurrentUser() u: CurrentUserContext) {
     return this.sourcing.createJobFromHeadcount(u.orgId, u.userId, requestId);
