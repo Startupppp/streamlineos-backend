@@ -104,7 +104,13 @@ export class DashboardAnnouncementsService {
 
     await this.db
       .delete(broadcasts)
-      .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)));
+      .where(
+        and(
+          eq(broadcasts.id, id),
+          eq(broadcasts.orgId, orgId),
+          eq(broadcasts.audienceType, "all"),
+        ),
+      );
 
     await this.invalidate(orgId);
     return { success: true };
@@ -112,6 +118,5 @@ export class DashboardAnnouncementsService {
 
   private async invalidate(orgId: string) {
     await this.cache.invalidateForOrg(orgId, CACHE_KEYS.announcementsList(orgId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.broadcastsListNamespace(orgId));
   }
 }

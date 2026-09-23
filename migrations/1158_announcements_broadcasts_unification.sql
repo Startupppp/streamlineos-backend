@@ -104,6 +104,7 @@ SELECT
   a."updated_at" AT TIME ZONE 'UTC'
 FROM "public"."announcements" a
 WHERE a."status" <> 'DRAFT'
+  AND a."target_type" = 'ALL'
   AND (a."expires_at" IS NULL OR (a."expires_at" AT TIME ZONE 'UTC') > now())
   AND NOT EXISTS (
     SELECT 1 FROM "public"."broadcasts" b
@@ -121,6 +122,7 @@ DECLARE
   pinned_notnull boolean;
   expires_type text;
   missing bigint;
+  leaked bigint;
   unsent bigint;
 BEGIN
   SELECT column_default, (is_nullable = 'NO')
@@ -157,6 +159,7 @@ BEGIN
   SELECT count(*) INTO missing
     FROM "public"."announcements" a
    WHERE a."status" <> 'DRAFT'
+     AND a."target_type" = 'ALL'
      AND (a."expires_at" IS NULL OR (a."expires_at" AT TIME ZONE 'UTC') > now())
      AND NOT EXISTS (
        SELECT 1 FROM "public"."broadcasts" b
@@ -167,7 +170,20 @@ BEGIN
           AND b."created_at" = (a."created_at" AT TIME ZONE 'UTC')
      );
   IF missing > 0 THEN
-    RAISE EXCEPTION '1158: % visible announcements have no broadcast twin, the Inbox would still not see them', missing;
+    RAISE EXCEPTION '1158: % org-wide announcements have no broadcast twin, the Inbox would still not see them', missing;
+  END IF;
+
+  SELECT count(*) INTO leaked
+    FROM "public"."announcements" a
+    JOIN "public"."broadcasts" b
+      ON b."org_id" = a."org_id"
+     AND b."created_by" = a."author_id"
+     AND b."title" = a."title"
+     AND b."message" = a."content"
+     AND b."created_at" = (a."created_at" AT TIME ZONE 'UTC')
+   WHERE a."target_type" <> 'ALL';
+  IF leaked > 0 THEN
+    RAISE EXCEPTION '1158: % audience-targeted announcements were copied to org-wide broadcasts, widening who can read them', leaked;
   END IF;
 
   SELECT count(*) INTO unsent

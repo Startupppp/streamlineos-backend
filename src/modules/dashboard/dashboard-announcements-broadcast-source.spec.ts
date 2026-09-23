@@ -232,7 +232,7 @@ describe("Home announcements read path keeps its pre-cutover ordering, expiry an
     expect(orderSignature(rec.orderBys[1])).toBe(orderSignature(desc(broadcasts.createdAt)));
   });
 
-  it("filters on expires_at so an expired announcement drops off Home, and on is_pinned so the order key is a real column", async () => {
+  it("filters on expires_at so an expired announcement drops off Home, and on audience_type so a targeted broadcast never leaks to the whole org through a per-org cache", async () => {
     const rec = newRecorder([[]]);
     const svc = new DashboardAnnouncementsService(makeDb(rec), makeCache() as never, allow());
 
@@ -240,9 +240,9 @@ describe("Home announcements read path keeps its pre-cutover ordering, expiry an
 
     const predicate = walk(rec.wheres);
     expect(predicate.columns).toContain("expires_at");
-    expect(predicate.columns).toContain("is_pinned");
     expect(predicate.columns).toContain("status");
     expect(predicate.columns).toContain("audience_type");
+    expect(predicate.values).toContain("all");
   });
 
   it("returns rows for the owning org, the positive control for the two negative filters above", async () => {
@@ -344,8 +344,8 @@ describe("an actor in org B cannot reach org A's announcement", () => {
   });
 });
 
-describe("the new writer keeps both caches that now read broadcasts correct", () => {
-  it("invalidates the Home announcements key and the broadcasts list namespace on create", async () => {
+describe("the Home writer invalidates through the org's own Redis cell", () => {
+  it("drops the Home announcements key on create and stays off the global cache family", async () => {
     const rec = newRecorder([[{ id: 1 }]]);
     const cache = makeCache();
     const svc = new DashboardAnnouncementsService(makeDb(rec), cache as never, allow());
@@ -353,10 +353,10 @@ describe("the new writer keeps both caches that now read broadcasts correct", ()
     await svc.createAnnouncement(ORG_A, "u-1", ACTOR as never, { title: "t", content: "c" });
 
     expect(cache.invalidateForOrg).toHaveBeenCalledWith(ORG_A, `dashboard:announcements:${ORG_A}`);
-    expect(cache.invalidateNamespace).toHaveBeenCalledWith(`broadcasts:list:${ORG_A}`);
+    expect(cache.invalidateNamespace).not.toHaveBeenCalled();
   });
 
-  it("invalidates both on delete as well, because a delete changes the same two reads", async () => {
+  it("drops the same key on delete, because a delete changes the same read", async () => {
     const rec = newRecorder([[]]);
     const cache = makeCache();
     const svc = new DashboardAnnouncementsService(makeDb(rec), cache as never, allow());
@@ -364,6 +364,38 @@ describe("the new writer keeps both caches that now read broadcasts correct", ()
     await svc.deleteAnnouncement(ORG_A, ACTOR as never, 5);
 
     expect(cache.invalidateForOrg).toHaveBeenCalledWith(ORG_A, `dashboard:announcements:${ORG_A}`);
+    expect(cache.invalidateNamespace).not.toHaveBeenCalled();
+  });
+});
+
+describe("a broadcast write invalidates the Home announcements key, because Home now reads broadcasts", () => {
+  function broadcastsServiceOverDraft(cache: ReturnType<typeof makeCache>) {
+    const rec = newRecorder([[]]);
+    const db = {
+      query: { broadcasts: { findFirst: async () => ({ id: 5, status: "DRAFT", title: "t" }) } },
+      delete: () => makeChain(rec, []),
+    } as unknown as Db;
+    return new BroadcastsService(
+      db,
+      cache as never,
+      { log: jest.fn() } as never,
+      { emit: jest.fn() } as never,
+    );
+  }
+
+  it("drops the Home announcements key when a broadcast is removed, so Home does not keep serving a deleted row", async () => {
+    const cache = makeCache();
+
+    await broadcastsServiceOverDraft(cache).remove(ORG_A, 5, "u-1");
+
+    expect(cache.invalidateForOrg).toHaveBeenCalledWith(ORG_A, `dashboard:announcements:${ORG_A}`);
+  });
+
+  it("still bumps its own list namespace as well, the positive control for the Home key above", async () => {
+    const cache = makeCache();
+
+    await broadcastsServiceOverDraft(cache).remove(ORG_A, 5, "u-1");
+
     expect(cache.invalidateNamespace).toHaveBeenCalledWith(`broadcasts:list:${ORG_A}`);
   });
 });
