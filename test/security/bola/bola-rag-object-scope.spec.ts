@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { and, eq, type SQL } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { kbArticles } from "../../../src/db/schema";
 import { KbSearchService } from "../../../src/modules/kb/retrieval/kb-search.service";
 import { KbCandidateService } from "../../../src/modules/kb/retrieval/kb-candidate.service";
@@ -11,6 +11,7 @@ import { KbAskService } from "../../../src/modules/kb/retrieval/kb-ask.service";
 import { KbCitationVisibilityService } from "../../../src/modules/kb/retrieval/kb-citation-visibility.service";
 import { KbAccessService } from "../../../src/modules/kb/core/kb-access.service";
 import { KbEventsService } from "../../../src/modules/kb/core/kb-events.service";
+import { KnowledgeAuthorizationService } from "../../../src/modules/kb/core/authorization/knowledge-authorization.service";
 import { AiGatewayService } from "../../../src/modules/ai/core/gateway/ai-gateway.service";
 import { DRIZZLE } from "../../../src/db/drizzle.constants";
 import { articleOwnerScopeFilter } from "../../../src/modules/kb/retrieval/kb-article-owner-scope";
@@ -113,6 +114,13 @@ const makeGateway = () => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
+const makeKbAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest
+    .fn()
+    .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+});
+
 function buildSearch(scope: DataScope) {
   const { db, recorded, executed } = makeFakeKbDb(FIXTURES);
   const gateway = makeGateway();
@@ -126,6 +134,7 @@ function buildSearch(scope: DataScope) {
     events as never,
     new KbCandidateService(db as never),
     scopes as never,
+    makeKbAuth() as never,
   );
   return { search, db, recorded, executed, gateway, events, access, scopes };
 }
@@ -297,6 +306,7 @@ describe("BOLA sweep — POST /kb/ask context window", () => {
       { provide: KbEventsService, useValue: built.events },
       { provide: KbSearchService, useValue: built.search },
       { provide: KbAccessService, useValue: built.access },
+      { provide: KnowledgeAuthorizationService, useValue: makeKbAuth() },
     ] }).compile();
     modules.push(module);
     return { ...built, ask: module.get(KbAskService) };

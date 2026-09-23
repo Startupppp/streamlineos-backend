@@ -130,7 +130,16 @@ function makePageHarness(options: { visible: boolean; isAdmin: boolean }): PageH
   const access = { holds: jest.fn().mockResolvedValue(options.isAdmin) } as unknown as AccessService;
   const auth = {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
-    assertPageAccess: jest.fn().mockResolvedValue({ orgId: ORG, pageId: PAGE_ID, action: "comment", via: "admin" }),
+    assertPageAccess: jest.fn().mockImplementation(() => {
+      pageLookups += 1;
+      if (!options.visible) throw new NotFoundException("Page not found");
+      return Promise.resolve({
+        orgId: ORG,
+        pageId: PAGE_ID,
+        action: "comment",
+        via: "admin",
+      });
+    }),
   };
 
   return {

@@ -12,14 +12,18 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Public } from "../../common/auth/public.decorator";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { CareersService, isApplyJobNotFound } from "./careers.service";
 import { applySchema, type ApplyInput } from "./dto/careers.schemas";
-import { uploadResumeSchema, type UploadResumeInput } from "./dto/resumes.schemas";
+import { type UploadResumeInput } from "./dto/resumes.schemas";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
-import { careersJobListSchema, careersApplyResponseSchema } from "./dto/careers-response.schemas";
+import {
+  careersJobListSchema,
+  careersApplyResponseSchema,
+} from "./dto/careers-response.schemas";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import type { Request } from "express";
 
@@ -52,20 +56,23 @@ export class CareersController {
   }
 
   @Post("resumes/upload")
+  @AuthorizedInService(
+    "CareersService.uploadResume resolves the candidate by id AND the caller's orgId, and rejects when that pair does not exist",
+  )
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor("file"))
   async uploadResume(
-    @Req() req: Request & { user: { orgId: string, userId: string } },
+    @Req() req: Request & { user: { orgId: string; userId: string } },
     @UploadedFile() file: Express.Multer.File,
     @Body() body: UploadResumeInput,
   ) {
     return this.careers.uploadResume(
-        req.user.orgId,
-        body.candidateId,
-        req.user.userId,
-        file.buffer,
-        file.originalname,
-        file.mimetype
+      req.user.orgId,
+      body.candidateId,
+      req.user.userId,
+      file.buffer,
+      file.originalname,
+      file.mimetype,
     );
   }
 }
