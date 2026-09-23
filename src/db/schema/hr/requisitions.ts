@@ -24,6 +24,7 @@ export const jobRequisitions = pgTable("job_requisitions", {
   rejectionReason: text("rejection_reason"),
   justification: text("justification"),
   targetDate: text("target_date"),
+  headcountId: integer("headcount_id"),
   linkedJobId: integer("linked_job_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

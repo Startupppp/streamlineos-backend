@@ -21,6 +21,7 @@ export const createRequisitionSchema = z.object({
   department: z.string().max(100).optional(),
   location: z.string().max(200).optional(),
   headcount: z.number().int().min(1).max(999).default(1),
+  headcountId: z.number().int().positive().optional(),
   budgetMin: z.number().min(0).optional(),
   budgetMax: z.number().min(0).optional(),
   hiringManagerId: z.string().optional(),
