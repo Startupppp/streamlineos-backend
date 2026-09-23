@@ -111,6 +111,7 @@ function makeImportService(items: ItemRow[], batchStatus = "SENT") {
   const service = new BatchStatusService(
     db as never,
     { log: jest.fn() } as never,
+    { emit: jest.fn() } as never,
     undefined,
   );
 
