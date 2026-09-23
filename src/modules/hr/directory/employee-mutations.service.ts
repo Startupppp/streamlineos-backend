@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
 } from "@nestjs/common";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
@@ -31,6 +32,7 @@ import { ScopedRead } from "../../access/scoped-read";
 import { selfEmployeeRead } from "./employees-scope";
 import { resolveEmployeesManageScope } from "./employees-scope";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { emptyEmploymentFacts } from "../../directory/employment-facts.types";
 import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
@@ -38,6 +40,8 @@ import {
 
 @Injectable()
 export class EmployeeMutationsService {
+  private readonly logger = new Logger(EmployeeMutationsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
@@ -46,6 +50,24 @@ export class EmployeeMutationsService {
     private readonly access: AccessService,
     private readonly employment: EmploymentFactsService,
   ) {}
+
+  private async degraded<T>(
+    targetUserId: string,
+    part: string,
+    fallback: T,
+    read: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await read();
+    } catch (error: unknown) {
+      this.logger.error(
+        `employee detail: ${part} unavailable for ${targetUserId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return fallback;
+    }
+  }
 
   async getEmployeeDetail(read: ScopedRead, targetUserId: string) {
     const orgId = read.orgId;
@@ -86,7 +108,8 @@ export class EmployeeMutationsService {
     const u = member.user;
 
     const [skillRows, employment, facts] = await Promise.all([
-      this.db
+      this.degraded(targetUserId, "skills", [] as { name: string; level: number }[], () =>
+        this.db
         .select({ name: employeeSkills.skillName, level: employeeSkills.level })
         .from(employeeSkills)
         .where(
@@ -96,7 +119,9 @@ export class EmployeeMutationsService {
           ),
         )
         .limit(100),
-      this.db
+      ),
+      this.degraded(targetUserId, "employment", null, () =>
+        this.db
         .select({
           id: hrEmployments.id,
           personId: hrEmployments.personId,
@@ -114,7 +139,10 @@ export class EmployeeMutationsService {
         .where(livePersonOfUser(orgId, targetUserId))
         .limit(1)
         .then((rows) => rows[0] ?? null),
-      this.employment.getFacts(orgId, targetUserId),
+      ),
+      this.degraded(targetUserId, "employment-facts", emptyEmploymentFacts(targetUserId), () =>
+        this.employment.getFacts(orgId, targetUserId),
+      ),
     ]);
 
     return {

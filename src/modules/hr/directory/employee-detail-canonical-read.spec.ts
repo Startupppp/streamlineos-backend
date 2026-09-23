@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { ScopedRead } from "../../access/scoped-read";
 import { employeeDetailSchema } from "./dto/directory-response.schemas";
@@ -211,5 +212,112 @@ describe("employee detail response contract, which nothing enforces outside NODE
     expect(result?.employment).toEqual(
       expect.objectContaining({ departmentId: "dept-1" }),
     );
+  });
+});
+
+describe("employee detail survives an enrichment read that fails, because skills and manager are decoration and a 500 there took the whole profile down", () => {
+  const USER = {
+    id: "user-1",
+    name: "Legacy Name",
+    firstName: "Legacy",
+    lastName: "Name",
+    email: "legacy@example.com",
+    image: null,
+    isActive: true,
+    bio: null,
+    linkedinUrl: null,
+    twitterUrl: null,
+    githubUrl: null,
+    websiteUrl: null,
+    phone: null,
+  };
+
+  function serviceWithFailing(part: "skills" | "employment" | "facts") {
+    const boom = new Error(`column does not exist (${part})`);
+    const skillsQuery = {
+      from: jest.fn(),
+      where: jest.fn().mockReturnValue({
+        limit:
+          part === "skills"
+            ? jest.fn().mockRejectedValue(boom)
+            : jest.fn().mockResolvedValue([]),
+      }),
+    };
+    skillsQuery.from.mockReturnValue(skillsQuery);
+    const employmentQuery = {
+      from: jest.fn(),
+      innerJoin: jest.fn(),
+      where: jest.fn(),
+      limit:
+        part === "employment"
+          ? jest.fn().mockRejectedValue(boom)
+          : jest.fn().mockResolvedValue([]),
+    };
+    employmentQuery.from.mockReturnValue(employmentQuery);
+    employmentQuery.innerJoin.mockReturnValue(employmentQuery);
+    employmentQuery.where.mockReturnValue(employmentQuery);
+    const db = {
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ role: "MEMBER", user: USER }),
+        },
+      },
+      select: jest
+        .fn()
+        .mockReturnValueOnce(skillsQuery)
+        .mockReturnValueOnce(employmentQuery),
+    };
+    return new EmployeeMutationsService(
+      db as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        getFacts:
+          part === "facts"
+            ? jest.fn().mockRejectedValue(boom)
+            : jest.fn().mockResolvedValue({
+                userId: "user-1",
+                managerUserId: null,
+              }),
+      } as never,
+    );
+  }
+
+  it.each(["skills", "employment", "facts"] as const)(
+    "still returns the profile when the %s read throws",
+    async (part) => {
+      jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      const service = serviceWithFailing(part);
+
+      const result = await service.getEmployeeDetail(
+        ScopedRead.of("org-1", "actor-1", "all"),
+        "user-1",
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({ id: "user-1", email: "legacy@example.com" }),
+      );
+      expect(employeeDetailSchema.safeParse(result).success).toBe(true);
+      jest.restoreAllMocks();
+    },
+  );
+
+  it("says which part was unavailable rather than failing silently", async () => {
+    const logged = jest
+      .spyOn(Logger.prototype, "error")
+      .mockImplementation(() => undefined);
+    const service = serviceWithFailing("facts");
+
+    await service.getEmployeeDetail(
+      ScopedRead.of("org-1", "actor-1", "all"),
+      "user-1",
+    );
+
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringContaining("employment-facts unavailable for user-1"),
+    );
+    jest.restoreAllMocks();
   });
 });
