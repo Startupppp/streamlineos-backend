@@ -75,12 +75,16 @@ export function correlationIdMiddleware(
    */
   const clientIp = resolveClientIp(req);
   const rawUa = req.headers["user-agent"];
-  const userAgent =
-    typeof rawUa === "string"
-      ? rawUa.slice(0, 512)
-      : Array.isArray(rawUa)
-        ? rawUa[0]?.slice(0, 512)
-        : undefined;
+  let userAgent: string | undefined;
+
+  if (typeof rawUa === "string") {
+    userAgent = rawUa.slice(0, 512);
+  } else if (Array.isArray(rawUa)) {
+    const arr = rawUa as string[];
+    if (arr.length > 0 && typeof arr[0] === "string") {
+      userAgent = arr[0].slice(0, 512);
+    }
+  }
 
   runWithObservabilityContext(
     {
