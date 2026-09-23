@@ -2,14 +2,14 @@
   "version": 1,
   "generator": "scripts/build-authorization-census.mjs",
   "scope": "src/modules/build/**/*.controller.ts",
-  "controllerFiles": 48,
-  "handlers": 318,
+  "controllerFiles": 49,
+  "handlers": 321,
   "counts": {
-    "VULNERABLE": 0,
+    "VULNERABLE": 4,
     "CLOSED-IN-FLIGHT": 0,
-    "NEEDS-REVIEW": 99,
+    "NEEDS-REVIEW": 3,
     "CLOSED": 36,
-    "VERIFIED": 183
+    "VERIFIED": 278
   },
   "handlersDetail": [
     {
@@ -296,10 +296,31 @@
       "parentEvidence": "src/modules/build/approvals/approvals-read.service.ts:75",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/approvals/:approvalId. The handler declares both @Param(\"projectId\") and @Param(\"approvalId\") and forwards both into ApprovalsReadService.getApproval(u, projectId, approvalId). That method calls assertProjectAccess(u, projectId) and then the shared loadApproval(db, orgId, projectId, approvalId) helper, whose single WHERE clause binds id=approvalId AND orgId=orgId AND projectId=projectId together and throws NotFoundException when they do not all match. A real approval that belongs to a different project (or a different org) 404s; the URL's :projectId is not decorative.",
       "evidence": "src/modules/build/approvals/approvals.controller.ts:96",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/approvals/approvals.controller.ts",
+          "line": 100,
+          "note": "handler binds both projectId and approvalId route params and forwards both"
+        },
+        {
+          "file": "src/modules/build/approvals/approvals-read.service.ts",
+          "line": 77,
+          "note": "projectId is passed into loadApproval alongside approvalId and orgId"
+        },
+        {
+          "file": "src/modules/build/approvals/approval-lookup.ts",
+          "line": 6,
+          "note": "shared lookup takes projectId as a required parameter"
+        },
+        {
+          "file": "src/modules/build/approvals/approval-lookup.ts",
+          "line": 11,
+          "note": "WHERE clause binds the approval row to the named project; NotFoundException on any mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/approvals/approvals.controller.ts#createApproval",
@@ -384,10 +405,31 @@
       "parentEvidence": "src/modules/build/approvals/approvals.service.ts:155",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/approvals/:approvalId/decide. The handler binds projectId+approvalId and calls ApprovalsService.decideApproval(user, projectId, approvalId, input). The method's first statement is loadApproval(this.db, orgId, projectId, approvalId), which binds id+orgId+projectId in one WHERE and 404s on any mismatch — so an approvalId belonging to a different project never reaches the decision logic or the UPDATE below it. The UPDATE itself is keyed by id+orgId only, but approvalId is a global-identity PK already proven by loadApproval to belong to this exact project, so re-stating projectId there would be redundant, not protective (verify-then-act-by-PK pattern, same shape as the loadApproval-gated methods throughout this file).",
       "evidence": "src/modules/build/approvals/approvals.controller.ts:122",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/approvals/approvals.controller.ts",
+          "line": 127,
+          "note": "handler binds both projectId and approvalId and forwards both"
+        },
+        {
+          "file": "src/modules/build/approvals/approvals.service.ts",
+          "line": 162,
+          "note": "first statement binds id+orgId+projectId; 404 on mismatch before any further logic"
+        },
+        {
+          "file": "src/modules/build/approvals/approvals.service.ts",
+          "line": 182,
+          "note": "mutation keyed by already-verified PK+org"
+        },
+        {
+          "file": "src/modules/build/approvals/approval-lookup.ts",
+          "line": 11,
+          "note": "loadApproval's project binding"
+        }
+      ]
     },
     {
       "key": "modules/build/approvals/approvals.controller.ts#updateApproval",
@@ -431,10 +473,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/approvals/:approvalId. Same shape as decideApproval: ApprovalsService.updateApproval(orgId, userId, projectId, approvalId, input) opens with loadApproval(this.db, orgId, projectId, approvalId), which binds id+orgId+projectId and 404s on mismatch, before building the patch and running the UPDATE keyed by the now-verified id+orgId.",
       "evidence": "src/modules/build/approvals/approvals.controller.ts:136",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/approvals/approvals.controller.ts",
+          "line": 140,
+          "note": "handler binds both projectId and approvalId and forwards both"
+        },
+        {
+          "file": "src/modules/build/approvals/approvals.service.ts",
+          "line": 204,
+          "note": "binds id+orgId+projectId; 404 on mismatch before the patch is built"
+        },
+        {
+          "file": "src/modules/build/approvals/approvals.service.ts",
+          "line": 222,
+          "note": "UPDATE keyed by the already-verified PK"
+        }
+      ]
     },
     {
       "key": "modules/build/approvals/approvals.controller.ts#softDeleteApproval",
@@ -478,9 +536,164 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/approvals/:approvalId. ApprovalsService.softDeleteApproval(orgId, projectId, approvalId) opens with the same loadApproval(this.db, orgId, projectId, approvalId) binding (id+orgId+projectId, 404 on mismatch) before setting deletedAt via an UPDATE keyed by the now-verified id+orgId.",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:149",
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/approvals/approvals.controller.ts",
+          "line": 154,
+          "note": "handler binds both projectId and approvalId and forwards both"
+        },
+        {
+          "file": "src/modules/build/approvals/approvals.service.ts",
+          "line": 260,
+          "note": "binds id+orgId+projectId; 404 on mismatch before the delete"
+        },
+        {
+          "file": "src/modules/build/approvals/approvals.service.ts",
+          "line": 264,
+          "note": "soft-delete UPDATE keyed by the already-verified PK"
+        }
+      ]
+    },
+    {
+      "key": "modules/build/client-portal/change-request-affected-items.controller.ts#listAffectedTickets",
+      "file": "src/modules/build/client-portal/change-request-affected-items.controller.ts",
+      "class": "ChangeRequestAffectedItemsController",
+      "method": "listAffectedTickets",
+      "line": 56,
+      "verb": "GET",
+      "path": "/build/:projectId/change-requests/:changeRequestId/affected-tickets",
+      "routeParams": [
+        "projectId",
+        "changeRequestId"
+      ],
+      "classification": "@RequirePermission(\"build:changerequests:view\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId",
+        "changeRequestId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": false,
+      "service": {
+        "call": "this.svc.listAffectedTickets(u, projectId, changeRequestId, query)",
+        "type": "ChangeRequestAffectedItemsService",
+        "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:62",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:62",
+      "leads": [],
+      "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:149",
+      "evidence": "src/modules/build/client-portal/change-request-affected-items.controller.ts:56",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/client-portal/change-request-affected-items.controller.ts#linkTicket",
+      "file": "src/modules/build/client-portal/change-request-affected-items.controller.ts",
+      "class": "ChangeRequestAffectedItemsController",
+      "method": "linkTicket",
+      "line": 69,
+      "verb": "POST",
+      "path": "/build/:projectId/change-requests/:changeRequestId/affected-tickets",
+      "routeParams": [
+        "projectId",
+        "changeRequestId"
+      ],
+      "classification": "@RequirePermission(\"build:changerequests:manage\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId",
+        "changeRequestId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": "@Idempotent(\"build.change_request.link_ticket\")",
+      "mutating": true,
+      "service": {
+        "call": "this.svc.linkTicket(u, projectId, changeRequestId, body)",
+        "type": "ChangeRequestAffectedItemsService",
+        "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:110",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:110",
+      "leads": [],
+      "notes": [],
+      "verdict": "NEEDS-REVIEW",
+      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "evidence": "src/modules/build/client-portal/change-request-affected-items.controller.ts:69",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/client-portal/change-request-affected-items.controller.ts#unlinkTicket",
+      "file": "src/modules/build/client-portal/change-request-affected-items.controller.ts",
+      "class": "ChangeRequestAffectedItemsController",
+      "method": "unlinkTicket",
+      "line": 84,
+      "verb": "DELETE",
+      "path": "/build/:projectId/change-requests/:changeRequestId/affected-tickets/:affectedItemId",
+      "routeParams": [
+        "projectId",
+        "changeRequestId",
+        "affectedItemId"
+      ],
+      "classification": "@RequirePermission(\"build:changerequests:manage\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId",
+        "changeRequestId",
+        "affectedItemId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": true,
+      "service": {
+        "call": "this.svc.unlinkTicket(u, projectId, changeRequestId, affectedItemId)",
+        "type": "ChangeRequestAffectedItemsService",
+        "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:162",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:162",
+      "leads": [],
+      "notes": [
+        "mutating verb without @Idempotent"
+      ],
+      "verdict": "NEEDS-REVIEW",
+      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "evidence": "src/modules/build/client-portal/change-request-affected-items.controller.ts:84",
       "reviewedEvidence": null
     },
     {
@@ -566,10 +779,26 @@
       "parentEvidence": "src/modules/build/client-portal/change-requests.service.ts:139",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/change-requests/:changeRequestId. ChangeRequestsService.getChangeRequest(u, projectId, crId) first calls assertProjectAccess(u, projectId), then SELECTs the row with id=crId AND orgId=u.orgId AND projectId=projectId all in the same WHERE, throwing NotFoundException when no row matches. The :projectId segment is a real predicate on the query, not just a permission check.",
       "evidence": "src/modules/build/client-portal/change-requests.controller.ts:68",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/change-requests.controller.ts",
+          "line": 72,
+          "note": "handler binds both projectId and changeRequestId and forwards both"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-requests.service.ts",
+          "line": 139,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-requests.service.ts",
+          "line": 146,
+          "note": "SELECT WHERE binds id+orgId+projectId together (see surrounding and(...))"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/change-requests.controller.ts#createChangeRequest",
@@ -658,10 +887,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/change-requests/:changeRequestId. ChangeRequestsService.updateChangeRequest(u, projectId, crId, input) first SELECTs the existing row bound to id+orgId+projectId (404 if it does not match), then the actual UPDATE repeats the identical id+orgId+projectId binding in its own WHERE clause. Both the existence check and the mutation itself are project-scoped, not just the pre-check.",
       "evidence": "src/modules/build/client-portal/change-requests.controller.ts:93",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/change-requests.controller.ts",
+          "line": 97,
+          "note": "handler binds both projectId and changeRequestId and forwards both"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-requests.service.ts",
+          "line": 229,
+          "note": "existence check binds id+orgId+projectId"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-requests.service.ts",
+          "line": 283,
+          "note": "the UPDATE's own WHERE re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/change-requests.controller.ts#deleteChangeRequest",
@@ -705,10 +950,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/change-requests/:changeRequestId. Same shape as updateChangeRequest: ChangeRequestsService.deleteChangeRequest(u, projectId, crId) SELECTs the existing row bound to id+orgId+projectId (404 on mismatch), then the soft-delete UPDATE repeats the identical id+orgId+projectId binding.",
       "evidence": "src/modules/build/client-portal/change-requests.controller.ts:106",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/change-requests.controller.ts",
+          "line": 111,
+          "note": "handler binds both projectId and changeRequestId and forwards both"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-requests.service.ts",
+          "line": 321,
+          "note": "existence check binds id+orgId+projectId"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-requests.service.ts",
+          "line": 334,
+          "note": "soft-delete UPDATE re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/client-portal.controller.ts#listPortalProjects",
@@ -965,10 +1226,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/client-visibility/tickets/:ticketId. ClientVisibilityService.toggleTicketVisibility(orgId, userId, projectId, ticketId, clientVisible) first looks up the ticket bound to id=ticketId AND orgId AND projectId (404 if absent), then the UPDATE is keyed by id+orgId — ticketId is a global PK already proven by the preceding lookup to belong to this exact project, so the UPDATE's narrower key is still safe (verify-then-act-by-PK).",
       "evidence": "src/modules/build/client-portal/client-visibility.controller.ts:49",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/client-visibility.controller.ts",
+          "line": 53,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/client-portal/client-visibility.service.ts",
+          "line": 52,
+          "note": "existence check binds id+orgId+projectId"
+        },
+        {
+          "file": "src/modules/build/client-portal/client-visibility.service.ts",
+          "line": 59,
+          "note": "UPDATE keyed by the already-verified PK"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/client-visibility.controller.ts#toggleMilestoneVisibility",
@@ -1012,10 +1289,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/client-visibility/milestones/:milestoneId. Same shape: toggleMilestoneVisibility looks up the milestone bound to id+orgId+projectId (404 if absent) before the UPDATE keyed by the already-verified id+orgId.",
       "evidence": "src/modules/build/client-portal/client-visibility.controller.ts:62",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/client-visibility.controller.ts",
+          "line": 66,
+          "note": "handler binds both projectId and milestoneId and forwards both"
+        },
+        {
+          "file": "src/modules/build/client-portal/client-visibility.service.ts",
+          "line": 74,
+          "note": "existence check binds id+orgId+projectId"
+        },
+        {
+          "file": "src/modules/build/client-portal/client-visibility.service.ts",
+          "line": 85,
+          "note": "UPDATE keyed by the already-verified PK"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/client-visibility.controller.ts#toggleCommentVisibility",
@@ -1059,10 +1352,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/client-visibility/comments/:commentId. toggleCommentVisibility resolves the comment through an INNER JOIN to tickets that explicitly binds tickets.projectId=projectId AND tickets.orgId=orgId AND ticketComments.id=commentId AND ticketComments.orgId=orgId (404 if no row), before the UPDATE keyed by the already-verified id+orgId. The join is the parent-binding: a comment on a ticket in a different project produces zero rows.",
       "evidence": "src/modules/build/client-portal/client-visibility.controller.ts:75",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/client-visibility.controller.ts",
+          "line": 79,
+          "note": "handler binds both projectId and commentId and forwards both"
+        },
+        {
+          "file": "src/modules/build/client-portal/client-visibility.service.ts",
+          "line": 101,
+          "note": "join binds the comment's ticket to the named project via tickets.projectId"
+        },
+        {
+          "file": "src/modules/build/client-portal/client-visibility.service.ts",
+          "line": 113,
+          "note": "UPDATE keyed by the already-verified PK"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/client-visibility.controller.ts#toggleAttachmentVisibility",
@@ -1106,10 +1415,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/client-visibility/attachments/:attachmentId. Same join-based binding as toggleCommentVisibility: the attachment is resolved through an INNER JOIN to tickets requiring tickets.projectId=projectId AND tickets.orgId=orgId (404 if no row), before the UPDATE keyed by the already-verified id+orgId.",
       "evidence": "src/modules/build/client-portal/client-visibility.controller.ts:88",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/client-visibility.controller.ts",
+          "line": 92,
+          "note": "handler binds both projectId and attachmentId and forwards both"
+        },
+        {
+          "file": "src/modules/build/client-portal/client-visibility.service.ts",
+          "line": 125,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/client-portal/client-visibility.service.ts",
+          "line": 131,
+          "note": "join binds the attachment's ticket to the named project"
+        }
+      ]
     },
     {
       "key": "modules/build/comment-drafts/comment-drafts.controller.ts#listMine",
@@ -1798,10 +2123,31 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/members/:memberUserId. ProjectsMembersService.updateMemberRole(projectId, memberUserId, input, u) calls assertProjectOwnership(orgId, projectId) (404 unless the project belongs to this org) and assertCanManageProject(u, projectId) before resolving memberUserId to a membership via assertOrganizationActor(db, orgId, {userId}), which itself only resolves memberships that belong to orgId. The UPDATE then runs where(projectMembers.projectId=projectId AND projectMembers.membershipId=targetActor.membershipId) — both sides of that predicate are already tenant/project-verified by the time the query runs, and the update 404s (NotFoundException) if the target actor is not actually a member of this specific project.",
       "evidence": "src/modules/build/core/project-resources.controller.ts:119",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/project-resources.controller.ts",
+          "line": 123,
+          "note": "handler binds both projectId and memberUserId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-members.service.ts",
+          "line": 359,
+          "note": "confirms projectId belongs to this org, 404 otherwise"
+        },
+        {
+          "file": "src/modules/build/core/projects-members.service.ts",
+          "line": 361,
+          "note": "resolves the target membership scoped to this org"
+        },
+        {
+          "file": "src/modules/build/core/projects-members.service.ts",
+          "line": 368,
+          "note": "UPDATE's WHERE requires the target membership to belong to this exact project; 404 otherwise"
+        }
+      ]
     },
     {
       "key": "modules/build/core/project-resources.controller.ts#bulkReorderCustomStates",
@@ -2288,10 +2634,36 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VULNERABLE",
+      "verdictReason": "PATCH /build/:projectId/automations/:automationId. The controller binds projectId and automationId and calls ProjectsAutomationsService.updateAutomation(u, projectId, automationId, data). The method calls this.members.assertCanManageProject(u, projectId), which authorizes the caller against the NAMED :projectId (org owner, OR org-wide build:manage, OR the caller's own project.managerMembershipId, OR the caller holding role 'ADMIN' in projectMembers for THAT project) — but the actual mutation, `update(projectAutomations).where(and(eq(projectAutomations.id, automationId), eq(projectAutomations.orgId, u.orgId)))`, never repeats eq(projectAutomations.projectId, projectId). A caller whose only standing is project-scoped (project.managerMembershipId or a projectMembers ADMIN role on project A — i.e. no org-wide build:manage) passes assertCanManageProject for their OWN project A, and can then supply any other project's automationId in the same org: the UPDATE matches on id+orgId alone and silently rewrites (or, in delete, destroys) an automation that belongs to a project the caller has no standing over. This is the same shape as the CLOSED projects-custom-fields.controller.ts#updateField finding: an authority check against the URL's :projectId that the actual mutation's WHERE clause never repeats.",
       "evidence": "src/modules/build/core/projects-automations.controller.ts:56",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-automations.controller.ts",
+          "line": 60,
+          "note": "handler binds both projectId and automationId and forwards both to the service"
+        },
+        {
+          "file": "src/modules/build/core/projects-automations.controller.ts",
+          "line": 66,
+          "note": "projectId is passed into the service call"
+        },
+        {
+          "file": "src/modules/build/core/projects-automations.service.ts",
+          "line": 81,
+          "note": "authorizes the caller against the named projectId only — this can be a project-scoped standing"
+        },
+        {
+          "file": "src/modules/build/core/projects-automations.service.ts",
+          "line": 88,
+          "note": "the actual UPDATE's WHERE omits projectId entirely — any automation in the org matches"
+        },
+        {
+          "file": "src/modules/build/core/projects-members.service.ts",
+          "line": 91,
+          "note": "assertCanManageProject accepts a per-project ADMIN standing, not only org-wide build:manage — confirming the caller's authority can be strictly project-scoped"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-automations.controller.ts#delete",
@@ -2335,10 +2707,31 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VULNERABLE",
+      "verdictReason": "DELETE /build/:projectId/automations/:automationId. Identical defect shape to #update: ProjectsAutomationsService.deleteAutomation(u, projectId, automationId) calls assertCanManageProject(u, projectId) — which can be satisfied by project-scoped authority over the NAMED project alone — but the actual DELETE, `delete(projectAutomations).where(and(eq(projectAutomations.id, automationId), eq(projectAutomations.orgId, u.orgId)))`, never re-binds projectId. A project-scoped manager of project A can delete any automation in the org by ID, regardless of which project it actually belongs to.",
       "evidence": "src/modules/build/core/projects-automations.controller.ts:69",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-automations.controller.ts",
+          "line": 74,
+          "note": "handler binds both projectId and automationId and forwards both to the service"
+        },
+        {
+          "file": "src/modules/build/core/projects-automations.controller.ts",
+          "line": 79,
+          "note": "projectId is passed into the service call"
+        },
+        {
+          "file": "src/modules/build/core/projects-automations.service.ts",
+          "line": 95,
+          "note": "authorizes the caller against the named projectId only — this can be a project-scoped standing"
+        },
+        {
+          "file": "src/modules/build/core/projects-automations.service.ts",
+          "line": 98,
+          "note": "the actual DELETE's WHERE omits projectId entirely — any automation in the org matches"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-budget.controller.ts#getBudget",
@@ -2855,10 +3248,26 @@
       "parentEvidence": "src/modules/build/core/projects-custom-fields.service.ts:145",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/tickets/:ticketId/custom-field-values. ProjectsCustomFieldsService.getTicketValues(orgId, projectId, ticketId) first looks up the ticket bound to id=ticketId AND projectId=projectId AND orgId=orgId (404 if absent), then reads ticketCustomFieldValues filtered by ticketId+orgId — ticketId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower filter on the values query is still safe.",
       "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:86",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-custom-fields.controller.ts",
+          "line": 90,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-custom-fields.service.ts",
+          "line": 145,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-custom-fields.service.ts",
+          "line": 149,
+          "note": "ticket lookup binds id+projectId+orgId; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-custom-fields.controller.ts#upsertTicketValues",
@@ -2902,10 +3311,21 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/tickets/:ticketId/custom-field-values. Same route-parent binding as getTicketValues: upsertTicketValues(orgId, projectId, ticketId, data) looks up the ticket bound to id+projectId+orgId (404 if absent) before writing any values, so the :projectId/:ticketId route-param claim under review here is genuinely enforced. Separately noted for follow-up, outside this route-binding question: the insert trusts each body-supplied values[].fieldId as-is (`fieldDefinitionId: fieldId`) with no lookup confirming that field id belongs to customFieldDefinitions scoped to this org/project — that is a body-payload object-reference gap, not a URL parent-binding gap, and is not one of the findings in scope for this census dimension, but is worth a follow-up pass.",
       "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:98",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-custom-fields.controller.ts",
+          "line": 103,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-custom-fields.service.ts",
+          "line": 210,
+          "note": "signature; the ticket lookup a few lines below binds id+projectId+orgId identically to getTicketValues, 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-customers.controller.ts#list",
@@ -4526,10 +4946,26 @@
       "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:470",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/tickets/:ticketId/relations. ProjectsTicketRelationsService.listRelations(u, projectId, ticketId) opens with assertTicketReadAccess(db, access, u, projectId, ticketId), whose SELECT WHERE binds tickets.orgId=actor.orgId AND tickets.projectId=projectId AND tickets.id=ticketId together and 404s if no row matches, before any relation is queried.",
       "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:75",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
+          "line": 79,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-relations.service.ts",
+          "line": 56,
+          "note": "signature"
+        },
+        {
+          "file": "src/modules/build/core/build-ticket-read-access.ts",
+          "line": 37,
+          "note": "assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-associations.controller.ts#addRelation",
@@ -4573,10 +5009,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/tickets/:ticketId/relations. addRelation(u, projectId, ticketId, body) also opens with assertTicketReadAccess(db, access, u, projectId, ticketId) (id+orgId+projectId bound, 404 on mismatch), and separately re-verifies that body.relatedTicketId belongs to the same projectId+orgId before inserting the relation row.",
       "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:87",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
+          "line": 92,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-relations.service.ts",
+          "line": 130,
+          "note": "binds ticketId to this projectId+orgId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-relations.service.ts",
+          "line": 139,
+          "note": "relatedTicketId is independently bound to the same project before the relation is created"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-associations.controller.ts#removeRelation",
@@ -4620,10 +5072,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/relations. removeRelation(u, projectId, ticketId, relatedId) opens with the same assertTicketReadAccess binding (id+orgId+projectId, 404 on mismatch) before deleting the workItemRelations edge, which is itself scoped to orgId and to the (already-verified) ticketId on either side of the edge.",
       "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:101",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
+          "line": 106,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-relations.service.ts",
+          "line": 210,
+          "note": "signature"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-relations.service.ts",
+          "line": 216,
+          "note": "binds ticketId to this projectId+orgId before the delete"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-associations.controller.ts#getWatchers",
@@ -4904,10 +5372,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/labels/:labelId. ProjectsTicketSubresourcesService.removeLabel(orgId, userId, projectId, ticketId, labelId) opens with the private requireTicket(orgId, projectId, ticketId) helper, whose WHERE binds id+projectId+orgId together and 404s on mismatch, before deleting the ticketLabelMappings row (itself scoped to the already-verified ticketId+orgId).",
       "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:168",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
+          "line": 173,
+          "note": "handler binds projectId, ticketId and labelId and forwards all three"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
+          "line": 416,
+          "note": "binds ticketId to this projectId+orgId; 404 on mismatch"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
+          "line": 271,
+          "note": "requireTicket's WHERE clause binds id+projectId+orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-associations.controller.ts#addAttachment",
@@ -5007,10 +5491,26 @@
       "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:606",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/tickets/:ticketId/git-links. ProjectsTicketLinksService.getGitLinks(orgId, projectId, ticketId) first confirms the project exists in this org, then looks up the ticket bound to id=ticketId AND projectId=projectId AND orgId=orgId (404 if absent), before querying gitTicketLinks filtered by the already-verified ticketId+orgId.",
       "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:196",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
+          "line": 200,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-links.service.ts",
+          "line": 41,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-links.service.ts",
+          "line": 50,
+          "note": "ticket lookup binds id+projectId+orgId; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-associations.controller.ts#listRelatedLinks",
@@ -5185,10 +5685,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId. ProjectsTicketLinksService.updateRelatedLink(u, projectId, ticketId, linkId, body) opens with assertTicketAccess (which wraps assertTicketReadAccess: id+orgId+projectId bound, 404 on mismatch), then both the SELECT and the UPDATE of ticketRelatedLinks are keyed by orgId+id=linkId+ticketId=ticketId — the already-verified ticketId is repeated in the mutation's own WHERE, not just the pre-check.",
       "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:234",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
+          "line": 238,
+          "note": "handler binds projectId, ticketId and linkId and forwards all three"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-links.service.ts",
+          "line": 163,
+          "note": "signature"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-links.service.ts",
+          "line": 170,
+          "note": "binds ticketId to this projectId+orgId before any read or write"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-associations.controller.ts#deleteRelatedLink",
@@ -5234,10 +5750,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/related-links/:linkId. Same shape as updateRelatedLink: deleteRelatedLink(u, projectId, ticketId, linkId) opens with assertTicketAccess (id+orgId+projectId bound, 404 on mismatch), then both the ownership SELECT and the DELETE of ticketRelatedLinks are keyed by orgId+id=linkId+ticketId=ticketId.",
       "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:248",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
+          "line": 253,
+          "note": "handler binds projectId, ticketId and linkId and forwards all three"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-links.service.ts",
+          "line": 205,
+          "note": "signature"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-links.service.ts",
+          "line": 211,
+          "note": "binds ticketId to this projectId+orgId before any read or write"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-checklists.controller.ts#getChecklists",
@@ -5279,10 +5811,26 @@
       "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:497",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/tickets/:ticketId/checklists. ProjectsTicketChecklistsService.getChecklists(orgId, projectId, ticketId) first looks up the ticket bound to id=ticketId AND projectId=projectId AND orgId=orgId (404 if absent), before querying ticketChecklists filtered by the already-verified ticketId+orgId.",
       "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:44",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-checklists.controller.ts",
+          "line": 48,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
+          "line": 57,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
+          "line": 61,
+          "note": "ticket lookup binds id+projectId+orgId; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-checklists.controller.ts#createChecklist",
@@ -5326,10 +5874,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/tickets/:ticketId/checklists. createChecklist(orgId, projectId, ticketId, data) performs the identical ticket lookup as getChecklists (id+projectId+orgId bound, 404 if absent) before inserting the new checklist row against the already-verified ticketId.",
       "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:56",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-checklists.controller.ts",
+          "line": 61,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
+          "line": 92,
+          "note": "signature"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
+          "line": 101,
+          "note": "ticket lookup binds id+projectId+orgId; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-checklists.controller.ts#updateChecklist",
@@ -5720,10 +6284,26 @@
       "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:86",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/tickets/:ticketId/comments/:commentId. ProjectsTicketCommentsService.getComment(u, projectId, ticketId, commentId) resolves the ticket by id+orgId via resolveTicketForComment, reads ticket.projectId, and immediately compares it against the route's projectId — `if (ticket.projectId !== projectId) throw new NotFoundException(...)` — an explicit parent-binding check, not an inferred one. Only after that passes does loadCommentRow bind the comment to id=commentId AND ticketId=ticketId AND orgId=orgId.",
       "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:59",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
+          "line": 63,
+          "note": "handler binds projectId, ticketId and commentId and forwards all three"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 204,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 206,
+          "note": "explicit parent-binding compare, 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-comments.controller.ts#editComment",
@@ -5769,10 +6349,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/tickets/:ticketId/comments/:commentId. Same explicit-compare pattern as getComment: editComment(u, projectId, ticketId, commentId, content) resolves the ticket and checks `if (ticket.projectId !== projectId) throw new NotFoundException(...)` before loading the comment bound to id+ticketId+orgId, checking author ownership, and finally updating it by id+orgId.",
       "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:72",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
+          "line": 76,
+          "note": "handler binds projectId, ticketId and commentId and forwards all three"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 212,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 214,
+          "note": "explicit parent-binding compare, 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-comments.controller.ts#deleteComment",
@@ -5818,10 +6414,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/comments/:commentId. Same explicit-compare pattern: deleteComment(u, projectId, ticketId, commentId) resolves the ticket and checks `if (ticket.projectId !== projectId) throw new NotFoundException(...)` before loading the comment (id+ticketId+orgId), checking author ownership, and soft-deleting it (and its replies) by id/parentCommentId+orgId.",
       "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:86",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
+          "line": 91,
+          "note": "handler binds projectId, ticketId and commentId and forwards all three"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 242,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 244,
+          "note": "explicit parent-binding compare, 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-comments.controller.ts#addReaction",
@@ -5867,10 +6479,31 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VULNERABLE",
+      "verdictReason": "POST /build/:projectId/tickets/:ticketId/comments/:commentId/reactions. Unlike its siblings getComment/editComment/deleteComment on the same controller, the addReaction handler's parameter list is `addReaction(@Param(\"ticketId\") ticketId, @Param(\"commentId\") commentId, @Body() body, @CurrentUser() u)` — there is no `@Param(\"projectId\")` at all. @Validate({ params: projectIdticketIdcommentIdParams_ }) still requires the :projectId segment to be present and non-empty in the URL (so the route 400s if it is missing), but the handler never reads the value it validated, and never passes it to the service. The call chain — controller → ProjectsTicketSubresourcesService.addReaction(commentId, userId, orgId, emoji, membershipId, ticketId) → ProjectsTicketCommentsService.addReaction — carries no projectId parameter anywhere; the service's own WHERE binds only `eq(ticketComments.id, commentId), eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)`, with no ticket→project check at all (not even the explicit compare that getComment/editComment/deleteComment use). This is a stronger version of the CLOSED updateField pattern: it is not merely that the mutation's WHERE omits projectId — the :projectId segment is discarded before the service boundary and never reconstructed anywhere downstream.",
       "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:100",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
+          "line": 105,
+          "note": "handler's parameter list has no @Param(\"projectId\") at all, even though the route and its @Validate params schema both name :projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
+          "line": 111,
+          "note": "call into the service carries no projectId argument"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
+          "line": 120,
+          "note": "facade method signature also has no projectId parameter"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 279,
+          "note": "terminal implementation's signature has no projectId parameter; its WHERE below binds only id+ticketId+orgId with no ticket-to-project check"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-ticket-comments.controller.ts#removeReaction",
@@ -5918,10 +6551,31 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VULNERABLE",
+      "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji. Identical defect shape to addReaction: `removeReaction(@Param(\"ticketId\") ticketId, @Param(\"commentId\") commentId, @Param(\"emoji\") emoji, @CurrentUser() u)` has no @Param(\"projectId\"), even though @Validate({ params: projectIdticketIdcommentIdemojiParams }) requires :projectId to be present in the URL. The value is validated for presence and then discarded — never read, never forwarded. ProjectsTicketCommentsService.removeReaction(commentId, userId, orgId, emoji, membershipId, ticketId) binds only id+ticketId+orgId when looking up the comment before deleting the reaction row; there is no ticket-to-project check anywhere in the chain.",
       "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:114",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
+          "line": 119,
+          "note": "handler's parameter list has no @Param(\"projectId\") at all, even though the route and its @Validate params schema both name :projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
+          "line": 125,
+          "note": "call into the service carries no projectId argument"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
+          "line": 138,
+          "note": "facade method signature also has no projectId parameter"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 299,
+          "note": "terminal implementation's signature has no projectId parameter; its WHERE below binds only id+ticketId+orgId with no ticket-to-project check"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-tickets.controller.ts#getAllWork",
@@ -6301,10 +6955,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/tickets/:ticketId/rank. The controller forwards to ProjectsTicketsService.rankTicket → the standalone rankTicket() helper in projects-tickets-rank-utils.ts. That helper authorizes and locks against the named projectId, reads the mutation candidates via readMutationTickets(tx, actor, projectId, ids, policy), and — decisively — the final UPDATE itself binds `eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.id, ticketId)` all together, throwing NotFoundException if no row matches. The mutation, not just a pre-check, re-asserts the parent binding.",
       "evidence": "src/modules/build/core/projects-tickets.controller.ts:173",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-tickets.controller.ts",
+          "line": 177,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-tickets-rank-utils.ts",
+          "line": 26,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-tickets-rank-utils.ts",
+          "line": 70,
+          "note": "the actual UPDATE's WHERE binds orgId+projectId+id together; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-tickets.controller.ts#getActivity",
@@ -6346,10 +7016,26 @@
       "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:160",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/tickets/:ticketId/activity. The controller forwards to ProjectsTicketSubresourcesService.getActivity(u, projectId, ticketId, opts), which opens with assertTicketReadAccess(db, access, actor, projectId, ticketId) — the same helper used throughout the associations/relations/links services — whose SELECT WHERE binds orgId+projectId+id together and 404s (NotFoundException) on mismatch, before any activity log row is queried.",
       "evidence": "src/modules/build/core/projects-tickets.controller.ts:186",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-tickets.controller.ts",
+          "line": 190,
+          "note": "handler binds both projectId and ticketId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
+          "line": 160,
+          "note": "signature"
+        },
+        {
+          "file": "src/modules/build/core/build-ticket-read-access.ts",
+          "line": 37,
+          "note": "assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-tickets.controller.ts#getTicketByKey",
@@ -6391,10 +7077,26 @@
       "parentEvidence": "src/modules/build/core/projects-tickets.service.ts:93",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/tickets/key/:ticketNumber. ProjectsTicketsDetailService.getTicketByKey(u, projectId, ticketNumber) calls the shared readTicket helper with a selector of `eq(tickets.projectId, projectId), eq(tickets.ticketNumber, ticketNumber)`, and readTicket's own findFirst WHERE additionally ANDs in `eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)`. The ticket is only ever resolved by the composite projectId+ticketNumber+orgId key.",
       "evidence": "src/modules/build/core/projects-tickets.controller.ts:202",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-tickets.controller.ts",
+          "line": 206,
+          "note": "handler binds both projectId and ticketNumber and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-tickets-detail.service.ts",
+          "line": 32,
+          "note": "signature"
+        },
+        {
+          "file": "src/modules/build/core/projects-tickets-detail.service.ts",
+          "line": 40,
+          "note": "selector binds the lookup to the named project"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-tickets.controller.ts#getTicket",
@@ -6747,10 +7449,26 @@
       "parentEvidence": "src/modules/build/core/projects-webhooks.service.ts:83",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/webhooks/:webhookId/deliveries. ProjectsWebhooksService.listDeliveries(orgId, projectId, webhookId) opens with assertWebhookOwnership(orgId, projectId, webhookId), whose WHERE binds id=webhookId AND orgId=orgId AND projectId=projectId together and 404s on mismatch, before querying webhookDeliveries filtered by the already-verified webhookId.",
       "evidence": "src/modules/build/core/projects-webhooks.controller.ts:72",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-webhooks.controller.ts",
+          "line": 76,
+          "note": "handler binds both projectId and webhookId and forwards both"
+        },
+        {
+          "file": "src/modules/build/core/projects-webhooks.service.ts",
+          "line": 83,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-webhooks.service.ts",
+          "line": 68,
+          "note": "ownership check binds id+orgId+projectId; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects-webhooks.controller.ts#sendTest",
@@ -6794,10 +7512,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/webhooks/:webhookId/test. The controller itself calls `await this.webhooks.assertWebhookOwnership(u.orgId, projectId, webhookId)` (id+orgId+projectId bound, 404 on mismatch) BEFORE calling `this.dispatch.sendTest(u.orgId, projectId, webhookId)`. Belt-and-suspenders: sendTest's own SELECT independently re-binds id=webhookId AND orgId=orgId AND projectId=projectId and returns a no-op failure result if the row is absent.",
       "evidence": "src/modules/build/core/projects-webhooks.controller.ts:84",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/core/projects-webhooks.controller.ts",
+          "line": 90,
+          "note": "handler binds both projectId and webhookId"
+        },
+        {
+          "file": "src/modules/build/core/projects-webhooks.controller.ts",
+          "line": 95,
+          "note": "controller-level ownership check runs before dispatch.sendTest"
+        },
+        {
+          "file": "src/modules/build/core/projects-webhooks-dispatch.service.ts",
+          "line": 311,
+          "note": "signature"
+        }
+      ]
     },
     {
       "key": "modules/build/core/projects.controller.ts#listProjects",
@@ -7558,10 +8292,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/cycles/:cycleId. CyclesService.updateCycle(orgId, projectId, cycleId, input) confirms the project exists in this org, then the actual UPDATE's WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly — the mutation itself, not just a pre-check, requires the cycle to belong to the named project.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:163",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/iterations.controller.ts",
+          "line": 167,
+          "note": "handler binds both projectId and cycleId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/cycles.service.ts",
+          "line": 109,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/execution/cycles.service.ts",
+          "line": 127,
+          "note": "UPDATE's own WHERE binds id+projectId+orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/iterations.controller.ts#deleteCycle",
@@ -7605,10 +8355,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/cycles/:cycleId. Same shape as updateCycle: CyclesService.deleteCycle(orgId, projectId, cycleId) confirms the project exists in this org, then the DELETE's own WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly, 404ing if zero rows are removed.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:176",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/iterations.controller.ts",
+          "line": 181,
+          "note": "handler binds both projectId and cycleId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/cycles.service.ts",
+          "line": 134,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/execution/cycles.service.ts",
+          "line": 140,
+          "note": "DELETE's own WHERE binds id+projectId+orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/iterations.controller.ts#listModules",
@@ -7934,10 +8700,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/epics/:epicId. EpicsService.updateEpic(orgId, projectId, epicId, input) runs the UPDATE directly with WHERE `eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, \"EPIC\")` — the mutation itself binds the epic to the named project, no separate pre-check needed.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:277",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/iterations.controller.ts",
+          "line": 281,
+          "note": "handler binds both projectId and epicId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/epics.service.ts",
+          "line": 61,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/execution/epics.service.ts",
+          "line": 67,
+          "note": "UPDATE's own WHERE binds id+orgId+projectId+type"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/iterations.controller.ts#deleteEpic",
@@ -7981,10 +8763,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).",
       "evidence": "src/modules/build/execution/iterations.controller.ts:290",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/iterations.controller.ts",
+          "line": 295,
+          "note": "handler binds both projectId and epicId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/epics.service.ts",
+          "line": 78,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/execution/epics.service.ts",
+          "line": 81,
+          "note": "existence check binds id+orgId+projectId+type; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/timesheets.controller.ts#listTimeEntries",
@@ -8442,10 +9240,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/whiteboards/:whiteboardId/sharing. WhiteboardSharingService.updateSharing(u, projectId, whiteboardId, input) opens with requireWhiteboardManageAccess(db, access, u, projectId, whiteboardId), whose SELECT WHERE binds `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)` together and 404s on mismatch, before the sharing settings are updated by the already-verified id+orgId.",
       "evidence": "src/modules/build/execution/whiteboard-sharing.controller.ts:57",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/whiteboard-sharing.controller.ts",
+          "line": 61,
+          "note": "handler binds both projectId and whiteboardId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboard-sharing.service.ts",
+          "line": 46,
+          "note": "binds whiteboardId to this projectId+orgId before any mutation"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboard-board-helpers.ts",
+          "line": 46,
+          "note": "signature takes projectId; its WHERE (a few lines below) binds id+projectId+orgId, 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/whiteboard-sharing.controller.ts#rotateShareToken",
@@ -8489,10 +9303,21 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token. Same requireWhiteboardManageAccess binding as updateSharing (id+projectId+orgId, 404 on mismatch) before the share token is rotated by the already-verified id+orgId.",
       "evidence": "src/modules/build/execution/whiteboard-sharing.controller.ts:70",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/whiteboard-sharing.controller.ts",
+          "line": 76,
+          "note": "handler binds both projectId and whiteboardId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboard-sharing.service.ts",
+          "line": 84,
+          "note": "binds whiteboardId to this projectId+orgId before rotating the token"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/whiteboard-sharing.controller.ts#setShares",
@@ -8536,10 +9361,21 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PUT /build/:projectId/whiteboards/:whiteboardId/shares. Same requireWhiteboardManageAccess binding (id+projectId+orgId, 404 on mismatch) before the whiteboard's share rows are replaced; the replace transaction itself is scoped to the already-verified whiteboardId.",
       "evidence": "src/modules/build/execution/whiteboard-sharing.controller.ts:84",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/whiteboard-sharing.controller.ts",
+          "line": 88,
+          "note": "handler binds both projectId and whiteboardId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboard-sharing.service.ts",
+          "line": 108,
+          "note": "binds whiteboardId to this projectId+orgId before the share rows are replaced"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/whiteboard-sharing.controller.ts#removeShare",
@@ -8585,10 +9421,21 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId. Same requireWhiteboardManageAccess binding (id+projectId+orgId, 404 on mismatch) before the share row for targetUserId is removed; the DELETE itself is scoped to the already-verified whiteboardId and to a membership subquery scoped to u.orgId.",
       "evidence": "src/modules/build/execution/whiteboard-sharing.controller.ts:97",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/whiteboard-sharing.controller.ts",
+          "line": 102,
+          "note": "handler binds projectId, whiteboardId and targetUserId and forwards all three"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboard-sharing.service.ts",
+          "line": 174,
+          "note": "binds whiteboardId to this projectId+orgId before the delete"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/whiteboard-sharing.controller.ts#getByToken",
@@ -9626,10 +10473,26 @@
       "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:202",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/whiteboards/:whiteboardId. WhiteboardsService.getWhiteboard(u, projectId, whiteboardId) confirms the project exists in this org, then loadBoardWithAccess's SELECT WHERE binds `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)` together and throws NotFoundException on mismatch, before the DTO is built.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:319",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/workspace.controller.ts",
+          "line": 323,
+          "note": "handler binds both projectId and whiteboardId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboards.service.ts",
+          "line": 202,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboards.service.ts",
+          "line": 64,
+          "note": "private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/workspace.controller.ts#updateWhiteboard",
@@ -9673,10 +10536,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/whiteboards/:whiteboardId. WhiteboardsService.updateWhiteboard(u, projectId, whiteboardId, input) calls loadBoardWithAccess (id+projectId+orgId, 404 on mismatch) for the access-level check, and the subsequent UPDATE independently repeats the identical binding in its own WHERE: `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)`.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:331",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/workspace.controller.ts",
+          "line": 335,
+          "note": "handler binds both projectId and whiteboardId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboards.service.ts",
+          "line": 229,
+          "note": "signature"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboards.service.ts",
+          "line": 253,
+          "note": "the UPDATE's own WHERE re-binds id+projectId+orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/execution/workspace.controller.ts#deleteWhiteboard",
@@ -9720,10 +10599,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/whiteboards/:whiteboardId. Same shape as updateWhiteboard: deleteWhiteboard(u, projectId, whiteboardId) calls loadBoardWithAccess (id+projectId+orgId, 404 on mismatch), and the soft-delete UPDATE independently repeats the identical id+projectId+orgId binding in its own WHERE.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:344",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/execution/workspace.controller.ts",
+          "line": 349,
+          "note": "handler binds both projectId and whiteboardId and forwards both"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboards.service.ts",
+          "line": 266,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/execution/whiteboards.service.ts",
+          "line": 280,
+          "note": "the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/files/files.controller.ts#listFiles",
@@ -9852,10 +10747,26 @@
       "parentEvidence": "src/modules/build/files/files.service.ts:167",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/files/:fileId/url. FilesService.getSignedUrl(u, projectId, fileId) confirms project access, then loadFile(orgId, projectId, fileId) binds id=fileId AND orgId=orgId AND projectId=projectId together (404 on mismatch) before the signed URL is generated from the already-verified row's storageKey.",
       "evidence": "src/modules/build/files/files.controller.ts:73",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/files/files.controller.ts",
+          "line": 77,
+          "note": "handler binds both projectId and fileId and forwards both"
+        },
+        {
+          "file": "src/modules/build/files/files.service.ts",
+          "line": 167,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/files/files.service.ts",
+          "line": 64,
+          "note": "loadFile's WHERE (a few lines below) binds id+orgId+projectId together; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/files/files.controller.ts#softDeleteFile",
@@ -9899,10 +10810,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/files/:fileId. FilesService.softDeleteFile(u, projectId, fileId) also opens with loadFile(orgId, projectId, fileId) (id+orgId+projectId bound, 404 on mismatch), checks uploader/manage authority, and the soft-delete UPDATE independently repeats the identical id+orgId+projectId binding in its own WHERE.",
       "evidence": "src/modules/build/files/files.controller.ts:85",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/files/files.controller.ts",
+          "line": 90,
+          "note": "handler binds both projectId and fileId and forwards both"
+        },
+        {
+          "file": "src/modules/build/files/files.service.ts",
+          "line": 174,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/files/files.service.ts",
+          "line": 188,
+          "note": "the soft-delete UPDATE's own WHERE re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/forms/forms.controller.ts#listForms",
@@ -9987,10 +10914,26 @@
       "parentEvidence": "src/modules/build/forms/forms.service.ts:72",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/forms/:formId. FormsService.getForm(u, projectId, formId) delegates directly to loadForm(orgId, projectId, formId), whose WHERE binds id=formId AND orgId=orgId AND projectId=projectId together and throws NotFoundException on mismatch.",
       "evidence": "src/modules/build/forms/forms.controller.ts:54",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/forms/forms.controller.ts",
+          "line": 58,
+          "note": "handler binds both projectId and formId and forwards both"
+        },
+        {
+          "file": "src/modules/build/forms/forms.service.ts",
+          "line": 72,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/forms/forms.service.ts",
+          "line": 24,
+          "note": "loadForm's WHERE (a few lines below) binds id+orgId+projectId together; 404 on mismatch"
+        }
+      ]
     },
     {
       "key": "modules/build/forms/forms.controller.ts#createForm",
@@ -10078,10 +11021,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/forms/:formId. FormsService.updateForm(u, projectId, formId, input) opens with loadForm(orgId, projectId, formId) (id+orgId+projectId bound, 404 on mismatch) before building the patch and running the UPDATE keyed by the now-verified id+orgId (formId is a global PK already proven to belong to this exact project — verify-then-act-by-PK).",
       "evidence": "src/modules/build/forms/forms.controller.ts:79",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/forms/forms.controller.ts",
+          "line": 83,
+          "note": "handler binds both projectId and formId and forwards both"
+        },
+        {
+          "file": "src/modules/build/forms/forms.service.ts",
+          "line": 113,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/forms/forms.service.ts",
+          "line": 114,
+          "note": "binds id+orgId+projectId; 404 on mismatch before any patch logic runs"
+        }
+      ]
     },
     {
       "key": "modules/build/forms/forms.controller.ts#deleteForm",
@@ -10125,10 +11084,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/forms/:formId. Same shape as updateForm: FormsService.deleteForm(u, projectId, formId) opens with loadForm(orgId, projectId, formId) (id+orgId+projectId bound, 404 on mismatch) before the soft-delete UPDATE keyed by the now-verified id+orgId.",
       "evidence": "src/modules/build/forms/forms.controller.ts:92",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/forms/forms.controller.ts",
+          "line": 97,
+          "note": "handler binds both projectId and formId and forwards both"
+        },
+        {
+          "file": "src/modules/build/forms/forms.service.ts",
+          "line": 151,
+          "note": "signature takes projectId"
+        },
+        {
+          "file": "src/modules/build/forms/forms.service.ts",
+          "line": 152,
+          "note": "binds id+orgId+projectId; 404 on mismatch before the delete"
+        }
+      ]
     },
     {
       "key": "modules/build/forms/submissions.controller.ts#listSubmissions",
@@ -10169,10 +11144,26 @@
       "notes": [
         "route params unvalidated (@Validate has no params key)"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/forms/:formId/submissions. The service's listSubmissions calls the private loadForm(orgId, projectId, formId) helper before querying, which selects projectForms WHERE id=formId AND orgId=orgId AND projectId=projectId (not deleted) and throws NotFoundException if the form does not belong to that project/org. Only after that binding succeeds does the submissions query run, itself filtered by formId+orgId. A :formId that belongs to a different project 404s before any row is read.",
       "evidence": "src/modules/build/forms/submissions.controller.ts:57",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/forms/submissions.controller.ts",
+          "line": 67,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/forms/submissions.service.ts",
+          "line": 145,
+          "note": "listSubmissions binds via loadForm before querying"
+        },
+        {
+          "file": "src/modules/build/forms/submissions.service.ts",
+          "line": 34,
+          "note": "loadForm's WHERE binds formId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/forms/submissions.controller.ts#createSubmission",
@@ -10214,10 +11205,26 @@
         "route params unvalidated (@Validate has no params key)",
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/forms/:formId/submissions. createSubmission calls loadForm(orgId, projectId, formId) first (same binding as listSubmissions — 404 on any org/project mismatch), then passes the *loaded form row* (not the raw params) into runSubmission, which derives orgId/projectId/formId for every insert from that already-validated row. The submission can only ever be written under the form's real project.",
       "evidence": "src/modules/build/forms/submissions.controller.ts:70",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/forms/submissions.controller.ts",
+          "line": 81,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/forms/submissions.service.ts",
+          "line": 178,
+          "note": "createSubmission binds via loadForm before running the submission"
+        },
+        {
+          "file": "src/modules/build/forms/submissions.service.ts",
+          "line": 74,
+          "note": "runSubmission destructures orgId/formId/projectId from the already-validated form row, not the raw params"
+        }
+      ]
     },
     {
       "key": "modules/build/forms/submissions.controller.ts#updateSubmission",
@@ -10263,10 +11270,31 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/forms/:formId/submissions/:submissionId — three route params. updateSubmission binds all three: loadForm(orgId, projectId, formId) confirms the form belongs to the project, then loadSubmission(orgId, formId, submissionId) confirms the submission belongs to that same formId and org. Only after both checks pass does the UPDATE run, itself re-filtered by id+orgId+formId. A submissionId that belongs to a different form, or a formId belonging to a different project, 404s before any write.",
       "evidence": "src/modules/build/forms/submissions.controller.ts:84",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/forms/submissions.controller.ts",
+          "line": 95,
+          "note": "route handler passes all three raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/forms/submissions.service.ts",
+          "line": 228,
+          "note": "binds formId to projectId"
+        },
+        {
+          "file": "src/modules/build/forms/submissions.service.ts",
+          "line": 229,
+          "note": "binds submissionId to formId"
+        },
+        {
+          "file": "src/modules/build/forms/submissions.service.ts",
+          "line": 236,
+          "note": "UPDATE WHERE clause re-binds formId"
+        }
+      ]
     },
     {
       "key": "modules/build/forms/submissions.controller.ts#submitPublicForm",
@@ -10404,10 +11432,26 @@
       "parentEvidence": "src/modules/build/governance/decisions.service.ts:70",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/decisions/:decisionId. getDecision calls assertProjectAccess(projectId) (404 if the project isn't in the caller's org) then loadDecision(orgId, projectId, decisionId), whose WHERE binds id=decisionId AND orgId AND projectId together. A decisionId belonging to another project 404s.",
       "evidence": "src/modules/build/governance/decisions.controller.ts:54",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/governance/decisions.controller.ts",
+          "line": 63,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/governance/decisions.service.ts",
+          "line": 72,
+          "note": "getDecision delegates to loadDecision"
+        },
+        {
+          "file": "src/modules/build/governance/decisions.service.ts",
+          "line": 41,
+          "note": "loadDecision's WHERE binds decisionId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/governance/decisions.controller.ts#createDecision",
@@ -10495,10 +11539,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/decisions/:decisionId. updateDecision calls assertProjectAccess(projectId), then loadDecision(orgId, projectId, decisionId) (404 on mismatch), then the UPDATE's own WHERE independently re-binds id+orgId+projectId. Both the pre-check and the write itself scope the row to the named project.",
       "evidence": "src/modules/build/governance/decisions.controller.ts:79",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/governance/decisions.controller.ts",
+          "line": 89,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/governance/decisions.service.ts",
+          "line": 122,
+          "note": "binds decisionId to projectId via loadDecision before patching"
+        },
+        {
+          "file": "src/modules/build/governance/decisions.service.ts",
+          "line": 137,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/governance/decisions.controller.ts#softDeleteDecision",
@@ -10542,10 +11602,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/decisions/:decisionId (soft delete). Same binding as updateDecision: assertProjectAccess + loadDecision(orgId, projectId, decisionId) 404s a foreign decisionId, and the soft-delete UPDATE's own WHERE independently repeats id+orgId+projectId.",
       "evidence": "src/modules/build/governance/decisions.controller.ts:92",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/governance/decisions.controller.ts",
+          "line": 102,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/governance/decisions.service.ts",
+          "line": 154,
+          "note": "binds decisionId to projectId via loadDecision before deleting"
+        },
+        {
+          "file": "src/modules/build/governance/decisions.service.ts",
+          "line": 158,
+          "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/governance/risks.controller.ts#listRisks",
@@ -10673,10 +11749,26 @@
       "parentEvidence": "src/modules/build/governance/risks.service.ts:123",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/risks/:riskId. getRisk calls assertProjectAccess(projectId) then loadRisk(orgId, projectId, riskId), whose WHERE binds id=riskId AND orgId AND projectId. A riskId from another project 404s.",
       "evidence": "src/modules/build/governance/risks.controller.ts:72",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/governance/risks.controller.ts",
+          "line": 81,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/governance/risks.service.ts",
+          "line": 125,
+          "note": "getRisk delegates to loadRisk"
+        },
+        {
+          "file": "src/modules/build/governance/risks.service.ts",
+          "line": 33,
+          "note": "loadRisk's WHERE binds riskId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/governance/risks.controller.ts#createRisk",
@@ -10764,10 +11856,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/risks/:riskId. updateRisk calls assertProjectAccess(projectId) then loadRisk(orgId, projectId, riskId) before patching, and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/governance/risks.controller.ts:97",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/governance/risks.controller.ts",
+          "line": 107,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/governance/risks.service.ts",
+          "line": 174,
+          "note": "binds riskId to projectId via loadRisk before patching"
+        },
+        {
+          "file": "src/modules/build/governance/risks.service.ts",
+          "line": 188,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/governance/risks.controller.ts#softDeleteRisk",
@@ -10811,10 +11919,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/risks/:riskId (soft delete). Same binding as updateRisk: assertProjectAccess + loadRisk(orgId, projectId, riskId) 404s a foreign riskId, and the soft-delete UPDATE's own WHERE independently repeats id+orgId+projectId.",
       "evidence": "src/modules/build/governance/risks.controller.ts:110",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/governance/risks.controller.ts",
+          "line": 120,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/governance/risks.service.ts",
+          "line": 205,
+          "note": "binds riskId to projectId via loadRisk before deleting"
+        },
+        {
+          "file": "src/modules/build/governance/risks.service.ts",
+          "line": 209,
+          "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/import-export/ticket-import-export.controller.ts#previewImport",
@@ -11032,10 +12156,26 @@
       "parentEvidence": "src/modules/build/incidents/incidents.service.ts:72",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the joined incidentUpdates query (itself filtered by the now-confirmed incidentId+orgId) runs.",
       "evidence": "src/modules/build/incidents/incidents.controller.ts:68",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/incidents/incidents.controller.ts",
+          "line": 77,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 74,
+          "note": "getIncident binds via loadIncident before reading updates"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 38,
+          "note": "loadIncident's WHERE binds incidentId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/incidents/incidents.controller.ts#createIncident",
@@ -11123,10 +12263,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/incidents/:incidentId. updateIncident binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId) and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction. NOTE: unlike the sibling getIncident/addUpdate handlers in this same file, updateIncident does not additionally call assertProjectAccess — it relies solely on org-wide build:incidents:manage plus the id/org/project row binding. That is a project-membership-scoping asymmetry (any org member holding build:incidents:manage can edit incidents in a project they are not otherwise a member of), not a parent-binding defect: the object itself is still fully and correctly scoped to the named project, and a cross-tenant/cross-project incidentId still 404s.",
       "evidence": "src/modules/build/incidents/incidents.controller.ts:93",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/incidents/incidents.controller.ts",
+          "line": 103,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 140,
+          "note": "binds incidentId to projectId via loadIncident before patching; no assertProjectAccess call precedes it"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 168,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/incidents/incidents.controller.ts#deleteIncident",
@@ -11170,10 +12326,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/incidents/:incidentId (soft delete). Same shape as updateIncident: loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId. Also skips assertProjectAccess like updateIncident (see that entry's note) — a project-membership-scoping asymmetry, not a parent-binding defect.",
       "evidence": "src/modules/build/incidents/incidents.controller.ts:106",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/incidents/incidents.controller.ts",
+          "line": 116,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 228,
+          "note": "binds incidentId to projectId via loadIncident; no assertProjectAccess call precedes it"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 236,
+          "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/incidents/incidents.controller.ts#addUpdate",
@@ -11217,10 +12389,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.",
       "evidence": "src/modules/build/incidents/incidents.controller.ts:119",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/incidents/incidents.controller.ts",
+          "line": 130,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 256,
+          "note": "binds incidentId to projectId via loadIncident before writing"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 282,
+          "note": "in-transaction status UPDATE independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/managed-products/managed-products.controller.ts#listManagedProducts",
@@ -11533,10 +12721,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/meetings/:meetingId/action-items. createItem calls assertMeeting(orgId, projectId, meetingId), whose WHERE binds id=meetingId AND orgId AND projectId, before inserting the action item. A meetingId belonging to another project 404s before any row is written.",
       "evidence": "src/modules/build/meetings/action-items.controller.ts:39",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/action-items.controller.ts",
+          "line": 50,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 62,
+          "note": "createItem binds via assertMeeting before inserting"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 34,
+          "note": "assertMeeting's WHERE binds meetingId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/action-items.controller.ts#updateItem",
@@ -11582,10 +12786,31 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/meetings/:meetingId/action-items/:itemId — three route params. updateItem binds all three: assertMeeting(orgId, projectId, meetingId) confirms the meeting belongs to the project, then loadItem(orgId, meetingId, itemId) confirms the item belongs to that meeting and org (404 otherwise). The final UPDATE's WHERE only re-checks id+orgId (not meetingId), but that is safe: loadItem already proved this exact primary-key row belongs to the named meeting, meetingId is never reassigned by any other endpoint in this file, and the UPDATE targets the row by its immutable primary key — so it can only ever touch the row already confirmed to be under the right parent.",
       "evidence": "src/modules/build/meetings/action-items.controller.ts:53",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/action-items.controller.ts",
+          "line": 64,
+          "note": "route handler passes all three raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 96,
+          "note": "binds meetingId to projectId via assertMeeting"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 97,
+          "note": "binds itemId to meetingId via loadItem before patching"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 107,
+          "note": "UPDATE targets the already-verified row by primary key id + orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/action-items.controller.ts#deleteItem",
@@ -11631,10 +12856,31 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/meetings/:meetingId/action-items/:itemId. Same binding shape as updateItem: assertMeeting(orgId, projectId, meetingId) then loadItem(orgId, meetingId, itemId) 404s a foreign itemId or meetingId before the soft-delete UPDATE runs, which targets the already-verified row by primary key.",
       "evidence": "src/modules/build/meetings/action-items.controller.ts:67",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/action-items.controller.ts",
+          "line": 78,
+          "note": "route handler passes all three raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 122,
+          "note": "binds meetingId to projectId via assertMeeting"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 123,
+          "note": "binds itemId to meetingId via loadItem before deleting"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 127,
+          "note": "soft-delete UPDATE targets the already-verified row by primary key id + orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/action-items.controller.ts#convertToTask",
@@ -11680,10 +12926,31 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task. convertToTask does its own inline binding inside one transaction: it looks up the meeting by id/org/project (404 otherwise), then the action item by id/org/meetingId (404 otherwise), and only then creates the ticket and updates the action item row (WHERE id=itemId AND orgId, targeting the row already proven to belong to the right meeting/project in the same transaction).",
       "evidence": "src/modules/build/meetings/action-items.controller.ts:81",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/action-items.controller.ts",
+          "line": 93,
+          "note": "route handler passes all three raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 144,
+          "note": "inline meeting lookup binds meetingId to projectId and orgId"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 155,
+          "note": "inline item lookup binds itemId to meetingId and orgId"
+        },
+        {
+          "file": "src/modules/build/meetings/action-items.service.ts",
+          "line": 187,
+          "note": "final UPDATE targets the already-verified row by primary key id + orgId, inside the same transaction"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/meetings.controller.ts#listMeetings",
@@ -11768,10 +13035,26 @@
       "parentEvidence": "src/modules/build/meetings/meetings.service.ts:171",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/meetings/:meetingId. getMeeting calls assertProjectAccess(projectId) then loadMeeting(orgId, projectId, meetingId), whose WHERE binds id=meetingId AND orgId AND projectId. The attendees/action-items/standup queries that follow are filtered by meetingId+orgId, which is safe because meetingId was already proven to belong to this project.",
       "evidence": "src/modules/build/meetings/meetings.controller.ts:67",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/meetings.controller.ts",
+          "line": 76,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 173,
+          "note": "getMeeting binds via loadMeeting before reading child rows"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 57,
+          "note": "loadMeeting's WHERE binds meetingId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/meetings.controller.ts#createMeeting",
@@ -11860,10 +13143,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/meetings/:meetingId. updateMeeting binds via loadMeeting(orgId, projectId, meetingId) (404 on a foreign meetingId) before the UPDATE, which targets the row by primary key id + orgId — safe because meetingId was already proven bound to this project. NOTE: like updateIncident/deleteIncident, this handler does not call assertProjectAccess (unlike getMeeting/listMeetings/createMeeting in the same file); that is a project-membership-scoping asymmetry, not a parent-binding gap — the object itself is still correctly scoped and a cross-project meetingId still 404s.",
       "evidence": "src/modules/build/meetings/meetings.controller.ts:92",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/meetings.controller.ts",
+          "line": 102,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 283,
+          "note": "binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 299,
+          "note": "UPDATE targets the already-verified row by primary key id + orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/meetings.controller.ts#deleteMeeting",
@@ -11907,10 +13206,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/meetings/:meetingId (soft delete). Same shape as updateMeeting: loadMeeting(orgId, projectId, meetingId) 404s a foreign meetingId, and the soft-delete UPDATE targets the already-verified row by primary key. Also skips assertProjectAccess like updateMeeting (see that entry's note).",
       "evidence": "src/modules/build/meetings/meetings.controller.ts:105",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/meetings.controller.ts",
+          "line": 115,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 314,
+          "note": "binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 318,
+          "note": "soft-delete UPDATE targets the already-verified row by primary key id + orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/meetings.controller.ts#addAttendee",
@@ -11954,10 +13269,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/meetings/:meetingId/attendees. addAttendee binds via loadMeeting(orgId, projectId, meetingId) (404 on a foreign meetingId), then additionally resolves the target user to a project member of this exact projectId (a project-membership subquery scoped by orgId) before inserting the attendee row — so both the meeting and the attendee being added are independently proven to belong to this project/org.",
       "evidence": "src/modules/build/meetings/meetings.controller.ts:118",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/meetings.controller.ts",
+          "line": 129,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 330,
+          "note": "binds meetingId to projectId via loadMeeting"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 334,
+          "note": "resolves the attendee to a member of this exact projectId, scoped by orgId, before inserting"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/meetings.controller.ts#removeAttendee",
@@ -12003,10 +13334,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/meetings/:meetingId/attendees/:attendeeUserId. removeAttendee binds via loadMeeting(orgId, projectId, meetingId) (404 on a foreign meetingId), then the DELETE's WHERE scopes to meetingId + a membership subquery filtered by orgId + the named attendeeUserId — meetingId was already proven to belong to the named project.",
       "evidence": "src/modules/build/meetings/meetings.controller.ts:132",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/meetings.controller.ts",
+          "line": 143,
+          "note": "route handler passes all three raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 349,
+          "note": "binds meetingId to projectId via loadMeeting"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 356,
+          "note": "DELETE WHERE clause re-binds orgId alongside meetingId"
+        }
+      ]
     },
     {
       "key": "modules/build/meetings/meetings.controller.ts#upsertStandup",
@@ -12050,10 +13397,21 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PUT /build/:projectId/meetings/:meetingId/standup. upsertStandup binds via loadMeeting(orgId, projectId, meetingId) (404 on a foreign meetingId) before the insert/onConflictDoUpdate, whose conflict target is (meetingId, userId) — meetingId was already proven to belong to this project, so the upsert can only ever touch a standup entry scoped to this meeting.",
       "evidence": "src/modules/build/meetings/meetings.controller.ts:146",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/meetings/meetings.controller.ts",
+          "line": 156,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/meetings/meetings.service.ts",
+          "line": 362,
+          "note": "binds meetingId to projectId via loadMeeting before the upsert"
+        }
+      ]
     },
     {
       "key": "modules/build/portfolios/portfolios.controller.ts#listPortfolios",
@@ -12368,10 +13726,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls loadPortfolio(orgId, portfolioId) first, whose WHERE binds id=portfolioId AND orgId (404 on a foreign portfolioId), then deletes the link row scoped by portfolioId+projectId+orgId. Because portfolioId is already proven to belong to this org, and orgId is repeated on the delete, a projectId belonging to another org's portfolio simply matches zero rows — it can never unlink a link row outside the caller's own org, and cannot affect the project row itself (only the join-table association).",
       "evidence": "src/modules/build/portfolios/portfolios.controller.ts:121",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/portfolios/portfolios.controller.ts",
+          "line": 131,
+          "note": "route handler passes both raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/portfolios/portfolios.service.ts",
+          "line": 292,
+          "note": "binds portfolioId to orgId via loadPortfolio before the delete"
+        },
+        {
+          "file": "src/modules/build/portfolios/portfolios.service.ts",
+          "line": 299,
+          "note": "DELETE WHERE clause scopes to portfolioId + projectId + orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/portfolios/programs.controller.ts#listPrograms",
@@ -12673,10 +14047,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/programs/:programId/projects/:projectId. Structurally identical to portfolios#unlinkProject: loadProgram(orgId, programId) binds programId to orgId (404 on a foreign programId), then the DELETE's WHERE scopes to programId+projectId+orgId. A projectId belonging to another org's program matches zero rows.",
       "evidence": "src/modules/build/portfolios/programs.controller.ts:121",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/portfolios/programs.controller.ts",
+          "line": 131,
+          "note": "route handler passes both raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/portfolios/programs.service.ts",
+          "line": 270,
+          "note": "binds programId to orgId via loadProgram before the delete"
+        },
+        {
+          "file": "src/modules/build/portfolios/programs.service.ts",
+          "line": 277,
+          "note": "DELETE WHERE clause scopes to programId + projectId + orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/bugs.controller.ts#listBugs",
@@ -12761,10 +14151,21 @@
       "parentEvidence": "src/modules/build/qa/bugs.service.ts:77",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/bugs/:bugId. getBug calls assertProjectAccess(projectId) then selects the ticket WHERE id=bugId AND orgId AND projectId AND type='BUG' (not deleted), throwing NotFoundException on zero rows. A bugId belonging to another project 404s.",
       "evidence": "src/modules/build/qa/bugs.controller.ts:59",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/bugs.controller.ts",
+          "line": 68,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/bugs.service.ts",
+          "line": 118,
+          "note": "SELECT WHERE clause binds bugId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/bugs.controller.ts#createBug",
@@ -12852,10 +14253,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/bugs/:bugId. updateBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before touching anything. The subsequent tickets UPDATE and workItemQaDetails UPDATE both target the row by primary key (bugId/workItemId) + orgId — safe because bugId was already proven bound to this project.",
       "evidence": "src/modules/build/qa/bugs.controller.ts:84",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/bugs.controller.ts",
+          "line": 94,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/bugs.service.ts",
+          "line": 225,
+          "note": "existence check binds bugId to projectId and orgId before patching"
+        },
+        {
+          "file": "src/modules/build/qa/bugs.service.ts",
+          "line": 268,
+          "note": "tickets UPDATE targets the already-verified row by primary key id + orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/bugs.controller.ts#deleteBug",
@@ -12899,10 +14316,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before the soft-delete UPDATE, which targets the row by primary key id + orgId.",
       "evidence": "src/modules/build/qa/bugs.controller.ts:97",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/bugs.controller.ts",
+          "line": 107,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/bugs.service.ts",
+          "line": 324,
+          "note": "existence check binds bugId to projectId and orgId before deleting"
+        },
+        {
+          "file": "src/modules/build/qa/bugs.service.ts",
+          "line": 334,
+          "note": "soft-delete UPDATE targets the already-verified row by primary key id + orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-cases.controller.ts#listCases",
@@ -12987,10 +14420,21 @@
       "parentEvidence": "src/modules/build/qa/test-management.service.ts:174",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/test-cases/:caseId. getCase calls assertProjectAccess(projectId) then queries testCases WHERE id=caseId AND orgId AND projectId (not deleted), throwing NotFoundException on zero rows.",
       "evidence": "src/modules/build/qa/test-cases.controller.ts:54",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-cases.controller.ts",
+          "line": 63,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 181,
+          "note": "SELECT WHERE clause binds caseId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-cases.controller.ts#createCase",
@@ -13078,10 +14522,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/test-cases/:caseId. updateCase calls assertProjectAccess(projectId) then an existence check WHERE id=caseId AND orgId AND projectId (404 otherwise), and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/qa/test-cases.controller.ts:79",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-cases.controller.ts",
+          "line": 89,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 232,
+          "note": "existence check binds caseId to projectId and orgId before patching"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 252,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-cases.controller.ts#deleteCase",
@@ -13125,10 +14585,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/test-cases/:caseId (soft delete). deleteCase calls assertProjectAccess(projectId) then an existence check WHERE id=caseId AND orgId AND projectId (404 otherwise), and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/qa/test-cases.controller.ts:92",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-cases.controller.ts",
+          "line": 102,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 264,
+          "note": "existence check binds caseId to projectId and orgId before deleting"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 273,
+          "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-runs.controller.ts#listRuns",
@@ -13213,10 +14689,21 @@
       "parentEvidence": "src/modules/build/qa/test-runs.service.ts:102",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/test-runs/:runId. getRun calls assertProjectAccess(projectId) then queries testRuns WHERE id=runId AND orgId AND projectId (not deleted), throwing NotFoundException on zero rows. The joined results query that follows filters by runId+orgId, safe because runId was already proven bound to this project.",
       "evidence": "src/modules/build/qa/test-runs.controller.ts:82",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-runs.controller.ts",
+          "line": 91,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 109,
+          "note": "SELECT WHERE clause binds runId to projectId and orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-runs.controller.ts#listRunResults",
@@ -13258,10 +14745,21 @@
       "parentEvidence": "src/modules/build/qa/test-runs.service.ts:137",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/test-runs/:runId/results. listRunResults calls assertProjectAccess(projectId) then an explicit existence check WHERE id=runId AND orgId AND projectId (404 otherwise) before listing results filtered by runId+orgId — safe because runId was already proven bound to this project.",
       "evidence": "src/modules/build/qa/test-runs.controller.ts:94",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-runs.controller.ts",
+          "line": 104,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 149,
+          "note": "existence check binds runId to projectId and orgId before listing results"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-runs.controller.ts#createRun",
@@ -13349,10 +14847,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/test-runs/:runId. updateRun calls assertProjectAccess(projectId) then an existence check WHERE id=runId AND orgId AND projectId (404 otherwise), and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/qa/test-runs.controller.ts:120",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-runs.controller.ts",
+          "line": 130,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 281,
+          "note": "existence check binds runId to projectId and orgId before patching"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 303,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-runs.controller.ts#deleteRun",
@@ -13396,10 +14910,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/test-runs/:runId (soft delete). deleteRun calls assertProjectAccess(projectId) then an existence check WHERE id=runId AND orgId AND projectId (404 otherwise), and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/qa/test-runs.controller.ts:133",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-runs.controller.ts",
+          "line": 143,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 325,
+          "note": "existence check binds runId to projectId and orgId before deleting"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 334,
+          "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-runs.controller.ts#updateResult",
@@ -13445,10 +14975,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/test-runs/:runId/results/:resultId — three route params. updateResult calls assertProjectAccess(projectId) then an existence check whose WHERE binds ALL of id=resultId, runId, orgId AND projectId in one query (404 if any mismatch), and the subsequent UPDATE's WHERE re-binds id+orgId+projectId, targeting the row already proven to belong to the named run.",
       "evidence": "src/modules/build/qa/test-runs.controller.ts:146",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-runs.controller.ts",
+          "line": 157,
+          "note": "route handler passes all three raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 351,
+          "note": "existence check binds resultId to runId, orgId, and projectId together in one WHERE"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 370,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-runs.controller.ts#createBugFromResult",
@@ -13494,10 +15040,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/test-runs/:runId/results/:resultId/bug. createBugFromResultConsolidated calls assertProjectAccess(projectId) then binds resultId to runId+orgId+projectId in one WHERE (404 otherwise). The linked test case is then looked up by the *result row's own* testCaseId (a trusted DB value, not a client-supplied param) scoped to orgId. The final testRunResults UPDATE (linking the new ticket) targets the row by primary key id + orgId — safe because resultId was already proven bound to this run/project.",
       "evidence": "src/modules/build/qa/test-runs.controller.ts:160",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-runs.controller.ts",
+          "line": 172,
+          "note": "route handler passes all three raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 390,
+          "note": "existence check binds resultId to runId, orgId, and projectId together in one WHERE"
+        },
+        {
+          "file": "src/modules/build/qa/test-runs.service.ts",
+          "line": 396,
+          "note": "linked test case is resolved from the already-validated result row's own testCaseId, not a client param"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-suites.controller.ts#listSuites",
@@ -13628,10 +15190,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/test-suites/:suiteId. updateSuite calls assertProjectAccess(projectId) then an existence check WHERE id=suiteId AND orgId AND projectId (404 otherwise), and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/qa/test-suites.controller.ts:67",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-suites.controller.ts",
+          "line": 77,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 114,
+          "note": "existence check binds suiteId to projectId and orgId before patching"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 128,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/qa/test-suites.controller.ts#deleteSuite",
@@ -13675,10 +15253,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/test-suites/:suiteId (soft delete). deleteSuite calls assertProjectAccess(projectId) then an existence check WHERE id=suiteId AND orgId AND projectId (404 otherwise), and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/qa/test-suites.controller.ts:80",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/qa/test-suites.controller.ts",
+          "line": 90,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 140,
+          "note": "existence check binds suiteId to projectId and orgId before deleting"
+        },
+        {
+          "file": "src/modules/build/qa/test-management.service.ts",
+          "line": 149,
+          "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/scope-directory/scope-directory.controller.ts#resolve",
@@ -14116,10 +15710,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/teams/:teamId/members/:memberUserId. updateMemberRole calls teams.loadTeam(orgId, teamId) (WHERE id=teamId AND orgId, 404 otherwise), then resolves memberUserId to a membership via assertOrganizationActor(db, orgId, ...) — which itself queries organizationMembers scoped to that exact orgId and throws if the user isn't a member of this org. The UPDATE's WHERE then binds teamId + that org-scoped membershipId + orgId together.",
       "evidence": "src/modules/build/teams/teams.controller.ts:151",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/teams/teams.controller.ts",
+          "line": 161,
+          "note": "route handler passes teamId and memberUserId straight to the service"
+        },
+        {
+          "file": "src/modules/build/teams/team-members.service.ts",
+          "line": 166,
+          "note": "binds teamId to orgId via loadTeam before updating"
+        },
+        {
+          "file": "src/modules/build/teams/team-members.service.ts",
+          "line": 175,
+          "note": "memberUserId is resolved to a membership scoped to this exact orgId via assertOrganizationActor"
+        }
+      ]
     },
     {
       "key": "modules/build/teams/teams.controller.ts#removeMember",
@@ -14163,10 +15773,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/teams/:teamId/members/:memberId. Same binding shape as updateMemberRole: teams.loadTeam(orgId, teamId) binds teamId to orgId (404 otherwise), and memberId is resolved to an org-scoped membership via assertOrganizationActor before the DELETE's WHERE binds teamId + membershipId + orgId together.",
       "evidence": "src/modules/build/teams/teams.controller.ts:170",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/teams/teams.controller.ts",
+          "line": 180,
+          "note": "route handler passes teamId and memberId straight to the service"
+        },
+        {
+          "file": "src/modules/build/teams/team-members.service.ts",
+          "line": 136,
+          "note": "binds teamId to orgId via loadTeam before deleting"
+        },
+        {
+          "file": "src/modules/build/teams/team-members.service.ts",
+          "line": 144,
+          "note": "memberId is resolved to a membership scoped to this exact orgId via assertOrganizationActor"
+        }
+      ]
     },
     {
       "key": "modules/build/teams/teams.controller.ts#listTeamProjects",
@@ -14298,10 +15924,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/teams/:teamId/projects/:projectId. removeProject calls teams.loadTeam(orgId, teamId), whose WHERE binds id=teamId AND orgId (404 on a foreign teamId), then deletes the assignment row scoped by teamId+projectId+orgId. Because teamId is already proven to belong to this org and orgId is repeated on the delete, a projectId belonging to another team/org simply matches zero rows.",
       "evidence": "src/modules/build/teams/teams.controller.ts:207",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/teams/teams.controller.ts",
+          "line": 217,
+          "note": "route handler passes teamId and projectId straight to the service"
+        },
+        {
+          "file": "src/modules/build/teams/team-projects.service.ts",
+          "line": 91,
+          "note": "binds teamId to orgId via loadTeam before deleting"
+        },
+        {
+          "file": "src/modules/build/teams/team-projects.service.ts",
+          "line": 97,
+          "note": "DELETE WHERE clause scopes to teamId + projectId + orgId together"
+        }
+      ]
     },
     {
       "key": "modules/build/updates/updates.controller.ts#listUpdates",
@@ -14431,10 +16073,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/updates/:updateId. editUpdate calls assertProjectAccess(projectId) then loadUpdate(orgId, projectId, updateId), whose WHERE binds id=updateId AND orgId AND projectId (not deleted) — 404 on a foreign updateId — followed by an authorship/permission check, and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/updates/updates.controller.ts:71",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/updates/updates.controller.ts",
+          "line": 81,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/updates/updates.service.ts",
+          "line": 117,
+          "note": "binds updateId to projectId via loadUpdate before patching"
+        },
+        {
+          "file": "src/modules/build/updates/updates.service.ts",
+          "line": 131,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/updates/updates.controller.ts#softDeleteUpdate",
@@ -14478,10 +16136,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/updates/:updateId (soft delete). softDeleteUpdate calls assertProjectAccess(projectId) then loadUpdate(orgId, projectId, updateId) (404 on a foreign updateId) followed by an authorship/permission check, then the soft-delete UPDATE targets the row by primary key id + orgId — safe because updateId was already proven bound to this project.",
       "evidence": "src/modules/build/updates/updates.controller.ts:84",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/updates/updates.controller.ts",
+          "line": 94,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/updates/updates.service.ts",
+          "line": 150,
+          "note": "binds updateId to projectId via loadUpdate before deleting"
+        },
+        {
+          "file": "src/modules/build/updates/updates.service.ts",
+          "line": 160,
+          "note": "soft-delete UPDATE targets the already-verified row by primary key id + orgId"
+        }
+      ]
     },
     {
       "key": "modules/build/workflow/workflow.controller.ts#listTransitions",
@@ -14612,10 +16286,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/workflow/transitions/:transitionId. updateTransition calls assertProjectAccess(projectId) then loadTransition(orgId, projectId, transitionId), whose WHERE binds id=transitionId AND orgId AND projectId (not deleted) — 404 on a foreign transitionId — and the UPDATE's own WHERE independently re-binds id+orgId+projectId. Any changed fromStatusId/toStatusId are additionally re-validated against this project via assertStatusInProject.",
       "evidence": "src/modules/build/workflow/workflow.controller.ts:69",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/workflow/workflow.controller.ts",
+          "line": 79,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/workflow/workflow.service.ts",
+          "line": 110,
+          "note": "binds transitionId to projectId via loadTransition before patching"
+        },
+        {
+          "file": "src/modules/build/workflow/workflow.service.ts",
+          "line": 132,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/workflow/workflow.controller.ts#deleteTransition",
@@ -14659,10 +16349,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/workflow/transitions/:transitionId (soft delete). deleteTransition calls assertProjectAccess(projectId) then loadTransition(orgId, projectId, transitionId) (404 on a foreign transitionId), and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/workflow/workflow.controller.ts:82",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/workflow/workflow.controller.ts",
+          "line": 92,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/workflow/workflow.service.ts",
+          "line": 150,
+          "note": "binds transitionId to projectId via loadTransition before deleting"
+        },
+        {
+          "file": "src/modules/build/workflow/workflow.service.ts",
+          "line": 157,
+          "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/workflow/workflow.controller.ts#getAllowedTransitions",
@@ -14704,10 +16410,21 @@
       "parentEvidence": "src/modules/build/workflow/workflow.service.ts:169",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/workflow/allowed/:fromStatusId. getAllowedTransitions calls assertProjectAccess(projectId) then queries workflowTransitions filtered directly by orgId+projectId (not deleted), with fromStatusId used only inside an OR-predicate that further narrows which already-org/project-scoped rows come back. fromStatusId is never independently existence-checked, but a nonexistent or foreign fromStatusId cannot widen the result set beyond org+project — it can only return fewer or zero rows.",
       "evidence": "src/modules/build/workflow/workflow.controller.ts:95",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/workflow/workflow.controller.ts",
+          "line": 104,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/workflow/workflow.service.ts",
+          "line": 176,
+          "note": "query is unconditionally filtered by orgId and projectId before the fromStatusId OR-predicate is applied"
+        }
+      ]
     },
     {
       "key": "modules/build/workflow/workflow.controller.ts#updateWipLimit",
@@ -14751,10 +16468,26 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls assertProjectAccess(projectId) then assertStatusInProject(orgId, projectId, statusId), whose WHERE binds id=statusId AND projectId AND orgId (404 on a foreign statusId), and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
       "evidence": "src/modules/build/workflow/workflow.controller.ts:107",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/workflow/workflow.controller.ts",
+          "line": 117,
+          "note": "route handler passes raw path params straight to the service"
+        },
+        {
+          "file": "src/modules/build/workflow/workflow.service.ts",
+          "line": 190,
+          "note": "binds statusId to projectId via assertStatusInProject before patching"
+        },
+        {
+          "file": "src/modules/build/workflow/workflow.service.ts",
+          "line": 197,
+          "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
+        }
+      ]
     }
   ]
 }
