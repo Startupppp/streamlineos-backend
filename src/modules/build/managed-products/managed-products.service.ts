@@ -4,7 +4,6 @@ import { feedbucketSubmissions, feedbucketWidgets, managedProducts, projects } f
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
@@ -22,7 +21,6 @@ export class ManagedProductsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
   private async loadProduct(orgId: string, managedProductId: number): Promise<ManagedProductRow> {
@@ -44,19 +42,14 @@ export class ManagedProductsService {
   async listManagedProducts(
     orgId: string,
     query: ListManagedProductsQuery,
-    callerMembershipId: number | null,
+    _callerMembershipId: number | null,
   ) {
-    if (query.pmWorkspaceId)
-      await this.pmWorkspaces.assertMemberOfWorkspace(orgId, query.pmWorkspaceId, callerMembershipId);
     const { cursor, limit, status } = query;
     const pos = decodeCursor(cursor);
     const conds = [
       eq(managedProducts.orgId, orgId),
       isNull(managedProducts.deletedAt),
       status ? eq(managedProducts.status, status) : undefined,
-      query.pmWorkspaceId
-        ? eq(managedProducts.pmWorkspaceId, query.pmWorkspaceId)
-        : undefined,
       query.search ? ilike(managedProducts.name, `%${query.search}%`) : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(managedProducts.createdAt, managedProducts.id, pos));
@@ -81,19 +74,13 @@ export class ManagedProductsService {
   async createManagedProduct(
     orgId: string,
     userId: string,
-    callerMembershipId: number | null,
+    _callerMembershipId: number | null,
     input: CreateManagedProductInput,
   ) {
-    const pmWorkspaceId = await this.pmWorkspaces.resolveWorkspaceIdForWrite(
-      orgId,
-      input.pmWorkspaceId,
-    );
-    await this.pmWorkspaces.assertMemberOfWorkspace(orgId, pmWorkspaceId, callerMembershipId);
     const [row] = await this.db
       .insert(managedProducts)
       .values({
         orgId,
-        pmWorkspaceId,
         name: input.name,
         key: input.key,
         description: input.description ?? null,

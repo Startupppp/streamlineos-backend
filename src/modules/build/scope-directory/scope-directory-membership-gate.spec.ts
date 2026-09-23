@@ -1,8 +1,6 @@
 import {
   managedProductMemberships,
   managedProducts,
-  pmWorkspaceMemberships,
-  pmWorkspaces,
   projectMembers,
   projectTeamAssignments,
   projects,
@@ -13,7 +11,6 @@ import {
   PROD_ROW,
   PROJ_ROW,
   USER,
-  WS_ROW,
   makeAccess,
   makeDb,
   makeResponses,
@@ -25,7 +22,6 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
   it("returns all org projects when build:manage scope is all, regardless of membershipId", async () => {
     const { db } = makeDb(makeResponses([
       [projects, [[PROJ_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
       [managedProducts, [[PROD_ROW]]],
     ]));
 
@@ -54,7 +50,6 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
       [projectMembers, [[{ projectId: 20 }]]],
       [projectTeamAssignments, [[]]],
       [projects, [[PROJ_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
       [managedProducts, [[PROD_ROW]]],
     ]));
 
@@ -72,7 +67,6 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
       [projectMembers, [[{ projectId: 20 }]]],
       [projectTeamAssignments, [[]]],
       [projects, [[PROJ_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
       [managedProducts, [[PROD_ROW]]],
     ]));
 
@@ -103,47 +97,6 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     expect(projectCall).toBeDefined();
     expect(renderParams(projectCall?.condition)).toContain(MEMBERSHIP_ID);
   });
-
-  it("workspace membership is enforced: omits a workspace the caller is not a member of when build:manage is not all", async () => {
-    const { db } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
-    ]));
-
-    const result = await makeSvc(db, makeAccess(null)).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["workspace:ws-1", "workspace:ws-2"],
-    );
-
-    expect(result).toHaveLength(1);
-    expect(result[0]?.id).toBe("ws-1");
-  });
-
-  it("workspace membership is enforced: omits all workspaces when membershipId is null and build:manage is not all", async () => {
-    const { db, calls } = makeDb(makeResponses());
-
-    const result = await makeSvc(db, makeAccess(null)).resolveScopeDirectory(
-      ORG, USER, null, ["workspace:ws-1"],
-    );
-
-    expect(result).toEqual([]);
-    const wsCall = calls.find((c) => c.table === pmWorkspaces);
-    expect(wsCall).toBeUndefined();
-  });
-
-  it("workspace membership is not enforced when build:manage scope is all — returns all org workspaces without consulting pmWorkspaceMemberships", async () => {
-    const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaces, [[WS_ROW, { pmWorkspaceId: "ws-2", name: "Other", status: "active" }]]],
-    ]));
-
-    const result = await makeSvc(db, makeAccess("all")).resolveScopeDirectory(
-      ORG, USER, null, ["workspace:ws-1", "workspace:ws-2"],
-    );
-
-    expect(result).toHaveLength(2);
-    const wsMembershipCall = calls.find((c) => c.table === pmWorkspaceMemberships);
-    expect(wsMembershipCall).toBeUndefined();
-  });
-
 });
 
 describe("ScopeDirectoryService — product membership gate (BSN-02-005 product half)", () => {
@@ -166,7 +119,6 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
   it("build:manage all bypasses product membership: products returned without consulting managedProductMemberships", async () => {
     const { db, calls } = makeDb(makeResponses([
       [managedProducts, [[PROD_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
 
     const result = await makeSvc(db, makeAccess("all")).resolveScopeDirectory(
@@ -180,7 +132,6 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
   it("product membership predicate is absent when build:manage is all even with a valid membershipId (negative gate)", async () => {
     const { db, calls } = makeDb(makeResponses([
       [managedProducts, [[PROD_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
 
     await makeSvc(db, makeAccess("all")).resolveScopeDirectory(
@@ -198,7 +149,6 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
     const { db: dbA, calls: callsA } = makeDb(makeResponses([
       [managedProductMemberships, [[{ managedProductId: 10 }]]],
       [managedProducts, [[PROD_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
     await makeSvc(dbA, makeAccess(null)).resolveScopeDirectory(
       ORG_A, USER, SHARED_MEMBERSHIP_ID, ["product:10"],
@@ -235,52 +185,22 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
   });
 });
 
-describe("ScopeDirectoryService — workspace membership gate (BSN-02-009 revoked access)", () => {
-  it("binds the actor's membershipId in the pmWorkspaceMemberships query when build:manage is below all", async () => {
+describe("ScopeDirectoryService — product and project gates run independently (workspace type removed)", () => {
+  it("product membership and project membership lookups both run when both types are requested together", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
-    ]));
-
-    await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["workspace:ws-1"],
-    );
-
-    const membershipCall = calls.find((c) => c.table === pmWorkspaceMemberships);
-    expect(membershipCall).toBeDefined();
-    expect(renderParams(membershipCall?.condition)).toContain(MEMBERSHIP_ID);
-  });
-
-  it("binds the caller's orgId in the pmWorkspaceMemberships query (cross-tenant isolation)", async () => {
-    const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[]]],
-    ]));
-
-    await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["workspace:ws-foreign"],
-    );
-
-    const membershipCall = calls.find((c) => c.table === pmWorkspaceMemberships);
-    expect(membershipCall).toBeDefined();
-    expect(renderParams(membershipCall?.condition)).toContain(ORG);
-  });
-
-  it("workspace membership and project membership lookups run even when both types are requested together", async () => {
-    const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
+      [managedProductMemberships, [[{ managedProductId: 10 }]]],
       [projectMembers, [[{ projectId: 20 }]]],
       [projectTeamAssignments, [[]]],
-      [pmWorkspaces, [[WS_ROW]]],
-      [projects, [[PROJ_ROW]]],
       [managedProducts, [[PROD_ROW]]],
+      [projects, [[PROJ_ROW]]],
     ]));
 
     const result = await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["workspace:ws-1", "project:20"],
+      ORG, USER, MEMBERSHIP_ID, ["product:10", "project:20"],
     );
 
     expect(result).toHaveLength(2);
-    expect(calls.find((c) => c.table === pmWorkspaceMemberships)).toBeDefined();
+    expect(calls.find((c) => c.table === managedProductMemberships)).toBeDefined();
     expect(calls.find((c) => c.table === projectMembers)).toBeDefined();
   });
 });

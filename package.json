@@ -460,7 +460,6 @@
     "check:composite-fk-set-null": "node src/scripts/check-composite-fk-set-null.mjs",
     "check:composite-fk-set-null:self-test": "node src/scripts/check-composite-fk-set-null.mjs --self-test",
     "test:db-specs": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --config ./jest-db.json --runInBand --forceExit",
-    "audit:build-workspace-orphans": "node --env-file-if-exists=.env scripts/audit-build-pm-workspace-orphans.mjs",
     "check:outbound-timeouts": "node src/scripts/check-outbound-timeouts.mjs",
     "check:outbound-timeouts:self-test": "node src/scripts/check-outbound-timeouts.mjs --self-test",
     "check:ai-route-tenant-optout": "node src/scripts/check-ai-route-tenant-optout.mjs",

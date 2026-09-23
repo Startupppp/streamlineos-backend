@@ -2,14 +2,14 @@
   "version": 1,
   "generator": "scripts/build-authorization-census.mjs",
   "scope": "src/modules/build/**/*.controller.ts",
-  "controllerFiles": 48,
-  "handlers": 322,
+  "controllerFiles": 47,
+  "handlers": 313,
   "counts": {
     "VULNERABLE": 0,
     "CLOSED-IN-FLIGHT": 0,
-    "NEEDS-REVIEW": 113,
+    "NEEDS-REVIEW": 112,
     "CLOSED": 34,
-    "VERIFIED": 175
+    "VERIFIED": 167
   },
   "handlersDetail": [
     {
@@ -41,7 +41,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:33",
+      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:32",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -80,7 +80,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:279",
+      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:255",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -123,7 +123,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:232",
+      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:208",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -1417,6 +1417,131 @@
       "reviewedEvidence": null
     },
     {
+      "key": "modules/build/core/build-members.controller.ts#list",
+      "file": "src/modules/build/core/build-members.controller.ts",
+      "class": "BuildMembersController",
+      "method": "list",
+      "line": 41,
+      "verb": "GET",
+      "path": "/build/members",
+      "routeParams": [],
+      "classification": "@RequirePermission(\"build:members:view\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": null,
+      "missingParams": null,
+      "extraParams": null,
+      "idempotent": null,
+      "mutating": false,
+      "service": {
+        "call": "this.members.list(u.orgId, query)",
+        "type": "BuildMembersService",
+        "file": "src/modules/build/core/build-members.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/core/build-members.service.ts:28",
+      "parentScoping": "N/A (not nested)",
+      "parentEvidence": null,
+      "leads": [],
+      "notes": [],
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "evidence": "src/modules/build/core/build-members.controller.ts:41",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/core/build-members.controller.ts#add",
+      "file": "src/modules/build/core/build-members.controller.ts",
+      "class": "BuildMembersController",
+      "method": "add",
+      "line": 52,
+      "verb": "POST",
+      "path": "/build/members",
+      "routeParams": [],
+      "classification": "@RequirePermission(\"build:members:manage\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": null,
+      "missingParams": null,
+      "extraParams": null,
+      "idempotent": null,
+      "mutating": true,
+      "service": {
+        "call": "this.members.add(u.orgId, u.userId, body)",
+        "type": "BuildMembersService",
+        "file": "src/modules/build/core/build-members.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/core/build-members.service.ts:107",
+      "parentScoping": "N/A (not nested)",
+      "parentEvidence": null,
+      "leads": [],
+      "notes": [
+        "mutating verb without @Idempotent"
+      ],
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "evidence": "src/modules/build/core/build-members.controller.ts:52",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/core/build-members.controller.ts#remove",
+      "file": "src/modules/build/core/build-members.controller.ts",
+      "class": "BuildMembersController",
+      "method": "remove",
+      "line": 64,
+      "verb": "DELETE",
+      "path": "/build/members/:userId",
+      "routeParams": [
+        "userId"
+      ],
+      "classification": "@RequirePermission(\"build:members:manage\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "userId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": true,
+      "service": {
+        "call": "this.members.remove(u.orgId, u.userId, userId)",
+        "type": "BuildMembersService",
+        "file": "src/modules/build/core/build-members.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/core/build-members.service.ts:146",
+      "parentScoping": "N/A (not nested)",
+      "parentEvidence": null,
+      "leads": [],
+      "notes": [
+        "mutating verb without @Idempotent"
+      ],
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "evidence": "src/modules/build/core/build-members.controller.ts:64",
+      "reviewedEvidence": null
+    },
+    {
       "key": "modules/build/core/project-resources.controller.ts#listOrgCustomStates",
       "file": "src/modules/build/core/project-resources.controller.ts",
       "class": "ProjectResourcesController",
@@ -2320,7 +2445,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-query.service.ts:296",
+      "orgEvidence": "src/modules/build/core/projects-query.service.ts:286",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -2363,7 +2488,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-write.service.ts:44",
+      "orgEvidence": "src/modules/build/core/projects-write.service.ts:43",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -2408,7 +2533,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-write.service.ts:244",
+      "orgEvidence": "src/modules/build/core/projects-write.service.ts:243",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -2453,7 +2578,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-write.service.ts:321",
+      "orgEvidence": "src/modules/build/core/projects-write.service.ts:320",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3573,7 +3698,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:87",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:80",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3618,7 +3743,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:116",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:109",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3663,7 +3788,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:127",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:120",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3704,7 +3829,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:137",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:130",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3743,7 +3868,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:141",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:134",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3788,7 +3913,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:149",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:142",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3833,7 +3958,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:153",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:146",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3878,7 +4003,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:157",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:150",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3919,7 +4044,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:161",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:154",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3958,7 +4083,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:165",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:158",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4003,7 +4128,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:173",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:166",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4048,7 +4173,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:177",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:170",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4089,7 +4214,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-templates.service.ts:52",
+      "orgEvidence": "src/modules/build/core/projects-templates.service.ts:50",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4128,7 +4253,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/core/projects-templates.service.ts:63",
+      "orgEvidence": "src/modules/build/core/projects-templates.service.ts:61",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -4175,7 +4300,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-templates.service.ts:106",
+      "orgEvidence": "src/modules/build/core/projects-templates.service.ts:104",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4220,7 +4345,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-templates.service.ts:122",
+      "orgEvidence": "src/modules/build/core/projects-templates.service.ts:120",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -6572,131 +6697,6 @@
       "reviewedEvidence": null
     },
     {
-      "key": "modules/build/core/projects-workspace-members.controller.ts#list",
-      "file": "src/modules/build/core/projects-workspace-members.controller.ts",
-      "class": "ProjectsWorkspaceMembersController",
-      "method": "list",
-      "line": 41,
-      "verb": "GET",
-      "path": "/build/members",
-      "routeParams": [],
-      "classification": "@RequirePermission(\"build:members:view\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": null,
-      "missingParams": null,
-      "extraParams": null,
-      "idempotent": null,
-      "mutating": false,
-      "service": {
-        "call": "this.workspace.list(u.orgId, query)",
-        "type": "ProjectsWorkspaceMembersService",
-        "file": "src/modules/build/core/projects-workspace-members.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-workspace-members.service.ts:30",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-workspace-members.controller.ts:41",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/core/projects-workspace-members.controller.ts#add",
-      "file": "src/modules/build/core/projects-workspace-members.controller.ts",
-      "class": "ProjectsWorkspaceMembersController",
-      "method": "add",
-      "line": 52,
-      "verb": "POST",
-      "path": "/build/members",
-      "routeParams": [],
-      "classification": "@RequirePermission(\"build:members:manage\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": null,
-      "missingParams": null,
-      "extraParams": null,
-      "idempotent": null,
-      "mutating": true,
-      "service": {
-        "call": "this.workspace.add(u.orgId, u.userId, body)",
-        "type": "ProjectsWorkspaceMembersService",
-        "file": "src/modules/build/core/projects-workspace-members.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-workspace-members.service.ts:109",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [
-        "mutating verb without @Idempotent"
-      ],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-workspace-members.controller.ts:52",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/core/projects-workspace-members.controller.ts#remove",
-      "file": "src/modules/build/core/projects-workspace-members.controller.ts",
-      "class": "ProjectsWorkspaceMembersController",
-      "method": "remove",
-      "line": 64,
-      "verb": "DELETE",
-      "path": "/build/members/:userId",
-      "routeParams": [
-        "userId"
-      ],
-      "classification": "@RequirePermission(\"build:members:manage\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": [
-        "userId"
-      ],
-      "missingParams": [],
-      "extraParams": [],
-      "idempotent": null,
-      "mutating": true,
-      "service": {
-        "call": "this.workspace.remove(u.orgId, u.userId, userId)",
-        "type": "ProjectsWorkspaceMembersService",
-        "file": "src/modules/build/core/projects-workspace-members.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-workspace-members.service.ts:149",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [
-        "mutating verb without @Idempotent"
-      ],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-workspace-members.controller.ts:64",
-      "reviewedEvidence": null
-    },
-    {
       "key": "modules/build/core/projects.controller.ts#listProjects",
       "file": "src/modules/build/core/projects.controller.ts",
       "class": "ProjectsController",
@@ -6725,7 +6725,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-query.service.ts:39",
+      "orgEvidence": "src/modules/build/core/projects-query.service.ts:37",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -6764,7 +6764,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-provision.service.ts:71",
+      "orgEvidence": "src/modules/build/core/projects-provision.service.ts:63",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -6803,7 +6803,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-provision.service.ts:184",
+      "orgEvidence": "src/modules/build/core/projects-provision.service.ts:168",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -10901,7 +10901,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:44",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:42",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -10944,7 +10944,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:77",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:70",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -10982,16 +10982,18 @@
         "file": "src/modules/build/managed-products/managed-products.service.ts",
         "resolved": true
       },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:81",
+      "orgScoping": "PASSED-UNBOUND",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:74",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "leads": [],
+      "leads": [
+        "org scoping: PASSED-UNBOUND"
+      ],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "verdict": "NEEDS-REVIEW",
+      "verdictReason": "org scoping: PASSED-UNBOUND",
       "evidence": "src/modules/build/managed-products/managed-products.controller.ts:65",
       "reviewedEvidence": null
     },
@@ -11028,7 +11030,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:124",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:111",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11073,7 +11075,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:159",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:146",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11116,7 +11118,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:218",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:205",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11690,403 +11692,6 @@
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
       "evidence": "src/modules/build/meetings/meetings.controller.ts:146",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#listWorkspaces",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "listWorkspaces",
-      "line": 59,
-      "verb": "GET",
-      "path": "/build/workspaces",
-      "routeParams": [],
-      "classification": "@RequirePermission(\"build:workspaces:view\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": null,
-      "missingParams": null,
-      "extraParams": null,
-      "idempotent": null,
-      "mutating": false,
-      "service": {
-        "call": "this.svc.listWorkspaces(u.orgId, query)",
-        "type": "PmWorkspacesService",
-        "file": "src/modules/build/pm-workspaces/pm-workspaces.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspaces.service.ts:58",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:59",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#getWorkspace",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "getWorkspace",
-      "line": 70,
-      "verb": "GET",
-      "path": "/build/workspaces/:pmWorkspaceId",
-      "routeParams": [
-        "pmWorkspaceId"
-      ],
-      "classification": "@RequirePermission(\"build:workspaces:view\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": [
-        "pmWorkspaceId"
-      ],
-      "missingParams": [],
-      "extraParams": [],
-      "idempotent": null,
-      "mutating": false,
-      "service": {
-        "call": "this.svc.getWorkspace(u.orgId, pmWorkspaceId)",
-        "type": "PmWorkspacesService",
-        "file": "src/modules/build/pm-workspaces/pm-workspaces.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspaces.service.ts:97",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:70",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#createWorkspace",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "createWorkspace",
-      "line": 81,
-      "verb": "POST",
-      "path": "/build/workspaces",
-      "routeParams": [],
-      "classification": "@RequirePermission(\"build:workspaces:create\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": null,
-      "missingParams": null,
-      "extraParams": null,
-      "idempotent": null,
-      "mutating": true,
-      "service": {
-        "call": "this.svc.createWorkspace(u.orgId, u.userId, body)",
-        "type": "PmWorkspacesService",
-        "file": "src/modules/build/pm-workspaces/pm-workspaces.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspaces.service.ts:101",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [
-        "org scoping: PASSED-UNBOUND"
-      ],
-      "notes": [
-        "mutating verb without @Idempotent"
-      ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "org scoping: PASSED-UNBOUND",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:81",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#updateWorkspace",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "updateWorkspace",
-      "line": 93,
-      "verb": "PATCH",
-      "path": "/build/workspaces/:pmWorkspaceId",
-      "routeParams": [
-        "pmWorkspaceId"
-      ],
-      "classification": "@RequirePermission(\"build:workspaces:update\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": [
-        "pmWorkspaceId"
-      ],
-      "missingParams": [],
-      "extraParams": [],
-      "idempotent": null,
-      "mutating": true,
-      "service": {
-        "call": "this.svc.updateWorkspace(u.orgId, u.userId, pmWorkspaceId, body)",
-        "type": "PmWorkspacesService",
-        "file": "src/modules/build/pm-workspaces/pm-workspaces.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspaces.service.ts:337",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [
-        "mutating verb without @Idempotent"
-      ],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:93",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#deleteWorkspace",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "deleteWorkspace",
-      "line": 105,
-      "verb": "DELETE",
-      "path": "/build/workspaces/:pmWorkspaceId",
-      "routeParams": [
-        "pmWorkspaceId"
-      ],
-      "classification": "@RequirePermission(\"build:workspaces:delete\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": [
-        "pmWorkspaceId"
-      ],
-      "missingParams": [],
-      "extraParams": [],
-      "idempotent": null,
-      "mutating": true,
-      "service": {
-        "call": "this.svc.deleteWorkspace(u.orgId, u.userId, pmWorkspaceId)",
-        "type": "PmWorkspacesService",
-        "file": "src/modules/build/pm-workspaces/pm-workspaces.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspaces.service.ts:369",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [
-        "mutating verb without @Idempotent"
-      ],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:105",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#listMembers",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "listMembers",
-      "line": 117,
-      "verb": "GET",
-      "path": "/build/workspaces/:pmWorkspaceId/members",
-      "routeParams": [
-        "pmWorkspaceId"
-      ],
-      "classification": "@RequirePermission(\"build:workspaces:members:view\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": [
-        "pmWorkspaceId"
-      ],
-      "missingParams": [],
-      "extraParams": [],
-      "idempotent": null,
-      "mutating": false,
-      "service": {
-        "call": "this.memberships.listMembers(u.orgId, pmWorkspaceId, query)",
-        "type": "PmWorkspaceMembershipsService",
-        "file": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts:74",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:117",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#addMember",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "addMember",
-      "line": 129,
-      "verb": "POST",
-      "path": "/build/workspaces/:pmWorkspaceId/members",
-      "routeParams": [
-        "pmWorkspaceId"
-      ],
-      "classification": "@RequirePermission(\"build:workspaces:members:manage\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": [
-        "pmWorkspaceId"
-      ],
-      "missingParams": [],
-      "extraParams": [],
-      "idempotent": null,
-      "mutating": true,
-      "service": {
-        "call": "this.memberships.addMember(u.orgId, u.userId, pmWorkspaceId, body)",
-        "type": "PmWorkspaceMembershipsService",
-        "file": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts:114",
-      "parentScoping": "N/A (not nested)",
-      "parentEvidence": null,
-      "leads": [],
-      "notes": [
-        "mutating verb without @Idempotent"
-      ],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:129",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#updateMemberRole",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "updateMemberRole",
-      "line": 142,
-      "verb": "PATCH",
-      "path": "/build/workspaces/:pmWorkspaceId/members/:pmWorkspaceMembershipId",
-      "routeParams": [
-        "pmWorkspaceId",
-        "pmWorkspaceMembershipId"
-      ],
-      "classification": "@RequirePermission(\"build:workspaces:members:manage\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": [
-        "pmWorkspaceId",
-        "pmWorkspaceMembershipId"
-      ],
-      "missingParams": [],
-      "extraParams": [],
-      "idempotent": null,
-      "mutating": true,
-      "service": {
-        "call": "this.memberships.updateMemberRole(u.orgId, u.userId, pmWorkspaceId, pmWorkspaceMembershipId, body, actingMembershipId(u.principal))",
-        "type": "PmWorkspaceMembershipsService",
-        "file": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts:223",
-      "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts:223",
-      "leads": [],
-      "notes": [
-        "mutating verb without @Idempotent"
-      ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:142",
-      "reviewedEvidence": null
-    },
-    {
-      "key": "modules/build/pm-workspaces/pm-workspaces.controller.ts#removeMember",
-      "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
-      "class": "PmWorkspacesController",
-      "method": "removeMember",
-      "line": 162,
-      "verb": "DELETE",
-      "path": "/build/workspaces/:pmWorkspaceId/members/:pmWorkspaceMembershipId",
-      "routeParams": [
-        "pmWorkspaceId",
-        "pmWorkspaceMembershipId"
-      ],
-      "classification": "@RequirePermission(\"build:workspaces:members:manage\")",
-      "moduleGuard": "@RequireModule(\"build\")",
-      "guards": [
-        "JwtAuthGuard",
-        "PermissionGuard"
-      ],
-      "guardChainOk": true,
-      "validate": "present",
-      "declaredParams": [
-        "pmWorkspaceId",
-        "pmWorkspaceMembershipId"
-      ],
-      "missingParams": [],
-      "extraParams": [],
-      "idempotent": null,
-      "mutating": true,
-      "service": {
-        "call": "this.memberships.removeMember(u.orgId, u.userId, pmWorkspaceId, pmWorkspaceMembershipId)",
-        "type": "PmWorkspaceMembershipsService",
-        "file": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts",
-        "resolved": true
-      },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts:167",
-      "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/pm-workspaces/pm-workspace-memberships.service.ts:167",
-      "leads": [],
-      "notes": [
-        "mutating verb without @Idempotent"
-      ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts:162",
       "reviewedEvidence": null
     },
     {
@@ -13732,7 +13337,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/scope-directory/scope-directory.service.ts:204",
+      "orgEvidence": "src/modules/build/scope-directory/scope-directory.service.ts:152",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13773,7 +13378,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/scope-directory/scope-directory.service.ts:425",
+      "orgEvidence": "src/modules/build/scope-directory/scope-directory.service.ts:323",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13812,7 +13417,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/teams.service.ts:53",
+      "orgEvidence": "src/modules/build/teams/teams.service.ts:51",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13855,7 +13460,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/teams.service.ts:101",
+      "orgEvidence": "src/modules/build/teams/teams.service.ts:93",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13893,16 +13498,18 @@
         "file": "src/modules/build/teams/teams.service.ts",
         "resolved": true
       },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/teams.service.ts:133",
+      "orgScoping": "PASSED-UNBOUND",
+      "orgEvidence": "src/modules/build/teams/teams.service.ts:125",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "leads": [],
+      "leads": [
+        "org scoping: PASSED-UNBOUND"
+      ],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "verdict": "NEEDS-REVIEW",
+      "verdictReason": "org scoping: PASSED-UNBOUND",
       "evidence": "src/modules/build/teams/teams.controller.ts:90",
       "reviewedEvidence": null
     },
@@ -13939,7 +13546,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/teams.service.ts:177",
+      "orgEvidence": "src/modules/build/teams/teams.service.ts:163",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13984,7 +13591,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/teams.service.ts:206",
+      "orgEvidence": "src/modules/build/teams/teams.service.ts:192",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14029,7 +13636,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/team-members.service.ts:36",
+      "orgEvidence": "src/modules/build/teams/team-members.service.ts:34",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14072,7 +13679,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/team-members.service.ts:80",
+      "orgEvidence": "src/modules/build/teams/team-members.service.ts:78",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14119,9 +13726,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/team-members.service.ts:162",
+      "orgEvidence": "src/modules/build/teams/team-members.service.ts:159",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/teams/team-members.service.ts:162",
+      "parentEvidence": "src/modules/build/teams/team-members.service.ts:159",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14166,9 +13773,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/team-members.service.ts:133",
+      "orgEvidence": "src/modules/build/teams/team-members.service.ts:130",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/teams/team-members.service.ts:133",
+      "parentEvidence": "src/modules/build/teams/team-members.service.ts:130",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"

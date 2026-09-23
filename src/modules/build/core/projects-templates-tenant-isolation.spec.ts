@@ -1,7 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
-import type { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -20,8 +19,7 @@ const OWNER_ORG = "org-owner";
 
 function makeDeps() {
   const planLimits = {} as unknown as PlanLimitsService;
-  const pmWorkspaces = {} as unknown as PmWorkspacesService;
-  return { planLimits, pmWorkspaces };
+  return { planLimits };
 }
 
 describe("ProjectsTemplatesService — cross-tenant isolation", () => {
@@ -30,8 +28,8 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
     const db = {
       query: { projectTemplates: { findMany } },
     } as unknown as Db;
-    const { planLimits, pmWorkspaces } = makeDeps();
-    const svc = new ProjectsTemplatesService(db, planLimits, pmWorkspaces);
+    const { planLimits } = makeDeps();
+    const svc = new ProjectsTemplatesService(db, planLimits);
 
     const result = await svc.listTemplates(ATTACKER_ORG);
 
@@ -47,8 +45,8 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
     const db = {
       query: { projectTemplates: { findMany: jest.fn().mockResolvedValue([fakeTemplate]) } },
     } as unknown as Db;
-    const { planLimits, pmWorkspaces } = makeDeps();
-    const svc = new ProjectsTemplatesService(db, planLimits, pmWorkspaces);
+    const { planLimits } = makeDeps();
+    const svc = new ProjectsTemplatesService(db, planLimits);
 
     const result = await svc.listTemplates(OWNER_ORG);
     expect(result).toHaveLength(1);

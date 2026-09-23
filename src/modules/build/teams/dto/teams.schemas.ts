@@ -5,7 +5,6 @@ export const listTeamsQuerySchema = z.object({
   cursor: z.string().optional(),
   pageSize: pageSizeField(50),
   search: z.string().optional(),
-  pmWorkspaceId: z.string().optional(),
 }).strict();
 
 export const createTeamSchema = z.object({
@@ -19,7 +18,6 @@ export const createTeamSchema = z.object({
   icon: z.string().optional(),
   color: z.string().optional(),
   isPrivate: z.boolean().optional(),
-  pmWorkspaceId: z.string().optional(),
 }).strict();
 
 export const updateTeamSchema = z.object({

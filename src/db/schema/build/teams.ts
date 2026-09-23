@@ -3,7 +3,6 @@ import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "../common/auth";
 import { projects } from "./core";
-import { pmWorkspaces } from "./pm-workspaces";
 
 export const projectTeams = build.table(
   "project_teams",
@@ -17,7 +16,6 @@ export const projectTeams = build.table(
     icon: text("icon"),
     color: text("color"),
     isPrivate: boolean("is_private").notNull().default(false),
-    pmWorkspaceId: text("pm_workspace_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -28,15 +26,7 @@ export const projectTeams = build.table(
   (t) => [
     uniqueIndex("uniq_project_teams_org_key").on(t.orgId, t.key),
     index("idx_project_teams_org").on(t.orgId).where(sql`deleted_at IS NULL`),
-    index("idx_project_teams_org_workspace")
-      .on(t.orgId, t.pmWorkspaceId)
-      .where(sql`deleted_at IS NULL`),
     unique("uniq_project_teams_org_id").on(t.orgId, t.id),
-    foreignKey({
-      columns: [t.orgId, t.pmWorkspaceId],
-      foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
-      name: "fk_project_teams_org_pm_workspace",
-    }),
   ],
 );
 
@@ -66,8 +56,8 @@ export const projectTeamMembers = build.table(
   ],
 );
 
-export const projectWorkspaceMembers = build.table(
-  "project_workspace_members",
+export const buildMembers = build.table(
+  "build_members",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
@@ -75,22 +65,16 @@ export const projectWorkspaceMembers = build.table(
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     role: text("role").notNull().default("member"),
-    pmWorkspaceId: text("pm_workspace_id").notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("uniq_project_workspace_members_org_user").on(
+    uniqueIndex("uniq_build_members_org_membership").on(
       t.orgId,
       t.membershipId,
     ),
-    unique("uniq_project_workspace_members_org_id").on(t.orgId, t.id),
+    unique("uniq_build_members_org_id").on(t.orgId, t.id),
     foreignKey({
-      columns: [t.orgId, t.pmWorkspaceId],
-      foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
-      name: "fk_project_workspace_members_org_pm_workspace",
-    }),
-    foreignKey({
-      name: "fk_project_workspace_members_actor",
+      name: "fk_build_members_actor",
       columns: [t.orgId, t.membershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     }).onDelete("cascade"),

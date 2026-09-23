@@ -49,10 +49,10 @@ const mockAccess = {
 
 async function capture(afterId: number | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [], selections: [] };
-  const svc = new ProjectsQueryService(buildDb(captured), {} as AuditService, mockAccess, {} as never);
+  const svc = new ProjectsQueryService(buildDb(captured), {} as AuditService, mockAccess);
   await svc.listProjects(
     { orgId: "org-1", userId: "u-1", principal: humanSessionPrincipal(1, false) } as never,
-    { afterId, limit: 9, status: "ALL", search: undefined, pmWorkspaceId: undefined },
+    { afterId, limit: 9, status: "ALL", search: undefined },
   );
   return captured;
 }

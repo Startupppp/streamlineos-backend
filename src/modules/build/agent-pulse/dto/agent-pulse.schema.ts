@@ -4,7 +4,6 @@ export const agentPulseQuerySchema = z
   .object({
     projectId: z.coerce.number().int().positive().optional(),
     managedProductId: z.coerce.number().int().positive().optional(),
-    pmWorkspaceId: z.string().min(1).optional(),
   })
   .strict();
 

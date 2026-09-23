@@ -89,17 +89,12 @@ describe("public intake — a deleted project does not accept anonymous submissi
         VALUES (${OWNER}, ${ORG}, 'OWNER', true) RETURNING id`;
       await tx`UPDATE organizations SET owner_membership_id = ${member?.id ?? 0} WHERE id = ${ORG}`;
 
-      // `build.projects` carries a composite FK to the org's PM workspace.
-      await tx`
-        INSERT INTO build.pm_workspaces (pm_workspace_id, org_id, name, slug, is_default, status)
-        VALUES (${`ws-${suffix}`}, ${ORG}, 'Intake probe workspace', ${`ws-${suffix}`}, true, 'active')`;
-
       const [live] = await tx<{ id: number }[]>`
-        INSERT INTO build.projects (org_id, name, key, pm_workspace_id)
-        VALUES (${ORG}, 'Live project', ${`LIVE${suffix}`}, ${`ws-${suffix}`}) RETURNING id`;
+        INSERT INTO build.projects (org_id, name, key)
+        VALUES (${ORG}, 'Live project', ${`LIVE${suffix}`}) RETURNING id`;
       const [gone] = await tx<{ id: number }[]>`
-        INSERT INTO build.projects (org_id, name, key, pm_workspace_id, deleted_at)
-        VALUES (${ORG}, 'Deleted project', ${`GONE${suffix}`}, ${`ws-${suffix}`}, now()) RETURNING id`;
+        INSERT INTO build.projects (org_id, name, key, deleted_at)
+        VALUES (${ORG}, 'Deleted project', ${`GONE${suffix}`}, now()) RETURNING id`;
       liveProjectId = Number(live?.id);
       deletedProjectId = Number(gone?.id);
     });
@@ -109,7 +104,6 @@ describe("public intake — a deleted project does not accept anonymous submissi
     if (owner) {
       await owner`DELETE FROM build.intake_items WHERE org_id = ${ORG}`;
       await owner`DELETE FROM build.projects WHERE org_id = ${ORG}`;
-      await owner`DELETE FROM build.pm_workspaces WHERE org_id = ${ORG}`;
       await owner`DELETE FROM organizations WHERE id = ${ORG}`;
       await owner`DELETE FROM users WHERE id = ${OWNER}`;
       await owner.end({ timeout: 5 });

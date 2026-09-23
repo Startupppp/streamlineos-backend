@@ -1,8 +1,6 @@
 import {
   managedProductMemberships,
   managedProducts,
-  pmWorkspaceMemberships,
-  pmWorkspaces,
   projectMembers,
   projectTeamAssignments,
   projects,
@@ -14,7 +12,6 @@ import {
   PROD_ROW,
   PROJ_ROW,
   USER,
-  WS_ROW,
   makeAccess,
   makeDb,
   makeResponses,
@@ -23,40 +20,27 @@ import {
 } from "./__tests__/scope-directory-spec-helpers";
 
 describe("ScopeDirectoryService.resolveScopeDirectory", () => {
-  it("resolves a mix of all three types and returns parentPath + clientPortalEnabled", async () => {
+  it("resolves a mix of product and project and returns parentPath + clientPortalEnabled", async () => {
     const { db } = makeDb(makeResponses([
-      [pmWorkspaces, [[WS_ROW]]],
       [managedProducts, [[PROD_ROW]]],
       [projects, [[PROJ_ROW]]],
     ]));
 
     const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
-      "workspace:ws-1",
       "product:10",
       "project:20",
     ]);
 
     expect(result).toEqual([
       {
-        key: "workspace:ws-1",
-        type: "workspace",
-        id: "ws-1",
-        name: "Delivery",
-        parentKey: null,
-        projectKey: null,
-        isArchived: false,
-        parentPath: null,
-        clientPortalEnabled: null,
-      },
-      {
         key: "product:10",
         type: "product",
         id: "10",
         name: "Atlas",
-        parentKey: "workspace:ws-1",
+        parentKey: null,
         projectKey: "ATL",
         isArchived: false,
-        parentPath: "Delivery",
+        parentPath: null,
         clientPortalEnabled: null,
       },
       {
@@ -67,24 +51,51 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
         parentKey: "product:10",
         projectKey: "LAU",
         isArchived: false,
-        parentPath: "Delivery > Atlas",
+        parentPath: "Atlas",
         clientPortalEnabled: false,
       },
     ]);
   });
 
+  it("a workspace: scope key is not resolvable — it is silently ignored rather than resolved", async () => {
+    const { db, calls } = makeDb(makeResponses([
+      [projects, [[PROJ_ROW]]],
+      [managedProducts, [[PROD_ROW]]],
+    ]));
+
+    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
+      "workspace:ws-1",
+      "project:20",
+    ]);
+
+    expect(result).toEqual([
+      {
+        key: "project:20",
+        type: "project",
+        id: "20",
+        name: "Launch",
+        parentKey: "product:10",
+        projectKey: "LAU",
+        isArchived: false,
+        parentPath: "Atlas",
+        clientPortalEnabled: false,
+      },
+    ]);
+    expect(calls.some((c) => c.table === managedProducts)).toBe(true);
+  });
+
   it("omits a key whose row is in another organization, because the caller-scoped query never returns it", async () => {
     const { db } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
+      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [managedProducts, [[PROD_ROW]]],
     ]));
 
     const result = await makeSvc(db, makeAccess(null)).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
-      "workspace:ws-1",
-      "workspace:ws-cross-org",
+      "product:10",
+      "product:999",
     ]);
 
-    expect(result.map((ref) => ref.key)).toEqual(["workspace:ws-1"]);
+    expect(result.map((ref) => ref.key)).toEqual(["product:10"]);
   });
 
   it("omits a soft-deleted row, because the deletedAt filter excludes it from the query result", async () => {
@@ -99,21 +110,19 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
 
   it("binds every issued query to the caller's orgId", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaces, [[]]],
       [managedProducts, [[]]],
       [projects, [[]]],
     ]));
 
     await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
-      "workspace:ws-1",
       "product:10",
       "project:20",
     ]);
 
     const mainCalls = calls.filter((c) =>
-      c.table === pmWorkspaces || c.table === managedProducts || c.table === projects,
+      c.table === managedProducts || c.table === projects,
     );
-    expect(mainCalls.length).toBeGreaterThanOrEqual(3);
+    expect(mainCalls.length).toBeGreaterThanOrEqual(2);
     for (const call of mainCalls)
       expect(renderParams(call.condition)).toContain(ORG);
   });
@@ -135,18 +144,23 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects a workspace: key prefix at the schema boundary", () => {
+    const result = resolveScopeDirectorySchema.safeParse({ keys: ["workspace:ws-1"] });
+    expect(result.success).toBe(false);
+  });
+
   it("issues no query for a type that appears in no key", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaces, [[WS_ROW]]],
+      [managedProducts, [[PROD_ROW]]],
     ]));
 
-    await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["workspace:ws-1"]);
+    await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["product:10"]);
 
     const mainCalls = calls.filter(
-      (c) => c.table === pmWorkspaces || c.table === managedProducts || c.table === projects,
+      (c) => c.table === managedProducts || c.table === projects,
     );
     expect(mainCalls).toHaveLength(1);
-    expect(mainCalls[0]?.table).toBe(pmWorkspaces);
+    expect(mainCalls[0]?.table).toBe(managedProducts);
   });
 
   it("clientPortalEnabled is true when the project has a clientMembershipId set", async () => {
@@ -169,50 +183,31 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
     expect(ref?.clientPortalEnabled).toBe(false);
   });
 
-  it("resolves parentPath for a product whose workspace was not in the requested keys", async () => {
+  it("resolves parentPath for a product as null, because a product has no ancestor", async () => {
     const { db } = makeDb(makeResponses([
       [managedProducts, [[PROD_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
 
     const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["product:10"]);
 
-    expect(ref?.parentPath).toBe("Delivery");
+    expect(ref?.parentPath).toBeNull();
   });
 
-  it("resolves parentPath for a project as WorkspaceName > ProductName when both are ancestors", async () => {
-    const projNoProduct = {
-      ...PROJ_ROW,
-      managedProductId: null,
-      pmWorkspaceId: "ws-1",
-    };
-    const { db } = makeDb(makeResponses([
-      [projects, [[projNoProduct]]],
-      [pmWorkspaces, [[WS_ROW]]],
-    ]));
-
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
-
-    expect(ref?.parentPath).toBe("Delivery");
-  });
-
-  it("resolves parentPath with both workspace and product ancestors when project has a managedProductId not in requested keys", async () => {
+  it("resolves parentPath for a project as the product name when the product is an ancestor", async () => {
     const { db } = makeDb(makeResponses([
       [projects, [[PROJ_ROW]]],
       [managedProducts, [[PROD_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
 
     const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
 
-    expect(ref?.parentPath).toBe("Delivery > Atlas");
+    expect(ref?.parentPath).toBe("Atlas");
   });
 
-  it("sets parentPath to null when the ancestor workspace is not in the org (deleted/cross-tenant)", async () => {
+  it("sets parentPath to null when the project has no managedProductId", async () => {
     const projNoProduct = { ...PROJ_ROW, managedProductId: null };
     const { db } = makeDb(makeResponses([
       [projects, [[projNoProduct]]],
-      [pmWorkspaces, [[]]],
     ]));
 
     const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
@@ -225,7 +220,6 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
     const proj2 = { ...PROJ_ROW, id: 21, name: "Titan", key: "TIT2", managedProductId: null };
     const { db } = makeDb(makeResponses([
       [projects, [[proj1, proj2]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
 
     const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
@@ -239,22 +233,10 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
   });
 });
 
-
 describe("ScopeDirectoryService — archived scopes", () => {
-  it("returns isArchived true for an archived workspace", async () => {
-    const { db } = makeDb(makeResponses([
-      [pmWorkspaces, [[{ ...WS_ROW, status: "archived" }]]],
-    ]));
-
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["workspace:ws-1"]);
-
-    expect(ref?.isArchived).toBe(true);
-  });
-
   it("returns isArchived true for an archived product", async () => {
     const { db } = makeDb(makeResponses([
       [managedProducts, [[{ ...PROD_ROW, status: "archived" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
 
     const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["product:10"]);
@@ -265,7 +247,6 @@ describe("ScopeDirectoryService — archived scopes", () => {
   it("returns isArchived true for an ARCHIVED project", async () => {
     const { db } = makeDb(makeResponses([
       [projects, [[{ ...PROJ_ROW, status: "ARCHIVED" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
       [managedProducts, [[PROD_ROW]]],
     ]));
 
@@ -276,45 +257,45 @@ describe("ScopeDirectoryService — archived scopes", () => {
 });
 
 describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL WHERE, not post-query JS filter (BSN-02-010)", () => {
-  it("search term is bound as a SQL parameter in the pmWorkspaces WHERE, proving the filter is in SQL not applied to the query result in JS", async () => {
+  it("search term is bound as a SQL parameter in the managedProducts WHERE, proving the filter is in SQL not applied to the query result in JS", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
+      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [managedProducts, [[PROD_ROW]]],
     ]));
 
-    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Delivery", 25, undefined);
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atlas", 25, undefined);
 
-    const wsCall = calls.find((c) => c.table === pmWorkspaces);
-    expect(wsCall).toBeDefined();
-    const params = renderParams(wsCall?.condition);
-    expect(params).toContain("Delivery");
-    expect(params).toContain("Delivery%");
+    const prodCall = calls.find((c) => c.table === managedProducts);
+    expect(prodCall).toBeDefined();
+    const params = renderParams(prodCall?.condition);
+    expect(params).toContain("Atlas");
+    expect(params).toContain("Atlas%");
   });
 
-  it("auth inArray is bound in the workspace WHERE — the accessible IDs reach the SQL predicate, not a JS result filter", async () => {
+  it("auth inArray is bound in the product WHERE — the accessible IDs reach the SQL predicate, not a JS result filter", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }, { pmWorkspaceId: "ws-2" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
+      [managedProductMemberships, [[{ managedProductId: 10 }, { managedProductId: 11 }]]],
+      [managedProducts, [[PROD_ROW]]],
     ]));
 
-    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Del", 25, undefined);
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "At", 25, undefined);
 
-    const wsCall = calls.find((c) => c.table === pmWorkspaces);
-    expect(wsCall).toBeDefined();
-    const params = renderParams(wsCall?.condition);
-    expect(params).toContain("ws-1");
-    expect(params).toContain("ws-2");
+    const prodCall = calls.find((c) => c.table === managedProducts);
+    expect(prodCall).toBeDefined();
+    const params = renderParams(prodCall?.condition);
+    expect(params).toContain(10);
+    expect(params).toContain(11);
   });
 
-  it("build:manage all bypasses workspace membership lookup in search", async () => {
+  it("build:manage all bypasses product membership lookup in search", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaces, [[WS_ROW]]],
+      [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess("all")).searchScopeDirectory(ORG, USER, null, "Delivery", 25, undefined);
+    const result = await makeSvc(db, makeAccess("all")).searchScopeDirectory(ORG, USER, null, "Atlas", 25, undefined);
 
     expect(result.data).toHaveLength(1);
-    expect(calls.find((c) => c.table === pmWorkspaceMemberships)).toBeUndefined();
+    expect(calls.find((c) => c.table === managedProductMemberships)).toBeUndefined();
   });
 
   it("returns empty data and no nextCursor when membershipId is null and build:manage is not all", async () => {
@@ -326,93 +307,97 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
     expect(result.nextCursor).toBeNull();
   });
 
-  it("returns workspace ref with correct shape from search", async () => {
+  it("returns product ref with correct shape from search", async () => {
     const { db } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
+      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Delivery", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atlas", 25, undefined);
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).toMatchObject({
-      key: "workspace:ws-1",
-      type: "workspace",
-      id: "ws-1",
-      name: "Delivery",
+      key: "product:10",
+      type: "product",
+      id: "10",
+      name: "Atlas",
       parentKey: null,
-      projectKey: null,
       isArchived: false,
       parentPath: null,
       clientPortalEnabled: null,
     });
   });
 
-  it("skips the pmWorkspaces data query when accessible workspace list is empty, so no phantom rows can appear", async () => {
+  it("skips the managedProducts data query when accessible product list is empty, so no phantom rows can appear", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[]]],
+      [managedProductMemberships, [[]]],
     ]));
 
     const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Nope", 25, undefined);
 
     expect(result.data).toEqual([]);
-    expect(calls.find((c) => c.table === pmWorkspaces)).toBeUndefined();
+    expect(calls.find((c) => c.table === managedProducts)).toBeUndefined();
   });
 
-  it("search includes product results with correct parentPath derived from workspace ancestor", async () => {
+  it("search includes project results with correct parentPath derived from product ancestor", async () => {
     const { db } = makeDb(makeResponses([
-      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [managedProductMemberships, [[]]],
+      [projectMembers, [[{ projectId: 20 }]]],
+      [projectTeamAssignments, [[]]],
+      [projects, [[PROJ_ROW]]],
       [managedProducts, [[PROD_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atl", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Lau", 25, undefined);
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).toMatchObject({
-      key: "product:10",
-      type: "product",
-      parentPath: "Delivery",
+      key: "project:20",
+      type: "project",
+      parentPath: "Atlas",
     });
   });
 
-  it("search product results require auth: product membership table is queried when build:manage is not all", async () => {
+  it("search project results require auth: project membership table is queried when build:manage is not all", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [managedProductMemberships, [[]]],
+      [projectMembers, [[{ projectId: 20 }]]],
+      [projectTeamAssignments, [[]]],
+      [projects, [[PROJ_ROW]]],
       [managedProducts, [[PROD_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
     ]));
 
-    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atl", 25, undefined);
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Lau", 25, undefined);
 
-    const membershipCall = calls.find((c) => c.table === managedProductMemberships);
+    const membershipCall = calls.find((c) => c.table === projectMembers);
     expect(membershipCall).toBeDefined();
     expect(renderParams(membershipCall?.condition)).toContain(MEMBERSHIP_ID);
   });
 
   it("nextCursor is null when results fit on one page", async () => {
     const { db } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
-      [pmWorkspaces, [[WS_ROW]]],
+      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Delivery", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atlas", 25, undefined);
 
     expect(result.nextCursor).toBeNull();
   });
 
   it("nextCursor is a non-empty string when results exceed the page limit", async () => {
-    const extraWsRows = Array.from({ length: 26 }, (_, i) => ({
-      pmWorkspaceId: `ws-extra-${i}`,
-      name: `Workspace ${i}`,
+    const extraProdRows = Array.from({ length: 26 }, (_, i) => ({
+      id: 100 + i,
+      name: `Product ${i}`,
+      key: `PROD${i}`,
       status: "active" as const,
     }));
     const { db } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [extraWsRows.map((r) => ({ pmWorkspaceId: r.pmWorkspaceId }))]],
-      [pmWorkspaces, [extraWsRows]],
+      [managedProductMemberships, [extraProdRows.map((r) => ({ managedProductId: r.id }))]],
+      [managedProducts, [extraProdRows]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Work", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Product", 25, undefined);
 
     expect(result.nextCursor).not.toBeNull();
     expect(result.data).toHaveLength(25);
@@ -420,14 +405,12 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
 
   it("orgId is bound in ALL membership and data queries issued by search", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
       [managedProductMemberships, [[{ managedProductId: 10 }]]],
       [projectMembers, [[{ projectId: 20 }]]],
       [projectTeamAssignments, [[]]],
-      [pmWorkspaces, [[WS_ROW]]],
       [managedProducts, [[PROD_ROW]]],
       [projects, [[PROJ_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
+      [managedProducts, [[PROD_ROW]]],
     ]));
 
     await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "a", 25, undefined);
@@ -437,11 +420,11 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
   });
 });
 
-describe("ScopeDirectoryService — workspace-less projects (BE-134)", () => {
-  it("produces a ref for a project whose pmWorkspaceId is null with parentPath null, confirming the project is not dropped", async () => {
-    const projNoWs = { ...PROJ_ROW, pmWorkspaceId: null, managedProductId: null };
+describe("ScopeDirectoryService — projects without a managed product (BE-134)", () => {
+  it("produces a ref for a project whose managedProductId is null with parentPath null, confirming the project is not dropped", async () => {
+    const projNoProduct = { ...PROJ_ROW, managedProductId: null };
     const { db } = makeDb(makeResponses([
-      [projects, [[projNoWs]]],
+      [projects, [[projNoProduct]]],
     ]));
 
     const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
@@ -458,26 +441,13 @@ describe("ScopeDirectoryService — workspace-less projects (BE-134)", () => {
     });
   });
 
-  it("resolves parentPath to the product name alone when pmWorkspaceId is null but managedProductId is set, not prefixed with a workspace name", async () => {
-    const projNoWs = { ...PROJ_ROW, pmWorkspaceId: null, managedProductId: 10 };
-    const { db } = makeDb(makeResponses([
-      [projects, [[projNoWs]]],
-      [managedProducts, [[PROD_ROW]]],
-      [pmWorkspaces, [[WS_ROW]]],
-    ]));
-
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
-
-    expect(ref?.parentPath).toBe("Atlas");
-  });
-
-  it("excludes null pmWorkspaceId from the workspace ancestor fetch so no null reaches the SQL inArray, while the real missing workspace id is fetched and used in parentPath", async () => {
-    const projNullWs = { ...PROJ_ROW, id: 20, pmWorkspaceId: null, managedProductId: null };
-    const projRealWs = { ...PROJ_ROW, id: 21, key: "P2", pmWorkspaceId: "ws-missing", managedProductId: null };
-    const missingWsRow = { pmWorkspaceId: "ws-missing", name: "Operations", status: "active" };
+  it("excludes null managedProductId from the product ancestor fetch so no null reaches the SQL inArray, while the real missing product id is fetched and used in parentPath", async () => {
+    const projNullProduct = { ...PROJ_ROW, id: 20, managedProductId: null };
+    const projRealProduct = { ...PROJ_ROW, id: 21, key: "P2", managedProductId: 99 };
+    const missingProductRow = { id: 99, name: "Orion", key: "ORI", status: "active" };
     const { db, calls } = makeDb(makeResponses([
-      [projects, [[projNullWs, projRealWs]]],
-      [pmWorkspaces, [[missingWsRow]]],
+      [projects, [[projNullProduct, projRealProduct]]],
+      [managedProducts, [[missingProductRow]]],
     ]));
 
     const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
@@ -487,11 +457,11 @@ describe("ScopeDirectoryService — workspace-less projects (BE-134)", () => {
 
     expect(result).toHaveLength(2);
     expect(result[0]?.parentPath).toBeNull();
-    expect(result[1]?.parentPath).toBe("Operations");
-    const wsCalls = calls.filter((c) => c.table === pmWorkspaces);
-    expect(wsCalls).toHaveLength(1);
-    const params = renderParams(wsCalls[0]?.condition);
-    expect(params).toContain("ws-missing");
+    expect(result[1]?.parentPath).toBe("Orion");
+    const productCalls = calls.filter((c) => c.table === managedProducts);
+    expect(productCalls).toHaveLength(1);
+    const params = renderParams(productCalls[0]?.condition);
+    expect(params).toContain(99);
     expect(params).not.toContain(null);
   });
 });

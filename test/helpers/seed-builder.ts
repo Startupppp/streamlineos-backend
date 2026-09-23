@@ -4,7 +4,6 @@ import {
   organizationMembers,
   organizationPlacement,
   organizations,
-  pmWorkspaces,
   projectMembers,
   projects,
   roleAssignments,
@@ -65,7 +64,6 @@ export interface SeededMember {
 
 export interface SeededProject {
   projectId: number;
-  pmWorkspaceId: string;
 }
 
 export interface SeededFixture {
@@ -288,22 +286,12 @@ export class SeedBuilder {
       }
 
       for (const [projectAlias, entry] of this.projectSeedEntries) {
-        const pmWorkspaceId = crypto.randomUUID();
-        await tx.insert(pmWorkspaces).values({
-          pmWorkspaceId,
-          orgId,
-          name: `ws-${entry.name}`,
-          slug: `ws-${entry.key.toLowerCase()}-${orgId.slice(0, 8)}`,
-          isDefault: false,
-          status: "active",
-        });
         const [projectRow] = await tx
           .insert(projects)
           .values({
             orgId,
             name: entry.name,
             key: entry.key,
-            pmWorkspaceId,
             status: "ACTIVE",
           })
           .returning({ id: projects.id });
@@ -312,7 +300,7 @@ export class SeedBuilder {
             `seed: project "${projectAlias}" insert failed for org ${orgId}`,
           );
         const projectId = projectRow.id;
-        seededProjects[projectAlias] = { projectId, pmWorkspaceId };
+        seededProjects[projectAlias] = { projectId };
 
         for (const { memberAlias, role } of entry.memberEntries) {
           const member = members[memberAlias];

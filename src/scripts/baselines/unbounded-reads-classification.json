@@ -1186,7 +1186,7 @@
       "note": "Has 2 explicit .limit() calls and 6 aggregate references; all row-returning paths are capped",
       "justification": "has 2 explicit .limit() + 6 aggregates; violations are bounded by sprint/project scope; gate missed limits past 120-line window 2026-09-01"
     },
-    "/build/core/projects-workspace-members.service.ts": {
+    "/build/core/build-members.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 3 explicit .limit() calls; workspace membership is bounded by org size",
       "justification": "has 3 explicit .limit(); violations are per-workspace membership queries bounded by workspace member count; gate missed limit placement 2026-09-01"

@@ -3,7 +3,6 @@ import type { SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { ManagedProductsService } from "./managed-products/managed-products.service";
 import { TeamsService } from "./teams/teams.service";
-import { PmWorkspacesService } from "./pm-workspaces/pm-workspaces.service";
 
 const dialect = new PgDialect();
 
@@ -14,9 +13,6 @@ function renderParams(condition: unknown): unknown[] {
 const audit = { log: jest.fn() } as never;
 const ORG = "org-1";
 const MEMBER = 4101;
-const memberOfEveryWorkspace = {
-  assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
-} as unknown as PmWorkspacesService;
 
 function makeListDb() {
   const limit = jest.fn().mockResolvedValue([]);
@@ -28,19 +24,9 @@ function makeListDb() {
 }
 
 describe("Build scope filters reach the WHERE clause", () => {
-  it("filters managed products by pmWorkspaceId", async () => {
-    const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit, memberOfEveryWorkspace).listManagedProducts(
-      ORG,
-      { limit: 20, pmWorkspaceId: "ws-7" } as never,
-      MEMBER,
-    );
-    expect(renderParams(where.mock.calls[0]?.[0])).toContain("ws-7");
-  });
-
   it("filters managed products by search term", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit, memberOfEveryWorkspace).listManagedProducts(
+    await new ManagedProductsService(db, audit).listManagedProducts(
       ORG,
       { limit: 20, search: "atlas" } as never,
       MEMBER,
@@ -48,41 +34,30 @@ describe("Build scope filters reach the WHERE clause", () => {
     expect(renderParams(where.mock.calls[0]?.[0])).toContain("%atlas%");
   });
 
-  it("filters teams by pmWorkspaceId", async () => {
+  it("filters teams by search term", async () => {
     const { db, where } = makeListDb();
-    await new TeamsService(db, audit, memberOfEveryWorkspace).listTeams(ORG, {
+    await new TeamsService(db, audit).listTeams(ORG, {
       pageSize: 50,
-      pmWorkspaceId: "ws-7",
+      search: "eng",
     } as never, MEMBER);
-    expect(renderParams(where.mock.calls[0]?.[0])).toContain("ws-7");
-  });
-
-  it("filters workspaces by search term", async () => {
-    const { db, where } = makeListDb();
-    await new PmWorkspacesService(db, audit).listWorkspaces(ORG, {
-      limit: 20,
-      search: "delivery",
-    } as never);
-    expect(renderParams(where.mock.calls[0]?.[0])).toContain("%delivery%");
+    expect(renderParams(where.mock.calls[0]?.[0])).toContain("%eng%");
   });
 
   it("keeps every scoped list bound to the caller's organization", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit, memberOfEveryWorkspace).listManagedProducts(
+    await new ManagedProductsService(db, audit).listManagedProducts(
       ORG,
-      { limit: 20, pmWorkspaceId: "ws-7" } as never,
+      { limit: 20, search: "atlas" } as never,
       MEMBER,
     );
     expect(renderParams(where.mock.calls[0]?.[0])).toContain(ORG);
   });
 
-  it("does not constrain by workspace when no workspace is requested", async () => {
+  it("keeps team lists bound to the caller's organization", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit, memberOfEveryWorkspace).listManagedProducts(
-      ORG,
-      { limit: 20 } as never,
-      MEMBER,
-    );
-    expect(renderParams(where.mock.calls[0]?.[0])).not.toContain("ws-7");
+    await new TeamsService(db, audit).listTeams(ORG, {
+      pageSize: 50,
+    } as never, MEMBER);
+    expect(renderParams(where.mock.calls[0]?.[0])).toContain(ORG);
   });
 });

@@ -56,7 +56,6 @@ describe("ProjectsQueryService.getProject — team-access join must match list p
       db,
       { log: jest.fn() } as unknown as AuditService,
       access,
-      {} as never,
     );
 
     await expect(

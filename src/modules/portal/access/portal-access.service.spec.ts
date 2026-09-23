@@ -8,7 +8,7 @@ describe("PortalAccessService.createGrant", () => {
 
   function createService(options: {
     membership?: { partyContactId: string; status: string };
-    project?: { id: number; pmWorkspaceId: string | null } | null;
+    project?: { id: number } | null;
     insertError?: Error;
   }) {
     let selectCall = 0;
@@ -21,7 +21,6 @@ describe("PortalAccessService.createGrant", () => {
             portalMembershipId: "pm-1",
             partyContactId: "contact-1",
             projectId: 10,
-            pmWorkspaceId: "ws-1",
             status: "ACTIVE",
           },
         ]);
@@ -50,26 +49,12 @@ describe("PortalAccessService.createGrant", () => {
   it("rejects grant when portal membership is not active", async () => {
     const service = createService({
       membership: { partyContactId: "contact-1", status: "PENDING" },
-      project: { id: 10, pmWorkspaceId: "ws-1" },
+      project: { id: 10 },
     });
     await expect(
       service.createGrant(organizationId, actorUserId, {
         portalMembershipId: "pm-1",
         projectId: 10,
-      }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it("rejects grant when pm workspace does not match project", async () => {
-    const service = createService({
-      membership: { partyContactId: "contact-1", status: "ACTIVE" },
-      project: { id: 10, pmWorkspaceId: "ws-1" },
-    });
-    await expect(
-      service.createGrant(organizationId, actorUserId, {
-        portalMembershipId: "pm-1",
-        projectId: 10,
-        pmWorkspaceId: "ws-other",
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -93,7 +78,7 @@ describe("PortalAccessService.createGrant", () => {
     // raises 23505. This holds the read, not the index.
     const service = createService({
       membership: { partyContactId: "contact-1", status: "ACTIVE" },
-      project: { id: 10, pmWorkspaceId: "ws-1" },
+      project: { id: 10 },
       insertError: drizzleUniqueViolation(),
     });
     await expect(

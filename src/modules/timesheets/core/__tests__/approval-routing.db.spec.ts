@@ -73,7 +73,6 @@ describe("Timesheet approval routing against a real schema", () => {
   const notices: Notice[] = [];
   const extraUserIds: string[] = [];
   let counter = 0;
-  let workspaceId: string;
 
   async function addPerson(label: string, options: { lifecycle?: string } = {}): Promise<Person> {
     counter += 1;
@@ -102,8 +101,8 @@ describe("Timesheet approval routing against a real schema", () => {
   async function project(name: string, managerMembershipId: number | null): Promise<number> {
     counter += 1;
     const [row] = await sql<{ id: number }[]>`
-      INSERT INTO build.projects (org_id, name, key, manager_membership_id, pm_workspace_id)
-      VALUES (${org.orgId}, ${name}, ${`P${counter}`}, ${managerMembershipId}, ${workspaceId})
+      INSERT INTO build.projects (org_id, name, key, manager_membership_id)
+      VALUES (${org.orgId}, ${name}, ${`P${counter}`}, ${managerMembershipId})
       RETURNING id`;
     return row.id;
   }
@@ -123,8 +122,6 @@ describe("Timesheet approval routing against a real schema", () => {
     sql = connect();
     db = drizzle(sql, { schema });
     org = await createProbeOrg(sql, "ts-routing");
-    workspaceId = `${org.orgId}-ws`;
-    await sql`INSERT INTO build.pm_workspaces (pm_workspace_id, org_id, name, slug, is_default) VALUES (${workspaceId}, ${org.orgId}, 'Probe', 'probe', true)`;
     await sql`INSERT INTO timesheet_settings (org_id) VALUES (${org.orgId})`;
     access = new FakeAccess();
     const employment = new EmploymentFactsService(db);
@@ -146,7 +143,6 @@ describe("Timesheet approval routing against a real schema", () => {
       await sql`DELETE FROM timesheet_periods WHERE org_id = ${org.orgId}`;
       await sql`DELETE FROM timesheet_settings WHERE org_id = ${org.orgId}`;
       await sql`DELETE FROM build.projects WHERE org_id = ${org.orgId}`;
-      await sql`DELETE FROM build.pm_workspaces WHERE org_id = ${org.orgId}`;
       await dropProbeOrg(sql, org, ["hr_reporting_lines", "hr_employments", "hr_people"]);
     }
     for (const userId of extraUserIds) await sql`DELETE FROM users WHERE id = ${userId}`;

@@ -5,8 +5,8 @@ import {
   Injectable,
   OnModuleInit,
 } from "@nestjs/common";
-import { and, asc, eq, gt, isNull } from "drizzle-orm";
-import { moduleOwnerships, modulesCatalog, orgModules, organizationMembers, organizations, pmWorkspaces } from "../../db/schema";
+import { and, asc, eq, gt } from "drizzle-orm";
+import { moduleOwnerships, modulesCatalog, orgModules, organizationMembers, organizations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -216,32 +216,6 @@ export class EntitlementsService implements OnModuleInit {
           target: [orgModules.orgId, orgModules.moduleKey],
           set: { enabled, enabledBy },
         });
-
-      if (moduleKey === "build" && enabled) {
-        const [existing] = await tx
-          .select({ id: pmWorkspaces.pmWorkspaceId })
-          .from(pmWorkspaces)
-          .where(
-            and(
-              eq(pmWorkspaces.orgId, orgId),
-              eq(pmWorkspaces.isDefault, true),
-              isNull(pmWorkspaces.deletedAt),
-            ),
-          )
-          .limit(1);
-        if (!existing) {
-          await tx
-            .insert(pmWorkspaces)
-            .values({
-              orgId,
-              name: "Default Workspace",
-              slug: "default",
-              isDefault: true,
-              status: "active",
-            })
-            .onConflictDoNothing();
-        }
-      }
 
       if (enabled && OWNERSHIP_MANAGED_MODULES.has(moduleKey)) {
         const [orgRow] = await tx

@@ -321,20 +321,22 @@ describe("EntitlementsService", () => {
   });
 
   describe("setModuleEnabled", () => {
-    it("wraps the upsert in a single transaction, and reads members in a second", async () => {
+    it("wraps the upsert in a single transaction, publishes the version bump in a second, and reads members in a third", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      // Two, not one, and the second is the point. Every write — the upsert, the
-      // default workspace, the ownership row, the version bump — is still one
-      // atomic transaction. The ACTIVE-member scan that feeds the session bust is
-      // deliberately NOT in it: it is deferred past the commit so the request's
+      // Three, not one, and the split is the point. Every write — the upsert, the
+      // ownership row, the version bump — is still one atomic transaction.
+      // bumpPermissionsVersion registers an afterCommit hook to publish the version
+      // bump, which drainAfterCommitHooks runs in its own transaction once the
+      // write commits. The ACTIVE-member scan that feeds the session bust is
+      // deliberately in neither: it is deferred past the commit so the request's
       // pooled connection is released first. There is no ambient request context
       // in a unit test, so `registerAfterCommit` declines and the hook runs
       // inline here, opening its own tenant transaction.
-      expect(mocks.transaction).toHaveBeenCalledTimes(2);
+      expect(mocks.transaction).toHaveBeenCalledTimes(3);
     });
 
     it("upserts with enabled=true and the correct field values", async () => {
@@ -378,10 +380,12 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      // One set_config per transaction and no other raw SQL: the write transaction
-      // and the deferred member scan. Anything above two is hand-written SQL that
-      // has escaped the query builder.
-      expect(mocks.execute).toHaveBeenCalledTimes(2);
+      // One set_config per transaction and no other raw SQL: the write transaction,
+      // the after-commit transaction bumpPermissionsVersion's registerAfterCommit
+      // hook opens to publish the version bump post-commit, and the deferred
+      // member scan. Anything above three is hand-written SQL that has escaped
+      // the query builder.
+      expect(mocks.execute).toHaveBeenCalledTimes(3);
     });
 
     it("executes only the tenant context SQL when disabling a module", async () => {
@@ -390,7 +394,7 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
-      expect(mocks.execute).toHaveBeenCalledTimes(2);
+      expect(mocks.execute).toHaveBeenCalledTimes(3);
     });
 
     it("throws 400 BadRequestException when toggling a core module (kb)", async () => {

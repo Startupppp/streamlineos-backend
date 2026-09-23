@@ -113,12 +113,12 @@ describe("BSN-04-040 — portal identity cannot reach internal Build sidebar rou
     expect(src).not.toContain(`"build:portal:view"`);
   });
 
-  it("pm-workspaces controller declares build:workspaces:view, disjoint from the portal key", () => {
+  it("portfolios controller declares build:portfolios:view, disjoint from the portal key", () => {
     const src = readFileSync(
-      join(BACKEND_ROOT, "src/modules/build/pm-workspaces/pm-workspaces.controller.ts"),
+      join(BACKEND_ROOT, "src/modules/build/portfolios/portfolios.controller.ts"),
       "utf8",
     );
-    expect(src).toContain(`"build:workspaces:view"`);
+    expect(src).toContain(`"build:portfolios:view"`);
     expect(src).not.toContain(`"build:portal:view"`);
   });
 

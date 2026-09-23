@@ -284,45 +284,6 @@ export const PROJECT_MANAGED_PRODUCTS_PERMISSIONS: Permission[] = [
   },
 ];
 
-export const PROJECT_WORKSPACES_PERMISSIONS: Permission[] = [
-  {
-    name: "build:workspaces:view",
-    resource: "build:workspaces",
-    action: "view",
-    description: "View PM workspaces",
-  },
-  {
-    name: "build:workspaces:create",
-    resource: "build:workspaces",
-    action: "create",
-    description: "Create PM workspaces",
-  },
-  {
-    name: "build:workspaces:update",
-    resource: "build:workspaces",
-    action: "update",
-    description: "Update PM workspaces",
-  },
-  {
-    name: "build:workspaces:delete",
-    resource: "build:workspaces",
-    action: "delete",
-    description: "Delete PM workspaces",
-  },
-  {
-    name: "build:workspaces:members:view",
-    resource: "build:workspaces:members",
-    action: "view",
-    description: "View PM workspace members",
-  },
-  {
-    name: "build:workspaces:members:manage",
-    resource: "build:workspaces:members",
-    action: "manage",
-    description: "Add and remove PM workspace members",
-  },
-];
-
 export const PROJECT_WORKFLOW_PERMISSIONS: Permission[] = [
   {
     name: "build:workflow:view",

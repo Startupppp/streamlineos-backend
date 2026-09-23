@@ -125,7 +125,7 @@ describe("BOLA live probe — how a response is graded", () => {
 
 describe("BOLA live probe — binding a path parameter to a real object", () => {
   it("derives a stem and plural forms from the parameter name", () => {
-    expect(paramStem("pmWorkspaceId")).toBe("pm_workspace");
+    expect(paramStem("clientMembershipId")).toBe("client_membership");
     expect(paramStem("projectId")).toBe("project");
     expect(pluralCandidates("project")).toContain("projects");
     expect(pluralCandidates("policy")).toContain("policies");

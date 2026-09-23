@@ -10,7 +10,7 @@ import {
 } from "./list-query.schema";
 import { listProjectsSchema } from "../../modules/build/core/dto/project-core.schemas";
 import { listProjectCustomersSchema } from "../../modules/build/core/dto/projects-customers.schemas";
-import { listWorkspaceMembersSchema } from "../../modules/build/core/dto/projects-workspace-members.schemas";
+import { listBuildMembersSchema } from "../../modules/build/core/dto/build-members.schemas";
 import {
   roadmapListQuerySchema,
   feedbackListQuerySchema,
@@ -21,10 +21,6 @@ import {
   teamTimesheetsQuerySchema,
 } from "../../modules/build/execution/dto/timesheets.schemas";
 import { listManagedProductsQuerySchema } from "../../modules/build/managed-products/dto/managed-products.schemas";
-import {
-  listWorkspacesQuerySchema,
-  listMembersQuerySchema,
-} from "../../modules/build/pm-workspaces/dto/pm-workspaces.schemas";
 import { listPortfoliosQuerySchema } from "../../modules/build/portfolios/dto/portfolios.schemas";
 import {
   listTeamsQuerySchema,
@@ -235,15 +231,13 @@ interface SchemaCaseConfig {
 const schemaCases: SchemaCaseConfig[] = [
   { name: "listProjectsSchema", schema: listProjectsSchema, sizeKey: "limit", defaultSize: 9 },
   { name: "listProjectCustomersSchema", schema: listProjectCustomersSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listWorkspaceMembersSchema", schema: listWorkspaceMembersSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listBuildMembersSchema", schema: listBuildMembersSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "roadmapListQuerySchema", schema: roadmapListQuerySchema, sizeKey: "limit", defaultSize: 50 },
   { name: "feedbackListQuerySchema", schema: feedbackListQuerySchema, sizeKey: "limit", defaultSize: 50 },
   { name: "changelogListQuerySchema", schema: changelogListQuerySchema, sizeKey: "limit", defaultSize: 50 },
   { name: "timeEntriesListQuerySchema", schema: timeEntriesListQuerySchema, sizeKey: "limit", defaultSize: 50 },
   { name: "teamTimesheetsQuerySchema", schema: teamTimesheetsQuerySchema, sizeKey: "limit", defaultSize: 50 },
   { name: "listManagedProductsQuerySchema", schema: listManagedProductsQuerySchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listWorkspacesQuerySchema", schema: listWorkspacesQuerySchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listMembersQuerySchema", schema: listMembersQuerySchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listPortfoliosQuerySchema", schema: listPortfoliosQuerySchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listTeamsQuerySchema", schema: listTeamsQuerySchema, sizeKey: "pageSize", defaultSize: 50 },
   { name: "listTeamMembersQuerySchema", schema: listTeamMembersQuerySchema, sizeKey: "pageSize", defaultSize: 50 },

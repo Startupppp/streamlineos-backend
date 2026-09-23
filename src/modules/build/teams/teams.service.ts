@@ -13,7 +13,6 @@ import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
@@ -31,7 +30,6 @@ export class TeamsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
   async loadTeam(orgId: string, teamId: number): Promise<TeamRow> {
@@ -53,19 +51,14 @@ export class TeamsService {
   async listTeams(
     orgId: string,
     query: ListTeamsQuery,
-    callerMembershipId: number | null,
+    _callerMembershipId: number | null,
   ) {
-    if (query.pmWorkspaceId)
-      await this.pmWorkspaces.assertMemberOfWorkspace(orgId, query.pmWorkspaceId, callerMembershipId);
     const { cursor, pageSize } = query;
     const pos = decodeCursor(cursor);
     const conds = [
       eq(projectTeams.orgId, orgId),
       isNull(projectTeams.deletedAt),
       query.search ? ilike(projectTeams.name, `%${query.search}%`) : undefined,
-      query.pmWorkspaceId
-        ? eq(projectTeams.pmWorkspaceId, query.pmWorkspaceId)
-        : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(projectTeams.createdAt, projectTeams.id, pos));
 
@@ -73,7 +66,6 @@ export class TeamsService {
       .select({
         id: projectTeams.id,
         orgId: projectTeams.orgId,
-        pmWorkspaceId: projectTeams.pmWorkspaceId,
         name: projectTeams.name,
         key: projectTeams.key,
         icon: projectTeams.icon,
@@ -133,20 +125,14 @@ export class TeamsService {
   async createTeam(
     orgId: string,
     userId: string,
-    callerMembershipId: number | null,
+    _callerMembershipId: number | null,
     input: CreateTeamInput,
   ) {
-    const pmWorkspaceId = await this.pmWorkspaces.resolveWorkspaceIdForWrite(
-      orgId,
-      input.pmWorkspaceId,
-    );
-    await this.pmWorkspaces.assertMemberOfWorkspace(orgId, pmWorkspaceId, callerMembershipId);
     try {
       const [row] = await this.db
         .insert(projectTeams)
         .values({
           orgId,
-          pmWorkspaceId,
           name: input.name,
           key: input.key,
           icon: input.icon ?? null,

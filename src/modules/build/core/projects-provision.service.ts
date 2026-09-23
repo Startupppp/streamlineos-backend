@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -21,7 +20,6 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { lockQuota } from "../../billing/core/seat-definition";
@@ -40,17 +38,15 @@ export class ProjectsProvisionService {
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
-  private async resolveManagedProductForWorkspace(
+  private async resolveManagedProductInOrg(
     orgId: string,
-    pmWorkspaceId: string,
     managedProductId: number | undefined,
   ): Promise<number | null> {
     if (managedProductId === undefined) return null;
     const [product] = await this.db
-      .select({ pmWorkspaceId: managedProducts.pmWorkspaceId })
+      .select({ id: managedProducts.id })
       .from(managedProducts)
       .where(
         and(
@@ -61,23 +57,14 @@ export class ProjectsProvisionService {
       )
       .limit(1);
     if (!product) throw new NotFoundException("Managed product not found");
-    if (product.pmWorkspaceId !== pmWorkspaceId)
-      throw new BadRequestException(
-        "Managed product belongs to a different PM workspace",
-      );
     return managedProductId;
   }
 
   async createProject(orgId: string, creatorUserId: string, input: CreateProjectInput) {
     const projectKey = input.key ?? generateProjectKey(input.name);
 
-    const pmWorkspaceId = await this.pmWorkspaces.resolveWorkspaceIdForWrite(
+    const managedProductId = await this.resolveManagedProductInOrg(
       orgId,
-      input.pmWorkspaceId,
-    );
-    const managedProductId = await this.resolveManagedProductForWorkspace(
-      orgId,
-      pmWorkspaceId,
       input.managedProductId,
     );
     const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
@@ -93,8 +80,6 @@ export class ProjectsProvisionService {
     if (!creator || !manager || additionalMembers.some((id) => !actors.has(id)))
       throw new NotFoundException("Project actors must be active members of this organization");
 
-    await this.pmWorkspaces.assertMemberOfWorkspace(orgId, pmWorkspaceId, creator.membershipId);
-
     const project = await this.db.transaction(async (tx) => {
       await tx.execute(lockQuota(orgId, "projects"));
       await this.planLimits.assertWithinLimit(orgId, "projects", 1, tx);
@@ -103,7 +88,6 @@ export class ProjectsProvisionService {
         .insert(projects)
         .values({
           orgId,
-          pmWorkspaceId,
           managedProductId,
           key: projectKey,
           name: input.name,
@@ -187,7 +171,6 @@ export class ProjectsProvisionService {
     });
     if (!deal) throw new NotFoundException("Deal not found");
 
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
     const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [userId, ...(deal.assignedToId ? [deal.assignedToId] : [])]);
     const creator = actors.get(userId);
     const manager = actors.get(deal.assignedToId ?? userId);
@@ -206,7 +189,6 @@ export class ProjectsProvisionService {
         .insert(projects)
         .values({
           orgId,
-          pmWorkspaceId,
           key: projectKey,
           name: input.name,
           description: input.description ?? deal.notes ?? null,

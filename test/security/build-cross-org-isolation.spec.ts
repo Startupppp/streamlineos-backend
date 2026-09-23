@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { ScopeDirectoryService } from "src/modules/build/scope-directory/scope-directory.service";
-import { PmWorkspacesService } from "src/modules/build/pm-workspaces/pm-workspaces.service";
+import { TeamsService } from "src/modules/build/teams/teams.service";
 import { ManagedProductsService } from "src/modules/build/managed-products/managed-products.service";
 import { ClientPortalService } from "src/modules/build/client-portal/client-portal.service";
 import type { Db } from "src/db/drizzle.module";
@@ -19,8 +19,10 @@ function renderParams(condition: unknown): unknown[] {
 
 const ORG_A = "org-a-caller";
 const ORG_B = "org-b-victim";
-const WORKSPACE_A = "ws-org-a";
-const WORKSPACE_B = "ws-org-b";
+const PROJECT_KEY_A = 501;
+const PROJECT_KEY_B = 502;
+const TEAM_A = 71;
+const TEAM_B = 72;
 const PRODUCT_A = 11;
 const PRODUCT_B = 22;
 const USER_A = "user-a";
@@ -77,32 +79,32 @@ function makePortalDb(findResult: Record<string, unknown> | undefined, selectRow
 }
 
 describe("BSN-04-042 — cross-organization isolation: scope-directory resolve", () => {
-  it("resolveScopeDirectory binds the caller's orgId in the workspace WHERE clause", async () => {
+  it("resolveScopeDirectory binds the caller's orgId in the project membership WHERE clause", async () => {
     const { db, capturedWheres } = makeScopeDirectoryDb([]);
     await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`workspace:${WORKSPACE_A}`],
+      ORG_A, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_A}`],
     );
     expect(capturedWheres.length).toBeGreaterThan(0);
     expect(renderParams(capturedWheres[0])).toContain(ORG_A);
   });
 
-  it("resolveScopeDirectory returns nothing for a workspace key belonging to a foreign org", async () => {
+  it("resolveScopeDirectory returns nothing for a project key belonging to a foreign org", async () => {
     const { db } = makeScopeDirectoryDb([]);
     const result = await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`workspace:${WORKSPACE_B}`],
+      ORG_A, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_B}`],
     );
     expect(result).toEqual([]);
   });
 
-  it("resolveScopeDirectory returns the workspace when the orgId and key match (control — mock is not vacuous)", async () => {
+  it("resolveScopeDirectory returns the project when the orgId and key match (control — mock is not vacuous)", async () => {
     const { db } = makeScopeDirectoryDb([
-      { pmWorkspaceId: WORKSPACE_A, name: "My WS", status: "active" },
+      { id: PROJECT_KEY_A, name: "My Project", key: "MYPRJ", status: "ACTIVE", managedProductId: null, clientMembershipId: null },
     ]);
     const result = await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`workspace:${WORKSPACE_A}`],
+      ORG_A, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_A}`],
     );
     expect(result.length).toBe(1);
-    expect(result[0]?.id).toBe(WORKSPACE_A);
+    expect(result[0]?.id).toBe(String(PROJECT_KEY_A));
   });
 
   it("resolveScopeDirectory binds orgId in the product WHERE clause", async () => {
@@ -113,18 +115,18 @@ describe("BSN-04-042 — cross-organization isolation: scope-directory resolve",
     expect(renderParams(capturedWheres[0])).toContain(ORG_A);
   });
 
-  it("org-B cannot retrieve org-A's workspace by guessing its key", async () => {
+  it("org-B cannot retrieve org-A's project by guessing its key", async () => {
     const { db } = makeScopeDirectoryDb([]);
     const result = await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_B, USER_A, MEMBERSHIP_A, [`workspace:${WORKSPACE_A}`],
+      ORG_B, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_A}`],
     );
     expect(result).toEqual([]);
   });
 
-  it("the caller's orgId is NOT org-B even when the key contains org-B's workspace id", async () => {
+  it("the caller's orgId is NOT org-B even when the key contains org-B's project id", async () => {
     const { db, capturedWheres } = makeScopeDirectoryDb([]);
     await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`workspace:${WORKSPACE_B}`],
+      ORG_A, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_B}`],
     );
     const params = renderParams(capturedWheres[0]);
     expect(params).toContain(ORG_A);
@@ -132,41 +134,43 @@ describe("BSN-04-042 — cross-organization isolation: scope-directory resolve",
   });
 });
 
-describe("BSN-04-042 — cross-organization isolation: pm-workspaces direct access", () => {
-  it("getWorkspace raises NotFoundException for a workspace the caller's org does not own", async () => {
+describe("BSN-04-042 — cross-organization isolation: teams direct access", () => {
+  it("loadTeam raises NotFoundException for a team the caller's org does not own", async () => {
     const { db } = makeLoadDb(undefined);
     await expect(
-      new PmWorkspacesService(db, audit).getWorkspace(ORG_A, WORKSPACE_B),
+      new TeamsService(db, audit).loadTeam(ORG_A, TEAM_B),
     ).rejects.toThrow(NotFoundException);
   });
 
-  it("getWorkspace serves the workspace when orgId matches (control)", async () => {
-    const workspaceRow = {
-      pmWorkspaceId: WORKSPACE_A,
+  it("loadTeam serves the team when orgId matches (control)", async () => {
+    const teamRow = {
+      id: TEAM_A,
       orgId: ORG_A,
       name: "Alpha",
-      status: "active",
+      key: "ALPHA",
+      icon: null,
+      color: null,
+      isPrivate: false,
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,
-      description: null,
     };
-    const { db } = makeLoadDb(workspaceRow);
+    const { db } = makeLoadDb(teamRow);
     await expect(
-      new PmWorkspacesService(db, audit).getWorkspace(ORG_A, WORKSPACE_A),
+      new TeamsService(db, audit).loadTeam(ORG_A, TEAM_A),
     ).resolves.toBeDefined();
   });
 
-  it("the workspace WHERE clause binds orgId so cross-tenant rows are filtered at the DB", async () => {
+  it("the team WHERE clause binds orgId so cross-tenant rows are filtered at the DB", async () => {
     const { db, capturedWhere } = makeLoadDb(undefined);
-    await new PmWorkspacesService(db, audit).getWorkspace(ORG_A, WORKSPACE_B).catch(() => undefined);
+    await new TeamsService(db, audit).loadTeam(ORG_A, TEAM_B).catch(() => undefined);
     expect(renderParams(capturedWhere[0])).toContain(ORG_A);
   });
 
-  it("404 is returned, not 403 — a 403 would confirm the workspace exists to the prober", async () => {
+  it("404 is returned, not 403 — a 403 would confirm the team exists to the prober", async () => {
     const { db } = makeLoadDb(undefined);
-    const thrown = await new PmWorkspacesService(db, audit)
-      .getWorkspace(ORG_A, WORKSPACE_B)
+    const thrown = await new TeamsService(db, audit)
+      .loadTeam(ORG_A, TEAM_B)
       .catch((e: unknown) => e);
     expect(thrown).toBeInstanceOf(NotFoundException);
   });
@@ -176,7 +180,7 @@ describe("BSN-04-042 — cross-organization isolation: managed-products direct a
   it("getManagedProduct raises NotFoundException for a product the caller's org does not own", async () => {
     const { db } = makeLoadDb(undefined);
     await expect(
-      new ManagedProductsService(db, audit, {} as never).getManagedProduct(ORG_A, PRODUCT_B),
+      new ManagedProductsService(db, audit).getManagedProduct(ORG_A, PRODUCT_B),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -187,7 +191,6 @@ describe("BSN-04-042 — cross-organization isolation: managed-products direct a
       name: "Atlas",
       key: "ATL",
       status: "active",
-      pmWorkspaceId: WORKSPACE_A,
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,
@@ -195,19 +198,19 @@ describe("BSN-04-042 — cross-organization isolation: managed-products direct a
     };
     const { db } = makeLoadDb(productRow);
     await expect(
-      new ManagedProductsService(db, audit, {} as never).getManagedProduct(ORG_A, PRODUCT_A),
+      new ManagedProductsService(db, audit).getManagedProduct(ORG_A, PRODUCT_A),
     ).resolves.toBeDefined();
   });
 
   it("product WHERE clause binds orgId so cross-tenant rows cannot be reached", async () => {
     const { db, capturedWhere } = makeLoadDb(undefined);
-    await new ManagedProductsService(db, audit, {} as never).getManagedProduct(ORG_A, PRODUCT_B).catch(() => undefined);
+    await new ManagedProductsService(db, audit).getManagedProduct(ORG_A, PRODUCT_B).catch(() => undefined);
     expect(renderParams(capturedWhere[0])).toContain(ORG_A);
   });
 
   it("404 is returned for a foreign product, not 403", async () => {
     const { db } = makeLoadDb(undefined);
-    const thrown = await new ManagedProductsService(db, audit, {} as never)
+    const thrown = await new ManagedProductsService(db, audit)
       .getManagedProduct(ORG_A, PRODUCT_B)
       .catch((e: unknown) => e);
     expect(thrown).toBeInstanceOf(NotFoundException);
@@ -273,7 +276,7 @@ describe("BSN-04-042 — cross-organization isolation: recents, stars, pins, cou
   it("dedicated recents/starred/pinned/agentPulse sidebar endpoints are not present in the current build module", () => {
     const controllers = [
       "src/modules/build/core/projects.controller.ts",
-      "src/modules/build/pm-workspaces/pm-workspaces.controller.ts",
+      "src/modules/build/teams/teams.controller.ts",
       "src/modules/build/scope-directory/scope-directory.controller.ts",
     ]
       .map((p) => readFileSync(join(BACKEND_ROOT, p), "utf8"))

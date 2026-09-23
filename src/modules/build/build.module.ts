@@ -10,7 +10,6 @@ import { BuildGovernanceModule } from "./governance/build-governance.module";
 import { BuildIncidentsModule } from "./incidents/build-incidents.module";
 import { BuildManagedProductsModule } from "./managed-products/managed-products.module";
 import { BuildMeetingsModule } from "./meetings/build-meetings.module";
-import { PmWorkspacesModule } from "./pm-workspaces/pm-workspaces.module";
 import { BuildPortfoliosModule } from "./portfolios/build-portfolios.module";
 import { BuildQaModule } from "./qa/build-qa.module";
 import { BuildTeamsModule } from "./teams/build-teams.module";
@@ -33,7 +32,6 @@ export const BUILD_MODULES = [
   BuildIncidentsModule,
   BuildManagedProductsModule,
   BuildMeetingsModule,
-  PmWorkspacesModule,
   BuildPortfoliosModule,
   BuildQaModule,
   BuildFilesModule,
