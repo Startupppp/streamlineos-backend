@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import { projectApprovals } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -64,5 +64,17 @@ export class BuildApprovalsInboxService {
       .limit(limit);
 
     return rows;
+  }
+
+  async countPending(
+    orgId: string,
+    membershipId: number | null,
+  ): Promise<number> {
+    if (membershipId === null) return 0;
+    const rows = await this.db
+      .select({ cnt: count() })
+      .from(projectApprovals)
+      .where(pendingApprovalsForActorCondition(orgId, membershipId));
+    return Number(rows[0]?.cnt ?? 0);
   }
 }

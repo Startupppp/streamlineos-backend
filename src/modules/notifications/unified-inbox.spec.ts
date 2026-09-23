@@ -56,6 +56,7 @@ function makeBroadcasts(rows: unknown[] = []): BroadcastsService {
 function makeBuildApprovals(rows: ApprovalInboxRow[] = []): BuildApprovalsInboxService {
   return {
     getInboxPage: jest.fn().mockResolvedValue(rows),
+    countPending: jest.fn().mockResolvedValue(0),
   } as unknown as BuildApprovalsInboxService;
 }
 

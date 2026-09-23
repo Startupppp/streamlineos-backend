@@ -53,12 +53,18 @@ function makeWfhRow(overrides: Partial<{
   };
 }
 
-function makeLeaves(rows: ReturnType<typeof makeLeaveRow>[] = [makeLeaveRow()]) {
-  return { pendingRoutedToPage: jest.fn().mockResolvedValue(rows) } as unknown as import("./leaves.service").LeavesService;
+function makeLeaves(rows: ReturnType<typeof makeLeaveRow>[] = [makeLeaveRow()], pendingCount = 1) {
+  return {
+    pendingRoutedToPage: jest.fn().mockResolvedValue(rows),
+    countPendingRoutedTo: jest.fn().mockResolvedValue(pendingCount),
+  } as unknown as import("./leaves.service").LeavesService;
 }
 
-function makeWfh(rows: ReturnType<typeof makeWfhRow>[] = [makeWfhRow()]) {
-  return { pendingRoutedToPage: jest.fn().mockResolvedValue(rows) } as unknown as import("./wfh.service").WfhService;
+function makeWfh(rows: ReturnType<typeof makeWfhRow>[] = [makeWfhRow()], pendingCount = 1) {
+  return {
+    pendingRoutedToPage: jest.fn().mockResolvedValue(rows),
+    countPendingRoutedTo: jest.fn().mockResolvedValue(pendingCount),
+  } as unknown as import("./wfh.service").WfhService;
 }
 
 function makeRegistry() {
@@ -222,5 +228,117 @@ describe("HrTimeApprovalAdapter — wfh fetch", () => {
     const cursor = { id: 55, t: "2026-09-21T00:00:00.000Z" };
     await wfhAdapter.fetch("org-77", "user-1", 12, 25, cursor);
     expect(wfh.pendingRoutedToPage).toHaveBeenCalledWith("org-77", 12, 25, cursor);
+  });
+});
+
+describe("HrTimeApprovalAdapter — leave deepLink", () => {
+  it("every leave item carries deepLink /hr/leaves?tab=pending", async () => {
+    const leaves = makeLeaves([makeLeaveRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
+    adapter.onModuleInit();
+    const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
+    const [item] = await leaveAdapter.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.deepLink).toBe("/hr/leaves?tab=pending");
+  });
+
+  it("CONTROL: wfh items carry a different deepLink than leave items", async () => {
+    const wfh = makeWfh([makeWfhRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
+    adapter.onModuleInit();
+    const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
+    const [item] = await wfhAdapter.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.deepLink).not.toBe("/hr/leaves?tab=pending");
+  });
+});
+
+describe("HrTimeApprovalAdapter — wfh deepLink", () => {
+  it("every wfh item carries deepLink /hr/attendance", async () => {
+    const wfh = makeWfh([makeWfhRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
+    adapter.onModuleInit();
+    const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
+    const [item] = await wfhAdapter.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.deepLink).toBe("/hr/attendance");
+  });
+
+  it("CONTROL: leave items carry a different deepLink than wfh items", async () => {
+    const leaves = makeLeaves([makeLeaveRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
+    adapter.onModuleInit();
+    const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
+    const [item] = await leaveAdapter.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.deepLink).not.toBe("/hr/attendance");
+  });
+});
+
+describe("HrTimeApprovalAdapter — leave countPending", () => {
+  it("returns the count from LeavesService.countPendingRoutedTo", async () => {
+    const leaves = makeLeaves([makeLeaveRow()], 4);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
+    adapter.onModuleInit();
+    const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
+    const result = await leaveAdapter.countPending("org-1", "user-1", 5);
+    expect(result).toBe(4);
+  });
+
+  it("returns 0 when membershipId is null — positive case above returns non-zero, satisfying BE-141", async () => {
+    const leaves = makeLeaves([makeLeaveRow()], 3);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
+    adapter.onModuleInit();
+    const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
+    const result = await leaveAdapter.countPending("org-1", "user-1", null);
+    expect(result).toBe(0);
+    expect(leaves.countPendingRoutedTo).not.toHaveBeenCalled();
+  });
+
+  it("passes orgId and membershipId to countPendingRoutedTo (tenant and approver isolation)", async () => {
+    const leaves = makeLeaves();
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(leaves, makeWfh(), registry);
+    adapter.onModuleInit();
+    const leaveAdapter = registry.list().find((a) => a.kindLabel === "leave")!;
+    await leaveAdapter.countPending("org-X", "user-1", 42);
+    expect(leaves.countPendingRoutedTo).toHaveBeenCalledWith("org-X", 42);
+    expect(leaves.countPendingRoutedTo).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("HrTimeApprovalAdapter — wfh countPending", () => {
+  it("returns the count from WfhService.countPendingRoutedTo", async () => {
+    const wfh = makeWfh([makeWfhRow()], 7);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
+    adapter.onModuleInit();
+    const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
+    const result = await wfhAdapter.countPending("org-1", "user-1", 12);
+    expect(result).toBe(7);
+  });
+
+  it("returns 0 when membershipId is null — positive case above returns non-zero, satisfying BE-141", async () => {
+    const wfh = makeWfh([makeWfhRow()], 2);
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
+    adapter.onModuleInit();
+    const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
+    const result = await wfhAdapter.countPending("org-1", "user-1", null);
+    expect(result).toBe(0);
+    expect(wfh.countPendingRoutedTo).not.toHaveBeenCalled();
+  });
+
+  it("passes orgId and membershipId to countPendingRoutedTo (tenant and approver isolation)", async () => {
+    const wfh = makeWfh();
+    const registry = makeRegistry();
+    const adapter = new HrTimeApprovalAdapter(makeLeaves(), wfh, registry);
+    adapter.onModuleInit();
+    const wfhAdapter = registry.list().find((a) => a.kindLabel === "wfh")!;
+    await wfhAdapter.countPending("org-Y", "user-2", 99);
+    expect(wfh.countPendingRoutedTo).toHaveBeenCalledWith("org-Y", 99);
+    expect(wfh.countPendingRoutedTo).toHaveBeenCalledTimes(1);
   });
 });

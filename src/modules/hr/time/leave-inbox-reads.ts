@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { leaveRequests, leaveTypes, users } from "../../../db/schema";
 import { descKeyset, type DescKeysetPosition } from "../../../common/pagination/desc-keyset";
 import type { Db } from "../../../db/drizzle.module";
@@ -15,6 +15,24 @@ export type LeaveInboxRow = {
   userLastName: string | null;
   userImage: string | null;
 };
+
+export async function countPendingLeavesRoutedTo(
+  db: Db,
+  orgId: string,
+  approverMembershipId: number,
+): Promise<number> {
+  const [row] = await db
+    .select({ cnt: count(leaveRequests.id) })
+    .from(leaveRequests)
+    .where(
+      and(
+        eq(leaveRequests.orgId, orgId),
+        eq(leaveRequests.status, "PENDING"),
+        eq(leaveRequests.approverMembershipId, approverMembershipId),
+      ),
+    );
+  return Number(row?.cnt ?? 0);
+}
 
 export async function pendingLeavesRoutedToPage(
   db: Db,

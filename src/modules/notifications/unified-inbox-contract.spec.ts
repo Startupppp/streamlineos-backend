@@ -111,9 +111,13 @@ function makeBroadcasts(rows: unknown[] = []): BroadcastsService {
   } as unknown as BroadcastsService;
 }
 
-function makeBuildApprovals(rows: ApprovalInboxRow[] = []): BuildApprovalsInboxService {
+function makeBuildApprovals(
+  rows: ApprovalInboxRow[] = [],
+  pendingCount = 0,
+): BuildApprovalsInboxService {
   return {
     getInboxPage: jest.fn().mockResolvedValue(rows),
+    countPending: jest.fn().mockResolvedValue(pendingCount),
   } as unknown as BuildApprovalsInboxService;
 }
 
@@ -283,9 +287,7 @@ describe("UnifiedInboxService — four-property contract", () => {
   describe("Property 2: unified unread-count semantics", () => {
     it("total equals the sum of per-source authorized counts", async () => {
       const db: Db = {
-        select: jest.fn()
-          .mockReturnValueOnce(makeCountChain(3))
-          .mockReturnValueOnce(makeCountChain(2)),
+        select: jest.fn().mockReturnValueOnce(makeCountChain(3)),
       } as unknown as Db;
 
       const mailSvc = makeMailWithUnread([
@@ -295,7 +297,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       ]);
 
       const access = makeAccess(true, true);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals(), makeRegistry());
+      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals([], 2), makeRegistry());
 
       const counts = await svc.unifiedUnreadCount(ORG, UID, user);
 

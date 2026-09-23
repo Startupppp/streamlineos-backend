@@ -21,6 +21,10 @@ export class TimesheetApprovalAdapter implements OnModuleInit {
       supportsAfterCursor: true,
       fetch: (orgId, _userId, membershipId, limit, cursor) =>
         this.fetchTimesheets(orgId, membershipId, limit, cursor),
+      countPending: (orgId, _userId, membershipId) => {
+        if (membershipId === null) return Promise.resolve(0);
+        return this.approvals.countPendingRoutedTo(orgId, membershipId);
+      },
     });
   }
 
@@ -51,7 +55,7 @@ export class TimesheetApprovalAdapter implements OnModuleInit {
         subject: `Timesheet · ${row.periodStart} to ${row.periodEnd}`,
         timestamp: row.submittedAt.toISOString(),
         isRead: false,
-        deepLink: null,
+        deepLink: "/timesheets/approvals",
         actor: row.userEmail
           ? {
               id: row.userEmail,

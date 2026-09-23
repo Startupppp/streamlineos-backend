@@ -53,7 +53,10 @@ export function makeBroadcasts(): BroadcastsService {
 }
 
 export function makeBuildApprovals(): BuildApprovalsInboxService {
-  return { getInboxPage: jest.fn().mockResolvedValue([]) } as unknown as BuildApprovalsInboxService;
+  return {
+    getInboxPage: jest.fn().mockResolvedValue([]),
+    countPending: jest.fn().mockResolvedValue(0),
+  } as unknown as BuildApprovalsInboxService;
 }
 
 export function makeUser(): CurrentUserContext {

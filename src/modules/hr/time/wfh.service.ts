@@ -138,6 +138,20 @@ export class WfhService {
       .limit(Math.min(limit, 100));
   }
 
+  async countPendingRoutedTo(orgId: string, approverMembershipId: number): Promise<number> {
+    const [row] = await this.db
+      .select({ cnt: count(wfhRequests.id) })
+      .from(wfhRequests)
+      .where(
+        and(
+          eq(wfhRequests.orgId, orgId),
+          eq(wfhRequests.status, "PENDING"),
+          eq(wfhRequests.approverMembershipId, approverMembershipId),
+        ),
+      );
+    return Number(row?.cnt ?? 0);
+  }
+
   async pending(currentUser: CurrentUserContext) {
     const orgId = currentUser.orgId;
     const scope = await resolveAttendanceScope(this.access, currentUser);

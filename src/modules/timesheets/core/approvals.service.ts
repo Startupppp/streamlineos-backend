@@ -11,7 +11,7 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
-import { and, gt, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, count, gt, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -266,6 +266,21 @@ export class ApprovalsService {
       Math.min(limit, 100),
       cursor,
     );
+  }
+
+  async countPendingRoutedTo(orgId: string, approverMembershipId: number): Promise<number> {
+    const [row] = await this.db
+      .select({ cnt: count(timesheetPeriods.id) })
+      .from(timesheetPeriods)
+      .where(
+        and(
+          eq(timesheetPeriods.orgId, orgId),
+          eq(timesheetPeriods.status, "SUBMITTED"),
+          eq(timesheetPeriods.currentApproverMembershipId, approverMembershipId),
+          isNotNull(timesheetPeriods.submittedAt),
+        ),
+      );
+    return Number(row?.cnt ?? 0);
   }
 
   async approveSinglePeriod(u: CurrentUserContext, periodId: number) {
