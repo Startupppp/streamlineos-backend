@@ -10,6 +10,7 @@ import {
   type InvoiceableTimesheetEntry,
 } from "../timesheets/core/timesheet-invoicing.service";
 import { InvoicesPostingService } from "./invoices-posting.service";
+import { assertDealBelongsToOrg, resolveProjectDealId } from "./lib/deal-link";
 import { gstSplit, resolveSupplierStateCode, round2 } from "./lib/invoice-helpers";
 import {
   insertInvoiceWithItems,
@@ -143,6 +144,14 @@ export class InvoicesFromTimesheetsService {
         lineFor(entry, input.gstRate, index, lineDetail),
       );
 
+      const dealId = input.dealId
+        ? await assertDealBelongsToOrg(tx, orgId, input.dealId)
+        : await resolveProjectDealId(
+            tx,
+            orgId,
+            entries.map((entry) => entry.projectId),
+          );
+
       const inserted = await insertInvoiceWithItems(
         tx,
         orgId,
@@ -150,6 +159,7 @@ export class InvoicesFromTimesheetsService {
         {
           clientId: input.clientId,
           projectId,
+          dealId,
           status,
           subtotal,
           taxPool,
