@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -21,15 +22,18 @@ import { KbSpacesService } from "./kb-spaces.service";
 import { resolveKbSpacesViewScope } from "../core/kb-scope";
 import {
   createSpaceSchema,
+  listSpacesQuerySchema,
   updateSpaceSchema,
   type CreateSpaceInput,
+  type ListSpacesQuery,
   type UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
-  kbSpaceListSchema,
+  kbSpaceArchiveImpactSchema,
   kbSpaceFullSchema,
+  kbSpaceListPageSchema,
   kbSpaceSuccessSchema,
 } from "./dto/kb-space-response.schemas";
 import { accountableMembershipId } from "../../../common/auth/principal";
@@ -47,10 +51,14 @@ export class KbSpacesController {
 
   @Get()
   @RequirePermission("kb:spaces:view")
-  @ResponseSchema(kbSpaceListSchema)
-  async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
+  @Validate({ query: listSpacesQuerySchema })
+  @ResponseSchema(kbSpaceListPageSchema)
+  async list(
+    @CurrentUser() u: CurrentUserContext,
+    @Query() query: ListSpacesQuery,
+  ): Promise<unknown> {
     const scope = await resolveKbSpacesViewScope(this.access, u);
-    return await this.spaces.list(u, scope);
+    return await this.spaces.list(u, scope, query);
   }
 
   @Post()
@@ -101,5 +109,40 @@ export class KbSpacesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.spaces.remove(u.orgId, spaceId);
+  }
+
+  @Get(":spaceId/archive-impact")
+  @RequirePermission("kb:spaces:manage")
+  @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbSpaceArchiveImpactSchema)
+  async archiveImpact(
+    @Param("spaceId", ParseIntPipe) spaceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.spaces.archiveImpact(u.orgId, spaceId);
+  }
+
+  @Post(":spaceId/archive")
+  @RequirePermission("kb:spaces:manage")
+  @HttpCode(200)
+  @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbSpaceSuccessSchema)
+  async archive(
+    @Param("spaceId", ParseIntPipe) spaceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.spaces.archive(u.orgId, spaceId);
+  }
+
+  @Post(":spaceId/restore")
+  @RequirePermission("kb:spaces:manage")
+  @HttpCode(200)
+  @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbSpaceSuccessSchema)
+  async restore(
+    @Param("spaceId", ParseIntPipe) spaceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.spaces.restore(u.orgId, spaceId);
   }
 }

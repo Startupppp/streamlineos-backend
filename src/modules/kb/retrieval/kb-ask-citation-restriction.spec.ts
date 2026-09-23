@@ -1,11 +1,13 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { getTableName, type SQL, sql } from "drizzle-orm";
+import { NotFoundException } from "@nestjs/common";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbCandidateService } from "./kb-candidate.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { AskCitation } from "./kb-ask.service";
 
 /**
  * Article visibility has TWO ACL dimensions: the owner DataScope, and the per-article
@@ -232,5 +234,80 @@ describe("KbAskService — citation re-verification re-applies the article-restr
     const cited = result.citations.map((c) => JSON.stringify(c)).join(" ");
     expect(cited).toContain(OPEN_ARTICLE.title);
     expect(cited).toContain(RESTRICTED_ARTICLE.title);
+  });
+});
+
+/**
+ * The article restriction tests above cover the `kb_article_restrictions` ACL
+ * dimension applied by `visibleArticles`. `visiblePages` is the parallel seam
+ * for the wiki-page half of the product — it delegates authorization to
+ * `visiblePagePredicate`, whose contract is that it returns a Drizzle SQL
+ * predicate that is correct for the requesting user's standing. These tests
+ * verify:
+ *  1. A page whose `visiblePagePredicate` has been tightened after the answer
+ *     was generated is redacted when the answer is replayed.
+ *  2. A page whose `visiblePagePredicate` still allows access is NOT redacted
+ *     (positive pair — a status-only negative passes on a 500 without this).
+ */
+describe("KbAskService — page citation: visiblePagePredicate applied on re-verification", () => {
+  const CITED_PAGE_ID = 55;
+
+  const pageCitation: AskCitation = {
+    kind: "page",
+    pageId: CITED_PAGE_ID,
+    title: "Org policy document",
+    spaceId: 5,
+    updatedAt: new Date("2024-01-01"),
+  };
+
+  /**
+   * Minimal DB double for `assertReplayCitations`. Only `execute` (consumed by
+   * `withTenant`'s set_config call) and `select` (consumed by `visiblePages`)
+   * are needed; `transaction` must invoke its callback so nothing inside it is
+   * skipped silently (BE-136).
+   */
+  function makeDbForRevocation(pageVisible: boolean) {
+    const db: Record<string, unknown> = {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(
+            pageVisible ? [{ id: CITED_PAGE_ID }] : [],
+          ),
+        }),
+      }),
+    };
+    db.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
+    return db;
+  }
+
+  it("revoking access to a cited page redacts the citation on re-open", async () => {
+    const db = makeDbForRevocation(false);
+    const authRevoked = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`false`),
+      assertPageAccess: jest.fn(),
+    };
+    const svc = new KbAskService(
+      db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never, {} as never,
+      new KbCitationVisibilityService(db as never, {} as never, {} as never, authRevoked as never),
+    );
+
+    await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).rejects.toThrow(NotFoundException);
+  });
+
+  it("a page citation accessible to the asker passes re-verification (positive pair)", async () => {
+    const db = makeDbForRevocation(true);
+    const authGrants = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: jest.fn(),
+    };
+    const svc = new KbAskService(
+      db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never, {} as never,
+      new KbCitationVisibilityService(db as never, {} as never, {} as never, authGrants as never),
+    );
+
+    await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).resolves.not.toThrow();
   });
 });

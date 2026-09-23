@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+} from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 export const kbImportJobSchema = z.object({
@@ -107,10 +110,14 @@ export const kbSpaceListItemSchema = z.object({
   isPublicHelpCenter: z.boolean(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+  archivedAt: nullableWireDate(),
   articleCount: z.number().int(),
+  pageCount: z.number().int(),
+  memberCount: z.number().int(),
 });
 
 export const kbSpaceListSchema = z.array(kbSpaceListItemSchema);
+export const kbSpaceListPageSchema = cursorPageSchema(kbSpaceListItemSchema);
 
 export const kbSpaceFullSchema = kbSpaceRowSchema;
 
@@ -153,3 +160,10 @@ export const kbSourceSchema = z.object({
 });
 
 export const kbSourceSuccessSchema = z.object({ success: z.boolean() });
+
+export const kbSpaceArchiveImpactSchema = z.object({
+  pageCount: z.number().int(),
+  publicLinkCount: z.number().int(),
+  recordLinkCount: z.number().int(),
+  askIndexed: z.boolean(),
+});

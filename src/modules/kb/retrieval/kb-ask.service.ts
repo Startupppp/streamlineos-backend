@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
@@ -174,7 +174,11 @@ export class KbAskService {
       if (gatewayResult.kind === "quota_exceeded") {
         throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       }
-      throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
+      return {
+        answer: "The AI assistant is temporarily unavailable. Here are the most relevant sources found for your question.",
+        citations,
+        hasContext: true,
+      };
     }
 
     const answer = gatewayResult.data;

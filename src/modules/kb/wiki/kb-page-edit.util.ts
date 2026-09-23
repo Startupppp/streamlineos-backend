@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { kbPages, kbPageLinks, kbPageVersions } from "../../../db/schema";
+import { kbPages, kbPageLinks, kbPageVersions, users } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { isUniqueViolationOn } from "../../../common/db/postgres-error";
 import { extractPageLinkIds } from "./kb-page-content.util";
@@ -121,4 +121,52 @@ export async function resyncPageLinks(
     .insert(kbPageLinks)
     .values(validPages.map((p) => ({ orgId, sourcePageId: pageId, targetPageId: p.id })))
     .onConflictDoNothing();
+}
+
+export async function buildPageAncestors(
+  db: Db,
+  orgId: string,
+  parentId: number | null,
+): Promise<Array<{ id: number; title: string }>> {
+  if (parentId === null) return [];
+  const rows = await db.execute(sql`
+    WITH RECURSIVE ancestors AS (
+      SELECT id, title, parent_page_id, 1 AS depth
+      FROM kb_pages
+      WHERE id = ${parentId} AND org_id = ${orgId}
+      UNION ALL
+      SELECT p.id, p.title, p.parent_page_id, a.depth + 1
+      FROM kb_pages p
+      INNER JOIN ancestors a ON p.id = a.parent_page_id AND a.depth < 100
+      WHERE p.org_id = ${orgId}
+    )
+    SELECT id, title FROM ancestors ORDER BY depth DESC
+  `);
+  return rows.map((row) => ({
+    id: Number(row.id),
+    title: String(row.title ?? ""),
+  }));
+}
+
+export async function describeLatestPageEdit(
+  tx: KbTransaction,
+  orgId: string,
+  pageId: number,
+): Promise<KbPageConflictDetails> {
+  const [latest] = await tx
+    .select({
+      contentRevision: kbPages.contentRevision,
+      updatedAt: kbPages.updatedAt,
+      editorName: users.name,
+    })
+    .from(kbPages)
+    .leftJoin(users, eq(kbPages.lastEditedById, users.id))
+    .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
+    .limit(1);
+  if (!latest) return NO_KB_PAGE_CONFLICT_DETAILS;
+  return {
+    currentContentRevision: latest.contentRevision,
+    lastEditedByName: latest.editorName,
+    lastEditedAt: latest.updatedAt.toISOString(),
+  };
 }
