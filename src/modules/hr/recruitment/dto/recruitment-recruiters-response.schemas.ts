@@ -10,12 +10,27 @@ export const recruiterPortalSchema = z.object({
   createdAt: wireDate(),
 });
 
-export const syncPortalResponseSchema = z.object({
-  platform: z.string(),
-  status: z.string(),
-  lastSyncedAt: z.string(),
-  message: z.string(),
-});
+/**
+ * `SYNC_INITIATED` is gone. It was returned with a message promising
+ * applications "shortly" from a call that reached no platform. Either a board
+ * answered (`SYNCED`, with how many rows it gave us) or it did not
+ * (`BLOCKED`, with why).
+ */
+export const syncPortalResponseSchema = z.discriminatedUnion("status", [
+  z.object({
+    platform: z.string(),
+    status: z.literal("BLOCKED"),
+    code: z.enum(["no-integration", "inactive", "needs-keys", "not-implemented"]),
+    message: z.string(),
+    lastSyncedAt: z.union([z.string(), z.date()]).nullable(),
+  }),
+  z.object({
+    platform: z.string(),
+    status: z.literal("SYNCED"),
+    fetched: z.number().int(),
+    lastSyncedAt: z.string(),
+  }),
+]);
 
 export const recruiterDirectoryItemSchema = z.object({
   userId: z.string(),

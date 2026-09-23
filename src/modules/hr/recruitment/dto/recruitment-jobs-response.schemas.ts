@@ -83,12 +83,32 @@ export const jobShareResponseSchema = z.object({
   careersPageLink: z.string(),
 });
 
-export const jobPublishResponseSchema = z.object({
-  results: z.array(z.object({
+/**
+ * One entry per board asked for. `BLOCKED` carries a machine-readable `code`
+ * so the UI can say WHICH problem this is — "not connected" and "we cannot post
+ * to this board yet" need different actions from the recruiter — and the schema
+ * has no `PUBLISHED` member at all, because nothing in this codebase can
+ * produce one without a board having answered.
+ */
+export const jobBoardOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
     platform: z.string(),
-    status: z.string(),
-  })),
-  publishedCount: z.number().int(),
+    status: z.literal("BLOCKED"),
+    code: z.enum(["no-integration", "inactive", "needs-keys", "not-implemented"]),
+    message: z.string(),
+  }),
+  z.object({
+    platform: z.string(),
+    status: z.literal("POSTED"),
+    externalPostingId: z.string(),
+    url: z.string().nullable(),
+  }),
+]);
+
+export const jobPublishResponseSchema = z.object({
+  results: z.array(jobBoardOutcomeSchema),
+  postedCount: z.number().int(),
+  blockedCount: z.number().int(),
   externalIds: z.record(z.string(), z.string()),
 });
 

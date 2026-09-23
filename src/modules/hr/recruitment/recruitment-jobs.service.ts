@@ -23,11 +23,11 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { formatDateOnly } from "../../../common/date";
+import { resolveBoard, type BoardOutcome } from "./boards/job-board-adapters";
 import type { AssignRecruiterInput, CreateJobInput, InternalApplyInput, JobListInput, PublishJobInput, UpdateJobInput } from "./dto/jobs.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 
-type PublishStatus = "PUBLISHED" | "NO_INTEGRATION" | "INACTIVE" | "NO_TOKEN";
 
 const SHARE_PLATFORMS = [
   { key: "LINKEDIN", name: "LinkedIn", baseUrl: "https://www.linkedin.com/sharing/share-offsite/?url=" },
@@ -246,9 +246,31 @@ export class RecruitmentJobsService {
     return job;
   }
 
+  /**
+   * Distribute this job to external boards.
+   *
+   * It answered `PUBLISHED` and stored `{platform}-{jobId}-{timestamp}` as an
+   * external posting id whenever a token happened to be saved, having called
+   * nobody. Now every platform resolves through `resolveBoard`, and with no
+   * adapter registered every one of them comes back `BLOCKED` with a code the
+   * UI can explain. `externalPostingIds` is written only from an id a board
+   * actually returned.
+   *
+   * Opening the job to the careers site is a different act and is a status
+   * patch to `OPEN`; this endpoint was never that and no longer reads as if it
+   * might be.
+   */
   async publish(orgId: string, jobId: number, input: PublishJobInput) {
     const job = await this.db.query.jobPostings.findFirst({
       where: and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)),
+      columns: {
+        id: true,
+        title: true,
+        description: true,
+        location: true,
+        status: true,
+        externalPostingIds: true,
+      },
     });
     if (!job) throw new NotFoundException("Job posting not found.");
     if (job.status === "DRAFT") {
@@ -260,29 +282,35 @@ export class RecruitmentJobsService {
       limit: 100,
     });
 
-    const results: Array<{ platform: string; status: PublishStatus }> = [];
+    const results: BoardOutcome[] = [];
     const externalIds: Record<string, string> = { ...(job.externalPostingIds ?? {}) };
+    let posted = 0;
 
     for (const platform of input.platforms) {
-      const src = sources.find((s) => s.platform === platform);
-      if (!src) {
-        results.push({ platform, status: "NO_INTEGRATION" });
+      const src = sources.find((s) => s.platform === platform) ?? null;
+      const resolved = resolveBoard(
+        platform,
+        src ? { isActive: src.isActive, oauthToken: src.oauthToken } : null,
+      );
+      if ("status" in resolved) {
+        results.push(resolved);
         continue;
       }
-      if (!src.isActive) {
-        results.push({ platform, status: "INACTIVE" });
-        continue;
-      }
-      if (!src.oauthToken) {
-        results.push({ platform, status: "NO_TOKEN" });
-        continue;
-      }
-      externalIds[platform.toLowerCase()] = `${platform.toLowerCase()}-${jobId}-${Date.now()}`;
-      results.push({ platform, status: "PUBLISHED" });
+      const outcome = await resolved.adapter.post(
+        { isActive: true, oauthToken: src?.oauthToken ?? null },
+        { jobId, title: job.title, description: job.description, location: job.location },
+      );
+      externalIds[platform.toLowerCase()] = outcome.externalPostingId;
+      results.push({
+        platform,
+        status: "POSTED",
+        externalPostingId: outcome.externalPostingId,
+        url: outcome.url,
+      });
+      posted += 1;
     }
 
-    const publishedCount = results.filter((r) => r.status === "PUBLISHED").length;
-    if (publishedCount > 0) {
+    if (posted > 0) {
       await this.db
         .update(jobPostings)
         .set({ externalPostingIds: externalIds, updatedAt: new Date() })
@@ -290,7 +318,7 @@ export class RecruitmentJobsService {
       await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     }
 
-    return { results, publishedCount, externalIds };
+    return { results, postedCount: posted, blockedCount: results.length - posted, externalIds };
   }
 
   async listRecruiters(orgId: string, jobId: number) {
