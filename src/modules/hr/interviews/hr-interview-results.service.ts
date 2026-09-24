@@ -1,12 +1,27 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { candidates, interviewScorecards, interviews, organizations, users } from "../../../db/schema";
+import {
+  candidateApplications,
+  candidates,
+  hiringFlowRounds,
+  interviewScorecards,
+  interviews,
+  jobPostings,
+  organizations,
+  users,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AutomationService } from "../../automation/automation.service";
 import { EmailService } from "../../email/email.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { logger } from "../../../common/logger/logger.service";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { nextAggregateVersion } from "../../../common/outbox/aggregate-version";
 import { getCandidateFeedbackEmail } from "../../email/templates/interviews";
+import { APPLICATION_STATUS_FOR_STAGE } from "../recruitment/recruitment-candidate-stages";
+import { advanceStageForScorecard, roundForInterview } from "../recruitment/ats-remaining";
 import type { SubmitScorecardInput, UpdateInterviewInput } from "./dto/interview-scheduling.schemas";
 
 @Injectable()
@@ -15,6 +30,7 @@ export class HrInterviewResultsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
     private readonly email: EmailService,
+    @Optional() @Inject(CacheService) private readonly cache?: CacheService,
   ) {}
 
   async updateInterview(orgId: string, interviewId: number, input: UpdateInterviewInput) {
@@ -78,7 +94,7 @@ export class HrInterviewResultsService {
     if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const interview = await this.db.query.interviews.findFirst({
       where: and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)),
-      columns: { id: true, candidateId: true },
+      columns: { id: true, candidateId: true, jobPostingId: true, type: true },
     });
     if (!interview) throw new NotFoundException("Interview not found.");
 
@@ -140,7 +156,112 @@ export class HrInterviewResultsService {
       () => undefined,
     );
 
+    void this.maybeAdvanceFromScorecard(orgId, interview, input).catch((error: unknown) => {
+      logger.error("scorecard auto-advance failed", { interviewId, error });
+    });
+
     return scorecard;
+  }
+
+  /**
+   * One legal stage forward when this interview's round has a threshold and
+   * the scorecard clears it. Offer acceptance is still the only way to Hired.
+   */
+  private async maybeAdvanceFromScorecard(
+    orgId: string,
+    interview: { id: number; candidateId: number; jobPostingId: number | null; type: string },
+    input: SubmitScorecardInput,
+  ): Promise<void> {
+    if (interview.jobPostingId == null) return;
+    const jobsQuery = this.db.query.jobPostings;
+    const roundsQuery = this.db.query.hiringFlowRounds;
+    if (!jobsQuery?.findFirst || !roundsQuery?.findMany) return;
+
+    const job = await jobsQuery.findFirst({
+      where: and(eq(jobPostings.id, interview.jobPostingId), eq(jobPostings.orgId, orgId)),
+      columns: { hiringFlowId: true },
+    });
+    if (!job?.hiringFlowId) return;
+
+    const rounds = await roundsQuery.findMany({
+      where: and(eq(hiringFlowRounds.orgId, orgId), eq(hiringFlowRounds.flowId, job.hiringFlowId)),
+      columns: { name: true, roundType: true, mode: true, autoAdvanceThreshold: true },
+      orderBy: (t, { asc }) => [asc(t.orderIndex)],
+      limit: 50,
+    });
+    const round = roundForInterview(rounds, interview.type);
+    if (!round) return;
+
+    const candidate = await this.db.query.candidates.findFirst({
+      where: and(eq(candidates.id, interview.candidateId), eq(candidates.orgId, orgId)),
+      columns: { status: true },
+    });
+    if (!candidate?.status) return;
+
+    const next = advanceStageForScorecard({
+      stage: candidate.status,
+      recommendation: input.recommendation,
+      ratings: input.ratings,
+      threshold: round.autoAdvanceThreshold,
+    });
+    if (!next) return;
+
+    const applicationStatus = APPLICATION_STATUS_FOR_STAGE[next];
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(candidates)
+        .set({ status: next, updatedAt: new Date() })
+        .where(
+          and(
+            eq(candidates.id, interview.candidateId),
+            eq(candidates.orgId, orgId),
+            eq(candidates.status, candidate.status),
+          ),
+        )
+        .returning({ id: candidates.id });
+      if (!updated) return;
+
+      if (applicationStatus) {
+        const latest = await tx.query.candidateApplications.findFirst({
+          where: and(
+            eq(candidateApplications.orgId, orgId),
+            eq(candidateApplications.candidateId, interview.candidateId),
+          ),
+          columns: { id: true },
+          orderBy: (t, { desc }) => [desc(t.appliedAt)],
+        });
+        if (latest) {
+          await tx
+            .update(candidateApplications)
+            .set({ status: applicationStatus, updatedAt: new Date() })
+            .where(and(eq(candidateApplications.id, latest.id), eq(candidateApplications.orgId, orgId)));
+        }
+      }
+
+      const aggregate = {
+        organizationId: orgId,
+        aggregateType: "candidate",
+        aggregateId: String(interview.candidateId),
+      };
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        ...aggregate,
+        aggregateVersion: await nextAggregateVersion(tx, aggregate),
+        eventType: "candidate.moved",
+        payload: {
+          candidateId: interview.candidateId,
+          jobPostingId: interview.jobPostingId,
+          fromStage: candidate.status,
+          toStage: next,
+          reason: null,
+          reasonNote: null,
+          source: "scorecard.auto_advance",
+        },
+        occurredAt: new Date(),
+      });
+    });
+
+    await this.cache?.invalidateNamespace(`hr:candidates:list:${orgId}`);
   }
 
   private async sendCandidateFeedbackEmail(

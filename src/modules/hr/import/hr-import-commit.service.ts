@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrPeople,
@@ -11,7 +11,6 @@ import {
   leaveTypes,
   documents,
 } from "../../../db/schema";
-import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { hrImportRows } from "../../../db/schema/hr/import-jobs";
 import {
   employeeRowSchema,
@@ -24,27 +23,59 @@ import {
   type AttendanceRow,
   type AssetRow,
   type DocumentMetadataRow,
+  attendanceInstant,
 } from "./schemas/entity-row-schemas";
 import type { HrImportEntity } from "./dto/import-job.dto";
+import { normalizeCode, normalizeName } from "./schemas/import-row-identity";
+import { MembershipAdmissionService, admissionRefusalMessage, canonicalAdmissionEmail } from "../../organization/core/membership-admission.service";
+import type { AdmissionOutcome } from "../../organization/core/membership-admission.service";
+import type { MembershipMutations } from "../../../common/org/membership-mutations";
+import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
+import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
+
+/**
+ * What a committed row did. A rollback may only undo `created` rows: an import
+ * that updated a record the operator already had must not delete it when the job
+ * is rolled back, and an `unchanged` row touched nothing to undo.
+ */
+export type CommitOutcome = "created" | "updated" | "unchanged";
 
 export interface CommitRef {
   table: string;
   id: number;
+  outcome: CommitOutcome;
 }
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/**
+ * Who is importing, and the membership writer their writes must go through.
+ *
+ * Only the employees entity needs these: it is the one import that admits people
+ * to the organisation. The other four resolve an existing person and are given
+ * the context anyway so every commit path has one shape.
+ */
+export interface ImportCommitContext {
+  orgId: string;
+  actorId: string;
+  membership: MembershipMutations;
+}
+
 @Injectable()
 export class HrImportCommitService {
-  constructor() {}
+  constructor(
+    private readonly admission: MembershipAdmissionService,
+    private readonly personEmployment: PersonEmploymentSyncService,
+  ) {}
 
   async commitRow(
     tx: Tx,
-    orgId: string,
+    ctx: ImportCommitContext,
     entity: HrImportEntity,
     payload: Record<string, unknown>,
   ): Promise<CommitRef | null> {
-    if (entity === "employees") return this.commitEmployee(tx, orgId, employeeRowSchema.parse(payload));
+    const orgId = ctx.orgId;
+    if (entity === "employees") return this.commitEmployee(tx, ctx, employeeRowSchema.parse(payload));
     if (entity === "leave_balances") return this.commitLeaveBalance(tx, orgId, leaveBalanceRowSchema.parse(payload));
     if (entity === "attendance") return this.commitAttendance(tx, orgId, attendanceRowSchema.parse(payload));
     if (entity === "assets") return this.commitAsset(tx, orgId, assetRowSchema.parse(payload));
@@ -52,99 +83,149 @@ export class HrImportCommitService {
     return null;
   }
 
-  private async resolveImportOrgPersonId(
-    tx: Tx,
-    orgId: string,
-    workEmail: string,
-    firstName: string,
-    lastName: string,
-    phone: string | null = null,
-    gender: string | null = null,
-  ): Promise<string> {
-    const byEmail = await tx.query.organizationPeople.findFirst({
-      where: and(
-        eq(organizationPeople.organizationId, orgId),
-        sql`lower(trim(${organizationPeople.workEmail})) = ${workEmail}`,
-        isNull(organizationPeople.deletedAt),
-      ),
-      columns: { organizationPersonId: true },
-    });
-    if (byEmail) return byEmail.organizationPersonId;
+  /**
+   * HRMS-E2E-003. The import used to write `organization_people`, `hr_people`
+   * and `hr_employments` directly and stop there — but the employee directory
+   * reads FROM organization_members INNER JOIN users and only LEFT JOINs
+   * hr_people (employees.service.ts:156). An imported employee had neither a
+   * user account nor a membership, so the directory could never show one.
+   * That is the whole of "Committed, Valid 5, Errors 0 but 0 new employees":
+   * five rows really were written, to three tables nothing lists from.
+   *
+   * It also stranded every other import. `commitLeaveBalance`,
+   * `commitAttendance`, `commitDocument` and `commitAsset` all resolve
+   * `hr_people.user_id`, which this path left NULL — so a leave balance or an
+   * attendance row for an imported employee failed with "No user found for
+   * email" no matter how correct the file was.
+   *
+   * The row now goes through the same two services the single-hire form uses:
+   * `MembershipAdmissionService` admits the person (user + membership, seat
+   * accounting included) and `PersonEmploymentSyncService.ensureFromUser`
+   * establishes the canonical person and employment. Both are idempotent, which
+   * is what makes re-importing a corrected sheet an update rather than a second
+   * employee.
+   */
+  private async commitEmployee(tx: Tx, ctx: ImportCommitContext, row: EmployeeRow): Promise<CommitRef> {
+    const orgId = ctx.orgId;
+    const email = canonicalAdmissionEmail(row.email);
 
-    const [created] = await tx
-      .insert(organizationPeople)
-      .values({ organizationId: orgId, firstName, lastName, workEmail, phone, gender })
-      .returning({ organizationPersonId: organizationPeople.organizationPersonId });
-    if (!created) throw new Error("Failed to create canonical person record");
-    return created.organizationPersonId;
-  }
-
-  private async commitEmployee(tx: Tx, orgId: string, row: EmployeeRow): Promise<CommitRef> {
-    const workEmail = row.email.toLowerCase().trim();
-    const organizationPersonId = await this.resolveImportOrgPersonId(
-      tx,
+    const outcome = await this.admission.admitOne(tx, {
       orgId,
-      workEmail,
-      row.firstName,
-      row.lastName,
-      row.phone ?? null,
-      row.gender ?? null,
+      email,
+      role: ORG_MEMBER_ROLES.MEMBER,
+      actor: { userId: ctx.actorId },
+      membership: ctx.membership,
+      seatReason: "hr-employee-import",
+      createUserIfMissing: {
+        name: `${row.firstName} ${row.lastName}`.trim(),
+        firstName: row.firstName,
+        lastName: row.lastName,
+        phone: row.phone ?? null,
+        gender: row.gender ?? null,
+        isActive: true,
+      },
+    });
+
+    const admitted = this.resolveAdmission(outcome, row.email);
+
+    // A person already in the organisation is an update, not a refusal: the
+    // ordinary correction workflow is to fix a column and re-upload the sheet.
+    const existing = admitted.outcome === "updated";
+
+    const employeeNumber = row.employeeNumber?.trim() || `EMP-${admitted.userId.slice(0, 8).toUpperCase()}`;
+    await this.assertEmployeeNumberFree(tx, orgId, employeeNumber, admitted.userId, row.employeeNumber);
+
+    const ensured = await this.personEmployment.ensureFromUser(
+      orgId,
+      ctx.actorId,
+      {
+        userId: admitted.userId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        workEmail: email,
+        employeeNumber,
+        joiningDate: row.joiningDate || null,
+        designation: row.designation ?? null,
+        phone: row.phone ?? null,
+        // PROVISIONAL — open product decision #4. An imported hire has not
+        // accepted an invitation, so it is staged rather than counted as active
+        // headcount. Same rung the single-hire form uses.
+        lifecycleStatus: "ONBOARDING",
+      },
+      tx as unknown as Db,
     );
 
-    const [person] = await tx
-      .insert(hrPeople)
-      .values({
-        orgId,
-        organizationPersonId,
+    // The columns an operator re-uploads to correct. `ensureFromUser` creates
+    // the employment but leaves an existing one alone, so the sheet's values are
+    // applied here or a second import would silently change nothing.
+    await tx
+      .update(hrEmployments)
+      .set({
+        ...(row.designation === undefined ? {} : { designation: row.designation || null }),
+        ...(row.joiningDate ? { joiningDate: row.joiningDate } : {}),
       })
-      .onConflictDoNothing()
-      .returning({ id: hrPeople.id });
+      .where(and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, ensured.employmentId)));
 
-    if (person) {
-      const empNumber = row.employeeNumber ?? `EMP-${Date.now()}`;
-      await tx
-        .insert(hrEmployments)
-        .values({
-          orgId,
-          personId: person.id,
-          employeeNumber: empNumber,
-          lifecycleStatus: "ACTIVE",
-          joiningDate: row.joiningDate || null,
-          designation: row.designation ?? null,
-        })
-        .onConflictDoNothing();
-      return { table: "hr_people", id: person.id };
-    }
-
-    const existing = await tx
-      .select({ id: hrPeople.id, organizationPersonId: hrPeople.organizationPersonId })
-      .from(hrPeople)
-      .innerJoin(
-        organizationPeople,
+    await tx
+      .update(organizationPeople)
+      .set({
+        firstName: row.firstName,
+        lastName: row.lastName,
+        ...(row.phone ? { phone: row.phone } : {}),
+        ...(row.gender ? { gender: row.gender } : {}),
+      })
+      .where(
         and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          eq(organizationPeople.organizationId, orgId),
+          sql`lower(trim(${organizationPeople.workEmail})) = ${email}`,
         ),
-      )
-      .where(and(eq(hrPeople.orgId, orgId), eq(organizationPeople.workEmail, workEmail), isNull(hrPeople.deletedAt)))
+      );
+
+    return {
+      table: "hr_people",
+      id: ensured.personId,
+      outcome: existing && !ensured.createdPerson ? "updated" : "created",
+    };
+  }
+
+  /** Turns an admission refusal into the row error an operator can act on. */
+  private resolveAdmission(
+    outcome: AdmissionOutcome,
+    email: string,
+  ): { userId: string; outcome: CommitOutcome } {
+    if (outcome.kind === "admitted")
+      return { userId: outcome.userId, outcome: outcome.createdUser ? "created" : "updated" };
+
+    if (outcome.kind === "conflict" && outcome.reason === "already-member" && outcome.userId)
+      return { userId: outcome.userId, outcome: "updated" };
+
+    throw new Error(`${email}: ${admissionRefusalMessage(outcome)}`);
+  }
+
+  /**
+   * An employee number is the organisation's own identifier for a person, so two
+   * people may not share one. Without this the sheet's later row silently won an
+   * `onConflictDoNothing`, or `ensureFromUser` quietly appended a suffix and the
+   * operator got a number they never typed.
+   */
+  private async assertEmployeeNumberFree(
+    tx: Tx,
+    orgId: string,
+    employeeNumber: string,
+    userId: string,
+    stated: string | undefined,
+  ): Promise<void> {
+    if (!stated?.trim()) return;
+    const [taken] = await tx
+      .select({ userId: hrPeople.userId })
+      .from(hrEmployments)
+      .innerJoin(hrPeople, and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, hrEmployments.personId)))
+      .where(and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.employeeNumber, employeeNumber)))
       .limit(1);
-
-    const existingRow = existing[0];
-    if (!existingRow) throw new Error(`Employee with email ${row.email} could not be inserted or found`);
-
-    if (existingRow.organizationPersonId === null)
-      await tx
-        .update(hrPeople)
-        .set({ organizationPersonId })
-        .where(and(eq(hrPeople.id, existingRow.id), eq(hrPeople.orgId, orgId)))
-        .catch((err: unknown) => {
-          const { code, constraint } = getPostgresErrorDetails(err);
-          if (code === "23505" && constraint === "uniq_hr_people_org_person_link")
-            throw new ConflictException("Duplicate directory-person link detected during import");
-          throw err;
-        });
-
-    return { table: "hr_people", id: existingRow.id };
+    if (taken && taken.userId !== userId)
+      throw new ConflictException(
+        `Employee number "${employeeNumber}" already belongs to someone else in this organization.`,
+      );
   }
 
   private async commitLeaveBalance(tx: Tx, orgId: string, row: LeaveBalanceRow): Promise<CommitRef> {
@@ -176,6 +257,26 @@ export class HrImportCommitService {
     const balance = String(typeof row.balance === "number" ? row.balance : parseFloat(String(row.balance)));
     const year = typeof row.year === "number" ? row.year : parseInt(String(row.year));
 
+    // The upsert already set the balance absolutely — the file wins over whatever
+    // was there — but it could not say whether the row was new, so a re-import
+    // reported the same "valid" count as a first import and an operator had no
+    // way to tell a no-op apart from a fresh load. The prior read is what turns
+    // that into created/updated. `uniq_leave_balances_user_type_year` is on
+    // (user_id, leave_type_id, year) with no org column, and leave_type_id is
+    // itself org-scoped, so the conflict target below matches that index exactly.
+    const [before] = await tx
+      .select({ id: leaveBalances.id, balance: leaveBalances.balance })
+      .from(leaveBalances)
+      .where(
+        and(
+          eq(leaveBalances.orgId, orgId),
+          eq(leaveBalances.userId, userId),
+          eq(leaveBalances.leaveTypeId, leaveTypeId),
+          eq(leaveBalances.year, year),
+        ),
+      )
+      .limit(1);
+
     const [lb] = await tx
       .insert(leaveBalances)
       .values({ orgId, userId, leaveTypeId, balance, year })
@@ -186,7 +287,12 @@ export class HrImportCommitService {
       .returning({ id: leaveBalances.id });
 
     if (!lb) throw new Error("Failed to upsert leave balance");
-    return { table: "leave_balances", id: lb.id };
+    if (!before) return { table: "leave_balances", id: lb.id, outcome: "created" };
+    return {
+      table: "leave_balances",
+      id: lb.id,
+      outcome: Number(before.balance) === Number(balance) ? "unchanged" : "updated",
+    };
   }
 
   private async commitAttendance(tx: Tx, orgId: string, row: AttendanceRow): Promise<CommitRef> {
@@ -206,8 +312,13 @@ export class HrImportCommitService {
     const userId = person[0]?.userId;
     if (!userId) throw new Error(`No user found for email ${row.employeeEmail}`);
 
-    const checkIn = row.checkIn ? new Date(row.checkIn) : null;
-    const checkOut = row.checkOut ? new Date(row.checkOut) : null;
+    // `new Date("09:30")` is an Invalid Date, and 09:30 is exactly what the
+    // import dialog documents this column as. Every row written in the
+    // documented format therefore failed at insert time with an error the file
+    // gave no clue about. `attendanceInstant` reads a wall clock on the row's
+    // own date in the organisation's zone, and passes a full timestamp through.
+    const checkIn = attendanceInstant(row.date, row.checkIn);
+    const checkOut = attendanceInstant(row.date, row.checkOut);
 
     // The `onConflictDoNothing()` that used to sit on this insert could never
     // fire: `attendance`'s only unique indexes are attendance_pkey (id) and
@@ -254,7 +365,7 @@ export class HrImportCommitService {
     if (!rec) {
       throw new Error(`Failed to import attendance for ${row.employeeEmail} on ${row.date}`);
     }
-    return { table: "attendance", id: rec.id };
+    return { table: "attendance", id: rec.id, outcome: "created" };
   }
 
   private async commitAsset(tx: Tx, orgId: string, row: AssetRow): Promise<CommitRef> {
@@ -276,24 +387,68 @@ export class HrImportCommitService {
       assignedTo = person[0]?.userId ?? null;
     }
 
+    const fields = {
+      name: row.name,
+      type: row.type,
+      brand: row.brand ?? null,
+      model: row.model ?? null,
+      status: row.status ?? ("AVAILABLE" as const),
+      purchaseDate: row.purchaseDate || null,
+      location: row.location ?? null,
+    };
+
+    // A serial number is the asset's identity: it is what is engraved on the
+    // machine and what an operator re-uploads a corrected sheet against. Without
+    // this lookup the importer inserted unconditionally, so re-importing the same
+    // file doubled the estate — QA's four-row sheet became eight assets with
+    // QA-SN-0001 present six times.
+    //
+    // The match is `upper(trim(serial))` rather than a unique index because the
+    // existing estate has not been audited for duplicates yet (HRMS-E2E-006a);
+    // an index would have to abort the migration or destroy rows. Matching in the
+    // query makes re-imports idempotent now and leaves the index to a migration
+    // once a cleanup is approved.
+    const serial = normalizeCode(row.serialNumber);
+    if (serial !== "") {
+      const [existing] = await tx
+        .select({ id: assets.id })
+        .from(assets)
+        .where(
+          and(
+            eq(assets.orgId, orgId),
+            sql`upper(trim(${assets.serialNumber})) = ${serial}`,
+          ),
+        )
+        .orderBy(asc(assets.id))
+        .limit(1);
+
+      if (existing) {
+        await tx
+          .update(assets)
+          .set({
+            ...fields,
+            // A blank assignee column means "not stated", not "unassign": an
+            // import that omits the column must not strip an assignment made in
+            // the app. Unassigning stays an explicit action in the assets UI.
+            ...(assignedTo === null ? {} : { assignedTo }),
+          })
+          .where(and(eq(assets.id, existing.id), eq(assets.orgId, orgId)));
+        return { table: "assets", id: existing.id, outcome: "updated" };
+      }
+    }
+
     const [asset] = await tx
       .insert(assets)
       .values({
         orgId,
-        name: row.name,
-        type: row.type,
-        brand: row.brand ?? null,
-        model: row.model ?? null,
+        ...fields,
         serialNumber: row.serialNumber ?? null,
         assignedTo,
-        status: row.status ?? "AVAILABLE",
-        purchaseDate: row.purchaseDate || null,
-        location: row.location ?? null,
       })
       .returning({ id: assets.id });
 
     if (!asset) throw new Error("Failed to insert asset");
-    return { table: "assets", id: asset.id };
+    return { table: "assets", id: asset.id, outcome: "created" };
   }
 
   private async commitDocument(tx: Tx, orgId: string, row: DocumentMetadataRow): Promise<CommitRef> {
@@ -312,22 +467,55 @@ export class HrImportCommitService {
 
     const userId = person[0]?.userId ?? null;
 
+    const fields = {
+      // The CSV's `type` column used to be parsed, validated and then thrown
+      // away: every imported document was stored as OTHER. `document_type` is an
+      // enum, so the row schema now rejects a value outside it rather than
+      // quietly flattening OFFER_LETTER and ID_PROOF into one bucket.
+      type: row.type,
+      category: row.category ?? null,
+      fileUrl: row.fileUrl,
+      expiryDate: row.expiryDate || null,
+      isActive: true,
+    };
+
+    // PROVISIONAL identity — open product decision #2. A document is the same
+    // document when it is the same person's, in the same category, under the same
+    // name. Without this the importer inserted unconditionally and re-running a
+    // sheet doubled the file: QA's three rows became six.
+    //
+    // `is not distinct from` is what makes the org-wide document (userId null)
+    // match itself; plain equality never matches NULL, so those rows would double
+    // on every re-import. No unique index backs this yet — see decision #2.
+    const [existing] = await tx
+      .select({ id: documents.id })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.orgId, orgId),
+          sql`${documents.userId} is not distinct from ${userId}`,
+          sql`lower(trim(coalesce(${documents.category}, ''))) = ${normalizeName(row.category)}`,
+          sql`lower(trim(${documents.name})) = ${normalizeName(row.name)}`,
+        ),
+      )
+      .orderBy(asc(documents.id))
+      .limit(1);
+
+    if (existing) {
+      await tx
+        .update(documents)
+        .set({ ...fields, name: row.name })
+        .where(and(eq(documents.id, existing.id), eq(documents.orgId, orgId)));
+      return { table: "documents", id: existing.id, outcome: "updated" };
+    }
+
     const [doc] = await tx
       .insert(documents)
-      .values({
-        orgId,
-        userId,
-        name: row.name,
-        type: "OTHER",
-        category: row.category ?? null,
-        fileUrl: row.fileUrl,
-        expiryDate: row.expiryDate || null,
-        isActive: true,
-      })
+      .values({ orgId, userId, name: row.name, ...fields })
       .returning({ id: documents.id });
 
     if (!doc) throw new Error("Failed to insert document metadata");
-    return { table: "documents", id: doc.id };
+    return { table: "documents", id: doc.id, outcome: "created" };
   }
 
   async rollbackRef(tx: Tx, ref: CommitRef): Promise<void> {

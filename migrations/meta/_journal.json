@@ -6630,6 +6630,13 @@
       "when": 1803000010705,
       "tag": "1190_job_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 1075,
+      "version": "7",
+      "when": 1803000010706,
+      "tag": "1191_hr_import_job_outcome_counts",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { toCsv } from "../../inventory/import-export/csv.util";
 import { HrImportService } from "./hr-import.service";
+import { exportColumnsOf } from "./hr-export-columns";
 import {
   createImportJobSchema,
   exportQuerySchema,
@@ -128,7 +129,12 @@ export class HrImportController {
     if (!parsed.success) throw new BadRequestException(`Invalid entity '${entity}'`);
     const page = await this.importService.exportEntity(u.orgId, parsed.data, query);
     const rows = page.data;
-    const headers = Object.keys(rows[0] ?? {});
+    // The header used to come from `Object.keys(rows[0] ?? {})`, so an export
+    // with no rows produced a genuinely empty file — a 0-byte "success" the
+    // browser saved without complaint (HRMS-E2E-013, -017). Taking it from the
+    // table's own columns means an empty export is a header-only CSV that says
+    // what it would have contained.
+    const headers = exportColumnsOf(parsed.data);
     const csv = toCsv(headers, rows);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(

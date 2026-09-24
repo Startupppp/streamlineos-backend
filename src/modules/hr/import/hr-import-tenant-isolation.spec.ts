@@ -71,7 +71,8 @@ describe("HrImportService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const mockCommit = { commit: jest.fn() };
-    const svc = new HrImportService(db, mockAudit as never, mockCommit as never);
+    const mockCache = { invalidateNamespace: jest.fn() };
+    const svc = new HrImportService(db, mockAudit as never, mockCommit as never, mockCache as never);
     await svc.listJobs(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
@@ -80,7 +81,8 @@ describe("HrImportService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const mockCommit = { commit: jest.fn() };
-    const svc = new HrImportService(db, mockAudit as never, mockCommit as never);
+    const mockCache = { invalidateNamespace: jest.fn() };
+    const svc = new HrImportService(db, mockAudit as never, mockCommit as never, mockCache as never);
     await svc.listJobs(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });

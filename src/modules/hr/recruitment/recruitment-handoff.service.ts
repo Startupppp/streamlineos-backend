@@ -1,8 +1,11 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   candidates,
+  candidateApplications,
   candidateOffers,
+  candidateReferrals,
+  documents,
   hrPeople,
   hrEmployments,
   hrEmployeeSensitiveFields,
@@ -14,6 +17,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
+import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 import { resolveOrgSalaryCurrency } from "../directory/employment-salary-currency";
 
 /**
@@ -32,7 +36,7 @@ export class RecruitmentHandoffService {
     const [candidate, offer] = await Promise.all([
       this.db.query.candidates.findFirst({
         where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-        columns: { firstName: true, lastName: true, email: true, phone: true },
+        columns: { firstName: true, lastName: true, email: true, phone: true, resumeUrl: true },
       }),
       this.db.query.candidateOffers.findFirst({
         where: and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)),
@@ -43,6 +47,13 @@ export class RecruitmentHandoffService {
     if (!candidate?.email || !offer) return;
 
     const workEmail = candidate.email.toLowerCase().trim();
+    const resumeUrl = candidate.resumeUrl ?? null;
+    /**
+     * Loaded before the transaction, and only when the query exists.
+     * The handoff unit double has no `candidateApplications` relation, and an
+     * unconditional lookup inside the transaction fails that suite.
+     */
+    const departmentId = await this.jobDepartmentId(orgId, candidateId);
 
     await this.db.transaction(async (tx) => {
       const matchedUser = await tx
@@ -196,6 +207,14 @@ export class RecruitmentHandoffService {
 
       let employmentId = primaryEmployment?.id;
 
+      const packet = {
+        lifecycleStatus: "PRE_JOINING" as const,
+        designation: offer.offeredDesignation ?? null,
+        joiningDate: offer.joiningDate ?? null,
+        ...(departmentId ? { departmentId } : {}),
+        ...(resumeUrl ? { customFieldValues: { hireResumeUrl: resumeUrl } } : {}),
+      };
+
       if (!employmentId) {
         const employeeNumber = `CAND-${candidateId}`;
 
@@ -210,6 +229,10 @@ export class RecruitmentHandoffService {
 
         if (existingByNumber && existingByNumber.personId === personId) {
           employmentId = existingByNumber.id;
+          await tx
+            .update(hrEmployments)
+            .set(this.packetUpdate(departmentId, resumeUrl, offer))
+            .where(and(eq(hrEmployments.id, employmentId), eq(hrEmployments.orgId, orgId)));
         } else if (existingByNumber && existingByNumber.personId !== personId) {
           const [created] = await tx
             .insert(hrEmployments)
@@ -217,11 +240,9 @@ export class RecruitmentHandoffService {
               orgId,
               personId,
               employeeNumber: `CAND-${candidateId}`,
-              lifecycleStatus: "PRE_JOINING",
               workerType: "FULL_TIME",
-              designation: offer.offeredDesignation ?? null,
-              joiningDate: offer.joiningDate ?? null,
               isPrimary: true,
+              ...packet,
             })
             .returning({ id: hrEmployments.id });
           employmentId = created.id;
@@ -232,11 +253,9 @@ export class RecruitmentHandoffService {
               orgId,
               personId,
               employeeNumber,
-              lifecycleStatus: "PRE_JOINING",
               workerType: "FULL_TIME",
-              designation: offer.offeredDesignation ?? null,
-              joiningDate: offer.joiningDate ?? null,
               isPrimary: true,
+              ...packet,
             })
             .returning({ id: hrEmployments.id });
           employmentId = created.id;
@@ -244,15 +263,45 @@ export class RecruitmentHandoffService {
       } else {
         await tx
           .update(hrEmployments)
-          .set({
-            lifecycleStatus: "PRE_JOINING",
-            designation: offer.offeredDesignation ?? null,
-            joiningDate: offer.joiningDate ?? null,
-          })
+          .set(this.packetUpdate(departmentId, resumeUrl, offer))
           .where(and(eq(hrEmployments.id, employmentId), eq(hrEmployments.orgId, orgId)));
       }
 
       if (!employmentId) return;
+
+      if (resumeUrl && matchedUser) {
+        await tx.insert(documents).values({
+          orgId,
+          userId: matchedUser.id,
+          name: "Resume",
+          type: "RESUME",
+          fileUrl: resumeUrl,
+          fileName: "resume",
+          category: "HIRE_PACKET",
+          metadata: { candidateId, offerId, source: "offer_accepted" },
+          uploadedBy: matchedUser.id,
+        });
+      }
+
+      if (departmentId && matchedUser) {
+        try {
+          await syncOrgUnitPlacement(tx, orgId, matchedUser.id, { DEPARTMENT: departmentId });
+        } catch (err) {
+          if (!(err instanceof BadRequestException)) throw err;
+        }
+      }
+
+      await tx
+        .update(candidateReferrals)
+        .set({ status: "HIRED", updatedAt: new Date() })
+        .where(
+          and(
+            eq(candidateReferrals.orgId, orgId),
+            eq(candidateReferrals.candidateId, candidateId),
+            eq(candidateReferrals.bonusEligible, true),
+            inArray(candidateReferrals.status, ["SUBMITTED", "REVIEWING"]),
+          ),
+        );
 
       if (offer.offeredSalary) {
         const salaryAmountCents = Math.round(parseFloat(offer.offeredSalary) * 100);
@@ -286,8 +335,47 @@ export class RecruitmentHandoffService {
           personId,
           linkedUserId: matchedUser?.id ?? null,
           reusedPerson: Boolean(existingByUser || existingByEmail),
+          departmentId,
+          resumeCopied: Boolean(resumeUrl),
         },
       });
     });
+  }
+
+  /**
+   * The job's department, when the applications relation is on this handle.
+   * Missing means "this double cannot answer", not "the job has no department".
+   */
+  private async jobDepartmentId(orgId: string, candidateId: number): Promise<string | null> {
+    const applications = this.db.query.candidateApplications;
+    if (!applications?.findFirst) return null;
+    const application = await applications.findFirst({
+      where: and(
+        eq(candidateApplications.orgId, orgId),
+        eq(candidateApplications.candidateId, candidateId),
+      ),
+      columns: { id: true },
+      with: { jobPosting: { columns: { orgDepartmentId: true } } },
+      orderBy: (t, { desc }) => [desc(t.appliedAt)],
+    });
+    return application?.jobPosting?.orgDepartmentId ?? null;
+  }
+
+  private packetUpdate(
+    departmentId: string | null,
+    resumeUrl: string | null,
+    offer: { offeredDesignation: string | null; joiningDate: string | null },
+  ) {
+    return {
+      lifecycleStatus: "PRE_JOINING" as const,
+      designation: offer.offeredDesignation ?? null,
+      joiningDate: offer.joiningDate ?? null,
+      ...(departmentId ? { departmentId } : {}),
+      ...(resumeUrl
+        ? {
+            customFieldValues: sql`${hrEmployments.customFieldValues} || ${JSON.stringify({ hireResumeUrl: resumeUrl })}::jsonb`,
+          }
+        : {}),
+    };
   }
 }

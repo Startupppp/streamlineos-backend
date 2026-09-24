@@ -49,6 +49,11 @@ export const hrImportJobs = pgTable(
     totalRows: integer("total_rows").default(0).notNull(),
     validRows: integer("valid_rows").default(0).notNull(),
     errorRows: integer("error_rows").default(0).notNull(),
+    // What the commit did, per row. `validRows` alone could not distinguish
+    // "wrote N records" from "walked N rows and wrote nothing" — see 1191.
+    createdRows: integer("created_rows").default(0).notNull(),
+    updatedRows: integer("updated_rows").default(0).notNull(),
+    unchangedRows: integer("unchanged_rows").default(0).notNull(),
     errors: jsonb("errors").$type<Array<{ row: number; field?: string; message: string }>>(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     committedAt: timestamp("committed_at"),
@@ -73,7 +78,14 @@ export const hrImportRows = pgTable(
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     status: hrImportRowStatusEnum("status").default("valid").notNull(),
     error: text("error"),
-    createdRecordRef: jsonb("created_record_ref").$type<{ table: string; id: string | number } | null>(),
+    // `outcome` is absent on rows committed before imports became idempotent.
+    // A rollback treats that absence as "created", which is what those rows were:
+    // every commit path inserted unconditionally back then.
+    createdRecordRef: jsonb("created_record_ref").$type<{
+      table: string;
+      id: string | number;
+      outcome?: "created" | "updated" | "unchanged";
+    } | null>(),
   },
   (table) => [
     foreignKey({

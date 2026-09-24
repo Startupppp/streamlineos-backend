@@ -1,7 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
-import { candidateApplications, candidateSlaTracking, candidates, jobPostings } from "../../../db/schema";
+import { candidateApplications, candidateSlaTracking, candidates, hiringFlowRounds, jobPostings } from "../../../db/schema";
+import { roundLabelForStage } from "./ats-remaining";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -79,11 +80,14 @@ export class RecruitmentPipelineService {
       slaLookup.set(`${row.candidateId}:${row.stage}`, row.status);
     }
 
+    const hiringRounds = await this.hiringRounds(orgId);
+
     const stages = PIPELINE_STAGES.map((stage, index) => ({
       stage,
       total: totals.get(stage) ?? 0,
       shown: stageCandidates[index].length,
       truncated: (totals.get(stage) ?? 0) > stageCandidates[index].length,
+      roundLabel: roundLabelForStage(stage, hiringRounds),
       candidates: stageCandidates[index].map((c) => {
         const latestApp = c.applications?.[0] ?? null;
         return {
@@ -103,7 +107,43 @@ export class RecruitmentPipelineService {
       }),
     }));
 
-    return { stages };
+    return { stages, hiringRounds };
+  }
+
+  /**
+   * Round names for jobs that are currently open. Capped: the board is one
+   * screen, and a column subtitle is not a report of every requisition.
+   */
+  private async hiringRounds(orgId: string) {
+    const jobsQuery = this.db.query.jobPostings;
+    const roundsQuery = this.db.query.hiringFlowRounds;
+    if (!jobsQuery?.findMany || !roundsQuery?.findMany) return [];
+
+    const jobs = await jobsQuery.findMany({
+      where: and(eq(jobPostings.orgId, orgId), eq(jobPostings.status, "OPEN")),
+      columns: { id: true, title: true, hiringFlowId: true },
+      limit: 30,
+    });
+    const flowIds = [...new Set(jobs.map((job) => job.hiringFlowId).filter((id): id is number => id != null))];
+    if (flowIds.length === 0) return [];
+
+    const rounds = await roundsQuery.findMany({
+      where: and(eq(hiringFlowRounds.orgId, orgId), inArray(hiringFlowRounds.flowId, flowIds)),
+      columns: { flowId: true, name: true, roundType: true, orderIndex: true },
+      orderBy: (t, { asc }) => [asc(t.orderIndex)],
+      limit: 200,
+    });
+
+    return jobs
+      .filter((job) => job.hiringFlowId != null)
+      .map((job) => ({
+        jobPostingId: job.id,
+        jobTitle: job.title,
+        rounds: rounds
+          .filter((round) => round.flowId === job.hiringFlowId)
+          .map((round) => ({ name: round.name, orderIndex: round.orderIndex, roundType: round.roundType })),
+      }))
+      .filter((job) => job.rounds.length > 0);
   }
 
   async diversityReport(orgId: string, query: DiversityReportQueryInput) {

@@ -119,7 +119,19 @@ async function bootstrap(): Promise<void> {
         }
       : config.corsOrigins,
     credentials: true,
-    exposedHeaders: ["x-correlation-id", "x-request-id", "traceparent"],
+    // A cross-origin download can only read the headers named here. Without
+    // Content-Disposition the browser hands the caller a blob with no filename,
+    // and without the pagination headers an export that spans pages looks
+    // complete after the first one — which is how a partial asset export read as
+    // a finished file (HRMS-E2E-013).
+    exposedHeaders: [
+      "x-correlation-id",
+      "x-request-id",
+      "traceparent",
+      "content-disposition",
+      "x-has-more",
+      "x-next-cursor",
+    ],
   });
 
   const admission = resolveAdmissionConfig(process.env);
