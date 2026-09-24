@@ -35,7 +35,13 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
 
 @Module({
   imports: [AiModule, AiJobsModule, KbCoreModule, OutboxModule],
-  controllers: [KbSearchController, KbAskController, KbConversationsController, KbResearchBriefController, KbPageIndexingController],
+  controllers: [
+    KbSearchController,
+    KbAskController,
+    KbConversationsController,
+    KbResearchBriefController,
+    KbPageIndexingController,
+  ],
   providers: [
     KbIndexingService,
     KbIngestionCheckpointService,
@@ -60,6 +66,15 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbResearchBriefService,
     KbResearchBriefHandler,
   ],
-  exports: [KbIndexingService, KbAttachmentIndexingService, KbArticleReindexService, KbPageBackfillService, KbSearchService, KbAskService, KbStuckSourceReaperService],
+  exports: [
+    KbIndexingService,
+    KbAttachmentIndexingService,
+    KbArticleReindexService,
+    KbPageBackfillService,
+    KbSearchService,
+    KbAskService,
+    KbStuckSourceReaperService,
+    KbResearchBriefService,
+  ],
 })
 export class KbRetrievalModule {}

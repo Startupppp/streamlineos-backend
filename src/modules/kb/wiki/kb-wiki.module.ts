@@ -40,6 +40,7 @@ import { KbSourcesController } from "./kb-sources.controller";
 import { KbPageAiController } from "./kb-page-ai.controller";
 import { KbPageGrantsController } from "./kb-page-grants.controller";
 import { KbPageGrantsService } from "./kb-page-grants.service";
+import { KbBriefToPageService } from "./kb-brief-to-page.service";
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { KbPageGrantsService } from "./kb-page-grants.service";
     KbContentHealthService,
     KbPageRecordLinksService,
     KbPageReviewsQueryService,
+    KbBriefToPageService,
   ],
   exports: [KbPageTreeService, KbPageTrashService],
 })
