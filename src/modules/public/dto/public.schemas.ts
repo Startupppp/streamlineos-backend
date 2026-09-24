@@ -1,6 +1,48 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
+/**
+ * A form field that reached us through `multipart/form-data` arrives as a
+ * string, because that is the only thing the wire format carries. The apply
+ * endpoint accepts both encodings — JSON from a script, multipart from the
+ * careers form that attaches a résumé — so the two boolean/object fields
+ * coerce rather than being declared twice.
+ *
+ * `z.coerce.boolean()` is deliberately NOT used: it is `Boolean(value)`, and
+ * `Boolean("false")` is `true`. Consent is the field where that would matter.
+ */
+const consentField = z
+  .union([
+    z.boolean(),
+    z.enum(["true", "false", "on", "off", "1", "0"]).transform((v) => v === "true" || v === "on" || v === "1"),
+  ])
+  .refine((value) => value === true, {
+    message: "You must consent to your data being processed before applying.",
+  });
+
+const screeningAnswersField = z
+  .union([
+    z.record(z.string().max(100), z.string().max(2000)),
+    z
+      .string()
+      .max(20_000)
+      .transform((raw, ctx): Record<string, string> => {
+        try {
+          const parsed: unknown = JSON.parse(raw);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            ctx.addIssue({ code: "custom", message: "answers must be a JSON object" });
+            return z.NEVER;
+          }
+          const out: Record<string, string> = {};
+          for (const [key, value] of Object.entries(parsed)) out[key] = String(value);
+          return out;
+        } catch {
+          ctx.addIssue({ code: "custom", message: "answers must be valid JSON" });
+          return z.NEVER;
+        }
+      }),
+  ]);
+
 export const applySchema = z.object({
   name: z.string().min(1).max(200).trim(),
   email: z.string().email().max(200).toLowerCase(),
@@ -8,6 +50,14 @@ export const applySchema = z.object({
   linkedinUrl: z.string().url().max(500).optional(),
   coverLetter: z.string().max(5000).optional(),
   resumeUrl: z.string().url().max(500).optional(),
+  /**
+   * Required, and required to be `true`. DPDP consent is the lawful basis for
+   * holding a candidate's file at all, so an application without it is not a
+   * weaker application — it is one we may not store.
+   */
+  consent: consentField,
+  /** Answers to `job_postings.screening_questions`, keyed by question id. */
+  answers: screeningAnswersField.optional(),
 }).strict();
 
 export const offerRespondSchema = z.object({

@@ -3,6 +3,7 @@ import { relations } from "drizzle-orm";
 import { jobPostingStatusEnum } from "../common/enums";
 import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
+import { hrJobLevels } from "./core-org";
 
 export const hiringFlows = pgTable("hiring_flows", {
   id: serial("id").primaryKey(),
@@ -89,12 +90,30 @@ export const jobPostings = pgTable("job_postings", {
   postedByMembershipId: integer("posted_by_membership_id"),
   externalPostingIds: jsonb("external_posting_ids").$type<Record<string, string>>(),
   isInternal: boolean("is_internal").notNull().default(false),
+  /**
+   * The grade this opening is posted at, for the internal-mobility rule.
+   *
+   * Nullable, and a job without one is exempt from the rule rather than
+   * refused by it — most openings will never carry a level, and an internal
+   * move that nobody graded is a conversation rather than a violation.
+   */
+  jobLevelId: integer("job_level_id"),
   screeningQuestions: jsonb("screening_questions").$type<ScreeningQuestion[]>(),
+  /**
+   * Whether an offer for this job may only be finalised against a verified
+   * identity.
+   *
+   * Per job rather than per organisation: some roles are regulated and most
+   * are not, and an org-wide switch would either block ordinary hiring or
+   * leave the regulated roles ungated.
+   */
+  requiresIdentityVerification: boolean("requires_identity_verification").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.hiringFlowId], foreignColumns: [hiringFlows.orgId, hiringFlows.id], name: "fk_job_postings_hiring_flow_id_org" }),
   foreignKey({ columns: [table.orgId, table.orgDepartmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_job_postings_org_department" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.jobLevelId], foreignColumns: [hrJobLevels.orgId, hrJobLevels.id], name: "fk_job_postings_job_level_id_org" }).onDelete("set null"),
   unique("uniq_job_postings_org_id").on(table.orgId, table.id),
   index("idx_job_postings_status").on(table.status),
   index("idx_job_postings_org_status").on(table.orgId, table.status),

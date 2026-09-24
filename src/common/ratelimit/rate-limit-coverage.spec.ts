@@ -136,10 +136,25 @@ const EVER_RECORDED_AS_UNLIMITED: readonly string[] = [
  * move together on a rename.
  */
 const CLOSED_PUBLIC_WRITE_GAPS: Readonly<Record<string, string>> = {
-  "modules/careers/careers.controller.ts:Post apply": "public:job-apply",
   "modules/csat/csat.controller.ts:Post public/:publicToken/responses": "csat:submit",
   "common/audit/internal-audit.controller.ts:Post audit": "internal:audit",
 };
+
+/**
+ * Gaps closed by removing the route rather than by limiting it — the strongest
+ * closure there is, and one this file could not previously express.
+ *
+ * `POST /careers/apply` was the legacy unscoped apply door. It took
+ * applications for any tenant and sat beside an org-scoped door that did the
+ * other half, so `faf27ad3e` deleted it and left one apply path
+ * (`POST /public/careers/:orgSlug/jobs/:jobId/apply`, tier `public:job-apply`).
+ * Kept named here so the shrink stays auditable: this map is what stops the gap
+ * list being reduced by quietly dropping an entry, and "the handler is gone"
+ * has to be stated rather than inferred from its absence.
+ */
+const REMOVED_PUBLIC_WRITES: readonly string[] = [
+  "modules/careers/careers.controller.ts:Post apply",
+];
 
 /**
  * Unauthenticated writes that carry no limiter of any kind today. Each is a
@@ -204,7 +219,9 @@ describe("rate limiting is targeted, not ambient — and the targeting is enforc
     for (const declared of Object.keys(UNLIMITED_PUBLIC_WRITES))
       expect([declared, EVER_RECORDED_AS_UNLIMITED.includes(declared)]).toEqual([declared, true]);
     expect(Object.keys(UNLIMITED_PUBLIC_WRITES)).toHaveLength(
-      EVER_RECORDED_AS_UNLIMITED.length - Object.keys(CLOSED_PUBLIC_WRITE_GAPS).length,
+      EVER_RECORDED_AS_UNLIMITED.length -
+        Object.keys(CLOSED_PUBLIC_WRITE_GAPS).length -
+        REMOVED_PUBLIC_WRITES.length,
     );
   });
 
@@ -217,6 +234,17 @@ describe("rate limiting is targeted, not ambient — and the targeting is enforc
       expect([id, handler?.decorators.includes("RateLimitGuard")]).toEqual([id, true]);
       expect([id, id in UNLIMITED_PUBLIC_WRITES]).toEqual([id, false]);
     }
+  });
+
+  /**
+   * A route named as removed must actually be gone. Otherwise "we deleted it"
+   * becomes a way to drop an entry off the gap list while the unlimited public
+   * write is still reachable.
+   */
+  it("proves each removed route no longer exists", () => {
+    const identities = new Set(handlers.map((handler) => handler.id));
+    for (const removed of REMOVED_PUBLIC_WRITES)
+      expect([removed, identities.has(removed)]).toEqual([removed, false]);
   });
 
   it("names no gap that has since been closed or moved", () => {

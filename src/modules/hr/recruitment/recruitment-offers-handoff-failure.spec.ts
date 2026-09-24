@@ -1,5 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { RecruitmentOffersService } from "./recruitment-offers.service";
+import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
 import { TenantContextService } from "../../../common/tenant/tenant-context";
 import type { AfterCommitHook } from "../../../common/tenant/tenant-context";
 
@@ -28,6 +29,11 @@ const EXISTING_OFFER = {
 
 function build(handleOfferAccepted: jest.Mock) {
   const db = {
+    /**
+     * An internal accept now closes the seat in the same transaction, which
+     * takes an aggregate-version lookup before the outbox emit.
+     */
+    execute: jest.fn().mockResolvedValue([{ next: "1" }]),
     query: {
       candidateOffers: { findFirst: jest.fn().mockResolvedValue(EXISTING_OFFER) },
       candidates: {
@@ -48,9 +54,11 @@ function build(handleOfferAccepted: jest.Mock) {
       }),
     }),
     insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([{ id: 1 }]),
-      }),
+      values: jest.fn().mockImplementation(() =>
+        Object.assign(Promise.resolve(undefined), {
+          returning: jest.fn().mockResolvedValue([{ id: 1 }]),
+        }),
+      ),
     }),
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
@@ -62,12 +70,23 @@ function build(handleOfferAccepted: jest.Mock) {
     }),
   };
 
-  const service = new RecruitmentOffersService(
+  const audit = { log: jest.fn(), logCritical: jest.fn().mockResolvedValue(undefined) };
+
+  /**
+   * The REAL acceptance service, with only its leaf collaborators doubled.
+   * Constructing a stand-in for it here would let the dispatch this suite exists
+   * to check be re-implemented by the test — the failure it was written for was
+   * a discarded promise, which a double would happily "succeed" at.
+   */
+  const acceptance = new RecruitmentOfferAcceptanceService(
     db as never,
     { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
-    { log: jest.fn(), logCritical: jest.fn().mockResolvedValue(undefined) } as never,
+    audit as never,
     { handleOfferAccepted } as never,
+    { startForCandidate: jest.fn().mockResolvedValue({ started: true, replay: true }) } as never,
   );
+
+  const service = new RecruitmentOffersService(db as never, audit as never, acceptance);
   return { service };
 }
 
@@ -107,7 +126,17 @@ describe("RecruitmentOffersService offer-accepted handoff", () => {
     expect(handoff).not.toHaveBeenCalled();
     expect(hooks).toHaveLength(1);
 
-    await hooks[0]!();
+    /**
+     * Run INSIDE a context, as `drainAfterCommitHooks` does. The hook registers
+     * two of its own — onboarding and the background check — and neither may
+     * run on the transaction the handoff is writing: the person onboarding
+     * needs is invisible to any other transaction until this one commits, and a
+     * verification agency refusing must not roll a committed hire back.
+     */
+    const nested: AfterCommitHook[] = [];
+    await tenant.run({ orgId: ORG_ID, afterCommit: nested } as never, () => hooks[0]!());
+
     expect(handoff).toHaveBeenCalledWith(ORG_ID, CANDIDATE_ID, OFFER_ID);
+    expect(nested).toHaveLength(2);
   });
 });

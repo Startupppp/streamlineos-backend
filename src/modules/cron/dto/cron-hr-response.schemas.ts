@@ -124,3 +124,35 @@ export const hrWebhookSweepResponseSchema = z.union([
     message: z.string(),
   }),
 ]);
+
+/**
+ * `heldWithoutConsent` is reported, not hidden: a tenant whose whole cohort is
+ * held is a consent-capture problem the operator needs to see.
+ */
+export const recruitmentSequenceStepsResponseSchema = z.object({
+  success: z.boolean(),
+  skipped: z.boolean().optional(),
+  message: z.string().optional(),
+  sent: z.number().int().optional(),
+  completed: z.number().int().optional(),
+  heldWithoutConsent: z.number().int().optional(),
+  skippedInactive: z.number().int().optional(),
+});
+
+export const recruitmentSlaSweepResponseSchema = z.object({
+  success: z.boolean(),
+  skipped: z.boolean().optional(),
+  message: z.string().optional(),
+  breached: z.number().int().optional(),
+  atRisk: z.number().int().optional(),
+  organizationsWithConfig: z.number().int().optional(),
+});
+
+export const recruitmentScheduledReportsResponseSchema = z.object({
+  success: z.boolean(),
+  skipped: z.boolean().optional(),
+  message: z.string().optional(),
+  delivered: z.number().int().optional(),
+  failed: z.number().int().optional(),
+  skippedNoRecipients: z.number().int().optional(),
+});

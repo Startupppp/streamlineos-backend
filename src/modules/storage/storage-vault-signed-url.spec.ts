@@ -81,6 +81,43 @@ const BASE_ROW: VaultRow = {
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
 };
 
+/**
+ * The row carried `av_result` and the controller returned it to the caller and
+ * otherwise ignored it — so a file a scanner had flagged still produced a
+ * signed URL, and the only thing standing between a recruiter and the malware
+ * was whether the UI happened to read the field.
+ */
+describe("StorageVaultController — an infected object has no authorised reader", () => {
+  it("refuses to sign a URL for a document the scanner flagged", async () => {
+    const storage = makeStorage();
+    const controller = new StorageVaultController(
+      makeDb({ ...BASE_ROW, avResult: "INFECTED" }),
+      storage,
+      makeAccess(),
+    );
+
+    await expect(controller.download(3, 7, USER)).rejects.toMatchObject({ status: 422 });
+    expect(storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  /**
+   * PENDING is NOT refused. It is the normal state on a deployment with no
+   * scanner configured, and refusing it would make every résumé unreadable
+   * there; the response carries `avResult` so the screen can warn instead.
+   */
+  it("still serves an unscanned document, and says it is unscanned", async () => {
+    const controller = new StorageVaultController(
+      makeDb({ ...BASE_ROW, avResult: "PENDING" }),
+      makeStorage(),
+      makeAccess(),
+    );
+
+    const result = await controller.download(3, 7, USER);
+    expect(result.avResult).toBe("PENDING");
+    expect(result.signedUrl).not.toBeNull();
+  });
+});
+
 describe("StorageVaultController — the vault never hands back a stored permanent URL", () => {
   it("presigns the object key", async () => {
     const storage = makeStorage();

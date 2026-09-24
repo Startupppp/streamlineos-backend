@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { interviewTypeEnum, interviewResultEnum } from "../common/enums";
 import { organizationMembers, organizations, users } from "../common/auth";
 import { scorecardTemplates, jobPostings } from "./hiring-core";
@@ -24,6 +24,31 @@ export const interviews = pgTable("interviews", {
   notes: text("notes"),
   recordingUrl: text("recording_url"),
   recordingPlatform: text("recording_platform"),
+  /**
+   * The interview transcript, and the facts that make holding it lawful.
+   *
+   * `transcriptConsentAt` is a timestamp rather than a flag: a recording is
+   * personal data belonging to the candidate as well as the panel, and "did
+   * they agree" needs the moment, not a box somebody ticked once.
+   * `transcriptRetainUntil` is stamped at the same time, so the retention
+   * decision is taken alongside the consent instead of guessed at later by
+   * whoever runs the sweep.
+   */
+  transcript: text("transcript"),
+  transcriptSource: text("transcript_source").$type<"MANUAL_UPLOAD" | "PROVIDER">(),
+  transcriptConsentAt: timestamp("transcript_consent_at"),
+  transcriptRetainUntil: timestamp("transcript_retain_until"),
+  transcriptStoredAt: timestamp("transcript_stored_at"),
+  transcriptStoredByMembershipId: integer("transcript_stored_by_membership_id"),
+  /**
+   * The vendor's own invitation or call id, for an ASSESSMENT or VOICE_SCREEN.
+   *
+   * A score webhook finds its row through this rather than through candidate
+   * details echoed back at us, which keeps the callback payload to an id and a
+   * result.
+   */
+  externalRef: text("external_ref"),
+  externalPlatform: text("external_platform"),
   remindersSent: jsonb("reminders_sent").$type<Record<string, boolean>>().notNull().default({}),
   calendarSyncToken: text("calendar_sync_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -38,6 +63,9 @@ export const interviews = pgTable("interviews", {
   index("idx_interviews_org_scheduled").on(table.orgId, table.scheduledAt),
   index("idx_interviews_org_interviewer_membership").on(table.orgId, table.interviewerMembershipId),
   foreignKey({ columns: [table.orgId, table.interviewerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_interviews_interviewer_actor" }).onDelete("restrict"),
+  foreignKey({ columns: [table.orgId, table.transcriptStoredByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_interviews_transcript_stored_by" }).onDelete("restrict"),
+  index("idx_interviews_transcript_retention").on(table.orgId, table.transcriptRetainUntil).where(sql`${table.transcript} is not null`),
+  uniqueIndex("uq_interviews_org_external_ref").on(table.orgId, table.externalPlatform, table.externalRef).where(sql`${table.externalRef} is not null`),
 ]);
 
 export const interviewScorecards = pgTable("interview_scorecards", {

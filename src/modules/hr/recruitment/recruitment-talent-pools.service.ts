@@ -17,6 +17,7 @@ export class RecruitmentTalentPoolsService {
         id: talentPools.id,
         name: talentPools.name,
         description: talentPools.description,
+        tags: talentPools.tags,
         createdAt: talentPools.createdAt,
         memberCount: sql<number>`count(${talentPoolMembers.id})::int`,
       })
@@ -31,7 +32,13 @@ export class RecruitmentTalentPoolsService {
   async create(orgId: string, userId: string, input: CreateTalentPoolInput) {
     const [pool] = await this.db
       .insert(talentPools)
-      .values({ orgId, name: input.name, description: input.description, createdBy: userId })
+      .values({
+        orgId,
+        name: input.name,
+        description: input.description,
+        tags: input.tags ?? [],
+        createdBy: userId,
+      })
       .returning();
     return pool;
   }

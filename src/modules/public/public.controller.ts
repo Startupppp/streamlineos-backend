@@ -11,8 +11,11 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -49,7 +52,6 @@ import {
   roadmapFeedbackSchema,
   roadmapQuerySchema,
   roadmapVoteSchema,
-  type ApplyInput,
   type ContactSubmitInput,
   type WaitlistJoinInput,
   type ExternalReferralSubmitInput,
@@ -69,7 +71,8 @@ import {
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { resolveClientIp } from "../../common/http/client-ip";
-import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { RESUME_MAX_BYTES } from "./careers-resume-intake";
 import {
   contactSubmitSchema as contactSubmitResponseSchema,
   waitlistJoinSchema as waitlistJoinResponseSchema,
@@ -204,18 +207,50 @@ export class PublicController {
     return this.careers.getOrgJob(orgSlug, jobId);
   }
 
+  /**
+   * The only apply door. Accepts JSON, or `multipart/form-data` when the
+   * candidate attaches a résumé — multer leaves a non-multipart request's body
+   * alone, so one handler serves both and `applySchema` coerces the string
+   * shapes multipart forces on `consent` and `answers`.
+   */
   @Post("careers/:orgSlug/jobs/:jobId/apply")
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:job-apply")
+  @UseInterceptors(FileInterceptor("resume", { limits: { fileSize: RESUME_MAX_BYTES } }))
+  @MultipartAction({
+    file: "resume",
+    fileRequired: false,
+    fields: {
+      name: "string",
+      email: "string",
+      phone: "string",
+      linkedinUrl: "string",
+      coverLetter: "string",
+      resumeUrl: "string",
+      consent: "boolean",
+      answers: "string",
+    },
+    requiredFields: ["name", "email", "consent"],
+  })
   @ResponseSchema(jobApplicationSchema)
-  @Validate({ params: orgSlugjobIdParams, body: applySchema })
+  @Validate({ params: orgSlugjobIdParams })
   applyToOrgJob(
     @Param("orgSlug") orgSlug: string,
     @Param("jobId", ParseIntPipe) jobId: number,
-    @Body() body: ApplyInput,
+    @Body() body: unknown,
+    @UploadedFile() resume?: Express.Multer.File,
   ) {
-    return this.careers.applyToOrgJob(orgSlug, jobId, body);
+    /**
+     * The body is parsed here rather than through `@Validate({ body })`.
+     * `ZodValidationInterceptor` is a GLOBAL `APP_INTERCEPTOR` and
+     * `FileInterceptor` is route-scoped, so Nest runs the global one first —
+     * before multer has parsed the multipart stream. Declaring the body on the
+     * decorator would therefore validate an empty object and reject every
+     * upload with a 400 about missing fields. Same schema, same boundary, one
+     * step later; a `ZodError` still maps to 400 in `AllExceptionsFilter`.
+     */
+    return this.careers.applyToOrgJob(orgSlug, jobId, applySchema.parse(body), resume);
   }
 
   @Get("offer/:token")

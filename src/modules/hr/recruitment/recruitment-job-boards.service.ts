@@ -6,6 +6,16 @@ import { eq, and, desc } from "drizzle-orm";
 import type { CreateJobBoardPostingInput, UpdateJobBoardPostingInput } from "./dto/job-boards.schemas";
 import { jobPostings } from "../../../db/schema";
 
+/**
+ * `job_board_postings` is a MANUAL LOG, not a distribution channel.
+ *
+ * Nothing here contacts a board. A recruiter posts the job on LinkedIn or
+ * Naukri themselves and records the link, the spend and the applicant counts so
+ * the source-of-hire reporting has numbers. Its `status` column holding the
+ * word `POSTED` therefore records what the recruiter did, and is not a claim
+ * that this system posted anything — the screen it feeds says so, and
+ * `boards/job-board-adapters.ts` is where an actual integration would go.
+ */
 @Injectable()
 export class RecruitmentJobBoardsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}

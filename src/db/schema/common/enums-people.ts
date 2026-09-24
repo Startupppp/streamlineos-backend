@@ -37,7 +37,15 @@ export const docAuditActionEnum = pgEnum("doc_audit_action", ["UPLOADED", "APPRO
 
 export const jobPostingStatusEnum = pgEnum("job_posting_status", ["DRAFT", "OPEN", "PAUSED", "CLOSED", "FILLED"]);
 export const candidateStatusEnum = pgEnum("candidate_status", ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"]);
-export const interviewTypeEnum = pgEnum("interview_type", ["PHONE", "VIDEO", "ONSITE", "TECHNICAL", "HR", "FINAL"]);
+/**
+ * ASSESSMENT and VOICE_SCREEN are evaluations too.
+ *
+ * Both produce a score for a candidate against a job, from a named evaluator,
+ * at a point in time — which is exactly what `interviews` stores. Reusing it
+ * keeps them inside the panel, scorecard and pipeline plumbing rather than
+ * adding two tables to a frozen schema and re-implementing all of it.
+ */
+export const interviewTypeEnum = pgEnum("interview_type", ["PHONE", "VIDEO", "ONSITE", "TECHNICAL", "HR", "FINAL", "ASSESSMENT", "VOICE_SCREEN"]);
 export const interviewResultEnum = pgEnum("interview_result", ["PENDING", "PASSED", "FAILED", "NO_SHOW"]);
 export const applicationStatusEnum = pgEnum("application_status", ["APPLIED", "SHORTLISTED", "INTERVIEWING", "OFFERED", "ACCEPTED", "REJECTED", "WITHDRAWN"]);
 

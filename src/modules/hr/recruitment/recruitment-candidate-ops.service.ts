@@ -340,7 +340,22 @@ export class RecruitmentCandidateOpsService {
     if (!candidate) throw new NotFoundException("Candidate not found");
 
     const now = new Date();
-    const updateFields: Partial<typeof candidates.$inferInsert> = { bgvStatus: input.bgvStatus, updatedAt: now };
+    /*
+      Stamped MANUAL, always.
+
+      This route predates the agency integration and cannot produce an agency
+      verdict — a recruiter recording a clearance they obtained themselves is
+      legitimate and is the manual fallback the whole feature leans on, but the
+      row has to say so. Leaving `bgv_source` null here would let a
+      recruiter-typed CLEARED and an agency-returned CLEARED stay
+      indistinguishable, which is the distinction `isAgencyClearance` exists to
+      make.
+    */
+    const updateFields: Partial<typeof candidates.$inferInsert> = {
+      bgvStatus: input.bgvStatus,
+      bgvSource: "MANUAL",
+      updatedAt: now,
+    };
     if (input.bgvAgency !== undefined) updateFields.bgvAgency = input.bgvAgency;
     if (input.bgvNotes !== undefined) updateFields.bgvNotes = input.bgvNotes;
     if (input.bgvStatus === "INITIATED" && candidate.bgvStatus === "NOT_INITIATED") {
@@ -348,6 +363,11 @@ export class RecruitmentCandidateOpsService {
     }
     if (input.bgvStatus === "CLEARED" || input.bgvStatus === "FAILED") {
       updateFields.bgvCompletedAt = now;
+    }
+    if (input.bgvStatus === "NOT_INITIATED") {
+      // Re-opening drops the agency's case reference; a later verdict carrying
+      // the old one would attach to a check nobody re-ran.
+      updateFields.bgvReference = null;
     }
 
     await this.db.update(candidates).set(updateFields).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));

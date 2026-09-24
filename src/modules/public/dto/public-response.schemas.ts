@@ -10,24 +10,26 @@ export const waitlistJoinSchema = z.object({
   alreadyJoined: z.boolean(),
 });
 
+/**
+ * The candidate-facing view of an application.
+ *
+ * Six coarse statuses, a first name, the job, and the two links a candidate can
+ * act on. No email, no notes, no scores — the token that reaches this endpoint
+ * travels in a URL, and a URL ends up in mail archives, browser history and
+ * referrer headers.
+ */
 export const applicationStatusSchema = z.object({
-  status: z.string(),
+  status: z.enum(["received", "in_review", "interview", "offer", "hired", "rejected"]),
+  statusText: z.string(),
   appliedAt: nullableWireDate(),
   updatedAt: wireDate(),
-  job: z
-    .object({
-      title: z.string().nullable(),
-      location: z.string().nullable(),
-      type: z.string().nullable(),
-    })
-    .nullable(),
-  candidate: z
-    .object({
-      firstName: z.string(),
-      lastName: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable(),
+  jobTitle: z.string(),
+  jobLocation: z.string().nullable(),
+  jobType: z.string().nullable(),
+  organisationName: z.string(),
+  candidateFirstName: z.string(),
+  bookingUrl: z.string().nullable(),
+  offerUrl: z.string().nullable(),
 });
 
 const orgInfoSchema = z.object({
@@ -55,6 +57,21 @@ export const jobListSchema = z.object({
   jobs: z.array(jobSummarySchema),
 });
 
+/**
+ * The questions the careers form renders. They are part of the job's public
+ * contract: the apply endpoint refuses a missing required answer and knocks out
+ * a disqualifying one, so a form that cannot see them cannot be filled in
+ * correctly. `knockoutAnswer` is deliberately absent — publishing the passing
+ * answer would tell every applicant what to say.
+ */
+const publicScreeningQuestionSchema = z.object({
+  id: z.string(),
+  question: z.string(),
+  type: z.enum(["TEXT", "YES_NO", "SINGLE_SELECT", "NUMBER"]),
+  required: z.boolean(),
+  options: z.array(z.string()).optional(),
+});
+
 export const jobDetailSchema = z.object({
   org: orgInfoSchema,
   job: jobSummarySchema.extend({
@@ -62,11 +79,15 @@ export const jobDetailSchema = z.object({
     requirements: z.string().nullable(),
     benefits: z.string().nullable(),
     closingDate: z.string().nullable(),
+    screeningQuestions: z.array(publicScreeningQuestionSchema).nullable(),
   }),
 });
 
 export const jobApplicationSchema = z.object({
   trackingToken: z.string(),
+  duplicate: z.boolean(),
+  resumeStored: z.boolean(),
+  resumeReason: z.string().nullable(),
 });
 
 export const offerDetailSchema = z.object({

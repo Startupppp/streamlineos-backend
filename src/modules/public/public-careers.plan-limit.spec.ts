@@ -34,22 +34,19 @@ function makeTx(existingByEmail: unknown) {
   const selectFrom = jest.fn().mockReturnValue({ where: selectWhere });
   const select = jest.fn().mockReturnValue({ from: selectFrom });
 
-  const racedLimit = jest.fn().mockResolvedValue([]);
-  const racedWhere = jest.fn().mockReturnValue({ limit: racedLimit });
-  const racedFrom = jest.fn().mockReturnValue({ where: racedWhere });
-
   return {
-    select: jest.fn()
-      .mockReturnValueOnce({ from: selectFrom })
-      .mockReturnValue({ from: racedFrom }),
+    select,
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
-        onConflictDoNothing: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([{ id: 42 }]),
-        }),
+        returning: jest.fn().mockResolvedValue([{ id: 42 }]),
+        then: (resolve: (v: unknown) => unknown) => Promise.resolve(undefined).then(resolve),
       }),
     }),
+    /** The advisory lock the duplicate guard takes. */
     execute: jest.fn().mockResolvedValue([]),
+    query: {
+      candidateApplications: { findFirst: jest.fn().mockResolvedValue(undefined) },
+    },
     _selectLimit: selectLimit,
     _select: select,
   };
@@ -63,8 +60,21 @@ function makeInput() {
     linkedinUrl: undefined,
     coverLetter: undefined,
     resumeUrl: undefined,
+    consent: true as const,
+    answers: undefined,
   } as Parameters<PublicCareersService["applyToOrgJob"]>[2];
 }
+
+/**
+ * The service now also holds storage, the quarantine and the AV scanner, which
+ * this suite never reaches: every case here applies without a file, so the
+ * résumé branch is skipped before any of the three is touched.
+ */
+const NO_FILE_DEPENDENCIES = [
+  { isConfigured: () => false },
+  {},
+  { scan: jest.fn() },
+] as const;
 
 describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => {
   afterEach(() => jest.clearAllMocks());
@@ -75,7 +85,7 @@ describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => 
     (runInTenantTransaction as jest.Mock).mockImplementation(
       async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
     );
-    const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never);
+    const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as unknown as [never, never, never]));
 
     const result = await svc.applyToOrgJob(ORG_SLUG, JOB_ID, makeInput());
 
@@ -89,7 +99,7 @@ describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => 
     (runInTenantTransaction as jest.Mock).mockImplementation(
       async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
     );
-    const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never);
+    const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as unknown as [never, never, never]));
 
     await svc.applyToOrgJob(ORG_SLUG, JOB_ID, makeInput());
 
@@ -111,7 +121,7 @@ describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => 
       (runInTenantTransaction as jest.Mock).mockImplementation(
         async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       );
-      const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never);
+      const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as unknown as [never, never, never]));
       return { svc, tx, assertWithinLimit };
     }
 
@@ -159,7 +169,7 @@ describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => 
       (runInTenantTransaction as jest.Mock).mockImplementation(
         async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       );
-      const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never);
+      const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as unknown as [never, never, never]));
 
       await expect(svc.applyToOrgJob(ORG_SLUG, JOB_ID, makeInput())).rejects.toBe(unrelated);
     });

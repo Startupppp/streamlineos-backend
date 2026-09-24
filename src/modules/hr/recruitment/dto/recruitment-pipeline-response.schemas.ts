@@ -3,7 +3,12 @@ import { nullableWireDate } from "../../../../common/openapi/wire-types";
 
 export const pipelineStageSchema = z.object({
   stage: z.string(),
+  /** Every candidate in this stage, including the ones not rendered. */
   total: z.number().int(),
+  /** How many of them this payload carries. */
+  shown: z.number().int(),
+  /** `total > shown`. The board says so rather than dropping people silently. */
+  truncated: z.boolean(),
   candidates: z.array(z.object({
     id: z.number().int(),
     name: z.string(),

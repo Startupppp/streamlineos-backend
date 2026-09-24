@@ -36,7 +36,7 @@ describe("PublicCareersService — cross-tenant isolation (getOrgJob)", () => {
       },
     } as unknown as Db;
 
-    const svc = new PublicCareersService(db, {} as never);
+    const svc = new PublicCareersService(db, {} as never, {} as never, {} as never, {} as never);
     await expect(svc.getOrgJob("unknown-org", 99)).rejects.toThrow(NotFoundException);
   });
 
@@ -55,7 +55,7 @@ describe("PublicCareersService — cross-tenant isolation (getOrgJob)", () => {
       },
     } as unknown as Db;
 
-    const svc = new PublicCareersService(db, {} as never);
+    const svc = new PublicCareersService(db, {} as never, {} as never, {} as never, {} as never);
     const result = await svc.getOrgJob(OWNER_SLUG, 1);
     expect(result).toMatchObject({ job: { id: 1 } });
   });
@@ -76,7 +76,7 @@ describe("PublicCareersService.listOrgJobs — cross-tenant isolation", () => {
       }),
     } as unknown as Db;
 
-    const svc = new PublicCareersService(db, {} as never);
+    const svc = new PublicCareersService(db, {} as never, {} as never, {} as never, {} as never);
     const result = await svc.listOrgJobs(OWNER_SLUG);
 
     expect(result.jobs).toHaveLength(0);
