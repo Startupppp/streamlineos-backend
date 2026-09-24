@@ -44,11 +44,7 @@ function flush(): Promise<void> {
 describe("BuildAutomationRunnerService — loop-prevention guard", () => {
   const dbSelect = { from: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue([RULE]) };
   const mockDb = {
-    transaction: jest.fn(),
-    execute: jest.fn(),
     select: jest.fn().mockReturnValue(dbSelect),
-    update: jest.fn(),
-    insert: jest.fn(),
     query: {
       ticketLabels: { findFirst: jest.fn().mockResolvedValue(null) },
       projectStatuses: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },

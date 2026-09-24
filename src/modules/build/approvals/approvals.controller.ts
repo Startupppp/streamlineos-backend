@@ -143,7 +143,7 @@ export class BuildApprovalsController {
     @Body() body: UpdateApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateApproval(u.orgId, u.userId, projectId, approvalId, body);
+    return this.svc.updateApproval(u, projectId, approvalId, body);
   }
 
   @Delete(":approvalId")
@@ -156,6 +156,6 @@ export class BuildApprovalsController {
     @Param("approvalId", ParseIntPipe) approvalId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.softDeleteApproval(u.orgId, u.userId, projectId, approvalId);
+    return this.svc.softDeleteApproval(u, projectId, approvalId);
   }
 }

@@ -64,7 +64,7 @@ export class SubmissionsController {
     @Query() query: ListSubmissionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listSubmissions(u.orgId, projectId, formId, query);
+    return this.svc.listSubmissions(u, projectId, formId, query);
   }
 
   @Post()
@@ -78,7 +78,7 @@ export class SubmissionsController {
     @Body() body: CreateSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createSubmission(u.orgId, u.userId, projectId, formId, body);
+    return this.svc.createSubmission(u, projectId, formId, body);
   }
 
   @Patch(":submissionId")
@@ -92,7 +92,7 @@ export class SubmissionsController {
     @Body() body: UpdateSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateSubmission(u.orgId, u.userId, projectId, formId, submissionId, body);
+    return this.svc.updateSubmission(u, projectId, formId, submissionId, body);
   }
 }
 

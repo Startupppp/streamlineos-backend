@@ -1,6 +1,8 @@
 import {
   Body,
+  type CanActivate,
   Controller,
+  type ExecutionContext,
   Get,
   HttpCode,
   Param,
@@ -11,8 +13,11 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PortalJwtAuthGuard } from "../../../common/portal-auth/portal-jwt-auth.guard";
 import type { PortalUserContext } from "../../../common/portal-auth/portal-claims";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { PortalClientService } from "./portal-client.service";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -29,7 +34,23 @@ import { z } from "zod";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
-type PortalReq = Request & { portalUser: PortalUserContext };
+type PortalReq = Request & {
+  portalUser: PortalUserContext;
+  user?: { orgId: string; userId: string; sessionId: string };
+};
+
+const portalCommandPrincipalGuard: CanActivate = {
+  canActivate(context: ExecutionContext) {
+    const request = context.switchToHttp().getRequest<PortalReq>();
+    const principalId = `portal:${String(request.portalUser.portalMembershipId)}`;
+    request.user = {
+      orgId: request.portalUser.organizationId,
+      userId: principalId,
+      sessionId: principalId,
+    };
+    return true;
+  },
+};
 
 @Controller("portal/v1")
 @UseGuards(PortalJwtAuthGuard)
@@ -66,6 +87,9 @@ export class PortalClientController {
 
   @Post("projects/:projectId/change-requests")
   @HttpCode(201)
+  @UseGuards(portalCommandPrincipalGuard, RateLimitGuard)
+  @UseRateLimit("support:portal-ticket-create")
+  @Idempotent("portal.client.change-request.create")
   @ResponseSchema(changeRequestSchema)
   @Validate({ params: projectIdParams, body: submitChangeRequestSchema })
   submitChangeRequest(

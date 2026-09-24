@@ -33,7 +33,6 @@ import type {
   CommentInput,
   UpdateRelatedLinkInput,
 } from "./dto/projects.schemas";
-import { assertTicketInProject } from "./project-access";
 import { AccessService } from "../../access/access.service";
 import {
   assertTicketReadAccess,
@@ -118,43 +117,23 @@ export class ProjectsTicketSubresourcesService {
   }
 
   addReaction(
-    commentId: number,
-    userId: string,
-    orgId: string,
-    emoji: string,
-    membershipId: number | null,
-    ticketId: number,
+    u: CurrentUserContext,
     projectId: number,
+    ticketId: number,
+    commentId: number,
+    emoji: string,
   ) {
-    return this.comments.addReaction(
-      commentId,
-      userId,
-      orgId,
-      emoji,
-      membershipId,
-      ticketId,
-      projectId,
-    );
+    return this.comments.addReaction(u, projectId, ticketId, commentId, emoji);
   }
 
   removeReaction(
-    commentId: number,
-    userId: string,
-    orgId: string,
-    emoji: string,
-    membershipId: number | null,
-    ticketId: number,
+    u: CurrentUserContext,
     projectId: number,
+    ticketId: number,
+    commentId: number,
+    emoji: string,
   ) {
-    return this.comments.removeReaction(
-      commentId,
-      userId,
-      orgId,
-      emoji,
-      membershipId,
-      ticketId,
-      projectId,
-    );
+    return this.comments.removeReaction(u, projectId, ticketId, commentId, emoji);
   }
 
   getCommentReactions(commentId: number, orgId: string) {
@@ -249,14 +228,18 @@ export class ProjectsTicketSubresourcesService {
     }));
   }
 
-  async getSubtasks(orgId: string, projectId: number, ticketId: number) {
-    await assertTicketInProject(this.db, orgId, projectId, ticketId);
+  async getSubtasks(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+  ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     return queryTickets(
       this.db,
       and(
         eq(tickets.parentTicketId, ticketId),
         eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
+        eq(tickets.orgId, u.orgId),
         isNull(tickets.deletedAt),
       ),
       [asc(tickets.rank), asc(tickets.id)],
@@ -264,29 +247,16 @@ export class ProjectsTicketSubresourcesService {
     );
   }
 
-  private async requireTicket(
-    orgId: string,
+  async getWatchers(
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
-  ): Promise<void> {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-  }
-
-  async getWatchers(orgId: string, projectId: number, ticketId: number) {
-    await this.requireTicket(orgId, projectId, ticketId);
+  ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const rows = await this.db.query.ticketWatchers.findMany({
       where: and(
         eq(ticketWatchers.ticketId, ticketId),
-        eq(ticketWatchers.orgId, orgId),
+        eq(ticketWatchers.orgId, u.orgId),
       ),
       columns: { id: true, ticketId: true, createdAt: true },
       with: {
@@ -321,7 +291,7 @@ export class ProjectsTicketSubresourcesService {
     ticketId: number,
     body: AddWatcherInput,
   ) {
-    await this.requireTicket(u.orgId, projectId, ticketId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const userId = body.userId ?? u.userId;
     const [member] = await this.db
       .select({ id: organizationMembers.id })
@@ -369,7 +339,7 @@ export class ProjectsTicketSubresourcesService {
     projectId: number,
     ticketId: number,
   ) {
-    await this.requireTicket(u.orgId, projectId, ticketId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const [member] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -394,41 +364,41 @@ export class ProjectsTicketSubresourcesService {
   }
 
   async addLabel(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     body: AddLabelInput,
   ) {
-    await this.requireTicket(orgId, projectId, ticketId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const [mapping] = await this.db
       .insert(ticketLabelMappings)
-      .values({ orgId, ticketId, labelId: body.labelId })
+      .values({ orgId: u.orgId, ticketId, labelId: body.labelId })
       .onConflictDoNothing()
       .returning({ id: ticketLabelMappings.id });
-    if (mapping) await this.logLabelChange(orgId, ticketId, userId);
+    if (mapping)
+      await this.logLabelChange(u.orgId, ticketId, u.userId);
     return { success: true };
   }
 
   async removeLabel(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     labelId: number,
   ) {
-    await this.requireTicket(orgId, projectId, ticketId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const deleted = await this.db
       .delete(ticketLabelMappings)
       .where(
         and(
           eq(ticketLabelMappings.ticketId, ticketId),
           eq(ticketLabelMappings.labelId, labelId),
-          eq(ticketLabelMappings.orgId, orgId),
+          eq(ticketLabelMappings.orgId, u.orgId),
         ),
       )
       .returning({ id: ticketLabelMappings.id });
-    if (deleted.length > 0) await this.logLabelChange(orgId, ticketId, userId);
+    if (deleted.length > 0)
+      await this.logLabelChange(u.orgId, ticketId, u.userId);
     return { success: true };
   }
 
@@ -455,7 +425,7 @@ export class ProjectsTicketSubresourcesService {
     ticketId: number,
     body: AttachmentInput,
   ) {
-    await this.requireTicket(u.orgId, projectId, ticketId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const [attachment] = await this.db
       .insert(ticketAttachments)
       .values({
@@ -498,33 +468,40 @@ export class ProjectsTicketSubresourcesService {
     );
   }
 
-  getChecklists(orgId: string, projectId: number, ticketId: number) {
-    return this.checklistsService.getChecklists(orgId, projectId, ticketId);
+  async getChecklists(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+  ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    return this.checklistsService.getChecklists(u.orgId, projectId, ticketId);
   }
 
-  createChecklist(
-    orgId: string,
+  async createChecklist(
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     data: { title: string },
   ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     return this.checklistsService.createChecklist(
-      orgId,
+      u.orgId,
       projectId,
       ticketId,
       data,
     );
   }
 
-  updateChecklist(
-    orgId: string,
+  async updateChecklist(
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
     data: { title: string },
   ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     return this.checklistsService.updateChecklist(
-      orgId,
+      u.orgId,
       projectId,
       ticketId,
       checklistId,
@@ -532,22 +509,23 @@ export class ProjectsTicketSubresourcesService {
     );
   }
 
-  deleteChecklist(
-    orgId: string,
+  async deleteChecklist(
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
   ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     return this.checklistsService.deleteChecklist(
-      orgId,
+      u.orgId,
       projectId,
       ticketId,
       checklistId,
     );
   }
 
-  createChecklistItem(
-    orgId: string,
+  async createChecklistItem(
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
@@ -558,8 +536,9 @@ export class ProjectsTicketSubresourcesService {
       order: number;
     },
   ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     return this.checklistsService.createChecklistItem(
-      orgId,
+      u.orgId,
       projectId,
       ticketId,
       checklistId,
@@ -567,8 +546,8 @@ export class ProjectsTicketSubresourcesService {
     );
   }
 
-  updateChecklistItem(
-    orgId: string,
+  async updateChecklistItem(
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
@@ -581,8 +560,9 @@ export class ProjectsTicketSubresourcesService {
       order?: number;
     },
   ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     return this.checklistsService.updateChecklistItem(
-      orgId,
+      u.orgId,
       projectId,
       ticketId,
       checklistId,
@@ -591,15 +571,16 @@ export class ProjectsTicketSubresourcesService {
     );
   }
 
-  deleteChecklistItem(
-    orgId: string,
+  async deleteChecklistItem(
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
     itemId: number,
   ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     return this.checklistsService.deleteChecklistItem(
-      orgId,
+      u.orgId,
       projectId,
       ticketId,
       checklistId,
@@ -607,8 +588,13 @@ export class ProjectsTicketSubresourcesService {
     );
   }
 
-  getGitLinks(orgId: string, projectId: number, ticketId: number) {
-    return this.linksService.getGitLinks(orgId, projectId, ticketId);
+  async getGitLinks(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+  ) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    return this.linksService.getGitLinks(u.orgId, projectId, ticketId);
   }
 
   listRelatedLinks(u: CurrentUserContext, projectId: number, ticketId: number) {

@@ -1072,6 +1072,11 @@
       "note": "Reads automation rules for a specific project + trigger event; automation rules per project are a small config set (typically <20)",
       "justification": "per-project automation rule config; bounded by number of automation rules per project (<20 in practice); small config set 2026-09-01"
     },
+    "/build/core/build-automation-run-history.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "listRuns first keyset-paginates run ids, then loads actions for only that bounded page in one grouped query",
+      "justification": "The primary read uses .limit(limit + 1), and listAutomationRunsQuerySchema clamps limit to PAGE_SIZE_CAP=100. The flagged action read filters with inArray(runId, runIds), where runIds comes from page.data and is therefore at most 100 ids. Each automation stores at most 50 actions because createAutomationSchema caps actions at 50 and updateAutomationSchema is its partial form; recordRunActions receives exactly the runner results for that validated action array. The query is one batched page sub-read, not an org-wide scan or N+1. 2026-09-24"
+    },
     "/build/core/build-ticket-mutation-policy.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "readMutationTickets:25 selects inArray(tickets.id, ids) FOR UPDATE over a caller-supplied id list, then throws NotFoundException unless rows.length === ids.length. It is an exact-id read, not a scan; the row count is ids.length by construction.",

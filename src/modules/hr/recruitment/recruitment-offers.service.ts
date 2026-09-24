@@ -12,6 +12,7 @@ import {
   rejectOfferApproval,
   submitOfferForApproval,
 } from "./recruitment-offer-approvals";
+import { assertCtcReconciles, ctcColumnValues, offerCompensationColumns, toDecimalColumn, withCtcPreview, CTC_INPUT_KEYS } from "./compensation/offer-ctc-fields";
 import { queryOrgOffers } from "./recruitment-offer-list-query";
 import { addOfferNegotiationEntry, listOfferNegotiations } from "./recruitment-offer-negotiations";
 import {
@@ -27,7 +28,9 @@ import type {
 } from "./dto/candidate-records.schemas";
 
 const LOCKED_STATUSES = new Set(["SENT", "VIEWED", "ACCEPTED", "DECLINED", "COUNTERED", "EXPIRED"]);
-const COMP_FIELDS = ["offeredSalary", "offeredDesignation", "joiningDate", "validUntil"] as const;
+/** The CTC components lock with the other terms: a breakdown editable after the
+ *  offer was sent changes the numbers under a candidate who is reading them. */
+const COMP_FIELDS = ["offeredSalary", "offeredDesignation", "joiningDate", "validUntil", ...CTC_INPUT_KEYS] as const;
 
 /**
  * The `candidate_offers` record itself — reads, creation, terms edits and deletion — and the
@@ -54,11 +57,12 @@ export class RecruitmentOffersService {
 
   async listOffers(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId);
-    return this.db.query.candidateOffers.findMany({
+    const rows = await this.db.query.candidateOffers.findMany({
       limit: 100,
       where: and(eq(candidateOffers.candidateId, candidateId), eq(candidateOffers.orgId, orgId)),
       orderBy: [desc(candidateOffers.createdAt)],
     });
+    return rows.map(withCtcPreview);
   }
 
   listAllOffers(orgId: string, query: OfferListInput) {
@@ -74,7 +78,8 @@ export class RecruitmentOffersService {
         candidateId,
         offeredBy: userId,
         jobPostingId: input.jobPostingId,
-        offeredSalary: input.offeredSalary?.toString(),
+        /** Salary and the six CTC columns together, reconciled before the insert. */
+        ...offerCompensationColumns(input),
         offeredDesignation: input.offeredDesignation,
         joiningDate: input.joiningDate,
         offerLetterUrl: input.offerLetterUrl,
@@ -126,6 +131,10 @@ export class RecruitmentOffersService {
     */
     const gate = await this.identity.gateForOffer(orgId, offer.candidateId, offer.jobPostingId);
     if (!gate.allowed) throw new BadRequestException(gate.reason);
+
+    /* The last moment a disagreement is still ours to fix: approval mints the
+       acceptance token, so the next reader of these numbers is the candidate. */
+    assertCtcReconciles(offer, offer.offeredSalary);
 
     const result = await approveOffer(this.db, this.audit, orgId, offer, userId, remarks);
     this.acceptance.deferStatusEffects(orgId, offer.candidateId, offerId, "SENT", offer.offerStatus, {
@@ -196,8 +205,16 @@ export class RecruitmentOffersService {
         updateData.respondedAt = now;
       }
     }
-    if (input.offeredSalary !== undefined) updateData.offeredSalary = String(input.offeredSalary);
+    if (input.offeredSalary !== undefined) updateData.offeredSalary = toDecimalColumn(input.offeredSalary);
     if (input.offeredDesignation !== undefined) updateData.offeredDesignation = input.offeredDesignation;
+    Object.assign(updateData, ctcColumnValues(input));
+
+    /* Guarded only on the way out: a draft may disagree with itself while a
+       recruiter types, and checking every partial PATCH would make the form
+       unsavable the moment a component landed beside an existing salary. A
+       direct patch to SENT is the same publication approval is. */
+    const merged = { ...existing, ...updateData };
+    if (input.offerStatus === "SENT") assertCtcReconciles(merged, merged.offeredSalary);
     if (input.joiningDate !== undefined) updateData.joiningDate = input.joiningDate;
     if (input.offerLetterUrl !== undefined) updateData.offerLetterUrl = input.offerLetterUrl;
     if (input.validUntil !== undefined) updateData.validUntil = input.validUntil;

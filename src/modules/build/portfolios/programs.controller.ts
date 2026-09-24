@@ -22,10 +22,12 @@ import {
   createProgramSchema,
   linkProjectSchema,
   listProgramsQuerySchema,
+  programDetailQuerySchema,
   updateProgramSchema,
   type CreateProgramInput,
   type LinkProjectInput,
   type ListProgramsQuery,
+  type ProgramDetailQuery,
   type UpdateProgramInput,
 } from "./dto/portfolios.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -33,7 +35,7 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   programRowSchema,
-  programListSchema,
+  programPageSchema,
   programDetailSchema,
   successSchema,
 } from "./dto/portfolios-response.schemas";
@@ -49,7 +51,7 @@ export class ProgramsController {
 
   @Get("programs")
   @RequirePermission("build:programs:view")
-  @ResponseSchema(programListSchema)
+  @ResponseSchema(programPageSchema)
   @Validate({ query: listProgramsQuerySchema })
   listPrograms(
     @Query() query: ListProgramsQuery,
@@ -61,12 +63,13 @@ export class ProgramsController {
   @Get("programs/:programId")
   @RequirePermission("build:programs:view")
   @ResponseSchema(programDetailSchema)
-  @Validate({ params: programIdParams })
+  @Validate({ params: programIdParams, query: programDetailQuerySchema })
   getProgram(
     @Param("programId", ParseIntPipe) programId: number,
+    @Query() query: ProgramDetailQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getProgram(u.orgId, programId);
+    return this.svc.getProgram(u.orgId, programId, query);
   }
 
   @Post("programs")

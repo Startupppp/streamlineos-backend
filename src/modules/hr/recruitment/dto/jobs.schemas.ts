@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { pageSizeField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
-const JOB_STATUSES = ["DRAFT", "OPEN", "PAUSED", "CLOSED", "FILLED"] as const;
-const VALID_JOB_TYPES = [
+export const JOB_STATUSES = ["DRAFT", "OPEN", "PAUSED", "CLOSED", "FILLED"] as const;
+export const VALID_JOB_TYPES = [
   "FULL_TIME",
   "PART_TIME",
   "CONTRACT",
@@ -13,7 +13,7 @@ const VALID_JOB_TYPES = [
   "APPRENTICESHIP",
   "COMMISSION_BASED",
 ] as const;
-const MAX_SALARY = 999_999_999;
+export const MAX_SALARY = 999_999_999;
 
 export const screeningQuestionSchema = z.object({
   id: z.string().min(1),

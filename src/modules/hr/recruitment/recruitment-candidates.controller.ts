@@ -19,6 +19,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
 import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
+import { CandidateErasureService } from "./consent/candidate-erasure.service";
 import {
   bgvStatusSchema,
   bulkImportSchema,
@@ -60,6 +61,7 @@ import {
   candidateDetailSchema,
   candidateMoveStageResponseSchema,
   candidateSlaTrackingSchema,
+  candidateErasureResponseSchema,
   jobApplicationSchema,
   successSchema,
 } from "./dto/recruitment-response.schemas";
@@ -73,6 +75,7 @@ export class RecruitmentCandidatesController {
   constructor(
     private readonly candidates: RecruitmentCandidatesService,
     private readonly ops: RecruitmentCandidateOpsService,
+    private readonly erasure: CandidateErasureService,
   ) {}
 
   @Get()
@@ -174,6 +177,28 @@ export class RecruitmentCandidatesController {
     return this.candidates.update(u.orgId, candidateId, body);
   }
 
+  /**
+   * Deletes the candidate — vault included.
+   *
+   * This used to call `RecruitmentCandidatesService.remove`, which hard-deletes
+   * the candidate, their applications, interviews and SLA rows and never
+   * touched `candidate_documents_vault`. The résumé outlived the only row that
+   * pointed at it, so the file — name, address, phone, employment history —
+   * stayed in the bucket permanently, unreachable by any later erasure request
+   * because nothing could find it any more. The 204 said that had gone fine.
+   *
+   * It now runs the same erasure as `DELETE :candidateId/personal-data`, which
+   * writes every object to the pending-purge ledger before attempting its
+   * delete, so a storage failure leaves a row the sweep retries instead of an
+   * orphan.
+   *
+   * The 204 is kept because this route's callers expect no body, and that is
+   * the limitation rather than the fix: 204 cannot distinguish a confirmed
+   * erasure from one whose objects the store never acknowledged. The outcome is
+   * recorded in the `hr.recruitment.candidate.erased` audit row either way, and
+   * a caller that must tell a real person what happened to their résumé is to
+   * use `:candidateId/personal-data`, which returns that distinction.
+   */
   @Delete(":candidateId")
   @HttpCode(204)
   @NoContentResponse()
@@ -183,7 +208,27 @@ export class RecruitmentCandidatesController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.candidates.remove(u.orgId, candidateId);
+    await this.erasure.eraseCandidate(u.orgId, candidateId, u.userId);
+  }
+
+  /**
+   * Erase this candidate's personal data, résumé vault included.
+   *
+   * Separate from `DELETE :candidateId`, which returns 204 and therefore cannot
+   * say anything. This route exists because the answer is not always "done":
+   * the stored objects live in a service this process does not own, so the
+   * response reports whether the vault is confirmed clear or merely queued, and
+   * the caller must not report erasure to the candidate on the latter.
+   */
+  @Delete(":candidateId/personal-data")
+  @ResponseSchema(candidateErasureResponseSchema)
+  @RequirePermission("hr:requisitions:manage")
+  @Validate({ params: candidateIdParams })
+  erasePersonalData(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.erasure.eraseCandidate(u.orgId, candidateId, u.userId);
   }
 
   @Patch(":candidateId/stage")

@@ -1,12 +1,21 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import { Column, SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 import { ProjectsTicketNotFoundException } from "../../../common/http/api-exceptions";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
 
 const ORG = "org-1";
 const OTHER_ORG = "org-2";
@@ -104,50 +113,68 @@ function makeU(orgId = ORG): CurrentUserContext {
 }
 
 describe("getTicket — the ticket detail read binds to the URL project", () => {
-  function makeDetail(rows: Row[]) {
+  async function makeDetail(rows: Row[]) {
     const findFirst = jest.fn(async (args: { where?: unknown }) =>
       rows.find((row) => matches(args.where, row)),
     );
-    const db = { query: { tickets: { findFirst } } } as unknown as Db;
-    const svc = new ProjectsTicketsDetailService(
-      db,
-      { scopeFor: jest.fn().mockResolvedValue("all") } as never,
-      { log: jest.fn() } as never,
-    );
-    return { svc, findFirst };
+    const module = await Test.createTestingModule({ providers: [
+      ProjectsTicketsDetailService,
+      {
+        provide: DRIZZLE,
+        useValue: {
+          query: {
+            tickets: { findFirst },
+            projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: MEMBERSHIP_ID }) },
+          },
+        },
+      },
+      {
+        provide: AccessService,
+        useValue: {
+          scopeFor: jest.fn().mockResolvedValue("all"),
+          resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+        },
+      },
+      { provide: AuditService, useValue: { log: jest.fn() } },
+    ] }).compile();
+    return { svc: module.get(ProjectsTicketsDetailService), findFirst, module };
   }
 
   it("answers 404 for a same-org ticket that belongs to another project", async () => {
-    const { svc } = makeDetail(makeTickets());
+    const { svc, module } = await makeDetail(makeTickets());
 
     await expect(svc.getTicket(makeU(), PROJECT_A, TICKET_B)).rejects.toBeInstanceOf(
       ProjectsTicketNotFoundException,
     );
+    await module.close();
   });
 
   it("reads the ticket that belongs to the URL project (control)", async () => {
-    const { svc } = makeDetail(makeTickets());
+    const { svc, module } = await makeDetail(makeTickets());
 
     await expect(svc.getTicket(makeU(), PROJECT_A, TICKET_A)).resolves.toMatchObject({
       id: TICKET_A,
       projectId: PROJECT_A,
     });
+    await module.close();
   });
 
   it("answers 404 rather than 403 for a foreign-project id, so the response cannot confirm the row exists", async () => {
-    const { svc } = makeDetail(makeTickets());
+    const { svc, module } = await makeDetail(makeTickets());
 
     await expect(svc.getTicket(makeU(), PROJECT_A, TICKET_B)).rejects.toMatchObject({
       status: 404,
     });
+    await module.close();
   });
 
   it("still refuses another organisation's ticket (control for the tenant predicate)", async () => {
-    const { svc } = makeDetail(makeTickets());
+    const { svc, module } = await makeDetail(makeTickets());
 
     await expect(svc.getTicket(makeU(OTHER_ORG), PROJECT_A, TICKET_A)).rejects.toBeInstanceOf(
       ProjectsTicketNotFoundException,
     );
+    await module.close();
   });
 });
 
@@ -187,6 +214,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
         { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
         { holds: jest.fn().mockResolvedValue(true) } as never,
       ),
+      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
     );
     return { svc, transaction };
   }
@@ -246,6 +274,10 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
 });
 
 describe("deleteTicket — the delete pre-read binds to the URL project", () => {
+  beforeEach(() => {
+    jest.mocked(assertTicketReadAccess).mockResolvedValue();
+  });
+
   function makeDelete(rows: Row[]) {
     const findFirst = jest.fn(async (args: { where?: unknown }) =>
       rows.find((row) => matches(args.where, row)),
@@ -263,6 +295,10 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
       },
       transaction,
     } as unknown as Db;
+    const access = {
+      scopeFor: jest.fn(),
+      resolveUserPermissions: jest.fn(),
+    };
     const svc = new ProjectsTicketsService(
       db,
       {} as never,
@@ -275,14 +311,15 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
       { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       {} as never,
+      access,
     );
-    return { svc, transaction };
+    return { svc, transaction, db, access };
   }
 
   it("answers 404 for a same-org ticket that belongs to another project", async () => {
     const { svc, transaction } = makeDelete(makeTickets());
 
-    await expect(svc.deleteTicket(ORG, "user-7", PROJECT_A, TICKET_B, false)).rejects.toThrow(
+    await expect(svc.deleteTicket(makeU(), PROJECT_A, TICKET_B, false)).rejects.toThrow(
       NotFoundException,
     );
     expect(transaction).not.toHaveBeenCalled();
@@ -291,7 +328,7 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
   it("deletes the ticket that belongs to the URL project (control)", async () => {
     const { svc, transaction } = makeDelete(makeTickets());
 
-    await expect(svc.deleteTicket(ORG, "user-7", PROJECT_A, TICKET_A, false)).resolves.toEqual({
+    await expect(svc.deleteTicket(makeU(), PROJECT_A, TICKET_A, false)).resolves.toEqual({
       deleted: true,
     });
     expect(transaction).toHaveBeenCalledTimes(1);
@@ -300,8 +337,28 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
   it("still refuses another organisation's ticket (control for the tenant predicate)", async () => {
     const { svc, transaction } = makeDelete(makeTickets());
 
-    await expect(svc.deleteTicket(OTHER_ORG, "user-7", PROJECT_A, TICKET_A, false)).rejects.toThrow(
+    await expect(svc.deleteTicket(makeU(OTHER_ORG), PROJECT_A, TICKET_A, false)).rejects.toThrow(
       NotFoundException,
+    );
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses deletion when the ticket is outside the caller's DataScope", async () => {
+    const { svc, transaction, db, access } = makeDelete(makeTickets());
+    const actor = makeU();
+    jest
+      .mocked(assertTicketReadAccess)
+      .mockRejectedValueOnce(new ForbiddenException("Ticket is outside your access scope"));
+
+    await expect(svc.deleteTicket(actor, PROJECT_A, TICKET_A, false)).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(assertTicketReadAccess).toHaveBeenCalledWith(
+      db,
+      access,
+      actor,
+      PROJECT_A,
+      TICKET_A,
     );
     expect(transaction).not.toHaveBeenCalled();
   });
@@ -309,7 +366,7 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
   it("the delete transaction mock really runs its callback, so the assertions above are not vacuous", async () => {
     const { svc, transaction } = makeDelete(makeTickets());
 
-    await svc.deleteTicket(ORG, "user-7", PROJECT_A, TICKET_A, false);
+    await svc.deleteTicket(makeU(), PROJECT_A, TICKET_A, false);
     const callback = transaction.mock.calls[0]?.[0] as unknown;
     expect(typeof callback).toBe("function");
     expect(transaction.mock.results[0]?.type).toBe("return");

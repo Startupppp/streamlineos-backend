@@ -7,6 +7,7 @@ import {
   recruitmentVendors,
   vendorCandidateSubmissions,
 } from "../../../db/schema";
+import { marginFor } from "./staffing/staffing-margin";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
@@ -136,23 +137,56 @@ export class RecruitmentVendorSourcingService {
         jobTitle: jobPostings.title,
       })
       .from(vendorCandidateSubmissions)
-      .leftJoin(candidates, eq(vendorCandidateSubmissions.candidateId, candidates.id))
-      .leftJoin(jobPostings, eq(vendorCandidateSubmissions.jobPostingId, jobPostings.id))
-      .where(eq(vendorCandidateSubmissions.vendorId, vendorId))
+      /*
+        Both joins carry `org_id`, and the predicate re-asserts it rather than
+        leaning on `ensureVendor` plus RLS. Vendor isolation is this ticket's
+        whole acceptance criterion, and a guard that only holds while the GUC is
+        set is a guard that stops holding the first time this read is called
+        from a background job.
+      */
+      .leftJoin(
+        candidates,
+        and(
+          eq(candidates.orgId, vendorCandidateSubmissions.orgId),
+          eq(candidates.id, vendorCandidateSubmissions.candidateId),
+        ),
+      )
+      .leftJoin(
+        jobPostings,
+        and(
+          eq(jobPostings.orgId, vendorCandidateSubmissions.orgId),
+          eq(jobPostings.id, vendorCandidateSubmissions.jobPostingId),
+        ),
+      )
+      .where(
+        and(
+          eq(vendorCandidateSubmissions.orgId, orgId),
+          eq(vendorCandidateSubmissions.vendorId, vendorId),
+        ),
+      )
       .orderBy(desc(vendorCandidateSubmissions.submittedAt))
       .limit(100);
 
     if (canViewFinancials) {
-      return rows.map((r) => ({
-        ...r,
-        margin:
-          r.billRate !== null && r.payRate !== null
-            ? (Number(r.billRate) - Number(r.payRate)).toFixed(2)
-            : null,
-      }));
+      return rows.map((r) => {
+        /*
+          Integer paise, not `Number(bill) - Number(pay)`. At ₹100.10 and
+          ₹33.37 that subtraction is 66.72999999999999 and the old `.toFixed(2)`
+          rounded the error out of sight rather than out of existence.
+        */
+        const margin = marginFor(r.billRate, r.payRate);
+        return { ...r, ...margin };
+      });
     }
 
-    return rows.map((r) => ({ ...r, billRate: null, payRate: null, margin: null }));
+    return rows.map((r) => ({
+      ...r,
+      billRate: null,
+      payRate: null,
+      marginAmount: null,
+      marginPercent: null,
+      negative: false,
+    }));
   }
 
   async createSubmission(orgId: string, vendorId: number, input: CreateSubmissionInput) {

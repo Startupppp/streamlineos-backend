@@ -43,10 +43,11 @@ const makeApprovalRow = (
   ...overrides,
 });
 
+const projectFindFirst = jest.fn();
 const mockDb = {
   query: {
     projectApprovals: { findFirst: jest.fn() },
-    projects: { findFirst: jest.fn() },
+    projects: { findFirst: projectFindFirst },
   },
 } as unknown as Db;
 
@@ -60,6 +61,7 @@ const mockChatMessages = { sendSystemMessage: jest.fn() } as unknown as ChatMess
 
 beforeEach(() => {
   jest.resetAllMocks();
+  projectFindFirst.mockResolvedValue({ managerMembershipId: 1 });
   (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
@@ -357,7 +359,7 @@ describe("ApprovalsService — soft-delete TOCTOU", () => {
     };
     (mockDb as unknown as { update: jest.Mock }).update = jest.fn().mockReturnValue(updateChain);
 
-    await svc.updateApproval("org-1", "user-2", 1, 1, { status: "escalated" });
+    await svc.updateApproval(makeUser(), 1, 1, { status: "escalated" });
 
     expect(whereCalls).toHaveLength(1);
     expect(renderSql(whereCalls[0]).toLowerCase()).toContain("is null");
@@ -375,7 +377,7 @@ describe("ApprovalsService.softDeleteApproval", () => {
       where: jest.fn().mockResolvedValue(undefined),
     });
 
-    await svc.softDeleteApproval("org-1", "user-2", 1, 7);
+    await svc.softDeleteApproval(makeUser(), 1, 7);
 
     expect(mockAudit.log).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -394,7 +396,7 @@ describe("ApprovalsService.softDeleteApproval", () => {
     const update = jest.fn();
     (mockDb as unknown as { update: jest.Mock }).update = update;
 
-    await expect(svc.softDeleteApproval("org-1", "user-2", 1, 999)).rejects.toThrow(NotFoundException);
+    await expect(svc.softDeleteApproval(makeUser(), 1, 999)).rejects.toThrow(NotFoundException);
     expect(update).not.toHaveBeenCalled();
     expect(mockAudit.log).not.toHaveBeenCalled();
   });

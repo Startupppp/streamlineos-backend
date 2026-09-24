@@ -55,7 +55,7 @@ describe("getTicketByKey — ticket beyond the first hundred opens", () => {
       select: jest.fn(),
       execute: jest.fn(),
       query: {
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         tickets: {
           findMany: findManyMock,
           findFirst: findFirstMock,
@@ -104,7 +104,7 @@ describe("getTicketByKey — ticket beyond the first hundred opens", () => {
       select: jest.fn(),
       execute: jest.fn(),
       query: {
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         tickets: {
           findMany: jest.fn(),
           findFirst: jest.fn().mockResolvedValue(null),

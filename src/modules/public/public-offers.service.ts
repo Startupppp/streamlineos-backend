@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { candidateFacingCtcPreview } from "../hr/recruitment/compensation/offer-ctc-fields";
 import { RecruitmentOfferAcceptanceService } from "../hr/recruitment/recruitment-offer-acceptance.service";
 import type { OfferRespondInput } from "./dto/public.schemas";
 
@@ -41,6 +42,12 @@ export class PublicOffersService {
           validUntil: true,
           notes: true,
           acceptanceTokenExpiresAt: true,
+          ctcFixed: true,
+          ctcVariable: true,
+          ctcJoiningBonus: true,
+          ctcEquityValue: true,
+          ctcEmployerPf: true,
+          ctcGratuity: true,
         },
       }),
     );
@@ -66,7 +73,19 @@ export class PublicOffersService {
           }),
         ]);
 
-        return { ...offer, negotiations, currency: org?.currency ?? "INR" };
+        /**
+         * The annual/monthly view is computed here and never in the browser.
+         * A second money implementation on the frontend — parsing these
+         * decimals into floats to add them up — is the 100x-class error the
+         * breakdown module exists to prevent, and it would show a candidate a
+         * total the backend never agreed to.
+         */
+        return {
+          ...offer,
+          negotiations,
+          currency: org?.currency ?? "INR",
+          ctcPreview: candidateFacingCtcPreview(offer, offer.offeredSalary),
+        };
       },
       { orgId: offer.orgId },
     );

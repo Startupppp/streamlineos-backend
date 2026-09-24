@@ -34,6 +34,8 @@ export const roadmapItems = build.table("roadmap_items", {
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_roadmap_items_org_project" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.epicTicketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_roadmap_items_org_ticket" }).onDelete("set null"),
   index("idx_roadmap_items_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
+  index("idx_roadmap_items_title_trgm").using("gin", table.title.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
+  index("idx_roadmap_items_description_trgm").using("gin", table.description.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
   unique("uniq_roadmap_items_org_id").on(table.orgId, table.id),
 ]);
 

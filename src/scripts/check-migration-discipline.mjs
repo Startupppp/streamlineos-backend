@@ -286,6 +286,7 @@ const BASELINE_FK_NOT_VALID = new Set([
   "0621_candidate_resumes_tenant_column.sql",
   "0623_workflow_variables_tenant_constraints.sql",
   "0655_chain_creates_remaining_catalog_objects.sql",
+  "1174_kb_articles_cutover_contract.sql",
   // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
   "0465_accounting_documents.sql", // crm: streamline_crm_merge, streamline_crm_e2e, crm_cold_0908
   "0519_inventory_resumable_import.sql", // inv: streamline_inv, inv_cold_head
@@ -320,6 +321,7 @@ const BASELINE_SET_NOT_NULL = new Set([
   "0628_communication_actor_normalization.sql",
   "0657_kb_article_tags_tenant_integrity.sql",
   "0658_calendar_membership_actors.sql",
+  "1174_kb_articles_cutover_contract.sql",
   // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
   "0520b_rbac_membership_keys.sql", // inv: streamline_inv, inv_cold_head
   // Its own header records the measurement the staged form exists to avoid: kb_pages held

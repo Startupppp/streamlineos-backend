@@ -65,7 +65,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
     ["GET /build/:projectId/modules", (db) => new ModulesService(db).listModules(ATTACKER_ORG, 1)],
     [
       "GET /build/:projectId/custom-fields",
-      (db) => new ProjectsCustomFieldsService(db).listFields(ATTACKER_ORG, 1),
+      (db) => new ProjectsCustomFieldsService(db, releasesAccess).listFields(ATTACKER_ORG, 1),
     ],
     [
       "GET /build/:projectId/analytics",

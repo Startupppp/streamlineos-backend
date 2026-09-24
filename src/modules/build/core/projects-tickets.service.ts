@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -30,6 +29,11 @@ import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.serv
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
+import { AccessService } from "../../access/access.service";
+import {
+  assertTicketReadAccess,
+  type TicketReadAccess,
+} from "./build-ticket-read-access";
 import type {
   AllWorkQuery,
   BulkUpdateInput,
@@ -63,6 +67,7 @@ export class ProjectsTicketsService {
     private readonly cache: CacheService,
     private readonly create: ProjectsTicketsCreateService,
     private readonly update: ProjectsTicketsUpdateService,
+    @Inject(AccessService) private readonly access: TicketReadAccess,
   ) {}
 
   async listTickets(
@@ -108,12 +113,13 @@ export class ProjectsTicketsService {
   }
 
   async deleteTicket(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     force: boolean,
   ) {
+    const { orgId, userId } = u;
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const existing = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, ticketId),
@@ -126,14 +132,6 @@ export class ProjectsTicketsService {
     if (!existing || !existing.projectId)
       throw new NotFoundException("Ticket not found");
     const ticketProjectId = existing.projectId;
-
-    const { hasAccess } = await this.read.checkProjectAccess(
-      orgId,
-      userId,
-      ticketProjectId,
-    );
-    if (!hasAccess)
-      throw new ForbiddenException("Not authorized to delete this ticket");
 
     if (!force) {
       /**

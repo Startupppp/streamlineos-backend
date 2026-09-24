@@ -106,11 +106,34 @@ export const offerListSchema = z.object({
 }).strict();
 export type OfferListInput = z.infer<typeof offerListSchema>;
 
+/**
+ * The structured CTC a candidate sees on the public offer page.
+ *
+ * `.nonnegative()` rather than `.positive()`, unlike `offeredSalary` above: zero
+ * is a term of the offer ("this role has no variable pay") and has to be
+ * expressible, while `.optional()` carries the other meaning ("nobody has
+ * entered one"). Collapsing the two would publish a claim the company never
+ * made. The ceiling matches `numeric(15,2)`; a value wider than the column is a
+ * 400 here rather than a silent round on the way in.
+ */
+const ctcComponentField = () =>
+  z.number().nonnegative("A compensation component cannot be negative").max(9_999_999_999_999).optional();
+
+const ctcBreakdownFields = {
+  ctcFixed: ctcComponentField(),
+  ctcVariable: ctcComponentField(),
+  ctcJoiningBonus: ctcComponentField(),
+  ctcEquityValue: ctcComponentField(),
+  ctcEmployerPf: ctcComponentField(),
+  ctcGratuity: ctcComponentField(),
+};
+
 export const createOfferSchema = z
   .object({
     jobPostingId: z.number().int().positive().optional(),
     offeredSalary: z.number().positive("Offer salary must be greater than 0").optional(),
     offeredDesignation: z.string().trim().min(1).max(200).optional(),
+    ...ctcBreakdownFields,
     joiningDate: z
       .string()
       .optional()
@@ -148,6 +171,7 @@ export const updateOfferSchema = z.object({
     .optional(),
   offeredSalary: z.number().positive().optional(),
   offeredDesignation: z.string().min(1).optional(),
+  ...ctcBreakdownFields,
   joiningDate: z.string().optional(),
   offerLetterUrl: z.string().url().optional(),
   validUntil: z.string().optional(),

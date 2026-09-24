@@ -7,6 +7,7 @@ import {
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   changeRequests,
+  organizationMembers,
   projectClientGrants,
   projectMilestones,
   projects,
@@ -17,35 +18,58 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { AuditService } from "../../../common/audit/audit.service";
 import type { SubmitChangeRequestInput } from "./dto/portal-client.schemas";
 
 type GrantRow = typeof projectClientGrants.$inferSelect;
 
 @Injectable()
 export class PortalClientService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
+
+  private activeGrantWhere(orgId: string, membershipId: string, projectId: number) {
+    return and(
+      eq(projectClientGrants.organizationId, orgId),
+      eq(projectClientGrants.portalMembershipId, membershipId),
+      eq(projectClientGrants.projectId, projectId),
+      eq(projectClientGrants.status, "ACTIVE"),
+      or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, new Date())),
+    );
+  }
 
   private async loadActiveGrant(
     orgId: string,
     membershipId: string,
     projectId: number,
   ): Promise<GrantRow> {
-    const now = new Date();
     const [grant] = await this.db
       .select()
       .from(projectClientGrants)
-      .where(
-        and(
-          eq(projectClientGrants.organizationId, orgId),
-          eq(projectClientGrants.portalMembershipId, membershipId),
-          eq(projectClientGrants.projectId, projectId),
-          eq(projectClientGrants.status, "ACTIVE"),
-          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
-        ),
-      )
+      .where(this.activeGrantWhere(orgId, membershipId, projectId))
       .limit(1);
     if (!grant) throw new NotFoundException("Project not found");
     return grant;
+  }
+
+  private async resolveSubmitterUserId(
+    orgId: string,
+    portalUserMembershipId: number | null,
+  ): Promise<string | null> {
+    if (portalUserMembershipId === null) return null;
+    const [member] = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.id, portalUserMembershipId),
+          eq(organizationMembers.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return member?.userId ?? null;
   }
 
   async listGrantedProjects(orgId: string, membershipId: string) {
@@ -220,13 +244,19 @@ export class PortalClientService {
     projectId: number,
     input: SubmitChangeRequestInput,
   ) {
-    const grant = await this.loadActiveGrant(orgId, membershipId, projectId);
-
-    if (!grant.canSubmitChangeRequests) {
-      throw new ForbiddenException("Change request submission not permitted for this project");
-    }
+    const submitterUserId = await this.resolveSubmitterUserId(orgId, portalUserMembershipId);
 
     return this.db.transaction(async (tx) => {
+      const [grant] = await tx
+        .select()
+        .from(projectClientGrants)
+        .where(this.activeGrantWhere(orgId, membershipId, projectId))
+        .limit(1)
+        .for("update");
+      if (!grant) throw new NotFoundException("Project not found");
+      if (!grant.canSubmitChangeRequests)
+        throw new ForbiddenException("Change request submission not permitted for this project");
+
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
 
       const [maxRow] = await tx
@@ -250,8 +280,8 @@ export class PortalClientService {
           title: input.title,
           description: input.description,
           status: "submitted",
-          requestedById: null,
-          createdBy: null,
+          requestedById: submitterUserId,
+          createdBy: submitterUserId,
         })
         .returning({
           id: changeRequests.id,
@@ -260,6 +290,20 @@ export class PortalClientService {
           status: changeRequests.status,
           createdAt: changeRequests.createdAt,
         });
+
+      await this.audit.logCritical({
+        action: "portal.change_request_submitted",
+        ...(submitterUserId ? { userId: submitterUserId } : { systemActor: "portal-change-request" }),
+        orgId,
+        resourceType: "change_request",
+        resourceId: String(cr.id),
+        metadata: {
+          projectId,
+          crNumber: cr.crNumber,
+          portalMembershipId: membershipId,
+          projectClientGrantId: grant.projectClientGrantId,
+        },
+      });
 
       return cr;
     });

@@ -189,3 +189,39 @@ export const candidateActivityEventSchema = z.object({
   actor: z.string().nullable(),
   at: wireDate(),
 });
+
+/**
+ * The result of erasing a candidate.
+ *
+ * `vault` is a discriminated union rather than a flag because the caller has to
+ * tell a real person what happened to their résumé: "CLEARED" and
+ * "NOT_CONFIRMED" are different claims, and collapsing them into a boolean is
+ * how a candidate gets told their data is gone while an object survives in a
+ * bucket.
+ */
+export const candidateErasureResponseSchema = z.object({
+  candidateId: z.number().int(),
+  status: z.enum(["ERASED", "VAULT_NOT_CONFIRMED"]),
+  recordsDeleted: z.object({
+    applications: z.number().int(),
+    interviews: z.number().int(),
+    slaTracking: z.number().int(),
+    vaultDocuments: z.number().int(),
+    candidate: z.number().int(),
+  }),
+  vault: z.discriminatedUnion("vault", [
+    z.object({
+      vault: z.literal("CLEARED"),
+      objectsDeleted: z.number().int(),
+      reason: z.string(),
+    }),
+    z.object({
+      vault: z.literal("NOT_CONFIRMED"),
+      objectsDeleted: z.number().int(),
+      objectsPendingRetry: z.number().int(),
+      objectsLost: z.number().int(),
+      reason: z.string(),
+    }),
+  ]),
+  summary: z.string(),
+});

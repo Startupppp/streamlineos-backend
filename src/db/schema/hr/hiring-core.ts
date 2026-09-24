@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { desc, relations, sql } from "drizzle-orm";
 import { jobPostingStatusEnum } from "../common/enums";
 import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
@@ -121,6 +121,60 @@ export const jobPostings = pgTable("job_postings", {
   foreignKey({ columns: [table.orgId, table.postedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_job_postings_posted_by_actor" }).onDelete("restrict"),
 ]);
 
+/**
+ * A reusable, org-scoped draft of the authored half of a job posting.
+ *
+ * Only what a human typed: the prose, the employment terms and the screening
+ * questions. A posting's lifecycle — status, openings, deadline, who posted it
+ * — is deliberately absent, because a template that could be OPEN would
+ * eventually be applied to, and a copied deadline is always the wrong date.
+ *
+ * Unrelated to `offerTemplates`, which renders a document for one named
+ * candidate at the end of the pipeline. The shared word is a coincidence.
+ */
+export const jobTemplates = pgTable("job_templates", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  /** The librarian's label, not the job title — one template serves openings whose titles differ. */
+  name: text("name").notNull(),
+  title: text("title"),
+  description: text("description"),
+  requirements: text("requirements"),
+  benefits: text("benefits"),
+  type: text("type").notNull().default("FULL_TIME"),
+  experience: text("experience"),
+  screeningQuestions: jsonb("screening_questions").$type<ScreeningQuestion[]>(),
+  jobLevelId: integer("job_level_id"),
+  createdByMembershipId: integer("created_by_membership_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => [
+  unique("uniq_job_templates_org_id").on(table.orgId, table.id),
+  /**
+   * Per-org, never global: a bare unique on `name` would let the first tenant
+   * to save "Software Engineer" block that name for every other tenant.
+   * Partial, so deleting a template frees its name for the replacement.
+   */
+  uniqueIndex("uq_job_templates_org_name")
+    .on(table.orgId, table.name)
+    .where(sql`${table.deletedAt} is null`),
+  index("idx_job_templates_org_created")
+    .on(table.orgId, desc(table.createdAt), desc(table.id))
+    .where(sql`${table.deletedAt} is null`),
+  index("idx_job_templates_org_type")
+    .on(table.orgId, table.type)
+    .where(sql`${table.deletedAt} is null`),
+  /**
+   * The FK-supporting indexes are full, not partial: a parent delete has to
+   * find soft-deleted children too, and a partial index hides exactly those.
+   */
+  index("idx_job_templates_org_job_level").on(table.orgId, table.jobLevelId),
+  index("idx_job_templates_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
+  foreignKey({ columns: [table.orgId, table.jobLevelId], foreignColumns: [hrJobLevels.orgId, hrJobLevels.id], name: "fk_job_templates_job_level_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_job_templates_created_by_actor" }).onDelete("set null"),
+]);
+
 export const candidateSources = pgTable("candidate_sources", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -168,4 +222,9 @@ export const jobPostingsRelations = relations(jobPostings, ({ one, many }) => ({
 export const candidateSourcesRelations = relations(candidateSources, ({ one }) => ({
   organization: one(organizations, { fields: [candidateSources.orgId], references: [organizations.id] }),
   createdByUser: one(users, { fields: [candidateSources.createdBy], references: [users.id] }),
+}));
+
+export const jobTemplatesRelations = relations(jobTemplates, ({ one }) => ({
+  organization: one(organizations, { fields: [jobTemplates.orgId], references: [organizations.id] }),
+  jobLevel: one(hrJobLevels, { fields: [jobTemplates.jobLevelId], references: [hrJobLevels.id] }),
 }));

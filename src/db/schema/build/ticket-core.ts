@@ -21,7 +21,7 @@ import {
 } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { projectStatuses, modules, cycles } from "./core";
-import { clients } from "../crm/contacts";
+import { crmOrgPartyMap } from "../party/legacy-party-map";
 
 export const tickets = build.table(
   "tickets",
@@ -87,8 +87,12 @@ export const tickets = build.table(
     foreignKey({ columns: [t.orgId, t.parentTicketId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_parent" }),
     foreignKey({ columns: [t.orgId, t.recurrenceParentId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_recurrence_parent" }),
     foreignKey({
-      columns: [t.customerId],
-      foreignColumns: [clients.id],
+      columns: [t.orgId, t.customerId],
+      foreignColumns: [
+        crmOrgPartyMap.organizationId,
+        crmOrgPartyMap.crmOrganizationId,
+      ],
+      name: "fk_tickets_customer_id_org",
     }).onDelete("set null"),
     foreignKey({
       name: "fk_tickets_status",
@@ -108,13 +112,6 @@ export const tickets = build.table(
     index("idx_tickets_org_project_rank")
       .on(t.orgId, t.projectId, t.rank)
       .where(sql`deleted_at IS NULL`),
-    // The board sorts (rank ASC, id ASC) and keysets on the same two columns —
-    // see listTicketsByCursor and board-keyset.spec.ts. `rank` must therefore be
-    // followed IMMEDIATELY by `id`; the predecessor of this index
-    // (idx_tickets_org_project_rank_sort, 0575) put created_at between them,
-    // copied from the template every other sortable column uses, and every board
-    // page Incremental-Sorted the whole project as a result. `createdAt` trails
-    // only so the page's projection stays index-only. Reshaped by 1059.
     index("idx_tickets_org_project_rank_id")
       .on(t.orgId, t.projectId, t.rank.asc(), t.id.asc(), t.createdAt.desc())
       .where(sql`deleted_at IS NULL`),

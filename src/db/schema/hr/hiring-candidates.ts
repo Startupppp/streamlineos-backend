@@ -3,6 +3,7 @@ import { relations, sql } from "drizzle-orm";
 import { candidateStatusEnum, applicationStatusEnum } from "../common/enums";
 import { organizationMembers, organizations, users } from "../common/auth";
 import { jobPostings } from "./hiring-core";
+import type { CandidateConsentPurpose } from "../../../modules/hr/recruitment/consent/candidate-consent";
 
 export const candidates = pgTable("candidates", {
   id: serial("id").primaryKey(),
@@ -68,6 +69,34 @@ export const candidates = pgTable("candidates", {
   identityReference: text("identity_reference"),
   identityLast4: text("identity_last4"),
   identityVerifiedAt: timestamp("identity_verified_at"),
+  /**
+   * Why this candidate was rejected, as a code, plus the free text only `OTHER`
+   * requires.
+   *
+   * The union is spelled out here rather than imported from
+   * `modules/hr/recruitment/disposition/rejection-reasons.ts` because the
+   * schema does not depend on a feature module — the same reason
+   * `identityStatus` above inlines its own. `rejection-reasons.spec.ts` reads
+   * this file and migration 1187 and fails when either drifts from the catalog,
+   * so the three copies cannot disagree silently.
+   *
+   * A label is never stored. Teams reword labels, and a stored label makes last
+   * quarter's rows stop matching this quarter's when a report groups by them.
+   */
+  rejectionReason: text("rejection_reason").$type<
+    | "SKILLS_MISMATCH"
+    | "EXPERIENCE_MISMATCH"
+    | "COMPENSATION"
+    | "LOCATION"
+    | "NOTICE_PERIOD"
+    | "WITHDREW"
+    | "POSITION_CLOSED"
+    | "FAILED_ASSESSMENT"
+    | "BACKGROUND_CHECK"
+    | "DUPLICATE"
+    | "OTHER"
+  >(),
+  rejectionNote: text("rejection_note"),
   sourceUrl: text("source_url"),
   location: text("location"),
   gender: text("gender").$type<"MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY" | null>(),
@@ -115,6 +144,29 @@ export const candidateApplications = pgTable("candidate_applications", {
   appliedAt: timestamp("applied_at").defaultNow().notNull(),
   coverLetter: text("cover_letter"),
   consentAt: timestamp("consent_at"),
+  /**
+   * What the candidate consented TO, and when that consent runs out.
+   *
+   * `consentAt` on its own records only that somebody clicked something on some
+   * date — it cannot be honoured, evidenced or expired, which is how a résumé
+   * vault ends up growing forever. `consentPurpose` is constrained to
+   * `CANDIDATE_CONSENT_PURPOSES` by a CHECK (migration 1189); the retention
+   * policy and the erasure decision that read these columns live in
+   * `modules/hr/recruitment/consent/candidate-consent.ts`.
+   *
+   * `consentTextHash` is a SHA-256 digest of the exact notice shown, never the
+   * notice itself, so a later edit to the wording cannot silently rewrite what
+   * somebody agreed to. `retainUntil` is materialised rather than derived on
+   * read, so the date the candidate was told is the date the sweep uses.
+   *
+   * All four are null on every row written before 1187, and that is left
+   * visible rather than backfilled: inventing a purpose would pick a retention
+   * window on the candidate's behalf.
+   */
+  consentPurpose: text("consent_purpose").$type<CandidateConsentPurpose>(),
+  consentVersion: text("consent_version"),
+  consentTextHash: text("consent_text_hash"),
+  retainUntil: timestamp("retain_until"),
   notes: text("notes"),
   trackingToken: text("tracking_token").unique(),
   screeningAnswers: jsonb("screening_answers").$type<Record<string, string>>(),

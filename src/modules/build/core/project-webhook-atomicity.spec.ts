@@ -1,6 +1,25 @@
 import type { Db } from "../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsTicketsService } from "./projects-tickets.service";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
+
+function makeActor(): CurrentUserContext {
+  return {
+    userId: "member-1",
+    orgId: "org-1",
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "session-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
+  };
+}
 
 function harness(enqueueFails: boolean) {
   let mutationCommitted = false;
@@ -58,6 +77,7 @@ function harness(enqueueFails: boolean) {
       cache as never,
       {} as never,
       {} as never,
+      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
     ),
     enqueue,
     timeline,
@@ -66,10 +86,14 @@ function harness(enqueueFails: boolean) {
 }
 
 describe("Build mutation and webhook intent atomicity", () => {
+  beforeEach(() => {
+    jest.mocked(assertTicketReadAccess).mockResolvedValue();
+  });
+
   it("rolls back the domain mutation when durable webhook enqueue fails", async () => {
     const test = harness(true);
 
-    await expect(test.service.deleteTicket("org-1", "member-1", 9, 4, true))
+    await expect(test.service.deleteTicket(makeActor(), 9, 4, true))
       .rejects.toThrow("outbox unavailable");
 
     expect(test.timeline[0]).toBe("mutation-staged");
@@ -80,7 +104,7 @@ describe("Build mutation and webhook intent atomicity", () => {
   it("stages the intent before the transaction commits, leaving no post-commit enqueue gap", async () => {
     const test = harness(false);
 
-    await test.service.deleteTicket("org-1", "member-1", 9, 4, true);
+    await test.service.deleteTicket(makeActor(), 9, 4, true);
 
     expect(test.timeline[0]).toBe("mutation-staged");
     expect(test.timeline.slice(-2)).toEqual(["intent-staged", "commit"]);
@@ -110,9 +134,10 @@ describe("Build mutation and webhook intent atomicity", () => {
       {} as never,
       {} as never,
       {} as never,
+      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
     );
 
-    await expect(service.deleteTicket("org-1", "member-1", 1, 7, true))
+    await expect(service.deleteTicket(makeActor(), 1, 7, true))
       .rejects.toThrow("Ticket not found");
     expect(db.transaction).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();

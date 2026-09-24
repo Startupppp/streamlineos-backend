@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
+import {
+  REJECTION_NOTE_MAX_LENGTH,
+  REJECTION_REASONS,
+} from "../disposition/rejection-reasons";
 
 const NAME_REGEX = /[a-zA-Z]/;
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
@@ -22,6 +26,21 @@ const CANDIDATE_SOURCES = [
   "CAMPUS",
   "INTERNAL",
 ] as const;
+
+/**
+ * The disposition half of a reject, optional at the edge and decided in the
+ * service.
+ *
+ * Optional here on purpose. Whether a reason is needed depends on the stage
+ * being moved to, and a `superRefine` restating that would put the rule in two
+ * places — which is how one copy learns a new code and the other keeps refusing
+ * it. The edge checks shape and bounds; `decideRejection` is the only thing
+ * that decides whether a rejection may be recorded.
+ */
+const rejectionFields = {
+  rejectionReason: z.enum(REJECTION_REASONS).optional(),
+  rejectionNote: z.string().trim().max(REJECTION_NOTE_MAX_LENGTH).optional(),
+};
 
 export const candidateListSchema = z
   .object({
@@ -85,11 +104,13 @@ export const updateCandidateSchema = z.object({
   notes: z.string().max(5000).optional(),
   rating: z.number().int().min(1).max(5).optional(),
   resumeUrl: z.string().url().max(500).optional().or(z.literal("")),
+  ...rejectionFields,
 }).strict();
 export type UpdateCandidateInput = z.infer<typeof updateCandidateSchema>;
 
 export const stageSchema = z.object({
   stage: z.enum(CANDIDATE_STATUSES),
+  ...rejectionFields,
 }).strict();
 export type StageInput = z.infer<typeof stageSchema>;
 

@@ -32,8 +32,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { sslForConnectionString } from "./lib/repo-roots.mjs";
-import postgres from "postgres";
+import { createScriptSql } from "./lib/script-sql-client.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "migrations");
 const REMOTE_OPT_IN = "APPLY_ONE_ALLOW_REMOTE";
@@ -140,7 +139,11 @@ async function main() {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
-  const sql = postgres(url, { prepare: false, max: 1, ssl: sslOption(url), onnotice: () => {} });
+  const sql = await createScriptSql({
+    url,
+    ssl: sslOption(url),
+    connection: { onnotice: () => {} },
+  });
 
   const [already] = await sql`
     SELECT 1 AS present FROM drizzle.__drizzle_migrations WHERE hash = ${hash} LIMIT 1

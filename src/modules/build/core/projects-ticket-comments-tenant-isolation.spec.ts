@@ -1,6 +1,11 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
 
 describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -64,6 +69,13 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
   const activity = { logTicketActivity: jest.fn(), processCommentMentions: jest.fn() } as never;
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:tickets:view"])) } as never;
   const webhooks = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn(), enqueue: jest.fn() } as never;
+
+  beforeEach(() => {
+    jest.mocked(assertTicketReadAccess).mockImplementation(async (db) => {
+      const ticket = await db.query.tickets.findFirst();
+      if (!ticket) throw new NotFoundException("Ticket not found");
+    });
+  });
 
   it("throws NotFoundException when ticket belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);

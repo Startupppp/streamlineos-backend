@@ -92,7 +92,7 @@ export class ProjectsCustomFieldsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.getTicketValues(u.orgId, projectId, ticketId);
+    return this.customFields.getTicketValues(u, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/custom-field-values")
@@ -106,6 +106,6 @@ export class ProjectsCustomFieldsController {
     @Body() body: UpsertCustomFieldValuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.upsertTicketValues(u.orgId, projectId, ticketId, body);
+    return this.customFields.upsertTicketValues(u, projectId, ticketId, body);
   }
 }

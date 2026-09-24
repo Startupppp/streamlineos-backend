@@ -298,19 +298,19 @@ export default [
     verdict: "VERIFIED",
     finding: "insert-binds-org-in-values",
     summary:
-      "POST /build/portfolios. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into project_portfolios with orgId as a column of .values() at portfolios.service.ts:182 and records createdBy from the verified context. PASSED-UNBOUND is the documented create-endpoint reading: the binding is an INSERT column and the static pass only recognises predicates. The sibling updatePortfolio binds eq(projectPortfolios.orgId, orgId) in its WHERE, confirming the column is the tenant key.",
+      "POST /build/portfolios. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into project_portfolios with orgId as a column of .values() and records createdBy from the verified context. PASSED-UNBOUND is the documented create-endpoint reading: the binding is an INSERT column and the static pass only recognises predicates. The sibling updatePortfolio binds eq(projectPortfolios.orgId, orgId) in its WHERE, confirming the column is the tenant key.",
     blastRadius:
       "None. The portfolio is created in the caller's own org; no existing row is addressed.",
     evidence: [
       {
         file: "src/modules/build/portfolios/portfolios.service.ts",
-        line: 180,
+        line: 237,
         anchor: /\.insert\(projectPortfolios\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/portfolios/portfolios.service.ts",
-        line: 182,
+        line: 239,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },

@@ -33,6 +33,7 @@ import {
   ResponseSchema,
 } from "../../../common/openapi/zod-operation-contracts";
 import {
+  changeRequestDetailSchema,
   changeRequestRowSchema,
   changeRequestListPageSchema,
 } from "./dto/change-requests-response.schemas";
@@ -67,7 +68,7 @@ export class ChangeRequestsController {
 
   @Get(":changeRequestId")
   @RequirePermission("build:changerequests:view")
-  @ResponseSchema(changeRequestRowSchema)
+  @ResponseSchema(changeRequestDetailSchema)
   @Validate({ params: projectAndChangeRequestIdParams })
   getChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,

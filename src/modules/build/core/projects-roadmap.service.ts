@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { projects, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -33,6 +33,9 @@ import {
   type RoadmapTierWeighting,
 } from "./roadmap-accounts";
 
+const ROADMAP_SEARCH_MIN_TERM_LENGTH = 3;
+export const ROADMAP_SEARCH_ID_CAP = 500;
+
 type Scored<T> = T & {
   prioritization: RoadmapPrioritization;
   tierWeighting: RoadmapTierWeighting;
@@ -58,17 +61,34 @@ export class ProjectsRoadmapService {
     private readonly feedback: ProjectsFeedbackService,
   ) {}
 
+  searchFallbackCondition(term: string): SQL {
+    const like = `%${term}%`;
+    const condition = or(
+      ilike(roadmapItems.title, like),
+      ilike(roadmapItems.description, like),
+    );
+    if (!condition) return sql`false`;
+    return condition;
+  }
+
+  async searchCondition(term: string): Promise<SQL> {
+    if (term.length < ROADMAP_SEARCH_MIN_TERM_LENGTH) return this.searchFallbackCondition(term);
+    const idRows = await this.db.execute(
+      sql`SELECT app.search_roadmap_item_ids(${term}, ${ROADMAP_SEARCH_ID_CAP + 1}) AS id`,
+    );
+    if (idRows.length > ROADMAP_SEARCH_ID_CAP) return this.searchFallbackCondition(term);
+    const ids = idRows.map((row) => Number(row["id"]));
+    if (ids.length === 0) return sql`false`;
+    return inArray(roadmapItems.id, ids);
+  }
+
   async listRoadmap(orgId: string, query: RoadmapListQuery) {
     const { cursor, limit: rawLimit } = query;
     const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
     const position = decodeCursor(cursor);
     const conditions = [eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)];
     if (query.status) conditions.push(eq(roadmapItems.status, query.status));
-    if (query.search) {
-      const term = `%${query.search}%`;
-      const match = or(ilike(roadmapItems.title, term), ilike(roadmapItems.description, term));
-      if (match) conditions.push(match);
-    }
+    if (query.search) conditions.push(await this.searchCondition(query.search));
     if (query.managedProductId !== undefined) {
       const sub = this.db
         .select({ id: projects.id })

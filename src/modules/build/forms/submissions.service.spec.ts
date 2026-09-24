@@ -1,6 +1,9 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { SubmissionsService } from "./submissions.service";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { Test } from "@nestjs/testing";
 
@@ -39,6 +42,18 @@ function makeSubmission(overrides: Record<string, unknown> = {}) {
 }
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
+const mockAccess = {
+  resolveUserPermissions: async () => new Set(["build:manage"]),
+};
+const actor: CurrentUserContext = {
+  userId: USER_ID,
+  orgId: ORG_ID,
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s1",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(7, false),
+};
 
 describe("SubmissionsService.createSubmission", () => {
   let svc: SubmissionsService;
@@ -49,6 +64,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     mockDb = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
@@ -61,6 +77,7 @@ describe("SubmissionsService.createSubmission", () => {
       providers: [
         SubmissionsService,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: AccessService, useValue: mockAccess },
         { provide: AuditService, useValue: mockAudit },
       ],
     }).compile();
@@ -71,7 +88,7 @@ describe("SubmissionsService.createSubmission", () => {
     (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(undefined);
 
     await expect(
-      svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} }),
+      svc.createSubmission(actor, PROJECT_ID, FORM_ID, { values: {} }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -81,7 +98,7 @@ describe("SubmissionsService.createSubmission", () => {
     );
 
     await expect(
-      svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} }),
+      svc.createSubmission(actor, PROJECT_ID, FORM_ID, { values: {} }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -142,7 +159,7 @@ describe("SubmissionsService.createSubmission", () => {
       },
     );
 
-    const result = await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, {
+    const result = await svc.createSubmission(actor, PROJECT_ID, FORM_ID, {
       values: { summary: "Fix login" },
     });
 
@@ -205,7 +222,7 @@ describe("SubmissionsService.createSubmission", () => {
       },
     );
 
-    const result = await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} });
+    const result = await svc.createSubmission(actor, PROJECT_ID, FORM_ID, { values: {} });
 
     expect(result.executedActionTypes).toContain("create_bug");
     expect(result.status).toBe("processed");
@@ -244,7 +261,7 @@ describe("SubmissionsService.createSubmission", () => {
       },
     );
 
-    const result = await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} });
+    const result = await svc.createSubmission(actor, PROJECT_ID, FORM_ID, { values: {} });
 
     expect(result.skippedActionTypes).toEqual(["send_email", "notify_pager"]);
     expect(result.executedActionTypes).toHaveLength(0);
@@ -282,7 +299,7 @@ describe("SubmissionsService.createSubmission", () => {
       },
     );
 
-    const result = await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} });
+    const result = await svc.createSubmission(actor, PROJECT_ID, FORM_ID, { values: {} });
 
     expect(result.status).toBe("submitted");
     expect(result.createdTicketIds).toHaveLength(0);
@@ -330,7 +347,7 @@ describe("SubmissionsService.createSubmission", () => {
       },
     );
 
-    await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} });
+    await svc.createSubmission(actor, PROJECT_ID, FORM_ID, { values: {} });
 
     expect(executeSpy).toHaveBeenCalledTimes(3);
   });
@@ -358,7 +375,7 @@ describe("SubmissionsService.createSubmission", () => {
       },
     );
 
-    await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} });
+    await svc.createSubmission(actor, PROJECT_ID, FORM_ID, { values: {} });
 
     expect(executeSpy).not.toHaveBeenCalled();
   });
@@ -373,6 +390,7 @@ describe("SubmissionsService.updateSubmission", () => {
 
     mockDb = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
@@ -385,6 +403,7 @@ describe("SubmissionsService.updateSubmission", () => {
       providers: [
         SubmissionsService,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: AccessService, useValue: mockAccess },
         { provide: AuditService, useValue: mockAudit },
       ],
     }).compile();
@@ -395,7 +414,7 @@ describe("SubmissionsService.updateSubmission", () => {
     (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(undefined);
 
     await expect(
-      svc.updateSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
+      svc.updateSubmission(actor, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -404,7 +423,7 @@ describe("SubmissionsService.updateSubmission", () => {
     (mockDb.query as { formSubmissions: { findFirst: jest.Mock } }).formSubmissions.findFirst.mockResolvedValueOnce(undefined);
 
     await expect(
-      svc.updateSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
+      svc.updateSubmission(actor, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -422,7 +441,7 @@ describe("SubmissionsService.updateSubmission", () => {
     (mockDb as Record<string, unknown>)["update"] = mockUpdate;
 
     await expect(
-      svc.updateSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
+      svc.updateSubmission(actor, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -440,7 +459,7 @@ describe("SubmissionsService.updateSubmission", () => {
     });
     (mockDb as Record<string, unknown>)["update"] = mockUpdate;
 
-    const result = await svc.updateSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" });
+    const result = await svc.updateSubmission(actor, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" });
 
     expect(result.status).toBe("processed");
     expect(mockAudit.log).toHaveBeenCalledTimes(1);
@@ -456,6 +475,7 @@ describe("SubmissionsService.submitPublicForm", () => {
 
     mockDb = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
@@ -468,6 +488,7 @@ describe("SubmissionsService.submitPublicForm", () => {
       providers: [
         SubmissionsService,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: AccessService, useValue: mockAccess },
         { provide: AuditService, useValue: mockAudit },
       ],
     }).compile();
@@ -576,6 +597,7 @@ describe("SubmissionsService.listSubmissions", () => {
 
     mockDb = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
@@ -588,6 +610,7 @@ describe("SubmissionsService.listSubmissions", () => {
       providers: [
         SubmissionsService,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: AccessService, useValue: mockAccess },
         { provide: AuditService, useValue: mockAudit },
       ],
     }).compile();
@@ -598,7 +621,7 @@ describe("SubmissionsService.listSubmissions", () => {
     (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(undefined);
 
     await expect(
-      svc.listSubmissions(ORG_ID, PROJECT_ID, FORM_ID, {}),
+      svc.listSubmissions(actor, PROJECT_ID, FORM_ID, {}),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -612,7 +635,7 @@ describe("SubmissionsService.listSubmissions", () => {
     const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
     (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
 
-    const result = await svc.listSubmissions(ORG_ID, PROJECT_ID, FORM_ID, {});
+    const result = await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, {});
     expect(Array.isArray(result)).toBe(true);
     expect(mockLimit).toHaveBeenCalledWith(100);
   });
@@ -626,7 +649,7 @@ describe("SubmissionsService.listSubmissions", () => {
     const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
     (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
 
-    await svc.listSubmissions(ORG_ID, PROJECT_ID, FORM_ID, { status: "submitted" });
+    await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, { status: "submitted" });
     expect(mockWhere).toHaveBeenCalledTimes(1);
     expect(mockLimit).toHaveBeenCalledWith(100);
   });
@@ -640,7 +663,7 @@ describe("SubmissionsService.listSubmissions", () => {
     const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
     (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
 
-    await svc.listSubmissions(ORG_ID, PROJECT_ID, FORM_ID, { cursor: "2026-01-01T00:00:00.000Z" });
+    await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, { cursor: "2026-01-01T00:00:00.000Z" });
     expect(mockWhere).toHaveBeenCalledTimes(1);
   });
 });

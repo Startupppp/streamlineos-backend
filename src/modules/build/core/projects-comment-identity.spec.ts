@@ -1,6 +1,15 @@
 import { HttpException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
+
+beforeEach(() => {
+  jest.mocked(assertTicketReadAccess).mockResolvedValue();
+});
 
 const OWNER_ORG = "org-owner";
 const PROJECT_ID = 10;

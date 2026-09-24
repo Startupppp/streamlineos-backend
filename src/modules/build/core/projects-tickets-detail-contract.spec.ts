@@ -33,7 +33,15 @@ it.each(["id", "key"])("returns the complete existing detail contract for %s loo
   const findFirst = jest.fn().mockResolvedValueOnce(row).mockResolvedValueOnce({ id: 2, title: "Epic" });
   const module = await Test.createTestingModule({ providers: [
     ProjectsTicketsDetailService,
-    { provide: DRIZZLE, useValue: { query: { tickets: { findFirst } } } },
+    {
+      provide: DRIZZLE,
+      useValue: {
+        query: {
+          tickets: { findFirst },
+          projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+        },
+      },
+    },
     { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all") } },
     { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();

@@ -57,7 +57,7 @@ describe("ClientVisibilityService — cross-tenant isolation (BOLA)", () => {
     const svc = new ClientVisibilityService(db, mockAccess, mockAudit);
 
     await expect(
-      svc.toggleTicketVisibility("org-attacker", "user-1", 1, 99, true),
+      svc.toggleTicketVisibility(makeU("org-attacker"), 1, 99, true),
     ).rejects.toThrow(NotFoundException);
   });
 });
@@ -132,5 +132,17 @@ describe("ClientVisibilityService — project membership gate (BOLA fix)", () =>
     const db = makeMemberDb();
     const svc = new ClientVisibilityService(db, gateAccess, mockAudit);
     await expect(svc.getVisibilitySummary(u, 1)).resolves.toBeDefined();
+  });
+
+  it.each([
+    ["ticket", (svc: ClientVisibilityService) => svc.toggleTicketVisibility(u, 1, 99, true)],
+    ["milestone", (svc: ClientVisibilityService) => svc.toggleMilestoneVisibility(u, 1, 99, true)],
+    ["comment", (svc: ClientVisibilityService) => svc.toggleCommentVisibility(u, 1, 99, true)],
+    ["attachment", (svc: ClientVisibilityService) => svc.toggleAttachmentVisibility(u, 1, 99, true)],
+  ])("rejects a non-member before changing %s visibility", async (_resource, toggle) => {
+    const db = makeNonMemberDb();
+    const svc = new ClientVisibilityService(db, gateAccess, mockAudit);
+
+    await expect(toggle(svc)).rejects.toThrow(ForbiddenException);
   });
 });

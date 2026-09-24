@@ -7,6 +7,7 @@ import { AccessService } from "../../access/access.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveTicketsScope, ticketScope } from "./tickets-scope";
+import { resolveProjectAccess } from "./project-access";
 import {
   ProjectsForbiddenTicketException,
   ProjectsTicketNotFoundException,
@@ -36,6 +37,7 @@ export class ProjectsTicketsDetailService {
   ) {
     return this.readTicket(
       u,
+      projectId,
       and(
         eq(tickets.projectId, projectId),
         eq(tickets.ticketNumber, ticketNumber),
@@ -46,12 +48,14 @@ export class ProjectsTicketsDetailService {
   async getTicket(u: CurrentUserContext, projectId: number, ticketId: number) {
     return this.readTicket(
       u,
+      projectId,
       and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId)),
     );
   }
 
   private async readTicket(
     u: CurrentUserContext,
+    projectId: number,
     selector: SQL<unknown> | undefined,
   ) {
     const read = await resolveTicketsScope(this.access, u);
@@ -93,6 +97,28 @@ export class ProjectsTicketsDetailService {
       },
     });
     if (!ticket) throw new ProjectsTicketNotFoundException();
+    const projectAccess = await resolveProjectAccess(
+      this.db,
+      this.access,
+      u,
+      projectId,
+    );
+    if (!projectAccess.hasAccess) {
+      this.audit.log({
+        action: "ticket.access_denied",
+        userId: u.userId,
+        orgId: u.orgId,
+        targetId: String(ticket.id),
+        targetType: "ticket",
+        metadata: {
+          ticketId: ticket.id,
+          projectId,
+          reason: "NO_PROJECT_ACCESS",
+        },
+        result: "FAILURE",
+      });
+      throw new ProjectsForbiddenTicketException();
+    }
     if (!read.unrestricted) {
       const isAssignee =
         ticket.assignee?.user?.id === u.userId ||

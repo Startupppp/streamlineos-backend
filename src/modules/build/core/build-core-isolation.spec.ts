@@ -143,7 +143,7 @@ describe("ProjectsCustomFieldsService — cross-tenant isolation", () => {
       }),
     } as unknown as Db;
 
-    const svc = new ProjectsCustomFieldsService(db);
+    const svc = new ProjectsCustomFieldsService(db, makeNoPermAccess());
 
     await expect(svc.listFields("org-attacker", 999)).rejects.toThrow(NotFoundException);
     expect(orderBy).not.toHaveBeenCalled();
@@ -159,7 +159,7 @@ describe("ProjectsCustomFieldsService — cross-tenant isolation", () => {
       }),
     } as unknown as Db;
 
-    const svc = new ProjectsCustomFieldsService(db);
+    const svc = new ProjectsCustomFieldsService(db, makeNoPermAccess());
 
     await expect(svc.listFields("org-owner", 1)).resolves.toEqual([]);
   });
