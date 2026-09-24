@@ -263,6 +263,12 @@ export type InviteLink = z.infer<typeof inviteLinkSchema>;
 
 export const employeeCountsSchema = z.object({
   active: z.number().int(),
+  /**
+   * Invited, account created, never accepted. Split out of `active` because an
+   * account flag is set the moment an administrator creates the person, so a
+   * hire who has never signed in was being counted as headcount.
+   */
+  pending: z.number().int(),
   inactive: z.number().int(),
 });
 

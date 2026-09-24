@@ -150,7 +150,21 @@ export class EmployeesService {
       ({ sql: where }) =>
         this.db
           .select({
-            active: sql<number>`count(*) filter (where ${users.isActive})`.mapWith(Number),
+            // `users.isActive` is the ACCOUNT flag, set true the moment an
+            // administrator creates the person — before any invitation has been
+            // opened. Counting on it alone reported a hire who had never signed
+            // in as active headcount, which is the number a founder reads off
+            // this screen (HRMS-E2E-014).
+            //
+            // PROVISIONAL — open product decision #4. Acceptance is taken to be
+            // `users.email_verified`, which the magic link sets when the person
+            // first comes through it, and which `resendInvite` already reads to
+            // choose between a welcome and a membership-added mail. If the
+            // product decides a joining date also has to have passed, this
+            // predicate is where that lands; no stored status changes, so
+            // nothing needs migrating either way.
+            active: sql<number>`count(*) filter (where ${users.isActive} and ${users.emailVerified} is not null)`.mapWith(Number),
+            pending: sql<number>`count(*) filter (where ${users.isActive} and ${users.emailVerified} is null)`.mapWith(Number),
             inactive: sql<number>`count(*) filter (where not ${users.isActive})`.mapWith(Number),
           })
           .from(organizationMembers)
@@ -160,7 +174,11 @@ export class EmployeesService {
           .where(where),
       () => [],
     );
-    return { active: counts?.active ?? 0, inactive: counts?.inactive ?? 0 };
+    return {
+      active: counts?.active ?? 0,
+      pending: counts?.pending ?? 0,
+      inactive: counts?.inactive ?? 0,
+    };
   }
 
   private async getEmployeesPaginated(
