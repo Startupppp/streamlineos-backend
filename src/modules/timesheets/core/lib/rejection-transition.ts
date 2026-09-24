@@ -16,28 +16,12 @@ import {
   periodOwnerUserIdOrWarn,
 } from "./approval-lifecycle";
 
-/** The transaction `ApprovalsBulkService` opens around a rejection. */
 type RejectionTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-/** The service's own collaborator, passed in rather than reached for. */
 export interface RejectionTransitionDeps {
   readonly audit: TimesheetsAuditService;
 }
 
-/*
-  What a rejection writes, inside the transaction `ApprovalsBulkService` opens:
-  the period (or periods) and their live entries move to REJECTED with the
-  reason, `event_seq` is bumped by the UPDATE that reads it back, the audit row
-  names the acting membership, and one lifecycle event goes out per period whose
-  owner still resolves. The rejection counterpart of `approval-transition.ts`.
-
-  Neither function checks permission. The service reads the periods, runs
-  `assertCanActOnPeriod` on each and resolves the owners before it opens the
-  transaction, and sends the notices after it commits. A new caller must run
-  the guard first: these are the writes, not the gate.
-*/
-
-/** One period, whose owner the caller has already resolved (or failed to). */
 export async function applyRejection(
   tx: RejectionTx,
   deps: RejectionTransitionDeps,
@@ -57,6 +41,7 @@ export async function applyRejection(
       status: "REJECTED",
       rejectedAt: now,
       rejectionReason: input.reason,
+      approvalDueAt: null,
       eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
       updatedAt: now,
     })
@@ -69,7 +54,6 @@ export async function applyRejection(
     )
     .returning(LIFECYCLE_RETURNING);
 
-  /* Zero rows: another decision committed between the service's check and this write. */
   if (!transition) throw new ConflictException(`Period ${periodId} is no longer awaiting a decision`);
 
   await tx
@@ -116,10 +100,6 @@ export async function applyRejection(
   }
 }
 
-/**
- * Every period in `ids`, each already past the guard: one UPDATE per table for
- * the batch, then one audit row and one lifecycle event per period.
- */
 export async function applyBulkRejection(
   tx: RejectionTx,
   deps: RejectionTransitionDeps,
@@ -133,13 +113,13 @@ export async function applyBulkRejection(
 ): Promise<number[]> {
   const { input, owners, now } = rejection;
 
-  /* The returned ids are the periods still SUBMITTED when the UPDATE ran; see applyBulkApproval. */
   const transitions = await tx
     .update(timesheetPeriods)
     .set({
       status: "REJECTED",
       rejectedAt: now,
       rejectionReason: input.reason,
+      approvalDueAt: null,
       eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
       updatedAt: now,
     })
@@ -182,12 +162,6 @@ export async function applyBulkRejection(
     })),
   );
 
-  /**
-   * One event per period, not one for the batch. A bulk rejection is a
-   * convenience for the approver; to everyone downstream it is N separate
-   * things that happened to N separate people, and an event whose
-   * `period_id` is a list is unroutable.
-   */
   for (const transition of transitions) {
     const ownerUserId = periodOwnerUserIdOrWarn(owners, transition.userMembershipId, {
       orgId: u.orgId,

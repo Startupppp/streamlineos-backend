@@ -15,7 +15,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { once } from "node:events";
+import { writeChunk } from "../../common/http/stream-abort";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -112,8 +112,7 @@ export class ContactsController {
   ): Promise<void> {
     const read = await resolveContactsViewScope(this.access, u);
     for await (const chunk of this.contacts.exportCsvChunks(read)) {
-      if (res.destroyed) return;
-      if (!res.write(chunk)) await once(res, "drain");
+      if (!(await writeChunk(res, chunk))) return;
     }
     res.end();
   }

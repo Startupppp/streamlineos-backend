@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import type { TenantTx } from "../../common/tenant";
-import { announcements, hrAuditLogs } from "../../db/schema";
+import { broadcasts, hrAuditLogs } from "../../db/schema";
 
 const BATCH_SIZE = 200;
 const MAX_BATCHES = 100;
@@ -39,7 +39,9 @@ export class CronAnnouncementsRetentionService {
       truncated: false,
     };
     const now = new Date();
-    const expiredCutoff = new Date(now.getTime() - EXPIRED_GRACE_DAYS * 24 * 3600 * 1000);
+    const expiredCutoff = new Date(
+      now.getTime() - EXPIRED_GRACE_DAYS * 24 * 3600 * 1000,
+    );
     const ageCutoff = new Date(now.getTime() - MAX_AGE_DAYS * 24 * 3600 * 1000);
 
     const sweepResult = await forEachOrg(
@@ -82,14 +84,15 @@ export class CronAnnouncementsRetentionService {
   ): Promise<BatchDrainResult> {
     return this.drain(orgId, "expired", (limit) =>
       tx
-        .delete(announcements)
+        .delete(broadcasts)
         .where(
-          sql`${announcements.id} IN (
-            SELECT id FROM announcements
+          sql`${broadcasts.id} IN (
+            SELECT id FROM broadcasts
             WHERE org_id = ${orgId}
+              AND audience_type = 'all'
               AND expires_at IS NOT NULL
               AND expires_at < ${cutoff.toISOString()}::timestamptz
-              AND author_id NOT IN (
+              AND created_by NOT IN (
                 SELECT subject_user_id FROM hr_legal_holds
                 WHERE org_id = ${orgId}
                   AND status = 'active'
@@ -99,7 +102,7 @@ export class CronAnnouncementsRetentionService {
             LIMIT ${limit}
           )`,
         )
-        .returning({ id: announcements.id })
+        .returning({ id: broadcasts.id })
         .then((rows) => rows.length),
     );
   }
@@ -111,13 +114,14 @@ export class CronAnnouncementsRetentionService {
   ): Promise<BatchDrainResult> {
     return this.drain(orgId, "aged", (limit) =>
       tx
-        .delete(announcements)
+        .delete(broadcasts)
         .where(
-          sql`${announcements.id} IN (
-            SELECT id FROM announcements
+          sql`${broadcasts.id} IN (
+            SELECT id FROM broadcasts
             WHERE org_id = ${orgId}
+              AND audience_type = 'all'
               AND created_at < ${cutoff.toISOString()}::timestamptz
-              AND author_id NOT IN (
+              AND created_by NOT IN (
                 SELECT subject_user_id FROM hr_legal_holds
                 WHERE org_id = ${orgId}
                   AND status = 'active'
@@ -127,17 +131,11 @@ export class CronAnnouncementsRetentionService {
             LIMIT ${limit}
           )`,
         )
-        .returning({ id: announcements.id })
+        .returning({ id: broadcasts.id })
         .then((rows) => rows.length),
     );
   }
 
-  /**
-   * Drains until a short batch proves the phase is exhausted. Stopping after one
-   * batch let a tenant that expires more than BATCH_SIZE announcements per tick
-   * accumulate for ever while the sweep reported success; `truncated` says the cap
-   * was hit and the next tick still has work.
-   */
   private async drain(
     orgId: string,
     phase: "expired" | "aged",

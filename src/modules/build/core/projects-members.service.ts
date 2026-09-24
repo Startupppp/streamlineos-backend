@@ -393,6 +393,10 @@ export class ProjectsMembersService {
     return this.statesService.listCustomStates(u.orgId, projectId);
   }
 
+  listOrgCustomStates(u: CurrentUserContext) {
+    return this.statesService.listOrgCustomStates(u.orgId);
+  }
+
   async createCustomState(
     u: CurrentUserContext,
     projectId: number,
@@ -404,14 +408,15 @@ export class ProjectsMembersService {
 
   updateCustomState(
     u: CurrentUserContext,
+    projectId: number,
     stateId: number,
     data: UpdateCustomStateInput,
   ) {
-    return this.statesService.updateCustomState(u, stateId, data);
+    return this.statesService.updateCustomState(u, projectId, stateId, data);
   }
 
-  deleteCustomState(u: CurrentUserContext, stateId: number) {
-    return this.statesService.deleteCustomState(u, stateId);
+  deleteCustomState(u: CurrentUserContext, projectId: number, stateId: number) {
+    return this.statesService.deleteCustomState(u, projectId, stateId);
   }
 
   bulkReorderCustomStates(

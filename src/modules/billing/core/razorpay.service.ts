@@ -9,9 +9,10 @@ import {
   type RazorpayFetchedOrder,
   type RazorpayOrder,
 } from "./dto/billing.schemas";
-import type {
-  CreatePlatformOrderParams,
-  PlatformPaymentProvider,
+import {
+  PLATFORM_PAYMENT_TIMEOUT_MS,
+  type CreatePlatformOrderParams,
+  type PlatformPaymentProvider,
 } from "./platform-payment-provider";
 
 @Injectable()
@@ -55,6 +56,7 @@ export class RazorpayService implements PlatformPaymentProvider {
         receipt: params.receipt,
         notes: params.notes,
       }),
+      signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -85,7 +87,10 @@ export class RazorpayService implements PlatformPaymentProvider {
     const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString("base64");
     const response = await fetch(
       `https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}`,
-      { headers: { Authorization: `Basic ${auth}` } },
+      {
+        headers: { Authorization: `Basic ${auth}` },
+        signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
+      },
     );
 
     if (!response.ok) {

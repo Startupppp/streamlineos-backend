@@ -19,11 +19,11 @@ import {
   stateGroupEnum,
   cycleStatusEnum,
   moduleStatusEnum,
+  invoiceLineDetailEnum,
 } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { deals } from "../crm/deals";
 import { managedProducts } from "./managed-products";
-import { pmWorkspaces } from "./pm-workspaces";
 
 export const projects = build.table(
   "projects",
@@ -43,10 +43,10 @@ export const projects = build.table(
     priority: text("priority"),
     dealId: integer("deal_id"),
     managedProductId: integer("managed_product_id"),
-    pmWorkspaceId: text("pm_workspace_id").notNull(),
     budget: decimal("budget", { precision: 15, scale: 2 }),
     budgetMinor: bigint("budget_minor", { mode: "number" }),
     budgetCurrency: text("budget_currency"),
+    invoiceLineDetail: invoiceLineDetailEnum("invoice_line_detail").notNull().default("summary"),
     settings: jsonb("settings").$type<{
       modules: {
         sprints: boolean;
@@ -78,11 +78,6 @@ export const projects = build.table(
     index("idx_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
     unique("uniq_projects_org_id").on(table.orgId, table.id),
     foreignKey({
-      columns: [table.orgId, table.pmWorkspaceId],
-      foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
-      name: "fk_projects_org_pm_workspace",
-    }),
-    foreignKey({
       name: "fk_projects_manager_actor",
       columns: [table.orgId, table.managerMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -95,39 +90,6 @@ export const projects = build.table(
   ],
 );
 
-export const sprints = build.table(
-  "sprints",
-  {
-    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    projectId: integer("project_id")
-      .notNull(),
-    name: text("name").notNull(),
-    startDate: timestamp("start_date").notNull(),
-    endDate: timestamp("end_date").notNull(),
-    goal: text("goal"),
-    status: text("status").default("PLANNED").notNull(),
-    deletedAt: timestamp("deleted_at", { withTimezone: true }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_sprints_org_project" }).onDelete("cascade"),
-    index("idx_sprints_project_status").on(table.projectId, table.status).where(sql`deleted_at IS NULL`),
-    index("idx_sprints_org_project_velocity_cursor").on(table.orgId, table.projectId, table.startDate.desc(), table.id.desc())
-      .where(sql`${table.deletedAt} IS NULL AND ${table.status} IN ('ACTIVE', 'COMPLETED')`),
-    unique("uniq_sprints_org_id").on(table.orgId, table.id),
-    check(
-      "chk_sprints_status",
-      sql`${table.status} IN ('PLANNED','ACTIVE','COMPLETED')`,
-    ),
-  ],
-);
 
 export const projectStatuses = build.table(
   "project_statuses",
@@ -162,12 +124,14 @@ export const cycles = build.table(
       .notNull(),
     name: text("name").notNull(),
     description: text("description"),
+    goal: text("goal"),
     status: cycleStatusEnum("status").default("draft").notNull(),
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
     createdBy: text("created_by")
       .references(() => users.id)
       .notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -178,6 +142,11 @@ export const cycles = build.table(
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_cycles_org_project" }).onDelete("cascade"),
     index("idx_cycles_project").on(table.projectId),
     index("idx_cycles_org_status").on(table.orgId, table.status),
+    index("idx_cycles_org_project_status_live").on(table.orgId, table.projectId, table.status)
+      .where(sql`${table.deletedAt} IS NULL`),
+    index("idx_cycles_org_project_velocity_cursor")
+      .on(table.orgId, table.projectId, table.startDate.desc(), table.id.desc())
+      .where(sql`${table.deletedAt} IS NULL AND ${table.status} IN ('active', 'completed')`),
     unique("uniq_cycles_org_id").on(table.orgId, table.id),
   ],
 );

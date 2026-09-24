@@ -707,7 +707,10 @@ if (IS_DIRECT_RUN) {
       dispatcher,
       version: authored?.version ?? prev?.version ?? "1",
       consumers: prev?.consumers?.length ? prev.consumers : ["customer-registered webhook endpoints (webhooks API subscriptions)"],
-      emittedFrom: sites.map((p) => p.slice(p.indexOf("src/"))).sort(),
+      emittedFrom: sites
+        .map((p) => p.replaceAll("\\", "/"))
+        .map((p) => p.slice(p.indexOf("src/")))
+        .sort(),
       declaredIn: null,
       subscribable: true,
       sunsetAt: prev?.sunsetAt ?? null,

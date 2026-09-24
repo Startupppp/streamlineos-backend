@@ -148,6 +148,7 @@ export class WorkflowOutboxRelayService {
         events.push(...rows);
       },
       "read",
+      { stopWhen: () => events.length >= limit },
     );
 
     let started = 0;

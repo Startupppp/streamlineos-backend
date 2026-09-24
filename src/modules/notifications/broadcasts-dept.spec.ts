@@ -18,6 +18,7 @@ const mockCache = {
   cached: jest.fn(),
   cachedVersioned: jest.fn(),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+  invalidateForOrg: jest.fn().mockResolvedValue(undefined),
 };
 const mockAudit = { log: jest.fn() };
 const mockDispatch = { emit: jest.fn().mockResolvedValue({ notified: 0, deferred: true }) };

@@ -4,6 +4,8 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import type { Db } from "../../../db/drizzle.types";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 import type { MailMessageDetail, MailMessageSummary } from "../../mail/dto/mail-response.schemas";
 import type { GmailMailProvider } from "../../mail/providers/gmail-mail.provider";
 import type { OutlookMailProvider } from "../../mail/providers/outlook-mail.provider";
@@ -105,7 +107,7 @@ interface Recorder {
 function makeDb(row: MailboxRow, recorder: Recorder): Db {
   let selectCall = 0;
 
-  return {
+  return withDelegatingTransaction({
     select: jest.fn().mockImplementation(() => ({
       from: jest.fn().mockImplementation(() => ({
         where: jest.fn().mockImplementation(() => ({
@@ -123,7 +125,7 @@ function makeDb(row: MailboxRow, recorder: Recorder): Db {
         return { where: jest.fn().mockResolvedValue(undefined) };
       }),
     })),
-  } as unknown as Db;
+  }) as unknown as Db;
 }
 
 interface GmailStub {
@@ -228,6 +230,8 @@ function makeService(row: MailboxRow, gmail: GmailMailProvider, outlook: Outlook
 }
 
 describe("the mailbox sweep", () => {
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
+
   describe("how much of the window it reads", () => {
     /**
      * The failure this replaces. The sweep read one page, and both providers

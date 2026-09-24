@@ -7,6 +7,7 @@ const invoiceBaseSchema = z.object({
   orgId: z.string(),
   clientId: z.number().int().nullable(),
   projectId: z.number().int().nullable(),
+  dealId: z.number().int().nullable(),
   invoiceNumber: z.string(),
   status: z.string(),
   subtotal: z.string(),
@@ -151,6 +152,7 @@ export const invoiceDetailResponseSchema = invoiceBaseSchema.extend({
       gstRate: z.string(),
       amount: z.string(),
       lineOrder: z.number().int(),
+      timesheetEntryId: z.number().int().nullable(),
     }),
   ),
 });
@@ -173,6 +175,12 @@ export const invoicePaymentsListResponseSchema = z.array(
 );
 
 export const invoiceCreateResponseSchema = invoiceBaseSchema;
+
+export const invoiceFromTimesheetsResponseSchema = z.object({
+  invoice: invoiceBaseSchema,
+  timesheetEntryIds: z.array(z.number().int()),
+  posted: z.boolean(),
+});
 
 export const invoiceRecordPaymentResponseSchema = z.object({
   id: z.number().int(),

@@ -15,7 +15,7 @@ import {
   getWorkLogApprovedEmailTemplate,
   getWorkLogRejectedEmailTemplate,
   getOnboardingReminderEmailTemplate,
-} from "../index";
+} from "..";
 import { BRAND, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
 export const notificationsTemplates = defineTemplateFamily({

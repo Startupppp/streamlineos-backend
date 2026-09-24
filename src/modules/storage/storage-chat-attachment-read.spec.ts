@@ -1,3 +1,9 @@
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn().mockImplementation(
+    async (_db: unknown, fn: () => Promise<unknown>) => fn(),
+  ),
+}));
+
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";

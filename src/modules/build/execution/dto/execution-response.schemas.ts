@@ -6,7 +6,6 @@ const sprintTicketItemSchema = z.object({
   title: z.string(),
   status: z.string(),
   points: z.number().int().nullable(),
-  sprintId: z.number().int().nullable(),
 });
 
 export const sprintListItemSchema = z.object({
@@ -135,7 +134,7 @@ const sprintTicketWithAssigneeSchema = z.object({
   priority: z.string(),
   projectId: z.number().int().nullable(),
   ticketNumber: z.number().int(),
-  sprintId: z.number().int().nullable(),
+  cycleId: z.number().int().nullable(),
   epicId: z.number().int().nullable(),
   assigneeMembershipId: z.number().int().nullable(),
   points: z.number().int().nullable(),
@@ -178,7 +177,7 @@ export const epicRowSchema = z.object({
   priority: z.string(),
   projectId: z.number().int().nullable(),
   ticketNumber: z.number().int(),
-  sprintId: z.number().int().nullable(),
+  cycleId: z.number().int().nullable(),
   epicId: z.number().int().nullable(),
   assigneeMembershipId: z.number().int().nullable(),
   points: z.number().int().nullable(),
@@ -193,4 +192,23 @@ export const epicRowSchema = z.object({
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+  assignee: z.object({ user: userColsSchema }).nullable().optional(),
+});
+
+export const memberCapacitySchema = z.object({
+  userId: z.string(),
+  membershipId: z.number().int(),
+  workingDaysInWindow: z.number(),
+  leaveDays: z.number(),
+  halfLeaveDays: z.number(),
+  netCapacityDays: z.number(),
+  capacityHours: z.number().nullable(),
+  loggedHours: z.number(),
+  isOverAllocated: z.boolean(),
+  isZeroCapacity: z.boolean(),
+  utilizationPercent: z.number().nullable(),
+});
+
+export const workloadCapacityResponseSchema = z.object({
+  members: z.array(memberCapacitySchema),
 });

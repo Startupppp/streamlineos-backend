@@ -11,7 +11,8 @@ import { projects } from "../../../db/schema/build/core";
 import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
+import type { GeneratedDraftAiOutput, UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
+import { COMMENT_DRAFT_MAX_RETRIES } from "./comment-drafts.constants";
 
 @Injectable()
 export class CommentDraftsService {
@@ -200,5 +201,84 @@ export class CommentDraftsService {
         ),
       );
     return { deleted: true };
+  }
+
+  async upsertGenerated(
+    orgId: string,
+    membershipId: number,
+    ticketId: number,
+    generated: GeneratedDraftAiOutput,
+  ) {
+    const affectedRecordIds =
+      generated.affectedRecordIds !== null
+        ? JSON.stringify(generated.affectedRecordIds)
+        : null;
+
+    const [row] = await this.db
+      .insert(commentDrafts)
+      .values({
+        orgId,
+        membershipId,
+        ticketId,
+        body: generated.body,
+        evidence: generated.evidence,
+        proposedChange: generated.proposedChange,
+        impact: generated.impact,
+        confidence: generated.confidence,
+        affectedRecordIds,
+        retryCount: 0,
+        lastError: null,
+      })
+      .onConflictDoUpdate({
+        target: [
+          commentDrafts.orgId,
+          commentDrafts.membershipId,
+          commentDrafts.ticketId,
+        ],
+        set: {
+          body: generated.body,
+          evidence: generated.evidence,
+          proposedChange: generated.proposedChange,
+          impact: generated.impact,
+          confidence: generated.confidence,
+          affectedRecordIds,
+          membershipId,
+          retryCount: 0,
+          lastError: null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    return row;
+  }
+
+  async recordDraftFailure(
+    orgId: string,
+    membershipId: number | null,
+    draftId: number,
+    error: string,
+  ) {
+    const owned = and(
+      eq(commentDrafts.id, draftId),
+      eq(commentDrafts.orgId, orgId),
+      this.draftOwnerFilter(membershipId),
+    );
+
+    const [current] = await this.db
+      .select({ retryCount: commentDrafts.retryCount })
+      .from(commentDrafts)
+      .where(owned)
+      .limit(1);
+
+    if (!current) throw new NotFoundException("Draft not found");
+
+    const retryCount = Math.min((current.retryCount ?? 0) + 1, COMMENT_DRAFT_MAX_RETRIES);
+    await this.db
+      .update(commentDrafts)
+      .set({ lastError: error, retryCount, updatedAt: new Date() })
+      .where(owned);
+
+    return { retryCount, retriesRemaining: COMMENT_DRAFT_MAX_RETRIES - retryCount };
   }
 }

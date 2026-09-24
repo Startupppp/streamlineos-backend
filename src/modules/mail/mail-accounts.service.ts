@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { userIntegrationConnections } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { MailProvider } from "./dto/mail-schemas";
 
 const MAIL_TOOLKITS = ["gmail", "outlook"] as const;
@@ -107,15 +108,17 @@ export class MailAccountsService {
     for (let i = 0; i < ids.length; i += REAUTH_MARK_CHUNK) {
       const chunk = ids.slice(i, i + REAUTH_MARK_CHUNK);
       try {
-        await this.db
-          .update(userIntegrationConnections)
-          .set({ status: "needs_reauth" })
-          .where(
-            and(
-              inArray(userIntegrationConnections.id, chunk),
-              eq(userIntegrationConnections.orgId, orgId),
+        await runInNewTenantTransaction(this.db, orgId, (tx) =>
+          tx
+            .update(userIntegrationConnections)
+            .set({ status: "needs_reauth" })
+            .where(
+              and(
+                inArray(userIntegrationConnections.id, chunk),
+                eq(userIntegrationConnections.orgId, orgId),
+              ),
             ),
-          );
+        );
       } catch (error) {
         this.logger.error(
           `mail: could not flag account(s) ${chunk.join(",")} as needs_reauth for org ${orgId}: ${

@@ -2,16 +2,6 @@ import type { MembershipArtifact } from "../membership-artifact.types";
 
 export const BUILD_ARTIFACTS = [
   {
-    id: "pm_workspace_memberships",
-    mechanism: "database-cascade",
-    table: "pm_workspace_memberships",
-    keyedBy: "organization_membership_id",
-    onRemoval: "cascade",
-    onSuspension: "retain",
-    reason:
-      "Workspace membership cascades. The org membership gate already denies every request while suspended.",
-  },
-  {
     id: "managed_products",
     mechanism: "database-cascade",
     table: "managed_products",
@@ -112,14 +102,14 @@ export const BUILD_ARTIFACTS = [
       "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
   },
   {
-    id: "bugs",
+    id: "work_item_qa_details_qa_owner_membership",
     mechanism: "database-cascade",
-    table: "bugs",
-    keyedBy: "assignee_membership_id",
+    table: "work_item_qa_details",
+    keyedBy: "qa_owner_membership_id",
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "The QA-owner pointer moved here from build.bugs when the QA bug lifecycle was consolidated onto tickets plus this sidecar, and build.bugs was dropped by b-qa-bug-05-contract-drop. fk_work_item_qa_details_qa_owner_actor is an ON DELETE SET NULL composite tenant foreign key, so the defect record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
   {
     id: "change_requests",
@@ -162,14 +152,14 @@ export const BUILD_ARTIFACTS = [
       "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_project_team_members_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
-    id: "project_workspace_members",
+    id: "build_members",
     mechanism: "database-cascade",
-    table: "project_workspace_members",
+    table: "build_members",
     keyedBy: "membership_id",
     onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_project_workspace_members_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_build_members_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "feedbucket_submissions",
@@ -192,16 +182,6 @@ export const BUILD_ARTIFACTS = [
       "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_comment_drafts_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
-    id: "bugs_qa_owner_membership",
-    mechanism: "database-cascade",
-    table: "bugs",
-    keyedBy: "qa_owner_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "The QA-owner pointer on bugs is cleared by fk_bugs_qa_owner_actor, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
     id: "okr_goals_created_by_membership",
     mechanism: "database-cascade",
     table: "okr_goals",
@@ -220,5 +200,45 @@ export const BUILD_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "The manager pointer on projects is cleared by fk_projects_manager_actor, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
+  },
+  {
+    id: "managed_product_memberships",
+    mechanism: "database-cascade",
+    table: "managed_product_memberships",
+    keyedBy: "organization_membership_id",
+    onRemoval: "cascade",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_mp_members_org_membership is ON DELETE CASCADE, so removing the membership removes the product-membership row automatically. A suspension is reversible, so nothing is written.",
+  },
+  {
+    id: "feedbucket_widgets_default_assignee",
+    mechanism: "database-write",
+    table: "feedbucket_widgets",
+    keyedBy: "default_assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The default_assignee_membership_id column carries no foreign key, so removing a membership does not touch it automatically. It must be explicitly set to NULL so the widget configuration does not point at a removed member.",
+  },
+  {
+    id: "project_updates_author",
+    mechanism: "database-cascade",
+    table: "project_updates",
+    keyedBy: "author_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_project_updates_org_author is ON DELETE RESTRICT and the column is NOT NULL, so removing the authoring member is blocked until the update rows are handled. The author attribution cannot be nulled without migrating the column to nullable first.",
+  },
+  {
+    id: "project_attachments_uploader",
+    mechanism: "database-cascade",
+    table: "project_attachments",
+    keyedBy: "uploaded_by_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_project_attachments_org_uploader is ON DELETE RESTRICT and the column is NOT NULL, so removing the uploading member is blocked until the attachment rows are handled. The uploader attribution cannot be nulled without migrating the column to nullable first.",
   },
 ] as const satisfies readonly MembershipArtifact[];

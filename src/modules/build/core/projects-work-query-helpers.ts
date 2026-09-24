@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { projects, tickets, users } from "../../../db/schema";
+import { organizationMembers, projects, tickets, users } from "../../../db/schema";
 
 export const WORK_ROW_SELECTION = {
   id: tickets.id,
@@ -15,11 +15,7 @@ export const WORK_ROW_SELECTION = {
   rank: tickets.rank,
   createdAt: tickets.createdAt,
   updatedAt: tickets.updatedAt,
-  assigneeId: sql<string | null>`(
-    SELECT user_id FROM organization_members
-    WHERE org_id = ${tickets.orgId} AND id = ${tickets.assigneeMembershipId}
-  )`,
-  sprintId: tickets.sprintId,
+  assigneeId: sql<string | null>`${organizationMembers.userId}`,
   cycleId: tickets.cycleId,
   epicId: tickets.epicId,
   projectId: projects.id,

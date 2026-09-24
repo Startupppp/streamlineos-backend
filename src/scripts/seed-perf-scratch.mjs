@@ -749,21 +749,11 @@ async function seedInventory(ctx) {
 // ---------------------------------------------------------------------------
 
 async function seedBuildProduct(ctx) {
-  const ws = await one(
-    `INSERT INTO build.pm_workspaces (pm_workspace_id, org_id, name, slug, is_default, status, created_at, updated_at)
-     VALUES (gen_random_uuid(), $1, 'Perf Workspace', 'perf', true, 'active', now(), now())
-     ON CONFLICT DO NOTHING RETURNING pm_workspace_id`,
-    [ctx.org],
-  );
-  const wsId = ws?.pm_workspace_id
-    ?? (await one(`SELECT pm_workspace_id FROM build.pm_workspaces WHERE org_id = $1 LIMIT 1`, [ctx.org]))?.pm_workspace_id;
-  if (!wsId) throw new Error("no pm_workspace for org");
-
   const proj = await one(
-    `INSERT INTO build.projects (org_id, name, key, status, pm_workspace_id, manager_membership_id, created_at, updated_at)
-     VALUES ($1, 'Perf Project', 'PERF', 'ACTIVE', $2, $3, now(), now())
+    `INSERT INTO build.projects (org_id, name, key, status, manager_membership_id, created_at, updated_at)
+     VALUES ($1, 'Perf Project', 'PERF', 'ACTIVE', $2, now(), now())
      ON CONFLICT DO NOTHING RETURNING id`,
-    [ctx.org, wsId, ctx.membership],
+    [ctx.org, ctx.membership],
   );
   const projectId = proj?.id
     ?? (await one(`SELECT id FROM build.projects WHERE org_id = $1 AND key = 'PERF'`, [ctx.org]))?.id;
@@ -1726,7 +1716,7 @@ const TOUCHED = [
   "gl_books", "gl_fiscal_years", "gl_periods", "gl_journals",
   "inv_vendors", "inv_warehouses", "inv_locations", "inv_products", "inv_product_variants",
   "inv_stock_levels", "inv_stock_transactions", "inv_purchase_orders",
-  "build.pm_workspaces", "build.projects", "build.project_statuses", "build.sprints",
+  "build.projects", "build.project_statuses", "build.sprints",
   "build.project_members", "build.tickets", "build.ticket_assignees",
   "build.roadmap_items", "build.feedback_posts", "build.changelog_entries",
   "acc_tax_payments", "fin_reminder_policies",

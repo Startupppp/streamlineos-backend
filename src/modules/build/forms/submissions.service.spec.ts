@@ -8,6 +8,7 @@ const ORG_ID = "org-1";
 const USER_ID = "user-1";
 const PROJECT_ID = 10;
 const FORM_ID = 20;
+const SUBMISSION_ID = 30;
 
 function makeForm(overrides: Record<string, unknown> = {}) {
   return {
@@ -17,6 +18,22 @@ function makeForm(overrides: Record<string, unknown> = {}) {
     name: "Bug Report Form",
     isActive: true,
     actions: [],
+    ...overrides,
+  };
+}
+
+function makeSubmission(overrides: Record<string, unknown> = {}) {
+  return {
+    id: SUBMISSION_ID,
+    orgId: ORG_ID,
+    formId: FORM_ID,
+    projectId: PROJECT_ID,
+    values: {},
+    status: "submitted",
+    submittedByName: null,
+    submittedById: USER_ID,
+    convertedTicketId: null,
+    createdAt: new Date(),
     ...overrides,
   };
 }
@@ -35,7 +52,9 @@ describe("SubmissionsService.createSubmission", () => {
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
-      transaction: jest.fn(),
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: jest.fn().mockResolvedValue(undefined), query: mockDb["query"] }),
+      ),
     };
 
     const module = await Test.createTestingModule({
@@ -117,6 +136,7 @@ describe("SubmissionsService.createSubmission", () => {
           execute: mockExecute,
           select: mockSelect,
           insert: mockInsert,
+          query: mockDb["query"],
         };
         return fn(tx);
       },
@@ -180,7 +200,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: mockSelect, insert: mockInsert };
+        const tx = { execute: mockExecute, select: mockSelect, insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -219,7 +239,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert };
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -257,7 +277,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert };
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -305,7 +325,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: executeSpy, select: mockSelect, insert: mockInsert };
+        const tx = { execute: executeSpy, select: mockSelect, insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -333,7 +353,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: executeSpy, select: jest.fn(), insert: mockInsert };
+        const tx = { execute: executeSpy, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -341,5 +361,286 @@ describe("SubmissionsService.createSubmission", () => {
     await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} });
 
     expect(executeSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("SubmissionsService.updateSubmission", () => {
+  let svc: SubmissionsService;
+  let mockDb: Record<string, unknown>;
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+
+    mockDb = {
+      query: {
+        projectForms: { findFirst: jest.fn() },
+        formSubmissions: { findFirst: jest.fn() },
+      },
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: jest.fn().mockResolvedValue(undefined), query: mockDb["query"] }),
+      ),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        SubmissionsService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AuditService, useValue: mockAudit },
+      ],
+    }).compile();
+    svc = module.get(SubmissionsService);
+  });
+
+  it("throws 404 when form is not found", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(undefined);
+
+    await expect(
+      svc.updateSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("throws 404 when submission is not found", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(makeForm());
+    (mockDb.query as { formSubmissions: { findFirst: jest.Mock } }).formSubmissions.findFirst.mockResolvedValueOnce(undefined);
+
+    await expect(
+      svc.updateSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("returns 404 when update returns no rows (cross-form guard fires)", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(makeForm());
+    (mockDb.query as { formSubmissions: { findFirst: jest.Mock } }).formSubmissions.findFirst.mockResolvedValueOnce(makeSubmission());
+
+    const mockUpdate = jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+    (mockDb as Record<string, unknown>)["update"] = mockUpdate;
+
+    await expect(
+      svc.updateSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("returns the updated submission on success", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(makeForm());
+    (mockDb.query as { formSubmissions: { findFirst: jest.Mock } }).formSubmissions.findFirst.mockResolvedValueOnce(makeSubmission());
+
+    const updatedSubmission = makeSubmission({ status: "processed" });
+    const mockUpdate = jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([updatedSubmission]),
+        }),
+      }),
+    });
+    (mockDb as Record<string, unknown>)["update"] = mockUpdate;
+
+    const result = await svc.updateSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, SUBMISSION_ID, { status: "processed" });
+
+    expect(result.status).toBe("processed");
+    expect(mockAudit.log).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SubmissionsService.submitPublicForm", () => {
+  let svc: SubmissionsService;
+  let mockDb: Record<string, unknown>;
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+
+    mockDb = {
+      query: {
+        projectForms: { findFirst: jest.fn() },
+        formSubmissions: { findFirst: jest.fn() },
+      },
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: jest.fn().mockResolvedValue(undefined), query: mockDb["query"] }),
+      ),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        SubmissionsService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AuditService, useValue: mockAudit },
+      ],
+    }).compile();
+    svc = module.get(SubmissionsService);
+  });
+
+  it("throws 404 when no form matches publicToken", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(undefined);
+
+    await expect(
+      svc.submitPublicForm("bad-token", { values: {} }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("throws 400 when form found by publicToken is inactive", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(
+      makeForm({ isActive: false, isPublic: true, publicToken: "tok-1" }),
+    );
+
+    await expect(
+      svc.submitPublicForm("tok-1", { values: {} }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("creates submission with submittedById null for public submissions", async () => {
+    const form = makeForm({ isPublic: true, publicToken: "tok-2" });
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(form);
+
+    const createdSubmission = {
+      id: 10, orgId: ORG_ID, formId: FORM_ID, projectId: PROJECT_ID,
+      values: {}, status: "submitted", submittedByName: "Alice",
+      submittedById: null, convertedTicketId: null, createdAt: new Date(),
+    };
+
+    const mockInsert = jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([createdSubmission]),
+      }),
+    });
+    const mockExecute = jest.fn().mockResolvedValue(undefined);
+
+    (mockDb as Record<string, unknown>)["insert"] = mockInsert;
+    (mockDb as Record<string, unknown>)["execute"] = mockExecute;
+
+    (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
+        return fn(tx);
+      },
+    );
+
+    const result = await svc.submitPublicForm("tok-2", { values: {}, submittedByName: "Alice" });
+
+    expect(result.status).toBe("submitted");
+    expect(result.submittedByName).toBe("Alice");
+    expect(mockAudit.log).toHaveBeenCalledTimes(1);
+    const insertCall = mockInsert.mock.calls[0];
+    expect(insertCall).toBeDefined();
+    const valuesCallArg = (mockInsert.mock.results[0]?.value as { values: jest.Mock }).values.mock.calls[0][0] as Record<string, unknown>;
+    expect(valuesCallArg["submittedById"]).toBeNull();
+  });
+
+  it("public response does not include orgId or projectId (PII projection)", async () => {
+    const form = makeForm({ isPublic: true, publicToken: "tok-3" });
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(form);
+
+    const createdSubmission = {
+      id: 11, orgId: ORG_ID, formId: FORM_ID, projectId: PROJECT_ID,
+      values: {}, status: "submitted", submittedByName: null,
+      submittedById: null, convertedTicketId: null, createdAt: new Date(),
+    };
+
+    const mockInsert = jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([createdSubmission]),
+      }),
+    });
+    const mockExecute = jest.fn().mockResolvedValue(undefined);
+
+    (mockDb as Record<string, unknown>)["insert"] = mockInsert;
+    (mockDb as Record<string, unknown>)["execute"] = mockExecute;
+
+    (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
+        return fn(tx);
+      },
+    );
+
+    const result = await svc.submitPublicForm("tok-3", { values: {} });
+
+    expect("orgId" in result).toBe(false);
+    expect("projectId" in result).toBe(false);
+    expect("formId" in result).toBe(false);
+    expect("submittedById" in result).toBe(false);
+    expect("createdTicketIds" in result).toBe(false);
+  });
+});
+
+describe("SubmissionsService.listSubmissions", () => {
+  let svc: SubmissionsService;
+  let mockDb: Record<string, unknown>;
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+
+    mockDb = {
+      query: {
+        projectForms: { findFirst: jest.fn() },
+        formSubmissions: { findFirst: jest.fn() },
+      },
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: jest.fn().mockResolvedValue(undefined), query: mockDb["query"] }),
+      ),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        SubmissionsService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AuditService, useValue: mockAudit },
+      ],
+    }).compile();
+    svc = module.get(SubmissionsService);
+  });
+
+  it("throws 404 when form is not found", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(undefined);
+
+    await expect(
+      svc.listSubmissions(ORG_ID, PROJECT_ID, FORM_ID, {}),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("returns submissions for the owner org", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(makeForm());
+
+    const submissions = [makeSubmission()];
+    const mockLimit = jest.fn().mockResolvedValue(submissions);
+    const mockOrderBy = jest.fn().mockReturnValue({ limit: mockLimit });
+    const mockWhere = jest.fn().mockReturnValue({ orderBy: mockOrderBy });
+    const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
+    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
+
+    const result = await svc.listSubmissions(ORG_ID, PROJECT_ID, FORM_ID, {});
+    expect(Array.isArray(result)).toBe(true);
+    expect(mockLimit).toHaveBeenCalledWith(100);
+  });
+
+  it("applies status filter when provided", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(makeForm());
+
+    const mockLimit = jest.fn().mockResolvedValue([]);
+    const mockOrderBy = jest.fn().mockReturnValue({ limit: mockLimit });
+    const mockWhere = jest.fn().mockReturnValue({ orderBy: mockOrderBy });
+    const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
+    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
+
+    await svc.listSubmissions(ORG_ID, PROJECT_ID, FORM_ID, { status: "submitted" });
+    expect(mockWhere).toHaveBeenCalledTimes(1);
+    expect(mockLimit).toHaveBeenCalledWith(100);
+  });
+
+  it("applies cursor filter for date-based pagination", async () => {
+    (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(makeForm());
+
+    const mockLimit = jest.fn().mockResolvedValue([]);
+    const mockOrderBy = jest.fn().mockReturnValue({ limit: mockLimit });
+    const mockWhere = jest.fn().mockReturnValue({ orderBy: mockOrderBy });
+    const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
+    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
+
+    await svc.listSubmissions(ORG_ID, PROJECT_ID, FORM_ID, { cursor: "2026-01-01T00:00:00.000Z" });
+    expect(mockWhere).toHaveBeenCalledTimes(1);
   });
 });

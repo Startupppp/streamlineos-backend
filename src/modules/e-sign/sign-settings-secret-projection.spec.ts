@@ -77,6 +77,55 @@ describe("SignSettingsService.getOrCreate — the webhook secret is never select
   });
 });
 
+describe("SignSettingsService.get — reads without writing because a GET request transaction is read-only", () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it("returns the existing row when one is found, without calling insert", async () => {
+    const findFirst = jest.fn().mockResolvedValue(fullRow());
+    const insert = jest.fn();
+    const db = { query: { signOrgSettings: { findFirst } }, insert } as unknown as Db;
+
+    const result = await new SignSettingsService(db, auditStub()).get(ORG);
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(result.orgId).toBe(ORG);
+  });
+
+  it("returns in-memory defaults without calling insert when no row exists yet — the first PATCH creates it", async () => {
+    const findFirst = jest.fn().mockResolvedValue(undefined);
+    const insert = jest.fn();
+    const db = { query: { signOrgSettings: { findFirst } }, insert } as unknown as Db;
+
+    const result = await new SignSettingsService(db, auditStub()).get(ORG);
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(result.orgId).toBe(ORG);
+    expect(result.defaultExpirationDays).toBe(30);
+  });
+
+  it("excludes webhookSecret from the column set on the findFirst call", async () => {
+    const findFirst = jest.fn().mockResolvedValue(fullRow());
+    const db = { query: { signOrgSettings: { findFirst } } } as unknown as Db;
+
+    await new SignSettingsService(db, auditStub()).get(ORG);
+
+    const [args] = findFirst.mock.calls[0] ?? [];
+    const columns = (args as { columns?: Record<string, boolean> } | undefined)?.columns;
+    expect(columns).toBeDefined();
+    expect(columns?.webhookSecret).toBe(false);
+  });
+
+  it("never carries webhookSecret in the synthesised defaults row", async () => {
+    const findFirst = jest.fn().mockResolvedValue(undefined);
+    const db = { query: { signOrgSettings: { findFirst } } } as unknown as Db;
+
+    const result = await new SignSettingsService(db, auditStub()).get(ORG);
+
+    expect(result).not.toHaveProperty("webhookSecret");
+  });
+});
+
 describe("SignSettingsService.update — the webhook secret is never returned", () => {
   beforeEach(() => jest.resetAllMocks());
 

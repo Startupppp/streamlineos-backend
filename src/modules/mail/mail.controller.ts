@@ -48,6 +48,7 @@ import {
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { NoTenantTransaction } from "../../common/tenant";
 import {
   mailAccountListSchema,
   mailAiDraftSchema,
@@ -200,6 +201,7 @@ export class MailController {
   }
 
   @Post("ai/thread-summary")
+  @NoTenantTransaction()
   @ResponseSchema(mailAiThreadSummarySchema)
   @HttpCode(200)
   @RequirePermission("mail:ai:use")
@@ -212,6 +214,7 @@ export class MailController {
   }
 
   @Post("ai/draft")
+  @NoTenantTransaction()
   @ResponseSchema(mailAiDraftSchema)
   @HttpCode(200)
   @RequirePermission("mail:ai:use")

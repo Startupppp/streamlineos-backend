@@ -1,14 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, or, inArray } from "drizzle-orm";
-import {
-  kbSpaces,
-  kbSpaceMembers,
-  kbArticles,
-  kbArticleRestrictions,
-  roles,
-  roleAssignments,
-  organizationMembers,
-} from "../../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { kbArticles, kbArticleRestrictions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -17,6 +9,10 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { AccessService } from "../../access/access.service";
 import { kbAclCacheKey, type KbAclDimension } from "./kb-acl-cache-key";
+import {
+  computeAccessibleSpaceIds,
+  resolveRoleSlugs,
+} from "./authorization/knowledge-space-scope";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
 
@@ -33,22 +29,7 @@ export class KbAccessService {
   }
 
   private async resolveRoleSlugs(orgId: string, userId: string): Promise<string[]> {
-    const rows = await this.db
-      .select({ slug: roles.slug })
-      .from(roleAssignments)
-      .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
-      .innerJoin(
-        organizationMembers,
-        eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-      )
-      .where(
-        and(
-          eq(roleAssignments.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.orgId, orgId),
-        ),
-      );
-    return rows.map((r) => r.slug);
+    return resolveRoleSlugs(this.db, orgId, userId);
   }
 
   private async resolveAclDimension(user: CurrentUserContext): Promise<KbAclDimension> {
@@ -81,34 +62,13 @@ export class KbAccessService {
     user: CurrentUserContext,
     acl: KbAclDimension,
   ): Promise<number[]> {
-    const spaces = await this.db
-      .select({ id: kbSpaces.id, audience: kbSpaces.audience })
-      .from(kbSpaces)
-      .where(and(eq(kbSpaces.orgId, user.orgId), isNull(kbSpaces.deletedAt)));
-
-    if (await this.isAdmin(user)) return spaces.map((s) => s.id);
-
-    const membershipId = acl.membershipId;
-    if (membershipId === null) throw new ForbiddenException("Organization membership required");
-    const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
-    const directMatch = eq(kbSpaceMembers.membershipId, membershipId);
-    const grantedRows = await this.db
-      .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
-      .from(kbSpaceMembers)
-      .where(
-        and(
-          eq(kbSpaceMembers.orgId, user.orgId),
-          roleSlugs.length > 0
-            ? or(directMatch, inArray(kbSpaceMembers.role, roleSlugs))
-            : directMatch,
-        ),
-      );
-
-    const granted = new Set(grantedRows.map((m) => m.spaceId));
-
-    return spaces
-      .filter((s) => s.audience === "public" || s.audience === "mixed" || granted.has(s.id))
-      .map((s) => s.id);
+    const isAdmin = await this.isAdmin(user);
+    if (!isAdmin && acl.membershipId === null) {
+      throw new ForbiddenException("Organization membership required");
+    }
+    return computeAccessibleSpaceIds(this.db, user.orgId, acl.membershipId, isAdmin, () =>
+      this.resolveRoleSlugs(user.orgId, user.userId),
+    );
   }
 
   async assertSpaceAccessible(user: CurrentUserContext, spaceId: number): Promise<void> {

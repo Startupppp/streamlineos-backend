@@ -37,6 +37,7 @@ export class TeamProjectsService {
         and(
           eq(projectTeamAssignments.teamId, teamId),
           eq(projectTeamAssignments.orgId, orgId),
+          isNull(projects.deletedAt),
         ),
       )
       .orderBy(desc(projectTeamAssignments.addedAt))

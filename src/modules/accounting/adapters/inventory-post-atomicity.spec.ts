@@ -110,7 +110,7 @@ function callArguments(text: string, call: string, from = 0): string {
 }
 
 describe.each(CALL_SITES)("$file", ({ file, call, transactionIndex, txArgument, helper }) => {
-  const source = readFileSync(join(MODULES, file), "utf8");
+  const source = readFileSync(join(MODULES, file), "utf8").replace(/\r\n/g, "\n");
   const [start, end] = transactionBody(source, transactionIndex);
   const body = source.slice(start, end);
 
@@ -165,7 +165,7 @@ describe("the inventory lane's bridge hands the transaction all the way down", (
     link of that chain is a place the transaction could be dropped.
   */
   const INVENTORY = join(MODULES, "inventory");
-  const read = (file: string) => readFileSync(join(INVENTORY, file), "utf8");
+  const read = (file: string) => readFileSync(join(INVENTORY, file), "utf8").replace(/\r\n/g, "\n");
 
   it.each([
     ["purchase-orders/lib/grn-post-tx.ts", "postReceiptJournal("],
@@ -189,7 +189,7 @@ describe("the contract this implements", () => {
     const contract = readFileSync(
       join(__dirname, "../../../..", "docs/inventory-gl-contract.md"),
       "utf8",
-    );
+    ).replace(/\r\n/g, "\n");
     expect(contract).toContain("Atomicity is inherited, not declared");
     /* The decision ACC-05 implements, and the one it rejected. */
     expect(contract).toContain("There is no\n> `pending_accounting` state");

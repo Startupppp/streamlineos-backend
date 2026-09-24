@@ -8,7 +8,6 @@ import type { AiCreditLedger } from "./credit-ledger.interface";
 import { LlmService } from "../providers/llm.service";
 import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
-import { AiResponseCacheService } from "./ai-response-cache.service";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
 import { EmbeddingsService } from "../providers/embeddings.service";
 
@@ -69,11 +68,6 @@ async function buildModule(
   const llm = llmOverride ?? makeLlm();
   const ledger = ledgerOverride ?? makeLedger();
 
-  const mockResponseCache = {
-    cachedInvoke: jest.fn().mockImplementation((_orgId: string, _params: unknown, fetcher: () => unknown) => fetcher()),
-    invalidate: jest.fn().mockResolvedValue(undefined),
-  };
-
   const mockConcurrencyLimiter =
     extras.limiter ?? { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
 
@@ -87,7 +81,6 @@ async function buildModule(
       { provide: AiUsageService, useValue: mockUsage },
       { provide: AuditService, useValue: mockAudit },
       { provide: AI_CREDIT_LEDGER, useValue: ledger },
-      { provide: AiResponseCacheService, useValue: mockResponseCache },
       { provide: AiConcurrencyLimiter, useValue: mockConcurrencyLimiter },
     ],
   }).compile();
@@ -249,40 +242,6 @@ describe("AiGatewayService", () => {
     });
   });
 
-  describe("dedupe+cache ordering — warm cache never calls runner (item 3)", () => {
-    it("with dedupe+cache both set and warm cache, runner is invoked zero times", async () => {
-      const llm = makeLlm();
-      const cachedValue = { ok: true as const, data: "cached", model: "m", latencyMs: 1, correlationId: "x", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
-      const warmCache = {
-        cachedInvoke: jest.fn().mockResolvedValue(cachedValue),
-        invalidate: jest.fn().mockResolvedValue(undefined),
-      };
-      const mockUsage = { track: jest.fn().mockResolvedValue(undefined) };
-      const mockAudit = { log: jest.fn() };
-      const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
-
-      const warmModule: TestingModule = await Test.createTestingModule({
-        providers: [
-          AiGatewayService,
-          { provide: LlmService, useValue: llm },
-          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQueryRaw: jest.fn(), embedBatchRaw: jest.fn(), toVectorLiteral: jest.fn() } },
-          { provide: AiUsageService, useValue: mockUsage },
-          { provide: AuditService, useValue: mockAudit },
-          { provide: AI_CREDIT_LEDGER, useValue: makeLedger() },
-          { provide: AiResponseCacheService, useValue: warmCache },
-          { provide: AiConcurrencyLimiter, useValue: limiter },
-        ],
-      }).compile();
-
-      const svc = warmModule.get(AiGatewayService);
-      const result = await svc.invokeText({ actor: ACTOR, feature: FEATURE, prompt: PROMPT, dedupe: true, cache: { aclVersion: "v1" } });
-
-      expect(llm.invokeTextWithUsage).not.toHaveBeenCalled();
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.data).toBe("cached");
-    });
-  });
-
   describe("dedupe", () => {
     it("shares in-flight promise for identical dedupe calls", async () => {
       let resolveCall!: (v: string) => void;
@@ -302,7 +261,7 @@ describe("AiGatewayService", () => {
       const [r1, r2] = await Promise.all([p1, p2]);
 
       expect(llm.invokeTextWithUsage).toHaveBeenCalledTimes(1);
-      expect(r1).toBe(r2);
+      expect(r1).toStrictEqual(r2);
     });
   });
 
@@ -331,10 +290,6 @@ describe("AiGatewayService", () => {
       const ledger = makeLedger();
       const mockUsage = { track: jest.fn().mockResolvedValue(undefined) };
       const mockAudit = { log: jest.fn() };
-      const mockResponseCache = {
-        cachedInvoke: jest.fn().mockImplementation((_o: string, _p: unknown, f: () => unknown) => f()),
-        invalidate: jest.fn().mockResolvedValue(undefined),
-      };
       const denyingLimiter = { acquire: jest.fn().mockResolvedValue(false), release: jest.fn() };
 
       const module: TestingModule = await Test.createTestingModule({
@@ -345,7 +300,6 @@ describe("AiGatewayService", () => {
           { provide: AiUsageService, useValue: mockUsage },
           { provide: AuditService, useValue: mockAudit },
           { provide: AI_CREDIT_LEDGER, useValue: ledger },
-          { provide: AiResponseCacheService, useValue: mockResponseCache },
           { provide: AiConcurrencyLimiter, useValue: denyingLimiter },
         ],
       }).compile();
@@ -374,7 +328,6 @@ describe("AiGatewayService", () => {
           { provide: AiUsageService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
           { provide: AuditService, useValue: { log: jest.fn() } },
           { provide: AI_CREDIT_LEDGER, useValue: makeLedger() },
-          { provide: AiResponseCacheService, useValue: { cachedInvoke: jest.fn(), invalidate: jest.fn() } },
           { provide: AiConcurrencyLimiter, useValue: { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() } },
         ],
       }).compile();
@@ -409,7 +362,7 @@ describe("AiGatewayService", () => {
       const embedOrder = mockEmbeddings.embedQueryRaw.mock.invocationCallOrder[0];
       expect(reserveOrder).toBeDefined();
       expect(embedOrder).toBeDefined();
-      expect(reserveOrder!).toBeLessThan(embedOrder!);
+      expect(reserveOrder).toBeLessThan(embedOrder);
     });
 
     it("never calls the provider when the wallet is short", async () => {

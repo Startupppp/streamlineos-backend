@@ -118,6 +118,7 @@ export class InvoicesService {
             gstRate: true,
             amount: true,
             lineOrder: true,
+            timesheetEntryId: true,
           },
           orderBy: [asc(invoiceItems.lineOrder), asc(invoiceItems.id)],
         },

@@ -1,7 +1,16 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { crmAccountTierEnum } from "../../../../db/schema";
 
 const sizeEnum = z.enum(["1-10", "11-50", "51-200", "201-1000", "1000+"]);
+
+/**
+ * The account tier, typed off the Postgres enum so the contract cannot offer a
+ * label the column will reject. It is entered by a person; nothing derives it.
+ */
+export const CRM_ACCOUNT_TIERS = crmAccountTierEnum.enumValues;
+export const crmAccountTierSchema = z.enum(CRM_ACCOUNT_TIERS);
+export type CrmAccountTier = z.infer<typeof crmAccountTierSchema>;
 
 export const organizationListSchema = z.object({
   cursor: z.string().optional(),
@@ -18,6 +27,7 @@ export const organizationCreateSchema = z.object({
   website: z.string().url().optional().or(z.literal("")),
   linkedinUrl: z.string().url().optional().or(z.literal("")),
   description: z.string().optional(),
+  tier: crmAccountTierSchema.optional(),
 }).strict();
 
 export const organizationUpdateSchema = z.object({
@@ -28,6 +38,7 @@ export const organizationUpdateSchema = z.object({
   website: z.string().optional().nullable(),
   linkedinUrl: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
+  tier: crmAccountTierSchema.optional().nullable(),
   healthScore: z.number().int().min(0).max(100).optional().nullable(),
   parentId: z.number().int().positive().optional().nullable(),
   notes: z.string().optional().nullable(),

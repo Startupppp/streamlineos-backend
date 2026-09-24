@@ -10,6 +10,7 @@ import { StorageService, type UploadResult } from "../../storage/storage.service
 import { validateMagicBytes } from "../../storage/file-signatures";
 import { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import { AvScanner } from "../../../common/security/av-scan";
@@ -56,6 +57,15 @@ const COMPRESSIBLE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
  */
 const MAX_IMAGE_PIXELS = 50_000_000;
 
+const MAX_IMAGE_MEGAPIXELS = MAX_IMAGE_PIXELS / 1_000_000;
+
+function imageTransformRefusal(error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  return reason.includes("pixel limit")
+    ? `Image is larger than the ${MAX_IMAGE_MEGAPIXELS} megapixel processing limit`
+    : "Invalid image file";
+}
+
 function sizeCap(mimeType: string): number {
   if (IMAGE_TYPES.has(mimeType)) return IMAGE_CAP;
   if (VIDEO_TYPES.has(mimeType)) return VIDEO_CAP;
@@ -85,7 +95,13 @@ export class KbMediaService {
       throw new ServiceUnavailableException("File storage is not available");
     }
 
-    if (pageId != null) await this.assertPageInOrg(u.orgId, pageId);
+    if (pageId != null) {
+      await runInTenantTransaction(
+        this.db,
+        async () => { await this.assertPageInOrg(u.orgId, pageId); },
+        { orgId: u.orgId },
+      );
+    }
 
     const { mimetype, buffer, originalname } = file;
 
@@ -121,8 +137,11 @@ export class KbMediaService {
           .toBuffer();
         uploadMime = "image/webp";
         uploadName = originalname.replace(/\.[^.]+$/, "") + ".webp";
-      } catch {
-        throw new BadRequestException("Invalid image file");
+      } catch (error) {
+        this.logger.error(
+          `KB image transform failed (${mimetype}, ${buffer.length} bytes, "${originalname}"): ${String(error)}`,
+        );
+        throw new BadRequestException(imageTransformRefusal(error));
       }
     }
 
@@ -136,7 +155,47 @@ export class KbMediaService {
       kbBucket,
     );
 
-    await this.recordAttachment(u, pageId ?? null, originalname, result, kbBucket);
+    await runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.recordAttachment(u, pageId ?? null, originalname, result, kbBucket);
+
+        if (pageId != null && DOC_TYPES.has(mimetype)) {
+          const indexPageId = pageId;
+          const index = () =>
+            this.attachmentIndexing.indexPageDocument(u.orgId, indexPageId, buffer, mimetype, originalname);
+          /**
+           * This was a bare `void`-with-`.catch` fire-and-forget, and it never
+           * indexed anything. The promise inherits the request's AsyncLocalStorage
+           * context, so `this.db` resolved to the request transaction — but the
+           * handler had already returned and that transaction had COMMITTED by the
+           * time the extract and the embedding round trip finished, so
+           * `indexPageDocument`'s own `db.transaction(...)` ran on a dead handle.
+           * The `.catch` then swallowed the failure into a log line, which is why
+           * page-document uploads reported success and were never searchable.
+           *
+           * `registerAfterCommit` is the right mechanism here (backend/CLAUDE.md 4,
+           * case 3): the attachment row is already committed and carries the file
+           * key, so a crash before indexing is re-drivable from stored state. The
+           * interceptor drains each hook inside its own
+           * `runInNewTenantTransaction`, so the GUC is present. It returns false
+           * when there is no ambient context, in which case the work runs inline
+           * rather than being dropped, and the hook deliberately does NOT swallow —
+           * the drain reports a rejection, and a silent indexing failure is what
+           * hid this for so long.
+           */
+          const deferred = registerAfterCommit(async () => {
+            await index();
+          });
+          if (!deferred) {
+            await index().catch((err: unknown) => {
+              this.logger.error(`Failed to index page document (page ${indexPageId}): ${String(err)}`);
+            });
+          }
+        }
+      },
+      { orgId: u.orgId },
+    );
 
     this.audit.log({
       action: "kb.media_upload",
@@ -144,40 +203,6 @@ export class KbMediaService {
       orgId: u.orgId,
       metadata: { fileKey: result.key, size: result.size, mimeType: result.mimeType },
     });
-
-    if (pageId != null && DOC_TYPES.has(mimetype)) {
-      const indexPageId = pageId;
-      const index = () =>
-        this.attachmentIndexing.indexPageDocument(u.orgId, indexPageId, buffer, mimetype, originalname);
-      /**
-       * This was a bare `void`-with-`.catch` fire-and-forget, and it never
-       * indexed anything. The promise inherits the request's AsyncLocalStorage
-       * context, so `this.db` resolved to the request transaction — but the
-       * handler had already returned and that transaction had COMMITTED by the
-       * time the extract and the embedding round trip finished, so
-       * `indexPageDocument`'s own `db.transaction(...)` ran on a dead handle.
-       * The `.catch` then swallowed the failure into a log line, which is why
-       * page-document uploads reported success and were never searchable.
-       *
-       * `registerAfterCommit` is the right mechanism here (backend/CLAUDE.md 4,
-       * case 3): the attachment row is already committed and carries the file
-       * key, so a crash before indexing is re-drivable from stored state. The
-       * interceptor drains each hook inside its own
-       * `runInNewTenantTransaction`, so the GUC is present. It returns false
-       * when there is no ambient context, in which case the work runs inline
-       * rather than being dropped, and the hook deliberately does NOT swallow —
-       * the drain reports a rejection, and a silent indexing failure is what
-       * hid this for so long.
-       */
-      const deferred = registerAfterCommit(async () => {
-        await index();
-      });
-      if (!deferred) {
-        await index().catch((err: unknown) => {
-          this.logger.error(`Failed to index page document (page ${indexPageId}): ${String(err)}`);
-        });
-      }
-    }
 
     return { ...result, name: originalname };
   }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { formSubmissionStatusEnum } from "../../../../db/schema";
 
 export const formRowSchema = z.object({
   id: z.number().int(),
@@ -26,7 +27,7 @@ export const submissionRowSchema = z.object({
   formId: z.number().int(),
   projectId: z.number().int(),
   values: z.unknown(),
-  status: z.string(),
+  status: z.enum(formSubmissionStatusEnum.enumValues),
   submittedByName: z.string().nullable(),
   submittedById: z.string().nullable(),
   convertedTicketId: z.number().int().nullable(),
@@ -39,12 +40,22 @@ export const submissionCreateResultSchema = z.object({
   formId: z.number().int(),
   projectId: z.number().int(),
   values: z.unknown(),
-  status: z.string(),
+  status: z.enum(formSubmissionStatusEnum.enumValues),
   submittedByName: z.string().nullable(),
   submittedById: z.string().nullable(),
   convertedTicketId: z.number().int().nullable(),
   createdAt: wireDate(),
   createdTicketIds: z.array(z.number().int()),
+  executedActionTypes: z.array(z.string()),
+  skippedActionTypes: z.array(z.string()),
+});
+
+export const publicSubmissionResultSchema = z.object({
+  id: z.number().int(),
+  status: z.enum(formSubmissionStatusEnum.enumValues),
+  submittedByName: z.string().nullable(),
+  values: z.unknown(),
+  createdAt: wireDate(),
   executedActionTypes: z.array(z.string()),
   skippedActionTypes: z.array(z.string()),
 });

@@ -43,10 +43,11 @@ import { GeofencingService } from "./geofencing.service";
 import { BiometricService } from "./biometric.service";
 import { LeavePoliciesService } from "./leave-policies.service";
 import { CompOffGrantService } from "./comp-off-grant.service";
-import { LeaveApproverService } from "./leave-approver.service";
 import { LeaveTypesService } from "./leave-types.service";
 import { RateLimitModule } from "../../../common/ratelimit/rate-limit.module";
 import { DirectoryModule } from "../../directory/directory.module";
+import { AttentionModule } from "../../attention/attention.module";
+import { HrTimeApprovalAdapter } from "./hr-time-approval.adapter";
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { DirectoryModule } from "../../directory/directory.module";
     RateLimitModule,
     HrLifecycleModule,
     DirectoryModule,
+    AttentionModule,
   ],
   controllers: [
     EmployeeAttendanceController,
@@ -100,8 +102,8 @@ import { DirectoryModule } from "../../directory/directory.module";
     BiometricService,
     LeavePoliciesService,
     CompOffGrantService,
-    LeaveApproverService,
     LeaveTypesService,
+    HrTimeApprovalAdapter,
   ],
   exports: [AttendanceService, HrTimeLedgerModule, LeavesService, WfhService],
 })

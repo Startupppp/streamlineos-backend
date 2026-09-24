@@ -37,10 +37,10 @@ export class ProjectsQueryService {
   async listProjects(u: CurrentUserContext, input: ListProjectsInput) {
     const read = await resolveProjectsScope(this.access, u);
     if (read.denied) return { data: [], hasMore: false, nextCursor: null };
+    const membershipId = actingMembershipId(u.principal);
     const ticketRead = await resolveTicketsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
-    const membershipId = actingMembershipId(u.principal);
     return this.queryProjects(orgId, userId, membershipId, read, ticketRead, input);
   }
 
@@ -52,12 +52,13 @@ export class ProjectsQueryService {
     ticketRead: ScopedRead,
     input: ListProjectsInput,
   ) {
-    const { search, status, afterId, limit, pmWorkspaceId } = input;
+    const { search, status, afterId, limit, managedProductId } =
+      input;
 
     const domain: (SQL | undefined)[] = [isNull(projects.deletedAt)];
 
-    if (pmWorkspaceId) {
-      domain.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
+    if (managedProductId !== undefined) {
+      domain.push(eq(projects.managedProductId, managedProductId));
     }
 
     const memberOf = this.db
@@ -255,7 +256,7 @@ export class ProjectsQueryService {
         description: p.description,
         key: p.key,
         status: p.status,
-        priority: p.priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT" | null,
+        priority: p.priority,
         startDate: p.startDate,
         endDate: p.endDate,
         managedProductId: p.managedProductId,
@@ -331,7 +332,7 @@ export class ProjectsQueryService {
             .from(projectTeamAssignments)
             .innerJoin(
               projectTeamMembers,
-              eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+              and(eq(projectTeamMembers.orgId, projectTeamAssignments.orgId), eq(projectTeamMembers.teamId, projectTeamAssignments.teamId)),
             )
             .where(
               and(

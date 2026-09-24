@@ -1,5 +1,7 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportAiTriageDataService } from "./support-ai-triage-data.service";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -28,7 +30,7 @@ function makeDataSvc(
     orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(selectResult) }),
   });
 
-  const db = {
+  const db = withDelegatingTransaction({
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         innerJoin: jest.fn().mockReturnValue({
@@ -38,7 +40,7 @@ function makeDataSvc(
         }),
       }),
     }),
-  };
+  });
 
   const embeddings = {
     isEmbeddingConfigured: jest.fn().mockReturnValue(true),
@@ -65,6 +67,8 @@ function makeDataSvc(
 }
 
 describe("SupportAiTriageDataService.searchKbForTicket — KB space ACL in RAG search (cross-tenant isolation)", () => {
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
+
   const OWNER_ORG = "org-owner";
   const OWNER_USER = "user-owner-1";
 

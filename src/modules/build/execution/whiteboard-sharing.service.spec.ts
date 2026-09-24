@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { WhiteboardSharingService } from "./whiteboard-sharing.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -5,6 +6,10 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 type MockChain = {
   from: jest.Mock;
@@ -296,6 +301,163 @@ describe("WhiteboardSharingService", () => {
       expect(txInsertValues).toHaveBeenCalledWith([
         expect.objectContaining({ membershipId: 3, role: "viewer" }),
       ]);
+    });
+  });
+
+  describe("share token hashing — D1: tokens must be stored as SHA-256 hashes, not plaintext", () => {
+    it("rotateShareToken stores hash not raw token: SET is called with sha256(rawToken)", async () => {
+      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId });
+      dbSelect.mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]));
+
+      let capturedSetArg: Record<string, unknown> | undefined;
+      const returning = jest.fn().mockResolvedValue([{ ...BASE_BOARD, visibility: "public" as const }]);
+      const where = jest.fn().mockReturnValue({ returning });
+      const set = jest.fn().mockImplementation((arg: Record<string, unknown>) => {
+        capturedSetArg = arg;
+        return { where };
+      });
+      dbUpdate.mockReturnValueOnce({ set });
+
+      const u = makeUser({ userId: BASE_BOARD.createdBy });
+      const result = await svc.rotateShareToken(u, BASE_BOARD.projectId, BASE_BOARD.id);
+
+      expect(capturedSetArg).toBeDefined();
+      const storedToken = capturedSetArg!["shareToken"] as string;
+      const returnedToken = result.shareToken;
+
+      expect(returnedToken).toBeDefined();
+      expect(storedToken).not.toBe(returnedToken);
+      expect(storedToken).toBe(sha256Hex(returnedToken!));
+      expect(storedToken).toHaveLength(64);
+    });
+
+    it("rotateShareToken response shareToken is the raw token, not the hash", async () => {
+      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId });
+      dbSelect.mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]));
+
+      const returning = jest.fn().mockResolvedValue([{ ...BASE_BOARD, visibility: "public" as const, shareToken: "some-hash-stored-in-db" }]);
+      const where = jest.fn().mockReturnValue({ returning });
+      const set = jest.fn().mockReturnValue({ where });
+      dbUpdate.mockReturnValueOnce({ set });
+
+      const u = makeUser({ userId: BASE_BOARD.createdBy });
+      const result = await svc.rotateShareToken(u, BASE_BOARD.projectId, BASE_BOARD.id);
+
+      expect(result.shareToken).not.toBe("some-hash-stored-in-db");
+      expect(result.shareToken).not.toHaveLength(64);
+    });
+
+    it("updateSharing stores hash when token is newly generated (needsToken=true)", async () => {
+      const boardWithNoToken = { ...BASE_BOARD, shareToken: null as string | null, visibility: "project" as const };
+      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId });
+      dbSelect.mockReturnValueOnce(makeChain([{ board: boardWithNoToken, shareRole: null }]));
+
+      let capturedSetArg: Record<string, unknown> | undefined;
+      const returning = jest.fn().mockResolvedValue([{ ...boardWithNoToken, visibility: "public" as const }]);
+      const where = jest.fn().mockReturnValue({ returning });
+      const set = jest.fn().mockImplementation((arg: Record<string, unknown>) => {
+        capturedSetArg = arg;
+        return { where };
+      });
+      dbUpdate.mockReturnValueOnce({ set });
+
+      const u = makeUser({ userId: BASE_BOARD.createdBy });
+      const result = await svc.updateSharing(u, BASE_BOARD.projectId, BASE_BOARD.id, { visibility: "public" });
+
+      expect(capturedSetArg!["shareToken"]).toBe(sha256Hex(result.shareToken!));
+    });
+
+    it("updateSharing returns null for shareToken when no new token is issued", async () => {
+      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId });
+      dbSelect.mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]));
+      const returning = jest.fn().mockResolvedValue([{ ...BASE_BOARD, visibility: "public" as const }]);
+      const where = jest.fn().mockReturnValue({ returning });
+      const set = jest.fn().mockReturnValue({ where });
+      dbUpdate.mockReturnValueOnce({ set });
+
+      const u = makeUser({ userId: BASE_BOARD.createdBy });
+      const result = await svc.updateSharing(u, BASE_BOARD.projectId, BASE_BOARD.id, { allowExport: false });
+
+      expect(result.shareToken).toBeNull();
+    });
+
+    it("getPublicByToken works correctly when the board is found via hash lookup", async () => {
+      const rawToken = "my-raw-share-token";
+      findFirstWhiteboard.mockResolvedValueOnce({
+        ...BASE_BOARD,
+        visibility: "public" as const,
+        publicAccess: "viewer" as const,
+        linkExpiresAt: null,
+      });
+      const result = await svc.getPublicByToken(rawToken);
+      expect(result.name).toBe(BASE_BOARD.name);
+    });
+
+    it("getPublicByToken hashes the token — sha256Hex of any raw token never equals the raw token (structural: hash differs from input)", () => {
+      const rawToken = "some-random-base64url-token";
+      const hash = sha256Hex(rawToken);
+      expect(hash).not.toBe(rawToken);
+      expect(hash).toHaveLength(64);
+      expect(/^[0-9a-f]{64}$/.test(hash)).toBe(true);
+    });
+
+    it("getPublicByToken: rejected when token hash does not match any board (unknown token)", async () => {
+      findFirstWhiteboard.mockResolvedValueOnce(undefined);
+      await expect(svc.getPublicByToken("does-not-exist")).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe("share token security — expiry and revocation (D1 continued)", () => {
+    it("getPublicByToken rejects an expired link immediately — revocation bound is zero", async () => {
+      findFirstWhiteboard.mockResolvedValueOnce({
+        ...BASE_BOARD,
+        visibility: "public" as const,
+        linkExpiresAt: new Date(Date.now() - 1),
+      });
+      await expect(svc.getPublicByToken("any-token")).rejects.toThrow(NotFoundException);
+    });
+
+    it("getPublicByToken rejects when visibility is changed away from public — revocation is immediate", async () => {
+      findFirstWhiteboard.mockResolvedValueOnce({
+        ...BASE_BOARD,
+        visibility: "project" as const,
+      });
+      await expect(svc.getPublicByToken("any-token")).rejects.toThrow(NotFoundException);
+    });
+
+    it("updatePublicByToken rejects an expired link — expiry enforced at write time", async () => {
+      findFirstWhiteboard.mockResolvedValueOnce({
+        id: 1,
+        orgId: BASE_BOARD.orgId,
+        visibility: "public" as const,
+        publicAccess: "editor" as const,
+        linkExpiresAt: new Date(Date.now() - 1),
+      });
+      await expect(
+        svc.updatePublicByToken("tok", { elements: [] }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("getPublicByToken does not expose orgId or shareToken in the response", async () => {
+      findFirstWhiteboard.mockResolvedValueOnce({
+        ...BASE_BOARD,
+        visibility: "public" as const,
+        publicAccess: "viewer" as const,
+        linkExpiresAt: null,
+      });
+      const result = await svc.getPublicByToken("tok") as Record<string, unknown>;
+      expect(result).not.toHaveProperty("orgId");
+      expect(result).not.toHaveProperty("shareToken");
+      expect(result).not.toHaveProperty("createdBy");
+      expect(result).not.toHaveProperty("projectId");
+    });
+
+    it("getPublicByToken does not expose private board data even when a valid-format token is presented", async () => {
+      findFirstWhiteboard.mockResolvedValueOnce({
+        ...BASE_BOARD,
+        visibility: "private" as const,
+      });
+      await expect(svc.getPublicByToken("looks-valid")).rejects.toThrow(NotFoundException);
     });
   });
 });

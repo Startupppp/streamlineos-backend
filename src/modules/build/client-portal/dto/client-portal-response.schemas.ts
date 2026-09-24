@@ -34,7 +34,7 @@ export const portalAttachmentSchema = z.object({
 export const portalCommentSchema = z.object({
   id: z.number().int(),
   body: z.string(),
-  authorName: z.string().nullable(),
+  authorName: z.string(),
   createdAt: wireDate(),
 });
 

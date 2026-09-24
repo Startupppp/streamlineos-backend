@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const conditionSchema = z.object({
   field: z.string().min(1).max(200),
@@ -29,3 +30,10 @@ export type CreateAutomationInput = z.infer<typeof createAutomationSchema>;
 
 export const updateAutomationSchema = createAutomationSchema.partial().strict();
 export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;
+
+export const listAutomationRunsQuerySchema = z.object({
+  automationId: z.coerce.number().int().positive().optional(),
+  limit: pageSizeField(50),
+  cursor: z.string().optional(),
+}).strict();
+export type ListAutomationRunsQuery = z.infer<typeof listAutomationRunsQuerySchema>;

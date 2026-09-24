@@ -3,7 +3,7 @@ import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 
 const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
 
@@ -111,8 +111,16 @@ function makeService(db: unknown, spaceIds: number[]): KbSearchService {
     makeEvents() as never,
     new KbCandidateService(db as never),
     makeScopes() as never,
+    makeKbAuth() as never,
   );
 }
+
+const makeKbAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest
+    .fn()
+    .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+});
 
 describe("KB ACL revision gate — stale chunks cannot surface in vector search", () => {
   it("articleVectorCandidates joins on a plain revision equality, with no arm that admits a NULL", async () => {

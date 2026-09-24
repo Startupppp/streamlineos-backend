@@ -78,7 +78,7 @@ describe("impliedViewKey", () => {
     "hr:employees:view",
     "surveys:view",
     "tasks:read",
-    "build:workspaces:members:view",
+    "hr:onboarding:tasks:view",
   ]);
 
   it("derives the sibling read key from the last segment at any arity", () => {
@@ -86,8 +86,8 @@ describe("impliedViewKey", () => {
       "hr:employees:view",
     );
     expect(impliedViewKey(catalog, "surveys:create")).toBe("surveys:view");
-    expect(impliedViewKey(catalog, "build:workspaces:members:manage")).toBe(
-      "build:workspaces:members:view",
+    expect(impliedViewKey(catalog, "hr:onboarding:tasks:complete")).toBe(
+      "hr:onboarding:tasks:view",
     );
     expect(impliedViewKey(catalog, "tasks:write")).toBe("tasks:read");
   });

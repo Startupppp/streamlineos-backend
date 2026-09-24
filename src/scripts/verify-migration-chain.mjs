@@ -105,11 +105,23 @@ const HISTORICAL_DUPLICATE_PREFIXES = new Set([
  * a deliberately far-future `when`), while `when` comes from each lane's own clock.
  * In every pair the later entry is applied (hash or `when` present on Neon or the
  * local inventory/CRM ledgers), and check:migration-ledger joins on `when`, so
- * restamping it would orphan ledger rows. The one pair with an unapplied side
+ * restamping it would orphan ledger rows.
+ *
+ * `0271a_waitlist_admission -> 0619_chain_creates_what_production_has` is the
+ * largest of them, a ~15.1 billion ms drop created when two cross-lane repairs
+ * were spliced in at array positions 340-341. Ordering here is by array position,
+ * not by `when`, so it is inert: run-pending-migrations queues the whole array and
+ * guards by file hash. check:watermark-free is what keeps that true, and it runs in
+ * CI on every push. Repairing it properly means restamping 0464a/0271a AND issuing
+ * a matching UPDATE on drizzle.__drizzle_migrations for every database where 0271a
+ * is applied -- one atomic repair spanning machines, so half of it cannot be done
+ * from a checkout. The full procedure and its preconditions are in
+ * docs/migration-chain-repair-2026-09-22.md. The one pair with an unapplied side
  * (0674a -> 0659b) has no gap to move into. check:migration-discipline carries
  * the same 16 as `journal-order:` baseline entries, each with where it is applied.
  */
 const HISTORICAL_TIMESTAMP_REGRESSIONS = new Set([
+  "0271a_waitlist_admission -> 0619_chain_creates_what_production_has",
   "0465_accounting_documents -> 0232_repair_crm_activity_grants",
   "0470_ar_document_pdf_cache -> 0471_platform_waitlist",
   "0472a_activities_deal_fk -> 0270_activities_thread_window",
@@ -168,13 +180,11 @@ async function readAppliedWatermark() {
   const url = process.env.DATABASE_URL;
   if (!url) return { status: "no-database" };
   try {
-    const { default: postgres } = await import("postgres");
-    const sql = postgres(url, {
-      prepare: false,
-      max: 1,
+    const { createScriptSql } = await import("./lib/script-sql-client.mjs");
+    const sql = await createScriptSql({
+      url,
       ssl: resolveSsl(url),
-      onnotice: () => {},
-      connect_timeout: 30,
+      connection: { prepare: false, max: 1, ssl: resolveSsl(url), onnotice: () => {}, connect_timeout: 30 },
     });
     try {
       const rows = await sql`SELECT max(created_at) AS mx FROM drizzle.__drizzle_migrations`;

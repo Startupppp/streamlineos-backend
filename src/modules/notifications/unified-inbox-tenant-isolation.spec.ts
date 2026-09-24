@@ -67,6 +67,10 @@ describe("UnifiedInboxService — cross-tenant isolation", () => {
     return { getInboxPage: jest.fn().mockResolvedValue([]) } as unknown as BuildApprovalsInboxService;
   }
 
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import('../attention/approval-adapter.registry').ApprovalAdapterRegistry;
+}
+
   const query: UnifiedInboxQuery = { kinds: ["notification"], limit: 25, unreadOnly: false };
 
   function caller() {
@@ -79,7 +83,7 @@ describe("UnifiedInboxService — cross-tenant isolation", () => {
 
   it("scopes notification query to the requesting org — cross-tenant isolation", async () => {
     const { db, where } = makeNotifDb();
-    const svc = new UnifiedInboxService(db, makeAccess(), makeMail(), makeBroadcasts(), makeBuildApprovals());
+    const svc = new UnifiedInboxService(db, makeAccess(), makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
     const result = await svc.list(ATTACKER_ORG, CALLER_USER, query, caller() as never);
 
@@ -90,7 +94,7 @@ describe("UnifiedInboxService — cross-tenant isolation", () => {
 
   it("does not return notifications addressed to a different recipient — user isolation", async () => {
     const { db, where } = makeNotifDb();
-    const svc = new UnifiedInboxService(db, makeAccess(), makeMail(), makeBroadcasts(), makeBuildApprovals());
+    const svc = new UnifiedInboxService(db, makeAccess(), makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
     const result = await svc.list(ATTACKER_ORG, CALLER_USER, query, caller() as never);
 
@@ -109,7 +113,7 @@ describe("UnifiedInboxService — cross-tenant isolation", () => {
    */
   it("reads nothing for a principal with no membership, rather than scanning the tenant", async () => {
     const { db, where } = makeNotifDb();
-    const svc = new UnifiedInboxService(db, makeAccess(), makeMail(), makeBroadcasts(), makeBuildApprovals());
+    const svc = new UnifiedInboxService(db, makeAccess(), makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
     const result = await svc.list(
       ATTACKER_ORG,

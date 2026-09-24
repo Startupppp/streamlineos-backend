@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INVOICEABLE_ENTRY_CAP } from "../../timesheets/core/timesheet-invoicing.service";
 
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
@@ -15,6 +16,7 @@ const itemSchema = z.object({
   quantity: z.number().positive(),
   rate: z.number().nonnegative(),
   gstRate: z.number().refine((v) => [0, 5, 12, 18, 28].includes(v), { message: "gstRate must be 0/5/12/18/28" }),
+  timesheetEntryId: z.number().int().positive().optional(),
 });
 
 function computeGrossTotal(input: {
@@ -34,6 +36,7 @@ export const createInvoiceSchema = z
   .object({
     clientId: z.number().optional(),
     projectId: z.number().optional(),
+    dealId: z.number().int().positive().optional(),
     lineItems: z.array(legacyLineItemSchema).min(1).optional(),
     items: z.array(itemSchema).min(1).optional(),
     taxRate: z.number().min(0).max(100).default(0),
@@ -88,6 +91,34 @@ export const updateInvoiceSchema = z.object({
   status: z.enum(["ISSUED", "PAID", "FAILED"]).optional(),
 }).strict();
 
+export const createInvoiceFromTimesheetsSchema = z
+  .object({
+    timesheetEntryIds: z
+      .array(z.number().int().positive())
+      .min(1)
+      .max(INVOICEABLE_ENTRY_CAP),
+    clientId: z.number().int().positive().optional(),
+    projectId: z.number().int().positive().optional(),
+    dealId: z.number().int().positive().optional(),
+    gstRate: z
+      .number()
+      .refine((v) => [0, 5, 12, 18, 28].includes(v), {
+        message: "gstRate must be 0/5/12/18/28",
+      })
+      .default(0),
+    discount: z.number().min(0).max(999999999.99).default(0),
+    currency: z.string().min(3).max(3).optional(),
+    dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD").optional(),
+    notes: z.string().max(2000).optional(),
+    status: z.enum(["DRAFT", "ISSUED"]).default("DRAFT"),
+    placeOfSupply: z.string().regex(/^\d{2}$/).optional(),
+    customerGstin: z.string().regex(GSTIN_REGEX).optional(),
+    supplierGstin: z.string().regex(GSTIN_REGEX).optional(),
+    reverseCharge: z.boolean().optional(),
+    taxInclusive: z.boolean().optional(),
+  })
+  .strict();
+
 export const recordPaymentSchema = z.object({
   amount: z.number().positive().max(999999999.99),
   paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
@@ -105,5 +136,8 @@ export const recordPaymentSchema = z.object({
 }).strict();
 
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
+export type CreateInvoiceFromTimesheetsInput = z.infer<
+  typeof createInvoiceFromTimesheetsSchema
+>;
 export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;

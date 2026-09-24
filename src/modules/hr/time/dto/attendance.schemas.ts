@@ -274,9 +274,6 @@ export const listRegularizationsSchema = z.object({
   cursor: z.string().min(1).max(512).optional(),
   limit: pageSizeField(20, 100),
 });
-export type ListRegularizationsInput = z.infer<typeof listRegularizationsSchema>;
-
 export const rejectRegularizationSchema = z.object({
   rejectionReason: z.string().min(1).max(500),
 });
-export type RejectRegularizationInput = z.infer<typeof rejectRegularizationSchema>;

@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import { projectApprovals } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { pendingApprovalsForActorCondition } from "./build-inbox-count.service";
 
 export type ApprovalInboxRow = {
   id: number;
@@ -41,7 +42,6 @@ export class BuildApprovalsInboxService {
     cursorAt: string | null = null,
   ): Promise<ApprovalInboxRow[]> {
     if (membershipId === null) return [];
-    const actorPredicate = eq(projectApprovals.approverMembershipId, membershipId);
     const rows = await this.db
       .select({
         id: projectApprovals.id,
@@ -56,10 +56,7 @@ export class BuildApprovalsInboxService {
       .from(projectApprovals)
       .where(
         and(
-          eq(projectApprovals.orgId, orgId),
-          actorPredicate,
-          inArray(projectApprovals.status, ["pending", "escalated"]),
-          isNull(projectApprovals.deletedAt),
+          pendingApprovalsForActorCondition(orgId, membershipId),
           approvalInboxKeyset(cursor, cursorAt),
         ),
       )
@@ -67,5 +64,17 @@ export class BuildApprovalsInboxService {
       .limit(limit);
 
     return rows;
+  }
+
+  async countPending(
+    orgId: string,
+    membershipId: number | null,
+  ): Promise<number> {
+    if (membershipId === null) return 0;
+    const rows = await this.db
+      .select({ cnt: count() })
+      .from(projectApprovals)
+      .where(pendingApprovalsForActorCondition(orgId, membershipId));
+    return Number(rows[0]?.cnt ?? 0);
   }
 }

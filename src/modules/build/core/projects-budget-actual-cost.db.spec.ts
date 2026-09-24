@@ -86,7 +86,6 @@ async function seed(sql: Sql, budgetCurrency: string | null): Promise<Fixture> {
   const tag = randomUUID().slice(0, 8);
   const orgId = `bgt-${tag}`;
   const userId = `bgt-u-${tag}`;
-  const workspaceId = `bgt-ws-${tag}`;
 
   return sql.begin(async (tx) => {
     await tx`INSERT INTO users (id, email, name) VALUES (${userId}, ${`${userId}@example.test`}, 'Budget Fixture')`;
@@ -103,15 +102,11 @@ async function seed(sql: Sql, budgetCurrency: string | null): Promise<Fixture> {
     `;
     await tx`UPDATE organizations SET owner_membership_id = ${member.id} WHERE id = ${orgId}`;
 
-    await tx`
-      INSERT INTO build.pm_workspaces (pm_workspace_id, org_id, name, slug, is_default)
-      VALUES (${workspaceId}, ${orgId}, 'Default', 'default', true)
-    `;
     const [project] = await tx<{ id: number }[]>`
       INSERT INTO build.projects
-        (org_id, name, key, pm_workspace_id, budget_minor, budget_currency, manager_membership_id)
+        (org_id, name, key, budget_minor, budget_currency, manager_membership_id)
       VALUES
-        (${orgId}, ${`Budget ${tag}`}, ${`BGT${tag.slice(0, 4).toUpperCase()}`}, ${workspaceId},
+        (${orgId}, ${`Budget ${tag}`}, ${`BGT${tag.slice(0, 4).toUpperCase()}`},
          ${PLANNED_BUDGET_MINOR}, ${budgetCurrency}, ${member.id})
       RETURNING id
     `;

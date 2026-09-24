@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { aliasedTable, and, asc, eq, isNull } from "drizzle-orm";
-import { businessParties, contactPartyMap } from "../../../db/schema/party";
+import { aliasedTable, and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { businessParties, contactPartyMap, crmOrgPartyMap } from "../../../db/schema/party";
 import { CONTACT_MIRROR, ORGANISATION_MIRROR } from "../../party/party-legacy-mirror";
 import {
   createMirroredOrganization,
@@ -22,6 +22,7 @@ import {
   type CrmOrgListingDeps,
 } from "./lib/crm-org-listing";
 import type {
+  CrmAccountTier,
   OrgDuplicatesQueryInput,
   OrganizationCreateInput,
   OrganizationListInput,
@@ -92,6 +93,44 @@ export class CrmOrganizationsService {
     return resolution.party.partyId;
   }
 
+  /**
+   * The account tier, written straight onto the party.
+   *
+   * `business_parties.tier` has no `crm_organizations` counterpart, so it is not
+   * one of the mirrored columns `party-legacy-orgs.ts` splits — handing it to
+   * `ORGANISATION_MIRROR.split` would be a column the map has never heard of.
+   * The company id is translated by the same `crm_org_party_map` subquery the
+   * reads use, with the tenant named on both sides of it, so an id belonging to
+   * another organisation matches nothing rather than writing anywhere.
+   */
+  private async writeTier(
+    orgId: string,
+    crmOrganizationId: number,
+    tier: CrmAccountTier | null,
+  ): Promise<void> {
+    const partyOfCompany = this.db
+      .select({ partyId: crmOrgPartyMap.partyId })
+      .from(crmOrgPartyMap)
+      .where(
+        and(
+          eq(crmOrgPartyMap.organizationId, orgId),
+          eq(crmOrgPartyMap.crmOrganizationId, crmOrganizationId),
+        ),
+      );
+
+    await this.db
+      .update(businessParties)
+      .set({ tier })
+      .where(
+        and(
+          eq(businessParties.organizationId, orgId),
+          eq(businessParties.partyKind, "ORGANISATION"),
+          isNull(businessParties.deletedAt),
+          inArray(businessParties.partyId, partyOfCompany),
+        ),
+      );
+  }
+
   list(orgId: string, filters: OrganizationListInput) {
     const searchTerm = (filters.search ?? filters.q ?? "").trim();
     const key = `${filters.cursor ?? ""}:${filters.pageSize}:${searchTerm}`;
@@ -143,8 +182,11 @@ export class CrmOrganizationsService {
       description: input.description ?? null,
     });
 
+    const tier = input.tier ?? null;
+    if (tier !== null) await this.writeTier(orgId, row.id, tier);
+
     await this.invalidateOrgCaches(orgId);
-    return { ...row, possibleDuplicates };
+    return { ...row, tier, possibleDuplicates };
   }
 
   /**
@@ -231,6 +273,9 @@ export class CrmOrganizationsService {
       createdAt: party.createdAt,
       updatedAt: party.updatedAt,
       ...ORGANISATION_MIRROR.derive(party),
+      // Party's own column: `crm_organizations` never had a tier, so the mirror
+      // does not derive one and it is read straight off the row.
+      tier: party.tier,
       contacts: employees.map((row) => ({
         id: row.contactId,
         orgId,
@@ -273,6 +318,7 @@ export class CrmOrganizationsService {
       ...(input.parentId !== undefined && { parentId: input.parentId }),
       ...(input.notes !== undefined && { notes: input.notes }),
     });
+    if (input.tier !== undefined) await this.writeTier(orgId, id, input.tier);
     await this.invalidateOrgCaches(orgId);
     return updated;
   }

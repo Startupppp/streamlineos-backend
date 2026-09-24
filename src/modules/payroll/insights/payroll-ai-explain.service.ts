@@ -163,7 +163,11 @@ export class PayrollAiExplainService {
   }
 
   async explainPayslip(orgId: string, userId: string, publicationId: number): Promise<PayslipExplanation> {
-    const evidence = await this.loadEvidence(orgId, userId, publicationId);
+    const evidence = await runInTenantTransaction(
+      this.db,
+      () => this.loadEvidence(orgId, userId, publicationId),
+      { orgId },
+    );
     const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId, userId },
       feature: FEATURE_KEY,

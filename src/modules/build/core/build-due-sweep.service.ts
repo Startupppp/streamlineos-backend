@@ -1,10 +1,14 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { organizationMembers, sprints, tickets } from "../../../db/schema";
+import { cycles, organizationMembers, projects, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import {
+  buildTicketHref,
+  buildTicketKey,
+} from "./build-app-paths";
 
 export interface BuildDueSweepResult {
   dueSoon: number;
@@ -69,9 +73,13 @@ export class BuildDueSweepService {
           id: tickets.id,
           title: tickets.title,
           dueDate: tickets.dueDate,
+          projectId: tickets.projectId,
+          ticketNumber: tickets.ticketNumber,
+          projectKey: projects.key,
           assigneeId: organizationMembers.userId,
         })
         .from(tickets)
+        .innerJoin(projects, and(eq(projects.orgId, tickets.orgId), eq(projects.id, tickets.projectId)))
         .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, entersWindow)))
         .limit(500);
@@ -81,9 +89,13 @@ export class BuildDueSweepService {
           id: tickets.id,
           title: tickets.title,
           dueDate: tickets.dueDate,
+          projectId: tickets.projectId,
+          ticketNumber: tickets.ticketNumber,
+          projectKey: projects.key,
           assigneeId: organizationMembers.userId,
         })
         .from(tickets)
+        .innerJoin(projects, and(eq(projects.orgId, tickets.orgId), eq(projects.id, tickets.projectId)))
         .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, slippedYesterday)))
         .limit(500);
@@ -98,34 +110,34 @@ export class BuildDueSweepService {
           entityId: String(ticket.id),
           title: `Due soon: ${ticket.title}`,
           message: `This ticket is due on ${ticket.dueDate}.`,
-          link: `/build/tickets/${ticket.id}`,
+          link: buildTicketHref(
+            ticket.projectId,
+            buildTicketKey(ticket.projectKey, ticket.ticketNumber),
+          ),
         });
         result.dueSoon += 1;
       }
 
-      // build.sprint.ending. Recipients are the people actually holding open work in the
-      // sprint — derived from the tickets themselves rather than from project membership,
-      // so nobody is told a sprint is closing on work they do not own.
       const ending = await tx
-        .select({ id: sprints.id, name: sprints.name })
-        .from(sprints)
+        .select({ id: cycles.id, name: cycles.name, projectId: cycles.projectId })
+        .from(cycles)
         .where(
           and(
-            eq(sprints.orgId, orgId),
-            isNull(sprints.deletedAt),
-            eq(sprints.status, "ACTIVE"),
-            sql`${sprints.endDate}::date = current_date + 1`,
+            eq(cycles.orgId, orgId),
+            eq(cycles.status, "active"),
+            isNull(cycles.deletedAt),
+            sql`${cycles.endDate} = current_date + 1`,
           ),
         )
         .limit(100);
 
-      const endingIds = ending.map((s) => s.id);
+      const endingIds = ending.map((c) => c.id);
       const ownerRows =
         endingIds.length === 0
           ? []
           : await tx
               .selectDistinct({
-                sprintId: tickets.sprintId,
+                cycleId: tickets.cycleId,
                 assigneeId: organizationMembers.userId,
               })
               .from(tickets)
@@ -133,32 +145,32 @@ export class BuildDueSweepService {
               .where(
                 and(
                   eq(tickets.orgId, orgId),
-                  inArray(tickets.sprintId, endingIds),
+                  inArray(tickets.cycleId, endingIds),
                   isNull(tickets.deletedAt),
                   isNotNull(tickets.assigneeMembershipId),
                   ne(tickets.status, "DONE"),
                 ),
               );
-      const ownersBySprint = new Map<number, string[]>();
+      const ownersByCycle = new Map<number, string[]>();
       for (const row of ownerRows) {
-        if (row.sprintId === null || !row.assigneeId) continue;
-        const bucket = ownersBySprint.get(row.sprintId);
+        if (row.cycleId === null || !row.assigneeId) continue;
+        const bucket = ownersByCycle.get(row.cycleId);
         if (bucket) bucket.push(row.assigneeId);
-        else ownersBySprint.set(row.sprintId, [row.assigneeId]);
+        else ownersByCycle.set(row.cycleId, [row.assigneeId]);
       }
 
-      for (const sprint of ending) {
-        const targets = ownersBySprint.get(sprint.id) ?? [];
+      for (const cycle of ending) {
+        const targets = ownersByCycle.get(cycle.id) ?? [];
         if (targets.length === 0) continue;
         await this.dispatch.emit({
           eventKey: "build.sprint.ending",
           orgId,
           targetUserIds: targets,
-          entityType: "sprint",
-          entityId: String(sprint.id),
-          title: `Sprint ending tomorrow: ${sprint.name}`,
-          message: "You still have open tickets in this sprint.",
-          link: `/build/sprints/${sprint.id}`,
+          entityType: "cycle",
+          entityId: String(cycle.id),
+          title: `Cycle ending tomorrow: ${cycle.name}`,
+          message: "You still have open tickets in this cycle.",
+          link: `/build/${cycle.projectId}/cycles`,
         });
         result.sprintsEnding += 1;
       }
@@ -173,7 +185,10 @@ export class BuildDueSweepService {
           entityId: String(ticket.id),
           title: `Overdue: ${ticket.title}`,
           message: `This ticket was due on ${ticket.dueDate} and is still open.`,
-          link: `/build/tickets/${ticket.id}`,
+          link: buildTicketHref(
+            ticket.projectId,
+            buildTicketKey(ticket.projectKey, ticket.ticketNumber),
+          ),
         });
         result.overdue += 1;
       }

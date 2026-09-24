@@ -182,11 +182,7 @@ export class InvAiProposalService {
     // C1's stored version, not a fresh guess. `latest` is the newest version for
     // exactly this (variant, scope) pair; a proposal narrated against a forecast
     // recomputed on the fly would be a narrative about numbers nobody kept.
-    const forecastVersion = await this.forecasts.latest(
-      orgId,
-      input.variantId,
-      warehouseId,
-    );
+    const forecastVersion = await this.forecasts.latest(orgId, input.variantId, warehouseId);
     if (!forecastVersion) {
       throw new NotFoundException(
         "No stored forecast exists for this item and site yet, so there is no proposal to review.",
@@ -195,11 +191,7 @@ export class InvAiProposalService {
 
     // C2's resolution of that version. Asserts warehouse visibility, reads the
     // live position, and puts the shortfall through the supplier's policy.
-    const proposal = await this.batches.proposalById(
-      orgId,
-      userId,
-      forecastVersion.id,
-    );
+    const proposal = await this.batches.proposalById(orgId, userId, forecastVersion.id);
     if (!proposal) {
       throw new NotFoundException("This proposal no longer exists.");
     }

@@ -3,6 +3,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { type Db } from "../../db/drizzle.module";
 import { InvoicesService } from "./invoices.service";
+import { invoiceDetailResponseSchema } from "./dto/invoice-response.schemas";
 
 const STORED_ITEMS = [
   {
@@ -14,6 +15,7 @@ const STORED_ITEMS = [
     gstRate: "18.00",
     amount: "12000.0000",
     lineOrder: 0,
+    timesheetEntryId: 4211,
   },
   {
     id: 2,
@@ -24,6 +26,7 @@ const STORED_ITEMS = [
     gstRate: "18.00",
     amount: "90001.0000",
     lineOrder: 1,
+    timesheetEntryId: null,
   },
 ];
 
@@ -125,7 +128,35 @@ describe("GET /invoices/:invoiceId returns the invoice's persisted line items", 
       "lineOrder",
       "quantity",
       "rate",
+      "timesheetEntryId",
     ]);
+  });
+
+  it("projects the billed timesheet entry, so an invoice line can be traced back to the approved time it bills", async () => {
+    const { db } = makeDb({ ...STORED_INVOICE, items: STORED_ITEMS });
+    const service = await buildService(db);
+
+    const invoice = await service.getInvoice("org-1", 7);
+
+    expect(invoice?.lineItems[0]?.timesheetEntryId).toBe(4211);
+  });
+
+  it("keeps the timesheet link null on a line that bills no time, rather than omitting the field", async () => {
+    const { db } = makeDb({ ...STORED_INVOICE, items: STORED_ITEMS });
+    const service = await buildService(db);
+
+    const invoice = await service.getInvoice("org-1", 7);
+    const line = invoice?.lineItems[1];
+
+    expect(line).toHaveProperty("timesheetEntryId");
+    expect(line?.timesheetEntryId).toBeNull();
+  });
+
+  it("declares the timesheet link on the published line-item contract, which otherwise strips it off the wire", () => {
+    const parsed = invoiceDetailResponseSchema.shape.lineItems.parse(STORED_ITEMS);
+
+    expect(parsed[0]).toMatchObject({ timesheetEntryId: 4211 });
+    expect(parsed[1]).toMatchObject({ timesheetEntryId: null });
   });
 
   it("keeps every line amount a decimal string, like the invoice's own money fields", async () => {

@@ -1,5 +1,11 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   portfolioProjects,
   projectPortfolios,
@@ -9,7 +15,10 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { resolveProjectCounts } from "./portfolio-project-counts";
 import type {
@@ -29,7 +38,10 @@ export class PortfoliosService {
     private readonly audit: AuditService,
   ) {}
 
-  private async loadPortfolio(orgId: string, portfolioId: number): Promise<PortfolioRow> {
+  private async loadPortfolio(
+    orgId: string,
+    portfolioId: number,
+  ): Promise<PortfolioRow> {
     const [row] = await this.db
       .select()
       .from(projectPortfolios)
@@ -49,42 +61,53 @@ export class PortfoliosService {
     const [row] = await this.db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
+      .where(
+        and(
+          eq(projects.id, projectId),
+          eq(projects.orgId, orgId),
+          isNull(projects.deletedAt),
+        ),
+      )
       .limit(1);
     if (!row) throw new BadRequestException("Project not found in org");
   }
 
   async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
+    const portfolio = alias(projectPortfolios, "portfolio");
     const { cursor, limit, status } = query;
     const pos = decodeCursor(cursor);
     const conds = [
-      eq(projectPortfolios.orgId, orgId),
-      isNull(projectPortfolios.deletedAt),
-      status ? eq(projectPortfolios.status, status) : undefined,
+      eq(portfolio.orgId, orgId),
+      isNull(portfolio.deletedAt),
+      status ? eq(portfolio.status, status) : undefined,
     ];
-    if (pos) conds.push(keysetBeforeId(projectPortfolios.createdAt, projectPortfolios.id, pos));
+    if (pos) conds.push(keysetBeforeId(portfolio.createdAt, portfolio.id, pos));
 
     const rows = await this.db
       .select({
-        id: projectPortfolios.id,
-        orgId: projectPortfolios.orgId,
-        name: projectPortfolios.name,
-        description: projectPortfolios.description,
-        ownerId: projectPortfolios.ownerId,
-        status: projectPortfolios.status,
-        health: projectPortfolios.health,
-        strategicGoal: projectPortfolios.strategicGoal,
-        createdBy: projectPortfolios.createdBy,
-        createdAt: projectPortfolios.createdAt,
-        updatedAt: projectPortfolios.updatedAt,
+        id: portfolio.id,
+        orgId: portfolio.orgId,
+        name: portfolio.name,
+        description: portfolio.description,
+        ownerId: portfolio.ownerId,
+        status: portfolio.status,
+        health: portfolio.health,
+        strategicGoal: portfolio.strategicGoal,
+        createdBy: portfolio.createdBy,
+        createdAt: portfolio.createdAt,
+        updatedAt: portfolio.updatedAt,
         projectCount: sql<number>`(
-          SELECT CAST(COUNT(*) AS INT) FROM ${portfolioProjects}
-          WHERE ${portfolioProjects.portfolioId} = ${projectPortfolios.id}
+          SELECT CAST(COUNT(*) AS INT)
+          FROM ${portfolioProjects} link
+          INNER JOIN ${projects} linked_project ON linked_project.id = link.project_id
+            AND linked_project.deleted_at IS NULL
+          WHERE link.portfolio_id = portfolio.id
+            AND link.org_id = portfolio.org_id
         )`,
       })
-      .from(projectPortfolios)
+      .from(portfolio)
       .where(and(...conds))
-      .orderBy(desc(projectPortfolios.createdAt), desc(projectPortfolios.id))
+      .orderBy(desc(portfolio.createdAt), desc(portfolio.id))
       .limit(limit + 1);
 
     return buildCursorPage(rows, limit, (r) => ({
@@ -106,7 +129,13 @@ export class PortfoliosService {
         })
         .from(portfolioProjects)
         .innerJoin(projects, eq(projects.id, portfolioProjects.projectId))
-        .where(and(eq(portfolioProjects.portfolioId, portfolioId), eq(portfolioProjects.orgId, orgId)))
+        .where(
+          and(
+            eq(portfolioProjects.portfolioId, portfolioId),
+            eq(portfolioProjects.orgId, orgId),
+            isNull(projects.deletedAt),
+          ),
+        )
         .limit(100),
       this.db
         .select({
@@ -142,7 +171,11 @@ export class PortfoliosService {
     };
   }
 
-  async createPortfolio(orgId: string, userId: string, input: CreatePortfolioInput) {
+  async createPortfolio(
+    orgId: string,
+    userId: string,
+    input: CreatePortfolioInput,
+  ) {
     const [row] = await this.db
       .insert(projectPortfolios)
       .values({
@@ -168,19 +201,31 @@ export class PortfoliosService {
     return row;
   }
 
-  async updatePortfolio(orgId: string, userId: string, portfolioId: number, input: UpdatePortfolioInput) {
+  async updatePortfolio(
+    orgId: string,
+    userId: string,
+    portfolioId: number,
+    input: UpdatePortfolioInput,
+  ) {
     await this.loadPortfolio(orgId, portfolioId);
     const patch: PortfolioPatch = {};
     if (input.name !== undefined) patch.name = input.name;
-    if (input.description !== undefined) patch.description = input.description ?? null;
+    if (input.description !== undefined)
+      patch.description = input.description ?? null;
     if (input.ownerId !== undefined) patch.ownerId = input.ownerId ?? null;
     if (input.status !== undefined) patch.status = input.status;
     if (input.health !== undefined) patch.health = input.health ?? null;
-    if (input.strategicGoal !== undefined) patch.strategicGoal = input.strategicGoal ?? null;
+    if (input.strategicGoal !== undefined)
+      patch.strategicGoal = input.strategicGoal ?? null;
     const [updated] = await this.db
       .update(projectPortfolios)
       .set(patch)
-      .where(and(eq(projectPortfolios.id, portfolioId), eq(projectPortfolios.orgId, orgId)))
+      .where(
+        and(
+          eq(projectPortfolios.id, portfolioId),
+          eq(projectPortfolios.orgId, orgId),
+        ),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Portfolio not found");
     this.audit.log({
@@ -199,7 +244,12 @@ export class PortfoliosService {
     await this.db
       .update(projectPortfolios)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectPortfolios.id, portfolioId), eq(projectPortfolios.orgId, orgId)));
+      .where(
+        and(
+          eq(projectPortfolios.id, portfolioId),
+          eq(projectPortfolios.orgId, orgId),
+        ),
+      );
     this.audit.log({
       action: "portfolio.deleted",
       userId,
@@ -210,7 +260,12 @@ export class PortfoliosService {
     });
   }
 
-  async linkProject(orgId: string, userId: string, portfolioId: number, input: LinkProjectInput) {
+  async linkProject(
+    orgId: string,
+    userId: string,
+    portfolioId: number,
+    input: LinkProjectInput,
+  ) {
     await this.loadPortfolio(orgId, portfolioId);
     await this.assertProject(orgId, input.projectId);
     await this.db
@@ -228,7 +283,12 @@ export class PortfoliosService {
     return { success: true };
   }
 
-  async unlinkProject(orgId: string, userId: string, portfolioId: number, projectId: number) {
+  async unlinkProject(
+    orgId: string,
+    userId: string,
+    portfolioId: number,
+    projectId: number,
+  ) {
     await this.loadPortfolio(orgId, portfolioId);
     await this.db
       .delete(portfolioProjects)

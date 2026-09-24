@@ -31,7 +31,7 @@ export interface TableRef {
 
 const SUFFIX_STRIP = /(Id|Key|Slug|Token)$/;
 
-/** `pmWorkspaceId` -> `pm_workspace`; `projectId` -> `project`. */
+/** `projectId` -> `project`; `ticketId` -> `ticket`. */
 export function paramStem(param: string): string {
   const withoutSuffix = param.replace(SUFFIX_STRIP, "");
   return withoutSuffix.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
@@ -178,7 +178,6 @@ export const PARAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   sprintId: ["sprints"],
   statusId: ["project_statuses"],
   postId: ["feedback_posts", "blog_posts"],
-  workspaceId: ["pm_workspaces"],
   reviewId: ["performance_reviews"],
   requestId: ["leave_requests"],
   balanceId: ["leave_balances"],

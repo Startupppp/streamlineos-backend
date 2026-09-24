@@ -2,14 +2,13 @@ import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
 import {
   projects,
-  sprints,
   projectStatuses,
   cycles,
   modules,
   projectTemplates,
   projectTemplateTickets,
 } from "./core";
-import { sprintScopeEvents } from "./sprint-events";
+import { cycleScopeEvents } from "./cycle-events";
 import {
   tickets,
   ticketAssignees,
@@ -53,11 +52,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   milestones: many(projectMilestones),
 }));
 
-export const sprintsRelations = relations(sprints, ({ one, many }) => ({
-  project: one(projects, { fields: [sprints.projectId], references: [projects.id] }),
-  tickets: many(tickets),
-}));
-
 export const cyclesRelations = relations(cycles, ({ one, many }) => ({
   project: one(projects, { fields: [cycles.projectId], references: [projects.id] }),
   organization: one(organizations, { fields: [cycles.orgId], references: [organizations.id] }),
@@ -85,7 +79,6 @@ export const projectTemplateTicketsRelations = relations(projectTemplateTickets,
 
 export const ticketsRelations = relations(tickets, ({ one, many }) => ({
   project: one(projects, { fields: [tickets.projectId], references: [projects.id] }),
-  sprint: one(sprints, { fields: [tickets.sprintId], references: [sprints.id] }),
   assignee: one(organizationMembers, {
     fields: [tickets.assigneeMembershipId],
     references: [organizationMembers.id],
@@ -111,10 +104,11 @@ export const ticketAssigneesRelations = relations(ticketAssignees, ({ one }) => 
   assigner: one(users, { fields: [ticketAssignees.assignedBy], references: [users.id], relationName: "assigner" }),
 }));
 
-export const ticketCommentsRelations = relations(ticketComments, ({ one }) => ({
+export const ticketCommentsRelations = relations(ticketComments, ({ one, many }) => ({
   ticket: one(tickets, { fields: [ticketComments.ticketId], references: [tickets.id] }),
   user: one(users, { fields: [ticketComments.userId], references: [users.id] }),
   parent: one(ticketComments, { fields: [ticketComments.parentCommentId], references: [ticketComments.id], relationName: "parentComment" }),
+  reactions: many(ticketCommentReactions),
 }));
 
 export const ticketAttachmentsRelations = relations(ticketAttachments, ({ one }) => ({
@@ -218,18 +212,21 @@ export const webhookDeliveriesRelations = relations(webhookDeliveries, ({ one })
 
 export const ticketCommentReactionsRelations = relations(ticketCommentReactions, ({ one }) => ({
   comment: one(ticketComments, { fields: [ticketCommentReactions.commentId], references: [ticketComments.id] }),
+  membership: one(organizationMembers, {
+    fields: [ticketCommentReactions.membershipId],
+    references: [organizationMembers.id],
+  }),
 }));
 
 export const projectAutomationsRelations = relations(projectAutomations, ({ one }) => ({
   project: one(projects, { fields: [projectAutomations.projectId], references: [projects.id] }),
 }));
 
-export const sprintScopeEventsRelations = relations(sprintScopeEvents, ({ one }) => ({
-  org: one(organizations, { fields: [sprintScopeEvents.orgId], references: [organizations.id] }),
-  sprint: one(sprints, { fields: [sprintScopeEvents.sprintId], references: [sprints.id] }),
-  ticket: one(tickets, { fields: [sprintScopeEvents.ticketId], references: [tickets.id] }),
+export const cycleScopeEventsRelations = relations(cycleScopeEvents, ({ one }) => ({
+  org: one(organizations, { fields: [cycleScopeEvents.orgId], references: [organizations.id] }),
+  ticket: one(tickets, { fields: [cycleScopeEvents.ticketId], references: [tickets.id] }),
   actorMembership: one(organizationMembers, {
-    fields: [sprintScopeEvents.orgId, sprintScopeEvents.actorMembershipId],
+    fields: [cycleScopeEvents.orgId, cycleScopeEvents.actorMembershipId],
     references: [organizationMembers.orgId, organizationMembers.id],
   }),
 }));

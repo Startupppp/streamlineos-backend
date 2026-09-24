@@ -96,6 +96,7 @@ describe("RisksService.getRisk — cross-tenant isolation (BOLA)", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     mockDb.query.projectRisks.findFirst.mockResolvedValue(riskRow);
 
     const result = await svc.getRisk(makeUser("org-1"), 1, 1);
@@ -237,7 +238,7 @@ describe("RisksService — project-membership gate (BOLA)", () => {
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
 
-    await expect(svc.listRisks(u, 1, {})).resolves.toEqual([]);
+    await expect(svc.listRisks(u, 1, {})).resolves.toEqual({ data: [], hasMore: false, nextCursor: null });
   });
 });
 
@@ -326,6 +327,273 @@ describe("DecisionsService — project-membership gate (BOLA)", () => {
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
 
-    await expect(svc.listDecisions(u, 1, {})).resolves.toEqual([]);
+    await expect(svc.listDecisions(u, 1, {})).resolves.toEqual({ data: [], hasMore: false, nextCursor: null });
+  });
+});
+
+describe("RisksService.getRisk — project-membership gate (BOLA)", () => {
+  const u = makeUser("org-1");
+  const riskRow = {
+    id: 1, orgId: "org-1", projectId: 1, riskNumber: 1, title: "DB failure",
+    status: "open", probability: "medium", impact: "medium", description: null,
+    ownerId: null, mitigation: null, linkedTicketId: null,
+    deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+  };
+
+  it("REJECTS a non-project-member reading a specific risk with ForbiddenException", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    mockDb.query.projectRisks.findFirst.mockResolvedValue(riskRow);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.getRisk(u, 1, 1)).rejects.toThrow(ForbiddenException);
+  });
+
+  it("ALLOWS a direct project member to read a specific risk", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select.mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]));
+    mockDb.query.projectRisks.findFirst.mockResolvedValue(riskRow);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.getRisk(u, 1, 1)).resolves.toEqual(riskRow);
+  });
+});
+
+describe("RisksService.updateRisk — project-membership gate (BOLA)", () => {
+  const u = makeUser("org-1");
+  const riskRow = {
+    id: 1, orgId: "org-1", projectId: 1, riskNumber: 1, title: "DB failure",
+    status: "open", probability: "medium", impact: "medium", description: null,
+    ownerId: null, mitigation: null, linkedTicketId: null,
+    deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+  };
+
+  it("REJECTS a non-project-member updating a risk with ForbiddenException", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    mockDb.query.projectRisks.findFirst.mockResolvedValue(riskRow);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.updateRisk(u, 1, 1, { title: "Updated" })).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe("RisksService.softDeleteRisk — project-membership gate (BOLA)", () => {
+  const u = makeUser("org-1");
+  const riskRow = {
+    id: 1, orgId: "org-1", projectId: 1, riskNumber: 1, title: "DB failure",
+    status: "open", probability: "medium", impact: "medium", description: null,
+    ownerId: null, mitigation: null, linkedTicketId: null,
+    deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+  };
+
+  it("REJECTS a non-project-member soft-deleting a risk with ForbiddenException", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    mockDb.query.projectRisks.findFirst.mockResolvedValue(riskRow);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.softDeleteRisk(u, 1, 1)).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe("DecisionsService.getDecision — project-membership gate (BOLA)", () => {
+  const u = makeUser("org-1");
+  const decisionRow = {
+    id: 1, orgId: "org-1", projectId: 1, decisionNumber: 1, title: "Adopt PostgreSQL",
+    context: null, decision: null, optionsConsidered: null, status: "proposed",
+    ownerId: null, decidedAt: null, revisitAt: null, linkedTicketId: null,
+    deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+  };
+
+  it("REJECTS a non-project-member reading a specific decision with ForbiddenException", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    mockDb.query.projectDecisions.findFirst.mockResolvedValue(decisionRow);
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.getDecision(u, 1, 1)).rejects.toThrow(ForbiddenException);
+  });
+
+  it("ALLOWS a direct project member to read a specific decision", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select.mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]));
+    mockDb.query.projectDecisions.findFirst.mockResolvedValue(decisionRow);
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.getDecision(u, 1, 1)).resolves.toEqual(decisionRow);
+  });
+});
+
+describe("DecisionsService.updateDecision — project-membership gate (BOLA)", () => {
+  const u = makeUser("org-1");
+  const decisionRow = {
+    id: 1, orgId: "org-1", projectId: 1, decisionNumber: 1, title: "Adopt PostgreSQL",
+    context: null, decision: null, optionsConsidered: null, status: "proposed",
+    ownerId: null, decidedAt: null, revisitAt: null, linkedTicketId: null,
+    deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+  };
+
+  it("REJECTS a non-project-member updating a decision with ForbiddenException", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    mockDb.query.projectDecisions.findFirst.mockResolvedValue(decisionRow);
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.updateDecision(u, 1, 1, { title: "Revised" })).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe("DecisionsService.softDeleteDecision — project-membership gate (BOLA)", () => {
+  const u = makeUser("org-1");
+  const decisionRow = {
+    id: 1, orgId: "org-1", projectId: 1, decisionNumber: 1, title: "Adopt PostgreSQL",
+    context: null, decision: null, optionsConsidered: null, status: "proposed",
+    ownerId: null, decidedAt: null, revisitAt: null, linkedTicketId: null,
+    deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+  };
+
+  it("REJECTS a non-project-member soft-deleting a decision with ForbiddenException", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    mockDb.query.projectDecisions.findFirst.mockResolvedValue(decisionRow);
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.softDeleteDecision(u, 1, 1)).rejects.toThrow(ForbiddenException);
+  });
+});
+
+function makeRiskRow(id: number): Record<string, unknown> {
+  return {
+    id, orgId: "org-1", projectId: 1, riskNumber: id, title: `Risk ${id}`,
+    description: null, probability: "medium", impact: "medium", status: "open",
+    ownerId: null, mitigation: null, linkedTicketId: null,
+    deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+  };
+}
+
+describe("RisksService.listRisks — page 2 cursor returned by page 1 excludes all page-1 rows and no page-2 row is skipped", () => {
+  const u = makeUser("org-1");
+
+  it("page 2 starts exactly where page 1 ended — no repeated rows, no skipped rows when sentinel row is present", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+
+    const page1DbRows = Array.from({ length: 101 }, (_, i) => makeRiskRow(105 - i));
+    const page2DbRows = [makeRiskRow(5), makeRiskRow(4), makeRiskRow(3)];
+
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain(page1DbRows))
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain(page2DbRows));
+
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    const page1 = await svc.listRisks(u, 1, {});
+    expect(page1.hasMore).toBe(true);
+    expect(page1.data).toHaveLength(100);
+    expect(page1.nextCursor).toBe(6);
+
+    const page2 = await svc.listRisks(u, 1, { cursor: page1.nextCursor ?? undefined });
+    expect(page2.hasMore).toBe(false);
+    expect(page2.nextCursor).toBeNull();
+
+    const page1Ids = new Set(page1.data.map((r) => r.id));
+    expect(page2.data.every((r) => !page1Ids.has(r.id))).toBe(true);
+    expect(page2.data.every((r) => r.id < (page1.nextCursor ?? 0))).toBe(true);
+  });
+
+  it("last page has hasMore=false and nextCursor=null when no sentinel row is returned", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([makeRiskRow(1)]));
+
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+    const page = await svc.listRisks(u, 1, { cursor: 3 });
+
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeNull();
+    expect(page.data.map((r) => r.id)).toEqual([1]);
+  });
+});
+
+describe("DecisionsService.listDecisions — page 2 cursor returned by page 1 excludes all page-1 rows and no page-2 row is skipped", () => {
+  const u = makeUser("org-1");
+
+  function makeDecisionRow(id: number): Record<string, unknown> {
+    return {
+      id, orgId: "org-1", projectId: 1, decisionNumber: id, title: `Decision ${id}`,
+      context: null, decision: null, optionsConsidered: null, status: "proposed",
+      ownerId: null, decidedAt: null, revisitAt: null, linkedTicketId: null,
+      deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+    };
+  }
+
+  it("page 2 starts exactly where page 1 ended — no repeated rows, no skipped rows when sentinel row is present", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+
+    const page1DbRows = Array.from({ length: 101 }, (_, i) => makeDecisionRow(105 - i));
+    const page2DbRows = [makeDecisionRow(5), makeDecisionRow(4), makeDecisionRow(3)];
+
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain(page1DbRows))
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain(page2DbRows));
+
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    const page1 = await svc.listDecisions(u, 1, {});
+    expect(page1.hasMore).toBe(true);
+    expect(page1.data).toHaveLength(100);
+    expect(page1.nextCursor).toBe(6);
+
+    const page2 = await svc.listDecisions(u, 1, { cursor: page1.nextCursor ?? undefined });
+    expect(page2.hasMore).toBe(false);
+    expect(page2.nextCursor).toBeNull();
+
+    const page1Ids = new Set(page1.data.map((r) => r.id));
+    expect(page2.data.every((r) => !page1Ids.has(r.id))).toBe(true);
+    expect(page2.data.every((r) => r.id < (page1.nextCursor ?? 0))).toBe(true);
+  });
+});
+
+describe("RisksService.getRiskStats — project-membership gate (BOLA)", () => {
+  const u = makeUser("org-1");
+
+  it("REJECTS a non-member before running either aggregate, so the size of another project's risk register never leaks", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.getRiskStats(u, 1)).rejects.toThrow(ForbiddenException);
   });
 });

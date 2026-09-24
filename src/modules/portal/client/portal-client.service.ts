@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   changeRequests,
   projectClientGrants,
@@ -30,6 +30,7 @@ export class PortalClientService {
     membershipId: string,
     projectId: number,
   ): Promise<GrantRow> {
+    const now = new Date();
     const [grant] = await this.db
       .select()
       .from(projectClientGrants)
@@ -39,6 +40,7 @@ export class PortalClientService {
           eq(projectClientGrants.portalMembershipId, membershipId),
           eq(projectClientGrants.projectId, projectId),
           eq(projectClientGrants.status, "ACTIVE"),
+          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
         ),
       )
       .limit(1);
@@ -47,6 +49,7 @@ export class PortalClientService {
   }
 
   async listGrantedProjects(orgId: string, membershipId: string) {
+    const now = new Date();
     const grants = await this.db
       .select({ projectId: projectClientGrants.projectId })
       .from(projectClientGrants)
@@ -55,6 +58,7 @@ export class PortalClientService {
           eq(projectClientGrants.organizationId, orgId),
           eq(projectClientGrants.portalMembershipId, membershipId),
           eq(projectClientGrants.status, "ACTIVE"),
+          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
         ),
       )
       .limit(100);
@@ -193,7 +197,20 @@ export class PortalClientService {
         : Promise.resolve([]),
     ]);
 
-    return { project, milestones, tasks: projectTasks, attachments, comments };
+    return {
+      project,
+      milestones,
+      tasks: projectTasks,
+      attachments,
+      comments,
+      capabilities: {
+        canViewMilestones: grant.canViewMilestones,
+        canViewTasks: grant.canViewTasks,
+        canViewAttachments: grant.canViewAttachments,
+        canViewComments: grant.canViewComments,
+        canSubmitChangeRequests: grant.canSubmitChangeRequests,
+      },
+    };
   }
 
   async submitChangeRequest(
@@ -232,10 +249,6 @@ export class PortalClientService {
           crNumber: nextNumber,
           title: input.title,
           description: input.description,
-          impact: input.impact,
-          estimateMinutes: input.estimateMinutes,
-          budgetImpactCents: input.budgetImpactCents,
-          timelineImpactDays: input.timelineImpactDays,
           status: "submitted",
           requestedById: null,
           createdBy: null,

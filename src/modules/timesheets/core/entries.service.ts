@@ -7,7 +7,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, projects, tickets } from "../../../db/schema";
@@ -21,7 +21,6 @@ import { formatDateOnly, wholeDaysBetween } from "./lib/period.helpers";
 import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 
-/** `unique_violation`. */
 const SQLSTATE_UNIQUE_VIOLATION = "23505";
 import type {
   CreateEntryInput,
@@ -71,6 +70,29 @@ export class EntriesService {
     if (!row) throw new NotFoundException("Project not found");
   }
 
+  private async dailyHoursTotal(
+    orgId: string,
+    membershipId: number,
+    date: string,
+    excludeEntryId?: number,
+  ): Promise<number> {
+    const conditions = [
+      eq(timesheets.orgId, orgId),
+      eq(timesheets.userMembershipId, membershipId),
+      eq(timesheets.date, date),
+      isNull(timesheets.voidedAt),
+    ];
+    if (excludeEntryId !== undefined)
+      conditions.push(ne(timesheets.id, excludeEntryId));
+
+    const [row] = await this.db
+      .select({ total: sql<string>`COALESCE(SUM(hours::numeric), 0)::text` })
+      .from(timesheets)
+      .where(and(...conditions));
+
+    return parseFloat(row?.total ?? "0");
+  }
+
   async createEntry(u: CurrentUserContext, input: CreateEntryInput) {
     const membershipId = actingMembershipId(u.principal);
     if (membershipId === null)
@@ -82,6 +104,9 @@ export class EntriesService {
     const allowBackdated = settings?.allowBackdatedEntries ?? true;
     const backdateLimitDays = settings?.backdateLimitDays ?? null;
     const hours = roundHours(input.hours, settings?.roundingRule);
+    if (hours <= 0) {
+      throw new BadRequestException("Hours must be greater than zero");
+    }
 
     const today = formatDateOnly(new Date());
     const allowFuture = settings?.allowFutureEntries ?? false;
@@ -115,21 +140,11 @@ export class EntriesService {
       throw new BadRequestException("Field 'ticket' is required");
     }
 
-    const [dailyHours] = await this.db
-      .select({
-        total: sql<string>`COALESCE(SUM(hours::numeric), 0)::text`,
-      })
-      .from(timesheets)
-      .where(
-        and(
-          eq(timesheets.orgId, u.orgId),
-          eq(timesheets.userMembershipId, membershipId),
-          eq(timesheets.date, input.date),
-          isNull(timesheets.voidedAt),
-        ),
-      );
-
-    const currentTotal = parseFloat(dailyHours?.total ?? "0");
+    const currentTotal = await this.dailyHoursTotal(
+      u.orgId,
+      membershipId,
+      input.date,
+    );
     if (!(settings?.allowOverlappingEntries ?? true) && currentTotal > 0) {
       throw new ConflictException(
         "An entry already exists for this day. Overlapping entries are disabled.",
@@ -165,18 +180,6 @@ export class EntriesService {
         tx,
       );
 
-      /**
-       * `timesheets` carries three partial unique indexes, and the widest of
-       * them — `uniq_timesheets_work_log`, one ticket-less entry per person
-       * per day — allows only one ticket-less entry per person per day. A
-       * second one raises 23505, and until this catch existed that
-       * reached the client as a 500: an ordinary thing for a user to do,
-       * answered with "internal server error" and an alert.
-       *
-       * SQLSTATE via `sqlstateOf`, not `err.code`: drizzle wraps the driver
-       * error, so the code sits one or two `cause` links down and a direct
-       * `err.code === "23505"` is simply never true.
-       */
       let inserted;
       try {
         [inserted] = await tx
@@ -280,10 +283,27 @@ export class EntriesService {
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (input.hours !== undefined) {
       const settings = await this.periodService.loadSettings(u.orgId);
-      updateData.hours = roundHours(
-        input.hours,
-        settings?.roundingRule,
-      ).toString();
+      const nextHours = roundHours(input.hours, settings?.roundingRule);
+      if (nextHours <= 0) {
+        throw new BadRequestException("Hours must be greater than zero");
+      }
+
+      if (entry.userMembershipId !== null) {
+        const maxHoursPerDay = parseFloat(settings?.maxHoursPerDay ?? "24");
+        const otherHours = await this.dailyHoursTotal(
+          u.orgId,
+          entry.userMembershipId,
+          entry.date,
+          entryId,
+        );
+        if (otherHours + nextHours > maxHoursPerDay) {
+          throw new BadRequestException(
+            `Logging ${nextHours}h would exceed the daily limit of ${maxHoursPerDay}h`,
+          );
+        }
+      }
+
+      updateData.hours = nextHours.toString();
     }
     if (input.description !== undefined)
       updateData.description = input.description;

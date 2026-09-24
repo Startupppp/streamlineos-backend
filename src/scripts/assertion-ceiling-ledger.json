@@ -137,10 +137,6 @@
       "as": 2,
       "nonNull": 0
     },
-    "src/modules/ai/core/gateway/ai-gateway.service.ts": {
-      "as": 2,
-      "nonNull": 0
-    },
     "src/modules/ai/core/persona-registry.ts": {
       "as": 1,
       "nonNull": 0
@@ -157,10 +153,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/automation/automation.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/automation/shared-condition-evaluator.ts": {
       "as": 1,
       "nonNull": 0
@@ -170,8 +162,8 @@
       "nonNull": 0
     },
     "src/modules/autonomy/autonomy-hold.service.ts": {
-      "as": 2,
-      "nonNull": 1
+      "as": 1,
+      "nonNull": 0
     },
     "src/modules/autonomy/autonomy-hold.workflow.ts": {
       "as": 1,
@@ -205,10 +197,6 @@
       "as": 0,
       "nonNull": 1
     },
-    "src/modules/build/core/projects-query.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/build/core/projects-roadmap.service.ts": {
       "as": 0,
       "nonNull": 1
@@ -227,10 +215,6 @@
     },
     "src/modules/calendar/external-event-normalizers.ts": {
       "as": 1,
-      "nonNull": 0
-    },
-    "src/modules/chat/chat-channel-list.service.ts": {
-      "as": 3,
       "nonNull": 0
     },
     "src/modules/chat/chat-fanout-outbox.ts": {
@@ -265,10 +249,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/crm/metadata/crm-data-quality.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/crm/metadata/crm-metadata.service.ts": {
       "as": 3,
       "nonNull": 3
@@ -279,10 +259,6 @@
     },
     "src/modules/crm/metadata/crm-validation.service.ts": {
       "as": 7,
-      "nonNull": 0
-    },
-    "src/modules/crm/pricebooks/crm-pricebooks.service.ts": {
-      "as": 5,
       "nonNull": 0
     },
     "src/modules/cron/cron-announcements-retention.service.ts": {
@@ -325,10 +301,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/data-quality/data-quality-queue.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/data-quality/dataset-health.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -337,17 +309,9 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/deals/deals-crud.service.ts": {
-      "as": 3,
-      "nonNull": 0
-    },
     "src/modules/deals/deals.service.ts": {
-      "as": 2,
+      "as": 1,
       "nonNull": 1
-    },
-    "src/modules/delegations/delegations.service.ts": {
-      "as": 0,
-      "nonNull": 2
     },
     "src/modules/directory/directory-identity.service.ts": {
       "as": 0,
@@ -485,10 +449,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/hr/onboarding/flow/module-checklist.service.ts": {
-      "as": 0,
-      "nonNull": 1
-    },
     "src/modules/hr/payroll-inputs/payroll-input-snapshots.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -569,14 +529,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/inventory/counts/inv-cycle-counts.service.ts": {
-      "as": 0,
-      "nonNull": 1
-    },
-    "src/modules/inventory/counts/inv-physical-audits.service.ts": {
-      "as": 0,
-      "nonNull": 1
-    },
     "src/modules/inventory/import-export/export.service.ts": {
       "as": 1,
       "nonNull": 2
@@ -586,10 +538,6 @@
       "nonNull": 3
     },
     "src/modules/inventory/purchase-orders/grn-receive.service.ts": {
-      "as": 0,
-      "nonNull": 2
-    },
-    "src/modules/inventory/purchase-orders/grn.service.ts": {
       "as": 0,
       "nonNull": 1
     },
@@ -623,23 +571,15 @@
     },
     "src/modules/inventory/stock-engine/reservation.service.ts": {
       "as": 0,
-      "nonNull": 2
-    },
-    "src/modules/inventory/stock-engine/stock-engine-batch.service.ts": {
-      "as": 2,
-      "nonNull": 0
+      "nonNull": 1
     },
     "src/modules/inventory/stock-engine/stock-engine.service.ts": {
       "as": 1,
       "nonNull": 1
     },
-    "src/modules/inventory/stock/inv-stock-adjustments.service.ts": {
-      "as": 0,
-      "nonNull": 1
-    },
     "src/modules/inventory/traceability/traceability-chain.service.ts": {
       "as": 0,
-      "nonNull": 5
+      "nonNull": 4
     },
     "src/modules/invoices/invoices-write.service.ts": {
       "as": 1,
@@ -682,7 +622,7 @@
       "nonNull": 0
     },
     "src/modules/mail/providers/mail-normalizers.ts": {
-      "as": 7,
+      "as": 3,
       "nonNull": 0
     },
     "src/modules/module-access/module-access-group-crud.service.ts": {
@@ -715,10 +655,6 @@
     },
     "src/modules/organization/hierarchy/org-hierarchy-list-filters.ts": {
       "as": 6,
-      "nonNull": 0
-    },
-    "src/modules/organization/setup/announcements.service.ts": {
-      "as": 1,
       "nonNull": 0
     },
     "src/modules/payroll/runs/runs.service.ts": {
@@ -754,7 +690,7 @@
       "nonNull": 5
     },
     "src/modules/sales/sales.service.ts": {
-      "as": 7,
+      "as": 4,
       "nonNull": 0
     },
     "src/modules/settings/settings.helpers.ts": {
@@ -778,7 +714,7 @@
       "nonNull": 0
     },
     "src/modules/support/kb-gap/support-kb-gap.service.ts": {
-      "as": 1,
+      "as": 0,
       "nonNull": 1
     },
     "src/modules/tasks/task-sequences.service.ts": {

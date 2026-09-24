@@ -1,14 +1,18 @@
-import { resolveAiStreamModel, selectTierModelId } from "./ai-stream-model";
+import {
+  DEFAULT_STREAM_GOOGLE_MODEL,
+  resolveAiStreamModel,
+  selectTierModelId,
+} from "./ai-stream-model";
 import { resolveLlmProvider, type LlmProviderConfig } from "../providers/llm-provider.config";
 import { resolveChatModelId } from "../services/chat-assistant-model";
 
 describe("stream model tier selection", () => {
-  it("preserves existing chat model selection when no tier is requested", () => {
-    expect(resolveAiStreamModel(undefined).modelId).toBe(resolveChatModelId());
+  it("holds the untiered default independently, so a chat model change cannot repoint the 21 untiered callers", () => {
+    expect(resolveAiStreamModel(undefined).modelId).toBe(DEFAULT_STREAM_GOOGLE_MODEL);
+    expect(resolveAiStreamModel(undefined).modelId).not.toBe(resolveChatModelId());
   });
   const config: LlmProviderConfig = {
     provider: "openai", apiKey: "test-only", baseURL: undefined,
-    fastModel: "fast-alias", standardModel: "standard-alias",
     fastChain: ["configured-fast-primary", "configured-fast-fallback"],
     standardChain: ["configured-standard-primary", "configured-standard-fallback"],
   };

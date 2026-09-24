@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { wireDate } from "../../../common/openapi/wire-types";
+import { nullableWireDate, wireDate } from "../../../common/openapi/wire-types";
 
 export const chatPresenceAckResponseSchema = z.object({ ok: z.literal(true) }).strict();
 
@@ -10,6 +10,8 @@ export const chatUnreadResponseSchema = z.object({
 export const chatOnlineResponseSchema = z.array(z.object({
   userId: z.string(),
   status: z.string(),
+  statusMessage: z.string().nullable().optional(),
+  statusExpiresAt: nullableWireDate().optional(),
   lastSeenAt: wireDate(),
   userName: z.string().nullable(),
   userImage: z.string().nullable(),

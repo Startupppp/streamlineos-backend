@@ -106,7 +106,7 @@ ${input.managerNotes ? `\nManager Notes: ${input.managerNotes}` : ""}`,
   };
 }
 
-export interface HelpdeskReplyInput {
+export interface HelpdeskReplyPromptInput {
   ticketTitle: string;
   ticketDescription?: string | null;
   category?: string | null;
@@ -114,7 +114,7 @@ export interface HelpdeskReplyInput {
   employeeName?: string | null;
 }
 
-export function helpdeskReplyPrompt(input: HelpdeskReplyInput) {
+export function helpdeskReplyPrompt(input: HelpdeskReplyPromptInput) {
   return {
     system: `You are an empathetic HR support agent for an Indian company.
 Generate a professional, helpful reply to an employee helpdesk ticket.
@@ -142,7 +142,7 @@ Employee: ${input.employeeName || "Anonymous"}`,
   };
 }
 
-export interface AttritionRiskInput {
+export interface AttritionRiskPromptInput {
   employeeName: string;
   role?: string | null;
   department?: string | null;
@@ -155,7 +155,7 @@ export interface AttritionRiskInput {
   hasGoals?: boolean;
 }
 
-export function attritionRiskPrompt(input: AttritionRiskInput) {
+export function attritionRiskPrompt(input: AttritionRiskPromptInput) {
   return {
     system: `You are an HR analytics expert assessing employee attrition risk for an Indian company.
 Score the attrition risk 0-100 (100 = very likely to leave).

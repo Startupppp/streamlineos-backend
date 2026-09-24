@@ -27,7 +27,7 @@ function walkTs(dir: string, found: string[] = []): string[] {
   return found;
 }
 
-const isLib = (path: string): boolean => /(^|\/)lib\//.test(path);
+const isLib = (path: string): boolean => /(^|\/)lib\//.test(path.replaceAll("\\", "/"));
 
 /**
  * `*.service.ts` AND everything under a `lib/` directory.

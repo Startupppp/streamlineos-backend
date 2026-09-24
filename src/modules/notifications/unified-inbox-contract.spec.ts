@@ -111,9 +111,13 @@ function makeBroadcasts(rows: unknown[] = []): BroadcastsService {
   } as unknown as BroadcastsService;
 }
 
-function makeBuildApprovals(rows: ApprovalInboxRow[] = []): BuildApprovalsInboxService {
+function makeBuildApprovals(
+  rows: ApprovalInboxRow[] = [],
+  pendingCount = 0,
+): BuildApprovalsInboxService {
   return {
     getInboxPage: jest.fn().mockResolvedValue(rows),
+    countPending: jest.fn().mockResolvedValue(pendingCount),
   } as unknown as BuildApprovalsInboxService;
 }
 
@@ -194,6 +198,10 @@ function approvalRow(id: number, createdAt: Date): ApprovalInboxRow {
   };
 }
 
+
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import("../attention/approval-adapter.registry").ApprovalAdapterRegistry;
+}
 describe("UnifiedInboxService — four-property contract", () => {
   const ORG = "org-1";
   const UID = "user-1";
@@ -206,7 +214,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const db = makeDbEmpty();
       const mailSvc = makeMail([mailMessage("msg-1", "2024-01-03T10:00:00Z")]);
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
@@ -218,7 +226,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const db = makeDbEmpty();
       const mailSvc = makeMail([mailMessage("msg-1", "2024-01-03T10:00:00Z")]);
       const access = makeAccess(true);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
@@ -229,7 +237,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const db = makeDbEmpty();
       const approvalsSvc = makeBuildApprovals([approvalRow(1, new Date())]);
       const access = makeAccess(false, false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), approvalsSvc);
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), approvalsSvc, makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
@@ -241,7 +249,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const db = makeDbEmpty();
       const approvalsSvc = makeBuildApprovals([approvalRow(1, new Date())]);
       const access = makeAccess(false, true);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), approvalsSvc);
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), approvalsSvc, makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
@@ -254,7 +262,7 @@ describe("UnifiedInboxService — four-property contract", () => {
         select: jest.fn().mockReturnValue(makeChain([notifRow(1, new Date())])),
       } as unknown as Db;
       const access = makeAccess(false, false);
-      const svc = new UnifiedInboxService(db2, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db2, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: ["notification"], unreadOnly: false }, user);
 
@@ -267,7 +275,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const db = makeDbEmpty();
       const mailSvc = makeMail();
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       await svc.list(ORG, UID, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
@@ -279,9 +287,7 @@ describe("UnifiedInboxService — four-property contract", () => {
   describe("Property 2: unified unread-count semantics", () => {
     it("total equals the sum of per-source authorized counts", async () => {
       const db: Db = {
-        select: jest.fn()
-          .mockReturnValueOnce(makeCountChain(3))
-          .mockReturnValueOnce(makeCountChain(2)),
+        select: jest.fn().mockReturnValueOnce(makeCountChain(3)),
       } as unknown as Db;
 
       const mailSvc = makeMailWithUnread([
@@ -291,7 +297,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       ]);
 
       const access = makeAccess(true, true);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals([], 2), makeRegistry());
 
       const counts = await svc.unifiedUnreadCount(ORG, UID, user);
 
@@ -310,7 +316,7 @@ describe("UnifiedInboxService — four-property contract", () => {
 
       const mailSvc = makeMail([mailMessage("m1", "2024-01-01T00:00:00Z", false)]);
       const access = makeAccess(false, true);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const counts = await svc.unifiedUnreadCount(ORG, UID, user);
 
@@ -328,7 +334,7 @@ describe("UnifiedInboxService — four-property contract", () => {
 
       const mailSvc = makeMailWithUnread([mailMessage("m1", "2024-01-01T00:00:00Z", false)]);
       const access = makeAccess(true, false);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const counts = await svc.unifiedUnreadCount(ORG, UID, user);
 
@@ -343,7 +349,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       } as unknown as Db;
 
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: ["notification"], unreadOnly: false }, user);
 
@@ -362,7 +368,7 @@ describe("UnifiedInboxService — four-property contract", () => {
 
       const broadcasts = makeBroadcasts([broadcastRow(10, t)]);
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), broadcasts, makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: ["notification", "broadcast"], unreadOnly: false }, user);
 
@@ -384,7 +390,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       } as unknown as Db;
 
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: ["notification"], unreadOnly: false }, user);
 
@@ -401,7 +407,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       } as unknown as Db;
 
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 10, kinds: ["notification"], unreadOnly: false }, user);
 
@@ -416,7 +422,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       );
       const db = { select: jest.fn().mockReturnValue(makeChain(rows)) } as unknown as Db;
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 5, kinds: undefined, unreadOnly: false }, user);
 
@@ -427,7 +433,7 @@ describe("UnifiedInboxService — four-property contract", () => {
     it("hasMore is false when all sources are exhausted", async () => {
       const db = { select: jest.fn().mockReturnValue(makeChain([notifRow(1, new Date())])) } as unknown as Db;
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 25, kinds: undefined, unreadOnly: false }, user);
 
@@ -443,7 +449,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       );
       const db = { select: jest.fn().mockReturnValue(makeChain(rows)) } as unknown as Db;
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 5, kinds: undefined, unreadOnly: false }, user);
 
@@ -457,7 +463,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const broadcasts = makeBroadcasts([broadcastRow(3, new Date("2024-01-09T00:00:00Z"))]);
       const access = makeAccess(false, true);
       const approvals = makeBuildApprovals([approvalRow(7, new Date("2024-01-08T00:00:00Z"))]);
-      const svc = new UnifiedInboxService(db, access, makeMail(), broadcasts, approvals);
+      const svc = new UnifiedInboxService(db, access, makeMail(), broadcasts, approvals, makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 1, kinds: undefined, unreadOnly: false }, user);
 
@@ -477,7 +483,7 @@ describe("UnifiedInboxService — four-property contract", () => {
     it("cursor JSON never contains 'undefined' — all fields are null or a typed value", async () => {
       const db = { select: jest.fn().mockReturnValue(makeChain([notifRow(5, new Date())])) } as unknown as Db;
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 1, kinds: undefined, unreadOnly: false }, user);
 
@@ -493,7 +499,7 @@ describe("UnifiedInboxService — four-property contract", () => {
     it("page 1 sends no cursor — the query uses no cursor state (null fields)", async () => {
       const db = { select: jest.fn().mockReturnValue(makeChain([])) } as unknown as Db;
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       await svc.list(ORG, UID, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
@@ -506,6 +512,7 @@ describe("UnifiedInboxService — four-property contract", () => {
         m: null,
         a: null,
         at: null,
+        ap: {},
       });
     });
 
@@ -515,7 +522,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       );
       const db = { select: jest.fn().mockReturnValue(makeChain(rows)) } as unknown as Db;
       const access = makeAccess(false);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       const result = await svc.list(ORG, UID, { limit: 200, kinds: undefined, unreadOnly: false }, user);
 
@@ -551,7 +558,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const VICTIM_ORG = "org-victim";
       const ATTACKER_ORG = "org-attacker";
       const access = { holds: jest.fn().mockResolvedValue(false) } as unknown as AccessService;
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       await svc.list(ATTACKER_ORG, "user-attacker", { kinds: ["notification"], limit: 25, unreadOnly: false }, makeUser(ATTACKER_ORG, "user-attacker"));
 
@@ -566,7 +573,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const ATTACKER_ORG = "org-attacker";
       const VICTIM_ORG = "org-victim";
       const access = { holds: jest.fn().mockResolvedValue(false) } as unknown as AccessService;
-      const svc = new UnifiedInboxService(db, access, makeMail(), broadcastsSvc, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, makeMail(), broadcastsSvc, makeBuildApprovals(), makeRegistry());
 
       await svc.list(ATTACKER_ORG, "user-attacker", { kinds: ["broadcast"], limit: 25, unreadOnly: false }, makeUser(ATTACKER_ORG, "user-attacker"));
 
@@ -582,7 +589,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const ATTACKER_ORG = "org-attacker";
       const VICTIM_ORG = "org-victim";
       const access = makeAccess(true, false);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals(), makeRegistry());
 
       await svc.list(ATTACKER_ORG, "user-attacker", { kinds: ["mail"], limit: 25, unreadOnly: false }, makeUser(ATTACKER_ORG, "user-attacker"));
 
@@ -597,7 +604,7 @@ describe("UnifiedInboxService — four-property contract", () => {
       const ATTACKER_ORG = "org-attacker";
       const VICTIM_ORG = "org-victim";
       const access = makeAccess(false, true);
-      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), approvalsSvc);
+      const svc = new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), approvalsSvc, makeRegistry());
 
       await svc.list(ATTACKER_ORG, "user-attacker", { kinds: ["build_approval"], limit: 25, unreadOnly: false }, makeUser(ATTACKER_ORG, "user-attacker"));
 
@@ -633,6 +640,7 @@ describe("unified unread count is honest about the mail scan boundary", () => {
       makeMailWithUnread(messages(3, 2)),
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const counts = await svc.unifiedUnreadCount(ORG, UID, user);
@@ -648,6 +656,7 @@ describe("unified unread count is honest about the mail scan boundary", () => {
       makeMailWithUnread(messages(100, 40)),
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const counts = await svc.unifiedUnreadCount(ORG, UID, user);
@@ -663,6 +672,7 @@ describe("unified unread count is honest about the mail scan boundary", () => {
       makeMailWithUnread(messages(100, 40)),
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const counts = await svc.unifiedUnreadCount(ORG, UID, user);

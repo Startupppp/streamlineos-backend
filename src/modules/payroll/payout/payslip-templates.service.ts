@@ -3,6 +3,8 @@ import { and, asc, eq, gt, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payslipTemplates } from "../../../db/schema";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { isUniqueViolationOn } from "../../../common/db/postgres-error";
 import { renderPayslipHtml } from "./lib/payslip-renderer";
 import type { CreateTemplateInput, PatchTemplateInput, PayslipTemplateConfig, PreviewTemplateInput } from "./dto/payout.schemas";
 import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
@@ -52,11 +54,13 @@ export class PayslipTemplatesService {
           isDefault: false,
         },
       ];
-      const seeded = await this.db.insert(payslipTemplates).values(defaults).returning();
-      seeded.sort((left, right) => left.id - right.id);
-      return buildCursorPage(seeded, cap, (row) =>
-        payrollCursorPosition(cursorScope, [row.id], row.id),
-      );
+      const seeded = await this.seedDefaults(orgId, defaults);
+      if (seeded) {
+        seeded.sort((left, right) => left.id - right.id);
+        return buildCursorPage(seeded, cap, (row) =>
+          payrollCursorPosition(cursorScope, [row.id], row.id),
+        );
+      }
     }
 
     const conditions = [eq(payslipTemplates.orgId, orgId)];
@@ -71,6 +75,20 @@ export class PayslipTemplatesService {
     return buildCursorPage(rows, cap, (row) =>
       payrollCursorPosition(cursorScope, [row.id], row.id),
     );
+  }
+
+  private async seedDefaults(
+    orgId: string,
+    defaults: (typeof payslipTemplates.$inferInsert)[],
+  ): Promise<(typeof payslipTemplates.$inferSelect)[] | null> {
+    try {
+      return await runInNewTenantTransaction(this.db, orgId, async (tx) =>
+        tx.insert(payslipTemplates).values(defaults).returning(),
+      );
+    } catch (error: unknown) {
+      if (isUniqueViolationOn(error, "uq_payslip_templates_org_default")) return null;
+      throw error;
+    }
   }
 
   async create(orgId: string, data: CreateTemplateInput) {

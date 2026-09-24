@@ -10,13 +10,16 @@ export const teamRowSchema = z.object({
   icon: z.string().nullable(),
   color: z.string().nullable(),
   isPrivate: z.boolean(),
-  pmWorkspaceId: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
   deletedAt: nullableWireDate(),
 });
 
-export const teamPageSchema = cursorPageSchema(teamRowSchema);
+export const teamListItemSchema = teamRowSchema
+  .omit({ deletedAt: true })
+  .extend({ memberCount: z.number().int() });
+
+export const teamPageSchema = cursorPageSchema(teamListItemSchema);
 
 export const teamDetailSchema = teamRowSchema.extend({
   members: z.array(z.object({

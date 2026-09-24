@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 
@@ -27,6 +28,10 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
   const dispatch = { dispatch: jest.fn() } as never;
   const holdsMock = jest.fn().mockResolvedValue(true);
   const access = { holds: holdsMock } as never;
+  const auth = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  };
 
   function makeDb() {
     const wheres: unknown[] = [];
@@ -58,7 +63,7 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
   it("scopes review list query to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
     holdsMock.mockResolvedValue(true);
-    const svc = new KbPageReviewsQueryService(db, access);
+    const svc = new KbPageReviewsQueryService(db, access, auth as never);
 
     await svc.list(makeUser(ATTACKER), undefined, undefined);
 
@@ -71,7 +76,7 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
   it("returns reviews for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
     holdsMock.mockResolvedValue(true);
-    const svc = new KbPageReviewsQueryService(db, access);
+    const svc = new KbPageReviewsQueryService(db, access, auth as never);
 
     const result = await svc.list(makeUser(OWNER), undefined, undefined);
 

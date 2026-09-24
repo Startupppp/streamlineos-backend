@@ -10,7 +10,6 @@ import type { Db } from "../../../db/drizzle.module";
 import {
   organizationMembers,
   organizations,
-  pmWorkspaces,
   projects,
   projectStatuses,
   tickets,
@@ -93,8 +92,7 @@ describeWithDb(
         const adminMembId = memberRows.find((m) => m.userId === U.admin)?.id ?? ownerMembershipId;
         const memberMembId = memberRows.find((m) => m.userId === U.member)?.id ?? 0;
         target.otherMembershipId = memberRows.find((m) => m.userId === U.other)?.id ?? 0;
-        const [workspace] = await tx.insert(pmWorkspaces).values({ orgId: ORG_ID, name: "Timesheet workspace", slug: "timesheet-workspace" }).returning();
-        const [project] = await tx.insert(projects).values({ orgId: ORG_ID, name: "Timesheet project", key: "TSC", pmWorkspaceId: workspace.pmWorkspaceId }).returning();
+        const [project] = await tx.insert(projects).values({ orgId: ORG_ID, name: "Timesheet project", key: "TSC" }).returning();
         await tx.insert(projectStatuses).values({ orgId: ORG_ID, projectId: project.id, name: "TODO" });
         const [ticket] = await tx.insert(tickets).values({ orgId: ORG_ID, projectId: project.id, title: "Timesheet ticket", ticketNumber: 1 }).returning();
         target.projectId = project.id;
@@ -119,8 +117,7 @@ describeWithDb(
         const membershipId = Number(sequence.id);
         await tx.insert(organizations).values({ id: FOREIGN_ORG_ID, name: "Foreign timesheet org", slug: FOREIGN_ORG_ID, ownerMembershipId: membershipId });
         await tx.insert(organizationMembers).values({ id: membershipId, orgId: FOREIGN_ORG_ID, userId: U.admin, isOwner: true });
-        const [workspace] = await tx.insert(pmWorkspaces).values({ orgId: FOREIGN_ORG_ID, name: "Foreign workspace", slug: "foreign-timesheet" }).returning();
-        const [project] = await tx.insert(projects).values({ orgId: FOREIGN_ORG_ID, name: "Foreign project", key: "FTS", pmWorkspaceId: workspace.pmWorkspaceId }).returning();
+        const [project] = await tx.insert(projects).values({ orgId: FOREIGN_ORG_ID, name: "Foreign project", key: "FTS" }).returning();
         await tx.insert(projectStatuses).values({ orgId: FOREIGN_ORG_ID, projectId: project.id, name: "TODO" });
         const [ticket] = await tx.insert(tickets).values({ orgId: FOREIGN_ORG_ID, projectId: project.id, title: "Foreign ticket", ticketNumber: 1 }).returning();
         target.foreignProjectId = project.id;

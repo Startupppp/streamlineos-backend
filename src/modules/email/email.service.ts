@@ -1,10 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { appUrl } from "./app-url";
-import { EmailSendersBase, invitationEmailOptions } from "./email-senders.base";
+import { EmailSendersBase, invitationEmailOptions, welcomeEmailOptions } from "./email-senders.base";
 import { EmailProviderService } from "./email.provider";
-import { EmailOutboxService } from "./email-outbox.service";
+import { EmailOutboxService, type EmailQueueOutcome } from "./email-outbox.service";
 import { type EmailOptions } from "./email.provider";
 import {
+  getMembershipAddedEmailTemplate,
   getExpenseSubmittedEmailTemplate,
   getExpenseApprovedEmailTemplate,
   getExpenseRejectedEmailTemplate,
@@ -36,9 +37,40 @@ export class EmailService extends EmailSendersBase {
     token: string,
     organizationName: string,
   ): Promise<void> {
-    await this.outbox.enqueueAndTry(
+    await this.outbox.enqueueOnly(
       invitationEmailOptions(email, token, organizationName),
     );
+  }
+
+  queueWelcomeEmail(input: {
+    organizationId: string;
+    recipientUserId: string;
+    email: string;
+    name: string;
+    setupUrl: string;
+  }): Promise<EmailQueueOutcome> {
+    return this.outbox.enqueueOnly({
+      ...welcomeEmailOptions(input.email, input.name, input.setupUrl),
+      organizationId: input.organizationId,
+      recipientUserId: input.recipientUserId,
+    });
+  }
+
+  queueMembershipAddedEmail(input: {
+    organizationId: string;
+    recipientUserId: string;
+    email: string;
+    name: string;
+    organizationName: string;
+    signInUrl: string;
+  }): Promise<EmailQueueOutcome> {
+    return this.outbox.enqueueOnly({
+      to: input.email,
+      subject: `You've been added to ${input.organizationName}`,
+      html: getMembershipAddedEmailTemplate(input.name, input.organizationName, input.signInUrl),
+      organizationId: input.organizationId,
+      recipientUserId: input.recipientUserId,
+    });
   }
 
   sendExpenseSubmittedEmail(

@@ -14,12 +14,6 @@ const USER: CurrentUserContext = {
   principal: humanSessionPrincipal(5, false),
 };
 
-/**
- * Two requests for the current week that both miss the first read: the
- * second INSERT used to raise on the (org, member, start, end) unique index
- * and surface as a 500. The insert now yields on conflict and the winner's
- * row is read back.
- */
 function harness(opts: { existsOnFirstRead: boolean; insertWins: boolean }) {
   let selects = 0;
   const insertValues: Record<string, unknown>[] = [];
@@ -52,6 +46,7 @@ function harness(opts: { existsOnFirstRead: boolean; insertWins: boolean }) {
   const reader = {
     getSettings: async () => ({ workWeekStart: 1 }),
     getPeriodWithUser: async (_org: string, id: number) => ({ id, userMembershipId: 5, status: "OPEN" }),
+    listPeriodEntries: async () => [],
     mapPeriod: (row: unknown) => row,
   };
   const service = new PeriodsService(db, reader as never, {} as never, {} as never, {} as never);

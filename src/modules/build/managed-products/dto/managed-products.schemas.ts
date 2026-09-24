@@ -6,6 +6,7 @@ export const listManagedProductsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
   status: z.enum(managedProductStatusEnum.enumValues).optional(),
+  search: z.string().optional(),
 }).strict();
 
 export const createManagedProductSchema = z.object({

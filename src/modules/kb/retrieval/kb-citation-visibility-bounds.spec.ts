@@ -1,9 +1,11 @@
+import { sql } from "drizzle-orm";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbSearchService } from "./kb-search.service";
@@ -47,6 +49,11 @@ const mockSearch = {
   articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
 };
 
+const mockAuth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+};
+
 async function makeVisibility(rows: { id: number }[]) {
   const db = makeDb(rows);
   const module: TestingModule = await Test.createTestingModule({
@@ -54,6 +61,7 @@ async function makeVisibility(rows: { id: number }[]) {
       KbCitationVisibilityService,
       { provide: KbAccessService, useValue: mockAccess },
       { provide: KbSearchService, useValue: mockSearch },
+      { provide: KnowledgeAuthorizationService, useValue: mockAuth },
       { provide: DRIZZLE, useValue: db },
     ],
   }).compile();
@@ -86,7 +94,7 @@ describe("KB citation visibility reads are bounded by their caller", () => {
 
   it.each([
     ["visibleArticles" as const, 1],
-    ["visiblePages" as const, 2],
+    ["visiblePages" as const, 1],
     ["visibleSources" as const, 1],
   ])("%s costs %i statement(s) whether it re-checks 1 citation or 30", async (method, expected) => {
     expect(await statementsFor(method, 1)).toBe(expected);
@@ -121,6 +129,16 @@ describe("KB citation visibility reads are bounded by their caller", () => {
       await harness.module.close();
     }
   });
+
+  it("consults the canonical authorization seam when checking page visibility", async () => {
+    const harness = await makeVisibility([{ id: 1 }]);
+    try {
+      await harness.service.visiblePages(user, [1]);
+      expect(mockAuth.visiblePagePredicate).toHaveBeenCalledWith(expect.anything(), "view");
+    } finally {
+      await harness.module.close();
+    }
+  });
 });
 
 /**
@@ -134,7 +152,7 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
       ...mockSearch,
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
       retrieveTopSources: jest.fn().mockResolvedValue([]),
-      retrieveAttachmentSnippets: jest.fn().mockResolvedValue(null),
+      retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -143,6 +161,7 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
         { provide: KbEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         { provide: KbSearchService, useValue: search },
         { provide: KbAccessService, useValue: mockAccess },
+        { provide: KnowledgeAuthorizationService, useValue: mockAuth },
         KbCitationVisibilityService,
         { provide: DRIZZLE, useValue: makeDb([]) },
       ],

@@ -33,9 +33,9 @@ import {
   projectStatusSchema,
 } from "./dto/workflow-response.schemas";
 
-const transitionIdParams = z.object({ transitionId: z.coerce.number().int().positive() }).strict();
-const fromStatusIdParams = z.object({ fromStatusId: z.coerce.number().int().positive() }).strict();
-const statusIdParams = z.object({ statusId: z.coerce.number().int().positive() }).strict();
+export const transitionIdParams = z.object({ projectId: z.coerce.number().int().positive(), transitionId: z.coerce.number().int().positive() }).strict();
+export const fromStatusIdParams = z.object({ projectId: z.coerce.number().int().positive(), fromStatusId: z.coerce.number().int().positive() }).strict();
+export const statusIdParams = z.object({ projectId: z.coerce.number().int().positive(), statusId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/workflow")

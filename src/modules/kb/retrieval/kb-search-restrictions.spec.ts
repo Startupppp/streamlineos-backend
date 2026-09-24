@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -44,6 +45,11 @@ const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
+const makeAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+});
+
 const makeEmbeddings = () => ({
   isEmbeddingConfigured: jest.fn().mockReturnValue(false),
   embedQueryWithCredit: jest.fn(),
@@ -61,6 +67,7 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeAuth() as never,
     );
 
     const user = makeUser();
@@ -68,6 +75,27 @@ describe("KbSearchService — restriction enforcement", () => {
 
     expect(access.getPrincipalIds).toHaveBeenCalledWith(user);
     expect(access.isAdmin).toHaveBeenCalledWith(user);
+  });
+
+  it("asks the canonical authorization seam for the page visibility predicate", async () => {
+    const db = makeDb();
+    const access = makeAccess([1], false);
+    const auth = makeAuth();
+
+    const svc = new KbSearchService(
+      db as never,
+      access as never,
+      makeEmbeddings() as never,
+      makeEvents() as never,
+      new KbCandidateService(db as never),
+      makeScopes() as never,
+      auth as never,
+    );
+
+    const user = makeUser();
+    await svc.retrieveTopArticles(user, "test query", 5);
+
+    expect(auth.visiblePagePredicate).toHaveBeenCalledWith(expect.anything(), "view");
   });
 
   it("asks the SECURITY DEFINER search function for ids before falling back to a scan", async () => {
@@ -81,6 +109,7 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeAuth() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "test query", 5);
@@ -101,6 +130,7 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeAuth() as never,
     );
 
     const result = await svc.retrieveTopArticles(makeUser(), "  ", 5);
@@ -119,6 +149,7 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeAuth() as never,
     );
 
     const result = await svc.retrieveTopArticles(makeUser(), "test", 5);

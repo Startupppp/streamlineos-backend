@@ -5,6 +5,7 @@ import { HrAuditService } from "../../core/hr-audit.service";
 import { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
 import { PayrollInputsBuildService } from "../payroll-inputs-build.service";
 import { PayrollInputSnapshotsService } from "../payroll-input-snapshots.service";
+import { PayrollInputAdjustmentsService } from "../payroll-input-adjustments.service";
 import { getTableName } from "drizzle-orm";
 import { hrLeaveLedger } from "../../../../db/schema/hr/leave-ledger";
 import { hrLoanRepayments } from "../../../../db/schema/hr/benefits";
@@ -116,6 +117,15 @@ async function makeService(db: unknown): Promise<PayrollInputsService> {
       { provide: HrAutomationEngineService, useValue: automation },
       { provide: PayrollInputsBuildService, useValue: build },
       { provide: PayrollInputSnapshotsService, useValue: snapshots },
+      {
+        provide: PayrollInputAdjustmentsService,
+        useValue: {
+          listAdjustments: jest.fn(),
+          createAdjustment: jest.fn(),
+          approveAdjustment: jest.fn(),
+          rejectAdjustment: jest.fn(),
+        },
+      },
     ],
   }).compile();
   return module.get(PayrollInputsService);

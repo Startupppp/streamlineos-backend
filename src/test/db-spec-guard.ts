@@ -13,6 +13,19 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
 
 const URL_VAR_PATTERN = /(?:DATABASE_URL|POSTGRES_URL|DB_URL)$/;
 
+const MANAGED_PROVIDER_HOST =
+  /\.(?:rds\.amazonaws\.com|neon\.tech|supabase\.(?:co|com)|postgres\.database\.azure\.com|render\.com|db\.ondigitalocean\.com|aivencloud\.com|tsdb\.cloud\.timescale\.com)$/i;
+
+const DISPOSABLE_DATABASE = /(?:scratch|disposable|sandbox|ephemeral)/i;
+
+function isManagedProviderHost(host: string): boolean {
+  return MANAGED_PROVIDER_HOST.test(host);
+}
+
+function databaseNameOf(url: URL): string {
+  return url.pathname.replace(/^\//, "").split("?")[0] ?? "";
+}
+
 export type UrlVerdict =
   | { readonly ok: true; readonly url: string; readonly target: string }
   | { readonly ok: false; readonly target: string; readonly because: string };
@@ -41,7 +54,7 @@ function hostList(env: NodeJS.ProcessEnv): string {
   return [...allowedHosts(env)].join(", ");
 }
 
-export function checkDatabaseUrl(raw: string, env: NodeJS.ProcessEnv = process.env): UrlVerdict {
+export function checkDatabaseHost(raw: string, env: NodeJS.ProcessEnv = process.env): UrlVerdict {
   const target = describeTarget(raw);
 
   let url: URL;
@@ -52,6 +65,17 @@ export function checkDatabaseUrl(raw: string, env: NodeJS.ProcessEnv = process.e
   }
 
   const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+
+  if (isManagedProviderHost(host) && !DISPOSABLE_DATABASE.test(databaseNameOf(url)))
+    return {
+      ok: false,
+      target,
+      because:
+        `host "${host}" is a managed database provider and database ` +
+        `"${databaseNameOf(url)}" is not named as disposable, so ${ALLOWED_HOSTS_VAR} cannot ` +
+        `approve it — name the database with "scratch" to run against a throwaway branch`,
+    };
+
   if (!allowedHosts(env).has(host))
     return {
       ok: false,
@@ -60,6 +84,14 @@ export function checkDatabaseUrl(raw: string, env: NodeJS.ProcessEnv = process.e
         `host "${host}" is not approved for destructive testing ` +
         `(approved: ${hostList(env)})`,
     };
+
+  return { ok: true, url: raw, target };
+}
+
+export function checkDatabaseUrl(raw: string, env: NodeJS.ProcessEnv = process.env): UrlVerdict {
+  const hostVerdict = checkDatabaseHost(raw, env);
+  if (!hostVerdict.ok) return hostVerdict;
+  const target = hostVerdict.target;
 
   if (env[OPT_IN_VAR] !== "1")
     return {
@@ -120,6 +152,41 @@ export function requireApprovedDatabaseUrl(options: {
       "  refused: none of them is set",
     ],
     env,
+  );
+}
+
+export const E2E_DATABASE_VARS = ["DATABASE_URL", "APP_DATABASE_URL"] as const;
+
+export function assertE2eDatabaseApproved(env: NodeJS.ProcessEnv = process.env): void {
+  const refused: string[] = [];
+  if (env.NODE_ENV === "production")
+    refused.push(
+      "  NODE_ENV=production\n" +
+        "  refused: this process loaded a production environment file, so every secret and\n" +
+        "  connection string in it is live regardless of which database the suite targets",
+    );
+  for (const name of E2E_DATABASE_VARS) {
+    const raw = env[name]?.trim();
+    if (!raw) continue;
+    const verdict = checkDatabaseHost(raw, env);
+    if (!verdict.ok) refused.push(`  ${name} -> ${verdict.target}\n  refused: ${verdict.because}`);
+  }
+  if (refused.length === 0) return;
+
+  throw new Error(
+    [
+      "",
+      "REFUSED: the controller e2e tier boots the real AppModule and seeds a fixture",
+      "organisation, user and owner membership through test/helpers/e2e-seed.ts.",
+      "jest-e2e.json loads dotenv/config, so an unapproved .env writes those rows",
+      "into whatever database .env names.",
+      "",
+      ...refused,
+      "",
+      "Point DATABASE_URL and APP_DATABASE_URL at a database you are willing to lose,",
+      `or widen the allowlist with ${ALLOWED_HOSTS_VAR}=host,host — never a production hostname.`,
+      "",
+    ].join("\n"),
   );
 }
 

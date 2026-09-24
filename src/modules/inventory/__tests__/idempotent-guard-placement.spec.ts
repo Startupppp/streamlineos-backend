@@ -60,6 +60,7 @@ const CANNOT_INVALIDATE: ReadonlyArray<{ file: string; method: string; reason: s
  * below asserts the walk still reaches enough claiming files to mean anything.
  */
 const serviceFiles = readdirSync(INVENTORY, { recursive: true, encoding: "utf8" })
+  .map((f) => f.replaceAll("\\", "/"))
   .filter((f) => f.endsWith(".ts") && !f.endsWith(".spec.ts"))
   .filter((f) => f.endsWith(".service.ts") || /(^|\/)lib\//.test(f))
   .sort();

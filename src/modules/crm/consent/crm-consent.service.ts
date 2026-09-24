@@ -21,9 +21,6 @@ import { logger } from "../../../common/logger/logger.service";
 
 export type {
   ConsentChannel,
-  ConsentStatus,
-  ConsentSource,
-  LegalBasis,
   ConsentDecision,
 } from "./lib/crm-consent.types";
 

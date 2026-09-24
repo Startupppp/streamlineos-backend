@@ -9,7 +9,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { ticketAssignees, tickets } from "../../../db/schema";
+import { cycles, ticketAssignees, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -36,6 +36,7 @@ import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { AccessService } from "../../access/access.service";
 import { resolveProjectAssignableMemberships } from "./project-access";
+import { buildTicketBoardHref } from "./build-app-paths";
 
 @Injectable()
 export class ProjectsTicketsUpdateService {
@@ -124,6 +125,7 @@ export class ProjectsTicketsUpdateService {
 
   async updateTicket(
     u: CurrentUserContext,
+    projectId: number | null,
     ticketId: number,
     input: UpdateTicketInput,
   ) {
@@ -147,11 +149,28 @@ export class ProjectsTicketsUpdateService {
     if (resolvedAssignee) pendingActorIds.add(resolvedAssignee);
     if (input.assigneeIds) input.assigneeIds.forEach((uid) => pendingActorIds.add(uid));
 
-    if (input.sprintId !== undefined) updateData.sprintId = input.sprintId;
     if (input.epicId !== undefined) updateData.epicId = input.epicId;
     if (input.moduleId !== undefined) updateData.moduleId = input.moduleId;
     if (input.points !== undefined) updateData.points = input.points;
-    if (input.cycleId !== undefined) updateData.cycleId = input.cycleId;
+    if (input.cycleId !== undefined) {
+      if (input.cycleId != null && projectId !== null) {
+        const [cycleRow] = await this.db
+          .select({ id: cycles.id })
+          .from(cycles)
+          .where(
+            and(
+              eq(cycles.orgId, orgId),
+              eq(cycles.projectId, projectId),
+              eq(cycles.id, input.cycleId),
+              isNull(cycles.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!cycleRow)
+          throw new NotFoundException("Cycle not found in this project");
+      }
+      updateData.cycleId = input.cycleId;
+    }
     if (input.originalEstimate !== undefined)
       updateData.originalEstimate = input.originalEstimate?.toString();
     if (input.startDate !== undefined) updateData.startDate = input.startDate;
@@ -173,13 +192,17 @@ export class ProjectsTicketsUpdateService {
     }
 
     const before = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      where: and(
+        eq(tickets.id, ticketId),
+        ...(projectId === null ? [] : [eq(tickets.projectId, projectId)]),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
       columns: {
         title: true,
         status: true,
         priority: true,
         assigneeMembershipId: true,
-        sprintId: true,
         startDate: true,
         dueDate: true,
         projectId: true,
@@ -189,6 +212,9 @@ export class ProjectsTicketsUpdateService {
         type: true,
         cycleId: true,
         version: true,
+      },
+      with: {
+        assignee: { columns: { userId: true } },
       },
     });
     if (!before || !before.projectId)
@@ -209,7 +235,7 @@ export class ProjectsTicketsUpdateService {
         ? (assigneeMemberships.get(resolvedAssignee) ?? null)
         : null;
     }
-    const beforeAssigneeId: string | null = null;
+    const beforeAssigneeId = before.assignee?.userId ?? null;
     const beforeAssigneeMembershipId = before.assigneeMembershipId;
 
     if (input.version !== undefined && input.version !== before.version)
@@ -242,8 +268,11 @@ export class ProjectsTicketsUpdateService {
     await this.db.transaction(async (tx) => {
       if (systemJobCovers(u.principal, "build:tickets:update"))
         await lockProjectTicketMutation(tx, orgId, ticketProjectId);
-      else
+      else {
         await this.query.authorizeMutation(tx, u, ticketProjectId, [ticketId]);
+        if (input.parentTicketId != null || input.epicId != null)
+          await lockProjectTicketMutation(tx, orgId, ticketProjectId);
+      }
       if (input.parentTicketId != null)
         await this.assertSelfRefChain(tx, orgId, ticketId, input.parentTicketId, "parentTicketId", ticketProjectId);
       if (input.epicId != null)
@@ -318,11 +347,10 @@ export class ProjectsTicketsUpdateService {
           status: input.status,
           priority: input.priority,
           assigneeId: resolveAssigneeId(input.assigneeId),
-          sprintId: input.sprintId,
           dueDate: input.dueDate,
           points: input.points,
           type: input.type,
-          cycleId: input.cycleId,
+          cycleId: updateData.cycleId,
       })
       .catch((error) => logger.error("Failed to log ticket activity", { error }));
 
@@ -350,7 +378,7 @@ export class ProjectsTicketsUpdateService {
           entityId: String(ticketId),
           title: input.status === "IN_REVIEW" ? "Ticket ready for review" : "Changes requested on your ticket",
           message: `Ticket "${before.title}" changed to ${input.status}.`,
-          link: `/projects/${before.projectId}/tickets/${ticketId}`,
+          link: buildTicketBoardHref(before.projectId, ticketId),
           variables: { ticketId, status: input.status, title: before.title },
         });
       }
@@ -379,7 +407,7 @@ export class ProjectsTicketsUpdateService {
     }
 
     void this.cache
-      .del(`projects:analytics:${orgId}:${ticketProjectId}`)
+      .invalidateNamespace(`build:analytics:${orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: ticketProjectId }));
 
     return { updated: true, updatedAt: now.toISOString() };

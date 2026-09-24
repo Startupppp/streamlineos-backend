@@ -1,6 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { SupportAiTriageAnalysisService } from "./support-ai-triage-analysis.service";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 
 const makeGatewayOk = <T>(data: T) => ({
   ok: true as const,
@@ -21,11 +23,11 @@ const makeGatewayFail = (kind: "quota_exceeded" | "provider_unavailable" | "not_
 const defaultTicket = { id: 42, orgId: "org1", title: "Test", description: "desc", category: null };
 
 function buildMockDb(ticket: Record<string, unknown> | null = defaultTicket) {
-  return {
+  return withDelegatingTransaction({
     query: {
       supportTicketMessages: { findMany: jest.fn().mockResolvedValue([]) },
     },
-  };
+  });
 }
 
 function buildMockData(ticket: Record<string, unknown> | null = defaultTicket) {
@@ -65,6 +67,7 @@ function buildService(
 }
 
 describe("SupportAiTriageAnalysisService.analyzeTicket — credit charging", () => {
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
   it("passes charge: true to the gateway so support.analysis credits are reserved", async () => {
     const { svc, mockGateway } = buildService(makeGatewayOk({
       summary: "Test", sentiment: "neutral", category: null, suggestedPriority: "LOW", isSpam: false, confidence: 0.8,

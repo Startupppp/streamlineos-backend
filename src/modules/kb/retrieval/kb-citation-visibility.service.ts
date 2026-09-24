@@ -6,8 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbSearchService } from "./kb-search.service";
-import { pageVisibleTo } from "./kb-page-visibility";
-import { getAccessibleProjectIds } from "./kb-project-access.util";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 export type CitedRef =
   | { kind: "article"; id: number }
@@ -28,6 +27,7 @@ export class KbCitationVisibilityService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
     private readonly search: KbSearchService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async partitionVisible(
@@ -89,7 +89,7 @@ export class KbCitationVisibilityService {
   }
 
   async visiblePages(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
-    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const rows = await this.db
       .select({ id: kbPages.id })
       .from(kbPages)
@@ -99,7 +99,7 @@ export class KbCitationVisibilityService {
           inArray(kbPages.id, ids),
           isNull(kbPages.deletedAt),
           ne(kbPages.status, "archived"),
-          pageVisibleTo(user, projectIds),
+          predicate,
         ),
       );
     return new Set(rows.map((r) => r.id));

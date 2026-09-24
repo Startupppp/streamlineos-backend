@@ -1,7 +1,7 @@
 import { ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { CacheService, REDIS } from "../common/cache/cache.service";
-import { DB_POOL_CONFIG, DRIZZLE } from "../db/drizzle.constants";
+import { DB_POOL_CONFIG, DRIZZLE, DRIZZLE_REPLICA } from "../db/drizzle.constants";
 import { poolTelemetry } from "../db/pool-telemetry";
 import { resolvePoolConfig } from "../db/pool.config";
 import { HealthController } from "./health.controller";
@@ -19,11 +19,13 @@ describe("HealthController", () => {
   async function createController(
     execute: () => Promise<unknown>,
     droppedInvalidations = 0,
+    probeExecute: () => Promise<unknown> = execute,
   ): Promise<HealthController> {
     const module = await Test.createTestingModule({
       controllers: [HealthController],
       providers: [
         { provide: DRIZZLE, useValue: { execute } },
+        { provide: DRIZZLE_REPLICA, useValue: { execute: probeExecute } },
         { provide: DB_POOL_CONFIG, useValue: POOL_CONFIG },
         { provide: REDIS, useValue: null },
         { provide: CacheService, useValue: { droppedInvalidationCount: droppedInvalidations } },
@@ -64,6 +66,18 @@ describe("HealthController", () => {
 
       expect(snapshot.status).toBe("ready");
       expect(snapshot.dependencies.find((entry) => entry.name === "database")?.state).toBe("up");
+    });
+
+    it("probes a connection request traffic cannot check out", async () => {
+      const requestPool = jest.fn().mockRejectedValue(new Error("all connections checked out"));
+      const probePool = jest.fn().mockResolvedValue(undefined);
+
+      const controller = await createController(requestPool, 0, probePool);
+      const snapshot = await controller.ready();
+
+      expect(snapshot.status).toBe("ready");
+      expect(probePool).toHaveBeenCalled();
+      expect(requestPool).not.toHaveBeenCalled();
     });
 
     it("returns HTTP 503 when the database is unreachable", async () => {

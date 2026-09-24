@@ -1,5 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { chatChannelMembers, organizationMembers } from "../../db/schema";
+import {
+  chatChannelMembers,
+  chatMessages,
+  organizationMembers,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
@@ -9,19 +13,9 @@ import { boundedMap } from "../../common/async/bounded-map";
 import { logger } from "../../common/logger/logger.service";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import type { ExternalEffect } from "../../common/outbox/external-effect-ledger";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 const SUPPRESSED_GENERAL_PREFERENCES = new Set(["NOTHING", "MENTIONS"]);
-
-/**
- * RT-007. These payloads carried the full message body. An Ably capability is granted
- * when the connection is created, so a user removed from a channel keeps receiving on a
- * subscription they already hold — and message text delivered that way never passes the
- * read endpoint's authorization at all.
- *
- * The payload is now a signal: enough to invalidate the right query and name the sender
- * for a toast, and nothing that has to be authorized. The client fetches the message
- * through the API, where access is re-checked. Nothing consumed `content` from here.
- */
 
 const PUBLISH_CONCURRENCY = 16;
 
@@ -31,7 +25,9 @@ function reportFailures(
   results: PromiseSettledResult<unknown>[],
 ): void {
   const failures = results
-    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    )
     .map((result) => result.reason);
   const failed = failures.length;
   if (failed === 0) return;
@@ -41,7 +37,10 @@ function reportFailures(
     failed,
     total: results.length,
   });
-  throw new AggregateError(failures, `${event} delivery failed for ${failed} recipient(s)`);
+  throw new AggregateError(
+    failures,
+    `${event} delivery failed for ${failed} recipient(s)`,
+  );
 }
 
 @Injectable()
@@ -51,12 +50,17 @@ export class ChatNotificationsService {
     private readonly ably: AblyService,
     private readonly orgSettings: ChatOrgSettingsService,
     private readonly effects: ExternalEffectLedger,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async publishNewMessageNotification(
     orgId: string,
     channelId: number,
-    message: { id: number; senderUserId: string | null; senderName: string | null },
+    message: {
+      id: number;
+      senderUserId: string | null;
+      senderName: string | null;
+    },
     channelType: string,
     idempotencyKey?: string,
   ) {
@@ -67,62 +71,93 @@ export class ChatNotificationsService {
         notificationPreference: chatChannelMembers.notificationPreference,
       })
       .from(chatChannelMembers)
-      .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
-      .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)));
+      .innerJoin(
+        organizationMembers,
+        eq(organizationMembers.id, chatChannelMembers.membershipId),
+      )
+      .where(
+        and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.channelId, channelId),
+        ),
+      );
 
     const settings = await this.orgSettings.getSettings(orgId);
     const defaultPreference = settings.defaultNotificationPreference;
 
     const now = new Date();
-    const recipients = members.filter(({ userId, mutedUntil, notificationPreference }) => {
-      if (message.senderUserId && userId === message.senderUserId) return false;
-      if (mutedUntil && mutedUntil > now) return false;
-      const effectivePreference =
-        notificationPreference !== "DEFAULT" ? notificationPreference : defaultPreference;
-      return !SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference);
-    });
+    const recipients = members.filter(
+      ({ userId, mutedUntil, notificationPreference }) => {
+        if (message.senderUserId && userId === message.senderUserId)
+          return false;
+        if (mutedUntil && mutedUntil > now) return false;
+        const effectivePreference =
+          notificationPreference !== "DEFAULT"
+            ? notificationPreference
+            : defaultPreference;
+        return !SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference);
+      },
+    );
 
     if (idempotencyKey) {
-      const items: Array<{ effect: ExternalEffect; send: () => Promise<void> }> = recipients.map(
-        ({ userId }) => ({
-          effect: {
-            organizationId: orgId,
-            producerEventId: idempotencyKey,
-            effectKey: `${idempotencyKey}:${userId}`,
-            effectType: "chat.notification.message",
-            providerIdempotency: "STABLE_KEY_PROPAGATED",
-          },
-          send: () =>
-            this.ably.publishToUser(
-              orgId,
-              userId,
-              "notification:message",
-              {
-                channelId,
-                messageId: message.id,
-                senderId: message.senderUserId ?? "",
-                senderName: message.senderName,
-                channelType,
-                idempotencyKey: `${idempotencyKey}:${userId}`,
-              },
-              { requireConfigured: true },
-            ),
-        }),
-      );
+      const items: Array<{
+        effect: ExternalEffect;
+        send: () => Promise<void>;
+      }> = recipients.map(({ userId }) => ({
+        effect: {
+          organizationId: orgId,
+          producerEventId: idempotencyKey,
+          effectKey: `${idempotencyKey}:${userId}`,
+          effectType: "chat.notification.message",
+          providerIdempotency: "STABLE_KEY_PROPAGATED",
+        },
+        send: () =>
+          this.ably.publishToUser(
+            orgId,
+            userId,
+            "notification:message",
+            {
+              channelId,
+              messageId: message.id,
+              senderId: message.senderUserId ?? "",
+              senderName: message.senderName,
+              channelType,
+              idempotencyKey: `${idempotencyKey}:${userId}`,
+            },
+            { requireConfigured: true },
+          ),
+      }));
       await this.effects.executeBatch(items);
-      return;
+    } else {
+      const delivered = await boundedMap(
+        recipients,
+        PUBLISH_CONCURRENCY,
+        ({ userId }) =>
+          this.ably.publishToUser(orgId, userId, "notification:message", {
+            channelId,
+            messageId: message.id,
+            senderId: message.senderUserId ?? "",
+            senderName: message.senderName,
+            channelType,
+          }),
+      );
+      reportFailures("notification:message", channelId, delivered);
     }
 
-    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, ({ userId }) =>
-      this.ably.publishToUser(orgId, userId, "notification:message", {
-        channelId,
-        messageId: message.id,
-        senderId: message.senderUserId ?? "",
-        senderName: message.senderName,
-        channelType,
-      }),
-    );
-    reportFailures("notification:message", channelId, delivered);
+    if (channelType === "DIRECT" && recipients.length > 0) {
+      const targetUserIds = recipients.map(({ userId }) => userId);
+      await this.dispatch.emitNow({
+        eventKey: "chat.message.direct",
+        orgId,
+        actorUserId: message.senderUserId ?? undefined,
+        targetUserIds,
+        channels: ["IN_APP"],
+        entityType: "chat_message",
+        entityId: String(message.id),
+        link: `/chat?channel=${channelId}`,
+        replayKey: idempotencyKey ? `${idempotencyKey}:inbox` : undefined,
+      });
+    }
   }
 
   async publishMentionNotification(
@@ -140,7 +175,10 @@ export class ChatNotificationsService {
         notificationPreference: chatChannelMembers.notificationPreference,
       })
       .from(chatChannelMembers)
-      .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
+      .innerJoin(
+        organizationMembers,
+        eq(organizationMembers.id, chatChannelMembers.membershipId),
+      )
       .where(
         and(
           eq(chatChannelMembers.orgId, orgId),
@@ -148,7 +186,9 @@ export class ChatNotificationsService {
           inArray(organizationMembers.userId, mentionedUserIds),
         ),
       );
-    const preferenceByUser = new Map(members.map((m) => [m.userId, m.notificationPreference]));
+    const preferenceByUser = new Map(
+      members.map((m) => [m.userId, m.notificationPreference]),
+    );
 
     const settings = await this.orgSettings.getSettings(orgId);
     const defaultPreference = settings.defaultNotificationPreference;
@@ -161,43 +201,123 @@ export class ChatNotificationsService {
     if (recipients.length === 0) return;
 
     if (idempotencyKey) {
-      const items: Array<{ effect: ExternalEffect; send: () => Promise<void> }> = recipients.map(
-        (userId) => ({
-          effect: {
-            organizationId: orgId,
-            producerEventId: idempotencyKey,
-            effectKey: `${idempotencyKey}:${userId}`,
-            effectType: "chat.notification.mention",
-            providerIdempotency: "STABLE_KEY_PROPAGATED",
-          },
-          send: () =>
-            this.ably.publishToUser(
-              orgId,
-              userId,
-              "notification:mention",
-              {
-                channelId,
-                messageId: message.id,
-                senderId: message.senderUserId ?? "",
-                senderName: message.senderName,
-                idempotencyKey: `${idempotencyKey}:${userId}`,
-              },
-              { requireConfigured: true },
-            ),
-        }),
-      );
+      const items: Array<{
+        effect: ExternalEffect;
+        send: () => Promise<void>;
+      }> = recipients.map((userId) => ({
+        effect: {
+          organizationId: orgId,
+          producerEventId: idempotencyKey,
+          effectKey: `${idempotencyKey}:${userId}`,
+          effectType: "chat.notification.mention",
+          providerIdempotency: "STABLE_KEY_PROPAGATED",
+        },
+        send: () =>
+          this.ably.publishToUser(
+            orgId,
+            userId,
+            "notification:mention",
+            {
+              channelId,
+              messageId: message.id,
+              senderId: message.senderUserId ?? "",
+              senderName: message.senderName,
+              idempotencyKey: `${idempotencyKey}:${userId}`,
+            },
+            { requireConfigured: true },
+          ),
+      }));
       await this.effects.executeBatch(items);
-      return;
+    } else {
+      const delivered = await boundedMap(
+        recipients,
+        PUBLISH_CONCURRENCY,
+        (userId) =>
+          this.ably.publishToUser(orgId, userId, "notification:mention", {
+            channelId,
+            messageId: message.id,
+            senderId: message.senderUserId ?? "",
+            senderName: message.senderName,
+          }),
+      );
+      reportFailures("notification:mention", channelId, delivered);
     }
 
-    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, (userId) =>
-      this.ably.publishToUser(orgId, userId, "notification:mention", {
-        channelId,
-        messageId: message.id,
-        senderId: message.senderUserId ?? "",
-        senderName: message.senderName,
-      }),
-    );
-    reportFailures("notification:mention", channelId, delivered);
+    const inboxRecipients = message.senderUserId
+      ? recipients.filter((id) => id !== message.senderUserId)
+      : recipients;
+    if (inboxRecipients.length > 0) {
+      await this.dispatch.emitNow({
+        eventKey: "chat.message.mention",
+        orgId,
+        actorUserId: message.senderUserId ?? undefined,
+        targetUserIds: inboxRecipients,
+        channels: ["IN_APP"],
+        entityType: "chat_message",
+        entityId: String(message.id),
+        link: `/chat?channel=${channelId}&message=${message.id}`,
+        replayKey: idempotencyKey ? `${idempotencyKey}:inbox` : undefined,
+      });
+    }
+  }
+
+  async publishThreadReplyInboxNotification(
+    orgId: string,
+    channelId: number,
+    message: { id: number; replyToId: number; senderUserId: string | null },
+    idempotencyKey?: string,
+  ): Promise<void> {
+    const [parent] = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        notificationPreference: chatChannelMembers.notificationPreference,
+        mutedUntil: chatChannelMembers.mutedUntil,
+      })
+      .from(chatMessages)
+      .innerJoin(
+        organizationMembers,
+        eq(organizationMembers.id, chatMessages.senderMembershipId),
+      )
+      .innerJoin(
+        chatChannelMembers,
+        and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.membershipId, organizationMembers.id),
+          eq(chatChannelMembers.channelId, channelId),
+        ),
+      )
+      .where(
+        and(
+          eq(chatMessages.orgId, orgId),
+          eq(chatMessages.id, message.replyToId),
+        ),
+      )
+      .limit(1);
+
+    if (!parent) return;
+    if (message.senderUserId && parent.userId === message.senderUserId) return;
+
+    const now = new Date();
+    if (parent.mutedUntil && parent.mutedUntil > now) return;
+
+    const settings = await this.orgSettings.getSettings(orgId);
+    const defaultPreference = settings.defaultNotificationPreference;
+    const effectivePreference =
+      parent.notificationPreference !== "DEFAULT"
+        ? parent.notificationPreference
+        : defaultPreference;
+    if (SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference)) return;
+
+    await this.dispatch.emitNow({
+      eventKey: "chat.thread.reply",
+      orgId,
+      actorUserId: message.senderUserId ?? undefined,
+      targetUserIds: [parent.userId],
+      channels: ["IN_APP"],
+      entityType: "chat_message",
+      entityId: String(message.id),
+      link: `/chat?channel=${channelId}&message=${message.replyToId}`,
+      replayKey: idempotencyKey ? `${idempotencyKey}:inbox` : undefined,
+    });
   }
 }

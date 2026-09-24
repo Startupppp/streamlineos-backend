@@ -26,7 +26,6 @@ export const ticketRowSchema = z.object({
   priority: z.string(),
   projectId: z.number().int().nullable(),
   ticketNumber: z.number().int(),
-  sprintId: z.number().int().nullable(),
   epicId: z.number().int().nullable(),
   assigneeMembershipId: z.number().int().nullable(),
   reporterId: z.string().nullable(),
@@ -69,6 +68,18 @@ export const ticketDetailSchema = ticketRowSchema.extend({
   epic: z.object({ id: z.number().int(), name: z.string() }).nullable(),
   assignee: z.object({ user: userSummarySchema }).nullable(),
   reporter: userSummarySchema,
+  assignees: z.array(
+    z.object({
+      id: z.number().int(),
+      ticketId: z.number().int(),
+      assignedAt: wireDate(),
+      assignedBy: z.string().nullable(),
+      user: z.object({
+        userId: z.string(),
+        user: userSummarySchema,
+      }),
+    }),
+  ),
   members: z.array(z.object({ user: z.object({ user: userSummarySchema }) })),
   watchers: z.array(z.object({ user: userSummarySchema })),
   attachments: z.array(
@@ -86,6 +97,22 @@ export const ticketDetailSchema = ticketRowSchema.extend({
       color: z.string().nullable(),
     }),
   ),
+  comments: z
+    .array(
+      z.object({
+        id: z.number().int(),
+        orgId: z.string(),
+        ticketId: z.number().int(),
+        userId: z.string(),
+        content: z.string(),
+        parentCommentId: z.number().int().nullable(),
+        createdAt: wireDate(),
+        updatedAt: wireDate(),
+        user: userSummarySchema,
+        reactions: z.array(z.object({ emoji: z.string(), userId: z.string() })).default([]),
+      }),
+    )
+    .default([]),
 });
 
 export const ticketListRowSchema = ticketRowSchema
@@ -98,7 +125,6 @@ export const ticketListRowSchema = ticketRowSchema
     priority: true,
     projectId: true,
     ticketNumber: true,
-    sprintId: true,
     epicId: true,
     assigneeMembershipId: true,
     reporterId: true,
@@ -119,6 +145,7 @@ export const ticketListRowSchema = ticketRowSchema
     updatedAt: true,
   })
   .extend({
+    descriptionExcerpt: z.string(),
     assigneeId: z.string().nullable(),
     assignee: userSummarySchema,
     assignees: z.array(
@@ -217,18 +244,37 @@ export const ticketRelationSchema = z.object({
   orgId: z.string(),
   workItemId: z.number().int(),
   relatedWorkItemId: z.number().int(),
+  relationType: z.enum(["blocks", "blocked_by", "duplicate_of", "relates_to"]),
   createdAt: wireDate(),
+});
+
+export const ticketRelationListItemSchema = z.object({
+  id: z.number().int(),
+  relationType: z.enum(["blocks", "blocked_by", "duplicate_of", "relates_to"]),
+  direction: z.enum(["outgoing", "incoming"]),
+  relatedTicket: z.object({
+    id: z.number().int(),
+    title: z.string(),
+    ticketNumber: z.number().int(),
+    status: z.string(),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]),
+    type: z.enum(["EPIC", "STORY", "TASK", "BUG"]),
+    points: z.number().int().nullable(),
+    assigneeMembershipId: z.number().int().nullable(),
+    projectId: z.number().int().nullable(),
+    project: z.object({ key: z.string() }).nullable(),
+    assignee: userSummarySchema,
+  }),
 });
 
 export const gitLinkSchema = z.object({
   id: z.number().int(),
-  orgId: z.string(),
-  projectId: z.number().int(),
-  ticketId: z.number().int(),
-  repoUrl: z.string(),
-  branch: z.string().nullable(),
-  prUrl: z.string().nullable(),
-  commitSha: z.string().nullable(),
+  provider: z.enum(["github", "gitlab", "bitbucket"]),
+  refType: z.enum(["commit", "pull_request", "branch"]),
+  externalId: z.string(),
+  title: z.string().nullable(),
+  url: z.string().nullable(),
+  author: z.string().nullable(),
   status: z.string().nullable(),
   createdAt: wireDate(),
 });
@@ -250,11 +296,12 @@ const checklistItemSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   checklistId: z.number().int(),
-  title: z.string(),
+  text: z.string(),
   isCompleted: z.boolean(),
-  position: z.number().int(),
+  assigneeId: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  order: z.number().int(),
   createdAt: wireDate(),
-  updatedAt: wireDate(),
 });
 
 export const checklistRowSchema = z.object({
@@ -343,7 +390,6 @@ export const allWorkItemSchema = z.object({
   points: z.number().nullable(),
   estimate: z.number().nullable(),
   rank: z.string().nullable(),
-  sprintId: z.number().int().nullable(),
   cycleId: z.number().int().nullable(),
   epicId: z.number().int().nullable(),
   assigneeId: z.string().nullable(),

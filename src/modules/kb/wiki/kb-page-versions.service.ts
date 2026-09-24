@@ -13,7 +13,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeValue } from "../../../common/pagination/keyset";
@@ -41,12 +41,15 @@ const VERSION_COLUMNS = {
 
 @Injectable()
 export class KbPageVersionsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly auth: KnowledgeAuthorizationService,
+  ) {}
 
   async listVersions(user: CurrentUserContext, pageId: number, cursor?: string, pageSize = PAGE_SIZE) {
     const orgId = user.orgId;
     const limit = Math.min(Math.max(pageSize, 1), PAGE_SIZE_CAP);
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "view");
     const position = decodeCursor(cursor);
     const rows = await this.db
       .select(VERSION_COLUMNS)
@@ -71,7 +74,7 @@ export class KbPageVersionsService {
 
   async getVersion(user: CurrentUserContext, pageId: number, versionNumber: number) {
     const orgId = user.orgId;
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "view");
     const rows = await this.db
       .select(VERSION_COLUMNS)
       .from(kbPageVersions)
@@ -94,7 +97,7 @@ export class KbPageVersionsService {
     versionNumber: number,
     canManage: boolean,
   ): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),

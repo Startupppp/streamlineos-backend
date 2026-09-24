@@ -43,7 +43,7 @@ export const createRunSchema = z
       ctx.addIssue({
         code: "custom",
         message:
-          "sourcePeriodKey or sourceRunId is required for off-cycle, correction, and F&F runs",
+          "sourcePeriodKey or sourceRunId is required for off-cycle, correction, and final settlement runs",
         path: ["sourcePeriodKey"],
       });
     }
@@ -174,6 +174,13 @@ export const commandCenterQuerySchema = z
   })
   .strict();
 export type CommandCenterQuery = z.infer<typeof commandCenterQuerySchema>;
+
+export const readinessQuerySchema = z
+  .object({
+    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  })
+  .strict();
+export type ReadinessQuery = z.infer<typeof readinessQuerySchema>;
 
 export const listProfilesQuerySchema = z
   .object({

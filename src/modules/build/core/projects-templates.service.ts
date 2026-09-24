@@ -18,7 +18,6 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type {
   ApplyTemplateInput,
   CreateTemplateInput,
@@ -46,7 +45,6 @@ export class ProjectsTemplatesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
-    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
   listTemplates(orgId: string) {
@@ -137,7 +135,6 @@ export class ProjectsTemplatesService {
 
     await this.planLimits.assertWithinLimit(orgId, "projects");
 
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
     const requestedManagerId = input.managerId ?? userId;
     const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [userId, requestedManagerId]);
     const creator = actors.get(userId);
@@ -158,7 +155,6 @@ export class ProjectsTemplatesService {
       .insert(projects)
       .values({
         orgId,
-        pmWorkspaceId,
         name: input.name,
         description: input.description ?? template.description ?? null,
         key,

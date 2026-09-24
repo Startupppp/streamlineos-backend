@@ -90,10 +90,6 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
       periodStart: "2025-01-01",
       periodEnd: "2025-01-07",
     };
-    /**
-     * The in-transaction period UPDATE hands back the row the lifecycle event
-     * is built from, so the mock answers `.returning` as well as `await`.
-     */
     const transition = {
       eventSeq: 3,
       userMembershipId: OWNER_MEMBERSHIP,
@@ -111,11 +107,6 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
       insert: jest.fn().mockReturnValue({ values: insertValues }),
     };
-    /**
-     * Reads in the order the service makes them: the period, its worker's
-     * membership (the event and the notice name the worker by user id), and
-     * the period after the update.
-     */
     const reads = [
       makeSelectChain([period]),
       makeSelectChain([{ id: OWNER_MEMBERSHIP, userId: ACTOR_ID }]),
@@ -124,8 +115,8 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
     let callCount = 0;
     const db = {
       select: jest.fn().mockImplementation(() => {
-        const { where } = reads[Math.min(callCount++, reads.length - 1)]!;
-        return { from: jest.fn().mockReturnValue({ where }) };
+        const { chain } = reads[Math.min(callCount++, reads.length - 1)]!;
+        return { from: jest.fn().mockReturnValue(chain) };
       }),
       transaction: jest.fn().mockImplementation((cb: (tx: unknown) => unknown) => cb(tx)),
     } as unknown as Db;
@@ -140,7 +131,6 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
     expect(result).toBeDefined();
     const vals = sqlValues(reads[0]!.where.mock.calls[0]?.[0]);
     expect(vals).toContain(OWNER);
-    /** The worker's membership is resolved inside the owning org, never another. */
     const ownerLookup = sqlValues(reads[1]!.where.mock.calls[0]?.[0]);
     expect(ownerLookup).toContain(OWNER);
     expect(ownerLookup).not.toContain(ATTACKER);

@@ -12,7 +12,7 @@ export class CyclesService {
 
   async listCycles(orgId: string, projectId: number, query: CycleListQuery) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    const conditions = [eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)];
+    const conditions = [eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), isNull(cycles.deletedAt)];
     if (query.status) conditions.push(eq(cycles.status, query.status));
 
     const cycleList = await this.db
@@ -69,6 +69,7 @@ export class CyclesService {
   }
 
   async createCycle(orgId: string, userId: string, projectId: number, input: CreateCycleInput) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const overlapping = await this.db
       .select({ id: cycles.id })
       .from(cycles)
@@ -76,6 +77,7 @@ export class CyclesService {
         and(
           eq(cycles.projectId, projectId),
           eq(cycles.orgId, orgId),
+          isNull(cycles.deletedAt),
           or(
             and(lte(cycles.startDate, input.startDate), gte(cycles.endDate, input.startDate)),
             and(lte(cycles.startDate, input.endDate), gte(cycles.endDate, input.endDate)),
@@ -105,12 +107,13 @@ export class CyclesService {
   }
 
   async updateCycle(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     if (input.status === "active") {
       const [existing] = await this.db
         .select({ id: cycles.id })
         .from(cycles)
         .where(
-          and(eq(cycles.status, "active"), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)),
+          and(eq(cycles.status, "active"), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), isNull(cycles.deletedAt)),
         )
         .limit(1);
 
@@ -121,19 +124,20 @@ export class CyclesService {
     const [updated] = await this.db
       .update(cycles)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)))
+      .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
       .returning();
 
     if (!updated) throw new NotFoundException("Cycle not found");
     return updated;
   }
 
-  async deleteCycle(orgId: string, cycleId: number) {
+  async deleteCycle(orgId: string, projectId: number, cycleId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     await this.db.transaction(async (tx) => {
       await tx.update(tickets).set({ cycleId: null }).where(and(eq(tickets.cycleId, cycleId), eq(tickets.orgId, orgId)));
       const removed = await tx
         .delete(cycles)
-        .where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)))
+        .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
         .returning({ id: cycles.id });
       if (removed.length === 0) throw new NotFoundException("Cycle not found");
     });

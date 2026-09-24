@@ -36,14 +36,30 @@ describe("KbPageStatusService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker-uuid";
   const PAGE_ID = 42;
 
-  describe("lock — assertPageAccessible + update predicate", () => {
+  function makeAuth(): { assertPageAccess: jest.Mock } {
+    return {
+      assertPageAccess: jest
+        .fn()
+        .mockImplementation((user: CurrentUserContext, pageId: number) => {
+          if (user.orgId !== OWNER_ORG) throw new NotFoundException("Page not found");
+          return Promise.resolve({
+            orgId: user.orgId,
+            pageId,
+            action: "edit",
+            via: "admin",
+          });
+        }),
+    };
+  }
+
+  describe("lock — canonical authorization + update predicate", () => {
     it("throws NotFoundException when page belongs to a different org (cross-tenant deny)", async () => {
       const findFirst = jest.fn().mockResolvedValue(null);
       const db = {
         query: { kbPages: { findFirst } },
       } as unknown as Db;
 
-      const svc = new KbPageStatusService(db, null as never);
+      const svc = new KbPageStatusService(db, null as never, makeAuth() as never);
       await expect(svc.lock(makeUser(ATTACKER_ORG), PAGE_ID, true)).rejects.toThrow(NotFoundException);
     });
 
@@ -66,7 +82,7 @@ describe("KbPageStatusService — cross-tenant isolation", () => {
         update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
       } as unknown as Db;
 
-      const svc = new KbPageStatusService(db, null as never);
+      const svc = new KbPageStatusService(db, null as never, makeAuth() as never);
       await svc.lock(makeUser(OWNER_ORG), PAGE_ID, true);
 
       expect(updateWhere).toHaveBeenCalledTimes(1);
@@ -74,6 +90,68 @@ describe("KbPageStatusService — cross-tenant isolation", () => {
       const vals = sqlValues(whereArg);
       expect(vals).toContain(OWNER_ORG);
       expect(vals).toContain(PAGE_ID);
+    });
+  });
+
+  describe("per-action authorization, which a view-level check never enforced", () => {
+    function makeMutableService(): {
+      svc: KbPageStatusService;
+      auth: { assertPageAccess: jest.Mock };
+    } {
+      const auth = makeAuth();
+      const db = {
+        query: { kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID, contentType: "doc" }) } },
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([{ id: PAGE_ID, contentRevision: 1, aclRevision: 1 }]),
+            }),
+          }),
+        }),
+        transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) =>
+          fn({
+            insert: jest
+              .fn()
+              .mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+            update: jest.fn().mockReturnValue({
+              set: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({
+                  returning: jest
+                    .fn()
+                    .mockResolvedValue([{ id: PAGE_ID, contentRevision: 1, aclRevision: 1 }]),
+                }),
+              }),
+            }),
+          }),
+        ),
+      } as unknown as Db;
+      return { svc: new KbPageStatusService(db, null as never, auth as never), auth };
+    }
+
+    it("demands manage on the record before locking a page, not merely the ability to see it", async () => {
+      const { svc, auth } = makeMutableService();
+
+      await svc.lock(makeUser(OWNER_ORG), PAGE_ID, true);
+
+      expect(auth.assertPageAccess).toHaveBeenCalledWith(expect.anything(), PAGE_ID, "manage");
+    });
+
+    it("demands edit on the record before archiving a page", async () => {
+      const { svc, auth } = makeMutableService();
+
+      await svc.archive(makeUser(OWNER_ORG), PAGE_ID);
+
+      expect(auth.assertPageAccess).toHaveBeenCalledWith(expect.anything(), PAGE_ID, "edit");
+    });
+
+    it("never authorizes a status mutation with a view-level check", async () => {
+      const { svc, auth } = makeMutableService();
+
+      await svc.publish(makeUser(OWNER_ORG), PAGE_ID);
+
+      for (const call of auth.assertPageAccess.mock.calls) {
+        expect(call[2]).not.toBe("view");
+      }
     });
   });
 });

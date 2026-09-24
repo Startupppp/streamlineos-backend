@@ -102,7 +102,6 @@ export const INVENTORY_SEAM_ROLES = [
   "grni",
   "inventory_write_off",
   "inventory_adjustment",
-  "landed_cost",
 ] as const satisfies readonly GlSystemTag[];
 
 /**
@@ -114,9 +113,6 @@ export const INVENTORY_SEAM_ROLES = [
  * `inventory` account, teaches an operator to ignore both. The next role added
  * to the chart ahead of its call site belongs here, and moves across in the
  * commit that starts resolving it.
- *
- * `landed_cost_clearing` is the one on the horizon, and it is not even seeded
- * — there is no landed-cost feature to resolve it.
  */
 export const INVENTORY_SEAM_ROLES_PENDING = [] as const satisfies readonly GlSystemTag[];
 

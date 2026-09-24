@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 
@@ -22,6 +23,10 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
 
   const dispatch = { dispatch: jest.fn() } as never;
   const access = { holds: jest.fn().mockResolvedValue(false) } as never;
+  const authMock = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: OWNER, pageId: PAGE_ID, action: "view", via: "admin" }),
+  };
 
   function makeDb(pageRow: unknown) {
     const wheres: unknown[] = [];
@@ -60,7 +65,7 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a page in another org (cross-tenant deny)", async () => {
     const { db, wheres } = makeDb(null);
-    const svc = new KbPageCommentsService(db, dispatch, access);
+    const svc = new KbPageCommentsService(db, dispatch, access, authMock as never);
 
     await expect(svc.list(makeUser(ATTACKER), PAGE_ID)).rejects.toThrow(NotFoundException);
 
@@ -71,7 +76,7 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
 
   it("returns comments for a page in the owning org (same-tenant control)", async () => {
     const { db } = makeDb({ id: PAGE_ID, orgId: OWNER });
-    const svc = new KbPageCommentsService(db, dispatch, access);
+    const svc = new KbPageCommentsService(db, dispatch, access, authMock as never);
 
     const result = await svc.list(makeUser(OWNER), PAGE_ID);
 

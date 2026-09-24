@@ -296,3 +296,62 @@ describe("health probes and error noise", () => {
     resetErrorReporter();
   });
 });
+
+describe("AllExceptionsFilter once a streaming response has begun", () => {
+  function streamingHost(state: { headersSent: boolean; writableEnded: boolean }): {
+    host: ArgumentsHost;
+    status: jest.Mock;
+    end: jest.Mock;
+  } {
+    const json = jest.fn();
+    const status = jest.fn((): { json: jest.Mock } => ({ json }));
+    const end = jest.fn();
+    const host = {
+      getArgs: () => [],
+      getArgByIndex: () => undefined,
+      switchToHttp: () => ({
+        getResponse: () => ({ status, end, ...state }),
+        getRequest: () => ({ method: "POST", url: "/ai/chat" }),
+        getNext: () => undefined,
+      }),
+      switchToRpc: () => ({} as ReturnType<ArgumentsHost["switchToRpc"]>),
+      switchToWs: () => ({} as ReturnType<ArgumentsHost["switchToWs"]>),
+      getType: () => "http",
+    } as ArgumentsHost;
+    return { host, status, end };
+  }
+
+  it("does not set a status after headers are sent, because doing so throws ERR_HTTP_HEADERS_SENT inside the filter where nothing can catch it", () => {
+    const { host, status } = streamingHost({ headersSent: true, writableEnded: false });
+
+    new AllExceptionsFilter().catch(new Error("provider died mid-stream"), host);
+
+    expect(status).not.toHaveBeenCalled();
+  });
+
+  it("ends the half-written response so a failed stream does not hang the client open", () => {
+    const { host, end } = streamingHost({ headersSent: true, writableEnded: false });
+
+    new AllExceptionsFilter().catch(new Error("provider died mid-stream"), host);
+
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves an already-ended response alone rather than double-ending it", () => {
+    const { host, status, end } = streamingHost({ headersSent: true, writableEnded: true });
+
+    new AllExceptionsFilter().catch(new Error("provider died mid-stream"), host);
+
+    expect(status).not.toHaveBeenCalled();
+    expect(end).not.toHaveBeenCalled();
+  });
+
+  it("still writes a normal envelope when the stream has not started", () => {
+    const { host, status, end } = streamingHost({ headersSent: false, writableEnded: false });
+
+    new AllExceptionsFilter().catch(new NotFoundException("Deal not found"), host);
+
+    expect(status).toHaveBeenCalledWith(404);
+    expect(end).not.toHaveBeenCalled();
+  });
+});

@@ -7,6 +7,7 @@ import {
 } from "./common/tenant";
 import { Reflector } from "@nestjs/core";
 
+import { ImpersonationContextInterceptor } from "./common/impersonation/impersonation-context.interceptor";
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
 import { ObservabilityEnrichmentInterceptor } from "./common/observability";
 import { RegionModule } from "./common/region/region.module";
@@ -34,6 +35,7 @@ import { GoalsModule } from "./modules/goals/goals.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { AttentionModule } from "./modules/attention/attention.module";
 import { PushModule } from "./modules/push/push.module";
 import { QuotesModule } from "./modules/quotes/quotes.module";
 import { ReportsModule } from "./modules/reports/reports.module";
@@ -119,6 +121,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
 import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
 import { EmploymentFactsModule } from "./modules/directory/employment-facts.module";
 import { ImpersonationModule } from "./modules/impersonation/impersonation.module";
+import { BuildAgentPulseModule } from "./modules/build/agent-pulse/build-agent-pulse.module";
 
 @Module({
   imports: [
@@ -144,6 +147,7 @@ import { ImpersonationModule } from "./modules/impersonation/impersonation.modul
     TasksModule,
     PlatformModule,
     NotificationsModule,
+    AttentionModule,
     PushModule,
     QuotesModule,
     CustomerExecutiveModule,
@@ -234,6 +238,7 @@ import { ImpersonationModule } from "./modules/impersonation/impersonation.modul
     MailModule,
     GdprModule,
     ImpersonationModule,
+    BuildAgentPulseModule,
   ],
   controllers: [HealthController, MeController, InboxController],
   providers: [
@@ -250,11 +255,9 @@ import { ImpersonationModule } from "./modules/impersonation/impersonation.modul
     { provide: APP_INTERCEPTOR, useClass: ObservabilityEnrichmentInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ImpersonationContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
-    // Last, so it is innermost on the response path and sees the value the handler
-    // returned rather than one a later interceptor reshaped. It tolerates the
-    // `{ success, data }` envelope either way — see its docblock.
     { provide: APP_INTERCEPTOR, useClass: ResponseContractInterceptor },
   ],
 })

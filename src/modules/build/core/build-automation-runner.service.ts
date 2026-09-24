@@ -1,19 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import {
-  projectAutomations,
-  projectStatuses,
-  ticketComments,
-  ticketLabelMappings,
-  ticketLabels,
-  tickets,
-  organizationMembers,
-} from "../../../db/schema";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { and, eq } from "drizzle-orm";
+import { projectAutomations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
-import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
+import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
+import {
+  BuildAutomationRunHistoryService,
+  type AutomationRunOutcome,
+  type AutomationActionRunResult,
+} from "./build-automation-run-history.service";
 import {
   evaluateNormalizedCondition,
   type ConditionOp,
@@ -21,7 +20,6 @@ import {
 } from "../../automation/shared-condition-evaluator";
 
 type StoredCondition = NonNullable<typeof projectAutomations.$inferSelect>["conditions"][number];
-type StoredAction = NonNullable<typeof projectAutomations.$inferSelect>["actions"][number];
 
 export interface TicketEventPayload {
   ticketId: number;
@@ -69,138 +67,103 @@ function evaluateBuildConditions(
   return conditions.every((c) => evaluateBuildCondition(c, payload));
 }
 
-function isTicketPriority(value: string): value is "LOW" | "MEDIUM" | "HIGH" | "URGENT" {
-  return value === "LOW" || value === "MEDIUM" || value === "HIGH" || value === "URGENT";
+/**
+ * Loop prevention. `BuildAutomationActionExecutor`'s writes (`set_status`/
+ * `set_assignee`/`set_priority`) currently go straight to `tickets` via
+ * Drizzle and never call back into `ProjectsTicketsUpdateService.updateTicket`
+ * — the only two call sites of `runForTicketEvent` are the create/update
+ * ticket services themselves (grepped: `projects-tickets-create.service.ts`,
+ * `projects-tickets-update.service.ts`), so today's action set cannot
+ * re-trigger this runner. But that is an accident of how those five actions
+ * happen to be implemented, not a structural guarantee — a natural future
+ * refactor (routing `set_status` through the shared update service to reuse
+ * its capacity-check/notification logic) would create unbounded recursion
+ * with zero guard. This context is keyed on the async call chain (not passed
+ * as an argument) so it protects the real re-entrancy point regardless of
+ * which future call path triggers it.
+ */
+interface AutomationChainContext {
+  readonly depth: number;
+  readonly seen: ReadonlySet<string>;
 }
 
-function isValidLabelId(value: string): boolean {
-  const n = Number(value);
-  return Number.isInteger(n) && n > 0;
-}
+const MAX_AUTOMATION_CHAIN_DEPTH = 3;
+const automationChainStorage = new AsyncLocalStorage<AutomationChainContext>();
 
 @Injectable()
 export class BuildAutomationRunnerService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  private async applyLabel(orgId: string, ticketId: number, labelRef: string): Promise<void> {
-    if (isValidLabelId(labelRef)) {
-      const numericId = Number(labelRef);
-      const found = await this.db.query.ticketLabels.findFirst({
-        where: and(eq(ticketLabels.id, numericId), eq(ticketLabels.orgId, orgId)),
-        columns: { id: true },
-      });
-      if (!found) {
-        logger.warn("BuildAutomationRunner: label not found by id", { numericId, orgId });
-        return;
-      }
-      await this.db
-        .insert(ticketLabelMappings)
-        .values({ orgId, ticketId, labelId: found.id })
-        .onConflictDoNothing();
-      return;
-    }
-
-    const byName = await this.db.query.ticketLabels.findFirst({
-      where: and(eq(ticketLabels.name, labelRef), eq(ticketLabels.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!byName) {
-      logger.warn("BuildAutomationRunner: label not found by name", { labelRef, orgId });
-      return;
-    }
-    await this.db
-      .insert(ticketLabelMappings)
-      .values({ orgId, ticketId, labelId: byName.id })
-      .onConflictDoNothing();
-  }
-
-  private async executeAction(
-    orgId: string,
-    projectId: number,
-    ticketId: number,
-    ruleId: number,
-    action: StoredAction,
-    authorId: string | null,
-  ): Promise<void> {
-    const ticketWhere = and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt));
-    switch (action.type) {
-      case "set_status": {
-        const statusExists = await this.db.query.projectStatuses.findFirst({
-          where: and(
-            eq(projectStatuses.orgId, orgId),
-            eq(projectStatuses.projectId, projectId),
-            eq(projectStatuses.name, action.value),
-          ),
-          columns: { id: true },
-        });
-        if (!statusExists) {
-          logger.warn("BuildAutomationRunner: set_status skipped — status does not exist in project", {
-            ruleId,
-            projectId,
-            orgId,
-            status: action.value,
-          });
-          return;
-        }
-        await this.db.transaction(async tx => {
-          await reserveTicketCapacity(tx, orgId, projectId, [{ status: action.value, count: 1 }], [ticketId]);
-          await tx.update(tickets)
-            .set({ status: action.value, updatedAt: new Date(), version: sql`${tickets.version} + 1` })
-            .where(ticketWhere);
-        });
-        return;
-      }
-      case "set_assignee": {
-        await this.db
-          .update(tickets)
-          .set({
-            assigneeMembershipId: (await this.db.query.organizationMembers.findFirst({
-              where: and(
-                eq(organizationMembers.orgId, orgId),
-                eq(organizationMembers.userId, action.value),
-                eq(organizationMembers.status, "ACTIVE"),
-              ),
-              columns: { id: true },
-            }))?.id ?? null,
-            updatedAt: new Date(),
-          })
-          .where(ticketWhere);
-        return;
-      }
-      case "set_priority": {
-        if (!isTicketPriority(action.value)) {
-          logger.warn("BuildAutomationRunner: invalid priority value, skipping", {
-            value: action.value,
-            ticketId,
-          });
-          return;
-        }
-        await this.db
-          .update(tickets)
-          .set({ priority: action.value, updatedAt: new Date() })
-          .where(ticketWhere);
-        return;
-      }
-      case "add_label": {
-        await this.applyLabel(orgId, ticketId, action.value);
-        return;
-      }
-      case "add_comment": {
-        if (!authorId) {
-          logger.warn("BuildAutomationRunner: add_comment skipped, automation has no authorId", {
-            ticketId,
-          });
-          return;
-        }
-        await this.db
-          .insert(ticketComments)
-          .values({ orgId, ticketId, userId: authorId, content: action.value });
-        return;
-      }
-    }
-  }
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly rateLimiter: RateLimitService,
+    private readonly history: BuildAutomationRunHistoryService,
+    private readonly actionExecutor: BuildAutomationActionExecutor,
+  ) {}
 
   private async execute(
+    orgId: string,
+    projectId: number,
+    triggerEvent: string,
+    ticket: TicketEventPayload,
+  ): Promise<void> {
+    const chainKey = `${ticket.ticketId}:${triggerEvent}`;
+    const parent = automationChainStorage.getStore();
+
+    // Loop prevention: a max-depth ceiling AND a per-(ticket, trigger event)
+    // dedup within one chain. The dedup catches the tighter cycle — a rule
+    // that re-triggers the exact event that matched it — before it even has
+    // to burn through the depth budget.
+    if (parent && (parent.depth >= MAX_AUTOMATION_CHAIN_DEPTH || parent.seen.has(chainKey))) {
+      logger.error("BuildAutomationRunner: loop guard blocked a re-entrant trigger", {
+        orgId,
+        projectId,
+        triggerEvent,
+        ticketId: ticket.ticketId,
+        depth: parent.depth,
+      });
+      await this.history.recordRun({
+        orgId,
+        projectId,
+        automationId: null,
+        ticketId: ticket.ticketId,
+        triggerEvent,
+        matched: false,
+        outcome: "blocked_loop_guard",
+        errorMessage: `chain depth ${parent.depth} at or above ${MAX_AUTOMATION_CHAIN_DEPTH}, or "${chainKey}" already ran earlier in this chain`,
+      });
+      return;
+    }
+
+    // Event-driven, no HTTP entry point — `@UseRateLimit`/`TIERS` per BE-35's
+    // convention, called directly rather than through the guard.
+    const rateLimit = await this.rateLimiter.check("build:automation-run", `${orgId}:${projectId}`);
+    if (!rateLimit.allowed) {
+      logger.warn("BuildAutomationRunner: rate limit exceeded, skipping run", {
+        orgId,
+        projectId,
+        triggerEvent,
+        retryAfterSecs: rateLimit.retryAfterSecs,
+      });
+      await this.history.recordRun({
+        orgId,
+        projectId,
+        automationId: null,
+        ticketId: ticket.ticketId,
+        triggerEvent,
+        matched: false,
+        outcome: "blocked_rate_limit",
+        errorMessage: `retry after ${rateLimit.retryAfterSecs}s`,
+      });
+      return;
+    }
+
+    const nextContext: AutomationChainContext = parent
+      ? { depth: parent.depth + 1, seen: new Set(parent.seen).add(chainKey) }
+      : { depth: 1, seen: new Set([chainKey]) };
+
+    await automationChainStorage.run(nextContext, () => this.runRules(orgId, projectId, triggerEvent, ticket));
+  }
+
+  private async runRules(
     orgId: string,
     projectId: number,
     triggerEvent: string,
@@ -228,24 +191,70 @@ export class BuildAutomationRunnerService {
     const payload: Record<string, unknown> = { ...ticket };
 
     for (const rule of rules) {
+      let matched: boolean;
       try {
-        const matched = evaluateBuildConditions(rule.conditions, payload);
-        if (!matched) continue;
-
-        for (const action of rule.actions) {
-          await this.executeAction(orgId, ticket.projectId, ticket.ticketId, rule.id, action, rule.createdBy).catch(
-            (error: unknown) => {
-              logger.error("BuildAutomationRunner: action failed", {
-                ruleId: rule.id,
-                actionType: action.type,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            },
-          );
-        }
+        matched = evaluateBuildConditions(rule.conditions, payload);
       } catch (error) {
         logger.error("BuildAutomationRunner: rule execution failed", { ruleId: rule.id, error });
+        await this.history.recordRun({
+          orgId,
+          projectId,
+          automationId: rule.id,
+          ticketId: ticket.ticketId,
+          triggerEvent,
+          matched: false,
+          outcome: "error",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        continue;
       }
+
+      if (!matched) {
+        await this.history.recordRun({
+          orgId,
+          projectId,
+          automationId: rule.id,
+          ticketId: ticket.ticketId,
+          triggerEvent,
+          matched: false,
+          outcome: "not_matched",
+          errorMessage: null,
+        });
+        continue;
+      }
+
+      const actionResults: AutomationActionRunResult[] = [];
+      for (const [index, action] of rule.actions.entries()) {
+        try {
+          await this.actionExecutor.execute(orgId, ticket.projectId, ticket.ticketId, rule.id, action, rule.createdBy);
+          actionResults.push({ index, type: action.type, outcome: "success", errorMessage: null });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error("BuildAutomationRunner: action failed", {
+            ruleId: rule.id,
+            actionType: action.type,
+            error: errorMessage,
+          });
+          actionResults.push({ index, type: action.type, outcome: "failure", errorMessage });
+        }
+      }
+
+      const failures = actionResults.filter((r) => r.outcome === "failure").length;
+      const outcome: AutomationRunOutcome =
+        failures === 0 ? "matched_success" : failures === actionResults.length ? "matched_failed" : "matched_partial_failure";
+
+      const runId = await this.history.recordRun({
+        orgId,
+        projectId,
+        automationId: rule.id,
+        ticketId: ticket.ticketId,
+        triggerEvent,
+        matched: true,
+        outcome,
+        errorMessage: null,
+      });
+
+      if (runId !== null) await this.history.recordRunActions(orgId, runId, actionResults);
     }
   }
 

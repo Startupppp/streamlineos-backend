@@ -10,9 +10,11 @@ import { HrWorkflowApproverService } from "./hr-workflow-approver.service";
 import { HrWorkflowStepRunnerService } from "./hr-workflow-step-runner.service";
 import { HrWorkflowStarterAdapter } from "./hr-workflow-starter.adapter";
 import { DirectoryModule } from "../../directory/directory.module";
+import { AttentionModule } from "../../attention/attention.module";
+import { HrWorkflowApprovalAdapter } from "./hr-workflow-approval.adapter";
 
 @Module({
-  imports: [DirectoryModule],
+  imports: [DirectoryModule, AttentionModule],
   controllers: [
     HrWorkflowDefinitionsController,
     HrWorkflowInstancesController,
@@ -26,7 +28,8 @@ import { DirectoryModule } from "../../directory/directory.module";
     HrWorkflowInstancesService,
     HrWorkflowDelegationsService,
     HrWorkflowStarterAdapter,
+    HrWorkflowApprovalAdapter,
   ],
-  exports: [HrWorkflowEngineService, HrWorkflowStarterAdapter, HrWorkflowApproverService],
+  exports: [HrWorkflowEngineService, HrWorkflowStarterAdapter, HrWorkflowApproverService, HrWorkflowInstancesService],
 })
 export class HrWorkflowsModule {}

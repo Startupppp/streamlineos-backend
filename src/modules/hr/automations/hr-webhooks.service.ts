@@ -30,6 +30,8 @@ import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE, boundHrReadLimit } from "../hr-read-li
 import { buildListResponse } from "../../../common/pagination/pagination";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
+import { runInNewTenantTransaction } from "../../../common/tenant";
+import { runOutsideTenantContext } from "../../../common/tenant/tenant-context";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 5;
@@ -211,7 +213,7 @@ export class HrWebhooksService {
       })
       .returning();
 
-    void this.attemptDelivery(sub.id, sub.url, sub.secret, delivery.id, sampleEvent, payload, 0);
+    this.detachDelivery(orgId, sub.id, sub.url, sub.secret, delivery.id, sampleEvent, payload, 0);
     return { deliveryId: delivery.id, event: sampleEvent };
   }
 
@@ -243,7 +245,8 @@ export class HrWebhooksService {
     if (!isSandboxEvent(delivery.event)) {
       throw new BadRequestException("Delivery references an unknown event");
     }
-    void this.attemptDelivery(
+    this.detachDelivery(
+      orgId,
       sub.id,
       sub.url,
       sub.secret,
@@ -306,7 +309,16 @@ export class HrWebhooksService {
         insertedDeliveries.map((delivery, i) => {
           const sub = active[i];
           if (!sub) return Promise.resolve();
-          return this.attemptDelivery(sub.id, sub.url, sub.secret, delivery.id, event, payload, 0);
+          return this.attemptDelivery(
+            orgId,
+            sub.id,
+            sub.url,
+            sub.secret,
+            delivery.id,
+            event,
+            payload,
+            0,
+          );
         }),
       );
 
@@ -315,7 +327,45 @@ export class HrWebhooksService {
     }
   }
 
+  private detachDelivery(
+    orgId: string,
+    subscriptionId: number,
+    url: string,
+    secret: string,
+    deliveryId: number,
+    /*
+      The union, matching `attemptDelivery` which this only forwards to. These
+      two tables are written by `RecruitmentWebhooksService` as well, and the
+      narrow type here was what made the test button, redeliver and the retry
+      sweep all silently drop the five hiring events.
+    */
+    event: SandboxEvent,
+    payload: Record<string, unknown>,
+    currentAttempts: number,
+  ): void {
+    void runOutsideTenantContext(() =>
+      this.attemptDelivery(
+        orgId,
+        subscriptionId,
+        url,
+        secret,
+        deliveryId,
+        event,
+        payload,
+        currentAttempts,
+      ),
+    ).catch((error: unknown) => {
+      logger.error("hr-webhook detached delivery failed", {
+        orgId,
+        subscriptionId,
+        deliveryId,
+        error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      });
+    });
+  }
+
   private async attemptDelivery(
+    orgId: string,
     subscriptionId: number,
     url: string,
     secret: string,
@@ -362,30 +412,34 @@ export class HrWebhooksService {
     const newAttempts = currentAttempts + 1;
 
     if (success) {
-      await this.db
-        .update(hrWebhookDeliveries)
-        .set({
-          status: "delivered",
-          attempts: newAttempts,
-          lastAttemptAt: new Date(),
-          responseStatus,
-          error: null,
-        })
-        .where(eq(hrWebhookDeliveries.id, deliveryId));
+      await runInNewTenantTransaction(this.db, orgId, (tx) =>
+        tx
+          .update(hrWebhookDeliveries)
+          .set({
+            status: "delivered",
+            attempts: newAttempts,
+            lastAttemptAt: new Date(),
+            responseStatus,
+            error: null,
+          })
+          .where(eq(hrWebhookDeliveries.id, deliveryId)),
+      );
       return;
     }
 
     const isDead = newAttempts >= MAX_ATTEMPTS;
-    await this.db
-      .update(hrWebhookDeliveries)
-      .set({
-        status: isDead ? "dead" : "failed",
-        attempts: newAttempts,
-        lastAttemptAt: new Date(),
-        responseStatus,
-        error,
-      })
-      .where(eq(hrWebhookDeliveries.id, deliveryId));
+    await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx
+        .update(hrWebhookDeliveries)
+        .set({
+          status: isDead ? "dead" : "failed",
+          attempts: newAttempts,
+          lastAttemptAt: new Date(),
+          responseStatus,
+          error,
+        })
+        .where(eq(hrWebhookDeliveries.id, deliveryId)),
+    );
 
     logger.warn("hr-webhook delivery failed", {
       subscriptionId,
@@ -435,6 +489,7 @@ export class HrWebhooksService {
         */
         if (!sub || !isSandboxEvent(d.event)) return Promise.resolve();
         return this.attemptDelivery(
+          sub.orgId,
           sub.id,
           sub.url,
           sub.secret,

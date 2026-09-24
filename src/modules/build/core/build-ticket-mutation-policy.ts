@@ -28,10 +28,9 @@ export async function readMutationTickets(
   policy: Awaited<ReturnType<typeof authorizeTicketMutation>>,
 ) {
   const rows = await db.select({
-    id: tickets.id, status: tickets.status, rank: tickets.rank,
-    createdAtCursor: sql<string>`${tickets.createdAt}::text`, version: tickets.version,
+    id: tickets.id, status: tickets.status, rank: tickets.rank, version: tickets.version,
     assigneeMembershipId: tickets.assigneeMembershipId, dueDate: tickets.dueDate,
-    priority: tickets.priority, points: tickets.points, epicId: tickets.epicId, sprintId: tickets.sprintId,
+    priority: tickets.priority, points: tickets.points, epicId: tickets.epicId, cycleId: tickets.cycleId,
     allowed: sql<boolean>`${policy.predicate}`,
   }).from(tickets).where(and(
     eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId),

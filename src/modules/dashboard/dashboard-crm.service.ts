@@ -30,6 +30,13 @@ export interface ExecutiveDashboard {
   conversionRate?: number;
 }
 
+export interface CrmPulseFigures {
+  mrr: number;
+  pipelineValue: number;
+  newLeadsThisWeek: number;
+  conversionRate: number;
+}
+
 @Injectable()
 export class DashboardCrmService {
   constructor(
@@ -162,6 +169,19 @@ export class DashboardCrmService {
     ]);
   }
 
+  private async buildCrmFigures(orgId: string): Promise<CrmPulseFigures> {
+    const [mrrRows, pipelineRows, newLeadsRows, totalLeadsRows, wonLeadsRows] =
+      await this.crmExecutiveReads(orgId);
+    const total = Number(totalLeadsRows[0]?.cnt ?? 0);
+    const won = Number(wonLeadsRows[0]?.cnt ?? 0);
+    return {
+      mrr: Number(mrrRows[0]?.total ?? 0),
+      pipelineValue: Number(pipelineRows[0]?.total ?? 0),
+      newLeadsThisWeek: Number(newLeadsRows[0]?.cnt ?? 0),
+      conversionRate: total > 0 ? Math.round((won / total) * 100) : 0,
+    };
+  }
+
   async getExecutiveDashboard(
     u: CurrentUserContext,
   ): Promise<ExecutiveDashboard> {
@@ -185,20 +205,18 @@ export class DashboardCrmService {
           activeProjects: Number(activeProjectsRows[0]?.cnt ?? 0),
         };
         if (!withCrm) return core;
-
-        const [mrrRows, pipelineRows, newLeadsRows, totalLeadsRows, wonLeadsRows] =
-          await this.crmExecutiveReads(orgId);
-        const total = Number(totalLeadsRows[0]?.cnt ?? 0);
-        const won = Number(wonLeadsRows[0]?.cnt ?? 0);
-
-        return {
-          ...core,
-          mrr: Number(mrrRows[0]?.total ?? 0),
-          pipelineValue: Number(pipelineRows[0]?.total ?? 0),
-          newLeadsThisWeek: Number(newLeadsRows[0]?.cnt ?? 0),
-          conversionRate: total > 0 ? Math.round((won / total) * 100) : 0,
-        };
+        return { ...core, ...(await this.buildCrmFigures(orgId)) };
       },
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  async getCrmPulse(orgId: string): Promise<CrmPulseFigures> {
+    const key = await buildOrgSectionCacheKey(this.access, orgId, "crm-pulse");
+    return this.cache.cachedForOrg(
+      orgId,
+      key,
+      () => this.buildCrmFigures(orgId),
       CACHE_TTL.MEDIUM,
     );
   }

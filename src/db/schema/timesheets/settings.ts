@@ -13,6 +13,7 @@ import {
 import {
   timesheetRoundingRuleEnum,
   timesheetApprovalModeEnum,
+  timesheetApproverSourceEnum,
   timesheetPayPeriodEnum,
 } from "./enums";
 import { organizations, organizationMembers } from "../common";
@@ -60,22 +61,15 @@ export const timesheetSettings = pgTable("timesheet_settings", {
   approvalMode: timesheetApprovalModeEnum("approval_mode")
     .notNull()
     .default("MANAGER"),
+  approverSource: timesheetApproverSourceEnum("approver_source")
+    .notNull()
+    .default("REPORTING_MANAGER"),
   clientApprovalEnabled: boolean("client_approval_enabled")
     .notNull()
     .default(false),
   lockAfterApproval: boolean("lock_after_approval").notNull().default(true),
   lockAfterInvoice: boolean("lock_after_invoice").notNull().default(true),
   reminderRules: jsonb("reminder_rules"),
-  /**
-   * TS-09. Whether a completed attendance day may become a draft timesheet
-   * entry.
-   *
-   * Default FALSE, and deliberately so. An organisation that clocks people in
-   * and out has not thereby asked for those hours to appear on a timesheet
-   * they will be asked to submit and an approver will be asked to sign; the
-   * two systems can legitimately disagree, and "nobody turned it off" is not
-   * consent to pre-fill somebody's timesheet with numbers they did not enter.
-   */
   autoDraftFromAttendance: boolean("auto_draft_from_attendance").notNull().default(false),
   payPeriod: timesheetPayPeriodEnum("pay_period").notNull().default("MONTHLY"),
   allowFutureEntries: boolean("allow_future_entries").notNull().default(false),

@@ -1,6 +1,11 @@
 jest.mock("sharp", () => ({ __esModule: true, default: jest.fn() }));
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn().mockImplementation(
+    async (_db: unknown, fn: () => Promise<unknown>) => fn(),
+  ),
+}));
 
-import { BadRequestException, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, Logger, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { KbMediaService } from "./kb-media.service";
 import type { StorageService, UploadResult } from "../../storage/storage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -114,9 +119,17 @@ describe("KbMediaService", () => {
   let mockChain: MockChain;
   let mockScanner: { scan: jest.Mock };
   let mockDb: MockDb;
+  let mockAttachmentIndexing: { indexPageDocument: jest.Mock };
 
   beforeEach(() => {
     jest.resetAllMocks();
+
+    const runInTenantTransactionMock = jest.requireMock<{
+      runInTenantTransaction: jest.Mock;
+    }>("../../../common/tenant/run-in-tenant-transaction").runInTenantTransaction;
+    runInTenantTransactionMock.mockImplementation(
+      async (_db: unknown, fn: () => Promise<unknown>) => fn(),
+    );
 
     mockChain = {
       rotate: jest.fn(),
@@ -138,8 +151,7 @@ describe("KbMediaService", () => {
     };
     mockAudit = { log: jest.fn() };
     mockScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
-
-    const mockAttachmentIndexing = {} as unknown as KbAttachmentIndexingService;
+    mockAttachmentIndexing = { indexPageDocument: jest.fn().mockResolvedValue(undefined) };
 
     mockDb = makeDb();
 
@@ -147,7 +159,7 @@ describe("KbMediaService", () => {
       mockDb.db,
       mockStorage as unknown as StorageService,
       mockAudit as unknown as AuditService,
-      mockAttachmentIndexing,
+      mockAttachmentIndexing as unknown as KbAttachmentIndexingService,
       kbConfig,
       mockScanner as unknown as AvScanner,
     );
@@ -253,6 +265,41 @@ describe("KbMediaService", () => {
       await expect(
         service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser()),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("logs the decoder's own reason, so a 400 on a valid-looking image is diagnosable at all", async () => {
+      const logged = jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      mockChain.toBuffer.mockRejectedValue(new Error("VipsJpeg: Premature end of input file"));
+
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF, "holiday.jpg"), makeUser()),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining("VipsJpeg: Premature end of input file"),
+      );
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("holiday.jpg"));
+      logged.mockRestore();
+    });
+
+    it("names the megapixel ceiling rather than calling an oversized but valid photo invalid", async () => {
+      jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      mockChain.toBuffer.mockRejectedValue(new Error("Input image exceeds pixel limit"));
+
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF, "panorama.jpg"), makeUser()),
+      ).rejects.toMatchObject({
+        message: "Image is larger than the 50 megapixel processing limit",
+      });
+    });
+
+    it("still calls a genuinely undecodable file invalid", async () => {
+      jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      mockChain.toBuffer.mockRejectedValue(new Error("unsupported image format"));
+
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser()),
+      ).rejects.toMatchObject({ message: "Invalid image file" });
     });
   });
 
@@ -491,6 +538,39 @@ describe("KbMediaService", () => {
       await expect(
         service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-42"), 7),
       ).rejects.toThrow("insert failed");
+    });
+  });
+
+  describe("document indexing — a PDF upload linked to a page triggers attachment indexing even when there is no ambient tenant transaction", () => {
+    const PDF_BUF = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0, 0, 0]);
+
+    it("indexPageDocument is called with the org, page id, original buffer and mime type", async () => {
+      mockStorage.uploadFile.mockResolvedValue({ ...MOCK_RESULT, mimeType: "application/pdf" });
+
+      await service.upload(makeFile("application/pdf", PDF_BUF, "spec.pdf"), makeUser("org-42"), 7);
+
+      expect(mockAttachmentIndexing.indexPageDocument).toHaveBeenCalledTimes(1);
+      expect(mockAttachmentIndexing.indexPageDocument).toHaveBeenCalledWith(
+        "org-42",
+        7,
+        PDF_BUF,
+        "application/pdf",
+        "spec.pdf",
+      );
+    });
+
+    it("a PDF upload with no pageId does not trigger indexing", async () => {
+      mockStorage.uploadFile.mockResolvedValue({ ...MOCK_RESULT, mimeType: "application/pdf" });
+
+      await service.upload(makeFile("application/pdf", PDF_BUF, "spec.pdf"), makeUser("org-42"));
+
+      expect(mockAttachmentIndexing.indexPageDocument).not.toHaveBeenCalled();
+    });
+
+    it("an image upload with a pageId does not trigger indexing", async () => {
+      await service.upload(makeFile("image/jpeg", JPEG_BUF, "photo.jpg"), makeUser("org-42"), 7);
+
+      expect(mockAttachmentIndexing.indexPageDocument).not.toHaveBeenCalled();
     });
   });
 });

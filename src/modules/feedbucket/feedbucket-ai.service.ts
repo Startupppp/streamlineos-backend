@@ -1,6 +1,5 @@
 import {
-  ConflictException,
-  ForbiddenException,
+  BadRequestException,
   HttpException,
   HttpStatus,
   Inject,
@@ -8,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { throwOnAiFailure } from "../ai/core/services/gateway-result.util";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -19,6 +19,11 @@ import { sanitizeHtml } from "../hr/templates/html-sanitizer";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { StorageService } from "../storage/storage.service";
+import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
+import { assertProjectAccess } from "../build/core/project-access";
+import { AccessService } from "../access/access.service";
+import { resolveFeedbucketTicketTarget } from "./feedbucket-ticket-routing";
+import type { ConvertToTicketInput } from "./feedbucket.schemas";
 import {
   FeedbackAnalysisSchema,
   type FeedbackAnalysis,
@@ -31,7 +36,11 @@ import {
   buildBugDescription,
 } from "./feedbucket-ai.prompts";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { FeedbucketConsoleEntry, FeedbucketMetadata, FeedbucketNetworkEntry } from "../../db/schema/build/feedback";
+import type {
+  FeedbucketConsoleEntry,
+  FeedbucketMetadata,
+  FeedbucketNetworkEntry,
+} from "../../db/schema/build/feedback";
 import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 
 const FEATURE_KEY = "feedbucket.analyze" as const;
@@ -54,7 +63,9 @@ function buildPlaintextDescription(analysis: FeedbackAnalysis): string {
   const parts: string[] = [analysis.summary];
   if (analysis.reproductionSteps.length > 0) {
     parts.push("\nSteps to reproduce:");
-    analysis.reproductionSteps.forEach((step, i) => parts.push(`${i + 1}. ${step}`));
+    analysis.reproductionSteps.forEach((step, i) =>
+      parts.push(`${i + 1}. ${step}`),
+    );
   }
   if (analysis.suggestions.length > 0) {
     parts.push("\nSuggestions:");
@@ -65,6 +76,7 @@ function buildPlaintextDescription(analysis: FeedbackAnalysis): string {
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 8000;
+const INTERACTIVE_ANALYSIS_BUDGET_MS = 25_000;
 
 const IMAGE_MIME_SIGNATURES: Array<{ mime: string; bytes: number[] }> = [
   { mime: "image/jpeg", bytes: [0xff, 0xd8, 0xff] },
@@ -100,6 +112,7 @@ export class FeedbucketAiService {
     private readonly ticketsService: ProjectsTicketsService,
     private readonly planLimits: PlanLimitsService,
     private readonly storage: StorageService,
+    private readonly access: AccessService,
   ) {}
 
   private async loadSubmission(orgId: string, submissionId: number) {
@@ -109,24 +122,48 @@ export class FeedbucketAiService {
         eq(feedbucketSubmissions.orgId, orgId),
         isNull(feedbucketSubmissions.deletedAt),
       ),
-      with: {
-        widget: {
-          columns: { id: true, projectId: true },
-          with: { project: { columns: { id: true, orgId: true } } },
-        },
-      },
+      with: { widget: true },
     });
     if (!row) throw new NotFoundException("Submission not found");
     return row;
   }
 
-  private assertProjectAccess(submission: Awaited<ReturnType<typeof this.loadSubmission>>, orgId: string): number {
+  private async resolveTicketTarget(
+    submission: Awaited<ReturnType<typeof this.loadSubmission>>,
+    u: CurrentUserContext,
+    override?: ConvertToTicketInput,
+  ): Promise<{ projectId: number; assigneeMembershipId: number | null }> {
+    const orgId = u.orgId;
     const widget = submission.widget;
-    if (!widget) throw new NotFoundException("Submission has no associated widget");
-    const project = widget.project;
-    if (!project || !widget.projectId) throw new NotFoundException("Widget has no linked project");
-    if (project.orgId !== orgId) throw new ForbiddenException("Project does not belong to your organisation");
-    return widget.projectId;
+    if (!widget)
+      throw new NotFoundException("Submission has no associated widget");
+
+    let overrideAssigneeMembershipId: number | undefined;
+    if (override?.assigneeId !== undefined) {
+      const actorMap = await resolveOrganizationActorsByUserIds(
+        this.db,
+        orgId,
+        [override.assigneeId],
+      );
+      const actor = actorMap.get(override.assigneeId);
+      if (!actor)
+        throw new BadRequestException(
+          `${override.assigneeId} is not an active member of this organization`,
+        );
+      overrideAssigneeMembershipId = actor.membershipId;
+    }
+
+    const { projectId, assigneeMembershipId } = resolveFeedbucketTicketTarget(
+      widget,
+      submission.type,
+      {
+        projectId: override?.projectId,
+        assigneeMembershipId: overrideAssigneeMembershipId,
+      },
+    );
+    if (!projectId) throw new NotFoundException("Widget has no linked project");
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    return { projectId, assigneeMembershipId };
   }
 
   /**
@@ -172,7 +209,10 @@ export class FeedbucketAiService {
 
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+      const timer = setTimeout(
+        () => controller.abort(),
+        IMAGE_FETCH_TIMEOUT_MS,
+      );
 
       let res: Response;
       try {
@@ -231,6 +271,7 @@ export class FeedbucketAiService {
       images: opts.imageDataUrls,
       charge: true,
       redact: false,
+      signal: AbortSignal.timeout(INTERACTIVE_ANALYSIS_BUDGET_MS),
     });
 
     if (!result.ok) {
@@ -262,7 +303,9 @@ export class FeedbucketAiService {
     if (opts.screenshotBuffer) {
       const mime = detectImageMime(opts.screenshotBuffer);
       if (mime) {
-        imageDataUrls = [`data:${mime};base64,${opts.screenshotBuffer.toString("base64")}`];
+        imageDataUrls = [
+          `data:${mime};base64,${opts.screenshotBuffer.toString("base64")}`,
+        ];
       }
     }
 
@@ -284,18 +327,25 @@ export class FeedbucketAiService {
     };
   }
 
-  async analyze(u: CurrentUserContext, submissionId: number, force = false): Promise<FeedbackAnalysis & { aiUsage?: AiUsageMeta }> {
+  async analyze(
+    u: CurrentUserContext,
+    submissionId: number,
+    force = false,
+  ): Promise<FeedbackAnalysis & { aiUsage?: AiUsageMeta }> {
     await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
-    this.assertProjectAccess(submission, u.orgId);
+    await this.resolveTicketTarget(submission, u);
 
     if (submission.aiProcessedAt && !force) {
       const stored = submission.aiAnalysis;
       if (stored) return stored;
     }
 
-    const rateLimitResult = await this.rateLimiter.check("feedbucket:ai-analyze", u.userId);
+    const rateLimitResult = await this.rateLimiter.check(
+      "feedbucket:ai-analyze",
+      u.userId,
+    );
     if (!rateLimitResult.allowed) {
       throw new HttpException(
         `AI analysis rate limit reached. Retry after ${rateLimitResult.retryAfterSecs}s.`,
@@ -303,7 +353,10 @@ export class FeedbucketAiService {
       );
     }
 
-    const images = await this.resolveScreenshotForVision(u.orgId, submission.screenshotUrl);
+    const images = await this.resolveScreenshotForVision(
+      u.orgId,
+      submission.screenshotUrl,
+    );
 
     const analysis = await this.runVisionAnalysis({
       orgId: u.orgId,
@@ -329,7 +382,10 @@ export class FeedbucketAiService {
         updatedAt: new Date(),
       })
       .where(
-        and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, u.orgId)),
+        and(
+          eq(feedbucketSubmissions.id, submissionId),
+          eq(feedbucketSubmissions.orgId, u.orgId),
+        ),
       );
 
     this.audit.log({
@@ -338,7 +394,11 @@ export class FeedbucketAiService {
       orgId: u.orgId,
       resourceType: "feedbucket_submission",
       resourceId: String(submissionId),
-      metadata: { type: analysis.type, confidence: analysis.confidence, model: "standard" },
+      metadata: {
+        type: analysis.type,
+        confidence: analysis.confidence,
+        model: "standard",
+      },
     });
 
     return analysis;
@@ -347,15 +407,43 @@ export class FeedbucketAiService {
   async createTicketFromAnalysis(
     u: CurrentUserContext,
     submissionId: number,
-  ): Promise<{ ticketId: number; ticketType: FeedbackAnalysis["suggestedTicketType"] }> {
+    override?: ConvertToTicketInput,
+  ): Promise<{
+    ticketId: number;
+    ticketType: FeedbackAnalysis["suggestedTicketType"];
+  }> {
     await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
+    const [lockedRow] = await this.db
+      .select({ linkedTicketId: feedbucketSubmissions.linkedTicketId })
+      .from(feedbucketSubmissions)
+      .where(
+        and(
+          eq(feedbucketSubmissions.id, submissionId),
+          eq(feedbucketSubmissions.orgId, u.orgId),
+          isNull(feedbucketSubmissions.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!lockedRow) throw new NotFoundException("Submission not found");
+
     const submission = await this.loadSubmission(u.orgId, submissionId);
-    const projectId = this.assertProjectAccess(submission, u.orgId);
 
     if (submission.linkedTicketId) {
-      throw new ConflictException("Submission is already linked to a ticket");
+      return {
+        ticketId: submission.linkedTicketId,
+        ticketType: submission.aiAnalysis
+          ? mapToTicketType(submission.aiAnalysis.type)
+          : "BUG",
+      };
     }
+
+    const { projectId, assigneeMembershipId } = await this.resolveTicketTarget(
+      submission,
+      u,
+      override,
+    );
 
     let analysis = submission.aiAnalysis;
     if (!analysis) {
@@ -365,21 +453,47 @@ export class FeedbucketAiService {
     const ticketType = mapToTicketType(analysis.type);
     const description =
       ticketType === "EPIC" || ticketType === "STORY"
-        ? buildEpicDescription(analysis, submission.screenshotUrl, submission.pageUrl)
-        : buildBugDescription(analysis, submission.screenshotUrl, submission.pageUrl);
+        ? buildEpicDescription(
+            analysis,
+            submission.screenshotUrl,
+            submission.pageUrl,
+          )
+        : buildBugDescription(
+            analysis,
+            submission.screenshotUrl,
+            submission.pageUrl,
+          );
 
-    const ticket = await this.ticketsService.createFromFeedback(u.orgId, u.userId, projectId, {
-      title: analysis.title.slice(0, 255),
-      description,
-      type: ticketType,
-    });
+    const ticket = await this.ticketsService.createFromFeedback(
+      u.orgId,
+      u.userId,
+      projectId,
+      {
+        title: analysis.title.slice(0, 255),
+        description,
+        type: ticketType,
+        assigneeMembershipId,
+      },
+    );
 
-    await this.db
-      .update(feedbucketSubmissions)
-      .set({ linkedTicketId: ticket.id, updatedAt: new Date() })
-      .where(
-        and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, u.orgId)),
-      );
+    try {
+      await this.db
+        .update(feedbucketSubmissions)
+        .set({ linkedTicketId: ticket.id, updatedAt: new Date() })
+        .where(
+          and(
+            eq(feedbucketSubmissions.id, submissionId),
+            eq(feedbucketSubmissions.orgId, u.orgId),
+          ),
+        );
+    } catch (updateErr: unknown) {
+      if (isUniqueViolation(updateErr)) {
+        const refreshed = await this.loadSubmission(u.orgId, submissionId);
+        if (refreshed.linkedTicketId)
+          return { ticketId: refreshed.linkedTicketId, ticketType };
+      }
+      throw updateErr;
+    }
 
     this.audit.log({
       action: "feedbucket.ai_ticket_created",

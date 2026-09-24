@@ -174,6 +174,19 @@ describe("journal outbox — lifecycle guards", () => {
     await expect(service.markExported("org1", "u1", 10)).rejects.toThrow(BadRequestException);
   });
 
+  it("stamps a posted batch exported without re-reading the batch and its lines, because its only caller discards the value", async () => {
+    const { service, rec } = build([[batchRow({ status: "POSTED" })], [{ id: 77 }]]);
+
+    await expect(service.markExported("org1", "u1", 10)).resolves.toBeUndefined();
+
+    expect(rec.updates).toHaveLength(1);
+    expect(rec.updates[0]?.set).toMatchObject({
+      status: "EXPORTED",
+      exportedBy: "u1",
+      exportedByMembershipId: 77,
+    });
+  });
+
   it("refuses to reconcile a draft batch", async () => {
     const { service } = build([[batchRow({ status: "DRAFT" })]]);
     await expect(

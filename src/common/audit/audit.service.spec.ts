@@ -124,7 +124,7 @@ describe("AuditService dispatch", () => {
     getTenantContext.mockReturnValue({ orgId: "org-1" });
     getObservabilityContext.mockReturnValue({
       correlationId: "corr-1",
-      clientIp: "203.0.113.50",
+      ipAddress: "203.0.113.50",
       userAgent: "Mozilla/5.0",
     });
     const service = new AuditService(db as never);
@@ -152,7 +152,7 @@ describe("AuditService dispatch", () => {
     getTenantContext.mockReturnValue({ orgId: "org-1" });
     getObservabilityContext.mockReturnValue({
       correlationId: "corr-1",
-      clientIp: "203.0.113.50",
+      ipAddress: "203.0.113.50",
     });
     const service = new AuditService(db as never);
 
@@ -172,7 +172,7 @@ describe("AuditService dispatch", () => {
     const { db, values } = makeDb();
     getObservabilityContext.mockReturnValue({
       correlationId: "corr-deferred",
-      clientIp: "198.51.100.20",
+      ipAddress: "198.51.100.20",
     });
     let hook: (() => Promise<void>) | undefined;
     registerAfterCommit.mockImplementation((candidate) => {

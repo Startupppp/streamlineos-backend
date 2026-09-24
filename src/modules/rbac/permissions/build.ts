@@ -284,45 +284,6 @@ export const PROJECT_MANAGED_PRODUCTS_PERMISSIONS: Permission[] = [
   },
 ];
 
-export const PROJECT_WORKSPACES_PERMISSIONS: Permission[] = [
-  {
-    name: "build:workspaces:view",
-    resource: "build:workspaces",
-    action: "view",
-    description: "View PM workspaces",
-  },
-  {
-    name: "build:workspaces:create",
-    resource: "build:workspaces",
-    action: "create",
-    description: "Create PM workspaces",
-  },
-  {
-    name: "build:workspaces:update",
-    resource: "build:workspaces",
-    action: "update",
-    description: "Update PM workspaces",
-  },
-  {
-    name: "build:workspaces:delete",
-    resource: "build:workspaces",
-    action: "delete",
-    description: "Delete PM workspaces",
-  },
-  {
-    name: "build:workspaces:members:view",
-    resource: "build:workspaces:members",
-    action: "view",
-    description: "View PM workspace members",
-  },
-  {
-    name: "build:workspaces:members:manage",
-    resource: "build:workspaces:members",
-    action: "manage",
-    description: "Add and remove PM workspace members",
-  },
-];
-
 export const PROJECT_WORKFLOW_PERMISSIONS: Permission[] = [
   {
     name: "build:workflow:view",
@@ -363,5 +324,35 @@ export const PROJECT_GOVERNANCE_PERMISSIONS: Permission[] = [
     resource: "build:decisions",
     action: "manage",
     description: "Create, update, and delete project decisions",
+  },
+];
+
+export const PROJECT_UPDATES_PERMISSIONS: Permission[] = [
+  {
+    name: "build:updates:view",
+    resource: "build:updates",
+    action: "view",
+    description: "View project status updates",
+  },
+  {
+    name: "build:updates:manage",
+    resource: "build:updates",
+    action: "manage",
+    description: "Post and delete project status updates",
+  },
+];
+
+export const PROJECT_FILES_PERMISSIONS: Permission[] = [
+  {
+    name: "build:files:view",
+    resource: "build:files",
+    action: "view",
+    description: "View project files",
+  },
+  {
+    name: "build:files:manage",
+    resource: "build:files",
+    action: "manage",
+    description: "Upload and delete project files",
   },
 ];

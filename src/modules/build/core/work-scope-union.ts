@@ -107,17 +107,36 @@ export function mineCountSql(
     ) u`;
 }
 
+export function mineCountByStatusSql(
+  where: SQL<unknown> | undefined,
+  orgId: string,
+  userId: string,
+): SQL<unknown> {
+  const w = where ?? sql`true`;
+  return sql`
+    SELECT u.status, count(*) AS cnt FROM (
+      (SELECT ${tickets.id} AS id, ${tickets.status} AS status
+       FROM ${tickets}
+       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+       WHERE ${w} AND ${tickets.assigneeMembershipId} IN (
+         SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId}
+       ))
+      UNION
+      (SELECT ${tickets.id} AS id, ${tickets.status} AS status
+       FROM ${tickets}
+       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+       INNER JOIN ${ticketAssignees} ta
+         ON ta.ticket_id = ${tickets.id}
+        AND ta.org_id = ${orgId}
+        AND ta.membership_id IN (
+          SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId}
+        )
+       WHERE ${w})
+    ) u
+    GROUP BY u.status`;
+}
+
 export function readIds(rows: Record<string, unknown>[]): number[] {
   return rows.map((row) => Number(row["id"]));
 }
 
-function readIdsAndTotal(rows: Record<string, unknown>[]): {
-  ids: number[];
-  total: number;
-} {
-  const first = rows[0];
-  return {
-    ids: rows.map((row) => Number(row["id"])),
-    total: first ? Number(first["total"]) : 0,
-  };
-}

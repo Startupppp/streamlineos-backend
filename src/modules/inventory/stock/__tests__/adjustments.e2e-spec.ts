@@ -2,8 +2,8 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "../../../../../test/helpers/e2e-app";
 import { signToken } from "../../../../../test/helpers/sign-token";
-import { DRIZZLE } from "../../../../../src/db/drizzle.constants";
-import type { Db } from "../../../../../src/db/drizzle.module";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import type { Db } from "../../../../db/drizzle.module";
 import { seedOrg, seedUser, cleanupSeedOrgs, cleanupSeedUsers } from "../../../../../test/helpers/e2e-seed";
 
 describe("/inventory/stock/adjustments (e2e)", () => {

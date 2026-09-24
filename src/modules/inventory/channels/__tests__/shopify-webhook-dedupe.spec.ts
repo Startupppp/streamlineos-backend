@@ -60,9 +60,9 @@ describe("Shopify Webhook Ingest Deduplication (INV-27)", () => {
 
     const mockConfig = {
       INV_CHANNEL_WEBHOOK_SECRET_SHOPIFY: "test-shopify-secret-32-chars-long!",
-    } as any;
+    };
 
-    const mockLogger = { warn: jest.fn(), log: jest.fn() } as any;
+    const mockLogger = { warn: jest.fn(), log: jest.fn() };
 
     const signature = createHmac("sha256", mockConfig.INV_CHANNEL_WEBHOOK_SECRET_SHOPIFY)
       .update(rawBody)
@@ -80,7 +80,7 @@ describe("Shopify Webhook Ingest Deduplication (INV-27)", () => {
 
     // First delivery -> accepted, duplicate = false
     const res1 = await receiveDelivery(
-      { db: mockDb, config: mockConfig, logger: mockLogger },
+      { db: mockDb, config: mockConfig as never, logger: mockLogger as never },
       input,
     );
     expect(res1.accepted).toBe(true);
@@ -90,7 +90,7 @@ describe("Shopify Webhook Ingest Deduplication (INV-27)", () => {
 
     // Second delivery (same providerDeliveryId) -> accepted, duplicate = true (only 1 import enqueued)
     const res2 = await receiveDelivery(
-      { db: mockDb, config: mockConfig, logger: mockLogger },
+      { db: mockDb, config: mockConfig as never, logger: mockLogger as never },
       input,
     );
     expect(res2.accepted).toBe(true);

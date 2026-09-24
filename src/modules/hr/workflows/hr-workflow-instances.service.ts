@@ -1,14 +1,29 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, desc, gt, inArray, isNull, lte, or } from "drizzle-orm";
-import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, eq, desc, gt, inArray, isNull } from "drizzle-orm";
+import {
+  decodeCursor,
+  buildCursorPage,
+} from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
+import type { DescKeysetPosition } from "../../../common/pagination/desc-keyset";
+import {
+  WORKFLOW_INBOX_MAX_BATCHES,
+  WORKFLOW_INBOX_OVERFETCH,
+  actingAndDelegatedMembershipIds,
+  readInboxCandidates,
+  type WorkflowInboxCandidate,
+} from "./hr-workflow-inbox-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrWorkflowDefinitions,
   hrWorkflowInstances,
   hrWorkflowStepActions,
-  hrWorkflowDelegations,
 } from "../../../db/schema/hr/workflow-engine";
 import { users, organizationMembers } from "../../../db/schema/common/auth";
 import { hrEmployments, hrPeople } from "../../../db/schema";
@@ -22,7 +37,11 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
+import { persistedStepRouting } from "./hr-workflow-engine.types";
 
 interface ResolvedStep {
   stepOrder: number;
@@ -32,7 +51,11 @@ interface ResolvedStep {
 
 function isResolvedStepArray(steps: unknown[]): steps is ResolvedStep[] {
   return steps.every(
-    (s) => typeof s === "object" && s !== null && "stepOrder" in s && "approverType" in s,
+    (s) =>
+      typeof s === "object" &&
+      s !== null &&
+      "stepOrder" in s &&
+      "approverType" in s,
   );
 }
 
@@ -45,16 +68,6 @@ export class HrWorkflowInstancesService {
     private readonly employment: EmploymentFactsService,
   ) {}
 
-  /**
-   * `GET /hr/workflows/:workflowId/instances` — found by the live cross-tenant sweep.
-   *
-   * The org predicate below answers on its own, so a `:workflowId` belonging to another
-   * organisation returned an empty page with **200**, and so did an id belonging to no
-   * organisation at all: the definition in the path was never resolved. Nothing crossed, but the
-   * contract 404 was absent. `HrWorkflowDefinitionsService.get` already resolves the definition
-   * exactly this way; the refusal is NotFound, never Forbidden, so an id in another tenant and an
-   * id that exists nowhere answer identically.
-   */
   async listForDefinition(
     orgId: string,
     definitionId: number,
@@ -71,7 +84,8 @@ export class HrWorkflowInstancesService {
         ),
       )
       .limit(1);
-    if (!definition) throw new NotFoundException("Workflow definition not found");
+    if (!definition)
+      throw new NotFoundException("Workflow definition not found");
 
     const pos = decodeCursor(query.cursor);
     const conditions = [
@@ -79,15 +93,27 @@ export class HrWorkflowInstancesService {
       eq(hrWorkflowInstances.definitionId, definitionId),
     ];
 
-    if (query.status) conditions.push(eq(hrWorkflowInstances.status, query.status));
-    if (query.objectType) conditions.push(eq(hrWorkflowInstances.objectType, query.objectType));
-    if (pos) conditions.push(keysetBeforeId(hrWorkflowInstances.createdAt, hrWorkflowInstances.id, pos));
+    if (query.status)
+      conditions.push(eq(hrWorkflowInstances.status, query.status));
+    if (query.objectType)
+      conditions.push(eq(hrWorkflowInstances.objectType, query.objectType));
+    if (pos)
+      conditions.push(
+        keysetBeforeId(
+          hrWorkflowInstances.createdAt,
+          hrWorkflowInstances.id,
+          pos,
+        ),
+      );
 
     const rows = await this.db
       .select()
       .from(hrWorkflowInstances)
       .where(and(...conditions))
-      .orderBy(desc(hrWorkflowInstances.createdAt), desc(hrWorkflowInstances.id))
+      .orderBy(
+        desc(hrWorkflowInstances.createdAt),
+        desc(hrWorkflowInstances.id),
+      )
       .limit(query.limit + 1);
 
     return buildCursorPage(rows, query.limit, (row) => ({
@@ -100,9 +126,18 @@ export class HrWorkflowInstancesService {
     const pos = decodeCursor(query.cursor);
     const conditions = [eq(hrWorkflowInstances.orgId, orgId)];
 
-    if (query.status) conditions.push(eq(hrWorkflowInstances.status, query.status));
-    if (query.objectType) conditions.push(eq(hrWorkflowInstances.objectType, query.objectType));
-    if (pos) conditions.push(keysetBeforeId(hrWorkflowInstances.createdAt, hrWorkflowInstances.id, pos));
+    if (query.status)
+      conditions.push(eq(hrWorkflowInstances.status, query.status));
+    if (query.objectType)
+      conditions.push(eq(hrWorkflowInstances.objectType, query.objectType));
+    if (pos)
+      conditions.push(
+        keysetBeforeId(
+          hrWorkflowInstances.createdAt,
+          hrWorkflowInstances.id,
+          pos,
+        ),
+      );
 
     const rows = await this.db
       .select({
@@ -124,7 +159,10 @@ export class HrWorkflowInstancesService {
       .from(hrWorkflowInstances)
       .innerJoin(users, eq(users.id, hrWorkflowInstances.requestedBy))
       .where(and(...conditions))
-      .orderBy(desc(hrWorkflowInstances.createdAt), desc(hrWorkflowInstances.id))
+      .orderBy(
+        desc(hrWorkflowInstances.createdAt),
+        desc(hrWorkflowInstances.id),
+      )
       .limit(query.limit + 1);
 
     return buildCursorPage(rows, query.limit, (row) => ({
@@ -183,7 +221,8 @@ export class HrWorkflowInstancesService {
     const cursorInstanceId = position ? Number(position.id) : undefined;
     if (
       position &&
-      (typeof cursorInstanceId !== "number" || !Number.isSafeInteger(cursorInstanceId) ||
+      (typeof cursorInstanceId !== "number" ||
+        !Number.isSafeInteger(cursorInstanceId) ||
         cursorInstanceId <= 0 ||
         position.sortValue !== position.id)
     ) {
@@ -191,8 +230,12 @@ export class HrWorkflowInstancesService {
     }
 
     const membershipId = actingMembershipId(u.principal);
-    if (membershipId == null) throw new BadRequestException("Organization membership required");
-    const actorPredicate = eq(hrWorkflowStepActions.actedByMembershipId, membershipId);
+    if (membershipId == null)
+      throw new BadRequestException("Organization membership required");
+    const actorPredicate = eq(
+      hrWorkflowStepActions.actedByMembershipId,
+      membershipId,
+    );
 
     const actionConditions = [
       eq(hrWorkflowStepActions.orgId, u.orgId),
@@ -200,7 +243,9 @@ export class HrWorkflowInstancesService {
       inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
     ];
     if (cursorInstanceId !== undefined) {
-      actionConditions.push(gt(hrWorkflowStepActions.instanceId, cursorInstanceId));
+      actionConditions.push(
+        gt(hrWorkflowStepActions.instanceId, cursorInstanceId),
+      );
     }
 
     const distinctRows = await this.db
@@ -235,64 +280,12 @@ export class HrWorkflowInstancesService {
     return { data: rows, pagination: page.pagination };
   }
 
-  async getInbox(u: CurrentUserContext, page: number, limit: number) {
-    const membershipId = actingMembershipId(u.principal);
-    if (membershipId == null) throw new BadRequestException("Organization membership required");
-    const { orgId } = u;
-    const now = new Date();
-    const delegations = await this.db
-      .select({
-        delegatorMembershipId: hrWorkflowDelegations.delegatorMembershipId,
-        endsAt: hrWorkflowDelegations.endsAt,
-      })
-      .from(hrWorkflowDelegations)
-      .where(
-        and(
-          eq(hrWorkflowDelegations.orgId, orgId),
-          eq(hrWorkflowDelegations.delegateMembershipId, membershipId),
-          eq(hrWorkflowDelegations.active, true),
-          lte(hrWorkflowDelegations.startsAt, now),
-        ),
-      )
-      .limit(50);
-
-    const allMembershipIds = [
-      membershipId,
-      ...delegations
-        .filter((d): d is typeof d & { delegatorMembershipId: number } => d.endsAt >= now && d.delegatorMembershipId != null)
-        .map((d) => d.delegatorMembershipId),
-    ];
-
-    const candidates = await this.db
-      .select({
-        id: hrWorkflowInstances.id,
-        orgId: hrWorkflowInstances.orgId,
-        definitionId: hrWorkflowInstances.definitionId,
-        objectType: hrWorkflowInstances.objectType,
-        objectId: hrWorkflowInstances.objectId,
-        requestedBy: hrWorkflowInstances.requestedBy,
-        subjectEmployeeId: hrWorkflowInstances.subjectEmployeeId,
-        context: hrWorkflowInstances.context,
-        status: hrWorkflowInstances.status,
-        currentStepOrder: hrWorkflowInstances.currentStepOrder,
-        dueAt: hrWorkflowInstances.dueAt,
-        createdAt: hrWorkflowInstances.createdAt,
-        updatedAt: hrWorkflowInstances.updatedAt,
-        definitionSnapshot: hrWorkflowInstances.definitionSnapshot,
-      })
-      .from(hrWorkflowInstances)
-      .where(
-        and(
-          eq(hrWorkflowInstances.orgId, orgId),
-          or(
-            eq(hrWorkflowInstances.status, "in_progress"),
-            eq(hrWorkflowInstances.status, "pending"),
-          ),
-        ),
-      )
-      .orderBy(desc(hrWorkflowInstances.createdAt))
-      .limit(limit * 5);
-
+  private async routedToMembershipIds(
+    orgId: string,
+    candidates: WorkflowInboxCandidate[],
+    allMembershipIds: readonly number[],
+    stopAt: number,
+  ): Promise<WorkflowInboxCandidate[]> {
     const cache = await this.buildApproverCache(
       orgId,
       candidates.map((i) => i.subjectEmployeeId),
@@ -302,37 +295,90 @@ export class HrWorkflowInstancesService {
     for (const instance of candidates) {
       const snapshotSteps = instance.definitionSnapshot.steps;
       if (!isResolvedStepArray(snapshotSteps)) continue;
-      const currentStep = snapshotSteps.find((s) => s.stepOrder === instance.currentStepOrder);
+      const currentStep = snapshotSteps.find(
+        (s) => s.stepOrder === instance.currentStepOrder,
+      );
       if (!currentStep) continue;
+      const persisted = persistedStepRouting(
+        instance.context,
+        currentStep.stepOrder,
+      );
       approversByInstance.set(
         instance.id,
-        this.resolveApproversFromCache(currentStep, instance.subjectEmployeeId, cache),
+        persisted
+          ? persisted.approverUserIds
+          : this.resolveApproversFromCache(
+              currentStep,
+              instance.subjectEmployeeId,
+              cache,
+            ),
       );
     }
 
-    const approverUserIds = [...new Set([...approversByInstance.values()].flat())];
-    const approverMembers = approverUserIds.length === 0
-      ? []
-      : await this.db
-        .select({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
-        .from(organizationMembers)
-        .where(and(
-          eq(organizationMembers.orgId, orgId),
-          inArray(organizationMembers.userId, approverUserIds),
-        ))
-        .limit(approverUserIds.length);
-    const membershipIdByUserId = new Map(approverMembers.map((member) => [member.userId, member.membershipId]));
+    const approverUserIds = [
+      ...new Set([...approversByInstance.values()].flat()),
+    ];
+    const approverMembers =
+      approverUserIds.length === 0
+        ? []
+        : await this.db
+            .select({
+              userId: organizationMembers.userId,
+              membershipId: organizationMembers.id,
+            })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                inArray(organizationMembers.userId, approverUserIds),
+              ),
+            )
+            .limit(approverUserIds.length);
+    const membershipIdByUserId = new Map(
+      approverMembers.map((member) => [member.userId, member.membershipId]),
+    );
 
-    const myInstances: (typeof candidates)[number][] = [];
+    const myInstances: WorkflowInboxCandidate[] = [];
     for (const instance of candidates) {
       const approvers = approversByInstance.get(instance.id) ?? [];
-      if (approvers.some((userId) => {
-        const approverMembershipId = membershipIdByUserId.get(userId);
-        return approverMembershipId != null && allMembershipIds.includes(approverMembershipId);
-      }))
+      if (
+        approvers.some((userId) => {
+          const approverMembershipId = membershipIdByUserId.get(userId);
+          return (
+            approverMembershipId != null &&
+            allMembershipIds.includes(approverMembershipId)
+          );
+        })
+      )
         myInstances.push(instance);
-      if (myInstances.length >= limit * page) break;
+      if (myInstances.length >= stopAt) break;
     }
+    return myInstances;
+  }
+
+  async getInbox(u: CurrentUserContext, page: number, limit: number) {
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null)
+      throw new BadRequestException("Organization membership required");
+    const { orgId } = u;
+    const allMembershipIds = await actingAndDelegatedMembershipIds(
+      this.db,
+      orgId,
+      membershipId,
+    );
+    const candidates = await readInboxCandidates(
+      this.db,
+      orgId,
+      limit * 5,
+      null,
+      false,
+    );
+    const myInstances = await this.routedToMembershipIds(
+      orgId,
+      candidates,
+      allMembershipIds,
+      limit * page,
+    );
 
     const offset = (page - 1) * limit;
     return {
@@ -341,6 +387,47 @@ export class HrWorkflowInstancesService {
       page,
       limit,
     };
+  }
+
+  async pendingRoutedToPage(
+    orgId: string,
+    membershipId: number,
+    limit: number,
+    cursor: DescKeysetPosition | null,
+  ): Promise<WorkflowInboxCandidate[]> {
+    const allMembershipIds = await actingAndDelegatedMembershipIds(
+      this.db,
+      orgId,
+      membershipId,
+    );
+    const batchSize = Math.max(limit, 1) * WORKFLOW_INBOX_OVERFETCH;
+    const delivered: WorkflowInboxCandidate[] = [];
+    let position = cursor;
+
+    for (let batch = 0; batch < WORKFLOW_INBOX_MAX_BATCHES; batch++) {
+      const candidates = await readInboxCandidates(
+        this.db,
+        orgId,
+        batchSize,
+        position,
+        true,
+      );
+      if (candidates.length === 0) break;
+      delivered.push(
+        ...(await this.routedToMembershipIds(
+          orgId,
+          candidates,
+          allMembershipIds,
+          limit - delivered.length,
+        )),
+      );
+      const last = candidates[candidates.length - 1];
+      if (last === undefined) break;
+      position = { id: last.id, t: last.createdAt.toISOString() };
+      if (delivered.length >= limit || candidates.length < batchSize) break;
+    }
+
+    return delivered.slice(0, limit);
   }
 
   private async buildApproverCache(orgId: string, subjectIds: string[]) {
@@ -387,8 +474,17 @@ export class HrWorkflowInstancesService {
         ? this.db
             .select({ id: orgUnits.id, managerId: organizationMembers.userId })
             .from(orgUnits)
-            .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
-            .where(and(inArray(orgUnits.id, deptIds), eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)))
+            .leftJoin(
+              organizationMembers,
+              eq(organizationMembers.id, orgUnits.headMembershipId),
+            )
+            .where(
+              and(
+                inArray(orgUnits.id, deptIds),
+                eq(orgUnits.orgId, orgId),
+                isNull(orgUnits.deletedAt),
+              ),
+            )
             .limit(deptIds.length)
         : Promise.resolve([]),
       locationIds.length > 0 && hrUserIds.length > 0
@@ -434,7 +530,8 @@ export class HrWorkflowInstancesService {
       case "named_user":
         return step.approverValue ? [step.approverValue] : [];
       case "direct_manager": {
-        const managerUserId = cache.subjectMap.get(subjectEmployeeId)?.managerUserId;
+        const managerUserId =
+          cache.subjectMap.get(subjectEmployeeId)?.managerUserId;
         return managerUserId ? [managerUserId] : [];
       }
       case "managers_manager": {

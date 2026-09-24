@@ -1,5 +1,7 @@
 import { SupportAiTriageService } from "./support-ai-triage.service";
 import type { Db } from "../../../db/drizzle.module";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -32,12 +34,13 @@ const TICKET = {
 };
 
 describe("SupportAiTriageService — cross-tenant isolation", () => {
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
   describe("suggestMacro", () => {
     it("returns null and scopes macro query to caller org (DENY — cross-tenant isolation)", async () => {
       const findManyMock = jest.fn().mockResolvedValue([]);
-      const db = {
+      const db = withDelegatingTransaction({
         query: { supportMacros: { findMany: findManyMock } },
-      } as unknown as Db;
+      }) as unknown as Db;
 
       const data = {
         isAvailable: jest.fn().mockResolvedValue(true),
@@ -68,9 +71,9 @@ describe("SupportAiTriageService — cross-tenant isolation", () => {
     it("returns a suggestion when owner org has matching macros (CONTROL — same-tenant access works)", async () => {
       const macroRows = [{ id: 1, title: "Standard response", body: "We are looking into this." }];
       const findManyMock = jest.fn().mockResolvedValue(macroRows);
-      const db = {
+      const db = withDelegatingTransaction({
         query: { supportMacros: { findMany: findManyMock } },
-      } as unknown as Db;
+      }) as unknown as Db;
 
       const suggestion = { id: 5, type: "macro", status: "pending", payload: { macroId: 1, reason: "fits" }, confidence: null, createdAt: new Date() };
 

@@ -5,6 +5,7 @@ import {
   riskStatusEnum,
   decisionStatusEnum,
 } from "../../../../db/schema";
+import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
 
 export const createRiskSchema = z.object({
   title: z.string().min(1).max(500),
@@ -30,6 +31,7 @@ export const updateRiskSchema = z.object({
 
 export const listRisksQuerySchema = z.object({
   status: z.enum(riskStatusEnum.enumValues).optional(),
+  cursor: idCursorSchema,
 }).strict();
 
 export const createDecisionSchema = z.object({
@@ -58,6 +60,7 @@ export const updateDecisionSchema = z.object({
 
 export const listDecisionsQuerySchema = z.object({
   status: z.enum(decisionStatusEnum.enumValues).optional(),
+  cursor: idCursorSchema,
 }).strict();
 
 export type CreateRiskInput = z.infer<typeof createRiskSchema>;

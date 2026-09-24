@@ -161,7 +161,10 @@ export class CrmMcpService {
        * must stay distinguishable.
        */
       if (decision.reason === "NO_MODULE") {
-        throw new ModuleDisabledException(namespaceOf(tool.requiredPermission));
+        throw new ModuleDisabledException(
+          namespaceOf(tool.requiredPermission),
+          decision.moduleReason ?? "org-disabled",
+        );
       }
       throw new ForbiddenException(
         `Agent lacks required permission '${tool.requiredPermission}' for tool '${tool.name}'`,

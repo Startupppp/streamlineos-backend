@@ -4,10 +4,14 @@ import type { TenantTx } from "../../../db/drizzle.types";
 import { createTenantAwareDb, type DbWithClient } from "../../../common/tenant/tenant-db";
 import { runWithTenantContext, type AfterCommitHook } from "../../../common/tenant/tenant-context";
 import { EmailOutboxService } from "../../email/email-outbox.service";
+import { EmailService } from "../../email/email.service";
+import type { EmailProviderService } from "../../email/email.provider";
 import type { EmailDispatcher } from "../../email/email-provider-selection";
 import type { EmailSuppressionService } from "../../email/email-suppression.service";
 
 const ORG_ID = "org-durability";
+const INVITEE = "invitee@example.com";
+const ORG_NAME = "Acme";
 
 interface RecordedInsert {
   handle: "ambient-tx" | "pool";
@@ -45,7 +49,7 @@ function neverSuppressed(): EmailSuppressionService {
 function makeOutbox(
   provider: EmailDispatcher,
   sink: RecordedInsert[],
-): { outbox: EmailOutboxService; ambientTx: TenantTx } {
+): { outbox: EmailOutboxService; email: EmailService; ambientTx: TenantTx; poolTx: TenantTx } {
   const poolHandle = makeInsertRecorder("pool", sink);
   const ambientHandle = makeInsertRecorder("ambient-tx", sink);
   const db = createTenantAwareDb(
@@ -54,7 +58,8 @@ function makeOutbox(
   const outbox = new EmailOutboxService(db as unknown as Db, neverSuppressed(), provider);
   jest.spyOn(outbox["logger"], "warn").mockImplementation(() => undefined);
   jest.spyOn(outbox["logger"], "error").mockImplementation(() => undefined);
-  return { outbox, ambientTx: ambientHandle as unknown as TenantTx };
+  const email = new EmailService(outbox, provider as unknown as EmailProviderService);
+  return { outbox, email, ambientTx: ambientHandle as unknown as TenantTx, poolTx: poolHandle as unknown as TenantTx };
 }
 
 function withAmbientTransaction<T>(
@@ -72,33 +77,35 @@ describe("invitation delivery durability — the enqueue path", () => {
   it("writes the queued email through the request transaction, so a rolled-back invitation takes it with it", async () => {
     const sink: RecordedInsert[] = [];
     const dispatch = jest.fn(() => Promise.resolve());
-    const { outbox, ambientTx } = makeOutbox(
+    const { email, ambientTx, poolTx } = makeOutbox(
       { sendEmailOnceDirect: dispatch, getEmailProvider: () => "resend" } as unknown as EmailDispatcher,
       sink,
     );
 
     await withAmbientTransaction(ambientTx, [], () =>
-      outbox.enqueueOnly({ to: "invitee@example.com", subject: "Join", html: "<p>x</p>" }),
+      email.queueInvitationEmail(INVITEE, "tok", ORG_NAME),
     );
 
     expect(sink).toHaveLength(1);
     expect(sink[0]?.handle).toBe("ambient-tx");
     expect(sink.some((row) => row.handle === "pool")).toBe(false);
 
-    await outbox.enqueueOnly({ to: "invitee@example.com", subject: "Join", html: "<p>x</p>" });
+    await withAmbientTransaction(poolTx, [], () =>
+      email.queueInvitationEmail(INVITEE, "tok", ORG_NAME),
+    );
     expect(sink[1]?.handle).toBe("pool");
   });
 
   it("writes a row the retry relay will drain, which is what makes it survive process death", async () => {
     const sink: RecordedInsert[] = [];
-    const { outbox, ambientTx } = makeOutbox(
+    const { email, ambientTx } = makeOutbox(
       { sendEmailOnceDirect: jest.fn(), getEmailProvider: () => "resend" } as unknown as EmailDispatcher,
       sink,
     );
 
     const before = Date.now();
     await withAmbientTransaction(ambientTx, [], () =>
-      outbox.enqueueOnly({ to: "invitee@example.com", subject: "Join", html: "<p>x</p>" }),
+      email.queueInvitationEmail(INVITEE, "tok", ORG_NAME),
     );
 
     const row = sink[0]?.values;
@@ -106,6 +113,7 @@ describe("invitation delivery durability — the enqueue path", () => {
     expect(row?.attempts).toBe(0);
     expect(row?.organizationId).toBe(ORG_ID);
     expect(row?.scope).toBe("TENANT");
+    expect(row?.toEmail).toBe(INVITEE);
     expect((row?.nextAttemptAt as Date).getTime()).toBeGreaterThanOrEqual(before - 1000);
     expect((row?.nextAttemptAt as Date).getTime()).toBeLessThanOrEqual(Date.now());
   });
@@ -113,16 +121,39 @@ describe("invitation delivery durability — the enqueue path", () => {
   it("makes no provider call while the request transaction is open", async () => {
     const sink: RecordedInsert[] = [];
     const dispatch = jest.fn(() => Promise.resolve());
-    const { outbox, ambientTx } = makeOutbox(
+    const { email, ambientTx } = makeOutbox(
       { sendEmailOnceDirect: dispatch, getEmailProvider: () => "resend" } as unknown as EmailDispatcher,
       sink,
     );
 
     await withAmbientTransaction(ambientTx, [], () =>
-      outbox.enqueueOnly({ to: "invitee@example.com", subject: "Join", html: "<p>x</p>" }),
+      email.queueInvitationEmail(INVITEE, "tok", ORG_NAME),
     );
 
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("never reaches the try-now exit, whose transient branch returns without throwing and leaves deliveryFailed false forever", async () => {
+    const sink: RecordedInsert[] = [];
+    const dispatch = jest.fn(() =>
+      Promise.reject(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" })),
+    );
+    const { outbox, email, ambientTx } = makeOutbox(
+      { sendEmailOnceDirect: dispatch, getEmailProvider: () => "resend" } as unknown as EmailDispatcher,
+      sink,
+    );
+    const tryNow = jest.spyOn(outbox, "enqueueAndTry");
+
+    await expect(
+      withAmbientTransaction(ambientTx, [], () =>
+        email.queueInvitationEmail(INVITEE, "tok", ORG_NAME),
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(tryNow).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(sink).toHaveLength(1);
+    expect(sink[0]?.values.status).toBe("PENDING");
   });
 
   it("leaves the try-now path's terminal row outside the relay's predicate, so its guarantee is weaker", async () => {

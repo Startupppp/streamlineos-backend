@@ -1,7 +1,44 @@
 import type { AiCreditLedger } from "./credit-ledger.interface";
 import type { AiUsageService } from "../services/ai-usage.service";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
+import { logger } from "../../../../common/logger/logger.service";
 import type { AiCallOutcome, AiCallTimings } from "../telemetry/ai-call-metrics";
+
+export interface ReservationHandle {
+  readonly reservationId: number;
+  release: (reason: string) => void;
+  markSettled: () => boolean;
+}
+
+export function makeReservationHandle(
+  id: number,
+  orgId: string,
+  ledger: AiCreditLedger,
+  feature: string,
+): ReservationHandle {
+  let disposed = false;
+  return {
+    reservationId: id,
+    release(reason: string): void {
+      if (disposed || id === 0) return;
+      disposed = true;
+      void ledger.release(id, reason, orgId).catch((err: unknown) => {
+        logger.error("Failed to release AI credit reservation", {
+          error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+          reason,
+          reservationId: id,
+          feature,
+          orgId,
+        });
+      });
+    },
+    markSettled(): boolean {
+      if (disposed) return false;
+      disposed = true;
+      return true;
+    },
+  };
+}
 
 export interface StreamSettlement {
   reservationId: number;

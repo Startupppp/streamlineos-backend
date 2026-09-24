@@ -100,7 +100,7 @@ export const chatChannelInviteLinks = pgTable(
     channelId: integer("channel_id")
       .notNull(),
     token: text("token"),
-    tokenHash: text("token_hash"),
+    tokenHash: text("token_hash").notNull(),
     tokenEncrypted: text("token_encrypted"),
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -110,7 +110,6 @@ export const chatChannelInviteLinks = pgTable(
     useCount: integer("use_count").notNull().default(0),
   },
   (table) => [
-    uniqueIndex("uniq_chat_invite_link_token").on(table.token),
     uniqueIndex("uniq_chat_invite_link_token_hash").on(table.tokenHash),
     uniqueIndex("uniq_chat_invite_active_link_channel")
       .on(table.orgId, table.channelId)

@@ -16,7 +16,6 @@ const TICKET = {
   priority: "MEDIUM",
   projectId: 1,
   ticketNumber: 101,
-  sprintId: null,
   epicId: null,
   assigneeMembershipId: null,
   reporterId: "user_1",

@@ -30,6 +30,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { NoTenantTransaction } from "../../../common/tenant";
 import {
   kbFeedbackListSchema,
   kbCommentListSchema,
@@ -167,6 +168,7 @@ export class SupportKbEngagementController {
   }
 
   @Post("ask")
+  @NoTenantTransaction()
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
   @HttpCode(200)

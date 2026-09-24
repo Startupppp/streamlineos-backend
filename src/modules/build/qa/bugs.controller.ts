@@ -31,7 +31,12 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { bugRowSchema } from "./dto/qa-response.schemas";
 
-const bugIdParams = z.object({ bugId: z.coerce.number().int().positive() }).strict();
+const bugRouteParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    bugId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/bugs")
@@ -54,13 +59,13 @@ export class BugsController {
   @Get(":bugId")
   @RequirePermission("build:bugs:view")
   @ResponseSchema(bugRowSchema)
-  @Validate({ params: bugIdParams })
+  @Validate({ params: bugRouteParams })
   getBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("bugId", ParseIntPipe) bugId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getBug(u.orgId, projectId, bugId);
+    return this.svc.getBug(u, projectId, bugId);
   }
 
   @Post()
@@ -79,26 +84,26 @@ export class BugsController {
   @Patch(":bugId")
   @RequirePermission("build:bugs:update")
   @ResponseSchema(bugRowSchema)
-  @Validate({ params: bugIdParams, body: updateBugSchema })
+  @Validate({ params: bugRouteParams, body: updateBugSchema })
   updateBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("bugId", ParseIntPipe) bugId: number,
     @Body() body: UpdateBugInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateBug(u.orgId, u.userId, projectId, bugId, body);
+    return this.svc.updateBug(u, projectId, bugId, body);
   }
 
   @Delete(":bugId")
   @RequirePermission("build:bugs:delete")
   @HttpCode(204)
   @NoContentResponse()
-  @Validate({ params: bugIdParams })
+  @Validate({ params: bugRouteParams })
   deleteBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("bugId", ParseIntPipe) bugId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteBug(u.orgId, projectId, bugId);
+    return this.svc.deleteBug(u, projectId, bugId);
   }
 }

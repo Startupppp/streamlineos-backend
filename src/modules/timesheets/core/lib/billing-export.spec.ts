@@ -9,15 +9,6 @@ import {
   exportBilling,
 } from "./billing-export";
 
-/**
- * The regression a chunked export invites is one export split in two: a
- * `timesheet_exports` row per chunk, or a period whose last chunk is never
- * read. This fake answers each read from an in-memory table using the cursor
- * and invoicing status the code actually bound into its SQL, so a loop that
- * forgets to advance, stops a chunk early or re-reads one shows up as a wrong
- * count instead of passing on a canned response.
- */
-
 const dialect = new PgDialect();
 const ORG = "org-1";
 const PERIOD = { startDate: "2026-08-01", endDate: "2026-08-31" };
@@ -55,7 +46,6 @@ function render(fragment: unknown): Query {
   );
 }
 
-/** What the code bound to `"timesheets"."<column>" <op> $n`, if anything. */
 function bound(q: Query, column: string, op: "=" | ">"): unknown {
   const m = new RegExp(`"timesheets"\\."${column}" ${op} \\$(\\d+)`).exec(
     q.sql,
@@ -71,7 +61,6 @@ function boundIds(q: Query): number[] {
     .map((p) => q.params[Number(p.trim().slice(1)) - 1] as number);
 }
 
-/** Ids step by 7 and are stored newest-first, so the cursor has to come from the rows, not from counting. */
 function rows(count: number, firstId: number, invoicingStatus = "UNINVOICED"): Row[] {
   return Array.from({ length: count }, (_, i) => ({
     id: firstId + i * 7,
@@ -175,8 +164,6 @@ function fakeDb(table: Row[], stored: StoredExport | null = null) {
     },
   };
 
-  // Only the idempotency lookup and the transaction live on the pool: a period
-  // read or a flip here would escape the transaction, so it throws.
   const db = {
     select: () => ({
       from(t: unknown) {
@@ -209,7 +196,6 @@ const byId = (a: number, b: number) => a - b;
 const snapshotIds = (row: Record<string, unknown> | undefined) =>
   (row?.snapshot as { id: number }[]).map((e) => e.id);
 
-/** One read per full chunk, plus the short or empty one that ends the loop. */
 const readsFor = (n: number) => Math.floor(n / BILLING_EXPORT_CHUNK) + 1;
 
 const SPANS = [
@@ -274,7 +260,6 @@ describe("exportBilling over a period longer than one chunk", () => {
         totalHours: String(n * 1.5),
       });
       expect(snapshotIds(fake.inserted[0])).toEqual(expectedIds);
-      // An export reports the period; only the draft claims it.
       expect(fake.flips).toEqual([]);
       expect(result).toEqual({
         exportId: 501,

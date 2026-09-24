@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { projectDecisions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -8,6 +8,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import type { CreateDecisionInput, ListDecisionsQuery, UpdateDecisionInput } from "./dto/governance.schemas";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 
 type DecisionPatch = Partial<
   Pick<
@@ -45,9 +46,11 @@ export class DecisionsService {
     return row;
   }
 
+  private static readonly PAGE_LIMIT = 100;
+
   async listDecisions(u: CurrentUserContext, projectId: number, query: ListDecisionsQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
-    return this.db
+    const rows = await this.db
       .select()
       .from(projectDecisions)
       .where(
@@ -56,13 +59,16 @@ export class DecisionsService {
           eq(projectDecisions.projectId, projectId),
           isNull(projectDecisions.deletedAt),
           query.status ? eq(projectDecisions.status, query.status) : undefined,
+          query.cursor !== undefined ? lt(projectDecisions.id, query.cursor) : undefined,
         ),
       )
-      .orderBy(desc(projectDecisions.createdAt))
-      .limit(100);
+      .orderBy(desc(projectDecisions.id))
+      .limit(DecisionsService.PAGE_LIMIT + 1);
+    return buildIdCursorPage(rows, DecisionsService.PAGE_LIMIT, (r) => r.id);
   }
 
   async getDecision(u: CurrentUserContext, projectId: number, decisionId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.loadDecision(u.orgId, projectId, decisionId);
   }
 
@@ -112,6 +118,7 @@ export class DecisionsService {
     decisionId: number,
     input: UpdateDecisionInput,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadDecision(u.orgId, projectId, decisionId);
     const patch: DecisionPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -127,7 +134,7 @@ export class DecisionsService {
     const [updated] = await this.db
       .update(projectDecisions)
       .set(patch)
-      .where(and(eq(projectDecisions.id, decisionId), eq(projectDecisions.orgId, u.orgId)))
+      .where(and(eq(projectDecisions.id, decisionId), eq(projectDecisions.orgId, u.orgId), eq(projectDecisions.projectId, projectId)))
       .returning();
     if (!updated) throw new NotFoundException("Decision not found");
 
@@ -143,11 +150,12 @@ export class DecisionsService {
   }
 
   async softDeleteDecision(u: CurrentUserContext, projectId: number, decisionId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadDecision(u.orgId, projectId, decisionId);
     await this.db
       .update(projectDecisions)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectDecisions.id, decisionId), eq(projectDecisions.orgId, u.orgId)));
+      .where(and(eq(projectDecisions.id, decisionId), eq(projectDecisions.orgId, u.orgId), eq(projectDecisions.projectId, projectId)));
     this.audit.log({
       action: "decision.deleted",
       userId: u.userId,

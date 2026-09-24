@@ -10,6 +10,8 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../../common/tenant";
+import { BooksService } from "../kernel/books.service";
 import type { DbOrTx } from "../kernel/sequence.service";
 import type {
   CompliancePayload,
@@ -22,6 +24,18 @@ export interface ComplianceDecision {
   status: ComplianceStatus;
   reason: string;
 }
+
+export type ComplianceState = Pick<
+  typeof documentCompliance.$inferSelect,
+  "transport" | "status" | "authorityId" | "ackNo" | "ackAt" | "errors" | "cancelledAt"
+>;
+
+export type FileDocumentResult =
+  | { outcome: "no-book" }
+  | { outcome: "no-decision" }
+  | { outcome: "not-reportable" }
+  | { outcome: "no-payload" }
+  | { outcome: "filed"; result: TransportResult; states: ComplianceState[] };
 
 /**
  * E-invoicing and e-reporting state (PRD 13).
@@ -36,7 +50,10 @@ export interface ComplianceDecision {
  */
 @Injectable()
 export class ComplianceService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly books: BooksService,
+  ) {}
 
   /**
    * Decide the transport and initial status for a document at post time.
@@ -164,36 +181,78 @@ export class ComplianceService {
    * `acknowledgementOnFile`, which is why a second submit cannot produce a
    * second IRN.
    */
-  async submitToTransport(
+  async fileDocument(
+    orgId: string,
+    documentType: string,
+    documentId: string,
+    adapter: ComplianceTransportAdapter,
+  ): Promise<FileDocumentResult> {
+    const prepared = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      const book = await this.books.findDefault(orgId, tx);
+      if (!book) return { step: "no-book" } as const;
+
+      const [state] = await this.get(orgId, book.id, documentType, documentId, tx);
+      if (!state) return { step: "no-decision" } as const;
+      if (state.status === "not_required") return { step: "not-reportable" } as const;
+
+      const filed = await this.acknowledgementOnFile(
+        orgId,
+        book.id,
+        documentType,
+        documentId,
+        adapter.transport,
+        tx,
+      );
+      if (filed) return { step: "on-file", bookId: book.id, result: filed } as const;
+
+      const payload = await this.payloadForDocument(orgId, book.id, documentType, documentId, tx);
+      if (!payload) return { step: "no-payload" } as const;
+
+      return { step: "ready", bookId: book.id, payload } as const;
+    });
+
+    if (prepared.step === "no-book") return { outcome: "no-book" };
+    if (prepared.step === "no-decision") return { outcome: "no-decision" };
+    if (prepared.step === "not-reportable") return { outcome: "not-reportable" };
+    if (prepared.step === "no-payload") return { outcome: "no-payload" };
+
+    const result =
+      prepared.step === "on-file" ? prepared.result : await adapter.submit(prepared.payload);
+
+    const states = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      if (prepared.step === "ready")
+        await this.recordTransportResult(
+          orgId,
+          prepared.bookId,
+          documentType,
+          documentId,
+          adapter.transport,
+          result,
+          tx,
+        );
+      return this.get(orgId, prepared.bookId, documentType, documentId, tx);
+    });
+
+    return { outcome: "filed", result, states };
+  }
+
+  private async recordTransportResult(
     orgId: string,
     bookId: string,
     documentType: string,
     documentId: string,
-    adapter: ComplianceTransportAdapter,
-    payload: CompliancePayload,
-    tx: DbOrTx = this.db,
-  ): Promise<TransportResult> {
-    const filed = await this.acknowledgementOnFile(
-      orgId,
-      bookId,
-      documentType,
-      documentId,
-      adapter.transport,
-      tx,
-    );
-    if (filed) return filed;
-
-    const result = await adapter.submit(payload);
-    const now = new Date();
-
+    transport: ComplianceTransport,
+    result: TransportResult,
+    tx: DbOrTx,
+  ): Promise<void> {
     const row = {
       orgId,
       bookId,
       documentType,
       documentId,
-      transport: adapter.transport,
+      transport,
       enforcementAtPost: "off" as const,
-      lastAttemptAt: now,
+      lastAttemptAt: new Date(),
       ...this.columnsFor(result),
     };
 
@@ -216,8 +275,6 @@ export class ComplianceService {
         */
         set: this.columnsFor(result),
       });
-
-    return result;
   }
 
   /**
@@ -338,7 +395,7 @@ export class ComplianceService {
    * and its deprecation is the subject of `docs/adr-legacy-invoices-vs-ar.md`;
    * offering to file from it would deepen a dependency that is being retired.
    */
-  async payloadForDocument(
+  private async payloadForDocument(
     orgId: string,
     bookId: string,
     documentType: string,
@@ -399,8 +456,14 @@ export class ComplianceService {
     };
   }
 
-  async get(orgId: string, bookId: string, documentType: string, documentId: string) {
-    return this.db
+  async get(
+    orgId: string,
+    bookId: string,
+    documentType: string,
+    documentId: string,
+    tx: DbOrTx = this.db,
+  ): Promise<ComplianceState[]> {
+    return tx
       .select({
         transport: documentCompliance.transport,
         status: documentCompliance.status,

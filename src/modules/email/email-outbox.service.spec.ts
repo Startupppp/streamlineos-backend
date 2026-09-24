@@ -1,5 +1,11 @@
-import type { EmailDispatcher } from "./email-provider-selection";
-import { EmailOutboxService } from "./email-outbox.service";
+import type { Db } from "../../db/drizzle.module";
+import type { EmailDispatcher, EmailOptions } from "./email-provider-selection";
+import {
+  EmailOutboxService,
+  INLINE_SEND_BUDGET_MS,
+  NO_EMAIL_PROVIDER_REASON,
+  SUPPRESSED_RECIPIENT_REASON,
+} from "./email-outbox.service";
 import type { EmailSuppressionService } from "./email-suppression.service";
 
 function suppressionStub(): EmailSuppressionService {
@@ -15,6 +21,132 @@ function emailProviderStub(): EmailDispatcher {
     dispatchEmail: () => Promise.resolve(),
   };
 }
+
+interface SendingDouble {
+  readonly db: Db;
+  readonly updated: jest.Mock;
+}
+
+function sendingDouble(): SendingDouble {
+  const updated = jest.fn().mockReturnValue({
+    where: jest.fn().mockResolvedValue(undefined),
+  });
+  const db = {
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([{ id: "email-1" }]),
+      }),
+    }),
+    update: jest.fn().mockReturnValue({ set: updated }),
+  };
+  return { db: db as never, updated };
+}
+
+function sendingService(
+  sendEmailOnceDirect: jest.Mock,
+): { service: EmailOutboxService; updated: jest.Mock } {
+  const { db, updated } = sendingDouble();
+  const provider: EmailDispatcher = {
+    getEmailProvider: () => "zeptomail",
+    sendEmailOnceDirect,
+    dispatchEmail: jest.fn(),
+  };
+  return {
+    service: new EmailOutboxService(db, suppressionStub(), provider),
+    updated,
+  };
+}
+
+const PLAIN_SEND: EmailOptions = {
+  to: "person@example.com",
+  subject: "Approval needed",
+  html: "<p>approve</p>",
+  organizationId: "org-1",
+};
+
+describe("EmailOutboxService.enqueueAndTry — the inline attempt holds a pooled connection", () => {
+  it("bounds the inline attempt to the connection-hold budget, because the row is already durable and the cron drain owns delivery", async () => {
+    const send = jest.fn().mockResolvedValue(undefined);
+    const { service } = sendingService(send);
+
+    await service.enqueueAndTry({ ...PLAIN_SEND });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: "Approval needed" }),
+      INLINE_SEND_BUDGET_MS,
+    );
+  });
+
+  it("leaves the row PENDING when the inline attempt exceeds its budget, so the drain still delivers it", async () => {
+    const send = jest
+      .fn()
+      .mockRejectedValue(new Error("Inline email send timed out after 5000ms"));
+    const { service, updated } = sendingService(send);
+
+    await expect(service.enqueueAndTry({ ...PLAIN_SEND })).resolves.toBeUndefined();
+
+    expect(updated).toHaveBeenCalledWith(
+      expect.objectContaining({ attempts: 1, nextAttemptAt: expect.any(Date) }),
+    );
+    expect(updated).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+
+  it("gives an attachment send the full provider timeout, because the outbox row stores no attachments and the inline attempt is its only one", async () => {
+    const send = jest.fn().mockResolvedValue(undefined);
+    const { service } = sendingService(send);
+
+    await service.enqueueAndTry({
+      ...PLAIN_SEND,
+      attachments: [{ filename: "payslip.pdf", content: "x", type: "application/pdf" }],
+    });
+
+    expect(send).toHaveBeenCalledWith(expect.anything(), undefined);
+  });
+
+  it("refuses to retry a send carrying headers, because the drain would redeliver it without its List-Unsubscribe", async () => {
+    const send = jest.fn().mockRejectedValue(new Error("ECONNRESET"));
+    const { service, updated } = sendingService(send);
+
+    await expect(
+      service.enqueueAndTry({
+        ...PLAIN_SEND,
+        headers: { "List-Unsubscribe": "<https://example.com/u/1>" },
+      }),
+    ).rejects.toThrow();
+
+    expect(updated).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+
+  it("refuses to retry a cc'd send, because the outbox row stores only the primary recipient", async () => {
+    const send = jest.fn().mockRejectedValue(new Error("ECONNRESET"));
+    const { service, updated } = sendingService(send);
+
+    await expect(
+      service.enqueueAndTry({ ...PLAIN_SEND, cc: ["manager@example.com"] }),
+    ).rejects.toThrow();
+
+    expect(updated).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+
+  it("treats an empty cc array as absent, so an ordinary send is still retryable", async () => {
+    const send = jest.fn().mockRejectedValue(new Error("ECONNRESET"));
+    const { service, updated } = sendingService(send);
+
+    await expect(
+      service.enqueueAndTry({ ...PLAIN_SEND, cc: [] }),
+    ).resolves.toBeUndefined();
+
+    expect(updated).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+});
 
 describe("EmailOutboxService.enqueueForDelivery", () => {
   it("bulk-enqueues one durable row per private recipient", async () => {
@@ -67,15 +199,15 @@ describe("EmailOutboxService.enqueueForDelivery", () => {
 
     await expect(
       service.enqueueForDelivery([
-        { to: "one@example.com", subject: "One", html: "one" },
-        { to: "two@example.com", subject: "Two", html: "two" },
+        { to: "one@example.com", subject: "One", html: "one", organizationId: "org-1" },
+        { to: "two@example.com", subject: "Two", html: "two", organizationId: "org-1" },
       ]),
     ).rejects.toThrow("Failed to enqueue all emails");
   });
 });
 
 describe("EmailOutboxService.enqueueOnly", () => {
-  it("records a suppressed recipient without queuing a pending delivery", async () => {
+  it("records a suppressed recipient without queuing a pending delivery, and says why nothing was queued", async () => {
     const values = jest.fn().mockResolvedValue(undefined);
     const suppression = {
       findSuppressed: jest
@@ -88,12 +220,14 @@ describe("EmailOutboxService.enqueueOnly", () => {
       emailProviderStub(),
     );
 
-    await service.enqueueOnly({
+    const outcome = await service.enqueueOnly({
       to: "blocked@example.com",
       subject: "Invitation",
       html: "invite",
+      organizationId: null,
     });
 
+    expect(outcome).toEqual({ queued: false, reason: SUPPRESSED_RECIPIENT_REASON });
     expect(suppression.findSuppressed).toHaveBeenCalledWith(
       ["blocked@example.com"],
       null,
@@ -105,5 +239,90 @@ describe("EmailOutboxService.enqueueOnly", () => {
         status: "SUPPRESSED",
       }),
     );
+  });
+
+  it("answers queued once the PENDING row is written", async () => {
+    const values = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 5 }]) });
+    const service = new EmailOutboxService(
+      { insert: jest.fn().mockReturnValue({ values }) } as never,
+      suppressionStub(),
+      emailProviderStub(),
+    );
+
+    const outcome = await service.enqueueOnly({
+      to: "new@example.com",
+      subject: "Welcome",
+      html: "<p>hi</p>",
+      organizationId: "org-1",
+      recipientUserId: "user-1",
+    });
+
+    expect(outcome).toEqual({ queued: true });
+    expect(values).toHaveBeenCalledWith([
+      expect.objectContaining({ toEmail: "new@example.com", status: "PENDING", recipientUserId: "user-1" }),
+    ]);
+  });
+
+  it("keeps a FAILED row and answers not queued when no provider is configured, so the caller cannot claim a send", async () => {
+    const values = jest.fn().mockResolvedValue(undefined);
+    const service = new EmailOutboxService(
+      { insert: jest.fn().mockReturnValue({ values }) } as never,
+      suppressionStub(),
+      { ...emailProviderStub(), getEmailProvider: () => "none" },
+    );
+
+    const outcome = await service.enqueueOnly({
+      to: "new@example.com",
+      subject: "Welcome",
+      html: "<p>hi</p>",
+      organizationId: "org-1",
+    });
+
+    expect(outcome).toEqual({ queued: false, reason: NO_EMAIL_PROVIDER_REASON });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toEmail: "new@example.com",
+        status: "FAILED",
+        attempts: 1,
+        lastError: "No email provider configured",
+      }),
+    );
+  });
+});
+
+describe("EmailOutboxService and the organization a send belongs to", () => {
+  function serviceThatRecords(rows: Record<string, unknown>[]) {
+    const values = jest.fn().mockImplementation((row: Record<string, unknown>) => {
+      rows.push(row);
+      return Promise.resolve();
+    });
+    return new EmailOutboxService(
+      { insert: jest.fn().mockReturnValue({ values }) } as never,
+      { findSuppressed: jest.fn().mockResolvedValue(new Set(["blocked@example.com"])) } as never,
+      { sendEmailOnceDirect: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+  }
+
+  it("refuses a send with neither an organization nor a tenant context, rather than attributing it to no tenant", async () => {
+    await expect(
+      serviceThatRecords([]).enqueueOnly({
+        to: "blocked@example.com",
+        subject: "Approval needed",
+        html: "<p>approve</p>",
+      }),
+    ).rejects.toThrow(/no organization to attribute this send to/);
+  });
+
+  it("accepts mail that says it has no tenant, so verification and password-reset still send", async () => {
+    const rows: Record<string, unknown>[] = [];
+    await serviceThatRecords(rows).enqueueOnly({
+      to: "blocked@example.com",
+      subject: "Verify your email",
+      html: "<p>verify</p>",
+      organizationId: null,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ organizationId: null, scope: "PLATFORM" });
   });
 });

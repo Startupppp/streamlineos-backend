@@ -14,6 +14,14 @@ import { join } from "node:path";
 
 const INVENTORY_ROOT = join(__dirname, "..");
 
+const MODULE_PREFIX = "modules/inventory/";
+
+export function inventoryRelativePath(path: string): string {
+  const normalised = path.replaceAll("\\", "/");
+  const at = normalised.indexOf(MODULE_PREFIX);
+  return at === -1 ? normalised : normalised.slice(at + MODULE_PREFIX.length);
+}
+
 export function inventoryControllerPaths(): string[] {
   const found: string[] = [];
   const walk = (dir: string): void => {
@@ -142,7 +150,7 @@ export function mutatingInventoryRoutes(): MutatingRoute[] {
 
   for (const path of inventoryControllerPaths()) {
     const source = readFileSync(path, "utf8");
-    const file = path.slice(path.indexOf("modules/inventory/") + "modules/inventory/".length);
+    const file = inventoryRelativePath(path);
     const base = /@Controller\(\s*["'`]([^"'`]*)["'`]/.exec(source)?.[1] ?? "";
     const fields = injectedFields(source, 0);
 

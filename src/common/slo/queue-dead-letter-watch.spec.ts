@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { QUEUE_SUBJECTS, QUEUE_SLOS } from "./index";
+import { QUEUE_SUBJECTS, QUEUE_SLOS } from ".";
 
 const BACKEND_ROOT = join(__dirname, "..", "..", "..");
 const SCRIPTS_ROOT = join(BACKEND_ROOT, "src", "scripts");

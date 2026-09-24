@@ -56,6 +56,16 @@ export class SignSettingsService {
     private readonly audit: SignAuditService,
   ) {}
 
+  async get(orgId: string): Promise<SignOrgSettingsPublic> {
+    const existing = await this.db.query.signOrgSettings.findFirst({
+      columns: { webhookSecret: false },
+      where: eq(signOrgSettings.orgId, orgId),
+    });
+    if (existing) return existing;
+    const { webhookSecret: _omitted, ...configDefaults } = DEFAULTS;
+    return { id: 0, orgId, createdAt: new Date(), updatedAt: new Date(), ...configDefaults };
+  }
+
   async getOrCreate(orgId: string): Promise<SignOrgSettingsPublic> {
     const existing = await this.db.query.signOrgSettings.findFirst({
       columns: { webhookSecret: false },

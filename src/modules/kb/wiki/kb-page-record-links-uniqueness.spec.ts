@@ -1,8 +1,16 @@
 import { ConflictException } from "@nestjs/common";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageRecordLinksService } from "./kb-page-record-links.service";
+
+function makeAuthMock() {
+  return {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-uniq", pageId: 7, action: "edit", via: "admin" }),
+  };
+}
 
 const BACKEND_ROOT = join(__dirname, "..", "..", "..", "..");
 
@@ -50,7 +58,7 @@ function makeDb(insertOutcome: { throws?: unknown; returns?: unknown[] }) {
 describe("KbPageRecordLinksService.add — the dedupe is backed by a constraint", () => {
   it("no longer reads for an existing link before inserting", async () => {
     const h = makeDb({ returns: [{ id: 1, ...DTO }] });
-    const service = new KbPageRecordLinksService(h.db);
+    const service = new KbPageRecordLinksService(h.db, makeAuthMock() as never);
 
     await service.add(makeUser(), PAGE_ID, { ...DTO });
 
@@ -63,7 +71,7 @@ describe("KbPageRecordLinksService.add — the dedupe is backed by a constraint"
       code: "23505",
       constraint: "uniq_kb_page_links_org_source_record",
     });
-    const service = new KbPageRecordLinksService(makeDb({ throws: violation }).db);
+    const service = new KbPageRecordLinksService(makeDb({ throws: violation }).db, makeAuthMock() as never);
 
     await expect(service.add(makeUser(), PAGE_ID, { ...DTO })).rejects.toBeInstanceOf(
       ConflictException,
@@ -73,7 +81,7 @@ describe("KbPageRecordLinksService.add — the dedupe is backed by a constraint"
   it("BITE: a unique violation nested in a Drizzle wrapper is still recognised", async () => {
     const inner = Object.assign(new Error("duplicate key"), { code: "23505" });
     const wrapped = Object.assign(new Error("Failed query"), { cause: inner });
-    const service = new KbPageRecordLinksService(makeDb({ throws: wrapped }).db);
+    const service = new KbPageRecordLinksService(makeDb({ throws: wrapped }).db, makeAuthMock() as never);
 
     await expect(service.add(makeUser(), PAGE_ID, { ...DTO })).rejects.toBeInstanceOf(
       ConflictException,
@@ -82,11 +90,24 @@ describe("KbPageRecordLinksService.add — the dedupe is backed by a constraint"
 
   it("does not swallow an unrelated database failure as a conflict", async () => {
     const other = Object.assign(new Error("deadlock detected"), { code: "40P01" });
-    const service = new KbPageRecordLinksService(makeDb({ throws: other }).db);
+    const service = new KbPageRecordLinksService(makeDb({ throws: other }).db, makeAuthMock() as never);
 
     await expect(service.add(makeUser(), PAGE_ID, { ...DTO })).rejects.toMatchObject({
       message: "deadlock detected",
     });
+  });
+
+  it("add requests 'edit' access not 'view' because creating a record link is a page mutation", async () => {
+    const h = makeDb({ returns: [{ id: 1, ...DTO }] });
+    const authMock = makeAuthMock();
+    const service = new KbPageRecordLinksService(h.db, authMock as never);
+
+    await service.add(makeUser(), PAGE_ID, { ...DTO });
+
+    expect(authMock.assertPageAccess).toHaveBeenCalledTimes(1);
+    const [, , action] = authMock.assertPageAccess.mock.calls[0] as [unknown, unknown, string];
+    expect(action).not.toBe("view");
+    expect(action).toBe("edit");
   });
 });
 

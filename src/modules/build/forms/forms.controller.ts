@@ -31,7 +31,7 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { formRowSchema } from "./dto/forms-response.schemas";
 
-const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
+export const formIdParams = z.object({ projectId: z.coerce.number().int().positive(), formId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/forms")

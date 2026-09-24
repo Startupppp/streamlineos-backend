@@ -181,7 +181,6 @@ describe("OrganizationCreationService", () => {
       "reserve-identity",
       "reserve-placement",
       "bootstrap-cell-organization",
-      "bootstrap-owner-membership",
       "activate-directory-projection",
     ]);
     expect(placeOrganization).toHaveBeenCalledWith(expect.anything(), {

@@ -1,5 +1,10 @@
+import type { FeedbucketMediaStorage } from "./feedbucket-submissions.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { ScopedRead } from "../access/scoped-read";
+
+const mockStorage: jest.Mocked<FeedbucketMediaStorage> = {
+  deleteFileIfPresent: jest.fn(),
+};
 
 describe("FeedbucketSubmissionsService user projection", () => {
   it("projects assignee identity without global-user secrets", async () => {
@@ -10,7 +15,11 @@ describe("FeedbucketSubmissionsService user projection", () => {
         from: () => ({ where: () => Promise.resolve([{ total: 0 }]) }),
       }),
     };
-    const service = new FeedbucketSubmissionsService(db as never);
+    const service = new FeedbucketSubmissionsService(
+      db as never,
+      mockStorage,
+      {} as unknown as import("../access/access.service").AccessService,
+    );
 
     await service.list(
       ScopedRead.of("org-1", "user-1", "all"),

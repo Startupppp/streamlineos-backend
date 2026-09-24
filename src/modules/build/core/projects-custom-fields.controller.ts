@@ -22,10 +22,10 @@ import {
   buildCustomFieldSchema,
   ticketFieldValueSchema,
 } from "./dto/build-core-response.schemas";
+import { projectAndTicketIdParams } from "./dto/build-params.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdfieldIdParams = z.object({ projectId: z.string().min(1), fieldId: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -62,11 +62,12 @@ export class ProjectsCustomFieldsController {
   @ResponseSchema(buildCustomFieldSchema)
   @Validate({ params: projectIdfieldIdParams, body: updateCustomFieldSchema })
   updateField(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body() body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.updateField(u.orgId, fieldId, body);
+    return this.customFields.updateField(u.orgId, projectId, fieldId, body);
   }
 
   @Delete(":projectId/custom-fields/:fieldId")
@@ -75,16 +76,17 @@ export class ProjectsCustomFieldsController {
   @NoContentResponse()
   @Validate({ params: projectIdfieldIdParams })
   deleteField(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.deleteField(u.orgId, fieldId);
+    return this.customFields.deleteField(u.orgId, projectId, fieldId);
   }
 
   @Get(":projectId/tickets/:ticketId/custom-field-values")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(ticketFieldValueSchema))
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   getTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -97,7 +99,7 @@ export class ProjectsCustomFieldsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
   @ResponseSchema(successSchema)
-  @Validate({ params: projectIdticketIdParams, body: upsertCustomFieldValuesSchema })
+  @Validate({ params: projectAndTicketIdParams, body: upsertCustomFieldValuesSchema })
   upsertTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,

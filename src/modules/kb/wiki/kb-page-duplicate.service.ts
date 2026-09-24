@@ -9,7 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { extractPageLinkIds } from "./kb-page-content.util";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
@@ -21,10 +21,11 @@ export class KbPageDuplicateService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async duplicate(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "view");
     const orgId = user.orgId;
     const root = await this.db.query.kbPages.findFirst({
       columns: { id: true },

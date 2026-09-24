@@ -135,6 +135,8 @@ const NOT_NULL_BLOCKERS: readonly string[] = [
   "ownership_transfers.from_membership_id",
   "ownership_transfers.initiated_by_membership_id",
   "ownership_transfers.to_membership_id",
+  "project_attachments.uploaded_by_membership_id",
+  "project_updates.author_membership_id",
   "support_tickets.created_by_membership_id",
 ];
 

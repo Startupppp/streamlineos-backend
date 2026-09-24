@@ -59,21 +59,6 @@ export const ACCOUNTING_NOTIFICATION_EVENTS = [
     { defaultChannels: IA },
   ),
   e(
-    "accounting.payment.failed",
-    "accounting",
-    "ACCOUNTING",
-    "Vendor payment failed",
-    {
-      defaultPriority: "CRITICAL",
-      defaultType: "ERROR",
-      defaultChannels: IA_EMAIL,
-      allowedChannels: ALLOWED_URGENT,
-      mandatory: true,
-      userConfigurable: false,
-      quietHoursBehavior: "always_bypass",
-    },
-  ),
-  e(
     "accounting.payment.recorded",
     "accounting",
     "ACCOUNTING",

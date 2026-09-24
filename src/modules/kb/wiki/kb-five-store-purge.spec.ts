@@ -1,5 +1,5 @@
 import { PgDialect, getTableConfig } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { kbArticleChunks, kbPages, kbArticles, kbSpaces } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -11,12 +11,6 @@ import {
 } from "../../../common/outbox/outbox-consumer.registry";
 import { KbAccessService } from "../core/kb-access.service";
 
-jest.mock("../retrieval/kb-page-access.util", () => ({
-  assertPageAccessible: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock("../retrieval/kb-project-access.util", () => ({
-  getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-}));
 jest.mock("./kb-page-attachment-purge", () => ({
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE: "kb:page:purge",
   recordPageAttachmentPurge: jest.fn(async () => mockPurgeKeys),
@@ -36,6 +30,11 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => {
     ),
   };
 });
+
+const auth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+};
 
 const mockPurgeKeys = ["kb-media/org-five/cover.webp"];
 const mockAttemptArgs: unknown[][] = [];
@@ -107,6 +106,7 @@ function makeTree() {
     { log: jest.fn() } as never,
     { deleteFileIfPresent: jest.fn().mockResolvedValue(true) } as never,
     { R2_KB_BUCKET_NAME: KB_BUCKET } as never,
+    auth as never,
   );
   return { service, deleted };
 }

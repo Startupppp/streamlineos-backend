@@ -1,12 +1,6 @@
+import { sql } from "drizzle-orm";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-jest.mock("../retrieval/kb-page-access.util", () => ({
-  assertPageAccessible: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock("../retrieval/kb-project-access.util", () => ({
-  getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-}));
 
 jest.mock("./kb-page-attachment-purge", () => ({
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE: "kb:page:purge",
@@ -94,6 +88,10 @@ const makeAudit = () => ({ log: jest.fn() });
 const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) });
 const KB_BUCKET = "kb-files";
 const makeConfig = () => ({ R2_KB_BUCKET_NAME: KB_BUCKET });
+const makeAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "manage", via: "admin" }),
+});
 
 describe("KbPageTreeService — every path that cascades kb_page_attachments records the objects first", () => {
   beforeEach(() => {
@@ -109,6 +107,7 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
       audit as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
   }
 
@@ -119,6 +118,7 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
 
     await svc.emptyTrash(makeUser());
@@ -177,6 +177,7 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
 
     await svc.hardDelete(makeUser(), 10);
@@ -192,6 +193,7 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
 
     await expect(svc.emptyTrash(makeUser())).rejects.toThrow("write-ahead failed");
@@ -205,6 +207,7 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
 
     await expect(svc.emptyTrash(makeUser())).resolves.toEqual({ purgedCount: 0 });

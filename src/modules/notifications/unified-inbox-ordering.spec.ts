@@ -204,6 +204,10 @@ function makeBuildApprovals(): BuildApprovalsInboxService {
   } as unknown as BuildApprovalsInboxService;
 }
 
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import('../attention/approval-adapter.registry').ApprovalAdapterRegistry;
+}
+
 function makeUser(): CurrentUserContext {
   return {
     userId: UID,
@@ -234,6 +238,7 @@ async function scroll(options: ScrollOptions): Promise<string[]> {
     makeMail(options.mail ?? []),
     makeBroadcasts(options.broadcasts ?? []).service,
     makeBuildApprovals(),
+  makeRegistry()
   );
   const user = makeUser();
   const delivered: string[] = [];
@@ -286,6 +291,7 @@ describe("unified inbox — keyset ordering agrees with the sources", () => {
       makeMail(),
       makeBroadcasts([]).service,
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -487,6 +493,7 @@ describe("unified inbox — keyset ordering agrees with the sources", () => {
       makeMail(),
       makeBroadcasts([]).service,
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -542,6 +549,7 @@ describe("unified inbox — keyset ordering agrees with the sources", () => {
       makeMail(),
       broadcasts.service,
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(

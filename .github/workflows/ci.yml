@@ -65,6 +65,16 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Test-inclusive typecheck. `pnpm typecheck` runs tsconfig.build.json, which
+      # EXCLUDES spec files; ts-jest runs with diagnostics: false. So typecheck is
+      # the ONLY gate that sees an arity change in a spec, and until this step the
+      # test-inclusive program was never run in CI at all.
+      #
+      # The heap is raised to 10240 (backend/CLAUDE.md §8); at 8192 tsc exits 134
+      # after printing zero errors — a silent false-pass, not a typecheck.
+      - name: Typecheck (test-inclusive)
+        run: pnpm typecheck:test
+
       - name: Lint
         run: pnpm lint
 
@@ -347,6 +357,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:type-assertions:self-test && pnpm check:type-assertions
 
+      # The process.env lint rule cannot tell "I fixed the read" from "I added my
+      # filename to the exemption list" — both make it pass. This caps the list so
+      # it may only shrink, and fails on a stale entry, which is a debt that was
+      # paid without the count ever falling. Measured at head: 62 files, rc=0.
+      - name: The process.env exemption list only shrinks
+        if: ${{ !cancelled() }}
+        run: pnpm check:process-env-ratchet:self-test && pnpm check:process-env-ratchet
+
       # CANNOT RUN IN CI — named prerequisite: a checkout of
       # Startupppp/streamlineos-frontend beside this repository. The gate
       # compares this repo's catalog against the frontend PermissionKey union
@@ -451,6 +469,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:route-duplicates:self-test && pnpm check:route-duplicates
 
+      - name: Strict params schemas declare every route param
+        if: ${{ !cancelled() }}
+        run: pnpm check:params-schema-completeness:self-test && pnpm check:params-schema-completeness
+
       - name: Published operations are registered and versioned
         if: ${{ !cancelled() }}
         run: pnpm check:contract-registry:self-test && pnpm check:contract-registry
@@ -519,6 +541,40 @@ jobs:
       - name: Plan limits are asserted before the insert
         if: ${{ !cancelled() }}
         run: pnpm check:plan-limit-enforcement:self-test && pnpm check:plan-limit-enforcement
+
+      # 2026-09-21 — the same shape as the plan-limit entry above, four times over.
+      # These four scripts were written, self-tested and DOCUMENTED as `pnpm check:*`
+      # in backend/docs (accounting-seam-dod.md says "Run the gate with:
+      # pnpm check:accounting-seam"), but no package.json entry ever existed, so every
+      # documented invocation failed and none had run once. check:gate-wiring could not
+      # see them: it verifies that DECLARED gates reach a run step, so a script file
+      # absent from package.json is outside what it reads. All four are static and were
+      # measured exit 0, self-test first, before being wired here.
+      - name: Accounting seam definition of done
+        if: ${{ !cancelled() }}
+        run: pnpm check:accounting-seam:self-test && pnpm check:accounting-seam
+
+      - name: Stock writers go through the kernel
+        if: ${{ !cancelled() }}
+        run: pnpm check:stock-writers:self-test && pnpm check:stock-writers
+
+      - name: Upserts onto a partial unique index repeat its predicate
+        if: ${{ !cancelled() }}
+        run: pnpm check:partial-index-upserts:self-test && pnpm check:partial-index-upserts
+
+      - name: Signed URLs are authorized before they are minted
+        if: ${{ !cancelled() }}
+        run: pnpm check:signed-url-authorization:self-test && pnpm check:signed-url-authorization
+
+      # Held back from the batch above because its self-test failed
+      # catchesRelativeEscape. The cause was a path bug, not the rule:
+      # resolvesInto compared `target.startsWith(dir + "/")` while resolve()
+      # yields "\" on Windows, so the relative-escape arm matched nothing on a
+      # developer machine and would have passed here on Linux regardless. It now
+      # decides containment with relative(), and all seven self-test checks pass.
+      - name: Timesheets does not import payroll or hr
+        if: ${{ !cancelled() }}
+        run: pnpm check:timesheets-payroll-boundary:self-test && pnpm check:timesheets-payroll-boundary
 
       # Derives the route list from the 12 Settings/organization/module-access
       # controllers themselves, so a 160th handler is picked up without editing the
@@ -896,6 +952,35 @@ jobs:
       - name: Real-database specs take the shared suite
         if: ${{ !cancelled() }}
         run: pnpm check:db-spec-gates:self-test && pnpm check:db-spec-gates
+
+      - name: Every outbound call declares an abort signal
+        if: ${{ !cancelled() }}
+        run: pnpm check:outbound-timeouts:self-test && pnpm check:outbound-timeouts
+
+      - name: An AI route does not hold a pooled connection across the model call
+        if: ${{ !cancelled() }}
+        run: pnpm check:ai-route-tenant-optout:self-test && pnpm check:ai-route-tenant-optout
+
+      - name: A read route does not write inside the request transaction
+        if: ${{ !cancelled() }}
+        run: pnpm check:get-route-writes:self-test && pnpm check:get-route-writes
+
+      - name: A route does not call out over the network holding a pooled connection
+        if: ${{ !cancelled() }}
+        run: pnpm check:request-txn-outbound:self-test && pnpm check:request-txn-outbound
+
+      - name: A periodic sweep over every organisation does not grow past its ceiling
+        if: ${{ !cancelled() }}
+        run: pnpm check:sweep-budget:self-test && pnpm check:sweep-budget
+
+      # Static-only: TypeScript AST walk of src/modules/build/**. Proves that every
+      # @ResponseSchema list handler's .select({}) projection covers the required fields
+      # of its item schema and projects nothing the schema will silently strip. No database,
+      # no credentials. RESOLVED_FLOOR=10 guards against a vacuous pass if the file walker
+      # stops reaching the source tree.
+      - name: List endpoint projections match their response schemas
+        if: ${{ !cancelled() }}
+        run: pnpm check:list-projections:self-test && pnpm check:list-projections
   # The golden path, on every pull request.
   #
   # It proves the one thing no unit test can: that buy -> receive -> put away ->
@@ -1049,6 +1134,18 @@ jobs:
       - name: ON DELETE SET NULL column lists (declaration half)
         if: ${{ !cancelled() }}
         run: pnpm check:set-null-column-lists:self-test
+
+      # The declaration half above knows WHICH 286 keys need a column list and can
+      # never know whether one was installed, because Drizzle's onDelete("set null")
+      # has no parameter for it. The migration SQL does say. This replays the corpus
+      # in journal order -- honouring both guarded-add idioms and the two
+      # catalog-driven sweeps that repair by name-free EXECUTE format -- and reads
+      # the installed column list out of the DDL. Fully hermetic: it opens no
+      # connection and needs no database. It does NOT replace the catalog half in
+      # db-gates.yml; text is not the catalog.
+      - name: ON DELETE SET NULL column lists (migration text half)
+        if: ${{ !cancelled() }}
+        run: pnpm check:set-null-migration-text:self-test && pnpm check:set-null-migration-text
 
       # The live ledger check needs a bootstrapped database; only its self-test is
       # hermetic. Wire the live half when a job here runs `pnpm db:bootstrap`.

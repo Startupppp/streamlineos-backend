@@ -9,7 +9,12 @@ import {
   hrWorkflowInstanceAttachments,
 } from "../../../db/schema/hr/workflow-engine";
 import { HrWorkflowApproverService } from "./hr-workflow-approver.service";
-import type { ResolvedStep } from "./hr-workflow-engine.types";
+import {
+  persistedStepRouting,
+  withStepRouting,
+  type HrWorkflowObjectType,
+  type ResolvedStep,
+} from "./hr-workflow-engine.types";
 
 @Injectable()
 export class HrWorkflowStepRunnerService {
@@ -39,7 +44,7 @@ export class HrWorkflowStepRunnerService {
 
     if (currentStep.mode === "parallel_any") {
       const nextStep = this.findNextStep(steps, currentStep.stepOrder);
-      return this.transitionToStep(instance.id, orgId, nextStep, steps);
+      return this.transitionToStep(instance, orgId, nextStep, steps);
     }
 
     if (currentStep.mode === "parallel_all") {
@@ -53,7 +58,7 @@ export class HrWorkflowStepRunnerService {
         .limit(1);
 
       const approvedCount = Number(approvedActions?.approvedCount ?? 0);
-      const resolvedApprovers = await this.approver.resolveApprovers(currentStep, instance.subjectEmployeeId, orgId);
+      const resolvedApprovers = await this.currentApprovers(instance, currentStep, orgId);
 
       if (approvedCount < resolvedApprovers.length) {
         return this.getInstanceOrThrow(orgId, instance.id);
@@ -61,22 +66,54 @@ export class HrWorkflowStepRunnerService {
     }
 
     const nextStep = this.findNextStep(steps, currentStep.stepOrder);
-    return this.transitionToStep(instance.id, orgId, nextStep, steps);
+    return this.transitionToStep(instance, orgId, nextStep, steps);
+  }
+
+  async currentApprovers(
+    instance: Pick<typeof hrWorkflowInstances.$inferSelect, "context" | "subjectEmployeeId" | "objectType">,
+    step: ResolvedStep,
+    orgId: string,
+  ): Promise<string[]> {
+    const persisted = persistedStepRouting(instance.context, step.stepOrder);
+    if (persisted) return persisted.approverUserIds;
+    return this.approver.resolveApprovers(step, instance.subjectEmployeeId, orgId, instance.objectType);
+  }
+
+  async routingFor(
+    step: ResolvedStep,
+    subjectEmployeeId: string,
+    orgId: string,
+    objectType: HrWorkflowObjectType,
+    context: Record<string, unknown>,
+  ): Promise<{ context: Record<string, unknown>; dueAt: Date | null }> {
+    const routing = await this.approver.resolveStepRouting(step, subjectEmployeeId, orgId, objectType);
+    const slaDueAt = step.slaHours ? new Date(Date.now() + step.slaHours * 3600_000) : null;
+    if (!routing) return { context, dueAt: slaDueAt };
+    return {
+      context: withStepRouting(context, step.stepOrder, routing),
+      dueAt: slaDueAt ?? new Date(routing.dueAt),
+    };
   }
 
   private findNextStep(steps: ResolvedStep[], currentOrder: number) {
     return steps.find((s) => s.stepOrder > currentOrder) ?? null;
   }
 
-  private async transitionToStep(instanceId: number, orgId: string, nextStep: ResolvedStep | null, steps: ResolvedStep[]) {
+  private async transitionToStep(
+    instance: typeof hrWorkflowInstances.$inferSelect,
+    orgId: string,
+    nextStep: ResolvedStep | null,
+    steps: ResolvedStep[],
+  ) {
+    const instanceId = instance.id;
     if (!nextStep) {
       await this.db.update(hrWorkflowInstances)
         .set({ status: "approved", updatedAt: new Date(), currentStepOrder: steps.at(-1)?.stepOrder ?? 0 })
         .where(and(eq(hrWorkflowInstances.id, instanceId), eq(hrWorkflowInstances.orgId, orgId)));
     } else {
-      const dueAt = nextStep.slaHours ? new Date(Date.now() + nextStep.slaHours * 3600_000) : null;
+      const { context, dueAt } = await this.routingFor(nextStep, instance.subjectEmployeeId, orgId, instance.objectType, instance.context);
       await this.db.update(hrWorkflowInstances)
-        .set({ currentStepOrder: nextStep.stepOrder, dueAt: dueAt ?? undefined, updatedAt: new Date() })
+        .set({ currentStepOrder: nextStep.stepOrder, dueAt: dueAt ?? undefined, context, updatedAt: new Date() })
         .where(and(eq(hrWorkflowInstances.id, instanceId), eq(hrWorkflowInstances.orgId, orgId)));
     }
     return this.getInstanceOrThrow(orgId, instanceId);

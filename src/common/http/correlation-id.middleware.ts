@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { runWithObservabilityContext } from "../observability/observability-context";
+import { resolveClientIp } from "./client-ip";
 import {
   formatTraceparent,
   parseTraceparent,
@@ -10,34 +11,40 @@ import {
 import type { SeamKey } from "../observability/seam-budgets";
 import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
 import { currentRelease } from "../observability/release";
-import { resolveClientIp } from "./client-ip";
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function routeSeamFor(method: string): SeamKey {
-  return READ_METHODS.has(method.toUpperCase()) ? "route.cached.read" : "route.write";
+  return READ_METHODS.has(method.toUpperCase())
+    ? "route.cached.read"
+    : "route.write";
 }
 
 const CORRELATION_HEADER = "x-correlation-id";
 const REQUEST_ID_HEADER = "x-request-id";
 const TRACEPARENT_HEADER = "traceparent";
 const MAX_LENGTH = 64;
+const MAX_USER_AGENT_LENGTH = 512;
+
+function userAgentOf(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const printable = Array.from(raw)
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code > 31 && code !== 127;
+    })
+    .join("")
+    .trim();
+  return printable.length > 0
+    ? printable.slice(0, MAX_USER_AGENT_LENGTH)
+    : undefined;
+}
 
 export type RequestWithCorrelation = Request & {
   correlationId?: string;
   requestId?: string;
 };
 
-/**
- * A caller-supplied correlation id is untrusted input that ends up on every log
- * line for the request, so it is treated as hostile.
- *
- * Two steps. Take only the leading run up to the first whitespace, which stops a
- * value carrying a newline and a JSON fragment from fabricating what looks like a
- * separate, entirely convincing log record. Then keep only characters that cannot
- * forge log structure at all, and cap the length so one header cannot bloat every
- * line a request produces.
- */
 function sanitise(raw: unknown): string | undefined {
   if (typeof raw !== "string") return undefined;
   const leading = raw.split(/\s/)[0] ?? "";
@@ -60,32 +67,6 @@ export function correlationIdMiddleware(
   res.setHeader(CORRELATION_HEADER, correlationId);
   res.setHeader(REQUEST_ID_HEADER, correlationId);
 
-  /**
-   * The request's span starts here and ends when the response does.
-   *
-   * An inbound `traceparent` is joined rather than replaced, so a request
-   * arriving from another service continues that service's trace instead of
-   * starting an unrelated one. The header is echoed back with this span's id,
-   * which is what lets a caller stitch the two halves together.
-   *
-   * Started inside the observability context so the span carries the same
-   * correlation id as every log line about the same request — and so deferred
-   * work, which runs inside this context, nests under this span rather than
-   * appearing as an orphan trace.
-   */
-  const clientIp = resolveClientIp(req);
-  const rawUa = req.headers["user-agent"];
-  let userAgent: string | undefined;
-
-  if (typeof rawUa === "string") {
-    userAgent = rawUa.slice(0, 512);
-  } else if (Array.isArray(rawUa)) {
-    const arr = rawUa as string[];
-    if (arr.length > 0 && typeof arr[0] === "string") {
-      userAgent = arr[0].slice(0, 512);
-    }
-  }
-
   runWithObservabilityContext(
     {
       correlationId,
@@ -93,13 +74,18 @@ export function correlationIdMiddleware(
       route: req.path,
       cellId: PROCESS_CELL_ID,
       release: currentRelease(),
-      ...(clientIp ? { clientIp } : {}),
-      ...(userAgent ? { userAgent } : {}),
+      ipAddress: resolveClientIp(req),
+      userAgent: userAgentOf(req.headers["user-agent"]),
     },
     () => {
       const open = startSpan(`${req.method} ${req.path}`, {
-        parent: parseTraceparent(req.headers[TRACEPARENT_HEADER] as string | undefined),
-        attributes: { "http.method": req.method, seam: routeSeamFor(req.method) },
+        parent: parseTraceparent(
+          req.headers[TRACEPARENT_HEADER] as string | undefined,
+        ),
+        attributes: {
+          "http.method": req.method,
+          seam: routeSeamFor(req.method),
+        },
       });
 
       res.setHeader(TRACEPARENT_HEADER, formatTraceparent(open.span));

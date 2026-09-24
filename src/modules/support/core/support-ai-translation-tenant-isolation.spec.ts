@@ -1,5 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 import { SupportAiTranslationService } from "./support-ai-translation.service";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { OrgFeaturesService } from "../../ai/core/services/org-features.service";
@@ -17,20 +19,21 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 }
 
 describe("SupportAiTranslationService — cross-tenant isolation", () => {
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
   const ATTACKER_ORG = "org-attacker";
   const VICTIM_TICKET_ID = 101;
   const VICTIM_MSG_ID = 202;
 
   function makeDb(ticketRow: unknown): { db: Db; findTicket: jest.Mock } {
     const findTicket = jest.fn().mockResolvedValue(ticketRow);
-    const db = {
+    const db = withDelegatingTransaction({
       query: {
         supportTickets: { findFirst: findTicket },
         supportTicketMessages: { findFirst: jest.fn().mockResolvedValue(null) },
         supportTicketDrafts: { findFirst: jest.fn().mockResolvedValue(null) },
         supportMacros: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-    } as unknown as Db;
+    }) as unknown as Db;
     return { db, findTicket };
   }
 

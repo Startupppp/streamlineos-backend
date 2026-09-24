@@ -1,7 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { TeamsService } from "./teams.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type { Db } from "../../../db/drizzle.module";
 import { encodeCursor } from "../../../common/pagination/cursor";
 
@@ -35,8 +34,8 @@ function buildDb(captured: Captured) {
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new TeamsService(buildDb(captured), {} as AuditService, {} as PmWorkspacesService);
-  await svc.listTeams("org-1", { cursor, pageSize: 20, search: undefined });
+  const svc = new TeamsService(buildDb(captured), {} as AuditService);
+  await svc.listTeams("org-1", { cursor, pageSize: 20, search: undefined }, 1);
   return captured;
 }
 

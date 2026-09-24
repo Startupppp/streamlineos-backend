@@ -26,6 +26,7 @@ interface StreamCall {
   abortSignal?: AbortSignal;
   onFinish?: (event: { usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>;
   onError?: (event: { error: unknown }) => void;
+  providerOptions?: Record<string, Record<string, unknown>>;
 }
 
 function captureStream(finishReason: Promise<string>) {
@@ -246,5 +247,24 @@ describe("AiGatewayStreamHelper — a streamed turn bills like a buffered one", 
 
     expect(helper.breakerFor("kb")).toBe(helper.breakerFor("kb"));
     expect(helper.breakerFor("kb")).not.toBe(helper.breakerFor("stream"));
+  });
+
+  it("passes providerOptions through to the underlying streamText call when supplied", async () => {
+    const calls = captureStream(Promise.resolve("stop"));
+    const { helper } = makeHelper(makeLedger(), makeUsage());
+    const providerOptions = { google: { cachedContent: "cache-handle-test-abc" } };
+
+    await helper.run(opts({ providerOptions }));
+
+    expect(calls[0]?.providerOptions).toEqual(providerOptions);
+  });
+
+  it("omits providerOptions from the streamText call when not supplied", async () => {
+    const calls = captureStream(Promise.resolve("stop"));
+    const { helper } = makeHelper(makeLedger(), makeUsage());
+
+    await helper.run(opts());
+
+    expect(calls[0]?.providerOptions).toBeUndefined();
   });
 });

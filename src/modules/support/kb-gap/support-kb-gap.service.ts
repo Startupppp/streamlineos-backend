@@ -27,6 +27,7 @@ import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import { buildEvidenceText, findKbOwners, type GapRow } from "./lib/gap-detection";
 import { gapDraftSchema } from "./support-kb-gap.schemas";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 /*
   Detection (clustering, search gaps, the all-orgs sweep) is
@@ -52,31 +53,43 @@ export class SupportKbGapService {
   ) {}
 
   async proposeDraft(orgId: string, gapId: number, actorUserId: string, userCtx?: CurrentUserContext): Promise<GapRow & { aiUsage?: AiUsageMeta }> {
-    const gap = await this.db.query.supportKnowledgeGaps.findFirst({
-      where: and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)),
-    });
-    if (!gap) throw new NotFoundException("Knowledge gap not found");
-    if (
-      gap.status === SupportKnowledgeGapStatus.DISMISSED ||
-      gap.status === SupportKnowledgeGapStatus.PUBLISHED
-    ) {
-      throw new BadRequestException(`Gap is already ${gap.status.toLowerCase()}`);
-    }
+    const { gap, actorMembershipId, spaceId, kbOwnerIds } = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const found = await tx.query.supportKnowledgeGaps.findFirst({
+          where: and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)),
+        });
+        if (!found) throw new NotFoundException("Knowledge gap not found");
+        if (
+          found.status === SupportKnowledgeGapStatus.DISMISSED ||
+          found.status === SupportKnowledgeGapStatus.PUBLISHED
+        ) {
+          throw new BadRequestException(`Gap is already ${found.status.toLowerCase()}`);
+        }
 
-    const [actorMember] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, actorUserId)))
-      .limit(1);
-    const actorMembershipId = actorMember?.id ?? null;
+        const [actorMember] = await tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, actorUserId)),
+          )
+          .limit(1);
 
-    const space = await this.db.query.kbSpaces.findFirst({
-      where: and(eq(kbSpaces.orgId, orgId), isNull(kbSpaces.deletedAt)),
-      columns: { id: true },
-    });
-    if (!space) throw new BadRequestException("No KB space found for this organisation");
+        const space = await tx.query.kbSpaces.findFirst({
+          where: and(eq(kbSpaces.orgId, orgId), isNull(kbSpaces.deletedAt)),
+          columns: { id: true },
+        });
+        if (!space) throw new BadRequestException("No KB space found for this organisation");
 
-    const kbOwnerIds = await findKbOwners(this.db, orgId);
+        return {
+          gap: found,
+          actorMembershipId: actorMember?.id ?? null,
+          spaceId: space.id,
+          kbOwnerIds: await findKbOwners(this.db, orgId),
+        };
+      },
+      { orgId },
+    );
 
     const evidenceText = buildEvidenceText(gap);
     const gatewayResult = await this.aiGateway.invokeStructuredWithUsage({
@@ -115,36 +128,39 @@ export class SupportKbGapService {
       sessionId: "",
       principal: ACCOUNT_ONLY_PRINCIPAL,
     };
-    const article = await this.kbArticles.create(ctx, {
-      spaceId: space.id,
-      title,
-      content: body,
-      contentText,
-      status: "draft" as const,
-      visibility: "internal" as const,
-    });
+    const updated = await runInTenantTransaction(this.db, async (tx) => {
+      const article = await this.kbArticles.create(ctx, {
+        spaceId,
+        title,
+        content: body,
+        contentText,
+        status: "draft" as const,
+        visibility: "internal" as const,
+      });
 
-    const eventActor = await assertOrganizationActor(this.db, orgId, {
-      kind: "user",
-      userId: actorUserId,
-    }).catch(() => null);
+      await assertOrganizationActor(this.db, orgId, {
+        kind: "user",
+        userId: actorUserId,
+      }).catch(() => null);
 
-    await this.kbEvents.record(orgId, "ticket_deflected", {
-      actorMembershipId,
-      articleId: article.id,
-      metadata: { feature: "kb_gap_draft", gapId },
-    });
+      await this.kbEvents.record(orgId, "ticket_deflected", {
+        actorMembershipId,
+        articleId: article.id,
+        metadata: { feature: "kb_gap_draft", gapId },
+      });
 
-    const [updated] = await this.db
-      .update(supportKnowledgeGaps)
-      .set({
-        proposedArticleId: article.id,
-        draftedBy: actorUserId,
-        status: SupportKnowledgeGapStatus.ROUTED,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)))
-      .returning();
+      const [row] = await tx
+        .update(supportKnowledgeGaps)
+        .set({
+          proposedArticleId: article.id,
+          draftedBy: actorUserId,
+          status: SupportKnowledgeGapStatus.ROUTED,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)))
+        .returning();
+      return row;
+    }, { orgId });
 
     if (kbOwnerIds.length > 0) {
       await this.notificationDispatch

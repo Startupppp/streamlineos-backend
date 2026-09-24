@@ -387,15 +387,6 @@
   "def": "CREATE INDEX idx_pages_org ON build.pages USING btree (org_id)"
  },
  {
-  "idx": "idx_pm_ws_members_org_ws",
-  "table": "build.pm_workspace_memberships",
-  "kind": "leading prefix",
-  "keep": "idx_pm_workspace_memberships_org_ws_added",
-  "droppedBy": "0999_s08_drop_redundant_indexes.sql",
-  "rows": 0,
-  "def": "CREATE INDEX idx_pm_ws_members_org_ws ON build.pm_workspace_memberships USING btree (org_id, pm_workspace_id)"
- },
- {
   "idx": "idx_project_approvals_org_approver_membership",
   "table": "build.project_approvals",
   "kind": "leading prefix",
@@ -457,24 +448,6 @@
   "droppedBy": "0999_s08_drop_redundant_indexes.sql",
   "rows": 0,
   "def": "CREATE INDEX idx_project_webhooks_org_id ON build.project_webhooks USING btree (org_id)"
- },
- {
-  "idx": "idx_project_workspace_members_org",
-  "table": "build.project_workspace_members",
-  "kind": "leading prefix",
-  "keep": "idx_project_workspace_members_org_pm_workspace",
-  "droppedBy": "0999_s08_drop_redundant_indexes.sql",
-  "rows": 0,
-  "def": "CREATE INDEX idx_project_workspace_members_org ON build.project_workspace_members USING btree (org_id)"
- },
- {
-  "idx": "idx_project_workspace_members_org_membership",
-  "table": "build.project_workspace_members",
-  "kind": "exact-duplicate",
-  "keep": "uniq_project_workspace_members_org_user",
-  "droppedBy": "0999_s08_drop_redundant_indexes.sql",
-  "rows": 0,
-  "def": "CREATE INDEX idx_project_workspace_members_org_membership ON build.project_workspace_members USING btree (org_id, membership_id)"
  },
  {
   "idx": "idx_release_tickets_release",

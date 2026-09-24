@@ -69,7 +69,7 @@ export class BuildEntityAdapter implements EntityAdapter {
     "ticket",
     "task",
     "project",
-    "sprint",
+    "cycle",
     "release",
     "incident",
   ] as const;

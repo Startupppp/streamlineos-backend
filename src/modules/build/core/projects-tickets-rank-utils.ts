@@ -15,7 +15,7 @@ export async function rebalanceProjectRanks(db: Db, orgId: string, projectId: nu
     await lockProjectTicketMutation(tx, orgId, projectId);
     await tx.execute(sql`
       WITH ordered AS (
-        SELECT id, row_number() OVER (ORDER BY rank ASC, created_at DESC, id ASC) * 1000 AS new_rank
+        SELECT id, row_number() OVER (ORDER BY rank ASC, id ASC) * 1000 AS new_rank
         FROM build.tickets WHERE org_id = ${orgId} AND project_id = ${projectId} AND deleted_at IS NULL
       ) UPDATE build.tickets t SET rank = ordered.new_rank, version = t.version + 1
         FROM ordered WHERE t.id = ordered.id AND t.org_id = ${orgId} AND t.project_id = ${projectId}
@@ -51,10 +51,8 @@ export async function rankTicket(db: Db, cache: CacheService, access: AccessServ
     const [gap] = await tx.select({ id: tickets.id }).from(tickets).where(and(
       eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.status, status),
       notInArray(tickets.id, ids), isNull(tickets.deletedAt),
-      before ? sql`(${tickets.rank} > ${before.rank}::numeric OR (${tickets.rank} = ${before.rank}::numeric AND
-        (${tickets.createdAt} < ${before.createdAtCursor}::timestamptz OR (${tickets.createdAt} = ${before.createdAtCursor}::timestamptz AND ${tickets.id} > ${before.id}))))` : undefined,
-      after ? sql`(${tickets.rank} < ${after.rank}::numeric OR (${tickets.rank} = ${after.rank}::numeric AND
-        (${tickets.createdAt} > ${after.createdAtCursor}::timestamptz OR (${tickets.createdAt} = ${after.createdAtCursor}::timestamptz AND ${tickets.id} < ${after.id}))))` : undefined,
+      before ? sql`(${tickets.rank} > ${before.rank}::numeric OR (${tickets.rank} = ${before.rank}::numeric AND ${tickets.id} > ${before.id}))` : undefined,
+      after ? sql`(${tickets.rank} < ${after.rank}::numeric OR (${tickets.rank} = ${after.rank}::numeric AND ${tickets.id} < ${after.id}))` : undefined,
     )).limit(1);
     if (gap) throw new ConflictException("Board order changed; refresh and retry");
     const rank = lower && upper ? sql`(${lower} + ${upper}) / 2`
@@ -75,7 +73,7 @@ export async function rankTicket(db: Db, cache: CacheService, access: AccessServ
     if (body.status !== undefined) await emitBatchStatusChanges(tx, actor, projectId, [target], status, now);
     return updated;
   });
-  await cache.del(`projects:analytics:${actor.orgId}:${projectId}`)
+  await cache.invalidateNamespace(`build:analytics:${actor.orgId}`)
     .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId }));
   return result;
 }

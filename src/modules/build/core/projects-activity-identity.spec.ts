@@ -68,7 +68,6 @@ describe("ProjectsActivityService — ROW-76 historical identity via organizatio
         status: "TODO",
         priority: "MEDIUM",
         assigneeId: null,
-        sprintId: null,
         dueDate: null,
         points: null,
         type: "TASK",
@@ -101,7 +100,7 @@ describe("ProjectsActivityService — ROW-76 historical identity via organizatio
       OWNER_ORG,
       1,
       "user-1",
-      { title: "T", status: "TODO", priority: "M", assigneeId: null, sprintId: null, dueDate: null, points: null, type: "TASK", cycleId: null },
+      { title: "T", status: "TODO", priority: "M", assigneeId: null, dueDate: null, points: null, type: "TASK", cycleId: null },
       { assigneeId: "user-new" },
     );
 
@@ -120,7 +119,7 @@ describe("ProjectsActivityService — ROW-76 historical identity via organizatio
       OWNER_ORG,
       1,
       "user-1",
-      { title: "T", status: "TODO", priority: "M", assigneeId: null, sprintId: null, dueDate: null, points: null, type: "TASK", cycleId: null },
+      { title: "T", status: "TODO", priority: "M", assigneeId: null, dueDate: null, points: null, type: "TASK", cycleId: null },
       { assigneeId: "departed-user" },
     );
 

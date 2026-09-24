@@ -76,7 +76,9 @@ function makeHarness(employmentRows: readonly unknown[]): Harness {
     }),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([]),
+        }),
         returning: jest.fn().mockResolvedValue([]),
       }),
     }),
@@ -223,7 +225,7 @@ describe("employment attachment cannot duplicate a primary — P4 acceptance", (
     });
 
     it("reuses the row when that number already belongs to this same person", async () => {
-      const harness = makeHarness([undefined, { id: 12, personId: 5 }]);
+      const harness = makeHarness([undefined, { id: 12, personId: 5, deletedAt: null }]);
       const service = buildService(harness.db);
 
       const result = await service.ensureFromUser(ORG_A, "actor-1", INPUT);

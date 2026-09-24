@@ -44,6 +44,8 @@ function dbStub(): Db {
     },
     select: () => chain(),
     selectDistinct: () => chain(),
+    execute: async () => [],
+    transaction: (fn: (tx: unknown) => unknown) => fn(stub),
   };
   return stub as unknown as Db;
 }

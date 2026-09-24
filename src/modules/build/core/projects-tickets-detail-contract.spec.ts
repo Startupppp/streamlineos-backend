@@ -18,8 +18,13 @@ const row = {
   recurrenceRule: null, recurrenceParentId: null, recurrenceNextRunAt: null, customerId: null,
   version: 1, deletedAt: null, createdAt: new Date(), updatedAt: new Date(),
   project: { id: 42, orgId: "org-1", name: "Project", key: "BUILD" }, sprint: null,
-  assignee: { user }, reporter: null, assignees: [{ user: { user } }],
-  watchers: [{ user: { user } }], comments: [],
+  assignee: { user }, reporter: null, assignees: [{ id: 5, ticketId: 1, assignedAt: new Date(), assignedBy: null, user: { userId: user.id, user } }],
+  watchers: [{ user: { user } }],
+  comments: [{
+    id: 9, orgId: "org-1", ticketId: 1, userId: "user-1", content: "hi",
+    parentCommentId: null, createdAt: new Date(), updatedAt: new Date(),
+    user, reactions: [{ emoji: "👍", membership: { userId: "user-1" } }],
+  }],
   attachments: [{ id: 3, fileName: "notes.txt", fileUrl: "https://example.test/notes", uploader: user }],
   labels: [{ label: { id: 4, name: "Bug", color: null } }],
 };
@@ -34,13 +39,15 @@ it.each(["id", "key"])("returns the complete existing detail contract for %s loo
   ] }).compile();
   try {
     const service = module.get(ProjectsTicketsDetailService);
-    const result = lookup === "id" ? await service.getTicket(actor, 1) : await service.getTicketByKey(actor, 42, 101);
+    const result = lookup === "id" ? await service.getTicket(actor, 42, 1) : await service.getTicketByKey(actor, 42, 101);
     const parsed = ticketDetailSchema.parse(result);
     expect(parsed.epic).toEqual({ id: 2, name: "Epic" });
+    expect(parsed.assignees[0]?.user).toEqual({ userId: user.id, user });
     expect(parsed.members[0]?.user.user).toEqual(user);
     expect(parsed.watchers[0]?.user).toEqual(user);
     expect(parsed.attachments[0]).toMatchObject({ filename: "notes.txt", url: "https://example.test/notes" });
     expect(parsed.labels[0]?.name).toBe("Bug");
+    expect(parsed.comments[0]?.reactions).toEqual([{ emoji: "👍", userId: "user-1" }]);
     expect(findFirst).toHaveBeenCalledTimes(2);
   } finally { await module.close(); }
 });

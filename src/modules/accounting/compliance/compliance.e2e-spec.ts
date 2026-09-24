@@ -79,7 +79,7 @@ beforeAll(async () => {
   client = postgres(url, { prepare: false, max: 5 });
   db = drizzle(client, { schema }) as unknown as Db;
   books = new BooksService(db, new PackRegistry());
-  compliance = new ComplianceService(db);
+  compliance = new ComplianceService(db, books);
 });
 
 afterAll(async () => {

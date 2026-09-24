@@ -1,15 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
+import { sql, type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageVersionsService } from "./kb-page-versions.service";
-
-function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
-  if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
-  if (Array.isArray(v)) return v.flatMap(i => sqlValues(i, seen));
-  if (typeof v !== "object" || seen.has(v)) return [];
-  seen.add(v);
-  const r = v as { queryChunks?: unknown[]; value?: unknown };
-  return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
-}
 
 describe("KbPageVersionsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
@@ -20,67 +13,84 @@ describe("KbPageVersionsService — cross-tenant isolation", () => {
     return { orgId, userId: "user-1", role: "MEMBER", isOrgOwner: false } as never;
   }
 
-  function makeDb(pageRow: unknown) {
-    const wheres: unknown[] = [];
-    const innerJoinChain: Record<string, unknown> = {
-      where: jest.fn().mockImplementation((w: unknown) => {
-        wheres.push(w);
-        return Promise.resolve([]);
-      }),
+  function makeAuthMock(opts: { throws?: unknown } = {}) {
+    return {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: opts.throws
+        ? jest.fn().mockRejectedValue(opts.throws)
+        : jest.fn().mockResolvedValue({ orgId: OWNER, pageId: PAGE_ID, action: "view", via: "admin" }),
     };
-    innerJoinChain.innerJoin = jest.fn().mockReturnValue(innerJoinChain);
+  }
+
+  function makeDb() {
+    const wheres: unknown[] = [];
     const leftJoinChain = {
-      where: jest.fn().mockImplementation((w: unknown) => {
-        wheres.push(w);
-        const sorted = Object.assign(Promise.resolve(pageRow ? [{ id: 1 }] : []), {
+      where: jest.fn().mockImplementation((clause: unknown) => {
+        wheres.push(clause);
+        return Object.assign(Promise.resolve([]), {
           orderBy: jest.fn().mockReturnValue(
             Object.assign(Promise.resolve([]), {
               limit: jest.fn().mockResolvedValue([]),
             }),
           ),
         });
-        return sorted;
       }),
     };
     return {
+      wheres,
       db: {
         query: {
           kbPages: {
-            findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
-              wheres.push(opts.where);
-              return Promise.resolve(pageRow);
-            }),
+            findFirst: jest.fn().mockResolvedValue(null),
           },
         },
         select: jest.fn().mockImplementation(() => ({
           from: jest.fn().mockImplementation(() => ({
-            innerJoin: jest.fn().mockReturnValue(innerJoinChain),
             leftJoin: jest.fn().mockReturnValue(leftJoinChain),
           })),
         })),
       } as unknown as Db,
-      wheres,
     };
   }
 
   it("throws NotFoundException for a page belonging to another org (cross-tenant deny)", async () => {
-    const { db, wheres } = makeDb(null);
-    const svc = new KbPageVersionsService(db);
+    const { db } = makeDb();
+    const authMock = makeAuthMock({ throws: new NotFoundException("Page not found") });
+    const svc = new KbPageVersionsService(db, authMock as never);
 
     await expect(svc.listVersions(makeUser(ATTACKER), PAGE_ID)).rejects.toThrow(NotFoundException);
 
-    expect(wheres.length).toBeGreaterThan(0);
-    const vals = wheres.flatMap(w => sqlValues(w));
-    expect(vals).toContain(ATTACKER);
-    expect(vals).not.toContain(OWNER);
+    expect(authMock.assertPageAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: ATTACKER }),
+      PAGE_ID,
+      "view",
+    );
   });
 
   it("returns versions for a page in the owning org (same-tenant control)", async () => {
-    const { db } = makeDb({ id: PAGE_ID, orgId: OWNER });
-    const svc = new KbPageVersionsService(db);
+    const { db } = makeDb();
+    const authMock = makeAuthMock();
+    const svc = new KbPageVersionsService(db, authMock as never);
 
     const result = await svc.listVersions(makeUser(OWNER), PAGE_ID);
 
+    expect(authMock.assertPageAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: OWNER }),
+      PAGE_ID,
+      "view",
+    );
     expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  it("still binds the caller's org into the version query itself, so isolation does not rest on the seam alone", async () => {
+    const { db, wheres } = makeDb();
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
+
+    await svc.listVersions(makeUser(OWNER), PAGE_ID);
+
+    expect(wheres).toHaveLength(1);
+    const rendered = new PgDialect().sqlToQuery(wheres[0] as SQL);
+    expect(rendered.params).toContain(OWNER);
+    expect(rendered.params).not.toContain(ATTACKER);
   });
 });

@@ -8,7 +8,6 @@ import {
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   employeeSkills,
-  hrReportingLines,
   onboardingTasks,
   organizationMembers,
   users,
@@ -23,15 +22,14 @@ import { HrAutomationEngineService } from "../automations/hr-automation-engine.s
 import { differenceInDays } from "../../../common/date";
 import type { UpdateEmployeeInput } from "./dto/hr-directory.schemas";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
-import { assertUsersInOrg } from "../../../common/tenant/org-membership";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 import { syncCanonicalEmploymentFields } from "../../../common/hr/sync-canonical-employment-fields";
-import { syncCanonicalReportingLine } from "../../../common/hr/sync-canonical-reporting-line";
 import { AccessService } from "../../access/access.service";
 import { ScopedRead } from "../../access/scoped-read";
 import { selfEmployeeRead } from "./employees-scope";
 import { resolveEmployeesManageScope } from "./employees-scope";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { ReportingLineService } from "../../directory/reporting-line.service";
 import { emptyEmploymentFacts } from "../../directory/employment-facts.types";
 import {
   livePersonOfUser,
@@ -49,6 +47,7 @@ export class EmployeeMutationsService {
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly access: AccessService,
     private readonly employment: EmploymentFactsService,
+    private readonly reportingLines: ReportingLineService,
   ) {}
 
   private async degraded<T>(
@@ -232,65 +231,6 @@ export class EmployeeMutationsService {
       );
     }
 
-    if (body.reportingTo !== undefined && body.reportingTo !== null) {
-      if (body.reportingTo === targetUserId) {
-        throw new BadRequestException(
-          "An employee cannot report to themselves.",
-        );
-      }
-      await assertUsersInOrg(this.db, actor.orgId, [body.reportingTo]);
-      const [cycle] = await this.db.execute<{ creates_cycle: boolean }>(sql`
-        WITH RECURSIVE manager_chain AS (
-          SELECT
-            emp.id AS employment_id,
-            p.user_id,
-            ARRAY[p.user_id]::text[] AS path
-          FROM hr_employments emp
-          INNER JOIN hr_people p
-            ON p.id = emp.person_id
-            AND p.org_id = ${actor.orgId}
-            AND p.deleted_at IS NULL
-          INNER JOIN organization_members om
-            ON om.user_id = p.user_id AND om.org_id = ${actor.orgId}
-          WHERE emp.org_id = ${actor.orgId}
-            AND emp.is_primary = true
-            AND emp.deleted_at IS NULL
-            AND p.user_id = ${body.reportingTo}
-          UNION ALL
-          SELECT
-            mgr_emp.id,
-            mgr_p.user_id,
-            chain.path || mgr_p.user_id
-          FROM manager_chain chain
-          INNER JOIN hr_reporting_lines rl
-            ON rl.employment_id = chain.employment_id
-            AND rl.org_id = ${actor.orgId}
-            AND rl.line_type = 'primary'
-            AND rl.effective_from <= CURRENT_DATE
-            AND rl.effective_to >= CURRENT_DATE
-          INNER JOIN hr_employments mgr_emp
-            ON mgr_emp.id = rl.manager_employment_id
-            AND mgr_emp.org_id = ${actor.orgId}
-            AND mgr_emp.is_primary = true
-            AND mgr_emp.deleted_at IS NULL
-          INNER JOIN hr_people mgr_p
-            ON mgr_p.id = mgr_emp.person_id
-            AND mgr_p.org_id = ${actor.orgId}
-            AND mgr_p.deleted_at IS NULL
-          WHERE NOT mgr_p.user_id = ANY(chain.path)
-            AND cardinality(chain.path) < 1000
-        )
-        SELECT EXISTS (
-          SELECT 1 FROM manager_chain WHERE user_id = ${targetUserId}
-        ) AS creates_cycle
-      `);
-      if (cycle?.creates_cycle) {
-        throw new BadRequestException(
-          "This reporting structure would create a circular management chain.",
-        );
-      }
-    }
-
     const updateData: Partial<typeof users.$inferInsert> = {};
     if (body.name !== undefined) updateData.name = body.name;
     if (body.firstName !== undefined || body.lastName !== undefined) {
@@ -349,13 +289,13 @@ export class EmployeeMutationsService {
       }
       if (body.reportingTo !== undefined) {
         const today = new Date().toISOString().slice(0, 10);
-        await syncCanonicalReportingLine(
-          tx,
+        await this.reportingLines.assign(
           actor.orgId,
           targetUserId,
           body.reportingTo ?? null,
           today,
           actor.userId,
+          tx,
         );
       }
 

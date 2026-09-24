@@ -98,7 +98,6 @@ export type PreviewQuery = z.infer<typeof previewQuerySchema>;
 export const activatePolicySchema = z.object({
   force: z.boolean().optional().default(false),
 });
-export type ActivatePolicyInput = z.infer<typeof activatePolicySchema>;
 
 export const simulatePolicySchema = z.object({
   employeeId: z.string().min(1),
@@ -106,9 +105,7 @@ export const simulatePolicySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   rules: z.record(z.string(), z.unknown()).optional(),
 });
-export type SimulatePolicyInput = z.infer<typeof simulatePolicySchema>;
 
 export const orgConflictsQuerySchema = z.object({
   type: z.enum(HR_POLICY_TYPES).optional(),
 });
-export type OrgConflictsQuery = z.infer<typeof orgConflictsQuerySchema>;

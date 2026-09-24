@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { projectDailySnapshots, projectStatuses, projects, sprintScopeEvents, sprints, tickets, workItemRelations } from "../../../db/schema";
+import { cycles, projectDailySnapshots, projectStatuses, projects, cycleScopeEvents, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { addDays, differenceInCalendarDays, formatDateOnly } from "../../../common/date";
@@ -58,56 +58,57 @@ export class ProjectsReportsService {
     const orgId = actor.orgId;
     const revision = await this.requireProject(actor, projectId);
 
-    const sprint = query.sprintId
-      ? await this.db.query.sprints.findFirst({
+    const cycle = query.cycleId
+      ? await this.db.query.cycles.findFirst({
           where: and(
-            eq(sprints.id, Number(query.sprintId)),
-            eq(sprints.projectId, projectId),
-            eq(sprints.orgId, orgId),
-            isNull(sprints.deletedAt),
+            eq(cycles.id, Number(query.cycleId)),
+            eq(cycles.projectId, projectId),
+            eq(cycles.orgId, orgId),
+            isNull(cycles.deletedAt),
           ),
           columns: { id: true, startDate: true, endDate: true },
         })
-      : await this.db.query.sprints.findFirst({
+      : await this.db.query.cycles.findFirst({
           where: and(
-            eq(sprints.projectId, projectId),
-            eq(sprints.orgId, orgId),
-            inArray(sprints.status, ["ACTIVE", "COMPLETED"]),
-            isNull(sprints.deletedAt),
+            eq(cycles.projectId, projectId),
+            eq(cycles.orgId, orgId),
+            inArray(cycles.status, ["active", "completed"]),
+            isNull(cycles.deletedAt),
           ),
-          orderBy: [desc(sprints.startDate)],
+          orderBy: [desc(cycles.startDate)],
           columns: { id: true, startDate: true, endDate: true },
         });
 
-    if (!sprint) {
-      if (query.sprintId) throw new NotFoundException("Sprint not found");
+    if (!cycle) {
+      if (query.cycleId) throw new NotFoundException("Cycle not found");
       return [];
     }
-    const startDate = new Date(sprint.startDate);
-    const endDate = new Date(sprint.endDate);
+    const startDate = new Date(cycle.startDate);
+    const endDate = new Date(cycle.endDate);
     const days = differenceInCalendarDays(endDate, startDate) + 1;
     if (!Number.isSafeInteger(days) || days < 1 || days > MAX_BURNUP_DAYS)
       throw new UnprocessableEntityException(`Burnup reports support sprint ranges of 1 to ${MAX_BURNUP_DAYS} days`);
 
-    const cacheKey = `projects:burnup:${orgId}:${projectId}:${sprint.id}:bounded:r${revision}`;
+    const cycleId = cycle.id;
+    const cacheKey = `projects:burnup:${orgId}:${projectId}:${cycleId}:bounded:r${revision}`;
     return this.cache.cached(
       cacheKey,
       async () => {
         const events = await this.db
           .select({
-            ticketId: sprintScopeEvents.ticketId,
-            eventType: sprintScopeEvents.eventType,
-            newPoints: sprintScopeEvents.newPoints,
-            createdAt: sprintScopeEvents.createdAt,
+            ticketId: cycleScopeEvents.ticketId,
+            eventType: cycleScopeEvents.eventType,
+            newPoints: cycleScopeEvents.newPoints,
+            createdAt: cycleScopeEvents.createdAt,
           })
-          .from(sprintScopeEvents)
+          .from(cycleScopeEvents)
           .where(
             and(
-              eq(sprintScopeEvents.orgId, orgId),
-              eq(sprintScopeEvents.sprintId, sprint.id),
+              eq(cycleScopeEvents.orgId, orgId),
+              eq(cycleScopeEvents.cycleId, cycleId),
             ),
           )
-          .orderBy(asc(sprintScopeEvents.createdAt), asc(sprintScopeEvents.id))
+          .orderBy(asc(cycleScopeEvents.createdAt), asc(cycleScopeEvents.id))
           .limit(MAX_BURNUP_EVENTS + 1);
         if (events.length > MAX_BURNUP_EVENTS)
           throw new UnprocessableEntityException(`Burnup reports support at most ${MAX_BURNUP_EVENTS} sprint events; choose a smaller sprint`);
@@ -115,7 +116,7 @@ export class ProjectsReportsService {
         if (events.length > 0)
           return computeBurnupFromEvents(events, startDate, days);
 
-        return this.burnupFromCurrentMembership(orgId, projectId, sprint.id, startDate, days);
+        return this.burnupFromCurrentMembership(orgId, projectId, cycleId, startDate, days);
       },
       CACHE_TTL.SHORT,
     );
@@ -124,7 +125,7 @@ export class ProjectsReportsService {
   private async burnupFromCurrentMembership(
     orgId: string,
     projectId: number,
-    sprintId: number,
+    cycleId: number,
     startDate: Date,
     days: number,
   ): Promise<BurnupPoint[]> {
@@ -133,7 +134,7 @@ export class ProjectsReportsService {
         totalScope: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
       })
       .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), eq(tickets.sprintId, sprintId), isNull(tickets.deletedAt)));
+      .where(and(eq(tickets.orgId, orgId), eq(tickets.cycleId, cycleId), isNull(tickets.deletedAt)));
 
     const totalScope = scopeRow?.totalScope ?? 0;
 
@@ -154,7 +155,7 @@ export class ProjectsReportsService {
       .where(
         and(
           eq(tickets.orgId, orgId),
-          eq(tickets.sprintId, sprintId),
+          eq(tickets.cycleId, cycleId),
           isNull(tickets.deletedAt),
           eq(projectStatuses.type, "completed"),
         ),

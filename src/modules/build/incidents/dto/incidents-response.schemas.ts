@@ -20,6 +20,7 @@ export const incidentRowSchema = z.object({
   responseDueAt: nullableWireDate(),
   resolutionDueAt: nullableWireDate(),
   linkedTicketId: z.number().int().nullable(),
+  releaseId: z.number().int().nullable(),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
@@ -36,9 +37,35 @@ export const incidentUpdateRowSchema = z.object({
   createdAt: wireDate(),
 });
 
+export const incidentDecisionRowSchema = z.object({
+  id: z.number().int(),
+  orgId: z.string(),
+  incidentId: z.number().int(),
+  decision: z.string(),
+  rationale: z.string().nullable(),
+  decidedBy: z.string().nullable(),
+  createdAt: wireDate(),
+});
+
+export const incidentFollowUpActionRowSchema = z.object({
+  id: z.number().int(),
+  orgId: z.string(),
+  incidentId: z.number().int(),
+  title: z.string(),
+  description: z.string().nullable(),
+  ownerId: z.string().nullable(),
+  status: z.string(),
+  dueAt: nullableWireDate(),
+  createdBy: z.string().nullable(),
+  createdAt: wireDate(),
+  updatedAt: wireDate(),
+});
+
 export const incidentDetailSchema = incidentRowSchema.extend({
   updates: z.array(incidentUpdateRowSchema.extend({
     createdByName: z.string().nullable(),
     createdByEmail: z.string().nullable(),
   })),
+  decisions: z.array(incidentDecisionRowSchema),
+  followUpActions: z.array(incidentFollowUpActionRowSchema),
 });

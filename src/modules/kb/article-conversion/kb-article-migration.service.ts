@@ -230,7 +230,10 @@ export class KbArticleMigrationService {
         processedItems: toMigrate.length,
         succeededItems: succeeded,
         failedItems: failedArticleIds.length,
-        errorReport: failedArticleIds.length > 0 ? { failedArticleIds } : undefined,
+        errorReport: {
+          itemTitles: toMigrate.map((article) => article.title),
+          ...(failedArticleIds.length > 0 ? { failedArticleIds } : {}),
+        },
         createdById: user.userId,
       })
       .returning();

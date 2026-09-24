@@ -3,6 +3,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 import { NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageAiService } from "./kb-page-ai.service";
 import { KbArticleAiService } from "../help-centre/kb-article-ai.service";
@@ -50,6 +51,11 @@ function makeDb(table: "kbPages" | "kbArticles", row: unknown): Db {
 
 const DOC_ROW = { id: DOC_ID, orgId: OWNER, spaceId: 1, title: "Onboarding", contentText: "the body" };
 
+const authMock = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+};
+
 interface Surface {
   name: string;
   keyPrefix: string;
@@ -61,7 +67,7 @@ const SURFACES: Surface[] = [
     name: "KbPageAiService",
     keyPrefix: "kb.page-",
     build: (gateway, row) =>
-      new KbPageAiService(makeDb("kbPages", row), gateway as never, { log: jest.fn() } as never),
+      new KbPageAiService(makeDb("kbPages", row), gateway as never, { log: jest.fn() } as never, authMock as never),
   },
   {
     name: "KbArticleAiService",
@@ -83,6 +89,11 @@ const SURFACES: Surface[] = [
  * that drifted rather than on whichever the test happened to pick.
  */
 describe.each(SURFACES)("$name.stream — the KB document panel actually streams", (surface) => {
+  beforeEach(() => {
+    authMock.visiblePagePredicate.mockClear();
+    authMock.assertPageAccess.mockClear();
+  });
+
   it.each(ACTIONS)("dispatches ONE paid streaming call for %s with the caller's real actor", async (action) => {
     const gateway = makeGateway();
     const svc = surface.build(gateway, DOC_ROW);

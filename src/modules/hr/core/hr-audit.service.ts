@@ -65,7 +65,7 @@ export class HrAuditService {
     after?: unknown;
     ipAddress?: string;
     userAgent?: string;
-  }, tx?: Db): Promise<void> {
+  }, tx?: DbOrTx): Promise<void> {
     const db = tx ?? this.db;
     let membershipId = params.actorMembershipId ?? null;
     if (membershipId === null && params.actorId !== null) {

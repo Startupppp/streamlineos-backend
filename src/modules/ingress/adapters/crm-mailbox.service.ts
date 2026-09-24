@@ -1,4 +1,10 @@
-import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { resolvePush } from "./mailbox-push-route";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -8,10 +14,17 @@ import type { NormalizerConnectionMeta } from "../../mail/providers/mail-normali
 import { GmailMailProvider } from "../../mail/providers/gmail-mail.provider";
 import { OutlookMailProvider } from "../../mail/providers/outlook-mail.provider";
 import { InboundIngressService } from "../inbound-ingress.service";
-import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { logger } from "../../../common/logger/logger.service";
-import { mailToInboundEvent, type MailMessageForIngress } from "./mail-to-inbound-event";
-import { advanceWatermark, planSweep } from "./mailbox-sync";
+import {
+  mailToInboundEvent,
+  type MailMessageForIngress,
+} from "./mail-to-inbound-event";
+import { advanceWatermark, planSweep, type SweepPlan } from "./mailbox-sync";
+
 import {
   forIngress,
   sweepNote,
@@ -23,15 +36,9 @@ import {
   fetchOutlookMessages,
 } from "./crm-mailbox-provider-fetch";
 
-/**
- * A mailbox feeding the CRM.
- *
- * Connecting a mailbox to StreamlineOS and pointing it at the CRM are two
- * different decisions, and this keeps them apart. Somebody may want their inbox
- * in the Mail module without every message they receive becoming a customer
- * record — so the connection is the integrations module's, and the opt-in is
- * here.
- */
+type CrmMailboxSyncRow = typeof crmMailboxSync.$inferSelect;
+type SweepPlanToRun = Extract<SweepPlan, { sweep: true }>;
+
 @Injectable()
 export class CrmMailboxService {
   private readonly logger = new Logger("CrmMailbox");
@@ -43,58 +50,61 @@ export class CrmMailboxService {
     private readonly outlook: OutlookMailProvider,
   ) {}
 
-  /**
-   * A provider push, which is a doorbell rather than a delivery.
-   *
-   * Runs outside any tenant context, because a push arrives with no session and
-   * no organisation — the mailbox row is what supplies the tenant. So the lookup
-   * is deliberately unscoped by `organization_id`, and `resolvePush` is what
-   * makes that safe: the row's own secret has to verify the body before its
-   * tenant is used for anything.
-   *
-   * Push is the fast path, never the truth. It only pulls the mailbox's next
-   * sweep forward; the periodic sweep still runs and still closes whatever gap
-   * push left, which is why a missed or forged-and-rejected notification costs
-   * latency rather than data.
-   */
   async push(rawBody: string, signature: string | undefined): Promise<void> {
     const parsed = ((): { resource?: unknown; provider?: unknown } => {
       try {
-        return JSON.parse(rawBody) as { resource?: unknown; provider?: unknown };
+        return JSON.parse(rawBody) as {
+          resource?: unknown;
+          provider?: unknown;
+        };
       } catch {
         return {};
       }
     })();
 
-    const address = typeof parsed.resource === "string" ? parsed.resource.trim() : "";
+    const address =
+      typeof parsed.resource === "string" ? parsed.resource.trim() : "";
     const provider = parsed.provider;
     if (!address || (provider !== "gmail" && provider !== "outlook")) return;
 
-    const [row] = await this.db
-      .select({
-        crmMailboxSyncId: crmMailboxSync.crmMailboxSyncId,
-        organizationId: crmMailboxSync.organizationId,
-        provider: crmMailboxSync.provider,
-        mailboxAddress: crmMailboxSync.mailboxAddress,
-        pushSecret: crmMailboxSync.pushSecret,
-        enabled: crmMailboxSync.enabled,
-      })
-      .from(crmMailboxSync)
-      .where(
-        and(
-          eq(crmMailboxSync.provider, provider),
-          eq(crmMailboxSync.mailboxAddress, address),
-          eq(crmMailboxSync.enabled, true),
-        ),
-      )
-      .limit(1);
+    const orgRows = await this.db.execute(
+      sql`SELECT app.resolve_crm_mailbox_sync_org_id(${provider}, ${address}) AS org_id`,
+    );
+    const organizationId = orgRows[0]?.org_id
+      ? String(orgRows[0].org_id)
+      : null;
+    if (!organizationId) return;
 
-    const verdict = resolvePush(rawBody, signature, row ?? null);
+    const row = await runInNewTenantTransaction(
+      this.db,
+      organizationId,
+      async (tx) => {
+        const rows = await tx
+          .select({
+            enabled: crmMailboxSync.enabled,
+            provider: crmMailboxSync.provider,
+            pushSecret: crmMailboxSync.pushSecret,
+            mailboxAddress: crmMailboxSync.mailboxAddress,
+            organizationId: crmMailboxSync.organizationId,
+            crmMailboxSyncId: crmMailboxSync.crmMailboxSyncId,
+          })
+          .from(crmMailboxSync)
+          .where(
+            and(
+              eq(crmMailboxSync.provider, provider),
+              eq(crmMailboxSync.mailboxAddress, address),
+              eq(crmMailboxSync.enabled, true),
+            ),
+          )
+          .limit(1);
+        return rows[0] ?? null;
+      },
+    );
+
+    const verdict = resolvePush(rawBody, signature, row);
     if (!verdict.ok) return;
 
-    await runInNewTenantTransaction(this.db, verdict.organizationId, async () => {
-      await this.sync(verdict.organizationId, verdict.crmMailboxSyncId);
-    });
+    await this.sync(verdict.organizationId, verdict.crmMailboxSyncId);
   }
 
   /** Every mailbox this organisation has pointed at the CRM. */
@@ -203,6 +213,56 @@ export class CrmMailboxService {
    * not stop the others.
    */
   async sync(organizationId: string, crmMailboxSyncId: string) {
+    const prepared = await runInTenantTransaction(
+      this.db,
+      () => this.prepareSweep(organizationId, crmMailboxSyncId),
+      { orgId: organizationId },
+    );
+    if (prepared.step !== "fetch") return prepared.outcome;
+
+    const { row, connection, plan } = prepared;
+
+    try {
+      const read = await this.fetch(
+        row.provider,
+        connection.userId,
+        connection.composioAccountId,
+        plan.since,
+      );
+      return await runInTenantTransaction(
+        this.db,
+        () => this.recordSweep(organizationId, row, plan, read),
+        { orgId: organizationId },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn("crm mailbox sweep failed", {
+        organizationId,
+        crmMailboxSyncId,
+        mailboxEmailAddress: row.mailboxAddress,
+        error: message,
+      });
+
+      await runInTenantTransaction(
+        this.db,
+        async () => {
+          await this.db
+            .update(crmMailboxSync)
+            .set({
+              lastRunAt: new Date(),
+              lastError: message.slice(0, 500),
+              consecutiveFailures: sql`${crmMailboxSync.consecutiveFailures} + 1`,
+            })
+            .where(eq(crmMailboxSync.crmMailboxSyncId, crmMailboxSyncId));
+        },
+        { orgId: organizationId },
+      );
+
+      return { swept: false as const, reason: "provider-error" as const };
+    }
+  }
+
+  private async prepareSweep(organizationId: string, crmMailboxSyncId: string) {
     const [row] = await this.db
       .select()
       .from(crmMailboxSync)
@@ -222,7 +282,11 @@ export class CrmMailboxService {
       consecutiveFailures: row.consecutiveFailures,
     });
 
-    if (!plan.sweep) return { swept: false as const, reason: plan.reason };
+    if (!plan.sweep)
+      return {
+        step: "done" as const,
+        outcome: { swept: false as const, reason: plan.reason },
+      };
 
     /**
      * The connection is the source of truth for whether this mailbox still
@@ -233,7 +297,8 @@ export class CrmMailboxService {
     const [connection] = await this.db
       .select({
         userId: userIntegrationConnections.userId,
-        composioAccountId: userIntegrationConnections.composioConnectedAccountId,
+        composioAccountId:
+          userIntegrationConnections.composioConnectedAccountId,
         status: userIntegrationConnections.status,
       })
       .from(userIntegrationConnections)
@@ -250,7 +315,10 @@ export class CrmMailboxService {
         .update(crmMailboxSync)
         .set({ enabled: false, lastError: "The mailbox was disconnected." })
         .where(eq(crmMailboxSync.crmMailboxSyncId, crmMailboxSyncId));
-      return { swept: false as const, reason: "disconnected" as const };
+      return {
+        step: "done" as const,
+        outcome: { swept: false as const, reason: "disconnected" as const },
+      };
     }
 
     /**
@@ -262,101 +330,72 @@ export class CrmMailboxService {
      * exactly where it is, so re-authorising resumes rather than re-imports.
      */
     if (connection.status === "needs_reauth")
-      return { swept: false as const, reason: "needs-reauth" as const };
-
-    try {
-      const read = await this.fetch(
-        row.provider,
-        connection.userId,
-        connection.composioAccountId,
-        plan.since,
-      );
-
-      let delivered = 0;
-      let skipped = 0;
-      let unjudged = 0;
-      let newest: Date | null = null;
-
-      for (const message of read.messages) {
-        const result = mailToInboundEvent(message, {
-          organizationId,
-          provider: row.provider,
-          mailboxAddress: row.mailboxAddress,
-          privateLabelRule: read.privateLabelRule,
-        });
-
-        if (result.ok) {
-          await this.ingress.accept(result.event, organizationId);
-          delivered += 1;
-        } else {
-          skipped += 1;
-          if (result.reason === "labels-unknown") unjudged += 1;
-        }
-
-        const at = this.watermarkTimestamp(message, result);
-        if (at && (!newest || at > newest)) newest = at;
-      }
-
-      /**
-       * How far the watermark may move, given how much of the window was read.
-       *
-       * A truncated read has offered the newest of the window and not the rest,
-       * and the watermark is a single instant: it cannot say "everything up to
-       * here except a hole in the middle". So the two cases are different.
-       *
-       * A first sweep truncating means the initial lookback held more mail than
-       * one sweep can carry. That window is a courtesy backfill, not a delivery
-       * promise, so the watermark moves and the oldest of it is left where it
-       * is — the alternative is a mailbox that re-reads the same newest 2,500
-       * messages every few minutes forever and never files a message that
-       * arrives after it was connected.
-       *
-       * Any later sweep truncating means mail that arrived *after* the mailbox
-       * was connected is at risk, and that is not a courtesy. The watermark is
-       * held so nothing is skipped, and the note below says so.
-       */
-      const holdWatermark = read.truncated && !plan.firstRun;
-
-      await this.db
-        .update(crmMailboxSync)
-        .set({
-          syncedThrough: holdWatermark
-            ? row.syncedThrough
-            : advanceWatermark(row.syncedThrough, newest),
-          lastRunAt: new Date(),
-          lastError: sweepNote(read.truncated, plan.firstRun, read.messages.length, unjudged),
-          consecutiveFailures: 0,
-        })
-        .where(eq(crmMailboxSync.crmMailboxSyncId, crmMailboxSyncId));
-
       return {
-        swept: true as const,
-        delivered,
-        skipped,
-        unjudged,
-        read: read.messages.length,
-        truncated: read.truncated,
+        step: "done" as const,
+        outcome: { swept: false as const, reason: "needs-reauth" as const },
       };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn("crm mailbox sweep failed", {
+
+    return { step: "fetch" as const, row, connection, plan };
+  }
+
+  private async recordSweep(
+    organizationId: string,
+    row: CrmMailboxSyncRow,
+    plan: SweepPlanToRun,
+    read: SweepRead,
+  ) {
+    let delivered = 0;
+    let skipped = 0;
+    let unjudged = 0;
+    let newest: Date | null = null;
+
+    for (const message of read.messages) {
+      const result = mailToInboundEvent(message, {
         organizationId,
-        crmMailboxSyncId,
-        mailboxEmailAddress: row.mailboxAddress,
-        error: message,
+        provider: row.provider,
+        mailboxAddress: row.mailboxAddress,
+        privateLabelRule: read.privateLabelRule,
       });
 
-      await this.db
-        .update(crmMailboxSync)
-        .set({
-          lastRunAt: new Date(),
-          lastError: message.slice(0, 500),
-          consecutiveFailures: sql`${crmMailboxSync.consecutiveFailures} + 1`,
-        })
-        .where(eq(crmMailboxSync.crmMailboxSyncId, crmMailboxSyncId));
+      if (result.ok) {
+        await this.ingress.accept(result.event, organizationId);
+        delivered += 1;
+      } else {
+        skipped += 1;
+        if (result.reason === "labels-unknown") unjudged += 1;
+      }
 
-      return { swept: false as const, reason: "provider-error" as const };
+      const at = this.watermarkTimestamp(message, result);
+      if (at && (!newest || at > newest)) newest = at;
     }
+
+    const holdWatermark = read.truncated && !plan.firstRun;
+
+    await this.db
+      .update(crmMailboxSync)
+      .set({
+        syncedThrough: holdWatermark
+          ? row.syncedThrough
+          : advanceWatermark(row.syncedThrough, newest),
+        lastRunAt: new Date(),
+        lastError: sweepNote(
+          read.truncated,
+          plan.firstRun,
+          read.messages.length,
+          unjudged,
+        ),
+        consecutiveFailures: 0,
+      })
+      .where(eq(crmMailboxSync.crmMailboxSyncId, row.crmMailboxSyncId));
+
+    return {
+      swept: true as const,
+      delivered,
+      skipped,
+      unjudged,
+      read: read.messages.length,
+      truncated: read.truncated,
+    };
   }
 
   /** Every enabled mailbox in this organisation, oldest run first. */
@@ -365,7 +404,10 @@ export class CrmMailboxService {
       .select({ id: crmMailboxSync.crmMailboxSyncId })
       .from(crmMailboxSync)
       .where(
-        and(eq(crmMailboxSync.organizationId, organizationId), eq(crmMailboxSync.enabled, true)),
+        and(
+          eq(crmMailboxSync.organizationId, organizationId),
+          eq(crmMailboxSync.enabled, true),
+        ),
       )
       .orderBy(sql`${crmMailboxSync.lastRunAt} ASC NULLS FIRST`)
       .limit(50);
@@ -384,21 +426,6 @@ export class CrmMailboxService {
     return { mailboxes: due.length, swept, delivered };
   }
 
-  /**
-   * The timestamp a message contributes to the watermark, if any.
-   *
-   * "Everything at or before the watermark has been offered" — so a message the
-   * adapter judged counts whether it was filed or refused; a private one was
-   * looked at and deliberately not filed, and re-reading it forever would be
-   * pointless.
-   *
-   * Two do not count. A message refused for want of labels was never judged at
-   * all, and moving past it would mean it is never judged. And an estimated
-   * timestamp is this instant rather than the message's, so letting it through
-   * would set "everything up to now has been read" off the back of one
-   * malformed `Date:` header — skipping whatever the provider had not yet
-   * indexed, which is the exact gap the watermark exists to close.
-   */
   private watermarkTimestamp(
     message: MailMessageForIngress,
     result: ReturnType<typeof mailToInboundEvent>,
@@ -406,7 +433,9 @@ export class CrmMailboxService {
     if (result.ok && result.occurredAtEstimated) return null;
     if (!result.ok && result.reason === "labels-unknown") return null;
 
-    const at = new Date(result.ok ? result.event.occurredAt : (message.date ?? ""));
+    const at = new Date(
+      result.ok ? result.event.occurredAt : (message.date ?? ""),
+    );
     return Number.isNaN(at.getTime()) ? null : at;
   }
 
@@ -428,6 +457,17 @@ export class CrmMailboxService {
         ? await fetchGmailMessages(this.gmail, userId, conn, since)
         : await fetchOutlookMessages(this.outlook, userId, conn, since);
 
-    return { ...read, messages: await enrichWithDetail(provider, this.gmail, this.outlook, userId, conn, read.messages, this.logger) };
+    return {
+      ...read,
+      messages: await enrichWithDetail(
+        provider,
+        this.gmail,
+        this.outlook,
+        userId,
+        conn,
+        read.messages,
+        this.logger,
+      ),
+    };
   }
 }

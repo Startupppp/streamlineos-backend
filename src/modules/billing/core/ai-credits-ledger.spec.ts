@@ -124,7 +124,7 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
         const txSelect = jest.fn().mockReturnValue({
           from: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([{ id: 99 }]),
+              limit: jest.fn().mockResolvedValue([{ id: 99, status: "RESERVED" }]),
             }),
           }),
         });
@@ -169,11 +169,15 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
     });
 
     /** A tenant transaction whose only query is the idempotency-key lookup. */
-    function idempotencyLookupTx(rows: Array<{ id: number }>) {
+    function idempotencyLookupTx(rows: Array<{ id: number; status?: string }>) {
       return tenantTx({
         select: jest.fn().mockReturnValue({
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(
+                rows.map((row) => ({ status: "RESERVED", ...row })),
+              ),
+            }),
           }),
         }),
       });
@@ -183,6 +187,29 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
     function savepointRejectsTx(err: unknown) {
       return { ...tenantTx({}), transaction: jest.fn().mockRejectedValue(err) };
     }
+
+    it("refuses a replay against a settled reservation, which would otherwise skip the balance check entirely", async () => {
+      db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const txSelect = jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([{ id: 99, status: "SETTLED" }]),
+            }),
+          }),
+        });
+        return fn(tenantTx({ select: txSelect }));
+      });
+
+      await expect(
+        svc.reserve({
+          orgId: "org1",
+          userId: "u1",
+          feature: "kb.ask",
+          credits: 1000,
+          idempotencyKey: "replayed",
+        }),
+      ).rejects.toThrow(/already settled/i);
+    });
 
     it("a request that loses the idempotency-key race returns the winner's reservation", async () => {
       db.transaction = jest.fn()

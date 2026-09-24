@@ -58,7 +58,8 @@ export async function authorize(
 
   // namespaceOf, never administeringModuleOf: Home administers `chat:*` and is always enabled, so that swap would keep `chat:*` live for an org with Chat disabled.
   const avail = await ctx.moduleAvailable(namespaceOf(permissionKey));
-  if (!avail.available) return { allow: false, scope: "none", reason: "NO_MODULE" };
+  if (!avail.available)
+    return { allow: false, scope: "none", reason: "NO_MODULE", moduleReason: avail.reason };
 
   const scope = await access.scopeFor(ctx.actor, permissionKey, ctx);
   if (scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };

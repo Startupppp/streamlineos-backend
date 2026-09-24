@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import request from "supertest";
 import { z } from "zod";
 import { encodeCursor } from "src/common/pagination/cursor";
-import { projectStatuses, sprintScopeEvents, sprints, tickets, workItemRelations } from "src/db/schema";
+import { cycles, projectStatuses, cycleScopeEvents, tickets, workItemRelations } from "src/db/schema";
 import { createBuildWorkflowFixture, type BuildWorkflowFixture } from "./build-workflow-fixtures";
 
 describe("[seeded-e2e] Build report correctness and bounds", () => {
@@ -24,29 +24,29 @@ describe("[seeded-e2e] Build report correctness and bounds", () => {
     }
   });
 
-  it("paginates tied sprint timestamps without duplicates after a concurrent newer sprint", async () => {
-    const sprintRows: (typeof sprints.$inferInsert)[] = Array.from({ length: 3 }, (_, index) => ({
-      orgId: f.home.orgId, projectId: f.projectId, name: `Velocity ${index}`, status: "COMPLETED",
-      startDate: new Date("2026-09-01"), endDate: new Date("2026-09-08"),
+  it("paginates tied cycle timestamps without duplicates after a concurrent newer cycle", async () => {
+    const cycleRows: (typeof cycles.$inferInsert)[] = Array.from({ length: 3 }, (_, index) => ({
+      orgId: f.home.orgId, projectId: f.projectId, name: `Velocity ${index}`, status: "completed",
+      startDate: "2026-09-01", endDate: "2026-09-08", createdBy: f.home.members.manager.userId,
     }));
-    const inserted = await f.seeded.seedDb.insert(sprints).values(sprintRows).returning({ id: sprints.id });
-    await f.seeded.seedDb.update(sprints).set({ startDate: sql`'2026-09-01 00:00:00.123456'::timestamp` })
-      .where(and(eq(sprints.orgId, f.home.orgId), eq(sprints.projectId, f.projectId)));
+    const inserted = await f.seeded.seedDb.insert(cycles).values(cycleRows).returning({ id: cycles.id });
+    await f.seeded.seedDb.update(cycles).set({ startDate: sql`'2026-09-01'::date` })
+      .where(and(eq(cycles.orgId, f.home.orgId), eq(cycles.projectId, f.projectId)));
     const seen: number[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < 3; page++) {
       const response = await request(f.seeded.app.getHttpServer()).get(`/build/${f.projectId}/reports/velocity`)
         .query({ limit: 1, ...(cursor ? { cursor } : {}) }).set("Authorization", `Bearer ${f.managerToken}`);
       expect(response.status).toBe(200);
-      const data = z.array(z.object({ sprintId: z.number() })).parse(response.body);
+      const data = z.array(z.object({ cycleId: z.number() })).parse(response.body);
       expect(data).toHaveLength(1);
-      seen.push(...data.map(row => row.sprintId));
+      seen.push(...data.map(row => row.cycleId));
       cursor = response.headers["x-next-cursor"];
       expect(response.headers["x-has-more"]).toBe(String(page < 2));
       if (page === 0) {
         expect(response.headers["link"]).toContain('rel="next"');
         expect(response.headers["access-control-expose-headers"]).toContain("X-Next-Cursor");
-        await f.seeded.seedDb.insert(sprints).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Concurrent sprint", status: "COMPLETED", startDate: new Date("2026-09-02"), endDate: new Date("2026-09-09") });
+        await f.seeded.seedDb.insert(cycles).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Concurrent cycle", status: "completed", startDate: "2026-09-02", endDate: "2026-09-09", createdBy: f.home.members.manager.userId });
       }
     }
     expect(seen).toEqual(inserted.map(row => row.id).sort((left, right) => right - left));
@@ -54,27 +54,27 @@ describe("[seeded-e2e] Build report correctness and bounds", () => {
   });
 
   it("rejects burnup ranges longer than 366 days instead of allocating an unbounded chart", async () => {
-    const [sprint] = await f.seeded.seedDb.insert(sprints).values({
-      orgId: f.home.orgId, projectId: f.projectId, name: "Oversized report range", status: "COMPLETED",
-      startDate: new Date("2020-01-01"), endDate: new Date("2026-09-09"),
-    }).returning({ id: sprints.id });
-    if (!sprint) throw new Error("Report sprint missing");
+    const [cycle] = await f.seeded.seedDb.insert(cycles).values({
+      orgId: f.home.orgId, projectId: f.projectId, name: "Oversized report range", status: "completed",
+      startDate: "2020-01-01", endDate: "2026-09-09", createdBy: f.home.members.manager.userId,
+    }).returning({ id: cycles.id });
+    if (!cycle) throw new Error("Report cycle missing");
     const response = await request(f.seeded.app.getHttpServer()).get(`/build/${f.projectId}/reports/burnup`)
-      .query({ sprintId: sprint.id }).set("Authorization", `Bearer ${f.managerToken}`);
+      .query({ cycleId: cycle.id }).set("Authorization", `Bearer ${f.managerToken}`);
     expect(response.status).toBe(422);
     expect(JSON.stringify(response.body)).toContain("366");
   });
 
   it("rejects burnup replay over 20000 events without returning a partial chart", async () => {
-    const [sprint] = await f.seeded.seedDb.insert(sprints).values({
-      orgId: f.home.orgId, projectId: f.projectId, name: "Oversized report replay", status: "COMPLETED",
-      startDate: new Date("2026-09-01"), endDate: new Date("2026-09-08"),
-    }).returning({ id: sprints.id });
-    if (!sprint) throw new Error("Report sprint missing");
-    await f.seeded.seedDb.execute(sql`INSERT INTO ${sprintScopeEvents} (org_id, sprint_id, ticket_id, event_type, new_points, created_at)
-      SELECT ${f.home.orgId}, ${sprint.id}, ${f.ticketIds[0]}, 'estimate_changed', 1, '2026-09-01'::timestamptz FROM generate_series(1, 20001)`);
+    const [cycle] = await f.seeded.seedDb.insert(cycles).values({
+      orgId: f.home.orgId, projectId: f.projectId, name: "Oversized report replay", status: "completed",
+      startDate: "2026-09-01", endDate: "2026-09-08", createdBy: f.home.members.manager.userId,
+    }).returning({ id: cycles.id });
+    if (!cycle) throw new Error("Report cycle missing");
+    await f.seeded.seedDb.execute(sql`INSERT INTO ${cycleScopeEvents} (org_id, cycle_id, ticket_id, event_type, new_points, created_at)
+      SELECT ${f.home.orgId}, ${cycle.id}, ${f.ticketIds[0]}, 'estimate_changed', 1, '2026-09-01'::timestamptz FROM generate_series(1, 20001)`);
     const response = await request(f.seeded.app.getHttpServer()).get(`/build/${f.projectId}/reports/burnup`)
-      .query({ sprintId: sprint.id }).set("Authorization", `Bearer ${f.managerToken}`);
+      .query({ cycleId: cycle.id }).set("Authorization", `Bearer ${f.managerToken}`);
     expect(response.status).toBe(422);
     expect(JSON.stringify(response.body)).toContain("20000");
   });

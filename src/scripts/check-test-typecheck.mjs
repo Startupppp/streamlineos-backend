@@ -25,7 +25,9 @@
  *   node src/scripts/check-test-typecheck.mjs             # normal gate
  *   node src/scripts/check-test-typecheck.mjs --self-test # proves the gate bites
  *
- * NOTE: the typecheck subprocess is given NODE_OPTIONS=--max-old-space-size=8192.
+ * NOTE: the typecheck subprocess is given NODE_OPTIONS=--max-old-space-size=10240.
+ *       At 8192 tsc dies with "Ineffective mark-compacts near heap limit", exit 134,
+ *       printing zero type errors — a false pass for any caller reading output.
  *       A crashed tsc prints no diagnostics, which greps as "0 errors" — this
  *       script treats a non-zero exit with no parseable diagnostics as a crash
  *       and fails, rather than reporting a clean tree.
@@ -51,7 +53,7 @@ const DIAGNOSTIC = /^([^\s(][^(]*)\((\d+),(\d+)\): error (TS\d+): /;
 function runTypecheck(project = PROJECT) {
   return spawnSync(process.execPath, [TSC, "--noEmit", "-p", project], {
     cwd: BACKEND_ROOT,
-    env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=8192" },
+    env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=10240" },
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });

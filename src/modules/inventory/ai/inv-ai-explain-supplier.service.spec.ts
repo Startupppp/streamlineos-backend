@@ -4,6 +4,7 @@ import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service"
 import type { VendorScorecardService } from "../vendors/vendor-scorecard.service";
 import type { InvAiService } from "./inv-ai.service";
 import type { Db } from "../../../db/drizzle.module";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
 
 function buildService(
   db: unknown,
@@ -12,7 +13,7 @@ function buildService(
   insights?: Partial<InvAiService>,
 ) {
   return new InvAiExplainService(
-    db as Db,
+    withDelegatingTransaction(db as object) as Db,
     gateway as AiGatewayService,
     (scorecards ?? {}) as VendorScorecardService,
     (insights ?? {}) as InvAiService,

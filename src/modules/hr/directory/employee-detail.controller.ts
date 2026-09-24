@@ -25,6 +25,7 @@ import {
 } from "./employees-scope";
 import { buildEmployeeProfilePdf } from "./profile-pdf";
 import {
+  employeeIdParamsSchema,
   updateEmployeeSchema,
   type UpdateEmployeeInput,
 } from "./dto/hr-directory.schemas";
@@ -38,9 +39,7 @@ import {
   reportsToMeListSchema,
   successSchema,
 } from "./dto/directory-response.schemas";
-import { z } from "zod";
 
-const employeeIdParams = z.object({ employeeId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -66,7 +65,7 @@ export class EmployeeDetailController {
   @Get(":employeeId/reports-to-me")
   @ResponseSchema(reportsToMeListSchema)
   @RequirePermission("hr:employees:view")
-  @Validate({ params: employeeIdParams })
+  @Validate({ params: employeeIdParamsSchema })
   async reportsToMe(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -80,7 +79,7 @@ export class EmployeeDetailController {
   @Get(":employeeId/manager-scorecard")
   @ResponseSchema(managerScorecardSchema)
   @RequirePermission("hr:employees:view")
-  @Validate({ params: employeeIdParams })
+  @Validate({ params: employeeIdParamsSchema })
   async managerScorecard(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -94,7 +93,7 @@ export class EmployeeDetailController {
   @Get(":employeeId/profile-pdf")
   @ApiOkResponse({ description: "Employee profile PDF binary", content: { "application/pdf": { schema: { type: "string", format: "binary" } } } })
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: employeeIdParams })
+  @Validate({ params: employeeIdParamsSchema })
   async profilePdf(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -117,7 +116,7 @@ export class EmployeeDetailController {
   @Get(":employeeId")
   @ResponseSchema(employeeDetailSchema)
   @RequirePermission("hr:employees:view")
-  @Validate({ params: employeeIdParams })
+  @Validate({ params: employeeIdParamsSchema })
   async getEmployeeDetail(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -131,7 +130,7 @@ export class EmployeeDetailController {
   @Patch(":employeeId")
   @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:update")
-  @Validate({ params: employeeIdParams, body: updateEmployeeSchema })
+  @Validate({ params: employeeIdParamsSchema, body: updateEmployeeSchema })
   updateEmployee(
     @Param("employeeId") employeeId: string,
     @Body() body: UpdateEmployeeInput,

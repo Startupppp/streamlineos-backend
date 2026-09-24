@@ -309,6 +309,7 @@ export const ticketRelatedLinks = build.table(
   (table) => [
   foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_related_links_org_ticket" }).onDelete("cascade"),
     index("idx_ticket_related_links_ticket").on(table.ticketId),
+    index("idx_ticket_related_links_org_ticket").on(table.orgId, table.ticketId, table.createdAt),
     unique("uniq_ticket_related_links_org_id").on(table.orgId, table.id),
     foreignKey({
       name: "fk_ticket_related_links_created_by_actor",

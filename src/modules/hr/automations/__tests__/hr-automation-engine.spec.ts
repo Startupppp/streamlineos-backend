@@ -1,4 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
+import { withDelegatingTransaction } from "../../../../test/delegating-transaction";
+import * as tenantContext from "../../../../common/tenant/tenant-context";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { HrAutomationEngineService } from "../hr-automation-engine.service";
 import { HrAutomationActionsService } from "../hr-automation-actions.service";
@@ -12,7 +14,7 @@ const mockUpdate = jest.fn().mockReturnThis();
 const mockSet = jest.fn().mockReturnThis();
 const mockWhere = jest.fn().mockResolvedValue(undefined);
 
-const mockDb = {
+const mockDb = withDelegatingTransaction({
   query: {
     hrAutomationRules: { findMany: jest.fn(), findFirst: jest.fn() },
     hrAutomationRuns: { findMany: jest.fn() },
@@ -22,7 +24,7 @@ const mockDb = {
   update: mockUpdate,
   set: mockSet,
   where: mockWhere,
-};
+});
 
 const mockActions = { execute: jest.fn() };
 const mockNotifications = { create: jest.fn() };
@@ -217,7 +219,7 @@ describe("HrAutomationEngineService — loop prevention + fire-and-forget", () =
     ]);
 
     let insertedRun: Record<string, unknown> | null = null;
-    const captureInsert = {
+    const captureInsert = withDelegatingTransaction({
       ...mockDb,
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
@@ -225,7 +227,7 @@ describe("HrAutomationEngineService — loop prevention + fire-and-forget", () =
           return Promise.resolve();
         }),
       }),
-    };
+    });
     (service as unknown as { db: typeof mockDb }).db = captureInsert as unknown as typeof mockDb;
 
     await service.emit("org1", "employee.created", { employeeId: "u1" }, { depth: 3 });
@@ -330,5 +332,35 @@ describe("HrAutomationActionsService — call_webhook SSRF", () => {
     const result = await callWebhookAction("not-a-url");
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/invalid.url/i);
+  });
+});
+
+describe("HrAutomationEngineService and the request transaction", () => {
+  it("runs its rules after the caller commits, so a webhook action cannot hold the request's connection", async () => {
+    const hooks: (() => unknown)[] = [];
+    jest
+      .spyOn(tenantContext, "registerAfterCommit")
+      .mockImplementation((hook: () => unknown) => {
+        hooks.push(hook);
+        return true;
+      });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        HrAutomationEngineService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: HrAutomationActionsService, useValue: mockActions },
+        { provide: HR_WORKFLOW_STARTER, useValue: mockWorkflowStarter },
+      ],
+    }).compile();
+
+    mockDb.query.hrAutomationRules.findMany.mockResolvedValueOnce([]);
+    await module.get(HrAutomationEngineService).emit("org1", "employee.created", {});
+
+    expect(hooks).toHaveLength(1);
+    expect(mockDb.query.hrAutomationRules.findMany).not.toHaveBeenCalled();
+
+    await hooks[0]!();
+    expect(mockDb.query.hrAutomationRules.findMany).toHaveBeenCalled();
   });
 });

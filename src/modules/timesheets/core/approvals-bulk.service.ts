@@ -28,12 +28,6 @@ import type {
 } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-/*
-  The service decides who and whether: it reads the periods, runs the guard on
-  each, resolves the owners, opens the transaction and sends the notices once it
-  commits. What an approval or a rejection writes inside that transaction is in
-  `lib/approval-transition.ts` and `lib/rejection-transition.ts`.
-*/
 @Injectable()
 export class ApprovalsBulkService {
   constructor(
@@ -49,7 +43,13 @@ export class ApprovalsBulkService {
     input: RejectPeriodInput,
   ) {
     const [period] = await this.db
-      .select()
+      .select({
+        status: timesheetPeriods.status,
+        userMembershipId: timesheetPeriods.userMembershipId,
+        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+        periodStart: timesheetPeriods.periodStart,
+        periodEnd: timesheetPeriods.periodEnd,
+      })
       .from(timesheetPeriods)
       .where(
         and(
@@ -107,15 +107,6 @@ export class ApprovalsBulkService {
     };
   }
 
-  /**
-   * A mixed-tenant id list must fail the whole request. Both bulk actions used
-   * to fold a foreign id into their ordinary skip path — the approve loop
-   * swallowed the `NotFoundException` as a skip, and the reject query narrows to
-   * the caller's org in the same predicate as the status filter — so the caller
-   * was told the request succeeded. Tenant membership is checked first and on
-   * its own, which leaves the per-period status and approver skips meaning what
-   * they say. A miss is 404, never 403.
-   */
   private async assertPeriodsInOrg(orgId: string, periodIds: readonly number[]): Promise<number[]> {
     const requestedIds = [...new Set(periodIds)];
     const owned = await this.db
@@ -179,13 +170,6 @@ export class ApprovalsBulkService {
     }
 
     const skipped = requestedIds.length - approvable.length;
-    /**
-     * TS-15. A caller who may approve none of a SUBMITTED batch used to get
-     * 200 `{ approved: 0, skipped: N }`, indistinguishable from "already
-     * approved". The single-period route answers 403 for the same standing;
-     * bulk must not launder that into success. Periods that are simply not
-     * SUBMITTED stay a skip — those are not an authority miss.
-     */
     if (approvable.length === 0) {
       if (candidates.length > 0) {
         throw new ForbiddenException("You are not allowed to approve any of the selected periods");
@@ -229,11 +213,6 @@ export class ApprovalsBulkService {
       ),
     );
 
-    /**
-     * One notification per worker, after the batch commits — the same notice
-     * `approveSinglePeriod` sends, for the same reason bulk rejection sends one
-     * per period: one action for the approver is N pieces of news for N people.
-     */
     for (const p of approvable) {
       if (!approvedIds.has(p.id)) continue;
       const ownerUserId =
@@ -253,7 +232,6 @@ export class ApprovalsBulkService {
       });
     }
 
-    /* A period decided by someone else between the check and the write counts as skipped, not overwritten. */
     return { approved: approvedIds.size, skipped: skipped + (ids.length - approvedIds.size) };
   }
 
@@ -323,11 +301,6 @@ export class ApprovalsBulkService {
       ),
     );
 
-    /**
-     * One notification per worker, after the batch commits. A bulk rejection is
-     * one action for the approver and N separate pieces of bad news for N
-     * people, each of whom needs the reason and their own period link.
-     */
     for (const p of periods) {
       if (!rejectedIds.has(p.id)) continue;
       const ownerUserId =

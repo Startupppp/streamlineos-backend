@@ -40,9 +40,28 @@ import {
 } from "../../directory/employment-query";
 import { canonicalAdmissionEmail } from "../../organization/core/membership-admission.service";
 import { findLivePrimaryEmploymentId } from "./employee-admission-status";
-import type { checkEmailSchema } from "./dto/directory-response.schemas";
+import type { checkEmailSchema, employeeCountsSchema } from "./dto/directory-response.schemas";
 
 type EmployeeAdmissionCheck = z.infer<typeof checkEmailSchema>;
+type EmployeeDirectoryCounts = z.infer<typeof employeeCountsSchema>;
+
+export type EmployeeDirectoryFilters = {
+  search?: string;
+  departmentId?: string;
+  role?: string;
+};
+
+function normalizeDirectoryFilters(opts: EmployeeDirectoryFilters): EmployeeDirectoryFilters {
+  return {
+    search: opts.search?.trim() || undefined,
+    departmentId: opts.departmentId,
+    role: opts.role?.trim() || undefined,
+  };
+}
+
+function directoryFilterKey(filters: EmployeeDirectoryFilters): string {
+  return `${filters.search ?? ""}:${filters.departmentId ?? ""}:${filters.role ?? ""}`;
+}
 
 @Injectable()
 export class EmployeesService {
@@ -54,35 +73,32 @@ export class EmployeesService {
 
   listEmployees(
     read: ScopedRead,
-    opts: {
+    opts: EmployeeDirectoryFilters & {
       cursor?: string;
       limit?: number;
-      search?: string;
-      departmentId?: string;
       isActive?: "true" | "false" | "all";
-      role?: string;
     },
   ) {
-    const search = opts.search;
     const limitN = opts.limit ?? 20;
     const isActive = opts.isActive ?? "true";
-    const departmentId = opts.departmentId;
-    const role = opts.role?.trim() || undefined;
+    const filters = normalizeDirectoryFilters(opts);
 
-    const key = `cursor:${read.discriminator}:${opts.cursor ?? ""}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
+    const key = `cursor:${read.discriminator}:${opts.cursor ?? ""}:${limitN}:${directoryFilterKey(filters)}:${isActive}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.hrEmployeesListNamespace(read.orgId),
       key,
-      () =>
-        this.getEmployeesPaginated(
-          read,
-          opts.cursor,
-          limitN,
-          search,
-          departmentId,
-          isActive,
-          role,
-        ),
+      () => this.getEmployeesPaginated(read, opts.cursor, limitN, filters, isActive),
+      CACHE_TTL.SHORT,
+    );
+  }
+
+  countEmployees(read: ScopedRead, opts: EmployeeDirectoryFilters): Promise<EmployeeDirectoryCounts> {
+    const filters = normalizeDirectoryFilters(opts);
+    const key = `counts:${read.discriminator}:${directoryFilterKey(filters)}`;
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.hrEmployeesListNamespace(read.orgId),
+      key,
+      () => this.getEmployeeCounts(read, filters),
       CACHE_TTL.SHORT,
     );
   }
@@ -106,24 +122,59 @@ export class EmployeesService {
     if (!visible) throw new NotFoundException("Employee not found");
   }
 
+  private async directoryConditions(
+    filters: EmployeeDirectoryFilters,
+    isActive: "true" | "false" | "all",
+  ): Promise<(SQL | undefined)[]> {
+    const conditions: (SQL | undefined)[] = [];
+    if (isActive === "true") conditions.push(eq(users.isActive, true));
+    else if (isActive === "false") conditions.push(eq(users.isActive, false));
+    if (filters.departmentId != null) conditions.push(eq(hrEmployments.departmentId, filters.departmentId));
+    if (filters.role) conditions.push(eq(organizationMembers.role, filters.role));
+    if (filters.search) conditions.push(await this.employeeSearchCondition(filters.search));
+    return conditions;
+  }
+
+  private async getEmployeeCounts(
+    read: ScopedRead,
+    filters: EmployeeDirectoryFilters,
+  ): Promise<EmployeeDirectoryCounts> {
+    const orgId = read.orgId;
+    const conditions = await this.directoryConditions(filters, "all");
+    const [counts] = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: conditions,
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            active: sql<number>`count(*) filter (where ${users.isActive})`.mapWith(Number),
+            inactive: sql<number>`count(*) filter (where not ${users.isActive})`.mapWith(Number),
+          })
+          .from(organizationMembers)
+          .innerJoin(users, eq(organizationMembers.userId, users.id))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .where(where),
+      () => [],
+    );
+    return { active: counts?.active ?? 0, inactive: counts?.inactive ?? 0 };
+  }
+
   private async getEmployeesPaginated(
     read: ScopedRead,
     encodedCursor: string | undefined,
     limit: number,
-    search: string | undefined,
-    departmentId?: string,
-    isActive: "true" | "false" | "all" = "true",
-    role?: string,
+    filters: EmployeeDirectoryFilters,
+    isActive: "true" | "false" | "all",
   ) {
     const orgId = read.orgId;
     const cursor = encodedCursor ? decodeEmployeeListCursor(encodedCursor) : undefined;
     const normalizedName = sql<string>`lower(coalesce(${users.name}, ''))`;
 
-    const extraConditions: (SQL | undefined)[] = [];
-    if (isActive === "true") extraConditions.push(eq(users.isActive, true));
-    else if (isActive === "false") extraConditions.push(eq(users.isActive, false));
-    if (departmentId != null) extraConditions.push(eq(hrEmployments.departmentId, departmentId));
-    if (role) extraConditions.push(eq(organizationMembers.role, role));
+    const extraConditions = await this.directoryConditions(filters, isActive);
     if (cursor) {
       extraConditions.push(
         or(
@@ -135,9 +186,6 @@ export class EmployeesService {
         ),
       );
     }
-
-    const searchCondition = search ? await this.employeeSearchCondition(search) : undefined;
-    extraConditions.push(searchCondition);
 
     const dataResult = await read.read(
       {

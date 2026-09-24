@@ -10,24 +10,6 @@ import {
 import { ExternalEffectLeaseBusyError } from "../../../../../common/outbox/external-effect-ledger";
 import type { WebhooksDispatchService } from "../../../../webhooks/webhooks-dispatch.service";
 
-/**
- * TS-06. The registration, and what happens when the event arrives.
- *
- * The registration test is the one that matters and the one that looks like
- * bookkeeping. `OutboxPublisherService.deliver` **throws** on an event type with
- * no registered consumer, and that throw goes down the retry-then-dead-letter
- * path — so a missing registration does not mean "nothing happens", it means
- * every submit, approval, rejection and lock in the platform dead-letters after
- * eight attempts, in a background sweep, silently. A test that asserts all four
- * names are registered is a test that the emits of TS-05 have somewhere to land.
- *
- * Note what is deliberately not stubbed away: nothing calls `handle` bare here
- * except this file, and it can, because the consumer opens no transaction of
- * its own — the publisher wraps it. A spec that called a consumer which *did*
- * expect an ambient tenant transaction would get an RLS refusal that is a
- * property of the spec, not of the product.
- */
-
 const PAYLOAD = {
   organization_id: "org-1",
   period_id: 42,
@@ -102,11 +84,6 @@ describe("TimesheetLifecycleConsumer", () => {
     expect(webhooks.calls[0]!.payload).toMatchObject({ period_id: 42, status: "APPROVED" });
   });
 
-  /**
-   * The registered handler and the method are the same code path — a
-   * registration that pointed somewhere else would pass the test above and fail
-   * in production.
-   */
   it("routes through the registered adapter, not just the method", async () => {
     const webhooks = stubWebhooks();
     const registry = new OutboxConsumerRegistry();
@@ -128,12 +105,6 @@ describe("TimesheetLifecycleConsumer", () => {
     expect(webhooks.calls).toHaveLength(0);
   });
 
-  /**
-   * The payload names its own organisation and so does the outbox row. If they
-   * ever disagree, the row is authoritative and the payload is evidence of a
-   * producer bug — delivering it would send one tenant's timesheet to another
-   * tenant's endpoints.
-   */
   it("refuses an event whose payload names a different organisation", async () => {
     const webhooks = stubWebhooks();
     const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry(), passThruEffects() as never);
@@ -144,12 +115,6 @@ describe("TimesheetLifecycleConsumer", () => {
     expect(webhooks.calls).toHaveLength(0);
   });
 
-  /**
-   * A delivery failure has to reach the publisher, which is the thing that
-   * retries. Swallowing it here would mark the outbox row DELIVERED for an
-   * event that reached nobody — the precise failure the outbox exists to
-   * prevent.
-   */
   it("propagates a delivery failure so the publisher can retry", async () => {
     const webhooks = stubWebhooks();
     webhooks.failWith(new Error("endpoint timed out"));

@@ -5,7 +5,7 @@ import {
   getTrialReminderEmail,
   getWaitlistAdminNotificationEmail,
   getWaitlistConfirmationEmail,
-} from "../index";
+} from "..";
 import { BASE_URL, BRAND, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
 export const platformTemplates = defineTemplateFamily({

@@ -10,6 +10,12 @@ import { ChatPinsService } from "../chat-pins.service";
 import { ChatPresenceService } from "../chat-presence.service";
 import { ChatSavedService } from "../chat-saved.service";
 import { ChatSearchService } from "../chat-search.service";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
+
+const searchChannelListStub = () =>
+  ({ listMemberChannelIds: jest.fn().mockResolvedValue([]) }) as unknown as ChatChannelListService;
+
 import { ChatSummarizeService } from "../chat-summarize.service";
 
 const ORG = "org-a";
@@ -88,7 +94,7 @@ function memberDb(
     orderBy: () => chain,
     limit: () => Promise.resolve(options.rows ?? []),
   };
-  return {
+  return withDelegatingTransaction({
     query: {
       chatChannels: {
         findFirst: jest
@@ -107,12 +113,14 @@ function memberDb(
     },
     select: jest.fn(() => chain),
     execute: jest.fn().mockResolvedValue([{ id: 1 }]),
-  } as unknown as Db;
+  }) as unknown as Db;
 }
 
 function members(db: Db, entities: EntityReferenceService) {
   return new ChatChannelMembersImplementation(db, entities);
 }
+
+beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
 
 describe("record channel — a retained membership does not survive losing the record", () => {
   it("DENY: getChannel 404s once the record no longer resolves", async () => {
@@ -254,7 +262,11 @@ describe("record channel — durable copies of its content are withheld too", ()
     };
     const db = memberDb(RECORD_CHANNEL_ROW);
     (db.query.chatMessages.findMany as jest.Mock).mockResolvedValue([hit]);
-    const result = await new ChatSearchService(db, entitiesThatAnswer(UNRESOLVED)).searchMessages(
+    const result = await new ChatSearchService(
+      db,
+      entitiesThatAnswer(UNRESOLVED),
+      searchChannelListStub(),
+    ).searchMessages(
       actor,
       "apollo",
       20,
@@ -326,7 +338,11 @@ describe("record channel — durable copies of its content are withheld too", ()
     };
     const db = memberDb(RECORD_CHANNEL_ROW);
     (db.query.chatMessages.findMany as jest.Mock).mockResolvedValue([hit]);
-    const result = await new ChatSearchService(db, entitiesThatAnswer(UNRESOLVED)).searchMessages(
+    const result = await new ChatSearchService(
+      db,
+      entitiesThatAnswer(UNRESOLVED),
+      searchChannelListStub(),
+    ).searchMessages(
       actor,
       "general",
       20,

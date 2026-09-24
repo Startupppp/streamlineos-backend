@@ -1,14 +1,16 @@
 import { z } from "zod";
 
+export const DESCRIPTION_MAX = 100_000;
+
 export const improveDescriptionBodySchema = z.object({
-  draft: z.string().max(5000).optional(),
+  draft: z.string().max(DESCRIPTION_MAX).optional(),
 }).strict();
 export type ImproveDescriptionBodyInput = z.infer<typeof improveDescriptionBodySchema>;
 
 export const draftTicketBodySchema = z
   .object({
     title: z.string().max(500).optional(),
-    description: z.string().max(5000).optional(),
+    description: z.string().max(DESCRIPTION_MAX).optional(),
   }).strict()
   .refine(
     (data) => Boolean(data.title?.trim() || data.description?.trim()),

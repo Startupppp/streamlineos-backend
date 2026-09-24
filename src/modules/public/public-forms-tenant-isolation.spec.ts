@@ -1,10 +1,15 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { PublicFormsService } from "./public-forms.service";
+import type { SubmissionsService } from "../build/forms/submissions.service";
 
 describe("PublicFormsService — cross-tenant isolation", () => {
   const VALID_TOKEN = "tok-form-valid";
   const INVALID_TOKEN = "tok-form-invalid";
+
+  function makeSubmissions() {
+    return { submitPublicForm: jest.fn() } as unknown as SubmissionsService;
+  }
 
   function makeDb(formRow: unknown): Db {
     return {
@@ -25,14 +30,14 @@ describe("PublicFormsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for an invalid token (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const svc = new PublicFormsService(db);
+    const svc = new PublicFormsService(db, makeSubmissions());
     await expect(svc.getFormByToken(INVALID_TOKEN)).rejects.toThrow(NotFoundException);
   });
 
   it("returns the form for a valid token (control — correct token)", async () => {
     const formRow = { id: 1, orgId: "org-owner", name: "Contact", description: null, type: "contact", fields: [] };
     const db = makeDb(formRow);
-    const svc = new PublicFormsService(db);
+    const svc = new PublicFormsService(db, makeSubmissions());
     const result = await svc.getFormByToken(VALID_TOKEN);
     expect(result).toHaveProperty("id");
   });

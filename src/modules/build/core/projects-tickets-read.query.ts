@@ -1,5 +1,8 @@
 import { type Db } from "../../../db/drizzle.module";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+import { tickets } from "../../../db/schema";
+
+export const TICKET_EXCERPT_CHARS = 160;
 
 const USER_COLS = {
   id: true,
@@ -19,7 +22,6 @@ const TICKET_LIST_COLUMNS = {
   priority: true,
   projectId: true,
   ticketNumber: true,
-  sprintId: true,
   epicId: true,
   assigneeMembershipId: true,
   reporterId: true,
@@ -50,6 +52,11 @@ export async function queryTickets(
     where,
     limit,
     columns: TICKET_LIST_COLUMNS,
+    extras: {
+      descriptionExcerpt: sql<string>`btrim(regexp_replace(left(regexp_replace(coalesce(${tickets.description}, ''), '<[^>]*>', ' ', 'g'), ${TICKET_EXCERPT_CHARS}), '[[:space:]]+', ' ', 'g'))`.as(
+        "description_excerpt",
+      ),
+    },
     with: {
       assignee: { columns: {}, with: { user: { columns: USER_COLS } } },
       assignees: {

@@ -48,6 +48,9 @@ jobs:
       - name: Dispatch alert self-test
         run: pnpm alert:dispatch:self-test
 
+      - name: Sign-sweep-stale alert self-test
+        run: pnpm alert:sign-sweep-stale:self-test
+
   # Fires a real test event to the configured webhook once per day so a human can
   # confirm the end-to-end delivery path is intact. A skipped delivery must be
   # visibly skipped rather than folded into a green run — the same philosophy as

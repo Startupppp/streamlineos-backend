@@ -79,8 +79,8 @@ jest.mock("ai", () => ({
   stepCountIs: jest.fn(() => () => false),
 }));
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
@@ -93,7 +93,7 @@ import { createTenantAwareDb, type DbWithClient } from "../../../../common/tenan
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { ChatHistoryService } from "./chat-history.service";
 import { fetchChatContext } from "./chat-assistant-context";
-import { actorFor, makeLedger, buildService, sqlstateOfRejection } from "./chat-assistant-tenant-context-fixtures";
+import { actorFor, makeLedger, buildService, sqlstateOfRejection } from "./chat-assistant-tenant-context-fixtures.spec";
 
 /** The SQLSTATE `app.current_org_id()` raises with. */
 const INSUFFICIENT_PRIVILEGE = "42501";
@@ -146,14 +146,14 @@ describe("Ask-OS chat against a live Postgres as the app role (CATALOG)", () => 
 
   it("REFUSES fetchChatContext on the bare pool and ALLOWS it inside a tenant transaction", async () => {
     await expect(
-      sqlstateOfRejection(() => fetchChatContext(appDb, DB_USER, DB_ORG)),
+      sqlstateOfRejection(() => fetchChatContext(appDb, DB_USER, DB_ORG, actorFor(DB_ORG, DB_USER, 1))),
     ).resolves.toBe(INSUFFICIENT_PRIVILEGE);
 
     await expect(
       runInNewTenantTransaction(appDb, DB_ORG, async () =>
-        fetchChatContext(appDb, DB_USER, DB_ORG),
+        fetchChatContext(appDb, DB_USER, DB_ORG, actorFor(DB_ORG, DB_USER, 1)),
       ),
-    ).resolves.toMatchObject({ pendingLeaves: 0, recentPayrolls: [], topLeads: [] });
+    ).resolves.toMatchObject({ context: { pendingLeaves: 0, recentPayrolls: [], topLeads: [] } });
   }, 60_000);
 
   it("REFUSES the chat-history INSERT on the bare pool and ALLOWS it inside one", async () => {

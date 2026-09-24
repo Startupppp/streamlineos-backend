@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { NoTenantTransaction } from "../../../common/tenant";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Universal } from "../../../common/auth/universal.decorator";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
@@ -87,6 +88,7 @@ export class BillingController {
   }
 
   @Post("checkout")
+  @NoTenantTransaction()
   @UseGuards(RateLimitGuard, PermissionGuard)
   @UseRateLimit("billing:checkout")
   @Idempotent("billing.checkout")
@@ -117,6 +119,7 @@ export class BillingController {
   }
 
   @Post("addons/purchase")
+  @NoTenantTransaction()
   @Idempotent("billing.addon.purchase")
   @HttpCode(200)
   @UseGuards(PermissionGuard)

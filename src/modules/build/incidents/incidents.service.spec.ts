@@ -1,10 +1,20 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+jest.mock("../core/project-access", () => ({
+  assertProjectAccess: jest.fn(),
+}));
+
+jest.mock("../../../common/outbox/outbox-writer", () => ({
+  OutboxWriter: { emit: jest.fn() },
+}));
+
+import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { IncidentsService } from "./incidents.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { assertProjectAccess } from "../core/project-access";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
@@ -30,12 +40,14 @@ function makeSelectChain(rows: unknown[]) {
   const chain = {
     from: jest.fn(),
     innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
     where: jest.fn(),
     orderBy: jest.fn(),
     limit: jest.fn().mockResolvedValue(rows),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.leftJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   chain.orderBy.mockReturnValue(chain);
   return chain;
@@ -43,6 +55,8 @@ function makeSelectChain(rows: unknown[]) {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  jest.mocked(assertProjectAccess).mockResolvedValue(undefined);
+  (OutboxWriter.emit as jest.Mock).mockResolvedValue(undefined);
 });
 
 const BASE_INCIDENT = {
@@ -81,16 +95,28 @@ function makeUpdateChain(returning: Record<string, unknown>[] = []) {
   return chain;
 }
 
+function makeTx(updateChain: ReturnType<typeof makeUpdateChain>) {
+  return {
+    update: jest.fn().mockReturnValue(updateChain),
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([]),
+      }),
+    }),
+  };
+}
+
 describe("IncidentsService.computeSla (via updateIncident)", () => {
   it("sets respondedAt on the first non-detected status transition", async () => {
     const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "investigating", respondedAt: new Date() }]);
+    const tx = makeTx(updateChain);
     const mockDb = {
       query: {
         projectIncidents: {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt: null }),
         },
       },
-      update: jest.fn().mockReturnValue(updateChain),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -104,13 +130,14 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
   it("does NOT overwrite respondedAt if it is already set", async () => {
     const existingRespondedAt = new Date("2024-01-01T10:05:00Z");
     const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "mitigating", respondedAt: existingRespondedAt }]);
+    const tx = makeTx(updateChain);
     const mockDb = {
       query: {
         projectIncidents: {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt: existingRespondedAt }),
         },
       },
-      update: jest.fn().mockReturnValue(updateChain),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -125,13 +152,14 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
     const updateChain = makeUpdateChain([
       { ...BASE_INCIDENT, status: "resolved", respondedAt, resolvedAt: new Date() },
     ]);
+    const tx = makeTx(updateChain);
     const mockDb = {
       query: {
         projectIncidents: {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt, resolvedAt: null }),
         },
       },
-      update: jest.fn().mockReturnValue(updateChain),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -145,13 +173,14 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
   it("does NOT set resolvedAt for non-resolved status transitions", async () => {
     const respondedAt = new Date("2024-01-01T10:05:00Z");
     const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "postmortem", respondedAt }]);
+    const tx = makeTx(updateChain);
     const mockDb = {
       query: {
         projectIncidents: {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt, resolvedAt: null }),
         },
       },
-      update: jest.fn().mockReturnValue(updateChain),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -165,6 +194,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
     const respondedAt = new Date("2024-01-01T10:05:00Z");
     const existingResolvedAt = new Date("2024-01-01T11:00:00Z");
     const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "resolved", respondedAt, resolvedAt: existingResolvedAt }]);
+    const tx = makeTx(updateChain);
     const mockDb = {
       query: {
         projectIncidents: {
@@ -173,7 +203,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
           }),
         },
       },
-      update: jest.fn().mockReturnValue(updateChain),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -185,13 +215,14 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
 
   it("does NOT set respondedAt when status remains detected", async () => {
     const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "detected" }]);
+    const tx = makeTx(updateChain);
     const mockDb = {
       query: {
         projectIncidents: {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt: null }),
         },
       },
-      update: jest.fn().mockReturnValue(updateChain),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -200,6 +231,127 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
     expect(patch).not.toHaveProperty("respondedAt");
     expect(patch).not.toHaveProperty("resolvedAt");
+  });
+});
+
+describe("IncidentsService.updateIncident — atomic timeline on status/severity change", () => {
+  it("inserts a timeline entry when status changes", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "investigating" }]);
+    const tx = makeTx(updateChain);
+    const mockDb = {
+      query: {
+        projectIncidents: {
+          findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
+        },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "investigating" });
+
+    expect(tx.insert).toHaveBeenCalled();
+    const insertValues = (tx.insert.mock.results[0]?.value as { values: jest.Mock }).values;
+    const insertArg = (insertValues.mock.calls[0] as [Record<string, unknown>])[0];
+    expect(insertArg).toMatchObject({ newStatus: "investigating", orgId: "org-1", incidentId: 1 });
+  });
+
+  it("does NOT insert a timeline entry when status is unchanged", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "detected" }]);
+    const tx = makeTx(updateChain);
+    const mockDb = {
+      query: {
+        projectIncidents: {
+          findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
+        },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "detected" });
+
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
+  it("inserts a timeline entry when severity is escalated", async () => {
+    const current = { ...BASE_INCIDENT, severity: "medium" as const };
+    const updateChain = makeUpdateChain([{ ...current, severity: "critical" }]);
+    const tx = makeTx(updateChain);
+    const mockDb = {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue(current) },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { severity: "critical" });
+
+    expect(tx.insert).toHaveBeenCalled();
+    const insertValues = (tx.insert.mock.results[0]?.value as { values: jest.Mock }).values;
+    const insertArg = (insertValues.mock.calls[0] as [Record<string, unknown>])[0];
+    expect(insertArg).toMatchObject({ message: "Severity escalated to critical" });
+  });
+
+  it("does NOT insert a timeline entry when severity is de-escalated", async () => {
+    const current = { ...BASE_INCIDENT, severity: "critical" as const };
+    const updateChain = makeUpdateChain([{ ...current, severity: "medium" }]);
+    const tx = makeTx(updateChain);
+    const mockDb = {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue(current) },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { severity: "medium" });
+
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
+  it("emits an outbox event when status changes", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "investigating" }]);
+    const tx = makeTx(updateChain);
+    const mockDb = {
+      query: {
+        projectIncidents: {
+          findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
+        },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "investigating" });
+
+    expect(OutboxWriter.emit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: "build.incident.status_changed",
+        aggregateType: "incident",
+        payload: expect.objectContaining({ oldStatus: "detected", newStatus: "investigating" }),
+      }),
+    );
+  });
+
+  it("does NOT emit an outbox event when status is unchanged", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "detected" }]);
+    const tx = makeTx(updateChain);
+    const mockDb = {
+      query: {
+        projectIncidents: {
+          findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
+        },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "detected" });
+
+    expect(OutboxWriter.emit).not.toHaveBeenCalled();
   });
 });
 
@@ -219,7 +371,8 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       from: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockResolvedValue(updates),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(updates),
     };
     const mockDb = {
       query: {
@@ -245,7 +398,8 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       from: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockResolvedValue([]),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
     };
     const mockDb = {
       query: {
@@ -276,33 +430,148 @@ describe("IncidentsService.getIncident — flat response structure", () => {
 describe("IncidentsService — project-membership gate (BOLA)", () => {
   const u = makeUser("org-1");
 
-  it("REJECTS a non-member with ForbiddenException", async () => {
+  it("REJECTS a non-member (listIncidents) with ForbiddenException", async () => {
+    jest.mocked(assertProjectAccess).mockRejectedValueOnce(
+      new ForbiddenException("You do not have access to this project"),
+    );
     const mockDb = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-        projectIncidents: { findFirst: jest.fn() },
-      },
-      select: jest.fn()
-        .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([])),
+      query: { projectIncidents: { findFirst: jest.fn() } },
+      select: jest.fn().mockReturnValue(makeSelectChain([])),
     } as unknown as Db;
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
 
     await expect(svc.listIncidents(u, 1, {})).rejects.toThrow(ForbiddenException);
   });
 
-  it("ALLOWS a direct project member", async () => {
+  it("ALLOWS a project member (listIncidents)", async () => {
     const mockDb = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-        projectIncidents: { findFirst: jest.fn() },
-      },
-      select: jest.fn()
-        .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-        .mockReturnValueOnce(makeSelectChain([])),
+      query: { projectIncidents: { findFirst: jest.fn() } },
+      select: jest.fn().mockReturnValue(makeSelectChain([])),
     } as unknown as Db;
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
 
     await expect(svc.listIncidents(u, 1, {})).resolves.toEqual([]);
+  });
+
+  it("REJECTS a non-member (getIncident) with ForbiddenException", async () => {
+    jest.mocked(assertProjectAccess).mockRejectedValueOnce(
+      new ForbiddenException("You do not have access to this project"),
+    );
+    const mockDb = {
+      query: { projectIncidents: { findFirst: jest.fn() } },
+    } as unknown as Db;
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+
+    await expect(svc.getIncident(u, 1, 1)).rejects.toThrow(ForbiddenException);
+  });
+
+  it("REJECTS a non-member (addUpdate) with ForbiddenException", async () => {
+    jest.mocked(assertProjectAccess).mockRejectedValueOnce(
+      new ForbiddenException("You do not have access to this project"),
+    );
+    const mockDb = {
+      query: { projectIncidents: { findFirst: jest.fn() } },
+    } as unknown as Db;
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+
+    await expect(svc.addUpdate(u, 1, 1, { message: "test" })).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe("IncidentsService.addUpdate — state machine and outbox", () => {
+  it("throws ConflictException when transitioning a closed incident to another status", async () => {
+    const closedIncident = { ...BASE_INCIDENT, status: "closed" as const };
+    const mockDb = {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue(closedIncident) },
+      },
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await expect(
+      svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Reopen attempt", newStatus: "investigating" }),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it("allows adding a message without status change to a closed incident", async () => {
+    const closedIncident = { ...BASE_INCIDENT, status: "closed" as const };
+    const insertValues = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: 9, message: "Postmortem note", newStatus: null }]),
+    });
+    const tx = {
+      insert: jest.fn().mockReturnValue({ values: insertValues }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      }),
+    };
+    const mockDb = {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue(closedIncident) },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const result = await svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Postmortem note" });
+
+    expect(result).toMatchObject({ message: "Postmortem note" });
+  });
+
+  it("emits an outbox event when status changes via addUpdate", async () => {
+    const insertValues = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: 5, message: "msg", newStatus: "investigating" }]),
+    });
+    const tx = {
+      insert: jest.fn().mockReturnValue({ values: insertValues }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      }),
+    };
+    const mockDb = {
+      query: {
+        projectIncidents: {
+          findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
+        },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Investigating", newStatus: "investigating" });
+
+    expect(OutboxWriter.emit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: "build.incident.status_changed",
+        aggregateType: "incident",
+        payload: expect.objectContaining({ oldStatus: "detected", newStatus: "investigating" }),
+      }),
+    );
+  });
+
+  it("does NOT emit an outbox event when newStatus matches current status (idempotent)", async () => {
+    const insertValues = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: 6, message: "msg", newStatus: "detected" }]),
+    });
+    const tx = {
+      insert: jest.fn().mockReturnValue({ values: insertValues }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      }),
+    };
+    const mockDb = {
+      query: {
+        projectIncidents: {
+          findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
+        },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    await svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Still detected", newStatus: "detected" });
+
+    expect(OutboxWriter.emit).not.toHaveBeenCalled();
+    expect(tx.update).not.toHaveBeenCalled();
   });
 });

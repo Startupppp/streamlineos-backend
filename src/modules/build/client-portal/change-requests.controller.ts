@@ -28,11 +28,24 @@ import {
 } from "./dto/change-requests.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { changeRequestRowSchema } from "./dto/change-requests-response.schemas";
+import {
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
+import {
+  changeRequestRowSchema,
+  changeRequestListPageSchema,
+} from "./dto/change-requests-response.schemas";
 
-const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
-const projectAndChangeRequestIdParams = z.object({ projectId: z.coerce.number().int().positive(), changeRequestId: z.coerce.number().int().positive() }).strict();
+const projectIdParams = z
+  .object({ projectId: z.coerce.number().int().positive() })
+  .strict();
+const projectAndChangeRequestIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    changeRequestId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/change-requests")
@@ -42,7 +55,7 @@ export class ChangeRequestsController {
 
   @Get()
   @RequirePermission("build:changerequests:view")
-  @ResponseSchema(z.array(changeRequestRowSchema))
+  @ResponseSchema(changeRequestListPageSchema)
   @Validate({ params: projectIdParams, query: listCrQuerySchema })
   listChangeRequests(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -61,7 +74,7 @@ export class ChangeRequestsController {
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getChangeRequest(u.orgId, projectId, changeRequestId);
+    return this.svc.getChangeRequest(u, projectId, changeRequestId);
   }
 
   @Post()
@@ -87,7 +100,7 @@ export class ChangeRequestsController {
     @Body() body: UpdateChangeRequestInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateChangeRequest(u.orgId, u.userId, projectId, changeRequestId, body);
+    return this.svc.updateChangeRequest(u, projectId, changeRequestId, body);
   }
 
   @Delete(":changeRequestId")
@@ -100,6 +113,6 @@ export class ChangeRequestsController {
     @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteChangeRequest(u.orgId, projectId, changeRequestId);
+    return this.svc.deleteChangeRequest(u, projectId, changeRequestId);
   }
 }

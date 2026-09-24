@@ -45,6 +45,7 @@ import {
   memberRoleSchema,
   projectCustomStateSchema,
   bulkReorderStatesResultSchema,
+  orgCustomStateSchema,
 } from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
@@ -57,6 +58,15 @@ const projectIdParams_ = z.object({ projectId: z.string().min(1) }).strict();
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectResourcesController {
   constructor(private readonly members: ProjectsMembersService) {}
+
+  @Get("org-custom-states")
+  @RequirePermission("build:view")
+  @ResponseSchema(z.array(orgCustomStateSchema))
+  listOrgCustomStates(
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.listOrgCustomStates(u);
+  }
 
   @Get(":projectId/members")
   @RequirePermission("build:view")
@@ -160,12 +170,12 @@ export class ProjectResourcesController {
   @ResponseSchema(projectCustomStateSchema)
   @Validate({ params: projectIdstateIdParams, body: updateCustomStateSchema })
   updateCustomState(
-    @Param("projectId", ParseIntPipe) _: number,
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("stateId", ParseIntPipe) stateId: number,
     @Body() body: UpdateCustomStateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.updateCustomState(u, stateId, body);
+    return this.members.updateCustomState(u, projectId, stateId, body);
   }
 
   @Delete(":projectId/custom-states/:stateId")
@@ -174,11 +184,11 @@ export class ProjectResourcesController {
   @NoContentResponse()
   @Validate({ params: projectIdstateIdParams })
   deleteCustomState(
-    @Param("projectId", ParseIntPipe) _: number,
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("stateId", ParseIntPipe) stateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.deleteCustomState(u, stateId);
+    return this.members.deleteCustomState(u, projectId, stateId);
   }
 
   /**

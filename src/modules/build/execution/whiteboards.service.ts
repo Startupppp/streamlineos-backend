@@ -49,7 +49,7 @@ export class WhiteboardsService {
           ? {
               visibility: board.visibility,
               publicAccess: board.publicAccess,
-              shareToken: board.shareToken,
+              shareToken: null,
               linkExpiresAt: board.linkExpiresAt,
               allowExport: board.allowExport,
             }
@@ -140,7 +140,8 @@ export class WhiteboardsService {
           visibilityFilter,
         ),
       )
-      .orderBy(desc(projectWhiteboards.updatedAt));
+      .orderBy(desc(projectWhiteboards.updatedAt))
+      .limit(100);
 
     return boards.map((board) => ({
       id: board.id,
@@ -252,6 +253,7 @@ export class WhiteboardsService {
           eq(projectWhiteboards.id, whiteboardId),
           eq(projectWhiteboards.projectId, projectId),
           eq(projectWhiteboards.orgId, u.orgId),
+          isNull(projectWhiteboards.deletedAt),
         ),
       )
       .returning();

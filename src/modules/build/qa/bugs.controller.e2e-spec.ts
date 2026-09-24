@@ -161,7 +161,7 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT enforce a gate on GET /projects/1/bugs with projects:bugs:view ability", async () => {
+  it("passes auth and permission gate on GET /build/1/bugs with build:bugs:view ability (returns 404 from business layer, not 401/403)", async () => {
     const token = await signToken({
       permissions: ["build:bugs:view"],
       enabledModules: ["build"],
@@ -169,11 +169,10 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/bugs")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  it("does NOT enforce a gate on GET /projects/1/test-suites with projects:qa:view ability", async () => {
+  it("passes auth and permission gate on GET /build/1/test-suites with build:qa:view ability (returns 404 from business layer, not 401/403)", async () => {
     const token = await signToken({
       permissions: ["build:qa:view"],
       enabledModules: ["build"],
@@ -181,7 +180,6 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/test-suites")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(404);
   });
 });

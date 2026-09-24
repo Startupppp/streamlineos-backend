@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import { TimesheetsService } from "./timesheets.service";
 
@@ -6,7 +7,7 @@ describe("TimesheetsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
-  const access = { scopeFor: jest.fn().mockResolvedValue("all") } as never;
+  const access = { scopeFor: jest.fn().mockResolvedValue("all"), holds: jest.fn().mockResolvedValue(true) } as never;
   const cache = { cachedVersioned: jest.fn(), invalidateNamespace: jest.fn() } as never;
   const periodService = {} as never;
 
@@ -44,5 +45,30 @@ describe("TimesheetsService — cross-tenant isolation", () => {
     const result = await svc.listTimeEntries(u, { page: 1, limit: 20 } as never);
     expect(result.items).toHaveLength(1);
     expect(result.total).toBe(1);
+  });
+
+  it("listTimeEntries WHERE clause guards against voided entries", async () => {
+    const db = makeDb(null);
+    const svc = new TimesheetsService(db, cache, access, periodService);
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1 } } as never;
+    await svc.listTimeEntries(u, { page: 1, limit: 20 } as never);
+    const options = (db.query.timesheets.findMany as jest.Mock).mock.calls[0]?.[0];
+    expect(new PgDialect().sqlToQuery(options.where).sql.toLowerCase()).toContain("voided_at");
+  });
+
+  it("approveEntry returns NotFoundException for a voided entry in the same org", async () => {
+    const db = makeDb(null);
+    const svc = new TimesheetsService(db, cache, access, periodService);
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false, principal: { kind: "human-session", membershipId: 2 } } as never;
+    await expect(svc.approveEntry(u, 99)).rejects.toThrow(NotFoundException);
+  });
+
+  it("listTimeEntries ignores userId filter when scope is own — prevents widening", async () => {
+    const db = makeDb(null);
+    const ownAccess = { scopeFor: jest.fn().mockResolvedValue("own"), holds: jest.fn().mockResolvedValue(false) } as never;
+    const svc = new TimesheetsService(db, cache, ownAccess, periodService);
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false, principal: { kind: "human-session", membershipId: 5 } } as never;
+    await svc.listTimeEntries(u, { page: 1, limit: 20, userId: "other-user" } as never);
+    expect(db.select).toHaveBeenCalledTimes(1);
   });
 });

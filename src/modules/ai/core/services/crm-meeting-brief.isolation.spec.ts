@@ -3,9 +3,7 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 jest.mock("./crm-brief-loaders", () => ({
-  loadLeadProfile: jest.fn().mockResolvedValue(undefined),
   loadLeadContext: jest.fn().mockResolvedValue(undefined),
-  trunc: (s: string | undefined | null) => s ?? "",
 }));
 
 import { NotFoundException } from "@nestjs/common";

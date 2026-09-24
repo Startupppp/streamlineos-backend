@@ -52,12 +52,6 @@ const DEFAULT_SETTINGS = { lockAfterApproval: false };
 
 const EMPLOYEE_MEMBER = { id: EMPLOYEE_MEMBERSHIP_ID, userId: "employee-user" };
 
-/**
- * `owner` is the membership row the lifecycle event and the worker's
- * notification resolve the period owner's user id from; since the actor
- * cutover the period itself only carries `user_membership_id`. It is read
- * after the settings and before the transaction.
- */
 function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown, owner: unknown = null) {
   const dbSelectSequence: unknown[][] = [
     period !== null ? [period] : [],
@@ -80,12 +74,6 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown,
   const dbSelect = jest.fn().mockReturnValue({ from: dbFrom });
 
   const setCaptures: Record<string, unknown>[] = [];
-  /*
-   * The period UPDATE carries `status = 'SUBMITTED'` and returns the row it
-   * flipped; an empty RETURNING now means another decision won the race and
-   * the transition refuses with 409, so the double answers as Postgres would
-   * for a period that was still submitted.
-   */
   const txReturning = jest.fn().mockResolvedValue([
     {
       eventSeq: 1,
@@ -112,7 +100,6 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown,
   const txSelectFrom = jest.fn().mockReturnValue({ where: txSelectWhere });
   const txSelect = jest.fn().mockReturnValue({ from: txSelectFrom });
 
-  /* The transition emits its lifecycle event through the outbox inside the same transaction. */
   const txInsertValues = jest.fn().mockResolvedValue(undefined);
   const txInsert = jest.fn().mockReturnValue({ values: txInsertValues });
 
@@ -142,13 +129,6 @@ const USER_CTX = {
 const AUDIT_MOCK = { record: jest.fn().mockResolvedValue(undefined) };
 const RATE_RESOLVER_MOCK = { resolveMany: jest.fn().mockResolvedValue([]) };
 
-/**
- * TS-24. Approval now tells the worker, through the existing notification
- * pipeline. This spec is about actor resolution and does not assert on the
- * notification — it only has to exist, because a service that cannot notify
- * would fail here for a reason that has nothing to do with what is being
- * tested.
- */
 const NOTIFICATIONS_MOCK = { emit: jest.fn().mockResolvedValue(undefined) };
 
 beforeEach(() => {

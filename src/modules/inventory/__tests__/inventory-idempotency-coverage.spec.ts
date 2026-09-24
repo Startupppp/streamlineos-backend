@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   inventoryControllerPaths,
+  inventoryRelativePath,
   isCovered,
   mutatingInventoryRoutes,
 } from "./inventory-mutating-routes";
@@ -65,7 +66,7 @@ function handlersTakingAKey(): Handler[] {
   const out: Handler[] = [];
   for (const path of inventoryControllerPaths()) {
     const source = readFileSync(path, "utf8");
-    const file = path.slice(path.indexOf("modules/inventory/"));
+    const file = inventoryRelativePath(path);
 
     const signatures: Array<{ at: number; name: string }> = [];
     for (const m of source.matchAll(METHOD_SIGNATURE))
@@ -258,7 +259,7 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     // from the value in the first place.
     const handRolled = inventoryControllerPaths()
       .filter((path) => /@Headers\(\s*["']idempotency-key["']/.test(readFileSync(path, "utf8")))
-      .map((path) => path.slice(path.indexOf("modules/inventory/")));
+      .map(inventoryRelativePath);
 
     expect(handRolled).toEqual([]);
   });

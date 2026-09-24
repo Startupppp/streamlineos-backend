@@ -1,16 +1,75 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../../../../db/drizzle.module";
-import { organizationMembers, timesheetPeriods, users } from "../../../../db/schema";
+import {
+  organizationMembers,
+  timesheetPeriods,
+  users,
+} from "../../../../db/schema";
+import {
+  descKeyset,
+  type DescKeysetPosition,
+} from "../../../../common/pagination/desc-keyset";
 
-/*
-  The two period reads behind the approvals list and the approve response,
-  with the owner and approver joined tenant-matched through two aliases of
-  `organization_members`. Both are bounded: the list keyset-paginates on
-  (submitted_at, id) and the single read is by id.
-*/
+export type TimesheetInboxRow = {
+  id: number;
+  userMembershipId: number | null;
+  userName: string | null;
+  userEmail: string | null;
+  periodStart: string;
+  periodEnd: string;
+  totalHours: string;
+  submittedAt: Date;
+  approvalDueAt: Date | null;
+};
 
-/** One keyset page of periods (plus one row, to know whether there is a next). */
+export async function listApprovalInboxRows(
+  db: Db,
+  orgId: string,
+  approverMembershipId: number,
+  limit: number,
+  cursor: DescKeysetPosition | null,
+): Promise<TimesheetInboxRow[]> {
+  const ownerMember = alias(organizationMembers, "owner_member");
+
+  const rows = await db
+    .select({
+      id: timesheetPeriods.id,
+      userMembershipId: timesheetPeriods.userMembershipId,
+      periodStart: timesheetPeriods.periodStart,
+      periodEnd: timesheetPeriods.periodEnd,
+      totalHours: timesheetPeriods.totalHours,
+      submittedAt: timesheetPeriods.submittedAt,
+      approvalDueAt: timesheetPeriods.approvalDueAt,
+      userEmail: users.email,
+      userName: users.name,
+    })
+    .from(timesheetPeriods)
+    .leftJoin(
+      ownerMember,
+      and(
+        eq(timesheetPeriods.orgId, ownerMember.orgId),
+        eq(timesheetPeriods.userMembershipId, ownerMember.id),
+      ),
+    )
+    .leftJoin(users, eq(ownerMember.userId, users.id))
+    .where(
+      and(
+        eq(timesheetPeriods.orgId, orgId),
+        eq(timesheetPeriods.status, "SUBMITTED"),
+        eq(timesheetPeriods.currentApproverMembershipId, approverMembershipId),
+        isNotNull(timesheetPeriods.submittedAt),
+        descKeyset(timesheetPeriods.submittedAt, timesheetPeriods.id, cursor),
+      ),
+    )
+    .orderBy(desc(timesheetPeriods.submittedAt), desc(timesheetPeriods.id))
+    .limit(limit);
+
+  return rows.flatMap((row) =>
+    row.submittedAt === null ? [] : [{ ...row, submittedAt: row.submittedAt }],
+  );
+}
+
 export async function listApprovalRows(
   db: Db,
   conditions: Parameters<typeof and>,
@@ -35,6 +94,9 @@ export async function listApprovalRows(
       rejectedAt: timesheetPeriods.rejectedAt,
       lockedAt: timesheetPeriods.lockedAt,
       currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+      approvalRoute: timesheetPeriods.approvalRoute,
+      approvalDueAt: timesheetPeriods.approvalDueAt,
+      approvalEscalatedAt: timesheetPeriods.approvalEscalatedAt,
       approvedBy: approverMember.userId,
       rejectionReason: timesheetPeriods.rejectionReason,
       createdAt: timesheetPeriods.createdAt,
@@ -43,10 +105,13 @@ export async function listApprovalRows(
       userName: users.name,
     })
     .from(timesheetPeriods)
-    .leftJoin(ownerMember, and(
-      eq(timesheetPeriods.orgId, ownerMember.orgId),
-      eq(timesheetPeriods.userMembershipId, ownerMember.id),
-    ))
+    .leftJoin(
+      ownerMember,
+      and(
+        eq(timesheetPeriods.orgId, ownerMember.orgId),
+        eq(timesheetPeriods.userMembershipId, ownerMember.id),
+      ),
+    )
     .leftJoin(users, eq(ownerMember.userId, users.id))
     .leftJoin(
       approverMember,
@@ -60,8 +125,11 @@ export async function listApprovalRows(
     .limit(limit + 1);
 }
 
-/** The period as the approve route returns it, read back after the approval committed. */
-export async function readApprovedPeriod(db: Db, orgId: string, periodId: number) {
+export async function readApprovedPeriod(
+  db: Db,
+  orgId: string,
+  periodId: number,
+) {
   const approverMember = alias(organizationMembers, "approver_member");
   const ownerMember = alias(organizationMembers, "owner_member");
 
@@ -81,6 +149,9 @@ export async function readApprovedPeriod(db: Db, orgId: string, periodId: number
       rejectedAt: timesheetPeriods.rejectedAt,
       lockedAt: timesheetPeriods.lockedAt,
       currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+      approvalRoute: timesheetPeriods.approvalRoute,
+      approvalDueAt: timesheetPeriods.approvalDueAt,
+      approvalEscalatedAt: timesheetPeriods.approvalEscalatedAt,
       approvedBy: approverMember.userId,
       rejectionReason: timesheetPeriods.rejectionReason,
       createdAt: timesheetPeriods.createdAt,
@@ -89,10 +160,13 @@ export async function readApprovedPeriod(db: Db, orgId: string, periodId: number
       userName: users.name,
     })
     .from(timesheetPeriods)
-    .leftJoin(ownerMember, and(
-      eq(timesheetPeriods.orgId, ownerMember.orgId),
-      eq(timesheetPeriods.userMembershipId, ownerMember.id),
-    ))
+    .leftJoin(
+      ownerMember,
+      and(
+        eq(timesheetPeriods.orgId, ownerMember.orgId),
+        eq(timesheetPeriods.userMembershipId, ownerMember.id),
+      ),
+    )
     .leftJoin(users, eq(ownerMember.userId, users.id))
     .leftJoin(
       approverMember,
@@ -102,10 +176,7 @@ export async function readApprovedPeriod(db: Db, orgId: string, periodId: number
       ),
     )
     .where(
-      and(
-        eq(timesheetPeriods.id, periodId),
-        eq(timesheetPeriods.orgId, orgId),
-      ),
+      and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, orgId)),
     )
     .limit(1);
 

@@ -188,7 +188,9 @@ describe("mail list — search reaches the database", () => {
     );
 
     expect(h.freshAccountIds).toHaveBeenCalledWith(ORG, [ACCOUNT], "inbox");
-    expect(h.listCached).toHaveBeenCalledWith(MEMBERSHIP, ORG, [ACCOUNT], "inbox", 5, "invoice");
+    expect(h.listCached).toHaveBeenCalledWith(
+      MEMBERSHIP, ORG, [ACCOUNT], "inbox", 5, "invoice", undefined, undefined,
+    );
     expect(page.messages.map((m) => m.id)).toEqual(["msg-9"]);
     expect(h.gmailList).not.toHaveBeenCalled();
   });
@@ -239,7 +241,7 @@ describe("mail list — the metadata regime serves the all-accounts view", () =>
     const page = await h.service.listMessages(ORG, USER, MEMBERSHIP, "inbox", "all", 5);
 
     expect(h.listCached).toHaveBeenCalledWith(
-      MEMBERSHIP, ORG, [ACCOUNT, OUTLOOK_ACCOUNT.id], "inbox", 5, undefined,
+      MEMBERSHIP, ORG, [ACCOUNT, OUTLOOK_ACCOUNT.id], "inbox", 5, undefined, undefined, undefined,
     );
     expect(page.messages.map((m) => m.id)).toEqual(["msg-9"]);
     expect(h.gmailList).not.toHaveBeenCalled();

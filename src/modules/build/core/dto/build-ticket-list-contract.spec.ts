@@ -8,10 +8,11 @@ import {
 const user = { id: "user-1", name: "Member", firstName: "Member", lastName: null, email: "member@example.test", image: null };
 const row = {
   id: 1, orgId: "org-1", title: "Ticket", type: "BUG", status: "OPEN", priority: "HIGH",
-  projectId: 42, ticketNumber: 1, sprintId: null, epicId: null, assigneeMembershipId: 7,
+  projectId: 42, ticketNumber: 1, epicId: null, assigneeMembershipId: 7,
   reporterId: null, points: null, storyPoints: null, link: null, rank: "a0", parentTicketId: null,
   originalEstimate: null, timeSpent: "0", startDate: null, dueDate: null, moduleId: null,
   cycleId: null, sequenceId: null, estimate: null, createdAt: new Date(), updatedAt: new Date(),
+  descriptionExcerpt: "A short plain-text excerpt of the ticket body",
   assigneeId: user.id, assignee: user, assignees: [{ id: 1, ticketId: 1, assignedAt: new Date(), assignedBy: null, userId: user.id, user }],
   labels: [{ id: 1, ticketId: 1, labelId: 3, createdAt: new Date(), label: { id: 3, orgId: "org-1", createdAt: new Date(), name: "Bug", color: null } }], cycle: null,
 };
@@ -35,7 +36,7 @@ describe("Build ticket list projection contract", () => {
   });
 
   it("accepts the actual cross-project work projection and requires rendered fields", () => {
-    const work = { id: 1, title: "Ticket", type: "BUG", status: "OPEN", priority: "HIGH", projectId: 42, projectKey: "BUILD", projectName: "Project", ticketNumber: 1, dueDate: null, startDate: null, points: null, estimate: null, rank: "a0", sprintId: null, cycleId: null, epicId: null, assigneeId: user.id, assignee: user, labels: [], createdAt: new Date(), updatedAt: new Date() };
+    const work = { id: 1, title: "Ticket", type: "BUG", status: "OPEN", priority: "HIGH", projectId: 42, projectKey: "BUILD", projectName: "Project", ticketNumber: 1, dueDate: null, startDate: null, points: null, estimate: null, rank: "a0", cycleId: null, epicId: null, assigneeId: user.id, assignee: user, labels: [], createdAt: new Date(), updatedAt: new Date() };
     const page = { data: [work], limit: 25, nextCursor: null, hasMore: false };
     expect(allWorkPageSchema.parse(page).data[0]).toEqual(work);
     expect(allWorkPageSchema.safeParse({ ...page, data: [{ ...work, projectName: undefined }] }).success).toBe(false);

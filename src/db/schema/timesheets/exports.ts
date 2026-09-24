@@ -39,15 +39,6 @@ export const timesheetExports = pgTable("timesheet_exports", {
   ackAt: timestamp("ack_at"),
   ackByMembershipId: integer("ack_by_membership_id"),
   createdByMembershipId: integer("created_by_membership_id"),
-  /**
-   * The export's outbox `aggregate_version`, on the same terms as
-   * `timesheet_periods.event_seq`: the creation event is version 1, and every
-   * acknowledgement claims the next number with `event_seq + 1` inside the
-   * UPDATE that records it, so the counter and the status commit together and
-   * two concurrent acknowledgements serialise on the row. The wall-clock
-   * millisecond it replaced was unique only by luck and ordered only within
-   * one node's clock.
-   */
   eventSeq: integer("event_seq").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [

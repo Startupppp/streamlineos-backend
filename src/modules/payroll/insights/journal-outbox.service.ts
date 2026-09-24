@@ -291,7 +291,7 @@ export class JournalOutboxService {
     return this.get(orgId, batchId);
   }
 
-  async markExported(orgId: string, userId: string, batchId: number): Promise<JournalBatchDetail> {
+  async markExported(orgId: string, userId: string, batchId: number): Promise<void> {
     const batch = await this.requireBatch(orgId, batchId);
     if (batch.status !== "POSTED" && batch.status !== "EXPORTED") {
       throw new BadRequestException(`Only a posted batch can be exported (batch is ${batch.status}).`);
@@ -313,8 +313,6 @@ export class JournalOutboxService {
       targetType: "payroll_journal_batch",
       metadata: { periodKey: batch.periodKey, version: batch.version },
     });
-
-    return this.get(orgId, batchId);
   }
 
   /**
@@ -477,7 +475,11 @@ export class JournalOutboxService {
 
   private async requireBatch(orgId: string, batchId: number) {
     const rows = await this.db
-      .select()
+      .select({
+        ...journalBatchSummarySelection,
+        entityId: payrollJournalBatches.entityId,
+        sourceHash: payrollJournalBatches.sourceHash,
+      })
       .from(payrollJournalBatches)
       .where(
         and(eq(payrollJournalBatches.orgId, orgId), eq(payrollJournalBatches.id, batchId)),

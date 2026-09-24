@@ -16,6 +16,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
+import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
 import type {
   AddRelatedLinkInput,
   UpdateRelatedLinkInput,
@@ -23,23 +25,17 @@ import type {
 
 @Injectable()
 export class ProjectsTicketLinksService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(AccessService) private readonly access: TicketReadAccess,
+  ) {}
 
   private async assertTicketAccess(
     u: CurrentUserContext,
     projectId: number,
     ticketId: number,
   ) {
-    const [ticket] = await this.db
-      .select({
-        id: tickets.id,
-        projectId: tickets.projectId,
-        orgId: tickets.orgId,
-      })
-      .from(tickets)
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)));
-    if (!ticket || ticket.projectId !== projectId)
-      throw new NotFoundException("Ticket not found");
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
   }
 
   async getGitLinks(orgId: string, projectId: number, ticketId: number) {
@@ -118,7 +114,12 @@ export class ProjectsTicketLinksService {
         createdAt: ticketRelatedLinks.createdAt,
       })
       .from(ticketRelatedLinks)
-      .where(eq(ticketRelatedLinks.ticketId, ticketId))
+      .where(
+        and(
+          eq(ticketRelatedLinks.orgId, u.orgId),
+          eq(ticketRelatedLinks.ticketId, ticketId),
+        ),
+      )
       .orderBy(ticketRelatedLinks.createdAt)
       .limit(50);
     return rows.map((row) => this.toRelatedLinkRow(row, projectId));

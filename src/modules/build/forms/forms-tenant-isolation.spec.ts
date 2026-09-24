@@ -1,9 +1,10 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { FormsService } from "./forms.service";
+import { createFormSchema, updateFormSchema } from "./dto/forms.schemas";
 
 describe("FormsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -121,5 +122,204 @@ describe("FormsService — project-membership gate (BOLA)", () => {
     const svc = new FormsService(mockDb, makeAccess(), audit);
 
     await expect(svc.listForms(u, 1, {})).resolves.toEqual([]);
+  });
+});
+
+describe("createFormSchema — conditional logic validation", () => {
+  function baseForm(fields: unknown[]) {
+    return { name: "F", fields, actions: [] };
+  }
+
+  function field(key: string, type: string, conditionalLogic?: unknown) {
+    return { key, label: key, type, required: false, ...(conditionalLogic !== undefined ? { conditionalLogic } : {}) };
+  }
+
+  it("rejects fields whose conditional logic contains a direct cycle (A depends on B, B depends on A)", () => {
+    const result = createFormSchema.safeParse(
+      baseForm([
+        field("a", "text", { action: "show", match: "all", conditions: [{ fieldKey: "b", operator: "eq", value: "x" }] }),
+        field("b", "text", { action: "show", match: "all", conditions: [{ fieldKey: "a", operator: "eq", value: "y" }] }),
+      ]),
+    );
+    expect(result.success).toBe(false);
+    expect(JSON.stringify((result as { error: unknown }).error)).toContain("cycle");
+  });
+
+  it("rejects a field that references itself in conditional logic", () => {
+    const result = createFormSchema.safeParse(
+      baseForm([
+        field("a", "text", { action: "show", match: "all", conditions: [{ fieldKey: "a", operator: "eq", value: "x" }] }),
+      ]),
+    );
+    expect(result.success).toBe(false);
+    expect(JSON.stringify((result as { error: unknown }).error)).toContain("itself");
+  });
+
+  it("rejects a condition that references an unknown field key", () => {
+    const result = createFormSchema.safeParse(
+      baseForm([
+        field("a", "text", { action: "show", match: "all", conditions: [{ fieldKey: "ghost", operator: "eq", value: "x" }] }),
+      ]),
+    );
+    expect(result.success).toBe(false);
+    expect(JSON.stringify((result as { error: unknown }).error)).toContain("unknown field key");
+  });
+
+  it("rejects a numeric operator applied to a non-numeric field type", () => {
+    const result = createFormSchema.safeParse(
+      baseForm([
+        field("title", "text"),
+        field("show_extra", "checkbox", { action: "show", match: "all", conditions: [{ fieldKey: "title", operator: "gt", value: 5 }] }),
+      ]),
+    );
+    expect(result.success).toBe(false);
+    expect(JSON.stringify((result as { error: unknown }).error)).toContain("numeric");
+  });
+
+  it("accepts a valid non-cyclic conditional logic with a compatible numeric operator", () => {
+    const result = createFormSchema.safeParse(
+      baseForm([
+        field("score", "number"),
+        field("feedback", "text", { action: "show", match: "all", conditions: [{ fieldKey: "score", operator: "gt", value: 3 }] }),
+      ]),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a linear dependency chain without a cycle", () => {
+    const result = createFormSchema.safeParse(
+      baseForm([
+        field("a", "text"),
+        field("b", "text", { action: "show", match: "all", conditions: [{ fieldKey: "a", operator: "eq", value: "x" }] }),
+        field("c", "text", { action: "show", match: "all", conditions: [{ fieldKey: "b", operator: "eq", value: "y" }] }),
+      ]),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an indirect cycle spanning three fields", () => {
+    const result = createFormSchema.safeParse(
+      baseForm([
+        field("a", "text", { action: "show", match: "all", conditions: [{ fieldKey: "c", operator: "eq", value: "x" }] }),
+        field("b", "text", { action: "show", match: "all", conditions: [{ fieldKey: "a", operator: "eq", value: "y" }] }),
+        field("c", "text", { action: "show", match: "all", conditions: [{ fieldKey: "b", operator: "eq", value: "z" }] }),
+      ]),
+    );
+    expect(result.success).toBe(false);
+    expect(JSON.stringify((result as { error: unknown }).error)).toContain("cycle");
+  });
+});
+
+describe("updateFormSchema — version field", () => {
+  it("accepts a valid ISO datetime version string", () => {
+    const result = updateFormSchema.safeParse({ name: "Updated", version: "2024-01-15T10:00:00.000Z" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a non-datetime version string", () => {
+    const result = updateFormSchema.safeParse({ name: "Updated", version: "not-a-date" });
+    expect(result.success).toBe(false);
+  });
+
+  it("passes when version is omitted", () => {
+    const result = updateFormSchema.safeParse({ name: "Updated" });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("FormsService — optimistic concurrency (dirty-version conflict)", () => {
+  const audit = { log: jest.fn() } as never;
+  const mockAccess = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
+  const STORED_DATE = new Date("2024-01-15T10:00:00.000Z");
+  const STALE_VERSION = "2024-01-14T09:00:00.000Z";
+
+  function makeU(): CurrentUserContext {
+    return {
+      userId: "user-1",
+      orgId: "org-1",
+      role: "MEMBER",
+      isOrgOwner: false,
+      sessionId: "s1",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(7, false),
+    };
+  }
+
+  function makeFormRow(updatedAt: Date) {
+    return {
+      id: 1,
+      orgId: "org-1",
+      projectId: 5,
+      formNumber: 1,
+      name: "Test Form",
+      description: null,
+      type: "generic",
+      fields: [],
+      actions: [],
+      isActive: true,
+      isPublic: false,
+      publicToken: null,
+      createdBy: "user-1",
+      createdAt: new Date(),
+      updatedAt,
+      deletedAt: null,
+    };
+  }
+
+  it("throws ConflictException when the provided version does not match stored updatedAt", async () => {
+    const db = {
+      query: {
+        projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
+      },
+    } as unknown as Db;
+    const svc = new FormsService(db, mockAccess, audit);
+
+    await expect(
+      svc.updateForm(makeU(), 5, 1, { name: "New Name", version: STALE_VERSION }),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it("proceeds to the DB update when the provided version matches stored updatedAt", async () => {
+    const updatedRow = makeFormRow(new Date());
+    const returningMock = jest.fn().mockResolvedValue([updatedRow]);
+    const whereMock = jest.fn().mockReturnValue({ returning: returningMock });
+    const setMock = jest.fn().mockReturnValue({ where: whereMock });
+    const updateMock = jest.fn().mockReturnValue({ set: setMock });
+
+    const db = {
+      query: {
+        projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
+      },
+      update: updateMock,
+    } as unknown as Db;
+    const svc = new FormsService(db, mockAccess, audit);
+
+    await expect(
+      svc.updateForm(makeU(), 5, 1, { name: "New Name", version: STORED_DATE.toISOString() }),
+    ).resolves.toBeDefined();
+
+    expect(updateMock).toHaveBeenCalled();
+  });
+
+  it("proceeds without version check when version is omitted", async () => {
+    const updatedRow = makeFormRow(new Date());
+    const returningMock = jest.fn().mockResolvedValue([updatedRow]);
+    const whereMock = jest.fn().mockReturnValue({ returning: returningMock });
+    const setMock = jest.fn().mockReturnValue({ where: whereMock });
+    const updateMock = jest.fn().mockReturnValue({ set: setMock });
+
+    const db = {
+      query: {
+        projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
+      },
+      update: updateMock,
+    } as unknown as Db;
+    const svc = new FormsService(db, mockAccess, audit);
+
+    await expect(
+      svc.updateForm(makeU(), 5, 1, { name: "No Version" }),
+    ).resolves.toBeDefined();
+
+    expect(updateMock).toHaveBeenCalled();
   });
 });

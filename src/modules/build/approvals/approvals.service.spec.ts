@@ -1,8 +1,11 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { ApprovalsService } from "./approvals.service";
 import { ApprovalsReadService } from "./approvals-read.service";
+import { approvalRowSchema, approvalInboxItemSchema } from "./dto/approvals-response.schemas";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { ChatChannelsService } from "../../chat/chat-channels.service";
@@ -10,6 +13,11 @@ import type { ChatMessagesService } from "../../chat/chat-messages.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+const dialect = new PgDialect();
+function renderSql(cond: unknown): string {
+  return dialect.sqlToQuery(cond as SQL).sql;
+}
 
 const makeApprovalRow = (
   overrides: Record<string, unknown> = {},
@@ -300,5 +308,160 @@ describe("ApprovalsReadService — project membership gate (BOLA fix)", () => {
     const db = makeMemberDb();
     const svc = new ApprovalsReadService(db, gateAccess);
     await expect(svc.listApprovals(gateU, 1, {})).resolves.toBeDefined();
+  });
+
+  it("rejects non-member with ForbiddenException on getApproval (BOLA target ACL)", async () => {
+    const db = makeNonMemberDb();
+    const svc = new ApprovalsReadService(db, gateAccess);
+    await expect(svc.getApproval(gateU, 1, 1)).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe("ApprovalsService — soft-delete TOCTOU", () => {
+  function makeSvc() {
+    return new ApprovalsService(mockDb, mockAudit, mockAccess, mockChatChannels, mockChatMessages);
+  }
+
+  it("decideApproval UPDATE WHERE includes deleted_at IS NULL to prevent resurrection of concurrently soft-deleted rows", async () => {
+    const svc = makeSvc();
+    const approval = makeApprovalRow({ approverMembershipId: 1, status: "pending" });
+    (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(approval);
+    const whereCalls: unknown[] = [];
+    const updateChain = {
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation((cond: unknown) => {
+        whereCalls.push(cond);
+        return { returning: jest.fn().mockResolvedValue([{ ...approval, status: "approved", decidedAt: new Date() }]) };
+      }),
+    };
+    (mockDb as unknown as { update: jest.Mock }).update = jest.fn().mockReturnValue(updateChain);
+
+    await svc.decideApproval(makeUser({ principal: humanSessionPrincipal(1, false) }), 1, 1, { decision: "approved" });
+
+    expect(whereCalls).toHaveLength(1);
+    expect(renderSql(whereCalls[0]).toLowerCase()).toContain("is null");
+  });
+
+  it("updateApproval UPDATE WHERE includes deleted_at IS NULL to prevent resurrection of concurrently soft-deleted rows", async () => {
+    const svc = makeSvc();
+    (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(
+      makeApprovalRow({ status: "pending" }),
+    );
+    const whereCalls: unknown[] = [];
+    const updateChain = {
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation((cond: unknown) => {
+        whereCalls.push(cond);
+        return { returning: jest.fn().mockResolvedValue([makeApprovalRow({ status: "escalated" })]) };
+      }),
+    };
+    (mockDb as unknown as { update: jest.Mock }).update = jest.fn().mockReturnValue(updateChain);
+
+    await svc.updateApproval("org-1", "user-2", 1, 1, { status: "escalated" });
+
+    expect(whereCalls).toHaveLength(1);
+    expect(renderSql(whereCalls[0]).toLowerCase()).toContain("is null");
+  });
+});
+
+describe("ApprovalsService.softDeleteApproval", () => {
+  it("audit-logs the delete, matching every other mutation in this service", async () => {
+    const svc = new ApprovalsService(mockDb, mockAudit, mockAccess, mockChatChannels, mockChatMessages);
+    (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(
+      makeApprovalRow({ id: 7 }),
+    );
+    (mockDb as unknown as { update: jest.Mock }).update = jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await svc.softDeleteApproval("org-1", "user-2", 1, 7);
+
+    expect(mockAudit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "approval.deleted",
+        userId: "user-2",
+        orgId: "org-1",
+        resourceType: "project_approval",
+        resourceId: "7",
+      }),
+    );
+  });
+
+  it("throws NotFoundException for a cross-tenant/cross-project approval and never writes or audits", async () => {
+    const svc = new ApprovalsService(mockDb, mockAudit, mockAccess, mockChatChannels, mockChatMessages);
+    (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(undefined);
+    const update = jest.fn();
+    (mockDb as unknown as { update: jest.Mock }).update = update;
+
+    await expect(svc.softDeleteApproval("org-1", "user-2", 1, 999)).rejects.toThrow(NotFoundException);
+    expect(update).not.toHaveBeenCalled();
+    expect(mockAudit.log).not.toHaveBeenCalled();
+  });
+});
+
+describe("approvalRowSchema — response contract enum coverage", () => {
+  const validRow = {
+    id: 1,
+    orgId: "org-1",
+    projectId: 1,
+    entityType: "task",
+    entityId: 1,
+    title: "Fix this",
+    reason: null,
+    requestedById: "u-1",
+    approverMembershipId: 2,
+    status: "pending",
+    level: 1,
+    dueAt: null,
+    decisionComment: null,
+    decidedAt: null,
+    createdBy: "u-1",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+  };
+
+  it("rejects a status value that is not in the approvalStatusEnum (z.string() would accept it silently)", () => {
+    const result = approvalRowSchema.safeParse({ ...validRow, status: "invented_status" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an entityType value that is not in the approvalEntityTypeEnum", () => {
+    const result = approvalRowSchema.safeParse({ ...validRow, entityType: "invented_type" });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts all valid enum status values without error", () => {
+    for (const status of ["requested", "pending", "approved", "rejected", "changes_requested", "escalated", "cancelled"] as const) {
+      expect(approvalRowSchema.safeParse({ ...validRow, status }).success).toBe(true);
+    }
+  });
+});
+
+describe("approvalInboxItemSchema — response contract enum coverage", () => {
+  const validItem = {
+    id: 1,
+    projectId: 1,
+    projectName: "P",
+    projectKey: "PJ",
+    entityType: "task",
+    entityId: 1,
+    title: "Review",
+    status: "pending",
+    level: 1,
+    dueAt: null,
+    requestedById: "u-1",
+    decidedAt: null,
+  };
+
+  it("rejects an inbox item status value outside the approvalStatusEnum", () => {
+    const result = approvalInboxItemSchema.safeParse({ ...validItem, status: "ghost_status" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an inbox item entityType value outside the approvalEntityTypeEnum", () => {
+    const result = approvalInboxItemSchema.safeParse({ ...validItem, entityType: "ghost_type" });
+    expect(result.success).toBe(false);
   });
 });

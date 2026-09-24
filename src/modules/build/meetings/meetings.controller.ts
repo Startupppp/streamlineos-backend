@@ -73,7 +73,7 @@ export class MeetingsController {
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getMeeting(u.orgId, projectId, meetingId);
+    return this.svc.getMeeting(u, projectId, meetingId);
   }
 
   @Post()

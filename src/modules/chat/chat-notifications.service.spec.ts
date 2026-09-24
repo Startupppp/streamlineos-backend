@@ -4,6 +4,7 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 const mockDb = {
   select: jest.fn(),
@@ -21,6 +22,7 @@ const mockEffects = {
   execute: jest.fn(),
   executeBatch: jest.fn(),
 };
+const mockDispatch = { emitNow: jest.fn() };
 
 const baseMessage = {
   id: 1,
@@ -47,6 +49,7 @@ describe("ChatNotificationsService", () => {
         for (const { send } of items) await send();
       },
     );
+    mockDispatch.emitNow.mockResolvedValue({ eventKey: "chat.message.mention", notified: 1, deliveriesQueued: 0, suppressed: 0, deduped: 0, deferred: false, failedRecipients: 0 });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatNotificationsService,
@@ -54,6 +57,7 @@ describe("ChatNotificationsService", () => {
         { provide: AblyService, useValue: mockAbly },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
         { provide: ExternalEffectLedger, useValue: mockEffects },
+        { provide: NotificationDispatchService, useValue: mockDispatch },
       ],
     }).compile();
     service = module.get(ChatNotificationsService);

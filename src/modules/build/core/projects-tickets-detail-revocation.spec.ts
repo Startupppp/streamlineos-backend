@@ -26,7 +26,7 @@ describe("ticket detail permission revocation", () => {
     ] }).compile();
     try {
       const service = module.get(ProjectsTicketsDetailService);
-      const result = lookup === "id" ? service.getTicket(user, 11) : service.getTicketByKey(user, 3, 11);
+      const result = lookup === "id" ? service.getTicket(user, 3, 11) : service.getTicketByKey(user, 3, 11);
       await expect(result).rejects.toBeInstanceOf(ProjectsForbiddenTicketException);
       expect(scopeFor).toHaveBeenCalledTimes(1);
       expect(findFirst).not.toHaveBeenCalled();

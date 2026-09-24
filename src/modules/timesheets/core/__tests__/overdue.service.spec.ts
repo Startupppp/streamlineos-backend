@@ -5,23 +5,6 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { OverdueQuery } from "../dto/overdue.schemas";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
-/**
- * TS-11. The escalation arithmetic, and the cutoff that keeps it a range scan.
- *
- * `submission_grace_days` and `reminder_rules` were read by the nightly sweep
- * and by nothing else, so an approver had no way to see who was late — the
- * people themselves got an email and that was the whole feature. This is the
- * same arithmetic served as a list, and these are the parts of it that are easy
- * to get subtly wrong:
- *
- *   - the due date is `period_end + grace`, not `period_end`;
- *   - the escalation level counts *crossed* thresholds, so an organisation that
- *     configured none gets 0 rather than a made-up number, and the response
- *     says which thresholds exist so a caller can tell those two cases apart;
- *   - the SQL cutoff must exclude a period that is due *today*, because due
- *     today is not yet late.
- */
-
 const USER = { orgId: "org-1", userId: "usr-1", principal: humanSessionPrincipal(1, false) } as unknown as CurrentUserContext;
 
 const PERIOD = {
@@ -50,7 +33,6 @@ function stubDb(settingsRow: unknown, periodRows: unknown[]) {
           p.orderBy = () => ({ limit: () => ({ offset: async () => periodRows }) });
           return p;
         },
-        // The page read joins the owner's membership and then users; each join returns the same chain.
         leftJoin: function join(): unknown {
           return {
             leftJoin: join,
@@ -67,11 +49,6 @@ function stubDb(settingsRow: unknown, periodRows: unknown[]) {
 
 const access = {} as unknown as AccessService;
 
-/**
- * `resolveApprovalScope` is a free function over AccessService; stub its answer.
- * It resolves main's `ScopedRead` rather than a bare DataScope, so the stub spends
- * `all` through `ScopedRead.of` for the caller's own organisation.
- */
 jest.mock("../timesheets-core-scope", () => {
   const { ScopedRead } = jest.requireActual<typeof import("../../../access/scoped-read")>(
     "../../../access/scoped-read",
@@ -96,7 +73,6 @@ describe("TimesheetOverdueService", () => {
 
     const result = await service.listOverdue(USER, query({ asOf: "2026-05-10" }));
 
-    /** Ends 04-30, grace 5 -> due 05-05; 05-10 is five days past it. */
     expect(result.graceDays).toBe(5);
     expect(result.items[0]).toMatchObject({ dueDate: "2026-05-05", daysOverdue: 5 });
   });
@@ -111,18 +87,12 @@ describe("TimesheetOverdueService", () => {
     );
     const service = new TimesheetOverdueService(db, access);
 
-    /** Due 04-30; 05-04 is four days past, so 1 and 3 are crossed and 7 is not. */
     const result = await service.listOverdue(USER, query({ asOf: "2026-05-04" }));
 
     expect(result.escalationThresholds).toEqual([1, 3, 7]);
     expect(result.items[0]!.escalationLevel).toBe(2);
   });
 
-  /**
-   * Level 0 has to be readable two ways, and the response has to disambiguate
-   * them: nothing crossed yet, versus an organisation that configured no
-   * escalation at all. `escalationThresholds` being empty is the second case.
-   */
   it("reports level 0 with no thresholds when the organisation configured none", async () => {
     const db = stubDb({ reminderRules: null, submissionGraceDays: 0 }, [PERIOD]);
     const service = new TimesheetOverdueService(db, access);
@@ -133,11 +103,6 @@ describe("TimesheetOverdueService", () => {
     expect(result.items[0]).toMatchObject({ escalationLevel: 0, daysOverdue: 4 });
   });
 
-  /**
-   * Unparseable stored rules must not take the queue down with them — the same
-   * forgiving read the sweep uses. The list is still useful without the
-   * escalation layer; a 500 is not.
-   */
   it("still lists overdue periods when the stored reminder rules do not parse", async () => {
     const db = stubDb({ reminderRules: { every: "friday" }, submissionGraceDays: 2 }, [PERIOD]);
     const service = new TimesheetOverdueService(db, access);

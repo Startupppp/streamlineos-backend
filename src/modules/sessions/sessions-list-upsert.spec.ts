@@ -1,10 +1,22 @@
 import { SessionsService } from "./sessions.service";
 import type { Db } from "../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn().mockImplementation(
+    async (_db: unknown, _orgId: string, fn: () => Promise<unknown>) => fn(),
+  ),
+}));
+
+const mockRunInNewTenantTransaction = runInNewTenantTransaction as jest.MockedFunction<
+  typeof runInNewTenantTransaction
+>;
 
 function makeDb(findFirstResult: { id: string; userAgent: string | null } | undefined): {
   db: Db;
   findFirst: jest.Mock;
   insertValues: jest.Mock;
+  onConflictDoNothing: jest.Mock;
   updateSet: jest.Mock;
   updateWhere: jest.Mock;
 } {
@@ -12,7 +24,8 @@ function makeDb(findFirstResult: { id: string; userAgent: string | null } | unde
   const findMany = jest.fn().mockResolvedValue([]);
   const updateWhere = jest.fn().mockResolvedValue([]);
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
-  const insertValues = jest.fn().mockResolvedValue([]);
+  const onConflictDoNothing = jest.fn().mockResolvedValue([]);
+  const insertValues = jest.fn().mockReturnValue({ onConflictDoNothing });
 
   const db = {
     query: {
@@ -22,7 +35,7 @@ function makeDb(findFirstResult: { id: string; userAgent: string | null } | unde
     update: jest.fn().mockReturnValue({ set: updateSet }),
   } as unknown as Db;
 
-  return { db, findFirst, insertValues, updateSet, updateWhere };
+  return { db, findFirst, insertValues, onConflictDoNothing, updateSet, updateWhere };
 }
 
 describe("SessionsService.list — upsert behaviour", () => {
@@ -37,10 +50,18 @@ describe("SessionsService.list — upsert behaviour", () => {
     return { service, ...mocks };
   }
 
+  it("yields to a concurrent first listing instead of raising 23505, because two requests for one session id both find nothing and both insert", async () => {
+    const { service, onConflictDoNothing } = buildService(undefined);
+
+    await service.list(userId, "org-1", sessionId, browserUA, "1.2.3.4");
+
+    expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
+  });
+
   it("inserts a new row when no session exists in DB", async () => {
     const { service, insertValues } = buildService(undefined);
 
-    await service.list(userId, sessionId, browserUA, "1.2.3.4");
+    await service.list(userId, "org-1", sessionId, browserUA, "1.2.3.4");
 
     expect(insertValues).toHaveBeenCalledTimes(1);
     const inserted = insertValues.mock.calls[0][0] as Record<string, unknown>;
@@ -54,7 +75,7 @@ describe("SessionsService.list — upsert behaviour", () => {
   it("does not INSERT when the session row already exists", async () => {
     const { service, insertValues } = buildService({ id: sessionId, userAgent: browserUA });
 
-    await service.list(userId, sessionId, browserUA, "1.2.3.4");
+    await service.list(userId, "org-1", sessionId, browserUA, "1.2.3.4");
 
     expect(insertValues).not.toHaveBeenCalled();
   });
@@ -63,7 +84,7 @@ describe("SessionsService.list — upsert behaviour", () => {
     const newBrowser = "Mozilla/5.0 Safari/17";
     const { service, updateSet } = buildService({ id: sessionId, userAgent: browserUA });
 
-    await service.list(userId, sessionId, newBrowser, "5.6.7.8");
+    await service.list(userId, "org-1", sessionId, newBrowser, "5.6.7.8");
 
     expect(updateSet).toHaveBeenCalledTimes(1);
     const setArg = updateSet.mock.calls[0][0] as Record<string, unknown>;
@@ -74,7 +95,7 @@ describe("SessionsService.list — upsert behaviour", () => {
   it("does NOT overwrite a real browser UA when incoming UA is an API client", async () => {
     const { service, updateSet } = buildService({ id: sessionId, userAgent: browserUA });
 
-    await service.list(userId, sessionId, axiosUA, "9.0.0.1");
+    await service.list(userId, "org-1", sessionId, axiosUA, "9.0.0.1");
 
     expect(updateSet).toHaveBeenCalledTimes(1);
     const setArg = updateSet.mock.calls[0][0] as Record<string, unknown>;
@@ -86,7 +107,7 @@ describe("SessionsService.list — upsert behaviour", () => {
   it("overwrites an API-client UA when the incoming UA is a real browser", async () => {
     const { service, updateSet } = buildService({ id: sessionId, userAgent: axiosUA });
 
-    await service.list(userId, sessionId, browserUA, "2.2.2.2");
+    await service.list(userId, "org-1", sessionId, browserUA, "2.2.2.2");
 
     expect(updateSet).toHaveBeenCalledTimes(1);
     const setArg = updateSet.mock.calls[0][0] as Record<string, unknown>;
@@ -96,7 +117,7 @@ describe("SessionsService.list — upsert behaviour", () => {
   it("overwrites a null stored UA regardless of incoming UA type", async () => {
     const { service, updateSet } = buildService({ id: sessionId, userAgent: null });
 
-    await service.list(userId, sessionId, axiosUA, "3.3.3.3");
+    await service.list(userId, "org-1", sessionId, axiosUA, "3.3.3.3");
 
     const setArg = updateSet.mock.calls[0][0] as Record<string, unknown>;
     expect(setArg.userAgent).toBe(axiosUA);
@@ -105,7 +126,7 @@ describe("SessionsService.list — upsert behaviour", () => {
   it("skips the upsert entirely for PAT session ids", async () => {
     const { service, findFirst, insertValues } = buildService(undefined);
 
-    await service.list(userId, "pat:some-token", browserUA, "1.1.1.1");
+    await service.list(userId, "org-1", "pat:some-token", browserUA, "1.1.1.1");
 
     expect(findFirst).not.toHaveBeenCalled();
     expect(insertValues).not.toHaveBeenCalled();
@@ -114,9 +135,23 @@ describe("SessionsService.list — upsert behaviour", () => {
   it("skips the upsert when currentSessionId is empty", async () => {
     const { service, findFirst, insertValues } = buildService(undefined);
 
-    await service.list(userId, "", browserUA, "1.1.1.1");
+    await service.list(userId, "org-1", "", browserUA, "1.1.1.1");
 
     expect(findFirst).not.toHaveBeenCalled();
     expect(insertValues).not.toHaveBeenCalled();
+  });
+
+  it("runs the upsert in an independent transaction so a read-replica accessMode:read-only request does not fail on the write", async () => {
+    const { service, insertValues } = buildService(undefined);
+    const orgId = "org-xyz";
+
+    await service.list(userId, orgId, sessionId, browserUA, "1.2.3.4");
+
+    expect(mockRunInNewTenantTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      orgId,
+      expect.any(Function),
+    );
+    expect(insertValues).toHaveBeenCalledTimes(1);
   });
 });

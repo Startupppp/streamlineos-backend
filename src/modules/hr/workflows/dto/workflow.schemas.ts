@@ -121,4 +121,3 @@ export const PaginationSchema = z.object({
   limit: pageSizeField(50, 100),
 });
 
-export type PaginationDto = z.infer<typeof PaginationSchema>;

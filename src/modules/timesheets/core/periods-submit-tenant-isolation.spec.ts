@@ -20,7 +20,6 @@ describe("PeriodsSubmitService — cross-tenant isolation", () => {
     return { update: jest.fn().mockReturnValue(updateChain), insert, select: ownerLookup };
   }
 
-  /** The owner's membership -> user id, answered for any org-scoped lookup. */
   const ownerLookup = jest.fn().mockReturnValue({
     from: () => ({ where: () => Object.assign(Promise.resolve([{ id: 10, userId: "owner-user" }]), { limit: async () => [{ id: 10, userId: "owner-user" }] }) }),
   });
@@ -43,7 +42,30 @@ describe("PeriodsSubmitService — cross-tenant isolation", () => {
     const entries = { recomputePeriodTotals: jest.fn().mockResolvedValue(undefined) };
     const audit = { record: jest.fn().mockResolvedValue(undefined) };
 
-    const svc = new PeriodsSubmitService(db, reader as never, entries as never, audit as never);
+    const routing = {
+      resolve: jest.fn().mockResolvedValue({
+        kind: "routed",
+        approver: { userId: "owner-manager", membershipId: 20, name: "Manager", email: "manager@example.test", designation: null },
+        queueUserIds: [],
+        route: {
+          source: "reporting_manager",
+          rung: "reporting_manager",
+          approverUserId: "owner-manager",
+          approverMembershipId: 20,
+          assignedToUserId: "owner-manager",
+          delegation: null,
+          projectId: null,
+          explanation: "Manager approves as reporting manager.",
+          slaHours: 48,
+          escalationRung: "queue",
+          escalatedFrom: null,
+        },
+        dueAt: new Date("2026-01-09T00:00:00.000Z"),
+      }),
+    };
+    const rateResolver = { resolveMany: jest.fn().mockResolvedValue([]) };
+
+    const svc = new PeriodsSubmitService(db, reader as never, entries as never, audit as never, routing as never, rateResolver as never);
     return { svc, getCalledOrg: () => calledWithOrg };
   }
 

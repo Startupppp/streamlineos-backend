@@ -1,4 +1,16 @@
-import { and, desc, eq, gte, isNull, lt, or, type SQL } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { notifications, users } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
 import { BroadcastsService } from "./broadcasts.service";
@@ -18,17 +30,24 @@ import type {
   NotificationInboxItem,
 } from "./dto/unified-inbox.schemas";
 
-/**
- * The two in-house inbox sources — a member's own notifications and the
- * organization broadcasts addressed to them — read and mapped into the unified
- * item shape.
- *
- * They are the sources whose row shape and index strategy belong to the
- * notifications module itself; `UnifiedInboxService` owns the merge, the cursor
- * arithmetic and the per-source authorization, and the mail and build-approval
- * sources live behind their own modules. Keeping the mapping here means a column
- * added to `notifications` touches one file.
- */
+import type { ApprovalSourceAdapter } from "../attention/approval-adapter.registry";
+export type { ApprovalSourceAdapter } from "../attention/approval-adapter.registry";
+
+export type InboxTriage = "active" | "later" | "done";
+
+export type InboxFilters = {
+  triage: InboxTriage;
+  q: string | undefined;
+  category: string | undefined;
+  priority: string | undefined;
+};
+
+export const DEFAULT_INBOX_FILTERS: InboxFilters = {
+  triage: "active",
+  q: undefined,
+  category: undefined,
+  priority: undefined,
+};
 
 export const SOURCE_TIMEOUT_MS = 5_000;
 
@@ -66,10 +85,6 @@ export async function readSourceWithin<T>(
   }
 }
 
-/**
- * Also keyed on `membership_id` — see `countNotificationUnread` for the numbers.
- * On `user_id` it cost 2,043 blocks to return 20 rows and grew with the tenant.
- */
 export function notificationKeyset(
   cursor: InboxSourcePosition | null,
 ): SQL | undefined {
@@ -82,6 +97,37 @@ export function notificationKeyset(
   );
 }
 
+function triageConditions(
+  triage: InboxTriage,
+  now: Date,
+): Array<SQL | undefined> {
+  if (triage === "later") {
+    return [
+      isNull(notifications.archivedAt),
+      isNotNull(notifications.snoozedUntil),
+      gt(notifications.snoozedUntil, now),
+    ];
+  }
+  if (triage === "done") return [isNotNull(notifications.archivedAt)];
+
+  return [isNull(notifications.archivedAt), notificationNotSnoozed(now)];
+}
+
+export function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+function notificationMatchesQ(q: string | undefined): SQL | undefined {
+  if (q === undefined) return undefined;
+  const trimmed = q.trim();
+  if (trimmed === "") return undefined;
+  const pattern = `%${escapeLikeTerm(trimmed)}%`;
+  return or(
+    sql`${notifications.title} ILIKE ${pattern}`,
+    sql`${notifications.message} ILIKE ${pattern}`,
+  );
+}
+
 export async function fetchNotificationItems(
   db: Db,
   orgId: string,
@@ -89,6 +135,7 @@ export async function fetchNotificationItems(
   fetchLimit: number,
   cursor: InboxSourcePosition | null,
   unreadOnly: boolean,
+  filters: InboxFilters = DEFAULT_INBOX_FILTERS,
 ): Promise<NotificationInboxItem[]> {
   if (membershipId === null) return [];
   const now = new Date();
@@ -101,12 +148,18 @@ export async function fetchNotificationItems(
         eq(notifications.orgId, orgId),
         eq(notifications.membershipId, membershipId),
         isNull(notifications.deletedAt),
-        isNull(notifications.archivedAt),
+        ...triageConditions(filters.triage, now),
         gte(notifications.createdAt, notificationWindowStart(now)),
         lt(notifications.createdAt, notificationWindowEnd(now)),
-        notificationNotSnoozed(now),
         notificationKeyset(cursor),
         unreadOnly ? eq(notifications.isRead, false) : undefined,
+        filters.category
+          ? sql`${notifications.category}::text = ${filters.category}`
+          : undefined,
+        filters.priority
+          ? sql`${notifications.priority}::text = ${filters.priority}`
+          : undefined,
+        notificationMatchesQ(filters.q),
       ),
     )
     .orderBy(desc(notifications.createdAt), desc(notifications.id))
@@ -181,6 +234,8 @@ export async function fetchMailItems(
   membershipId: number | null,
   fetchLimit: number,
   cursor: string | null,
+  unreadOnly?: boolean,
+  q?: string,
 ): Promise<MailSourceBatch> {
   const result = await mail.listMessages(
     orgId,
@@ -190,6 +245,8 @@ export async function fetchMailItems(
     "all",
     fetchLimit,
     cursor ?? undefined,
+    q,
+    unreadOnly,
   );
 
   const items: MailInboxItem[] = result.messages.map(
@@ -227,16 +284,6 @@ export async function fetchMailItems(
   };
 }
 
-/**
- * Where the mail source should resume, given how much of the batch it fetched
- * was actually delivered.
- *
- * Fully delivered — or nothing fetched at all — and the batch's own
- * `nextMailCursor` is the answer. Partly delivered, and the boundary is
- * re-read: `limit`-bounded, one read, and never on a page that trimmed no
- * mail. Nothing delivered leaves the position untouched, so the same batch is
- * offered again on the next page rather than being skipped.
- */
 export async function nextMailPosition(
   mail: MailService,
   orgId: string,
@@ -245,9 +292,11 @@ export async function nextMailPosition(
   current: string | null,
   fetched: MailSourceBatch,
   delivered: number,
+  unreadOnly?: boolean,
 ): Promise<string | null> {
   if (fetched.items.length === 0) return current;
-  if (delivered === fetched.items.length) return fetched.nextMailCursor ?? current;
+  if (delivered === fetched.items.length)
+    return fetched.nextMailCursor ?? current;
   if (delivered === 0) return current;
   const boundary = await mail.listMessages(
     orgId,
@@ -257,6 +306,8 @@ export async function nextMailPosition(
     "all",
     delivered,
     current ?? undefined,
+    undefined,
+    unreadOnly,
   );
   return boundary.nextCursor ?? current;
 }
@@ -283,16 +334,45 @@ export async function fetchBuildApprovalItems(
       kind: "build_approval",
       id: row.id,
       projectId: row.projectId,
+      approvalKind: "build",
       ticketId: row.entityType === "task" ? row.entityId : null,
       status: row.status,
       subject: row.title,
       sourceModule: "build",
       actor: null,
-      deepLink: null,
+      deepLink: buildApprovalDeepLink(row.projectId),
       isRead: false,
-      dedupKey: `approval:${String(row.id)}`,
+      dedupKey: `approval:build:${String(row.id)}`,
       timestamp: row.createdAt.toISOString(),
       dueAt: row.dueAt ? row.dueAt.toISOString() : null,
     }),
   );
+}
+
+export function buildApprovalDeepLink(projectId: number | null): string {
+  return projectId === null
+    ? "/build/approvals"
+    : `/build/approvals?projectId=${String(projectId)}`;
+}
+
+export function buildApprovalAdapter(
+  buildApprovals: BuildApprovalsInboxService,
+): ApprovalSourceAdapter {
+  return {
+    module: "build",
+    permission: "build:approvals:view",
+    kindLabel: "build",
+    supportsAfterCursor: true,
+    fetch: (orgId, userId, membershipId, limit, cursor) =>
+      fetchBuildApprovalItems(
+        buildApprovals,
+        orgId,
+        userId,
+        membershipId,
+        limit,
+        cursor,
+      ),
+    countPending: (orgId, _userId, membershipId) =>
+      buildApprovals.countPending(orgId, membershipId),
+  };
 }

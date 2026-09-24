@@ -76,7 +76,7 @@ describe("the delete guard's blocker lookup", () => {
   it("binds the caller's organisation into the blocker query", async () => {
     const { service, findMany } = serviceWithBlockers([{ workItemId: 9 }]);
 
-    await expect(service.deleteTicket(OWNER_ORG, "member-1", 7, false)).rejects.toThrow(
+    await expect(service.deleteTicket(OWNER_ORG, "member-1", 3, 7, false)).rejects.toThrow(
       ConflictException,
     );
 
@@ -91,7 +91,7 @@ describe("the delete guard's blocker lookup", () => {
   it("caps how many blockers it reads", async () => {
     const { service, findMany } = serviceWithBlockers([{ workItemId: 9 }]);
 
-    await expect(service.deleteTicket(OWNER_ORG, "member-1", 7, false)).rejects.toThrow(
+    await expect(service.deleteTicket(OWNER_ORG, "member-1", 3, 7, false)).rejects.toThrow(
       ConflictException,
     );
 
@@ -108,7 +108,7 @@ describe("the delete guard's blocker lookup", () => {
     const atCap = Array.from({ length: 50 }, (_, i) => ({ workItemId: i }));
     const { service } = serviceWithBlockers(atCap);
 
-    await expect(service.deleteTicket(OWNER_ORG, "member-1", 7, false)).rejects.toThrow(/50\+/);
+    await expect(service.deleteTicket(OWNER_ORG, "member-1", 3, 7, false)).rejects.toThrow(/50\+/);
   });
 
   it("allows the delete when nothing blocks it (control)", async () => {
@@ -131,12 +131,12 @@ describe("the delete guard's blocker lookup", () => {
       {} as never,
       {} as never,
       { enqueue: jest.fn() } as never,
-      { invalidate: jest.fn(), del: jest.fn(), delByPrefix: jest.fn() } as never,
+      { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn(), delByPrefix: jest.fn() } as never,
       {} as never,
       {} as never,
     );
 
-    await service.deleteTicket(OWNER_ORG, "member-1", 7, false).catch(() => undefined);
+    await service.deleteTicket(OWNER_ORG, "member-1", 3, 7, false).catch(() => undefined);
 
     expect(transaction).toHaveBeenCalled();
   });

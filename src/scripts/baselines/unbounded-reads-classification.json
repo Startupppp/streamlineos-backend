@@ -1186,7 +1186,7 @@
       "note": "Has 2 explicit .limit() calls and 6 aggregate references; all row-returning paths are capped",
       "justification": "has 2 explicit .limit() + 6 aggregates; violations are bounded by sprint/project scope; gate missed limits past 120-line window 2026-09-01"
     },
-    "/build/core/projects-workspace-members.service.ts": {
+    "/build/core/build-members.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 3 explicit .limit() calls; workspace membership is bounded by org size",
       "justification": "has 3 explicit .limit(); violations are per-workspace membership queries bounded by workspace member count; gate missed limit placement 2026-09-01"
@@ -1239,6 +1239,31 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Has 12 count/sum/groupBy aggregate references; test-run analytics queries produce scalar summaries",
       "justification": "L86 is aggregate-only; L135/L150/L163 read testCase IDs bounded by specific test run ID; test cases per run bounded by run scope 2026-09-01"
+    },
+    "/build/core/project-access.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "resolveProjectAssignableMemberships (L54-79) selects projectMembers JOIN organizationMembers filtered by inArray(organizationMembers.userId, uniqueUserIds) where uniqueUserIds is the caller-supplied assignee list",
+      "justification": "All three call sites pass small, request-scoped id lists, never an unbounded set: projects-tickets-create.service.ts:116-119 passes a single ticket's [...allAssigneeIds] (one create request); projects-tickets-update.service.ts:223-226 passes [...pendingActorIds] for one ticket being updated; build-ticket-bulk-mutation.ts:47-52 passes at most one id ([assigneeId] or []). Row count is bounded by uniqueUserIds.length by construction (inArray), same shape as build-ticket-mutation-policy.ts's FALSE-POSITIVE. 2026-09-23"
+    },
+    "/build/core/projects-roadmap.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "L74 .select({ id: projects.id }) is a Drizzle sub-select builder passed unawaited into inArray(roadmapItems.projectId, sub) at L75 — it is never executed as an independent query",
+      "justification": "The select is not awaited on its own; it becomes a correlated IN-subquery compiled into the single roadmapItems.findMany() statement at L91-95 (`WHERE project_id IN (SELECT id FROM projects WHERE org_id = ? AND managed_product_id = ?)`). No row set is ever materialized into the app from this line — the gate's regex matches `.select(` without seeing it is a subquery argument, not a top-level read. The outer findMany already carries `limit: limit + 1` (cursor pagination). 2026-09-23"
+    },
+    "/build/import-export/ticket-import-reads.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "L13 readProjectStatusNames reads project statuses for one project (small config set); L28 readConflictingTitleKeys reads tickets by inArray(TITLE_KEY_SQL, keys) where keys comes from the request's own parsed file rows",
+      "justification": "L13 is the same per-project status config-set read already classified FALSE-POSITIVE across the module (ticket-status.util.ts, projects-custom-states.service.ts; typically <20 statuses per project). L28's keys array is deduplicated title keys from parsed.rows, and parseImportSource (import-source.ts:66,99) rejects any file over IMPORT_MAX_ROWS=1000 (import-export.constants.ts:1) before rows ever reach here, so keys.length <= 1000 and the inArray result is bounded by the caller's own capped upload, same shape as build-ticket-mutation-policy.ts's ids.length bound. 2026-09-23"
+    },
+    "/build/qa/bugs.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "L80 getBug is an exact eq(tickets.id, bugId) single-row lookup; L148 and L252 read project statuses for one project inside createBug/updateBug (small config set)",
+      "justification": "L80 filters on a single primary key (eq(tickets.id, bugId)) plus tenant/project scope and checks rows.length === 0 for 404 — at most one row by construction. L148/L252 are the same per-project projectStatuses config-set read as ticket-status.util.ts and bugs.service.ts's own L21-74 listBugs neighbor pattern (typically <20 statuses per project). 2026-09-23"
+    },
+    "/build/scope-directory/scope-directory.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "resolveScopeDirectory (L134,187,197,229,285,302) reads are all inArray()-filtered by ids drawn from the request's `keys` array, capped at 26 by resolveScopeDirectorySchema (dto/scope-directory.schemas.ts:12, `.max(26)`); searchScopeDirectory (L346,355,364) reads the caller's OWN project/product memberships with no request-supplied id list",
+      "justification": "L134 missingProductIds, L187/L197 requestedProjectIds, L229 productEntries ids and L285/L302 productIdsToFetch/projectWhere all trace back to `keys`, which .strict() + .max(26) caps before the service ever runs — result sets are bounded by <=26 regardless of org size. L346/L355/L364 have no request-supplied cap because they answer 'what does this member belong to': managedProductMemberships/projectMembers/projectTeamAssignments filtered by eq(...membershipId, membershipId) alone, bounded by one member's own membership count, the same shape already accepted for projects-query.service.ts:70/74 and projects-budget.service.ts:56 (bounded by user project membership count). 2026-09-23"
     },
     "/calendar/calendar-attendee-sync.ts": {
       "verdict": "FALSE-POSITIVE",

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   CanActivate,
   Controller,
@@ -112,6 +113,11 @@ interface Surface {
   build(db: Db, gateway: ProviderProbe): KbArticleAiService | KbPageAiService;
 }
 
+const kbPageAiAuth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: ORG_ID, pageId: DOC_ID, action: "view", via: "admin" }),
+};
+
 const SURFACES: Surface[] = [
   {
     name: "KbArticleAiService",
@@ -125,7 +131,7 @@ const SURFACES: Surface[] = [
   },
   {
     name: "KbPageAiService",
-    build: (db, gateway) => new KbPageAiService(db, gateway as never, { log: jest.fn() } as never),
+    build: (db, gateway) => new KbPageAiService(db, gateway as never, { log: jest.fn() } as never, kbPageAiAuth as never),
   },
 ];
 

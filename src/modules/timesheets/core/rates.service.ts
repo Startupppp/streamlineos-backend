@@ -10,11 +10,6 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
 import type { CreateRateInput, UpdateRateInput } from "./dto/rates.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-/**
- * The platform page cap. Rates are a configuration list rather than a feed, so
- * there is no cursor to page with — the honest bound is the same 100 every
- * other list obeys, plus a flag saying when it bit.
- */
 const RATE_LIST_CAP = 100;
 
 @Injectable()
@@ -25,24 +20,6 @@ export class RatesService {
     private readonly audit: TimesheetsAuditService,
   ) {}
 
-  /**
-   * TS-34. Bounded, ordered, and honest about the bound.
-   *
-   * Both halves of this were unbounded `SELECT *` per organisation — the only
-   * list endpoint in the module with no cap at all, and the one most likely to
-   * grow without anybody noticing, because a rate card per client per role is
-   * how these tables fill up. A tenant with a few thousand rates was serving
-   * every one of them on every page load.
-   *
-   * `RATE_LIST_CAP + 1` is fetched so the response can say whether it is
-   * complete rather than quietly showing a prefix. Truncating without saying so
-   * is how a rate somebody configured becomes a rate nobody can find.
-   *
-   * Ordering is by `(priority desc, id desc)` for rates because that is the
-   * order resolution considers them in, so the page a person sees matches the
-   * rules that actually apply — a cap over an unordered scan would show an
-   * arbitrary subset that changes between requests.
-   */
   async listRates(u: CurrentUserContext) {
     const [rateRows, cardRows] = await Promise.all([
       this.db

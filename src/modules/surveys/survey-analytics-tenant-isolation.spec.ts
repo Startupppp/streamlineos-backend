@@ -26,6 +26,7 @@ describe("SurveyAnalyticsService — cross-tenant isolation", () => {
         surveyQuestions: { findMany: questionsFindMany },
         surveyAnswers: { findMany: jest.fn().mockResolvedValue([]) },
       },
+      select: () => ({ from: () => ({ where: async () => [{ total: 0 }] }) }),
     } as unknown as Db;
     const svc = new SurveyAnalyticsService(db);
 
@@ -46,6 +47,7 @@ describe("SurveyAnalyticsService — cross-tenant isolation", () => {
         surveyQuestions: { findMany: questionsFindMany },
         surveyAnswers: { findMany: answersFindMany },
       },
+      select: () => ({ from: () => ({ where: async () => [{ total: 0 }] }) }),
     } as unknown as Db;
     const svc = new SurveyAnalyticsService(db);
 

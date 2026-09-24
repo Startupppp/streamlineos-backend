@@ -1,8 +1,14 @@
 import { RecruitmentCandidateDocumentsController } from "../recruitment-candidate-documents.controller";
 import { RecruitmentCandidateVaultService } from "../recruitment-candidate-vault.service";
-import { StorageService } from "../../storage/storage.service";
-import { FileQuarantineService } from "../../storage/file-quarantine.service";
-import { AuditService } from "../../../common/audit/audit.service";
+/*
+  This branch's symbols (quarantine, AV scanner, the two extra exception types)
+  at origin/main's depths. Ours were one level short — `src/modules/hr/storage/`
+  and `src/modules/common/audit/` do not exist — so this spec could not resolve
+  and was not running.
+*/
+import { StorageService } from "../../../storage/storage.service";
+import { FileQuarantineService } from "../../../storage/file-quarantine.service";
+import { AuditService } from "../../../../common/audit/audit.service";
 import { AvScanner } from "../../../../common/security/av-scan";
 import {
   BadRequestException,
@@ -67,7 +73,7 @@ describe("RecruitmentCandidateDocumentsController", () => {
       size: 1024,
     } as Express.Multer.File;
 
-    storage.planUpload.mockResolvedValue({ key: "path/to/file" });
+    storage.planUpload.mockResolvedValue({ key: "path/to/file", plannedMimeType: "application/pdf" });
     storage.getFileUrl.mockResolvedValue("http://s3.com/file");
     quarantine.begin.mockResolvedValue("quarantine-id");
     vaultService.addVaultDocument.mockResolvedValue({ id: 1 } as any);

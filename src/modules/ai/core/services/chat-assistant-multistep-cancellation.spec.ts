@@ -218,8 +218,8 @@ jest.mock("ai", () => ({
   stepCountIs: jest.fn(() => () => false),
 }));
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
@@ -238,6 +238,10 @@ import type { AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "./ai-usage.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayStreamHelper, type AiStreamTextOpts } from "../gateway/ai-gateway-stream.helper";
+import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
+import { AccessService } from "../../../access/access.service";
 
 // Annotated, deliberately. Without the annotation tsc never excess-property-checks
 // this literal, which is how `permissions: []` -- a shape §5 bans and
@@ -254,19 +258,25 @@ const ACTOR: CurrentUserContext = {
 };
 
 const STUB_CONTEXT = {
-  projectCount: 0,
-  ticketCount: 0,
   todayAttendance: null,
   pendingLeaves: 0,
   recentPayrolls: [],
   myLeadsCount: 0,
-  hotLeadsCount: 0,
   myOpenDealsCount: 0,
   topLeads: [],
 };
 
+const STUB_ASK_OS_ACTOR = {
+  userId: "user_1", orgId: "org_1", membershipId: 1, displayName: "Test Member",
+  email: "member@example.com", orgName: "Acme", role: "MEMBER", isOrgOwner: false,
+  timezone: "UTC", today: "2026-09-19", monthStart: "2026-09-01",
+  monthEnd: "2026-09-30", currentYear: 2026, currentMonth: 9,
+};
+
 interface StreamTextOpts {
-  onAbort?: () => void;
+  onAbort?: (event?: {
+    steps?: ReadonlyArray<{ usage?: { inputTokens?: number; outputTokens?: number } }>;
+  }) => void;
   onFinish?: (opts: {
     text: string;
     usage?: { inputTokens?: number; outputTokens?: number };
@@ -286,30 +296,40 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>) {
     append: jest.fn().mockResolvedValue(undefined),
     appendToConversation: jest.fn().mockResolvedValue(undefined),
   };
-  const noop = { buildTools: jest.fn().mockReturnValue({}) };
   const usageSvc = { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
+  const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
+  const streamHelper = new AiGatewayStreamHelper(
+    ledger,
+    usageSvc,
+    limiterStub as unknown as AiConcurrencyLimiter,
+    null,
+  );
+  const gateway = Object.assign(Object.create(AiGatewayService.prototype), {
+    streamAgenticTurn: (opts: AiStreamTextOpts) => streamHelper.run(opts),
+  }) as unknown as AiGatewayService;
+
+  const access = {
+    getAccessSnapshot: jest.fn().mockResolvedValue({
+      membershipId: 1,
+      scopes: {},
+      modules: {},
+      isOrgOwner: false,
+      canManageOrganizationMembership: false,
+      mfa: { enforced: false, satisfied: true },
+      version: 0,
+    }),
+  };
 
   const svc = new ChatAssistantService(
     {} as never,
-    { ask: jest.fn(), summarize: jest.fn() } as never,
+    gateway,
     history as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    { denyReason: jest.fn().mockResolvedValue(null) } as never,
-    { get: jest.fn().mockReturnValue({ ask: jest.fn() }) } as never,
-    usageSvc,
-    ledger,
-    null,
-    { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() } as never,
+    access as unknown as AccessService,
+    [],
   );
 
-  jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+  jest.spyOn(svc as never, "fetchContext").mockResolvedValue({ context: STUB_CONTEXT, actor: STUB_ASK_OS_ACTOR } as never);
   return svc;
 }
 
@@ -328,7 +348,7 @@ describe("ChatAssistantService — cancelling a tool-using turn", () => {
     expect(typeof opts.onAbort).toBe("function");
   });
 
-  it("releases the reservation and never settles when the turn is aborted mid-step-two", async () => {
+  it("settles the tokens the completed steps already burned when the turn is aborted mid-step-two", async () => {
     const ledger = makeLedger();
     let opts: StreamTextOpts = {};
     (streamText as jest.Mock).mockImplementation((o: StreamTextOpts) => {
@@ -349,15 +369,24 @@ describe("ChatAssistantService — cancelling a tool-using turn", () => {
     // Exactly the order the SDK uses: notify onAbort, close the controller,
     // then flush notifies onEnd (= onFinish) with the null usage it substitutes.
     controller.abort();
-    opts.onAbort?.();
+    opts.onAbort?.({
+      steps: [
+        { usage: { inputTokens: 900, outputTokens: 120 } },
+        { usage: { inputTokens: 1_100, outputTokens: 80 } },
+      ],
+    });
     await opts.onFinish?.({ text: "", usage: {} });
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(ledger.release).toHaveBeenCalledWith(42, "stream_aborted_no_settle", "org_1");
-    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.settle).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ promptTokens: 2_000, completionTokens: 200 }),
+    );
+    expect(ledger.release).not.toHaveBeenCalled();
   });
 
-  it("releases once, however many times the SDK notifies", async () => {
+  it("releases rather than settling when the client leaves before any step completed", async () => {
     const ledger = makeLedger();
     let opts: StreamTextOpts = {};
     (streamText as jest.Mock).mockImplementation((o: StreamTextOpts) => {
@@ -375,13 +404,38 @@ describe("ChatAssistantService — cancelling a tool-using turn", () => {
     );
 
     controller.abort();
-    opts.onAbort?.();
-    opts.onAbort?.();
+    opts.onAbort?.({ steps: [] });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.release).toHaveBeenCalledWith(42, "stream_aborted_no_settle", "org_1");
+  });
+
+  it("resolves the reservation exactly once, however many times the SDK notifies", async () => {
+    const ledger = makeLedger();
+    let opts: StreamTextOpts = {};
+    (streamText as jest.Mock).mockImplementation((o: StreamTextOpts) => {
+      opts = o;
+      return { finishReason: Promise.resolve("other") };
+    });
+
+    const controller = new AbortController();
+    await buildService(ledger).processChat(
+      [{ role: "user", content: "hi" }],
+      ACTOR,
+      undefined,
+      undefined,
+      controller.signal,
+    );
+
+    controller.abort();
+    opts.onAbort?.({ steps: [{ usage: { inputTokens: 30, outputTokens: 10 } }] });
+    opts.onAbort?.({ steps: [{ usage: { inputTokens: 30, outputTokens: 10 } }] });
     await opts.onFinish?.({ text: "partial", usage: { inputTokens: 30, outputTokens: 10 } });
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(ledger.release).toHaveBeenCalledTimes(1);
-    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
   });
 
   /**

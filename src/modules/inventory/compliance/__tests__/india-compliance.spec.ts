@@ -174,6 +174,7 @@ describe("E5 India compliance boundary", () => {
      */
     function codeOf(file: string): string {
       return readFileSync(join(__dirname, "..", file), "utf8")
+        .replace(/\r\n/g, "\n")
         .replace(/\/\*[\s\S]*?\*\//g, " ")
         .split("\n")
         .map((line) => line.replace(/\/\/.*$/, ""))

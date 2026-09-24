@@ -5,8 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { RangeInput } from "./dto/kb-analytics.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { pageVisibleTo } from "../retrieval/kb-page-visibility";
-import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 type TopArticle = {
   id: number;
@@ -65,7 +64,10 @@ type GapRow = {
 
 @Injectable()
 export class KbAnalyticsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly auth: KnowledgeAuthorizationService,
+  ) {}
 
   async overview(orgId: string, range: RangeInput): Promise<OverviewResult> {
     const eventConditions: SQL[] = [eq(kbEvents.orgId, orgId)];
@@ -150,7 +152,7 @@ export class KbAnalyticsService {
   }
 
   async pages(user: CurrentUserContext): Promise<PageAnalyticsRow[]> {
-    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     return this.db
       .select({
         id: kbPages.id,
@@ -172,7 +174,7 @@ export class KbAnalyticsService {
         kbPageVersions,
         and(eq(kbPageVersions.pageId, kbPages.id), eq(kbPageVersions.orgId, user.orgId)),
       )
-      .where(and(eq(kbPages.orgId, user.orgId), isNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)))
+      .where(and(eq(kbPages.orgId, user.orgId), isNull(kbPages.deletedAt), predicate))
       .groupBy(kbPages.id)
       .orderBy(desc(sql`count(distinct ${kbPageVisits.id})`))
       .limit(50);

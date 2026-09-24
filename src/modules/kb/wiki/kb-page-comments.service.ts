@@ -7,9 +7,7 @@ import type { CreatePageCommentInput, UpdatePageCommentInput } from "./dto/kb-pa
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { KeysetPosition } from "../../../common/pagination/keyset";
 import { keysetAfterId } from "../../../common/pagination/keyset";
-import { pageVisibleTo } from "../retrieval/kb-page-visibility";
-import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AccessService } from "../../access/access.service";
 
@@ -24,6 +22,7 @@ export class KbPageCommentsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly dispatch: NotificationDispatchService,
     private readonly access: AccessService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async list(
@@ -54,14 +53,14 @@ export class KbPageCommentsService {
   async create(user: CurrentUserContext, pageId: number, input: CreatePageCommentInput): Promise<CommentWithAuthor> {
     const orgId = user.orgId;
     const authorId = user.userId;
-    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const predicate = await this.auth.visiblePagePredicate(user, "comment");
 
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, orgId),
         isNull(kbPages.deletedAt),
-        pageVisibleTo(user, projectIds),
+        predicate,
       ),
       columns: { id: true, createdById: true, ownerUserId: true },
     });
@@ -113,7 +112,7 @@ export class KbPageCommentsService {
     });
     if (!existing) throw new NotFoundException("Comment not found");
 
-    await assertPageAccessible(this.db, user, existing.pageId);
+    await this.auth.assertPageAccess(user, existing.pageId, "comment");
 
     const isAdmin = await this.access.holds(user, "kb:pages:manage");
     if (existing.authorId !== user.userId && !isAdmin) throw new ForbiddenException("Not your comment");
@@ -135,7 +134,7 @@ export class KbPageCommentsService {
     });
     if (!existing) throw new NotFoundException("Comment not found");
 
-    await assertPageAccessible(this.db, user, existing.pageId);
+    await this.auth.assertPageAccess(user, existing.pageId, "comment");
 
     const isAdmin = await this.access.holds(user, "kb:pages:manage");
     if (existing.authorId !== user.userId && !isAdmin) throw new ForbiddenException("Not your comment");
@@ -153,7 +152,7 @@ export class KbPageCommentsService {
     });
     if (!existing) throw new NotFoundException("Comment not found");
 
-    await assertPageAccessible(this.db, user, existing.pageId);
+    await this.auth.assertPageAccess(user, existing.pageId, "comment");
 
     const [updated] = await this.db
       .update(kbPageComments)
@@ -175,13 +174,13 @@ export class KbPageCommentsService {
   }
 
   private async assertPageExists(user: CurrentUserContext, pageId: number): Promise<void> {
-    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, user.orgId),
         isNull(kbPages.deletedAt),
-        pageVisibleTo(user, projectIds),
+        predicate,
       ),
       columns: { id: true },
     });

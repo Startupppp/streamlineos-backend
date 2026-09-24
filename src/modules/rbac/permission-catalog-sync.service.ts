@@ -13,8 +13,12 @@ import { PERMISSIONS } from "./permissions";
 import { buildPermissionCatalogRows } from "./permission-catalog-rows";
 import { buildModulesCatalogRows } from "../../common/rbac/modules-catalog-rows";
 import { RoleGrantReconcilerService } from "./role-grant-reconciler.service";
+import { CronLeaseService } from "../cron/cron-lease.service";
 
-type SupportedScope = "all" | "team" | "own";
+export const GRANT_RECONCILE_JOB_KEY = "rbac-grant-reconcile";
+export const GRANT_RECONCILE_WINDOW_SECONDS = 600;
+
+type SupportedScope = "all" | "own";
 
 interface RetiredPermissionClassification {
   deletableKeys: string[];
@@ -27,9 +31,7 @@ export function classifyRetiredPermissions(
 ): RetiredPermissionClassification {
   const referenced = new Set(referencedKeys);
   return {
-    deletableKeys: staleKeys
-      .filter((key) => !referenced.has(key))
-      .sort(),
+    deletableKeys: staleKeys.filter((key) => !referenced.has(key)).sort(),
     retainedKeys: staleKeys.filter((key) => referenced.has(key)).sort(),
   };
 }
@@ -41,15 +43,9 @@ export class PermissionCatalogSyncService implements OnModuleInit {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly grantReconciler: RoleGrantReconcilerService,
+    private readonly cronLease: CronLeaseService,
   ) {}
 
-  /**
-   * The reconciler is called from here rather than from its own lifecycle hook
-   * because the ordering is the whole point: a grant whose permission key is new
-   * in this release violates the foreign key to `permissions.name` until this
-   * sync has run, which is why a migration can never place one. A failed sync
-   * therefore skips the reconcile instead of reconciling against a stale catalog.
-   */
   async onModuleInit(): Promise<void> {
     try {
       await this.sync();
@@ -62,15 +58,21 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       return;
     }
     if (process.env.RBAC_GRANT_RECONCILE_ON_BOOT === "false") return;
-    try {
-      await this.grantReconciler.reconcileAllOrganizations();
-    } catch (error) {
-      this.logger.error(
-        `Role grant reconcile failed — organisations seeded before the current role definitions keep the permissions they have: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
+    this.reconcileDetached();
+  }
+
+  reconcileDetached(): void {
+    void this.cronLease
+      .withLease(GRANT_RECONCILE_JOB_KEY, GRANT_RECONCILE_WINDOW_SECONDS, () =>
+        this.grantReconciler.reconcileAllOrganizations(),
+      )
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Role grant reconcile failed — organisations seeded before the current role definitions keep the permissions they have: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 
   async sync(options?: { cleanupRetired?: boolean }): Promise<{
@@ -94,8 +96,12 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       .onConflictDoNothing();
 
     const catalogModules = new Set(
-      (await this.db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog).limit(100))
-        .map((row) => row.moduleKey),
+      (
+        await this.db
+          .select({ moduleKey: modulesCatalog.moduleKey })
+          .from(modulesCatalog)
+          .limit(100)
+      ).map((row) => row.moduleKey),
     );
 
     await this.db
@@ -118,10 +124,9 @@ export class PermissionCatalogSyncService implements OnModuleInit {
         const rows: { permissionKey: string; scope: SupportedScope }[] = [
           { permissionKey: permission.name, scope: "all" },
         ];
-        if (permission.scopable === true) {
-          rows.push({ permissionKey: permission.name, scope: "team" });
+        if (permission.scopable === true)
           rows.push({ permissionKey: permission.name, scope: "own" });
-        }
+
         return rows;
       },
     );
@@ -131,8 +136,13 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       .values(scopeRows)
       .onConflictDoNothing();
 
-    const catalogNames = new Set(PERMISSIONS.map((permission) => permission.name));
-    const stored = await this.db.select({ name: permissions.name }).from(permissions).limit(5000);
+    const catalogNames = new Set(
+      PERMISSIONS.map((permission) => permission.name),
+    );
+    const stored = await this.db
+      .select({ name: permissions.name })
+      .from(permissions)
+      .limit(5000);
     const staleKeys = stored
       .map((row) => row.name)
       .filter((name) => !catalogNames.has(name))
@@ -160,36 +170,32 @@ export class PermissionCatalogSyncService implements OnModuleInit {
             permissionKey: userDelegationPermissions.permissionKey,
           })
           .from(userDelegationPermissions)
-          .where(
-            inArray(userDelegationPermissions.permissionKey, lockedKeys),
-          );
+          .where(inArray(userDelegationPermissions.permissionKey, lockedKeys));
         const classification = classifyRetiredPermissions(
           lockedKeys,
-          [
-            ...roleReferencedRows,
-            ...delegationReferencedRows,
-          ].map((row) => row.permissionKey),
+          [...roleReferencedRows, ...delegationReferencedRows].map(
+            (row) => row.permissionKey,
+          ),
         );
-        if (classification.deletableKeys.length > 0) {
+        if (classification.deletableKeys.length > 0)
           await tx
             .delete(permissions)
             .where(inArray(permissions.name, classification.deletableKeys));
-        }
+
         return classification;
       });
       deletedKeys = cleanup.deletableKeys;
       retainedKeys = cleanup.retainedKeys;
     }
 
-    if (options?.cleanupRetired === true && retainedKeys.length > 0) {
+    if (options?.cleanupRetired === true && retainedKeys.length > 0)
       this.logger.warn(
         `Permission catalog has ${retainedKeys.length} retired key(s) retained because role or delegation grants still reference them: ${retainedKeys.join(", ")}`,
       );
-    } else if (staleKeys.length > 0) {
+    else if (staleKeys.length > 0)
       this.logger.warn(
         `Permission catalog has ${staleKeys.length} retired key(s); cleanup is disabled: ${staleKeys.join(", ")}`,
       );
-    }
 
     return {
       catalogSize: PERMISSIONS.length,

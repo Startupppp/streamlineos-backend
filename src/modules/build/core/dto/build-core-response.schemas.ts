@@ -76,6 +76,12 @@ export const bulkReorderStatesResultSchema = z.object({
   })),
 });
 
+export const orgCustomStateSchema = z.object({
+  name: z.string(),
+  color: z.string().nullable(),
+  type: z.string().nullable(),
+});
+
 export const buildCustomFieldSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -165,15 +171,6 @@ export const webhookTestResultSchema = z.object({
   responseCode: z.number().int().nullable(),
 });
 
-export const projectAutomationListItemSchema = z.object({
-  id: z.number().int(),
-  name: z.string(),
-  triggerEvent: z.string(),
-  isActive: z.boolean(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
-});
-
 const automationConditionSchema = z.object({
   field: z.string(),
   operator: z.enum(["equals", "not_equals", "contains", "is_empty", "is_not_empty"]),
@@ -183,6 +180,18 @@ const automationConditionSchema = z.object({
 const automationActionSchema = z.object({
   type: z.enum(["set_status", "set_assignee", "set_priority", "add_label", "add_comment"]),
   value: z.string(),
+});
+
+export const projectAutomationListItemSchema = z.object({
+  id: z.number().int(),
+  projectId: z.number().int(),
+  name: z.string(),
+  triggerEvent: z.string(),
+  isActive: z.boolean(),
+  conditions: z.array(automationConditionSchema),
+  actions: z.array(automationActionSchema),
+  createdAt: wireDate(),
+  updatedAt: wireDate(),
 });
 
 export const projectAutomationRowSchema = z.object({
@@ -199,7 +208,49 @@ export const projectAutomationRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
-export const workspaceMemberItemSchema = z.object({
+const automationRunOutcomeSchema = z.enum([
+  "matched_success",
+  "matched_partial_failure",
+  "matched_failed",
+  "not_matched",
+  "blocked_loop_guard",
+  "blocked_rate_limit",
+  "error",
+]);
+
+export const automationRunActionRowSchema = z.object({
+  id: z.number().int(),
+  actionIndex: z.number().int(),
+  actionType: z.string(),
+  outcome: z.enum(["success", "failure"]),
+  errorMessage: z.string().nullable(),
+  createdAt: wireDate(),
+});
+
+export const automationRunRowSchema = z.object({
+  id: z.number().int(),
+  orgId: z.string(),
+  projectId: z.number().int(),
+  automationId: z.number().int().nullable(),
+  ticketId: z.number().int().nullable(),
+  triggerEvent: z.string(),
+  matched: z.boolean(),
+  outcome: automationRunOutcomeSchema,
+  errorMessage: z.string().nullable(),
+  createdAt: wireDate(),
+  actions: z.array(automationRunActionRowSchema),
+});
+
+export const automationRunListSchema = z.object({
+  items: z.array(automationRunRowSchema),
+  pagination: z.object({
+    limit: z.number().int(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+});
+
+export const buildMemberItemSchema = z.object({
   id: z.string(),
   role: z.string(),
   addedAt: wireDate(),
@@ -211,14 +262,13 @@ export const workspaceMemberItemSchema = z.object({
   teams: z.array(z.string()),
 });
 
-export const workspaceMemberPageSchema = cursorPageSchema(workspaceMemberItemSchema);
+export const buildMemberPageSchema = cursorPageSchema(buildMemberItemSchema);
 
-export const workspaceMemberRowSchema = z.object({
+export const buildMemberRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   membershipId: z.number().int(),
   role: z.string(),
-  pmWorkspaceId: z.string(),
   addedAt: wireDate(),
 });
 

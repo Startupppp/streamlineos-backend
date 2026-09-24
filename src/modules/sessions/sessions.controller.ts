@@ -42,7 +42,7 @@ export class SessionsController {
       null;
     const userAgent = enrichUserAgent(rawUa, { clientApp });
     const ipAddress = resolveClientIp(req);
-    return this.sessions.list(u.userId, u.sessionId, userAgent, ipAddress);
+    return this.sessions.list(u.userId, u.orgId, u.sessionId, userAgent, ipAddress);
   }
 
   @Delete(":sessionId")

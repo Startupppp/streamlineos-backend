@@ -4,6 +4,7 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
+import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { linkPreviewQuerySchema, type LinkPreviewQueryInput } from "./dto/chat-link-preview.schemas";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
@@ -27,6 +28,7 @@ export class ChatLinkPreviewController {
   @ApiOperation({ summary: "Fetch Open Graph metadata for a URL to render a link preview card" })
   @ApiResponse({ status: 200, description: "Link metadata" })
   @Get()
+  @NoTenantTransaction()
   @ResponseSchema(chatLinkPreviewSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ query: linkPreviewQuerySchema })

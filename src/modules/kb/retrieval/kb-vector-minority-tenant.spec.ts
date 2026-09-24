@@ -2,6 +2,7 @@ import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { sql } from "drizzle-orm";
 
 const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
 
@@ -67,6 +68,13 @@ const makeEmbeddings = () => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
+const makeKbAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest
+    .fn()
+    .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+});
+
 describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterative scan first", () => {
   it("issues SET LOCAL hnsw.iterative_scan = relaxed_order before any vector query", async () => {
     const { db } = makeDb({ hasChunks: true });
@@ -77,6 +85,7 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeKbAuth() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "deployment config", 4);
@@ -101,6 +110,7 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeKbAuth() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "password reset", 4);
@@ -123,6 +133,7 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeKbAuth() as never,
     );
 
     await svc.retrieveTopSources(makeUser(), "onboarding", 4);

@@ -84,6 +84,28 @@ export class ProjectsCustomStatesService {
       .limit(100);
   }
 
+  async listOrgCustomStates(orgId: string) {
+    return this.db
+      .select({
+        name: projectStatuses.name,
+        color: sql<string | null>`MAX(${projectStatuses.color})`,
+        type: sql<string | null>`MAX(${projectStatuses.type})`,
+      })
+      .from(projectStatuses)
+      .innerJoin(
+        projects,
+        and(
+          eq(projects.id, projectStatuses.projectId),
+          eq(projects.orgId, orgId),
+          isNull(projects.deletedAt),
+        ),
+      )
+      .where(eq(projectStatuses.orgId, orgId))
+      .groupBy(projectStatuses.name)
+      .orderBy(projectStatuses.name)
+      .limit(200);
+  }
+
   async createCustomState(
     orgId: string,
     projectId: number,
@@ -135,6 +157,7 @@ export class ProjectsCustomStatesService {
 
   async updateCustomState(
     u: CurrentUserContext,
+    projectId: number,
     stateId: number,
     data: UpdateCustomStateInput,
   ) {
@@ -143,11 +166,15 @@ export class ProjectsCustomStatesService {
       .select()
       .from(projectStatuses)
       .where(
-        and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)),
+        and(
+          eq(projectStatuses.id, stateId),
+          eq(projectStatuses.projectId, projectId),
+          eq(projectStatuses.orgId, orgId),
+        ),
       )
       .limit(1);
     if (!existing) throw new NotFoundException("Status not found");
-    await this.assertCanManageProject(u, existing.projectId);
+    await this.assertCanManageProject(u, projectId);
 
     if (data.name !== undefined && data.name !== existing.name) {
       const [duplicate] = await this.db
@@ -196,6 +223,7 @@ export class ProjectsCustomStatesService {
         .where(
           and(
             eq(projectStatuses.id, stateId),
+            eq(projectStatuses.projectId, projectId),
             eq(projectStatuses.orgId, orgId),
           ),
         )
@@ -268,17 +296,21 @@ export class ProjectsCustomStatesService {
     };
   }
 
-  async deleteCustomState(u: CurrentUserContext, stateId: number) {
+  async deleteCustomState(u: CurrentUserContext, projectId: number, stateId: number) {
     const orgId = u.orgId;
     const [existing] = await this.db
       .select()
       .from(projectStatuses)
       .where(
-        and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)),
+        and(
+          eq(projectStatuses.id, stateId),
+          eq(projectStatuses.projectId, projectId),
+          eq(projectStatuses.orgId, orgId),
+        ),
       )
       .limit(1);
     if (!existing) throw new NotFoundException("Status not found");
-    await this.assertCanManageProject(u, existing.projectId);
+    await this.assertCanManageProject(u, projectId);
 
     const siblings = await this.db
       .select()
@@ -342,6 +374,7 @@ export class ProjectsCustomStatesService {
         .where(
           and(
             eq(projectStatuses.id, stateId),
+            eq(projectStatuses.projectId, projectId),
             eq(projectStatuses.orgId, orgId),
           ),
         );

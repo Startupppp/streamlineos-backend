@@ -9,7 +9,7 @@ import {
 } from "../../db/schema";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
-import { AutomationWebhookService } from "./automation-webhook.service";
+import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import type { AiNodeType } from "./ai-workflow-nodes/ai-node-types";
 import type { EventPayload } from "./automation.evaluator";
@@ -34,7 +34,7 @@ export class AutomationActionExecutor {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
     private readonly email: AutomationEmailService,
-    private readonly webhookService: AutomationWebhookService,
+    private readonly webhookService: WebhooksDispatchService,
     private readonly aiNodeExecutor: AiNodeExecutorService,
   ) {}
 
@@ -136,7 +136,7 @@ export class AutomationActionExecutor {
           return { type: action.type, ok: true };
         }
         case "webhook": {
-          await this.webhookService.dispatchWebhook(orgId, action.config.event, payload);
+          this.webhookService.dispatch(orgId, action.config.event, payload);
           return { type: action.type, ok: true };
         }
         case "support_assign_ticket": {

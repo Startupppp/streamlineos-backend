@@ -6,13 +6,12 @@ import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { pageVisibleTo } from "../retrieval/kb-page-visibility";
-import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 import type { AiTextStream } from "../../ai/core/gateway/ai-gateway-stream.helper";
 import { throwOnAiFailure } from "../../ai/core/services/gateway-result.util";
 import type { KbDocAiAction } from "../retrieval/dto/kb-ai.schemas";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 const MAX_PAGE_TEXT = 4000;
 
@@ -66,16 +65,17 @@ export class KbPageAiService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
     private readonly audit: AuditService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   private async assertPageVisible(user: CurrentUserContext, pageId: number) {
-    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, user.orgId),
         isNull(kbPages.deletedAt),
-        pageVisibleTo(user, projectIds),
+        predicate,
       ),
       columns: { id: true, title: true, contentText: true },
     });

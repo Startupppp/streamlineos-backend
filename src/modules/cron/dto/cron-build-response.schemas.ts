@@ -42,6 +42,20 @@ export const buildRetentionPruneResponseSchema = z.union([
   }),
 ]);
 
+export const feedbucketMediaRetentionResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    organizations: z.number().int().nonnegative(),
+    organizationsFailed: z.number().int().nonnegative(),
+    submissionsPurged: z.number().int().nonnegative(),
+    objectsDeleted: z.number().int().nonnegative(),
+    mediaDeleteFailures: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+  }),
+]);
+
 export const buildDailySnapshotsResponseSchema = z.union([
   cronSkippedSchema,
   z.object({

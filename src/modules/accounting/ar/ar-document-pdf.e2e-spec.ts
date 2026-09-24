@@ -266,7 +266,7 @@ beforeAll(async () => {
     packs,
     tax,
     parties,
-    new ComplianceService(db),
+    new ComplianceService(db, books),
   );
 
   storage = new FakeStorage();

@@ -1,5 +1,11 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn().mockImplementation(
+    async (_db: unknown, _orgId: string, fn: () => Promise<unknown>) => fn(),
+  ),
+}));
+
 import { Test } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
 import { readFileSync } from "fs";

@@ -63,6 +63,9 @@ function makeDb(rows: unknown[] = []) {
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]), onConflictDoNothing: jest.fn().mockResolvedValue([]) }) }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
   } as unknown as Db;
+  (db as unknown as { transaction: unknown }).transaction = jest
+    .fn()
+    .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(db));
   return { db, findMany, findFirst, selectWhere };
 }
 

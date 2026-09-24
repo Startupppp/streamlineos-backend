@@ -19,14 +19,17 @@ export const HR_NOTIFICATION_EVENTS = [
   e("hr.asset.assigned", "hr", "HRMS", "Asset assigned", {
     defaultChannels: IA_EMAIL,
   }),
-  e("hr.helpdesk.ticket_created", "hr", "WORKFLOW", "HR helpdesk ticket created", {
+  e("hr.helpdesk.ticket_created", "hr", "WORKFLOW", "Employee support request created", {
     defaultChannels: IA_EMAIL,
   }),
-  e("hr.helpdesk.ticket_assigned", "hr", "WORKFLOW", "HR helpdesk ticket assigned", {
+  e("hr.helpdesk.ticket_assigned", "hr", "WORKFLOW", "Employee support request assigned", {
     defaultChannels: IA_EMAIL,
   }),
-  e("hr.helpdesk.ticket_status_changed", "hr", "WORKFLOW", "HR helpdesk ticket status changed", {
+  e("hr.helpdesk.ticket_status_changed", "hr", "WORKFLOW", "Employee support request status changed", {
     defaultChannels: IA,
+  }),
+  e("hr.helpdesk.ticket_escalated", "hr", "WORKFLOW", "Employee support request escalated", {
+    defaultChannels: IA_EMAIL,
   }),
   e("hr.resignation.submitted", "hr", "WORKFLOW", "Resignation submitted", {
     defaultChannels: IA_EMAIL,

@@ -155,4 +155,23 @@ describe("StripeService", () => {
       false,
     );
   });
+
+  it("bounds every outbound call so a stalled provider cannot pin a pooled connection", async () => {
+    const service = new StripeService(CONFIGURED);
+
+    const createFetch = withFetch({ ok: true, body: PAYMENT_INTENT });
+    await service.createOrder({
+      amount: 1900,
+      currency: "EUR",
+      receipt: "rcpt_1",
+      notes: {},
+    });
+    const createInit = createFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(createInit.signal).toBeInstanceOf(AbortSignal);
+
+    const fetchFetch = withFetch({ ok: true, body: PAYMENT_INTENT });
+    await service.fetchOrder("pi_3MtwBwLkdIwHu7ix28a3tqPa");
+    const fetchInit = fetchFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(fetchInit.signal).toBeInstanceOf(AbortSignal);
+  });
 });

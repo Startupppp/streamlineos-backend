@@ -14,6 +14,7 @@ import { and, eq } from "drizzle-orm";
 import {
   feedbucketAttachments,
   feedbucketSubmissions,
+  type FeedbucketAssigneeRules,
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { StorageService } from "../../storage/storage.service";
@@ -37,6 +38,10 @@ import {
   type FeedbucketWidget,
 } from "./feedbucket-public-request";
 import type { PublicSubmitInput } from "../feedbucket.schemas";
+import {
+  deriveFeedbackTicketTitle,
+  resolveFeedbucketTicketTarget,
+} from "../feedbucket-ticket-routing";
 
 export interface FeedbucketSubmitDeps {
   readonly db: Db;
@@ -155,7 +160,7 @@ export async function submitPublicFeedback(
 
       await queueMediaTransforms(deps.storage, deps.transforms, widget.orgId, pendingTransforms);
 
-      if (widget.autoCreateTicket && widget.projectId) {
+      if (widget.autoCreateTicket && (widget.projectId ?? widget.defaultProjectId)) {
         const deferred = () =>
           autoLinkTicket(deps, widget, submissionId, dto.type, dto.message, {
             screenshot,
@@ -176,8 +181,8 @@ export async function submitPublicFeedback(
             title: "New Feedback Received",
             message: `New ${dto.type} feedback received via widget "${widget.name}"`,
             link: widget.projectId
-              ? `/projects/${widget.projectId}/feedbucket/${submissionId}`
-              : `/projects/feedbucket`,
+              ? `/build/${widget.projectId}/feedbucket/${submissionId}`
+              : `/build`,
           })
           .catch(() => undefined);
       }
@@ -192,7 +197,7 @@ async function autoLinkTicket(
   deps: FeedbucketSubmitDeps,
   widget: FeedbucketWidget,
   submissionId: number,
-  type: string,
+  type: keyof FeedbucketAssigneeRules,
   message: string,
   media: {
     screenshot?: Express.Multer.File;
@@ -200,7 +205,7 @@ async function autoLinkTicket(
     recordingUrl?: string;
   },
 ) {
-  const projectId = widget.projectId;
+  const { projectId, assigneeMembershipId } = resolveFeedbucketTicketTarget(widget, type);
   if (!projectId) return;
   try {
     await runInNewTenantTransaction(deps.db, widget.orgId, async () => {
@@ -223,9 +228,10 @@ async function autoLinkTicket(
         actingUserId,
         projectId,
         {
-          title: message.slice(0, 255) || `${type} feedback`,
+          title: deriveFeedbackTicketTitle(message, type),
           description: parts.join(""),
           type: widget.defaultTicketType,
+          assigneeMembershipId,
         },
       );
       await deps.db

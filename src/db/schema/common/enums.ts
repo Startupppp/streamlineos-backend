@@ -3,7 +3,7 @@ import { pgEnum } from "drizzle-orm/pg-core";
 
 /**
  * `enums.ts` is the contract, not the file layout: every pgEnum in the schema is
- * importable from here, and 100+ call sites say `from "../common/enums"`. The four
+ * importable from here, and 100+ call sites say `from "./enums"`. The four
  * domain files below hold the declarations verbatim; what stays in this file is the
  * platform and cross-module set — work items, CRM, notifications, billing, support,
  * knowledge, accounting, onboarding, payments, party and portal — which has no
@@ -17,6 +17,7 @@ export * from "./enums-inventory-verticals";
 export const ticketTypeEnum = pgEnum("ticket_type", ["EPIC", "STORY", "TASK", "BUG"]);
 export const ticketStatusEnum = pgEnum("ticket_status", ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
 export const ticketPriorityEnum = pgEnum("ticket_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
+export const helpdeskQueueEnum = pgEnum("helpdesk_queue", ["HR", "IT", "FINANCE", "ADMIN", "LEGAL"]);
 export const projectStatusEnum = pgEnum("project_status", ["ACTIVE", "COMPLETED", "ARCHIVED"]);
 export const managedProductStatusEnum = pgEnum("managed_product_status", ["active", "archived"]);
 export const workerEngagementStatusEnum = pgEnum("worker_engagement_status", ["PLANNED", "ACTIVE", "COMPLETED", "TERMINATED", "CANCELLED"]);
@@ -42,6 +43,8 @@ export const membershipStatusEnum = pgEnum("membership_status", ["INVITED", "ACT
 
 export const crmPersonRoleEnum = pgEnum("crm_person_role", ["sales_rep", "csm"]);
 export const crmHealthEnum = pgEnum("crm_health", ["healthy", "at_risk", "critical"]);
+export const crmAccountTierEnum = pgEnum("crm_account_tier", ["free", "pro", "enterprise"]);
+export const invoiceLineDetailEnum = pgEnum("invoice_line_detail", ["summary", "raw"]);
 export const crmDealStageEnum = pgEnum("crm_deal_stage", ["Discovery", "Qualified", "Proposal", "Negotiation", "Closed Won"]);
 export const crmCampaignStatusEnum = pgEnum("crm_campaign_status", ["active", "paused", "completed"]);
 export const crmLeadStatusEnum = pgEnum("crm_lead_status", ["visitor", "lead", "mql", "sql", "opportunity"]);

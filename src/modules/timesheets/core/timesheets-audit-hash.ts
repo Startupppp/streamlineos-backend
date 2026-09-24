@@ -11,8 +11,6 @@ export interface AuditEventParams {
   reason?: string;
 }
 
-/** JSON.stringify with recursively sorted object keys, so hashes survive
- *  Postgres jsonb round-trips (jsonb does not preserve key order). */
 export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   const toJson: unknown = Reflect.get(value, "toJSON");

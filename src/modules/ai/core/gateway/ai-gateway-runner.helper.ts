@@ -8,6 +8,7 @@ import {
   settleSuccessfulCall,
   withUsageMeta,
 } from "./ai-gateway-runner-call";
+import { resolveGatewayTier } from "../routing/model-routing";
 import type {
   AiInvokeResult,
   AiInvokeWithUsageResult,
@@ -61,7 +62,7 @@ export class AiGatewayRunnerHelper {
     try {
       const result = await call.provider(() =>
         this.llm.invokeStructuredWithUsage({
-          model: opts.tier ?? "fast",
+          model: resolveGatewayTier(opts.feature, opts.tier),
           schema: opts.schema,
           schemaName: opts.feature.replace(/[^a-z0-9]/gi, "_"),
           system: gate.prompt.system,
@@ -118,7 +119,7 @@ export class AiGatewayRunnerHelper {
     try {
       const result = await call.provider(() =>
         this.llm.invokeStructuredWithImageWithUsage({
-          model: opts.tier ?? "fast",
+          model: resolveGatewayTier(opts.feature, opts.tier),
           schema: opts.schema,
           schemaName: opts.feature.replace(/[^a-z0-9]/gi, "_"),
           system: gate.prompt.system,
@@ -168,7 +169,7 @@ export class AiGatewayRunnerHelper {
     try {
       const result = await call.provider(() =>
         this.llm.invokeTextWithUsage({
-          model: opts.tier ?? "fast",
+          model: resolveGatewayTier(opts.feature, opts.tier),
           system: gate.prompt.system,
           user: gate.prompt.user,
           maxTokens: boundedMaxTokens(opts.maxTokens),

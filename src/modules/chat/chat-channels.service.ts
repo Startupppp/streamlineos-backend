@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { chatChannelMembers, chatChannels, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -98,35 +99,47 @@ export class ChatChannelsService {
         : (await this.listService.getMembershipId(orgId, targetUserId));
       if (targetMembershipId === null) throw new NotFoundException("User not found in this organization");
 
-      const myMemberships = await this.db
-        .select({ channelId: chatChannelMembers.channelId })
-        .from(chatChannelMembers)
-        .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.membershipId, creatorMembershipId)));
-
-      if (myMemberships.length > 0) {
-        const channelIds = myMemberships.map((c) => c.channelId);
-        const existingDMs = await this.db.query.chatChannels.findMany({
-          where: and(
-            inArray(chatChannels.id, channelIds),
-            eq(chatChannels.type, "DIRECT"),
-            eq(chatChannels.orgId, orgId),
-          ),
-          with: { members: { columns: { membershipId: true } } },
-        });
-
-        const dmChannel = existingDMs.find((ch) =>
-          isSelfDm
-            ? ch.members.length === 1 && ch.members[0]?.membershipId === creatorMembershipId
-            : ch.members.length === 2 &&
-              ch.members.some((m) => m.membershipId === targetMembershipId),
-        );
-
-        if (dmChannel)
-          return {
-            channel: await this.loadChannelDetail(this.db, dmChannel.id, orgId),
-            created: false,
-          };
-      }
+      const creatorM = alias(chatChannelMembers, "creator_m");
+      const targetM = alias(chatChannelMembers, "target_m");
+      const [dmRow] = isSelfDm
+        ? await this.db
+            .select({ id: chatChannels.id })
+            .from(chatChannels)
+            .innerJoin(creatorM, and(
+              eq(creatorM.channelId, chatChannels.id),
+              eq(creatorM.orgId, orgId),
+              eq(creatorM.membershipId, creatorMembershipId),
+            ))
+            .where(
+              and(
+                eq(chatChannels.orgId, orgId),
+                eq(chatChannels.type, "DIRECT"),
+                sql`NOT EXISTS (
+                  SELECT 1 FROM "chat_channel_members" other_m
+                  WHERE other_m.channel_id = ${chatChannels.id}
+                    AND other_m.org_id = ${orgId}
+                    AND other_m.membership_id != ${creatorMembershipId}
+                )`,
+              ),
+            )
+            .limit(1)
+        : await this.db
+            .select({ id: chatChannels.id })
+            .from(chatChannels)
+            .innerJoin(creatorM, and(
+              eq(creatorM.channelId, chatChannels.id),
+              eq(creatorM.orgId, orgId),
+              eq(creatorM.membershipId, creatorMembershipId),
+            ))
+            .innerJoin(targetM, and(
+              eq(targetM.channelId, chatChannels.id),
+              eq(targetM.orgId, orgId),
+              eq(targetM.membershipId, targetMembershipId),
+            ))
+            .where(and(eq(chatChannels.orgId, orgId), eq(chatChannels.type, "DIRECT")))
+            .limit(1);
+      if (dmRow)
+        return { channel: await this.loadChannelDetail(this.db, dmRow.id, orgId), created: false };
 
       const [targetUser, currentUser] = await Promise.all([
         this.db.query.users.findFirst({

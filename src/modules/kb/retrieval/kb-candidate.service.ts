@@ -1,11 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbArticleChunks, kbArticleRestrictions, kbPages } from "../../../db/schema";
+import { kbArticles, kbArticleChunks, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
 import { queryVectorChunkIds } from "./kb-vector-candidate-query";
+import { buildArticleRestrictionPredicate } from "./kb-article-restriction-predicate";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
@@ -211,30 +212,7 @@ export class KbCandidateService {
     orgId: string,
     principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
   ): SQL {
-    const kar = kbArticleRestrictions;
-    const membershipMatch =
-      principal.membershipId !== null
-        ? sql`${kar.membershipId} = ${principal.membershipId} OR `
-        : sql``;
-    return sql`(
-      NOT EXISTS (
-        SELECT 1 FROM ${kar}
-        WHERE ${kar.articleId} = ${kbArticles.id}
-          AND ${kar.orgId} = ${orgId}
-          AND ${kar.level} = 'view'
-      )
-      OR EXISTS (
-        SELECT 1 FROM ${kar}
-        WHERE ${kar.articleId} = ${kbArticles.id}
-          AND ${kar.orgId} = ${orgId}
-          AND ${kar.level} = 'view'
-          AND (${membershipMatch}${
-            principal.roleSlugs.length > 0
-              ? inArray(kar.role, principal.roleSlugs)
-              : sql`false`
-          })
-      )
-    )`;
+    return buildArticleRestrictionPredicate(orgId, principal);
   }
 
   async resolveArticleKeywordCondition(q: string, tsquery: SQL, cap: number): Promise<SQL> {

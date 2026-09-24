@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { organizations } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
+import { isRecord } from "../../../../common/types/is-record";
 
 export interface OrgFeatureFlags {
   aiChat: boolean;
@@ -21,10 +22,6 @@ const DEFAULT_FLAGS: OrgFeatureFlags = {
   aiWeeklyRecap: true,
   supportAi: true,
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function readBooleanFlag(features: Record<string, unknown>, key: keyof OrgFeatureFlags, fallback: boolean): boolean {
   const value = features[key];

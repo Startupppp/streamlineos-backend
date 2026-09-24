@@ -19,21 +19,49 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { IncidentsService } from "./incidents.service";
 import {
+  addIncidentDecisionSchema,
   addIncidentUpdateSchema,
+  createFollowUpActionSchema,
   createIncidentSchema,
   listIncidentsQuerySchema,
+  updateFollowUpActionSchema,
   updateIncidentSchema,
+  type AddIncidentDecisionInput,
   type AddIncidentUpdateInput,
+  type CreateFollowUpActionInput,
   type CreateIncidentInput,
   type ListIncidentsQuery,
+  type UpdateFollowUpActionInput,
   type UpdateIncidentInput,
 } from "./dto/incidents.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { incidentRowSchema, incidentDetailSchema, incidentUpdateRowSchema } from "./dto/incidents-response.schemas";
+import {
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
+import {
+  incidentRowSchema,
+  incidentDetailSchema,
+  incidentUpdateRowSchema,
+  incidentDecisionRowSchema,
+  incidentFollowUpActionRowSchema,
+} from "./dto/incidents-response.schemas";
 
-const incidentIdParams = z.object({ incidentId: z.coerce.number().int().positive() }).strict();
+export const incidentIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    incidentId: z.coerce.number().int().positive(),
+  })
+  .strict();
+
+export const incidentFollowUpIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    incidentId: z.coerce.number().int().positive(),
+    followUpActionId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/incidents")
@@ -116,5 +144,47 @@ export class IncidentsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addUpdate(u, projectId, incidentId, body);
+  }
+
+  @Post(":incidentId/decisions")
+  @HttpCode(201)
+  @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentDecisionRowSchema)
+  @Validate({ params: incidentIdParams, body: addIncidentDecisionSchema })
+  addDecision(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("incidentId", ParseIntPipe) incidentId: number,
+    @Body() body: AddIncidentDecisionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.addDecision(u, projectId, incidentId, body);
+  }
+
+  @Post(":incidentId/follow-ups")
+  @HttpCode(201)
+  @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentFollowUpActionRowSchema)
+  @Validate({ params: incidentIdParams, body: createFollowUpActionSchema })
+  addFollowUpAction(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("incidentId", ParseIntPipe) incidentId: number,
+    @Body() body: CreateFollowUpActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.addFollowUpAction(u, projectId, incidentId, body);
+  }
+
+  @Patch(":incidentId/follow-ups/:followUpActionId")
+  @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentFollowUpActionRowSchema)
+  @Validate({ params: incidentFollowUpIdParams, body: updateFollowUpActionSchema })
+  updateFollowUpAction(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("incidentId", ParseIntPipe) incidentId: number,
+    @Param("followUpActionId", ParseIntPipe) followUpActionId: number,
+    @Body() body: UpdateFollowUpActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.updateFollowUpAction(u, projectId, incidentId, followUpActionId, body);
   }
 }

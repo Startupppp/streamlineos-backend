@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { projectForms } from "../../../db/schema";
@@ -37,7 +37,24 @@ export class FormsService {
   async listForms(u: CurrentUserContext, projectId: number, query: ListFormsQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
-      .select()
+      .select({
+        id: projectForms.id,
+        orgId: projectForms.orgId,
+        projectId: projectForms.projectId,
+        formNumber: projectForms.formNumber,
+        name: projectForms.name,
+        description: projectForms.description,
+        type: projectForms.type,
+        fields: projectForms.fields,
+        actions: projectForms.actions,
+        isActive: projectForms.isActive,
+        isPublic: projectForms.isPublic,
+        publicToken: projectForms.publicToken,
+        createdBy: projectForms.createdBy,
+        createdAt: projectForms.createdAt,
+        updatedAt: projectForms.updatedAt,
+        deletedAt: projectForms.deletedAt,
+      })
       .from(projectForms)
       .where(
         and(
@@ -95,6 +112,12 @@ export class FormsService {
 
   async updateForm(u: CurrentUserContext, projectId: number, formId: number, input: UpdateFormInput) {
     const existing = await this.loadForm(u.orgId, projectId, formId);
+    if (
+      input.version !== undefined &&
+      new Date(input.version).getTime() !== existing.updatedAt.getTime()
+    ) {
+      throw new ConflictException("Form has been modified by another session");
+    }
     const patch: FormPatch = {};
     if (input.name !== undefined) patch.name = input.name;
     if (input.description !== undefined) patch.description = input.description ?? null;

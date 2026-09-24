@@ -1,18 +1,23 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
-import { bugs, testCases, testRunResults, testRuns } from "../../../db/schema";
+import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { cycles, testCases, testRunResults, testRuns, tickets, workItemQaDetails, projectStatuses } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import { AuditService } from "../../../common/audit/audit.service";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type {
   CreateBugFromResultInput,
   CreateTestRunInput,
+  RunResultsQuery,
   UpdateTestResultInput,
   UpdateTestRunInput,
 } from "./dto/qa.schemas";
+import { resolveWorkItemStatus, resolveTicketPriority } from "./phase-2/bug-consolidation-mapping";
+
+const RUN_PAGE = 50;
 
 @Injectable()
 export class TestRunsService {
@@ -22,7 +27,28 @@ export class TestRunsService {
     private readonly audit: AuditService,
   ) {}
 
-  async listRuns(u: CurrentUserContext, projectId: number, query: { status?: "not_started" | "in_progress" | "completed" | "aborted" }) {
+  private async resolveCycleBinding(
+    orgId: string,
+    input: { cycleId?: number },
+  ): Promise<{ cycleId: number } | null> {
+    if (input.cycleId !== undefined) {
+      const rows = await this.db
+        .select({ id: cycles.id })
+        .from(cycles)
+        .where(and(eq(cycles.orgId, orgId), eq(cycles.id, input.cycleId), isNull(cycles.deletedAt)))
+        .limit(1);
+      const row = rows[0];
+      if (!row) throw new BadRequestException(`Cycle ${input.cycleId} does not exist`);
+      return { cycleId: row.id };
+    }
+    return null;
+  }
+
+  async listRuns(
+    u: CurrentUserContext,
+    projectId: number,
+    query: { status?: "not_started" | "in_progress" | "completed" | "aborted"; cursor?: number },
+  ) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const conditions = [
       eq(testRuns.orgId, u.orgId),
@@ -30,14 +56,21 @@ export class TestRunsService {
       isNull(testRuns.deletedAt),
     ];
     if (query.status) conditions.push(eq(testRuns.status, query.status));
-    const runs = await this.db
+    if (query.cursor !== undefined) conditions.push(gt(testRuns.id, query.cursor));
+    const rawRuns = await this.db
       .select()
       .from(testRuns)
       .where(and(...conditions))
-      .orderBy(testRuns.runNumber)
-      .limit(100);
-    if (runs.length === 0) return [];
-    const runIds = runs.map((r) => r.id);
+      .orderBy(testRuns.id)
+      .limit(RUN_PAGE + 1);
+
+    const hasMore = rawRuns.length > RUN_PAGE;
+    const pageRuns = hasMore ? rawRuns.slice(0, RUN_PAGE) : rawRuns;
+    const nextCursor = hasMore && pageRuns.length > 0 ? pageRuns[pageRuns.length - 1]!.id : null;
+
+    if (pageRuns.length === 0) return { data: [], hasMore: false, nextCursor: null };
+
+    const runIds = pageRuns.map((r) => r.id);
     const countRows = await this.db
       .select({
         runId: testRunResults.runId,
@@ -52,7 +85,7 @@ export class TestRunsService {
       .where(inArray(testRunResults.runId, runIds))
       .groupBy(testRunResults.runId);
     const countMap = new Map(countRows.map((r) => [r.runId, r]));
-    return runs.map((run) => {
+    const data = pageRuns.map((run) => {
       const s = countMap.get(run.id);
       return {
         ...run,
@@ -63,9 +96,12 @@ export class TestRunsService {
         skippedCount: Number(s?.skipped ?? 0),
       };
     });
+    return { data, hasMore, nextCursor };
   }
 
-  async getRun(orgId: string, projectId: number, runId: number) {
+  async getRun(u: CurrentUserContext, projectId: number, runId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const run = await this.db.query.testRuns.findFirst({
       where: and(
         eq(testRuns.id, runId),
@@ -84,7 +120,7 @@ export class TestRunsService {
         notes: testRunResults.notes,
         executedBy: testRunResults.executedBy,
         executedAt: testRunResults.executedAt,
-        linkedBugId: testRunResults.linkedBugId,
+        linkedWorkItemId: testRunResults.linkedWorkItemId,
         createdAt: testRunResults.createdAt,
         updatedAt: testRunResults.updatedAt,
         caseNumber: testCases.caseNumber,
@@ -98,8 +134,58 @@ export class TestRunsService {
     return { ...run, results };
   }
 
+  async listRunResults(
+    u: CurrentUserContext,
+    projectId: number,
+    runId: number,
+    query: RunResultsQuery,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const run = await this.db.query.testRuns.findFirst({
+      where: and(
+        eq(testRuns.id, runId),
+        eq(testRuns.orgId, orgId),
+        eq(testRuns.projectId, projectId),
+        isNull(testRuns.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!run) throw new NotFoundException("Test run not found");
+
+    const limit = query.limit ?? 50;
+    const conditions = [
+      eq(testRunResults.runId, runId),
+      eq(testRunResults.orgId, orgId),
+    ];
+    if (query.cursor !== undefined) conditions.push(gt(testRunResults.id, query.cursor));
+
+    const rows = await this.db
+      .select({
+        id: testRunResults.id,
+        orgId: testRunResults.orgId,
+        projectId: testRunResults.projectId,
+        runId: testRunResults.runId,
+        testCaseId: testRunResults.testCaseId,
+        status: testRunResults.status,
+        notes: testRunResults.notes,
+        executedBy: testRunResults.executedBy,
+        executedAt: testRunResults.executedAt,
+        linkedWorkItemId: testRunResults.linkedWorkItemId,
+        createdAt: testRunResults.createdAt,
+        updatedAt: testRunResults.updatedAt,
+      })
+      .from(testRunResults)
+      .where(and(...conditions))
+      .orderBy(testRunResults.id)
+      .limit(limit + 1);
+
+    return buildIdCursorPage(rows, limit, (r) => r.id);
+  }
+
   async createRun(u: CurrentUserContext, projectId: number, input: CreateTestRunInput) {
     await assertProjectAccess(this.db, this.access, u, projectId);
+    const binding = await this.resolveCycleBinding(u.orgId, input);
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
@@ -114,7 +200,7 @@ export class TestRunsService {
           projectId,
           runNumber: nextNumber,
           name: input.name,
-          sprintId: input.sprintId ?? null,
+          cycleId: binding?.cycleId ?? null,
           releaseId: input.releaseId ?? null,
           environment: input.environment,
           browserDevice: input.browserDevice,
@@ -179,7 +265,15 @@ export class TestRunsService {
     });
   }
 
-  async updateRun(orgId: string, userId: string, projectId: number, runId: number, input: UpdateTestRunInput) {
+  async updateRun(
+    u: CurrentUserContext,
+    projectId: number,
+    runId: number,
+    input: UpdateTestRunInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const userId = u.userId;
     const existing = await this.db.query.testRuns.findFirst({
       where: and(
         eq(testRuns.id, runId),
@@ -190,6 +284,7 @@ export class TestRunsService {
       columns: { id: true, status: true, startedAt: true, completedAt: true },
     });
     if (!existing) throw new NotFoundException("Test run not found");
+    const binding = await this.resolveCycleBinding(orgId, input);
     const completing = input.status === "completed" && !existing.completedAt;
     const [updated] = await this.db
       .update(testRuns)
@@ -199,13 +294,13 @@ export class TestRunsService {
         ...(input.environment !== undefined && { environment: input.environment }),
         ...(input.browserDevice !== undefined && { browserDevice: input.browserDevice }),
         ...(input.testerId !== undefined && { testerId: input.testerId }),
-        ...(input.sprintId !== undefined && { sprintId: input.sprintId }),
+        ...(binding !== null && { cycleId: binding.cycleId }),
         ...(input.releaseId !== undefined && { releaseId: input.releaseId }),
         ...(input.status === "in_progress" && !existing.startedAt && { startedAt: new Date() }),
         ...(completing && { completedAt: new Date() }),
         updatedAt: new Date(),
       })
-      .where(and(eq(testRuns.id, runId), eq(testRuns.orgId, orgId)))
+      .where(and(eq(testRuns.id, runId), eq(testRuns.orgId, orgId), eq(testRuns.projectId, projectId)))
       .returning();
     if (completing) {
       this.audit.log({
@@ -220,7 +315,9 @@ export class TestRunsService {
     return updated;
   }
 
-  async deleteRun(orgId: string, projectId: number, runId: number) {
+  async deleteRun(u: CurrentUserContext, projectId: number, runId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const existing = await this.db.query.testRuns.findFirst({
       where: and(
         eq(testRuns.id, runId),
@@ -234,18 +331,20 @@ export class TestRunsService {
     await this.db
       .update(testRuns)
       .set({ deletedAt: new Date() })
-      .where(and(eq(testRuns.id, runId), eq(testRuns.orgId, orgId)));
+      .where(and(eq(testRuns.id, runId), eq(testRuns.orgId, orgId), eq(testRuns.projectId, projectId)));
     return { success: true };
   }
 
   async updateResult(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     runId: number,
     resultId: number,
     input: UpdateTestResultInput,
-    executorId: string,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const executorId = u.userId;
     const existing = await this.db.query.testRunResults.findFirst({
       where: and(
         eq(testRunResults.id, resultId),
@@ -253,9 +352,12 @@ export class TestRunsService {
         eq(testRunResults.orgId, orgId),
         eq(testRunResults.projectId, projectId),
       ),
-      columns: { id: true },
     });
     if (!existing) throw new NotFoundException("Test run result not found");
+
+    if (existing.status === input.status && (existing.notes ?? null) === (input.notes ?? null))
+      return existing;
+
     const [updated] = await this.db
       .update(testRunResults)
       .set({
@@ -265,19 +367,21 @@ export class TestRunsService {
         executedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(and(eq(testRunResults.id, resultId), eq(testRunResults.orgId, orgId)))
+      .where(and(eq(testRunResults.id, resultId), eq(testRunResults.orgId, orgId), eq(testRunResults.projectId, projectId)))
       .returning();
     return updated;
   }
 
-  async createBugFromResult(
-    orgId: string,
-    userId: string,
+  async createBugFromResultConsolidated(
+    u: CurrentUserContext,
     projectId: number,
     runId: number,
     resultId: number,
     input: CreateBugFromResultInput,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const userId = u.userId;
     const result = await this.db.query.testRunResults.findFirst({
       where: and(
         eq(testRunResults.id, resultId),
@@ -293,53 +397,73 @@ export class TestRunsService {
       columns: { id: true, title: true, steps: true, expectedResult: true },
     });
     if (!tc) throw new NotFoundException("Test case not found");
+
+    const availableStatuses = await this.db
+      .select({ id: projectStatuses.id, name: projectStatuses.name, order: projectStatuses.order, type: projectStatuses.type })
+      .from(projectStatuses)
+      .where(and(eq(projectStatuses.orgId, orgId), eq(projectStatuses.projectId, projectId)));
+
+    const ticketStatus = resolveWorkItemStatus("new", availableStatuses);
+    const ticketPriority = resolveTicketPriority(input.priority);
+
     const stepsText =
       tc.steps && tc.steps.length > 0
         ? tc.steps.map((s, i) => `${i + 1}. ${s.action} → Expected: ${s.expected}`).join("\n")
         : undefined;
-    const bug = await this.db.transaction(async (tx) => {
+
+    const ticket = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
-        .select({ maxNum: sql<number>`COALESCE(MAX(${bugs.bugNumber}), 0)` })
-        .from(bugs)
-        .where(and(eq(bugs.projectId, projectId), eq(bugs.orgId, orgId)));
-      const nextNumber = (maxRow?.maxNum ?? 0) + 1;
+        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
+        .from(tickets)
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+      const nextTicketNumber = (maxRow?.maxNum ?? 0) + 1;
+
       const [created] = await tx
-        .insert(bugs)
+        .insert(tickets)
         .values({
           orgId,
           projectId,
-          bugNumber: nextNumber,
+          ticketNumber: nextTicketNumber,
           title: input.title ?? `Failed: ${tc.title}`,
           description: input.description,
-          severity: input.severity ?? "major",
-          priority: input.priority ?? "medium",
-          status: "new",
-          stepsToReproduce: stepsText,
-          expectedResult: input.expectedResult ?? tc.expectedResult ?? null,
-          actualResult: input.actualResult,
-          environment: input.environment,
-          browserDevice: input.browserDevice,
-          assigneeMembershipId: undefined,
+          type: "BUG",
+          status: ticketStatus,
+          priority: ticketPriority,
           reporterId: userId,
-          linkedTestCaseId: tc.id,
-          createdBy: userId,
         })
         .returning();
+
+      await tx.insert(workItemQaDetails).values({
+        orgId,
+        workItemId: created.id,
+        projectId,
+        severity: input.severity ?? "major",
+        stepsToReproduce: stepsText,
+        expectedResult: input.expectedResult ?? tc.expectedResult ?? null,
+        actualResult: input.actualResult,
+        environment: input.environment,
+        browserDevice: input.browserDevice,
+        linkedTestCaseId: tc.id,
+        createdByUserId: userId,
+      });
+
       await tx
         .update(testRunResults)
-        .set({ linkedBugId: created.id, updatedAt: new Date() })
+        .set({ linkedWorkItemId: created.id, updatedAt: new Date() })
         .where(and(eq(testRunResults.id, resultId), eq(testRunResults.orgId, orgId)));
+
       return created;
     });
+
     this.audit.log({
-      action: "bug.created_from_result",
+      action: "bug.created_from_result_consolidated",
       userId,
       orgId,
-      resourceType: "bug",
-      resourceId: String(bug.id),
-      metadata: { bugId: bug.id, resultId, runId, projectId },
+      resourceType: "ticket",
+      resourceId: String(ticket.id),
+      metadata: { ticketId: ticket.id, resultId, runId, projectId },
     });
-    return bug;
+    return ticket;
   }
 }

@@ -15,6 +15,7 @@ import type { Redis } from "@upstash/redis";
 import { isApiClientUserAgent, withClientInfo } from "../../common/http/parse-user-agent";
 import { logger } from "../../common/logger/logger.service";
 import { writeTombstones, pruneRevocations, describeRedisFailure } from "./session-revocation-helpers";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 /**
  * The device list is a page, not a dump. Matches the admin twin
@@ -31,42 +32,48 @@ export class SessionsService {
 
   async list(
     userId: string,
+    orgId: string,
     currentSessionId: string,
     userAgent: string | undefined,
     ipAddress: string | undefined,
   ) {
     if (currentSessionId && !currentSessionId.startsWith("pat:")) {
-      const now = new Date();
-      const incoming = userAgent ?? null;
-      const incomingIsApiClient = isApiClientUserAgent(incoming);
+      await runInNewTenantTransaction(this.db, orgId, async () => {
+        const now = new Date();
+        const incoming = userAgent ?? null;
+        const incomingIsApiClient = isApiClientUserAgent(incoming);
 
-      const existing = await this.db.query.userSessions.findFirst({
-        where: and(eq(userSessions.id, currentSessionId), eq(userSessions.userId, userId)),
-        columns: { id: true, userAgent: true },
-      });
-
-      if (!existing) {
-        await this.db.insert(userSessions).values({
-          id: currentSessionId,
-          userId,
-          userAgent: incoming,
-          ipAddress: ipAddress ?? null,
-          isRevoked: false,
-          lastActive: now,
-          expiresAt: addDays(now, 30),
+        const existing = await this.db.query.userSessions.findFirst({
+          where: and(eq(userSessions.id, currentSessionId), eq(userSessions.userId, userId)),
+          columns: { id: true, userAgent: true },
         });
-      } else {
-        const storedIsApiClient = isApiClientUserAgent(existing.userAgent);
-        const shouldOverwriteUa = !incomingIsApiClient || storedIsApiClient || existing.userAgent === null;
 
-        await this.db
-          .update(userSessions)
-          .set({
-            lastActive: now,
-            ...(shouldOverwriteUa ? { userAgent: incoming, ipAddress: ipAddress ?? null } : {}),
-          })
-          .where(and(eq(userSessions.id, currentSessionId), eq(userSessions.userId, userId)));
-      }
+        if (!existing) {
+          await this.db
+            .insert(userSessions)
+            .values({
+              id: currentSessionId,
+              userId,
+              userAgent: incoming,
+              ipAddress: ipAddress ?? null,
+              isRevoked: false,
+              lastActive: now,
+              expiresAt: addDays(now, 30),
+            })
+            .onConflictDoNothing();
+        } else {
+          const storedIsApiClient = isApiClientUserAgent(existing.userAgent);
+          const shouldOverwriteUa = !incomingIsApiClient || storedIsApiClient || existing.userAgent === null;
+
+          await this.db
+            .update(userSessions)
+            .set({
+              lastActive: now,
+              ...(shouldOverwriteUa ? { userAgent: incoming, ipAddress: ipAddress ?? null } : {}),
+            })
+            .where(and(eq(userSessions.id, currentSessionId), eq(userSessions.userId, userId)));
+        }
+      });
     }
 
     /**

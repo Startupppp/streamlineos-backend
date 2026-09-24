@@ -30,6 +30,30 @@ export const listLeaveRequestsSchema = z
   })
   .strict();
 
+const isoDateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD format");
+
+export const LEAVE_REQUEST_STATUSES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
+
+/**
+ * Team list: id-keyset cursor plus the three server-side filters. `from`/`to` select
+ * requests that overlap the window (start <= to AND end >= from), the same reading
+ * the calendar and this-week surfaces use.
+ */
+export const listTeamLeaveRequestsSchema = z
+  .object({
+    cursor: z.coerce.number().int().positive().optional(),
+    limit: pageSizeField(50),
+    status: z.enum(LEAVE_REQUEST_STATUSES).optional(),
+    leaveTypeId: z.coerce.number().int().positive().optional(),
+    from: isoDateField.optional(),
+    to: isoDateField.optional(),
+  })
+  .strict()
+  .refine((q) => !q.from || !q.to || q.to >= q.from, {
+    message: "to must be on or after from",
+    path: ["to"],
+  });
+
 export const updateLeaveSchema = z.object({
   status: z.literal("PENDING"),
 }).strict();
@@ -85,6 +109,7 @@ export type LeaveCalendarQuery = z.infer<typeof leaveCalendarQuerySchema>;
 export type ListLeaveRequestsQuery = z.infer<
   typeof listLeaveRequestsSchema
 >;
+export type ListTeamLeaveRequestsQuery = z.infer<typeof listTeamLeaveRequestsSchema>;
 export type UpdateLeaveInput = z.infer<typeof updateLeaveSchema>;
 export type ApproveLeaveInput = z.infer<typeof approveLeaveSchema>;
 export type RejectLeaveInput = z.infer<typeof rejectLeaveSchema>;

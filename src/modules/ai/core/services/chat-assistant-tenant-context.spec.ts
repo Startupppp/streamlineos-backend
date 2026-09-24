@@ -4,8 +4,8 @@ jest.mock("ai", () => ({
   stepCountIs: jest.fn(() => () => false),
 }));
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
@@ -18,7 +18,7 @@ import { getTenantContext } from "../../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { primeRelocationTrafficTracker } from "../../../../common/relocation/relocation-traffic-tracker";
 import type { Db } from "../../../../db/drizzle.module";
-import { actorFor, makeLedger, buildService } from "./chat-assistant-tenant-context-fixtures";
+import { actorFor, makeLedger, buildService } from "./chat-assistant-tenant-context-fixtures.spec";
 
 /** The literal text `app.current_org_id()` raises. Matched, not paraphrased. */
 const DENIED_MESSAGE =
@@ -91,6 +91,18 @@ interface DenyingHandle {
  * statement `withTenant` runs first is `SELECT set_config(…)`, which touches no
  * policy — that is what establishes the context for everything after it.
  */
+const LIVE_ACTOR_ROW = {
+  name: "Chat User",
+  firstName: null,
+  lastName: null,
+  email: "chat@example.com",
+  role: "ADMIN",
+  isOwner: false,
+  membershipId: 11,
+  orgName: "Acme",
+  timezone: "UTC",
+};
+
 function denyingHandle(): DenyingHandle {
   const log: string[] = [];
 
@@ -105,8 +117,15 @@ function denyingHandle(): DenyingHandle {
     return thenableChain([]);
   };
 
+  const select = (projection?: Record<string, unknown>): object => {
+    guard();
+    const isActorRead =
+      projection !== undefined && "membershipId" in projection && "orgName" in projection;
+    return thenableChain(isActorRead ? [LIVE_ACTOR_ROW] : []);
+  };
+
   const handle = {
-    select: statement,
+    select,
     insert: statement,
     update: statement,
     delete: statement,

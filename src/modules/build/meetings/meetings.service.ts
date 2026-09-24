@@ -35,7 +35,7 @@ type MeetingPatch = Partial<
     | "durationMinutes"
     | "timezone"
     | "recurrenceRule"
-    | "sprintId"
+    | "cycleId"
   >
 >;
 
@@ -120,9 +120,11 @@ export class MeetingsService {
       );
     }
 
-    if (meetings.length === 0) return meetings;
     const ids = meetings.map((m) => m.id);
-    const [attCounts, aiCounts, unresolvedAiCounts] = await Promise.all([
+    const emptyCounts: { meetingId: number; count: number }[] = [];
+    const [attCounts, aiCounts, unresolvedAiCounts] = ids.length === 0
+      ? [emptyCounts, emptyCounts, emptyCounts]
+      : await Promise.all([
       this.db
         .select({ meetingId: meetingAttendees.meetingId, count: sql<number>`count(*)::int` })
         .from(meetingAttendees)
@@ -151,7 +153,7 @@ export class MeetingsService {
           ),
         )
         .groupBy(meetingActionItems.meetingId),
-    ]);
+      ]);
     const attMap = new Map(attCounts.map((r) => [r.meetingId, r.count]));
     const aiMap = new Map(aiCounts.map((r) => [r.meetingId, r.count]));
     const unresolvedAiMap = new Map(unresolvedAiCounts.map((r) => [r.meetingId, r.count]));
@@ -166,13 +168,14 @@ export class MeetingsService {
     return result;
   }
 
-  async getMeeting(orgId: string, projectId: number, meetingId: number) {
-    const meeting = await this.loadMeeting(orgId, projectId, meetingId);
+  async getMeeting(u: CurrentUserContext, projectId: number, meetingId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const meeting = await this.loadMeeting(u.orgId, projectId, meetingId);
     const [attendees, actionItems, standupEntries] = await Promise.all([
       this.db
         .select()
         .from(meetingAttendees)
-        .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, orgId)))
+        .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, u.orgId)))
         .limit(100),
       this.db
         .select()
@@ -180,7 +183,7 @@ export class MeetingsService {
         .where(
           and(
             eq(meetingActionItems.meetingId, meetingId),
-            eq(meetingActionItems.orgId, orgId),
+            eq(meetingActionItems.orgId, u.orgId),
             isNull(meetingActionItems.deletedAt),
           ),
         )
@@ -188,7 +191,7 @@ export class MeetingsService {
       this.db
         .select()
         .from(meetingStandupEntries)
-        .where(and(eq(meetingStandupEntries.meetingId, meetingId), eq(meetingStandupEntries.orgId, orgId)))
+        .where(and(eq(meetingStandupEntries.meetingId, meetingId), eq(meetingStandupEntries.orgId, u.orgId)))
         .limit(100),
     ]);
     return { ...meeting, attendees, actionItems, standupEntries };
@@ -196,6 +199,7 @@ export class MeetingsService {
 
   async createMeeting(u: CurrentUserContext, projectId: number, input: CreateMeetingInput) {
     await assertProjectAccess(this.db, this.access, u, projectId);
+    const resolvedCycleId = input.cycleId ?? null;
     let attendeeMemberships = new Map<string, number>();
 
     if (input.attendeeUserIds && input.attendeeUserIds.length > 0) {
@@ -239,7 +243,7 @@ export class MeetingsService {
           durationMinutes: input.durationMinutes ?? null,
           timezone: input.timezone ?? null,
           recurrenceRule: input.recurrenceRule ?? null,
-          sprintId: input.sprintId ?? null,
+          cycleId: resolvedCycleId,
           createdBy: u.userId,
         })
         .returning();
@@ -288,7 +292,7 @@ export class MeetingsService {
     if (input.durationMinutes !== undefined) patch.durationMinutes = input.durationMinutes ?? null;
     if (input.timezone !== undefined) patch.timezone = input.timezone ?? null;
     if (input.recurrenceRule !== undefined) patch.recurrenceRule = input.recurrenceRule ?? null;
-    if (input.sprintId !== undefined) patch.sprintId = input.sprintId ?? null;
+    if (input.cycleId !== undefined) patch.cycleId = input.cycleId ?? null;
     const [updated] = await this.db
       .update(projectMeetings)
       .set(patch)

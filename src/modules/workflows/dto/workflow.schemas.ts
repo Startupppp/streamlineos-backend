@@ -9,7 +9,7 @@ export const CreateWorkflowSchema = z.object({
 export const UpdateWorkflowSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
-  // "published" is deliberately absent: it is reachable only through POST /:id/publish, which gates on workflows:workflows:publish.
+  // "published" is deliberately absent: it is reachable only through POST /:workflowId/publish, which gates on workflows:workflows:publish.
   status: z.enum(["draft", "disabled", "archived"]).optional(),
 }).strict();
 

@@ -8,6 +8,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { CrmMailboxService } from "./crm-mailbox.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import {
@@ -76,6 +77,7 @@ export class CrmMailboxController {
   }
 
   @Post(":crmMailboxSyncId/sync")
+  @NoTenantTransaction()
   @BodylessAction()
   @ResponseSchema(crmMailboxSyncResponseSchema)
   @RequirePermission("crm:ingress:submit")
@@ -88,6 +90,7 @@ export class CrmMailboxController {
   }
 
   @Post("sync")
+  @NoTenantTransaction()
   @BodylessAction()
   @ResponseSchema(crmMailboxSweepAllResponseSchema)
   @RequirePermission("crm:ingress:submit")

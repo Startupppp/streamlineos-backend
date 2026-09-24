@@ -7,8 +7,6 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
-import { pageVisibleTo } from "../retrieval/kb-page-visibility";
-import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { kbPages, kbArticleChunks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -16,8 +14,8 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { KB_PAGE_COLUMNS, KB_PAGE_LIST_COLUMNS, type KbPageListItem, type KbPageRow } from "./kb-page-columns";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { StorageService } from "../../storage/storage.service";
 import {
   attemptPageAttachmentPurge,
@@ -60,6 +58,7 @@ export class KbPageTreeService {
     private readonly audit: AuditService,
     private readonly storage: StorageService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async getTree(user: CurrentUserContext, projectId?: number): Promise<{
@@ -69,15 +68,17 @@ export class KbPageTreeService {
     projectId: number | null;
     title: string;
     icon: string | null;
+    coverImage: string | null;
     sortOrder: number;
     visibility: string;
     createdById: string | null;
     status: string;
+    updatedAt: Date;
     hasChildren: boolean;
   }[]> {
     const orgId = user.orgId;
-    const projectIds = await getAccessibleProjectIds(this.db, user);
-    const filters: SQL[] = [eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)];
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
+    const filters: SQL[] = [eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), predicate];
     if (projectId !== undefined) {
       filters.push(eq(kbPages.projectId, projectId));
     }
@@ -89,10 +90,12 @@ export class KbPageTreeService {
         projectId: kbPages.projectId,
         title: kbPages.title,
         icon: kbPages.icon,
+        coverImage: kbPages.coverImage,
         sortOrder: kbPages.sortOrder,
         visibility: kbPages.visibility,
         createdById: kbPages.createdById,
         status: kbPages.status,
+        updatedAt: kbPages.updatedAt,
       })
       .from(kbPages)
       .where(and(...filters))
@@ -104,7 +107,7 @@ export class KbPageTreeService {
   }
 
   async softDelete(user: CurrentUserContext, pageId: number): Promise<{ deletedCount: number }> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "manage");
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
@@ -384,7 +387,7 @@ export class KbPageTreeService {
   }
 
   async move(user: CurrentUserContext, pageId: number, input: MovePageInput): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
 
     const page = await this.db.query.kbPages.findFirst({
@@ -454,11 +457,11 @@ export class KbPageTreeService {
 
   async getTrash(user: CurrentUserContext): Promise<KbPageListItem[]> {
     const orgId = user.orgId;
-    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     return this.db
       .select(KB_PAGE_LIST_COLUMNS)
       .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)))
+      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt), predicate))
       .orderBy(sql`${kbPages.deletedAt} desc`)
       .limit(100);
   }

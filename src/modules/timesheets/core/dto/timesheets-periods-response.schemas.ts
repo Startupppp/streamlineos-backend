@@ -29,16 +29,10 @@ export const periodDetailResponseSchema = z.object({
     timesheetPeriodId: z.number().int().nullable(),
     createdAt: wireDate(),
     updatedAt: wireDate(),
+    project: z.object({ id: z.number().int(), name: z.string() }).nullable(),
   })),
 });
 
-/**
- * `GET /timesheets/periods/overdue`. Derived on read from `period_end + grace`,
- * so `graceDays` and `escalationThresholds` come back alongside the rows: an
- * organisation that configured no reminders reports every `escalationLevel` as
- * zero, and only the empty threshold list tells that apart from "not yet late
- * enough". `totalHours` is a numeric column, hence a string.
- */
 export const overduePeriodSchema = z.object({
   periodId: z.number().int(),
   userMembershipId: z.number().int().nullable(),

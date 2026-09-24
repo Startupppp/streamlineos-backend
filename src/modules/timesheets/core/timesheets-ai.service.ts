@@ -31,13 +31,6 @@ const FEATURE_KEY = "timesheets.period-summary" as const;
 const DESCRIBE_FEATURE_KEY = "timesheets.describe-entry" as const;
 const REJECTION_FEATURE_KEY = "timesheets.rejection-draft" as const;
 
-/**
- * Every method here reads evidence from the database and then calls a provider.
- * The two are deliberately separated: `readEvidence` opens a short tenant
- * transaction, commits it, and only then does the gateway call go out. The
- * controller's `@NoTenantTransaction()` means there is no ambient request
- * transaction to hold open across that round trip (PRD-C078 / C147).
- */
 @Injectable()
 export class TimesheetsAiService {
   constructor(

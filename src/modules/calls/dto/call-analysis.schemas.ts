@@ -11,8 +11,6 @@ export const callAnalysisParamsSchema = z.object({
   activityId: z.string().trim().min(1).max(64),
 });
 
-export type CallAnalysisParams = z.infer<typeof callAnalysisParamsSchema>;
-
 /**
  * What a rep may say when they share their own analysis early.
  *

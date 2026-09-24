@@ -16,6 +16,9 @@ describe("RecruitmentHandoffService", () => {
        */
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([{ currency: "USD" }]),
+          }),
           innerJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
               limit: jest

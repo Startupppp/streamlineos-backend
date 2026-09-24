@@ -1,5 +1,5 @@
 import { INestApplication } from "@nestjs/common";
-import { getTableName, type SQL, type Table } from "drizzle-orm";
+import { getTableName, sql, type SQL, type Table } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
@@ -23,6 +23,11 @@ interface FakeDb {
   tables: string[];
   conditions: SQL[];
 }
+
+const auth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+};
 
 const dialect = new PgDialect();
 
@@ -78,7 +83,7 @@ function makeDb(options: FakeDbOptions): FakeDb {
 }
 
 function makeService(db: Db): KbSourcesService {
-  return new KbSourcesService(db, {} as never, {} as never, {} as never, {} as never);
+  return new KbSourcesService(db, {} as never, {} as never, {} as never, {} as never, auth as never);
 }
 
 const SOURCE_ROW: Row = {

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -42,6 +43,11 @@ const makeAccess = () => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
+const makeAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+});
+
 function makeEmbeddings() {
   return {
     isEmbeddingConfigured: jest.fn().mockReturnValue(true),
@@ -60,6 +66,7 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeAuth() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);
@@ -77,6 +84,7 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeAuth() as never,
     );
 
     const result = await svc.retrieveTopSources(makeUser(), "anything at all", 4);
@@ -95,10 +103,30 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeAuth() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);
 
     expect(embeddings.embedQueryWithCredit).toHaveBeenCalled();
+  });
+
+  it("consults the canonical authorization seam for page visibility when retrieving top articles", async () => {
+    const embeddings = makeEmbeddings();
+    const db = makeDb([{ id: 1 }]);
+    const auth = makeAuth();
+    const svc = new KbSearchService(
+      db as never,
+      makeAccess() as never,
+      embeddings as never,
+      makeEvents() as never,
+      new KbCandidateService(db as never),
+      makeScopes() as never,
+      auth as never,
+    );
+
+    await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);
+
+    expect(auth.visiblePagePredicate).toHaveBeenCalledWith(expect.anything(), "view");
   });
 });

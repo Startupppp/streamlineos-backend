@@ -1,6 +1,7 @@
 import { decimal, foreignKey, index, integer, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { jobPostings } from "./hiring-core";
+import { headcountRequests } from "./hiring-pipeline";
 
 export const jobRequisitions = pgTable("job_requisitions", {
   id: serial("id").primaryKey(),
@@ -33,4 +34,6 @@ export const jobRequisitions = pgTable("job_requisitions", {
   unique("uniq_job_requisitions_org_id").on(table.orgId, table.id),
   index("idx_requisitions_org_status").on(table.orgId, table.status),
   index("idx_requisitions_hiring_manager").on(table.hiringManagerId),
+  foreignKey({ columns: [table.orgId, table.headcountId], foreignColumns: [headcountRequests.orgId, headcountRequests.id], name: "fk_job_requisitions_headcount_org" }).onDelete("set null"),
+  index("idx_requisitions_headcount").on(table.orgId, table.headcountId),
 ]);

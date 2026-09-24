@@ -4,8 +4,8 @@ jest.mock("ai", () => ({
   stepCountIs: jest.fn(() => () => false),
 }));
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
@@ -22,6 +22,10 @@ import { ChatAssistantService } from "./chat-assistant.service";
 import { type AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "./ai-usage.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayStreamHelper, type AiStreamTextOpts } from "../gateway/ai-gateway-stream.helper";
+import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
+import { AccessService } from "../../../access/access.service";
 
 const ACTOR = {
   userId: "user_1",
@@ -47,42 +51,66 @@ function makeUsageSvc(): jest.Mocked<AiUsageService> {
 }
 
 const STUB_CONTEXT = {
-  projectCount: 0, ticketCount: 0, todayAttendance: null, pendingLeaves: 0,
-  recentPayrolls: [], myLeadsCount: 0, hotLeadsCount: 0, myOpenDealsCount: 0, topLeads: [],
+  todayAttendance: null, pendingLeaves: 0,
+  recentPayrolls: [], myLeadsCount: 0, myOpenDealsCount: 0, topLeads: [],
 };
 
-function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocked<AiUsageService>) {
+const STUB_ASK_OS_ACTOR = {
+  userId: "user_1", orgId: "org_1", membershipId: 1, displayName: "Test Member",
+  email: "member@example.com", orgName: "Acme", role: "MEMBER", isOrgOwner: false,
+  timezone: "UTC", today: "2026-09-19", monthStart: "2026-09-01",
+  monthEnd: "2026-09-30", currentYear: 2026, currentMonth: 9,
+};
+
+function buildService(
+  ledger: jest.Mocked<AiCreditLedger>,
+  usageSvc?: jest.Mocked<AiUsageService>,
+  storedOldestFirst: ReadonlyArray<{ role: string; content: string }> = [],
+) {
   const history = {
     append: jest.fn().mockResolvedValue(undefined),
     appendToConversation: jest.fn().mockResolvedValue(undefined),
+    listMessages: jest.fn().mockResolvedValue({
+      messages: [...storedOldestFirst]
+        .reverse()
+        .map((m, index) => ({ id: index, role: m.role, content: m.content, createdAt: "2026-09-19T00:00:00.000Z" })),
+      nextCursor: null,
+    }),
   };
 
-  const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
-  const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
-  const noop = { buildTools: jest.fn().mockReturnValue({}) };
   const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
+  const streamHelper = new AiGatewayStreamHelper(
+    ledger,
+    usageSvc ?? makeUsageSvc(),
+    limiterStub as unknown as AiConcurrencyLimiter,
+    null,
+  );
+  const gateway = Object.assign(Object.create(AiGatewayService.prototype), {
+    streamAgenticTurn: (opts: AiStreamTextOpts) => streamHelper.run(opts),
+  }) as unknown as AiGatewayService;
+
+  const access = {
+    getAccessSnapshot: jest.fn().mockResolvedValue({
+      membershipId: 1,
+      scopes: {},
+      modules: {},
+      isOrgOwner: false,
+      canManageOrganizationMembership: false,
+      mfa: { enforced: false, satisfied: true },
+      version: 0,
+    }),
+  };
 
   const svc = new ChatAssistantService(
     {} as never,
-    { ask: jest.fn(), summarize: jest.fn() } as never,
+    gateway,
     history as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    toolAccess as never,
-    moduleRef as never,
-    usageSvc ?? makeUsageSvc(),
-    ledger,
-    null,
-    limiterStub as never,
+    access as unknown as AccessService,
+    [],
   );
 
-  jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+  jest.spyOn(svc as never, "fetchContext").mockResolvedValue({ context: STUB_CONTEXT, actor: STUB_ASK_OS_ACTOR } as never);
 
   return { svc, history, ledger };
 }
@@ -95,31 +123,38 @@ function buildServiceWithLimiter(
     append: jest.fn().mockResolvedValue(undefined),
     appendToConversation: jest.fn().mockResolvedValue(undefined),
   };
-  const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
-  const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
-  const noop = { buildTools: jest.fn().mockReturnValue({}) };
+
+  const streamHelper = new AiGatewayStreamHelper(
+    ledger,
+    makeUsageSvc(),
+    limiter as unknown as AiConcurrencyLimiter,
+    null,
+  );
+  const gateway = Object.assign(Object.create(AiGatewayService.prototype), {
+    streamAgenticTurn: (opts: AiStreamTextOpts) => streamHelper.run(opts),
+  }) as unknown as AiGatewayService;
+
+  const access = {
+    getAccessSnapshot: jest.fn().mockResolvedValue({
+      membershipId: 1,
+      scopes: {},
+      modules: {},
+      isOrgOwner: false,
+      canManageOrganizationMembership: false,
+      mfa: { enforced: false, satisfied: true },
+      version: 0,
+    }),
+  };
 
   const svc = new ChatAssistantService(
     {} as never,
-    { ask: jest.fn(), summarize: jest.fn() } as never,
+    gateway,
     history as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    toolAccess as never,
-    moduleRef as never,
-    makeUsageSvc(),
-    ledger,
-    null,
-    limiter as never,
+    access as unknown as AccessService,
+    [],
   );
 
-  jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+  jest.spyOn(svc as never, "fetchContext").mockResolvedValue({ context: STUB_CONTEXT, actor: STUB_ASK_OS_ACTOR } as never);
 
   return { svc, history };
 }
@@ -489,7 +524,7 @@ describe("ChatAssistantService — output token cap and history bound (12.3 crit
     expect(capturedMaxOutputTokens).toBe(2048);
   });
 
-  it("passes only the last 20 messages to the model when history is longer than 20", async () => {
+  it("replays only the last 20 stored messages when the conversation is longer than 20, and prepends an omission marker for the 30 dropped turns", async () => {
     const messages = Array.from({ length: 50 }, (_, i) => ({
       role: "user" as const,
       content: `q${i}`,
@@ -499,14 +534,15 @@ describe("ChatAssistantService — output token cap and history bound (12.3 crit
       capturedMessages = opts.messages ?? [];
       return {};
     });
-    const { svc } = buildService(makeLedger());
-    await svc.processChat(messages, ACTOR);
-    expect(capturedMessages).toHaveLength(20);
-    expect(capturedMessages[0]).toEqual({ role: "user", content: "q30" });
-    expect(capturedMessages[19]).toEqual({ role: "user", content: "q49" });
+    const { svc } = buildService(makeLedger(), undefined, messages);
+    await svc.processChat([], ACTOR, 1);
+    expect(capturedMessages).toHaveLength(21);
+    expect(capturedMessages[0]?.content).toContain("30 earlier messages omitted");
+    expect(capturedMessages[1]).toEqual({ role: "user", content: "q30" });
+    expect(capturedMessages[20]).toEqual({ role: "user", content: "q49" });
   });
 
-  it("passes all messages unchanged when history is at or below the 20-message cap", async () => {
+  it("replays all stored messages when the conversation is at or below the 20-message cap", async () => {
     const messages = Array.from({ length: 10 }, (_, i) => ({
       role: "user" as const,
       content: `q${i}`,
@@ -516,12 +552,12 @@ describe("ChatAssistantService — output token cap and history bound (12.3 crit
       capturedMessages = opts.messages ?? [];
       return {};
     });
-    const { svc } = buildService(makeLedger());
-    await svc.processChat(messages, ACTOR);
+    const { svc } = buildService(makeLedger(), undefined, messages);
+    await svc.processChat([], ACTOR, 1);
     expect(capturedMessages).toHaveLength(10);
   });
 
-  it("caps the combined history payload", async () => {
+  it("drops whole messages rather than cutting content mid-message when the char budget is exhausted, and prepends an omission marker for the dropped turns", async () => {
     const messages = Array.from({ length: 10 }, () => ({
       role: "user" as const,
       content: "x".repeat(5_000),
@@ -531,9 +567,14 @@ describe("ChatAssistantService — output token cap and history bound (12.3 crit
       capturedMessages = opts.messages ?? [];
       return {};
     });
-    const { svc } = buildService(makeLedger());
-    await svc.processChat(messages, ACTOR);
-    expect(capturedMessages.reduce((total, message) => total + message.content.length, 0)).toBe(24_000);
+    const { svc } = buildService(makeLedger(), undefined, messages);
+    await svc.processChat([], ACTOR, 1);
+    const [markerMessage, ...contentMessages] = capturedMessages;
+    expect(markerMessage?.content).toMatch(/\d+ earlier messages? omitted from context/);
+    expect(contentMessages.length).toBeGreaterThan(0);
+    expect(contentMessages.length).toBeLessThan(10);
+    for (const msg of contentMessages)
+      expect(msg.content.length).toBe(5_000);
   });
 });
 
@@ -545,32 +586,7 @@ describe("ChatAssistantService — per-org concurrency cap (12.3 criterion 4)", 
     const limiter = { acquire: jest.fn().mockResolvedValue(false), release: jest.fn() };
     (streamText as jest.Mock).mockImplementation(() => ({}));
 
-    const history = { append: jest.fn(), appendToConversation: jest.fn() };
-    const noop = { buildTools: jest.fn().mockReturnValue({}) };
-    const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
-    const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
-
-    const { ChatAssistantService } = await import("./chat-assistant.service");
-    const svc = new ChatAssistantService(
-      {} as never,
-      { ask: jest.fn() } as never,
-      history as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      toolAccess as never,
-      moduleRef as never,
-      makeUsageSvc(),
-      ledger,
-      null,
-      limiter as never,
-    );
-    jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+    const { svc } = buildServiceWithLimiter(ledger, limiter);
 
     await expect(
       svc.processChat([{ role: "user", content: "hi" }], ACTOR),
@@ -589,32 +605,7 @@ describe("ChatAssistantService — per-org concurrency cap (12.3 criterion 4)", 
       return {};
     });
 
-    const history = { append: jest.fn(), appendToConversation: jest.fn() };
-    const noop = { buildTools: jest.fn().mockReturnValue({}) };
-    const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
-    const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
-
-    const { ChatAssistantService } = await import("./chat-assistant.service");
-    const svc = new ChatAssistantService(
-      {} as never,
-      { ask: jest.fn() } as never,
-      history as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      toolAccess as never,
-      moduleRef as never,
-      makeUsageSvc(),
-      ledger,
-      null,
-      limiter as never,
-    );
-    jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+    const { svc } = buildServiceWithLimiter(ledger, limiter);
 
     await svc.processChat([{ role: "user", content: "hi" }], ACTOR);
 
@@ -633,32 +624,7 @@ describe("ChatAssistantService — per-org concurrency cap (12.3 criterion 4)", 
       throw new Error("provider setup failed");
     });
 
-    const history = { append: jest.fn(), appendToConversation: jest.fn() };
-    const noop = { buildTools: jest.fn().mockReturnValue({}) };
-    const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
-    const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
-
-    const { ChatAssistantService } = await import("./chat-assistant.service");
-    const svc = new ChatAssistantService(
-      {} as never,
-      { ask: jest.fn() } as never,
-      history as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      toolAccess as never,
-      moduleRef as never,
-      makeUsageSvc(),
-      ledger,
-      null,
-      limiter as never,
-    );
-    jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+    const { svc } = buildServiceWithLimiter(ledger, limiter);
 
     await expect(
       svc.processChat([{ role: "user", content: "hi" }], ACTOR),
@@ -687,36 +653,138 @@ describe("ChatAssistantService — per-org concurrency cap (12.3 criterion 4)", 
     expect(streamText).not.toHaveBeenCalled();
   });
 
-  it("releases the concurrency slot and the reservation when context loading throws after the slot is taken", async () => {
-    const ledger = makeLedger();
-    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
-    (streamText as jest.Mock).mockImplementation(() => ({}));
+});
 
-    const { svc } = buildServiceWithLimiter(ledger, limiter);
-    jest.spyOn(svc as never, "fetchContext").mockRejectedValue(new Error("context load failed") as never);
+describe("ChatAssistantService — a confirmation token never reaches the persisted transcript (A-19)", () => {
+  beforeEach(() => jest.clearAllMocks());
 
-    await expect(
-      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
-    ).rejects.toThrow("context load failed");
+  it("persists the model's prose verbatim and appends nothing else, so a reloaded conversation cannot replay a proposal token", async () => {
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+    (streamText as jest.Mock).mockImplementation(
+      (opts: { onFinish?: typeof capturedOnFinish }) => {
+        capturedOnFinish = opts.onFinish;
+        return {};
+      },
+    );
 
-    expect(limiter.release).toHaveBeenCalledWith("org_1");
-    expect(ledger.release).toHaveBeenCalledWith(42, "chat_setup_error", "org_1");
-    expect(streamText).not.toHaveBeenCalled();
+    const { svc, history } = buildService(makeLedger());
+    await svc.processChat(
+      [{ role: "user", content: "Send a mail to someone@example.com saying hello" }],
+      ACTOR,
+    );
+    const prose = "I've prepared that email. Confirm below and I'll send it.";
+    await capturedOnFinish?.({ text: prose, usage: { inputTokens: 10, outputTokens: 5 } });
+
+    const assistantAppends = (history.append.mock.calls as unknown[][]).filter(
+      (call) => call[3] === "assistant",
+    );
+    expect(assistantAppends).toHaveLength(1);
+    expect(assistantAppends[0]?.[4]).toBe(prose);
   });
 
-  it("releases the concurrency slot when persisting the user turn throws after the slot is taken", async () => {
-    const ledger = makeLedger();
-    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
-    (streamText as jest.Mock).mockImplementation(() => ({}));
+  it("persists the user turn and the assistant turn only, so no directive payload is written as a third row", async () => {
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+    (streamText as jest.Mock).mockImplementation(
+      (opts: { onFinish?: typeof capturedOnFinish }) => {
+        capturedOnFinish = opts.onFinish;
+        return {};
+      },
+    );
 
-    const { svc, history } = buildServiceWithLimiter(ledger, limiter);
-    history.append.mockRejectedValue(new Error("history write failed"));
+    const { svc, history } = buildService(makeLedger());
+    await svc.processChat([{ role: "user", content: "Clock me in" }], ACTOR);
+    await capturedOnFinish?.({ text: "You're clocked in.", usage: { inputTokens: 4, outputTokens: 3 } });
 
-    await expect(
-      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
-    ).rejects.toThrow("history write failed");
+    expect((history.append.mock.calls as unknown[][]).map((call) => call[3])).toEqual([
+      "user",
+      "assistant",
+    ]);
+  });
+});
 
-    expect(limiter.release).toHaveBeenCalledWith("org_1");
-    expect(streamText).not.toHaveBeenCalled();
+describe("the history budget charges the system prompt and the tool manifest, not history alone", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("keeps the newest message even when it alone exceeds the budget, marking it truncated rather than sending the model a marker with no question in it", async () => {
+    const messages = [{ role: "user" as const, content: "q".repeat(60_000) }];
+    let capturedMessages: { role: string; content: string }[] = [];
+    (streamText as jest.Mock).mockImplementation((opts: { messages?: typeof capturedMessages }) => {
+      capturedMessages = opts.messages ?? [];
+      return {};
+    });
+    const { svc } = buildService(makeLedger(), undefined, messages);
+
+    await svc.processChat([], ACTOR, 1);
+
+    const turn = capturedMessages.at(-1);
+    expect(turn?.content).toContain("qqq");
+    expect(turn?.content).toContain("[message truncated to fit the context budget]");
+  });
+
+  it("no omission marker when all messages fit — short conversation with budget to spare", async () => {
+    const messages = Array.from({ length: 3 }, (_, i) => ({
+      role: "user" as const,
+      content: `turn ${i}`,
+    }));
+    let capturedMessages: { role: string; content: string }[] = [];
+    (streamText as jest.Mock).mockImplementation((opts: { messages?: typeof capturedMessages }) => {
+      capturedMessages = opts.messages ?? [];
+      return {};
+    });
+    const { svc } = buildService(makeLedger(), undefined, messages);
+    await svc.processChat([], ACTOR, 1);
+    expect(capturedMessages).toHaveLength(3);
+    expect(capturedMessages[0]?.content).toBe("turn 0");
+  });
+
+  it("omission marker is singular when exactly one message is omitted", async () => {
+    const messages = Array.from({ length: 21 }, (_, i) => ({
+      role: "user" as const,
+      content: `m${i}`,
+    }));
+    let capturedMessages: { role: string; content: string }[] = [];
+    (streamText as jest.Mock).mockImplementation((opts: { messages?: typeof capturedMessages }) => {
+      capturedMessages = opts.messages ?? [];
+      return {};
+    });
+    const { svc } = buildService(makeLedger(), undefined, messages);
+    await svc.processChat([], ACTOR, 1);
+    expect(capturedMessages[0]?.content).toContain("1 earlier message omitted from context");
+    expect(capturedMessages[0]?.content).not.toContain("messages omitted");
+  });
+
+  it("prompt overhead reduces available history budget: 7 messages of 4_000 chars each exceed the effective budget once the prompt length and MANIFEST_CHARS_ESTIMATE are subtracted from MAX_CONTEXT_CHARS", async () => {
+    const messages = Array.from({ length: 7 }, () => ({
+      role: "user" as const,
+      content: "b".repeat(4_000),
+    }));
+    let capturedMessages: { role: string; content: string }[] = [];
+    (streamText as jest.Mock).mockImplementation((opts: { messages?: typeof capturedMessages }) => {
+      capturedMessages = opts.messages ?? [];
+      return {};
+    });
+    const { svc } = buildService(makeLedger(), undefined, messages);
+    await svc.processChat([], ACTOR, 1);
+    expect(capturedMessages[0]?.content).toMatch(/\d+ earlier messages? omitted from context/);
+  });
+
+  it("MANIFEST_CHARS_ESTIMATE of 20_000 represents 62 tools at approximately 320 chars per tool for description and schema overhead combined — verify the constant bites by checking that a chat with 10 large messages does not pass them all through", async () => {
+    const messages = Array.from({ length: 10 }, () => ({
+      role: "user" as const,
+      content: "a".repeat(4_000),
+    }));
+    let capturedMessages: { role: string; content: string }[] = [];
+    (streamText as jest.Mock).mockImplementation((opts: { messages?: typeof capturedMessages }) => {
+      capturedMessages = opts.messages ?? [];
+      return {};
+    });
+    const { svc } = buildService(makeLedger(), undefined, messages);
+    await svc.processChat([], ACTOR, 1);
+    const nonMarker = capturedMessages.filter((m) => !m.content.includes("omitted"));
+    expect(nonMarker.length).toBeLessThan(10);
   });
 });

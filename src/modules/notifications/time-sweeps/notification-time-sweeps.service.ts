@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { aliasedTable, and, eq, inArray, isNotNull, lte, notInArray, sql } from "drizzle-orm";
-import { calendarEvents, eventAttendees, invoices, organizationMembers, signEnvelopes, supportTickets } from "../../../db/schema";
+import { broadcasts, calendarEvents, eventAttendees, invoices, organizationMembers, signEnvelopes, supportTickets } from "../../../db/schema";
 
 const calendarCreatorMember = aliasedTable(organizationMembers, "notif_calendar_creator");
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -13,7 +13,10 @@ export interface TimeSweepResult {
   invoicesDueSoon: number;
   envelopesExpiring: number;
   eventsStartingSoon: number;
+  scheduledBroadcastsSent: number;
 }
+
+export const SCHEDULED_BROADCAST_SWEEP_CAP = 200;
 
 /**
  * REG-003, the time-derived events whose owning modules have no sweep of their own.
@@ -42,6 +45,7 @@ export class NotificationTimeSweepsService {
       invoicesDueSoon: 0,
       envelopesExpiring: 0,
       eventsStartingSoon: 0,
+      scheduledBroadcastsSent: 0,
     };
 
     await forEachOrg(this.db, "notification-time-sweeps", async (tx, orgId) => {
@@ -49,20 +53,58 @@ export class NotificationTimeSweepsService {
       await this.sweepInvoicesDueSoon(tx, orgId, result);
       await this.sweepEnvelopesExpiring(tx, orgId, result);
       await this.sweepEventsStartingSoon(tx, orgId, result);
+      await this.sweepScheduledBroadcasts(tx, orgId, result);
     });
 
     const total =
       result.slaBreached +
       result.invoicesDueSoon +
       result.envelopesExpiring +
-      result.eventsStartingSoon;
+      result.eventsStartingSoon +
+      result.scheduledBroadcastsSent;
     if (total > 0) {
       this.logger.log(
         `TIME_SWEEPS: ${result.slaBreached} SLA, ${result.invoicesDueSoon} invoice, ` +
-          `${result.envelopesExpiring} envelope, ${result.eventsStartingSoon} calendar notification(s)`,
+          `${result.envelopesExpiring} envelope, ${result.eventsStartingSoon} calendar, ` +
+          `${result.scheduledBroadcastsSent} scheduled broadcast(s)`,
       );
     }
     return result;
+  }
+
+  private async sweepScheduledBroadcasts(
+    tx: Db,
+    orgId: string,
+    result: TimeSweepResult,
+  ): Promise<void> {
+    const now = new Date();
+    const due = await tx
+      .select({ id: broadcasts.id })
+      .from(broadcasts)
+      .where(
+        and(
+          eq(broadcasts.orgId, orgId),
+          eq(broadcasts.status, "SCHEDULED"),
+          isNotNull(broadcasts.scheduledAt),
+          lte(broadcasts.scheduledAt, now),
+        ),
+      )
+      .limit(SCHEDULED_BROADCAST_SWEEP_CAP);
+    if (due.length === 0) return;
+
+    await tx
+      .update(broadcasts)
+      .set({ status: "SENT", sentAt: now })
+      .where(
+        and(
+          eq(broadcasts.orgId, orgId),
+          inArray(
+            broadcasts.id,
+            due.map((row) => row.id),
+          ),
+        ),
+      );
+    result.scheduledBroadcastsSent += due.length;
   }
 
   /**

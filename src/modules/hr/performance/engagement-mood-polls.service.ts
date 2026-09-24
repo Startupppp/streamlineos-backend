@@ -24,8 +24,10 @@ import {
   type VotePollInput,
 } from "./dto/engagement-extras.schemas";
 import { hasPatchValues } from "../../../common/db/patch-values";
-
-const MIN_GROUP_SIZE = 5;
+import {
+  ANONYMITY_MIN_RESPONSES,
+  isBelowAnonymityThreshold,
+} from "../../../common/privacy/anonymity-threshold";
 
 @Injectable()
 export class EngagementMoodPollsService {
@@ -99,18 +101,22 @@ export class EngagementMoodPollsService {
       byDate.set(r.date, existing);
     }
 
-    const result: { date: string; avgMood: number; count: number }[] = [];
+    const points: { date: string; avgMood: number; count: number }[] = [];
+    let suppressedDays = 0;
     for (const [date, moods] of byDate.entries()) {
-      if (moods.length < MIN_GROUP_SIZE) continue;
+      if (isBelowAnonymityThreshold(moods.length)) {
+        suppressedDays += 1;
+        continue;
+      }
       const avg = moods.reduce((a, b) => a + b, 0) / moods.length;
-      result.push({
+      points.push({
         date,
         avgMood: Math.round(avg * 10) / 10,
         count: moods.length,
       });
     }
-    result.sort((a, b) => a.date.localeCompare(b.date));
-    return result;
+    points.sort((a, b) => a.date.localeCompare(b.date));
+    return { minResponses: ANONYMITY_MIN_RESPONSES, suppressedDays, points };
   }
 
   listPolls(orgId: string) {
@@ -205,18 +211,24 @@ export class EngagementMoodPollsService {
 
     const optsParsed = pollOptionsSchema.safeParse(poll.options);
     const opts = optsParsed.success ? optsParsed.data : [];
-    const counts = opts.map((option, idx) => ({
-      option,
-      optionIndex: idx,
-      count: Number(votes.find((v) => v.optionIndex === idx)?.count ?? 0),
-    }));
+    const totalVotes = votes.reduce((total, vote) => total + Number(vote.count), 0);
+    const suppressed = poll.anonymous && totalVotes > 0 && isBelowAnonymityThreshold(totalVotes);
+    const counts = suppressed
+      ? null
+      : opts.map((option, idx) => ({
+          option,
+          optionIndex: idx,
+          count: Number(votes.find((v) => v.optionIndex === idx)?.count ?? 0),
+        }));
 
     return {
       pollId,
       question: poll.question,
       anonymous: poll.anonymous,
       status: poll.status,
-      totalVotes: votes.reduce((total, vote) => total + Number(vote.count), 0),
+      totalVotes,
+      minResponses: ANONYMITY_MIN_RESPONSES,
+      suppressed,
       counts,
     };
   }

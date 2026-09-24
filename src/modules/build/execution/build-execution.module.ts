@@ -1,9 +1,8 @@
 import { Module } from "@nestjs/common";
-import { ProjectsModule } from "../../build/core/projects.module";
+import { ProjectsModule } from "../core/projects.module";
 import { TimesheetsCoreModule } from "../../timesheets/core/timesheets-core.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
-import { BuildSprintCompletedConsumerService } from "./build-sprint-completed-consumer.service";
 import {
   CyclesController,
   EpicsController,
@@ -39,6 +38,8 @@ import {
   TimeEntriesController,
 } from "./timesheets.controller";
 import { TimesheetsService } from "./timesheets.service";
+import { WorkloadCapacityService } from "./workload-capacity.service";
+import { WorkloadCapacityController } from "./workload-capacity.controller";
 
 @Module({
   imports: [ProjectsModule, TimesheetsCoreModule, NotificationsModule, OutboxModule],
@@ -58,9 +59,9 @@ import { TimesheetsService } from "./timesheets.service";
     TimeEntriesController,
     BillingSummaryController,
     TicketTimeEntriesController,
+    WorkloadCapacityController,
   ],
   providers: [
-    BuildSprintCompletedConsumerService,
     SprintsService,
     CyclesService,
     ModulesService,
@@ -71,6 +72,7 @@ import { TimesheetsService } from "./timesheets.service";
     WhiteboardsService,
     WhiteboardSharingService,
     TimesheetsService,
+    WorkloadCapacityService,
   ],
 })
 export class BuildExecutionModule {}

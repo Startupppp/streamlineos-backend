@@ -7,8 +7,10 @@ jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(() => true),
 }));
 
+import { PgDialect } from "drizzle-orm/pg-core";
 import { isScopable } from "../../rbac/permissions";
 import {
+  approvalQueueScope,
   resolveApprovalScope,
   resolveEntriesScope,
   resolvePayrollScope,
@@ -49,11 +51,6 @@ describe("resolveEntriesScope", () => {
     expect(read.denied).toBe(true);
   });
 
-  /**
-   * A plain member holds `timesheets:entries:view` through self-service at
-   * `own` and no `timesheets:team:view` at all. Resolving only the widening
-   * key answered `none`, and My Time listed a member's own entries as empty.
-   */
   it("gives a member who holds only entries:view their own rows, not nothing", async () => {
     scopes({ [TS_ENTRIES_VIEW_PERMISSION]: "own" });
     const read = await resolveEntriesScope(mockAccess, makeUser());
@@ -115,5 +112,21 @@ describe("resolvePayrollScope", () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("team");
     const read = await resolvePayrollScope(mockAccess, makeUser());
     expect(read.rawScope("spec reads the resolved scope")).toBe("team");
+  });
+});
+
+describe("approvalQueueScope", () => {
+  const dialect = new PgDialect();
+  const render = (scope: ReturnType<typeof approvalQueueScope>) => dialect.sqlToQuery(scope.own);
+
+  it("shows a manager the periods routed to them as well as their own, since 'own' on an approval key means 'mine to decide'", () => {
+    const rendered = render(approvalQueueScope(77));
+
+    expect(rendered.sql).toMatch(/"user_membership_id" = \$1 or .*"current_approver_membership_id" = \$2/);
+    expect(rendered.params).toEqual([77, 77]);
+  });
+
+  it("matches nothing for a session with no membership", () => {
+    expect(render(approvalQueueScope(null)).sql).toBe("false");
   });
 });

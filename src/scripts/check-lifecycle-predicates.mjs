@@ -121,7 +121,6 @@ const PRIMARY_CANDIDATE_BASELINE = 69;
  * still be a candidate — a stale entry fails.
  */
 const ACCEPTED = [
-  { site: "modules/build/qa/test-runs.service.ts::bugs", reason: "MAX(bug_number) sequence lookup — must see deleted rows (report 06)" },
   { site: "modules/surveys/survey-automation.service.ts::surveyForms", reason: "an archived survey must stay inspectable to be restored (report 06)" },
   { site: "modules/surveys/survey-response-submitted-consumer.service.ts::surveyForms", reason: "a response to an archived survey must still be consumed (report 06)" },
   { site: "modules/ai/core/services/survey-ai.service.ts::surveyForms", reason: "reported by ticket 06, outside its territory" },

@@ -20,9 +20,12 @@ import { correlationIdMiddleware } from "./common/http/correlation-id.middleware
 import {
   LogErrorReporter,
   LogSpanExporter,
+  describeFailure,
   eventLoopDelayMonitor,
-  reportError,
+  installProcessFailureHandlers,
   setErrorReporter,
+  setFatalHandler,
+  FATAL_EXIT_CODE,
   setSpanExporter,
   structuredNestLogger,
 } from "./common/observability";
@@ -33,21 +36,7 @@ import { shutdownGate } from "./health/shutdown-gate";
 
 setDefaultResultOrder("ipv4first");
 
-function describeError(error: unknown): string {
-  if (error instanceof Error) return error.stack ?? error.message;
-  return String(error);
-}
-
-process.on("unhandledRejection", (reason: unknown) => {
-  logger.error("Unhandled promise rejection — process kept alive", {
-    error: describeError(reason),
-  });
-  // Also through the reporter, so a rejection is fingerprinted and classified
-  // like any other failure. A dropped `void something(...)` is exactly how the
-  // tenant-context outage stayed invisible, and that is the classification
-  // (`errorClass: "tenant-context"`) that would have named it.
-  reportError(reason, { source: "unhandledRejection" });
-});
+installProcessFailureHandlers();
 
 async function bootstrap(): Promise<void> {
   const config = validateEnv();
@@ -82,6 +71,17 @@ async function bootstrap(): Promise<void> {
   setErrorReporter(new LogErrorReporter());
   setSpanExporter(new LogSpanExporter());
   eventLoopDelayMonitor.start();
+
+  setFatalHandler(() => {
+    void app
+      .close()
+      .catch((error: unknown) => {
+        logger.error("Fatal: shutdown after uncaught exception failed", {
+          error: describeFailure(error),
+        });
+      })
+      .finally(() => process.exit(FATAL_EXIT_CODE));
+  });
 
   // Shared with `src/scripts/generate-openapi.ts`, which had no versioning at
   // all — so `/v2/users` was served here and documented nowhere.
@@ -145,6 +145,6 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((error: unknown) => {
-  logger.error("Fatal: application bootstrap failed", { error: describeError(error) });
+  logger.error("Fatal: application bootstrap failed", { error: describeFailure(error) });
   process.exit(1);
 });

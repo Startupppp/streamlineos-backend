@@ -4,7 +4,6 @@ import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 
 const PROJECT_ID = "1";
-const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001";
 const TEAM_ID = "1";
 
 describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
@@ -31,9 +30,6 @@ describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/build/workspaces"],
-    ["post", "/build/workspaces"],
-    [`get`, `/build/workspaces/${WORKSPACE_ID}`],
     ["get", "/build/teams"],
     ["post", "/build/teams"],
     [`get`, `/build/teams/${TEAM_ID}`],
@@ -56,19 +52,6 @@ describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("403 on %s %s without required permission", async (method, path) => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await call(method, path).set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN" });
-  });
-
-  it("403 on POST /build/workspaces without build:workspaces:create", async () => {
-    const token = await signToken({
-      permissions: ["build:workspaces:view"],
-      enabledModules: ALL_MODULES,
-    });
-    const res = await request(app.getHttpServer())
-      .post("/build/workspaces")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ name: "My Workspace" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
   });
@@ -110,17 +93,5 @@ describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
       .send({ title: "Crash on login" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
-  });
-
-  it("cross-tenant: workspace from another org returns 404 not 403", async () => {
-    const token = await signToken({
-      permissions: ["build:workspaces:view"],
-      enabledModules: ALL_MODULES,
-    });
-    const OTHER_ORG_WORKSPACE = "ffffffff-ffff-ffff-ffff-ffffffffffff";
-    const res = await request(app.getHttpServer())
-      .get(`/build/workspaces/${OTHER_ORG_WORKSPACE}`)
-      .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(403);
   });
 });

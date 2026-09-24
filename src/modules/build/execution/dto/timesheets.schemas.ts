@@ -17,7 +17,7 @@ export const rejectEntrySchema = z.object({
 }).strict();
 
 export const logTimeSchema = z.object({
-  date: z.string(),
+  date: z.iso.date(),
   hours: z.number().positive(),
   description: z.string().optional(),
   imageUrl: z.string().optional(),
@@ -28,20 +28,20 @@ export const timeEntriesListQuerySchema = timeEntryPaginationQuerySchema.extend(
   userId: z.string().optional(),
   projectId: z.coerce.number().int().optional(),
   ticketId: z.coerce.number().int().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: z.iso.date().optional(),
+  endDate: z.iso.date().optional(),
 });
 
 export const teamTimesheetsQuerySchema = timeEntryPaginationQuerySchema.extend({
   userId: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: z.iso.date().optional(),
+  endDate: z.iso.date().optional(),
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
 });
 
 export const billingSummaryQuerySchema = z.object({
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: z.iso.date().optional(),
+  endDate: z.iso.date().optional(),
 });
 
 export type UpdateEntryInput = z.infer<typeof updateEntrySchema>;

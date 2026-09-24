@@ -12,18 +12,6 @@ import type { TimesheetsAuditService } from "../timesheets-audit.service";
 import { TimesheetOverdueService } from "../overdue.service";
 import { TimesheetRemindersSweepService } from "../reminders-sweep.service";
 
-/**
- * Cross-tenant isolation for the three timesheet services the CRM / Timesheets
- * lane brought in without one: the attendance drafter, the overdue queue and
- * the reminder sweep.
- *
- * Every fixture holds only the OWNER's rows, and the double answers a statement
- * with whatever its bound predicates select — no predicate, every row. So each
- * deny case below fails in two places if the org predicate is deleted: the
- * statement binds no org (the `orgBound` assertion), and the owner's row comes
- * back to the attacker (the outcome assertion).
- */
-
 jest.mock("../../../../common/tenant/for-each-org", () => ({ forEachOrg: jest.fn() }));
 
 const OWNER_ORG = "org-owner";
@@ -136,7 +124,6 @@ describe("TimesheetOverdueService — cross-tenant isolation", () => {
         },
       ],
     });
-    /** Approval scope `all`, so the only thing between the caller and a period is the org predicate. */
     const access = { scopeFor: jest.fn().mockResolvedValue("all") } as unknown as AccessService;
     return { store, service: new TimesheetOverdueService(store.db, access) };
   }
@@ -190,7 +177,6 @@ describe("TimesheetOverdueService — cross-tenant isolation", () => {
 
 describe("TimesheetRemindersSweepService — cross-tenant isolation", () => {
   const ENABLED = { enabled: true, remindBeforeDueDays: [2], remindAfterDueDays: [1] };
-  /** Ends 03-31, grace 5, so 04-03 is two days before it is due: a due-soon reminder. */
   const OWNER_PERIOD = {
     orgId: OWNER_ORG,
     id: 11,
@@ -231,7 +217,6 @@ describe("TimesheetRemindersSweepService — cross-tenant isolation", () => {
     expect(t.emit).not.toHaveBeenCalled();
     const [periodRead] = t.store.on(timesheetPeriods, "select");
     expect(t.store.orgBound(periodRead, timesheetPeriods.orgId)).toEqual([ATTACKER_ORG]);
-    /** The worker is resolved through a membership joined inside the swept org only. */
     expect(t.store.orgBound({ ...periodRead!, where: periodRead!.joins }, organizationMembers.orgId)).toEqual([
       ATTACKER_ORG,
     ]);

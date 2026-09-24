@@ -131,7 +131,7 @@ export class AuditService {
     if (!obs) return entry;
     return {
       ...entry,
-      ipAddress: entry.ipAddress ?? obs.clientIp ?? null,
+      ipAddress: entry.ipAddress ?? obs.ipAddress ?? null,
       userAgent: entry.userAgent ?? obs.userAgent ?? null,
       requestId: entry.requestId ?? obs.correlationId ?? null,
     };
@@ -183,7 +183,7 @@ export class AuditService {
       resourceType: entry.resourceType ?? null,
       resourceId: entry.resourceId ?? null,
       metadata: this.buildMetadata(entry),
-      ipAddress: entry.ipAddress ?? null,
+      ipAddress: entry.ipAddress ?? getObservabilityContext()?.ipAddress ?? null,
       isPlatformEvent: orgId === null,
     };
   }

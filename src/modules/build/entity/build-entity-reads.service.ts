@@ -5,7 +5,7 @@ import {
   projectMembers,
   projectReleases,
   projects,
-  sprints,
+  cycles,
   ticketAssignees,
   tickets,
   users,
@@ -22,12 +22,20 @@ import {
   type EntityReference,
   type EntityResolution,
 } from "../../entity-reference/entity-reference.types";
+import {
+  buildCycleListHref,
+  buildIncidentHref,
+  buildProjectHref,
+  buildReleaseListHref,
+  buildTicketHref,
+  buildTicketKey,
+} from "../core/build-app-paths";
 
 const READ_KEY: Record<string, string> = {
   ticket: "build:tickets:view",
   task: "build:tickets:view",
   project: "build:view",
-  sprint: "build:sprints:view",
+  cycle: "build:sprints:view",
   release: "build:view",
   incident: "build:incidents:view",
 };
@@ -97,8 +105,8 @@ export class BuildEntityReadsService {
     switch (type) {
       case "project":
         return this.readProjects(actor, ids, scope);
-      case "sprint":
-        return this.readSprints(actor, ids, scope);
+      case "cycle":
+        return this.readCycles(actor, ids, scope);
       case "release":
         return this.readReleases(actor, ids, scope);
       case "incident":
@@ -141,7 +149,13 @@ export class BuildEntityReadsService {
         image: users.image,
       })
       .from(projectMembers)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, projectMembers.orgId),
+          eq(organizationMembers.id, projectMembers.membershipId),
+        ),
+      )
       .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
@@ -265,6 +279,7 @@ export class BuildEntityReadsService {
             title: tickets.title,
             status: tickets.status,
             ticketNumber: tickets.ticketNumber,
+            projectId: tickets.projectId,
             projectKey: projects.key,
           })
           .from(tickets)
@@ -278,7 +293,10 @@ export class BuildEntityReadsService {
           title: row.title,
           subtitle: `${row.projectKey}-${row.ticketNumber}`,
           status: row.status,
-          href: `/build/tickets/${row.id}`,
+          href: buildTicketHref(
+            row.projectId,
+            buildTicketKey(row.projectKey, row.ticketNumber),
+          ),
         }));
       },
       () => new Map<number, EntityCard>(),
@@ -321,43 +339,37 @@ export class BuildEntityReadsService {
           title: row.name,
           subtitle: row.key,
           status: row.status,
-          href: `/build/projects/${row.id}`,
+          href: buildProjectHref(row.id),
         }));
       },
       () => new Map<number, EntityCard>(),
     );
   }
 
-  private async readSprints(
+  private async readCycles(
     actor: EntityActor,
     ids: number[],
     scope: ScopedRead,
   ): Promise<Map<number, EntityCard>> {
     const found = await this.db
       .select({
-        id: sprints.id,
-        name: sprints.name,
-        status: sprints.status,
-        projectId: sprints.projectId,
+        id: cycles.id,
+        name: cycles.name,
+        status: cycles.status,
+        projectId: cycles.projectId,
       })
-      .from(sprints)
-      .where(
-        and(
-          eq(sprints.orgId, actor.orgId),
-          inArray(sprints.id, ids),
-          isNull(sprints.deletedAt),
-        ),
-      )
+      .from(cycles)
+      .where(and(eq(cycles.orgId, actor.orgId), inArray(cycles.id, ids)))
       .limit(ids.length);
     const rows = await this.keepReachable(actor, scope, found);
 
     return this.index(rows, (row) => ({
-      type: "sprint",
+      type: "cycle",
       id: String(row.id),
       title: row.name,
       subtitle: null,
       status: row.status,
-      href: `/build/projects/${row.projectId}/sprints`,
+      href: buildCycleListHref(row.projectId),
     }));
   }
 
@@ -391,7 +403,7 @@ export class BuildEntityReadsService {
       title: row.name,
       subtitle: row.version,
       status: row.status,
-      href: `/build/projects/${row.projectId}/releases`,
+      href: buildReleaseListHref(row.projectId),
     }));
   }
 
@@ -426,7 +438,7 @@ export class BuildEntityReadsService {
       title: row.title,
       subtitle: `#${row.incidentNumber} · ${row.severity}`,
       status: row.status,
-      href: `/build/incidents/${row.id}`,
+      href: buildIncidentHref(row.projectId, row.id),
     }));
   }
 

@@ -3,12 +3,6 @@ import type { SQL } from "drizzle-orm";
 import { ApprovalsService } from "../approvals.service";
 import { userDelegationPermissions } from "../../../../db/schema";
 
-/**
- * A delegation is a header plus one row per permission it hands over. Acting
- * for an approver therefore means holding a delegation that carries
- * `timesheets:approvals:manage` — not any delegation from that person at all,
- * which is what a header-only read conferred.
- */
 describe("a delegate acts for the approver only through a delegation that carries the approval key", () => {
   function build() {
     const captured: { join?: { table: unknown; on: SQL }; where?: SQL; limit?: number } = {};

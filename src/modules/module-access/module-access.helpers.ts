@@ -2,7 +2,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { moduleAccessDenied } from "./module-access-errors";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import type { Db } from "../../db/drizzle.module";
-import { resolveModuleManagementStanding } from "./module-standing";
+import { resolveModuleManagementStanding, resolveModuleStanding } from "./module-standing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 
@@ -95,13 +95,8 @@ export async function assertModuleAccessPolicy(
   }
 
   const resolved = await deps.resolveUserPermissions(actor.orgId, actor.userId);
-  const scope =
-    resolved.get(`${moduleKey}:access:${action}`) ??
-    resolved.get(`${moduleKey}:access:manage`);
-  if (scope && scope !== "none") return;
-
-  if (await hasModuleAccessManagementAuthority(deps.db, actor, moduleKey))
-    return;
+  const standing = await resolveModuleStanding(deps.db, actor, moduleKey, resolved);
+  if (standing.level !== "none") return;
 
   throw moduleAccessDenied(action);
 }

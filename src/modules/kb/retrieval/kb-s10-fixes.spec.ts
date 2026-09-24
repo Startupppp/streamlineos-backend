@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbSearchService } from "./kb-search.service";
 import { KbArticleReindexService } from "./kb-article-reindex.service";
@@ -67,6 +67,10 @@ describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () =
       embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1], vectorLiteral: "[0.1]" }),
     };
 
+    const auth = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+    };
     const svc = new KbSearchService(
       db as never,
       access as never,
@@ -74,6 +78,7 @@ describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () =
       { record: jest.fn().mockResolvedValue(undefined) } as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      auth as never,
     );
 
     await svc.retrieveTopSources({ userId: "u1", orgId: "org-fix1", isOrgOwner: false, role: "member", sessionId: "s1", tokenScopes: null, principal: undefined } as never, "query", 4);

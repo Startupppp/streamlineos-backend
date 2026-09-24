@@ -1,6 +1,6 @@
 import { Controller, Get, Header, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
-import { once } from "node:events";
+import { writeChunk } from "../../common/http/stream-abort";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -58,8 +58,7 @@ export class AuditLogController {
     @Res() res: Response,
   ): Promise<void> {
     for await (const chunk of this.auditLog.exportCsvChunks(u.orgId, filters)) {
-      if (res.destroyed) return;
-      if (!res.write(chunk)) await once(res, "drain");
+      if (!(await writeChunk(res, chunk))) return;
     }
     res.end();
   }

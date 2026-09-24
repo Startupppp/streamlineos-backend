@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -65,6 +65,10 @@ function makeHarness(options: { scope?: string; isAdmin?: boolean } = {}) {
       .fn()
       .mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
   };
+  const auth = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  };
   const service = new KbSearchService(
     db as never,
     access as never,
@@ -72,15 +76,16 @@ function makeHarness(options: { scope?: string; isAdmin?: boolean } = {}) {
     { recordDetached: jest.fn().mockResolvedValue(undefined) } as never,
     new KbCandidateService(db as never),
     { scopeFor: jest.fn().mockResolvedValue(options.scope ?? "all") } as never,
+    auth as never,
   );
   return { service, wheres };
 }
 
-describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
+describe("retrieveDocumentPassages applies the article ACL itself", () => {
   it("binds the caller's org and the published status to kb_articles, not just the id list", async () => {
     const { service, wheres } = makeHarness();
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     expect(wheres).toHaveLength(1);
     const where = wheres[0];
@@ -95,7 +100,7 @@ describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
   it("pushes the per-article restriction subquery for a non-admin reader", async () => {
     const { service, wheres } = makeHarness();
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text } = render(wheres[0]);
     expect(text).toContain("kb_article_restrictions");
@@ -105,7 +110,7 @@ describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
   it("narrows an own-scoped reader to their own articles", async () => {
     const { service, wheres } = makeHarness({ scope: "own" });
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text, params } = render(wheres[0]);
     const owner = /"kb_articles"\."owner_membership_id"\s*=\s*\$(\d+)/.exec(text);
@@ -116,7 +121,7 @@ describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
   it("denies outright when the reader holds no scope for kb:articles:view", async () => {
     const { service, wheres } = makeHarness({ scope: "none" });
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     expect(render(wheres[0]).text).toContain("false");
   });
@@ -124,7 +129,7 @@ describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
   it("leaves a kb:spaces:manage holder unrestricted, matching the direct read path", async () => {
     const { service, wheres } = makeHarness({ isAdmin: true });
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text } = render(wheres[0]);
     expect(text).not.toContain("kb_article_restrictions");

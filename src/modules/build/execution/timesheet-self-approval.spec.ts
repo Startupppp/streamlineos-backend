@@ -3,7 +3,7 @@ import { TimesheetsService } from "./timesheets.service";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
 import type { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
 
@@ -47,7 +47,7 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
       resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:timesheets:manage"])),
       holds: jest.fn().mockResolvedValue(true),
     } as unknown as AccessService;
-    const cache = { del: jest.fn(), get: jest.fn(), set: jest.fn() } as unknown as CacheService;
+    const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn(), get: jest.fn(), set: jest.fn() } as unknown as CacheService;
     const periods = {} as unknown as EntriesPeriodService;
     svc = new TimesheetsService(db, cache, access, periods);
   });
@@ -76,6 +76,20 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
       svc.rejectEntry(makeUser(), 1, { reason: "no" } as never),
     ).rejects.toThrow(ForbiddenException);
     expect(updateWhere).not.toHaveBeenCalled();
+  });
+
+  it("rejects approving when the actor has no membership identity — fails closed", async () => {
+    findFirst.mockResolvedValueOnce({ id: 1, orgId: ORG_ID, userMembershipId: 2, status: "PENDING", payrollStatus: null });
+    await expect(svc.approveEntry(makeUser({ principal: ACCOUNT_ONLY_PRINCIPAL }), 1)).rejects.toThrow(ForbiddenException);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects rejecting when the actor has no membership identity — fails closed", async () => {
+    findFirst.mockResolvedValueOnce({ id: 1, orgId: ORG_ID, userMembershipId: 2, status: "PENDING", payrollStatus: null });
+    await expect(
+      svc.rejectEntry(makeUser({ principal: ACCOUNT_ONLY_PRINCIPAL }), 1, { reason: "no" } as never),
+    ).rejects.toThrow(ForbiddenException);
+    expect(findFirst).not.toHaveBeenCalled();
   });
 
   it("allows approving another person's entry", async () => {

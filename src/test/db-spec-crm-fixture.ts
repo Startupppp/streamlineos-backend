@@ -10,6 +10,7 @@ import { PermissionCatalogSyncService } from "../modules/rbac/permission-catalog
 import { seedSystemRolesForOrg } from "../modules/rbac/seed-system-roles";
 import { ensureFixtureOrgs, type DbSpecOrg } from "./db-spec-fixture";
 import { RoleGrantReconcilerService } from "../modules/rbac/role-grant-reconciler.service";
+import { CronLeaseService } from "../modules/cron/cron-lease.service";
 
 /**
  * The CRM data a real-database spec needs before it can assert anything.
@@ -81,7 +82,11 @@ export async function ensureSeededSystemRoles(
 ): Promise<{ catalogSize: number; rolesCreated: number }> {
   const db = drizzle(client, { schema }) as unknown as Db;
 
-  const { catalogSize } = await new PermissionCatalogSyncService(db, new RoleGrantReconcilerService(db)).sync();
+  const { catalogSize } = await new PermissionCatalogSyncService(
+    db,
+    new RoleGrantReconcilerService(db),
+    new CronLeaseService(null),
+  ).sync();
   const { created } = await seedSystemRolesForOrg(db, orgId);
 
   return { catalogSize, rolesCreated: created };

@@ -1,6 +1,21 @@
 import { z } from "zod";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import {
+  RICE_CONFIDENCE_MAX,
+  RICE_CONFIDENCE_MIN,
+  RICE_EFFORT_MAX,
+  RICE_EFFORT_MIN,
+  RICE_IMPACT_MAX,
+  RICE_IMPACT_MIN,
+  RICE_REACH_MAX,
+  RICE_REACH_MIN,
+} from "../roadmap-prioritization";
+
+const riceReachField = z.number().int().min(RICE_REACH_MIN).max(RICE_REACH_MAX);
+const riceImpactField = z.number().int().min(RICE_IMPACT_MIN).max(RICE_IMPACT_MAX);
+const riceConfidenceField = z.number().int().min(RICE_CONFIDENCE_MIN).max(RICE_CONFIDENCE_MAX);
+const riceEffortField = z.number().int().min(RICE_EFFORT_MIN).max(RICE_EFFORT_MAX);
 
 export const roadmapListQuerySchema = z.object({
   status: z
@@ -9,6 +24,7 @@ export const roadmapListQuerySchema = z.object({
   search: z.string().trim().min(1).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(50),
+  managedProductId: z.coerce.number().int().positive().optional(),
 }).strict();
 
 export const createRoadmapSchema = z.object({
@@ -23,6 +39,10 @@ export const createRoadmapSchema = z.object({
   epicTicketId: z.number().int().positive().optional(),
   targetQuarter: z.string().trim().max(20).optional(),
   sortOrder: z.number().int().default(0),
+  reach: riceReachField.optional(),
+  impact: riceImpactField.optional(),
+  confidence: riceConfidenceField.optional(),
+  effort: riceEffortField.optional(),
 }).strict();
 
 export const updateRoadmapSchema = z.object({
@@ -37,6 +57,10 @@ export const updateRoadmapSchema = z.object({
   epicTicketId: z.number().int().positive().nullable().optional(),
   targetQuarter: z.string().trim().max(20).nullable().optional(),
   sortOrder: z.number().int().optional(),
+  reach: riceReachField.nullable().optional(),
+  impact: riceImpactField.nullable().optional(),
+  confidence: riceConfidenceField.nullable().optional(),
+  effort: riceEffortField.nullable().optional(),
 }).strict();
 
 export const feedbackListQuerySchema = z.object({
@@ -62,6 +86,7 @@ export const createFeedbackSchema = z.object({
   category: z.string().trim().max(100).optional(),
   submittedByName: z.string().trim().max(120).optional(),
   submittedByEmail: z.string().trim().email().optional(),
+  crmOrganizationId: z.number().int().positive().optional(),
   linkedRoadmapItemId: z.number().int().positive().optional(),
 }).strict();
 
@@ -72,6 +97,7 @@ export const updateFeedbackSchema = z.object({
     .enum(["open", "planned", "in_progress", "completed", "declined"])
     .optional(),
   category: z.string().trim().max(100).nullable().optional(),
+  crmOrganizationId: z.number().int().positive().nullable().optional(),
   linkedRoadmapItemId: z.number().int().positive().nullable().optional(),
 }).strict();
 

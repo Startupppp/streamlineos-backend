@@ -130,3 +130,91 @@ describe("WorkflowService — project membership gate (BOLA fix)", () => {
     await expect(svc.listTransitions(u, 1)).resolves.toBeDefined();
   });
 });
+
+describe("WorkflowService — list endpoints respect the 100-row hard cap", () => {
+  const ORG = "org-cap";
+  const audit = { log: jest.fn() } as never;
+  const access = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  } as unknown as AccessService;
+  const u = makeU(ORG, true);
+
+  it("listTransitions passes 100 as the limit (not 500)", async () => {
+    let capturedLimit: number | undefined;
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ORG }) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockImplementation((n: number) => {
+              capturedLimit = n;
+              return Promise.resolve([]);
+            }),
+          }),
+        }),
+      }),
+    } as unknown as Db;
+    const svc = new WorkflowService(db, access, audit);
+    await svc.listTransitions(u, 1);
+    expect(capturedLimit).toBe(100);
+  });
+
+  it("getAllowedTransitions passes 100 as the limit (not 500)", async () => {
+    let capturedLimit: number | undefined;
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ORG }) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockImplementation((n: number) => {
+              capturedLimit = n;
+              return Promise.resolve([]);
+            }),
+          }),
+        }),
+      }),
+    } as unknown as Db;
+    const svc = new WorkflowService(db, access, audit);
+    await svc.getAllowedTransitions(u, 1, 5);
+    expect(capturedLimit).toBe(100);
+  });
+});
+
+describe("WorkflowService — wrong-project or cross-tenant statusId returns 404 not 400", () => {
+  const ORG = "org-404-test";
+  const audit = { log: jest.fn() } as never;
+  const access = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  } as unknown as AccessService;
+  const u = makeU(ORG, true);
+
+  it("createTransition throws NotFoundException (not BadRequestException) when toStatusId is not in the project", async () => {
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ORG, managerMembershipId: null }) },
+        projectStatuses: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+    } as unknown as Db;
+    const svc = new WorkflowService(db, access, audit);
+    await expect(
+      svc.createTransition(u, 1, { toStatusId: 99 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("updateWipLimit throws NotFoundException (not BadRequestException) when statusId is not in the project", async () => {
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ORG, managerMembershipId: null }) },
+        projectStatuses: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+    } as unknown as Db;
+    const svc = new WorkflowService(db, access, audit);
+    await expect(
+      svc.updateWipLimit(u, 1, 99, { wipLimit: 5 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});

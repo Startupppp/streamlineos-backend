@@ -74,7 +74,7 @@ const TIMESHEETS = num("SEED_TIMESHEETS", 50000);
 const NEIGHBOUR_PROJECTS = num("SEED_NEIGHBOUR_PROJECTS", 4);
 const NEIGHBOUR_TICKETS = num("SEED_NEIGHBOUR_TICKETS", 4000);
 const CHUNK = num("SEED_CHUNK", 25000);
-const SPRINTS_PER_PROJECT = 5;
+const CYCLES_PER_PROJECT = 5;
 const LABELS_PER_PROJECT = 8;
 
 const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
@@ -183,7 +183,6 @@ async function reset(orgId) {
     where org_id = ${orgId} and key like ${KEY_PREFIX + "%"}`;
   if (!cnt.n) {
     log(`reset: no seeded projects found for ${orgId}, nothing to clear`);
-    await sql`delete from build.pm_workspaces where org_id = ${orgId} and slug = 'seed-load'`;
     return;
   }
   log(`reset: clearing ~${cnt.n} seeded projects for ${orgId}`);
@@ -229,7 +228,7 @@ async function reset(orgId) {
     where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
       and t.project_id = p.id`;
   await sql`
-    delete from build.sprints where org_id = ${orgId}
+    delete from build.cycles where org_id = ${orgId}
       and project_id in (select id from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"})`;
   await sql`
     delete from build.project_members where org_id = ${orgId}
@@ -238,24 +237,14 @@ async function reset(orgId) {
     delete from build.project_statuses where org_id = ${orgId}
       and project_id in (select id from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"})`;
   await sql`delete from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"}`;
-  await sql`delete from build.pm_workspaces where org_id = ${orgId} and slug = 'seed-load'`;
   await sql`delete from build.ticket_labels where org_id = ${orgId} and name like 'seed-label-%'`;
   log(`reset: cleared seeded build data for ${orgId}`);
 }
 
-async function ensureWorkspace(orgId) {
-  const id = `ws-seed-${orgId.slice(0, 8)}`;
+async function seedProjects(orgId, count, users) {
   await sql`
-    insert into build.pm_workspaces (pm_workspace_id, org_id, name, slug, is_default)
-    values (${id}, ${orgId}, 'Seed Load Workspace', 'seed-load', false)
-    on conflict do nothing`;
-  return id;
-}
-
-async function seedProjects(orgId, workspaceId, count, users) {
-  await sql`
-    insert into build.projects (org_id, pm_workspace_id, name, key, status, created_at, updated_at)
-    select ${orgId}, ${workspaceId},
+    insert into build.projects (org_id, name, key, status, created_at, updated_at)
+    select ${orgId},
            'Seed Project ' || g,
            ${KEY_PREFIX} || g,
            (array['ACTIVE','ACTIVE','ACTIVE','COMPLETED','ARCHIVED'])[1 + (g % 5)]::project_status,
@@ -277,12 +266,13 @@ async function seedProjects(orgId, workspaceId, count, users) {
       ('IN_REVIEW',2,'started'),('DONE',3,'completed')) s(name, ord, typ)`;
 
   await sql`
-    insert into build.sprints (org_id, project_id, name, start_date, end_date)
-    select ${orgId}, p.id, 'Sprint ' || s.n,
-           now() - ((s.n * 14) || ' days')::interval,
-           now() - (((s.n - 1) * 14) || ' days')::interval
+    insert into build.cycles (org_id, project_id, name, status, start_date, end_date, created_by)
+    select ${orgId}, p.id, 'Cycle ' || s.n, 'completed',
+           (now() - ((s.n * 14) || ' days')::interval)::date,
+           (now() - (((s.n - 1) * 14) || ' days')::interval)::date,
+           (select user_id from organization_members where org_id = ${orgId} order by id limit 1)
     from unnest(${sql.array(ids)}::int[]) p(id)
-    cross join generate_series(1, ${SPRINTS_PER_PROJECT}::int) s(n)`;
+    cross join generate_series(1, ${CYCLES_PER_PROJECT}::int) s(n)`;
 
   await sql`
     insert into build.project_members (project_id, membership_id, org_id)
@@ -353,11 +343,11 @@ async function seedTickets(orgId, projectIds, total, users) {
   });
 
   await sql`
-    update build.tickets t set sprint_id = s.id
+    update build.tickets t set cycle_id = c.id
     from (select id, project_id, row_number() over (partition by project_id order by id) rn
-          from build.sprints where org_id = ${orgId}) s
-    where t.org_id = ${orgId} and t.project_id = s.project_id
-      and (t.id % ${SPRINTS_PER_PROJECT}) = (s.rn % ${SPRINTS_PER_PROJECT})`;
+          from build.cycles where org_id = ${orgId}) c
+    where t.org_id = ${orgId} and t.project_id = c.project_id
+      and (t.id % ${CYCLES_PER_PROJECT}) = (c.rn % ${CYCLES_PER_PROJECT})`;
 
   const [range] = await sql`
     select min(id)::int lo, max(id)::int hi, count(*)::int n
@@ -484,7 +474,7 @@ async function vacuumAnalyze() {
   const tables = [
     "projects", "tickets", "ticket_comments", "ticket_activity_log", "ticket_assignees",
     "ticket_label_mappings", "ticket_labels", "work_item_relations", "sprints",
-    "project_members", "project_statuses", "timesheets", "pm_workspaces",
+    "project_members", "project_statuses", "timesheets",
     "users", "organization_members", "organization_people",
   ];
   const wanted = new Set(tables);
@@ -512,8 +502,7 @@ async function main() {
 
   const bigUsers = await resolveUsers(BIG_ORG);
   log(`big org ${BIG_ORG}: ${bigUsers.length} active members total`);
-  const bigWs = await ensureWorkspace(BIG_ORG);
-  const bigProjects = await seedProjects(BIG_ORG, bigWs, PROJECTS, bigUsers);
+  const bigProjects = await seedProjects(BIG_ORG, PROJECTS, bigUsers);
   const bigRange = await seedTickets(BIG_ORG, bigProjects, TICKETS, bigUsers);
   await seedTicketChildren(BIG_ORG, bigRange, bigUsers, bigProjects.length);
   await seedTimesheets(BIG_ORG, bigRange, bigUsers);
@@ -521,8 +510,7 @@ async function main() {
   const NEIGHBOUR_MEMBERS = Math.max(5, Math.floor(MEMBERS / 5));
   await provisionSyntheticMembers(NEIGHBOUR_ORG, NEIGHBOUR_MEMBERS);
   const nUsers = await resolveUsers(NEIGHBOUR_ORG);
-  const nWs = await ensureWorkspace(NEIGHBOUR_ORG);
-  const nProjects = await seedProjects(NEIGHBOUR_ORG, nWs, NEIGHBOUR_PROJECTS, nUsers);
+  const nProjects = await seedProjects(NEIGHBOUR_ORG, NEIGHBOUR_PROJECTS, nUsers);
   await seedTickets(NEIGHBOUR_ORG, nProjects, NEIGHBOUR_TICKETS, nUsers);
   log(`neighbour org ${NEIGHBOUR_ORG}: seeded for cross-tenant isolation probes`);
 

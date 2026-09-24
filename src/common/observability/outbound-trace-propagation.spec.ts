@@ -33,7 +33,6 @@ describe("product-module outbound calls propagate trace context", () => {
   const SCANNED_FILES = [
     "modules/hr/automations/hr-webhooks.service.ts",
     "modules/inventory/webhooks/webhook-emitter.service.ts",
-    "modules/automation/automation-webhook.service.ts",
     "modules/hr/automations/hr-automation-actions.service.ts",
     "modules/crm/automation-studio/crm-automation-runner.service.ts",
     "common/security/turnstile.service.ts",

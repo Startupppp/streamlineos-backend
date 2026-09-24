@@ -1,5 +1,5 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, lte, not, sql, sum } from "drizzle-orm";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { and, asc, count, desc, eq, gte, inArray, lte, not, or, sql, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -237,13 +237,23 @@ export class EssService {
 
     const profile = await this.db.query.employeeSalaryProfiles.findFirst({
       where: and(
-        eq(employeeSalaryProfiles.userMembershipId, membershipId),
         eq(employeeSalaryProfiles.orgId, orgId),
         eq(employeeSalaryProfiles.status, "ACTIVE"),
+        or(
+          eq(employeeSalaryProfiles.userMembershipId, membershipId),
+          eq(employeeSalaryProfiles.userId, userId),
+        ),
       ),
       orderBy: (fields, { desc: d }) => [d(fields.effectiveFrom)],
     });
-    if (!profile) throw new NotFoundException("No active salary profile found");
+    if (!profile) {
+      return {
+        setupRequired: true as const,
+        profile: null,
+        components: [],
+        message: "Your salary structure has not been configured yet. Ask your HR or payroll administrator to add a salary profile.",
+      };
+    }
 
     const components = await this.db
       .select({
@@ -259,6 +269,7 @@ export class EssService {
       .limit(500);
 
     return {
+      setupRequired: false as const,
       profile: {
         annualCtc: profile.annualCtc,
         workerType: profile.workerType,

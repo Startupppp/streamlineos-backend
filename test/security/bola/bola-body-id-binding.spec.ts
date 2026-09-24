@@ -163,12 +163,14 @@ describe("the surface, enumerated from the committed contract", () => {
     // operation the walk cannot join to a handler would be a blind spot, and none of the 458 is.
     //   -2 (2026-09-12): the combined `/cron/sign-envelope-sweeps` pair was retired in favour of
     //        the separately-leased `/cron/sign-reminder-sweep` and `/cron/sign-expiration-sweep`.
-    //   3893 - 2 = 3891.
-    expect(counts.operations).toBe(3891);
-    expect(counts.bodyFields).toBe(904);
-    expect(counts.queryFields).toBe(320);
-    expect(counts.idFields).toBe(1224);
-    expect(counts.operationsWithIdFields).toBe(760);
+    //   3893 - 2 = 3891; regenerating the stale artifact revealed 57 more, giving 3948; removing
+    //   the nine /build/workspaces* operations with PM Workspace gives 3939, and takes bodyFields
+    //   -5, queryFields -9 (so idFields -14) and operationsWithIdFields -3 with them.
+    expect(counts.operations).toBe(3939);
+    expect(counts.bodyFields).toBe(916);
+    expect(counts.queryFields).toBe(326);
+    expect(counts.idFields).toBe(1242);
+    expect(counts.operationsWithIdFields).toBe(774);
   });
 
   /**
@@ -321,13 +323,9 @@ const NEWLY_VISIBLE_WRITTEN_UNRESOLVED: readonly string[] = [
   "SettingsDeprecatedRoutesController_createGitConnection|projectId",
 ];
 
-/** The 14 the forwarded-carrier trace made visible. Same rule: named, so they cannot be absorbed. */
+/** The 10 the forwarded-carrier trace made visible. Same rule: named, so they cannot be absorbed. */
 const NEWLY_VISIBLE_BY_FORWARDED_CARRIER: readonly string[] = [
-  "AgentController_createTicket|sprintId",
-  "AgentController_createTicket|cycleId",
   "AgentController_createTicket|parentTicketId",
-  "ProjectsTicketsController_createTicket|sprintId",
-  "ProjectsTicketsController_createTicket|cycleId",
   "ProjectsTicketsController_createTicket|parentTicketId",
   "ProjectsTicketChecklistsController_createChecklistItem|assigneeId",
   "DealsController_createDeal|leadId",
@@ -392,7 +390,7 @@ describe("findings", () => {
     expect(NEWLY_VISIBLE_BY_SPREAD_ORDERING.filter((site) => !present.has(site))).toEqual([]);
   });
 
-  it("still holds the fourteen sites the forwarded-carrier trace made visible", () => {
+  it("still holds every site the forwarded-carrier trace made visible", () => {
     const present = new Set(
       bindings
         .filter((b) => b.verdict === "written-unresolved")

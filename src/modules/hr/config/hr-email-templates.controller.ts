@@ -28,6 +28,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import {
   emailTemplateRowSchema,
   emailTemplateAiSchema,
@@ -83,6 +84,7 @@ export class HrEmailTemplatesController {
   }
 
   @Post("generate-ai")
+  @NoTenantTransaction()
   @ResponseSchema(emailTemplateAiSchema)
   @HttpCode(200)
   @Validate({ body: generateEmailTemplateAiSchema })

@@ -32,6 +32,7 @@ import {
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import {
   findActorMembershipId,
+  invitationTransition,
   openAdminInvitationFilter,
   recordDeliveryFailure,
   requireActiveOrg,
@@ -70,12 +71,7 @@ export class InvitationLifecycleService {
     const org = await requireActiveOrg(this.db, orgId);
 
     const invitation = await this.db.query.invitations.findFirst({
-      where: and(
-        eq(invitations.id, invitationId),
-        eq(invitations.orgId, orgId),
-        eq(invitations.status, "PENDING"),
-        isNull(invitations.acceptedAt),
-      ),
+      where: openAdminInvitationFilter(invitationId, orgId),
     });
     if (!invitation)
       throw new NotFoundException("Invitation not found or already accepted");
@@ -99,14 +95,7 @@ export class InvitationLifecycleService {
             expiresAt: invitations.expiresAt,
           })
           .from(invitations)
-          .where(
-            and(
-              eq(invitations.id, invitationId),
-              eq(invitations.orgId, orgId),
-              eq(invitations.status, "PENDING"),
-              isNull(invitations.acceptedAt),
-            ),
-          )
+          .where(openAdminInvitationFilter(invitationId, orgId))
           .for("update")
           .limit(1);
 
@@ -299,16 +288,14 @@ export class InvitationLifecycleService {
     await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const updated = await tx
-          .update(invitations)
-          .set({
-            status: "REVOKED",
-            revokedAt: new Date(),
-            revokedByMembershipId: actorMembership?.id ?? null,
-          })
-          .where(openAdminInvitationFilter(invitationId, orgId))
-          .returning({ id: invitations.id });
-        if (updated.length === 0)
+        const revoked = await invitationTransition(tx, {
+          invitationId,
+          orgId,
+          from: "PENDING",
+          to: "REVOKED",
+          patch: { revokedAt: new Date(), revokedByMembershipId: actorMembership?.id ?? null },
+        });
+        if (!revoked)
           throw new NotFoundException("Invitation not found or already accepted");
 
         await tx.insert(invitationEvents).values({

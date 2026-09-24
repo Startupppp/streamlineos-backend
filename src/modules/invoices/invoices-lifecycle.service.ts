@@ -1,11 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, lte, sql } from "drizzle-orm";
-import { invoices, payments, organizationMembers } from "../../db/schema";
+import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { invoices, invoiceItems, payments, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { InvoicesPostingService } from "./invoices-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import { TimesheetInvoicingService } from "../timesheets/core/timesheet-invoicing.service";
 import { compareDecimals, subtractDecimals, toDecimal } from "../accounting/core/money.util";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
@@ -27,6 +28,7 @@ export class InvoicesLifecycleService {
     private readonly posting: InvoicesPostingService,
     private readonly dispatch: NotificationDispatchService,
     private readonly bus: CrmAutomationBusService,
+    private readonly timesheetInvoicing: TimesheetInvoicingService,
   ) {}
 
   async recomputeInvoiceBalance(invoiceId: number, tx: DbOrTx): Promise<void> {
@@ -80,8 +82,21 @@ export class InvoicesLifecycleService {
    * The retired `fin_payment_allocations` guard is gone with the table: an
    * allocation only ever existed alongside a payment row, so the payment check
    * below already covers every case it did.
+   *
+   * It also un-sticks the timesheet entries this invoice billed. Both
+   * `createFromTimesheets` (straight to `INVOICED`, even for a `DRAFT`
+   * invoice) and a manually linked `createInvoice` item leave the entry
+   * unable to be voided or re-billed once nothing reverses it — that is the
+   * stranded-`INVOICE_DRAFTED`/`INVOICED` bug. The status flip and the
+   * release happen in one transaction: a void that updated the invoice but
+   * left its entries claimed would recreate the same stranding it exists to
+   * fix.
    */
-  async voidInvoice(orgId: string, userId: string, invoiceId: number): Promise<{ success: true }> {
+  async voidInvoice(
+    orgId: string,
+    userId: string,
+    invoiceId: number,
+  ): Promise<{ success: true; releasedTimesheetEntryIds: number[] }> {
     const invoice = await this.db.query.invoices.findFirst({
       where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
     });
@@ -100,6 +115,8 @@ export class InvoicesLifecycleService {
 
     // No-op when the invoice was never posted (a draft, or an organisation
     // without accounting enabled) — the kernel finds the original by source.
+    // Runs before the transaction below: if the reversal fails, nothing else
+    // must change either.
     await this.posting.reverseInvoiceIssued(
       orgId,
       userId,
@@ -107,12 +124,39 @@ export class InvoicesLifecycleService {
       new Date().toISOString().slice(0, 10),
     );
 
-    await this.db
-      .update(invoices)
-      .set({ status: "VOIDED", updatedAt: new Date() })
-      .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
+    const releasedTimesheetEntryIds = await this.db.transaction(async (tx) => {
+      const linkedItems = await tx
+        .select({ timesheetEntryId: invoiceItems.timesheetEntryId })
+        .from(invoiceItems)
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, invoiceId),
+            isNotNull(invoiceItems.timesheetEntryId),
+          ),
+        );
+      const entryIds = [
+        ...new Set(
+          linkedItems
+            .map((row) => row.timesheetEntryId)
+            .filter((id): id is number => id !== null),
+        ),
+      ];
 
-    return { success: true };
+      const released = await this.timesheetInvoicing.releaseEntriesToUninvoiced(
+        tx,
+        orgId,
+        entryIds,
+      );
+
+      await tx
+        .update(invoices)
+        .set({ status: "VOIDED", updatedAt: new Date() })
+        .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
+
+      return released;
+    });
+
+    return { success: true, releasedTimesheetEntryIds };
   }
 
   async markOverdueInvoices(orgId?: string): Promise<{ updated: number }> {

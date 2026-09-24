@@ -86,7 +86,7 @@ export function buildServices(db: Db) {
   const parties = new PartiesService(db, books);
   const accounts = new AccountsService(db, audit);
   const fx = new FxService(db, audit);
-  const compliance = new ComplianceService(db);
+  const compliance = new ComplianceService(db, books);
   const periods = new PeriodsService(db, books, packs, audit);
   const bankAccounts = new BankAccountsService(db, books);
   const statements = new StatementImportService(db, bankAccounts);

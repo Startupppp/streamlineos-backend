@@ -47,8 +47,8 @@ export const accountingMappingUpdateSchema = z.object({
 export const essBankSchema = z
   .object({
     accountNumber: z.string().min(8).max(34),
-    bankName: z.string().min(1).max(100),
-    branch: z.string().min(1).max(100),
+    bankName: z.string().max(100).optional(),
+    branch: z.string().max(100).optional(),
     ifsc: z.string().max(50).optional(),
     code: z.string().max(50).optional(),
     accountHolder: z.string().min(1).max(100),

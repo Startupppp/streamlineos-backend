@@ -1,7 +1,7 @@
 jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }));
 jest.mock("../../build/core/projects-tickets.service");
 
-import { ConflictException, ForbiddenException, HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { FeedbucketAiService } from "../feedbucket-ai.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -10,6 +10,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import type { AccessService } from "../../access/access.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
 import type {
   AiInvokeWithUsageResult,
@@ -111,7 +112,15 @@ function makeUser(orgId = ORG_A) {
   };
 }
 
-function makeDb(submission: unknown, updateResult?: unknown): Db {
+function makeDb(submission: unknown, updateResult?: unknown, projectFound = true): Db {
+  const sub = submission as { linkedTicketId?: number | null } | undefined;
+  const lockRows = sub ? [{ linkedTicketId: sub.linkedTicketId ?? null }] : [];
+  const selectChain = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    for: jest.fn().mockResolvedValue(lockRows),
+  };
   const updateChain = {
     set: jest.fn().mockReturnThis(),
     where: jest.fn().mockResolvedValue(updateResult ?? []),
@@ -121,7 +130,11 @@ function makeDb(submission: unknown, updateResult?: unknown): Db {
       feedbucketSubmissions: {
         findFirst: jest.fn().mockResolvedValue(submission),
       },
+      projects: {
+        findFirst: jest.fn().mockResolvedValue(projectFound ? { id: 99 } : undefined),
+      },
     },
+    select: jest.fn().mockReturnValue(selectChain),
     update: jest.fn().mockReturnValue(updateChain),
   } as unknown as Db;
 }
@@ -157,11 +170,16 @@ function makePlanLimits(): jest.Mocked<PlanLimitsService> {
 function buildService(opts: {
   submission?: unknown;
   notFound?: boolean;
+  projectFound?: boolean;
   gateway?: ReturnType<typeof makeGateway>;
   rateLimit?: jest.Mocked<RateLimitService>;
   tickets?: jest.Mocked<ProjectsTicketsService>;
 }) {
-  const db = makeDb(opts.notFound ? undefined : (opts.submission ?? makeSubmission()));
+  const db = makeDb(
+    opts.notFound ? undefined : (opts.submission ?? makeSubmission()),
+    undefined,
+    opts.projectFound ?? true,
+  );
   const gateway = opts.gateway ?? makeGateway();
   const audit = makeAudit();
   const rateLimiter = opts.rateLimit ?? makeRateLimit();
@@ -174,8 +192,15 @@ function buildService(opts: {
     tickets,
     makePlanLimits(),
     makeStorage(),
+    makeAccess(),
   );
   return { service, db, gateway, audit, rateLimiter, tickets };
+}
+
+function makeAccess() {
+  return {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
+  } as unknown as AccessService;
 }
 
 function makeStorage() {
@@ -212,6 +237,15 @@ describe("FeedbucketAiService", () => {
       expect(gateway.invokeStructuredWithImageWithUsage).toHaveBeenCalledWith(
         expect.objectContaining({ charge: true }),
       );
+    });
+
+    it("bounds the provider call below the standard tier's 60s, because the request transaction is held across it", async () => {
+      const { service, gateway } = buildService({});
+      await service.analyze(makeUser(), SUB_ID);
+
+      const [opts] = gateway.invokeStructuredWithImageWithUsage.mock.calls[0]!;
+      expect(opts.signal).toBeInstanceOf(AbortSignal);
+      expect(opts.signal?.aborted).toBe(false);
     });
 
     it("throws 402 when gateway returns quota_exceeded", async () => {
@@ -290,12 +324,10 @@ describe("FeedbucketAiService", () => {
       await expect(service.analyze(makeUser(ORG_B), SUB_ID)).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it("throws ForbiddenException when project belongs to a different org", async () => {
-      const foreignProjectWidget = { ...baseWidget, project: { id: 99, orgId: ORG_B } };
-      const submission = makeSubmission({ widget: foreignProjectWidget });
-      const { service } = buildService({ submission });
+    it("throws NotFoundException when the resolved project does not belong to this org (cross-tenant returns 404, never 403)", async () => {
+      const { service } = buildService({ projectFound: false });
 
-      await expect(service.analyze(makeUser(ORG_A), SUB_ID)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.analyze(makeUser(ORG_A), SUB_ID)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -341,6 +373,7 @@ describe("FeedbucketAiService", () => {
         makeTickets(),
         makePlanLimits(),
         makeStorage(),
+        makeAccess(),
       );
 
       await service.analyzePublic({
@@ -376,6 +409,7 @@ describe("FeedbucketAiService", () => {
         makeTickets(),
         makePlanLimits(),
         makeStorage(),
+        makeAccess(),
       );
 
       await expect(
@@ -414,11 +448,26 @@ describe("FeedbucketAiService", () => {
       expect(result).toEqual({ ticketId: 88, ticketType: "BUG" });
     });
 
-    it("throws ConflictException when submission is already linked to a ticket", async () => {
-      const submission = makeSubmission({ linkedTicketId: 42 });
-      const { service } = buildService({ submission });
+    it("returns the existing linked ticket without calling createFromFeedback, so a client retry cannot create a duplicate", async () => {
+      const submission = makeSubmission({ linkedTicketId: 42, aiAnalysis: baseAnalysis, aiProcessedAt: new Date() });
+      const tickets = makeTickets();
+      const { service } = buildService({ submission, tickets });
 
-      await expect(service.createTicketFromAnalysis(makeUser(), SUB_ID)).rejects.toBeInstanceOf(ConflictException);
+      const result = await service.createTicketFromAnalysis(makeUser(), SUB_ID);
+
+      expect(tickets.createFromFeedback).not.toHaveBeenCalled();
+      expect(result).toEqual({ ticketId: 42, ticketType: "BUG" });
+    });
+
+    it("returns the existing linked ticket without calling createFromFeedback when aiAnalysis is absent, deriving BUG as the default type", async () => {
+      const submission = makeSubmission({ linkedTicketId: 99, aiAnalysis: null });
+      const tickets = makeTickets();
+      const { service } = buildService({ submission, tickets });
+
+      const result = await service.createTicketFromAnalysis(makeUser(), SUB_ID);
+
+      expect(tickets.createFromFeedback).not.toHaveBeenCalled();
+      expect(result).toEqual({ ticketId: 99, ticketType: "BUG" });
     });
   });
 });

@@ -2,41 +2,19 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import postgres from "postgres";
-import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
+import { assertProductionSafeTarget, runTargetGuardSelfTest } from "./lib/production-host-guard.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const MIGRATIONS = path.join(ROOT, "migrations");
 const JOURNAL = path.join(MIGRATIONS, "meta", "_journal.json");
 
 
-export function assertMigrationTarget(url, allowProduction) {
-  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
-  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
-  if (!matched) return { allowed: true, reason: "not a known production host" };
-  if (allowProduction === "1") return { allowed: true, reason: `production host '${matched}' — ALLOW_PRODUCTION_MIGRATION=1 acknowledged` };
-  return { allowed: false, reason: `DATABASE_URL names production host '${matched}'; set ALLOW_PRODUCTION_MIGRATION=1 to proceed deliberately` };
-}
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const tagArg = args.find((a) => a.startsWith("--tag="))?.slice("--tag=".length);
 
-if (args.includes("--self-test")) {
-  const cases = [
-    [assertMigrationTarget("postgresql://u:p@127.0.0.1:5432/app", undefined), true],
-    [assertMigrationTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", undefined), false],
-    [assertMigrationTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", "1"), true],
-    [assertMigrationTarget("postgresql://u:p@db.neon.tech/neondb", undefined), false],
-    [assertMigrationTarget("postgresql://u:p@db.neon.tech/neondb", "1"), true],
-    [assertMigrationTarget(undefined, undefined), false],
-  ];
-  let failed = 0;
-  for (const [verdict, expected] of cases)
-    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got '${verdict.reason}'`); failed++; }
-  if (failed) process.exit(1);
-  console.log("PASS: run-pending-migrations target guard, 6 cases.");
-  process.exit(0);
-}
+if (args.includes("--self-test")) runTargetGuardSelfTest("run-pending-migrations");
 
 const url = process.env.DATABASE_URL ?? process.env.DB;
 if (!url) {
@@ -44,7 +22,7 @@ if (!url) {
   process.exit(1);
 }
 
-const _migGuard = assertMigrationTarget(url, process.env.ALLOW_PRODUCTION_MIGRATION);
+const _migGuard = assertProductionSafeTarget(url, process.env.ALLOW_PRODUCTION_MIGRATION);
 if (!_migGuard.allowed) {
   console.error(`run-pending-migrations BLOCKED — ${_migGuard.reason}`);
   process.exit(2);
@@ -63,7 +41,12 @@ function sslFor(connectionString) {
   return /[?&]sslmode=disable\b/.test(connectionString) ? false : "require";
 }
 
-const sql = postgres(url, { prepare: false, max: 1, ssl: sslFor(url), onnotice: () => {} });
+const { createScriptSql } = await import("./lib/script-sql-client.mjs");
+const sql = await createScriptSql({
+  url,
+  ssl: sslFor(url),
+  connection: { prepare: false, max: 1, ssl: sslFor(url), onnotice: () => {} },
+});
 
 /**
  * The same search path `db-bootstrap.mjs`, `replay-chain-cold.mjs` and

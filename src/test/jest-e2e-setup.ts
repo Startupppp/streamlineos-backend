@@ -1,3 +1,7 @@
+import { assertE2eDatabaseApproved } from "./db-spec-guard";
+
+assertE2eDatabaseApproved();
+
 process.env.NODE_ENV = "test";
 
 for (const key of [

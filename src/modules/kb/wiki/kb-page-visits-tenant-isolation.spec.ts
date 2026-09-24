@@ -1,4 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 
@@ -11,9 +12,19 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
+const authMock = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+};
+
 describe("KbPageVisitsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
+
+  beforeEach(() => {
+    authMock.visiblePagePredicate.mockClear();
+    authMock.assertPageAccess.mockClear();
+  });
 
   function makeUser(orgId: string) {
     return { orgId, userId: "user-1", isOrgOwner: false } as never;
@@ -61,7 +72,7 @@ describe("KbPageVisitsService — cross-tenant isolation", () => {
 
   it("throws ForbiddenException when membership not found for org (cross-tenant deny)", async () => {
     const { db, wheres } = makeDb(null);
-    const svc = new KbPageVisitsService(db);
+    const svc = new KbPageVisitsService(db, authMock as never);
 
     await expect(svc.getRecent(makeUser(ATTACKER))).rejects.toThrow(ForbiddenException);
 
@@ -72,10 +83,22 @@ describe("KbPageVisitsService — cross-tenant isolation", () => {
 
   it("returns page list for owning org member (same-tenant control)", async () => {
     const { db } = makeDb({ id: 1 });
-    const svc = new KbPageVisitsService(db);
+    const svc = new KbPageVisitsService(db, authMock as never);
 
     const result = await svc.getRecent(makeUser(OWNER));
 
     expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("consults visiblePagePredicate with action 'view' so shared and space pages are not silently omitted from recent list", async () => {
+    const { db } = makeDb({ id: 1 });
+    const svc = new KbPageVisitsService(db, authMock as never);
+
+    await svc.getRecent(makeUser(OWNER));
+
+    expect(authMock.visiblePagePredicate).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: OWNER }),
+      "view",
+    );
   });
 });

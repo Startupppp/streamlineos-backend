@@ -1,7 +1,13 @@
 import { NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+const auth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+};
 
 describe("DELETE /kb/pages/:pageId/favorite — a delete that matched nothing is a 404", () => {
   function make(rows: Array<{ pageId: number }>) {
@@ -11,7 +17,7 @@ describe("DELETE /kb/pages/:pageId/favorite — a delete that matched nothing is
       query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 3 }) } },
       delete: jest.fn().mockReturnValue({ where }),
     } as unknown as Db;
-    return new KbPageVisitsService(db);
+    return new KbPageVisitsService(db, auth as never);
   }
   const user = { orgId: "org-attacker", userId: "u-1" } as CurrentUserContext;
 

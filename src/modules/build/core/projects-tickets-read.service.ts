@@ -217,8 +217,6 @@ export class ProjectsTicketsReadService {
       type,
       assigneeId,
       labelIds,
-      sprintId,
-      sprintIds,
       cycleId,
       moduleIds,
       epicId,
@@ -233,6 +231,8 @@ export class ProjectsTicketsReadService {
         data: [],
         pagination: { limit, nextCursor: null, hasMore: false },
       };
+
+    const allCycleIds: number[] = [...(cycleId ?? [])];
 
     const filterConditions: SQL<unknown>[] = [];
 
@@ -298,12 +298,8 @@ export class ProjectsTicketsReadService {
       );
     }
 
-    if (sprintId !== undefined)
-      filterConditions.push(eq(tickets.sprintId, sprintId));
-    if (sprintIds && sprintIds.length > 0)
-      filterConditions.push(inArray(tickets.sprintId, sprintIds));
-    if (cycleId && cycleId.length > 0)
-      filterConditions.push(inArray(tickets.cycleId, cycleId));
+    if (allCycleIds.length > 0)
+      filterConditions.push(inArray(tickets.cycleId, allCycleIds));
     if (moduleIds && moduleIds.length > 0)
       filterConditions.push(inArray(tickets.moduleId, moduleIds));
     if (epicId !== undefined) filterConditions.push(eq(tickets.epicId, epicId));

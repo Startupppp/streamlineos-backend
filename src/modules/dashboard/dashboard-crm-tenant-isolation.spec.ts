@@ -72,3 +72,57 @@ describe("DashboardCrmService — cross-tenant isolation", () => {
     expect(result).toBeDefined();
   });
 });
+
+describe("DashboardCrmService.getCrmPulse — cross-tenant isolation", () => {
+  const ATTACKER = "org-attacker";
+  const OWNER = "org-owner";
+
+  function makeOrgDb(): { db: Db; wheres: unknown[] } {
+    const wheres: unknown[] = [];
+    const db = {
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockImplementation(() => {
+          const where = jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return Promise.resolve([{ cnt: 0, total: "0" }]); });
+          const self: Record<string, jest.Mock> = { where };
+          self["innerJoin"] = jest.fn().mockImplementation(() => ({ where }));
+          self["leftJoin"] = jest.fn().mockImplementation(() => ({ where }));
+          return self;
+        }),
+      })),
+    } as unknown as Db;
+    return { db, wheres };
+  }
+
+  function passthroughAccess(): AccessService {
+    return {
+      getPermissionsVersion: jest.fn().mockResolvedValue(1),
+      moduleAvailability: jest.fn().mockResolvedValue({ available: true }),
+      holds: jest.fn().mockResolvedValue(true),
+    } as unknown as AccessService;
+  }
+
+  it("scopes getCrmPulse queries to the requesting org (tenant isolation)", async () => {
+    const { db, wheres } = makeOrgDb();
+    const cache = { cachedForOrg: jest.fn().mockImplementation((_orgId: unknown, _k: unknown, fn: () => unknown) => fn()) } as never;
+    const svc = new DashboardCrmService(db, cache, passthroughAccess());
+
+    await svc.getCrmPulse(ATTACKER);
+
+    expect(wheres.length).toBeGreaterThan(0);
+    expect(wheres.flatMap((w) => sqlValues(w))).toContain(ATTACKER);
+  });
+
+  it("does not leak OWNER data when queried as ATTACKER (cross-tenant control)", async () => {
+    const { db: dbA, wheres: wheresA } = makeOrgDb();
+    const { db: dbB, wheres: wheresB } = makeOrgDb();
+    const cache = { cachedForOrg: jest.fn().mockImplementation((_orgId: unknown, _k: unknown, fn: () => unknown) => fn()) } as never;
+
+    await new DashboardCrmService(dbA, cache, passthroughAccess()).getCrmPulse(ATTACKER);
+    await new DashboardCrmService(dbB, cache, passthroughAccess()).getCrmPulse(OWNER);
+
+    expect(wheresA.flatMap((w) => sqlValues(w))).toContain(ATTACKER);
+    expect(wheresA.flatMap((w) => sqlValues(w))).not.toContain(OWNER);
+    expect(wheresB.flatMap((w) => sqlValues(w))).toContain(OWNER);
+    expect(wheresB.flatMap((w) => sqlValues(w))).not.toContain(ATTACKER);
+  });
+});

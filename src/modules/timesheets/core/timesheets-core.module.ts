@@ -47,9 +47,15 @@ import { TimesheetRemindersSweepService } from "./reminders-sweep.service";
 import { TIMESHEET_ATTENDANCE_PORT } from "./attendance/attendance.port";
 import { SchemaAttendanceAdapter } from "./attendance/schema-attendance.adapter";
 import { AttendanceDraftService } from "./attendance/attendance-draft.service";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
+import { TimesheetApprovalRoutingService } from "./approval-routing.service";
+import { TimesheetApprovalEscalationSweepService } from "./approval-escalation-sweep.service";
+import { AttentionModule } from "../../attention/attention.module";
+import { TimesheetApprovalAdapter } from "./timesheet-approval.adapter";
+import { TimesheetInvoicingService } from "./timesheet-invoicing.service";
 
 @Module({
-  imports: [AiModule, AccountingKernelModule, NotificationsModule, OutboxModule, WebhooksModule],
+  imports: [AiModule, AccountingKernelModule, NotificationsModule, OutboxModule, WebhooksModule, EmploymentFactsModule, AttentionModule],
   controllers: [
     EntriesController,
     TimerController,
@@ -75,9 +81,10 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
     EntriesService,
     TimerService,
     PeriodsReadService,
+    TimesheetApprovalRoutingService,
+    TimesheetApprovalEscalationSweepService,
     PeriodsSubmitService,
     PeriodsService,
-    /** TS-11. The overdue/escalation queue, derived from grace days + reminderRules. */
     TimesheetOverdueService,
     ApprovalsService,
     ApprovalsBulkService,
@@ -93,27 +100,23 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
     TimesheetsAiService,
     TimesheetsBillingAiService,
     TimesheetRemindersSweepService,
-    /**
-     * TS-06. Registers itself for every timesheet lifecycle event type at boot.
-     * Without it the publisher has no handler for the events TS-05 emits and
-     * dead-letters all of them.
-     */
     TimesheetLifecycleConsumer,
-    /** TS-09. Reads the port above and writes draft entries; see the service. */
     AttendanceDraftService,
-    /**
-     * Attendance, through a port. Swapping this binding is how a deployment
-     * says attendance is not a source of truth for timesheets, or moves to an
-     * HR-published service when one exists — nothing else in the module changes.
-     */
     { provide: TIMESHEET_ATTENDANCE_PORT, useClass: SchemaAttendanceAdapter },
+    TimesheetApprovalAdapter,
+    TimesheetInvoicingService,
   ],
   exports: [
+    TimesheetInvoicingService,
     SettingsService,
+    ApprovalsService,
+    PeriodsReadService,
     TimesheetsAuditService,
     ExceptionsDetectorService,
     EntriesPeriodService,
     TimesheetRemindersSweepService,
+    TimesheetApprovalRoutingService,
+    TimesheetApprovalEscalationSweepService,
     TIMESHEET_ATTENDANCE_PORT,
   ],
 })

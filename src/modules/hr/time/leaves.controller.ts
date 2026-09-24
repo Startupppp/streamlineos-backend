@@ -30,6 +30,7 @@ import {
   createLeaveSchema,
   leaveAnalyticsQuerySchema,
   listLeaveRequestsSchema,
+  listTeamLeaveRequestsSchema,
   rejectLeaveSchema,
   updateLeaveSchema,
   type ApproveLeaveInput,
@@ -37,6 +38,7 @@ import {
   type CreateLeaveInput,
   type LeaveAnalyticsQuery,
   type ListLeaveRequestsQuery,
+  type ListTeamLeaveRequestsQuery,
   type RejectLeaveInput,
   type UpdateLeaveInput,
   createLeaveTypeSchema,
@@ -111,8 +113,12 @@ export class LeavesController {
   @Get("team")
   @ResponseSchema(leavesTeamResponseSchema)
   @RequirePermission("hr:leaves:view")
-  async team(@CurrentUser() currentUser: CurrentUserContext) {
-    return await this.leaves.team(currentUser);
+  @Validate({ query: listTeamLeaveRequestsSchema })
+  team(
+    @Query() query: ListTeamLeaveRequestsQuery,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.leaves.team(currentUser, query);
   }
 
   @Get("this-week")

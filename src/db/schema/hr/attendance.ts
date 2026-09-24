@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { wfhRequestStatusEnum, ticketPriorityEnum, ticketStatusEnum, deviceStatusEnum } from "../common/enums";
+import { wfhRequestStatusEnum, ticketPriorityEnum, ticketStatusEnum, deviceStatusEnum, helpdeskQueueEnum } from "../common/enums";
 import { organizationMembers, organizations, users } from "../common/auth";
 import { workers } from "../directory/workers";
 import { workerEngagements } from "../directory/worker-engagements";
@@ -117,12 +117,17 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
   title: text("title").notNull(),
   description: text("description"),
   category: text("category"),
+  queue: helpdeskQueueEnum("queue").default("HR").notNull(),
   priority: ticketPriorityEnum("priority").default("MEDIUM").notNull(),
   status: ticketStatusEnum("status").default("TODO").notNull(),
   assigneeId: text("assignee_id"),
   assigneeMembershipId: integer("assignee_membership_id"),
   isConfidential: boolean("is_confidential").default(false).notNull(),
+  firstResponseDueAt: timestamp("first_response_due_at"),
+  firstRespondedAt: timestamp("first_responded_at"),
   slaDueAt: timestamp("sla_due_at"),
+  escalatedAt: timestamp("escalated_at"),
+  escalationLevel: integer("escalation_level").default(0).notNull(),
   resolvedAt: timestamp("resolved_at"),
   resolution: text("resolution"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -131,6 +136,10 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
   unique("uniq_helpdesk_tickets_org_id").on(table.orgId, table.id),
   index("idx_helpdesk_tickets_org_created").on(table.orgId, table.createdAt.desc(), table.id.desc()),
   index("idx_helpdesk_tickets_org_status_created").on(table.orgId, table.status, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_queue_status_created").on(table.orgId, table.queue, table.status, table.createdAt.desc(), table.id.desc()),
+  index("idx_helpdesk_tickets_org_escalation_due")
+    .on(table.orgId, table.slaDueAt)
+    .where(sql`${table.escalationLevel} = 0 AND ${table.status} <> 'DONE'`),
   index("idx_helpdesk_tickets_org_user_created").on(table.orgId, table.userId, table.createdAt.desc(), table.id.desc()),
   index("idx_helpdesk_tickets_org_assignee_created").on(table.orgId, table.assigneeId, table.createdAt.desc(), table.id.desc()),
   index("idx_helpdesk_tickets_org_assignee_membership").on(table.orgId, table.assigneeMembershipId),
@@ -145,13 +154,41 @@ export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   category: text("category").notNull(),
-  assigneeUserId: text("assignee_user_id").notNull(),
+  queue: helpdeskQueueEnum("queue"),
+  assigneeUserId: text("assignee_user_id"),
   assigneeMembershipId: integer("assignee_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hr_helpdesk_routing_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_helpdesk_routing_org_category").on(table.orgId, table.category),
+  check("chk_hr_helpdesk_routing_target", sql`${table.queue} IS NOT NULL OR ${table.assigneeUserId} IS NOT NULL`),
+  foreignKey({
+    columns: [table.orgId, table.assigneeMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_hr_helpdesk_routing_assignee_actor",
+  }).onDelete("set null"),
+]);
+
+export const helpdeskQueues = pgTable("helpdesk_queues", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  queue: helpdeskQueueEnum("queue").notNull(),
+  firstResponseHours: integer("first_response_hours").notNull(),
+  resolutionHours: integer("resolution_hours").notNull(),
+  escalationUserId: text("escalation_user_id"),
+  escalationMembershipId: integer("escalation_membership_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  unique("uniq_helpdesk_queues_org_id").on(table.orgId, table.id),
+  uniqueIndex("uniq_helpdesk_queues_org_queue").on(table.orgId, table.queue),
+  check("chk_helpdesk_queues_hours", sql`${table.firstResponseHours} > 0 AND ${table.resolutionHours} > 0`),
+  foreignKey({
+    columns: [table.orgId, table.escalationMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_helpdesk_queues_escalation_actor",
+  }).onDelete("set null"),
 ]);
 
 export const hrHelpdeskComments = pgTable("hr_helpdesk_comments", {
@@ -215,4 +252,8 @@ export const hrHelpdeskCommentsRelations = relations(hrHelpdeskComments, ({ one 
 
 export const hrHelpdeskRoutingRelations = relations(hrHelpdeskRouting, ({ one }) => ({
   assignee: one(users, { fields: [hrHelpdeskRouting.assigneeUserId], references: [users.id] }),
+}));
+
+export const helpdeskQueuesRelations = relations(helpdeskQueues, ({ one }) => ({
+  escalationUser: one(users, { fields: [helpdeskQueues.escalationUserId], references: [users.id] }),
 }));

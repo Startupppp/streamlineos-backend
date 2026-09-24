@@ -202,7 +202,7 @@ export const aiUsageResponseSchema = z.object({
 export const gitConnectionItemSchema = z.object({
   id: z.number().int(),
   provider: z.string(),
-  projectId: z.string().nullable(),
+  projectId: z.number().int().nullable(),
   repoUrl: z.string(),
   repoName: z.string().nullable(),
   isActive: z.boolean(),
@@ -219,7 +219,7 @@ export const gitConnectionListResponseSchema = z.array(gitConnectionItemSchema);
 export const gitConnectionCreateResponseSchema = z.object({
   id: z.number().int(),
   provider: z.string(),
-  projectId: z.string().nullable(),
+  projectId: z.number().int().nullable(),
   repoUrl: z.string(),
   repoName: z.string().nullable(),
   isActive: z.boolean(),
@@ -233,7 +233,7 @@ export const gitConnectionCreateResponseSchema = z.object({
 export const gitConnectionUpdateResponseSchema = z.object({
   id: z.number().int(),
   provider: z.string(),
-  projectId: z.string().nullable(),
+  projectId: z.number().int().nullable(),
   repoUrl: z.string(),
   repoName: z.string().nullable(),
   isActive: z.boolean(),

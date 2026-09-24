@@ -13,7 +13,6 @@ import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
@@ -31,7 +30,6 @@ export class TeamsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
   async loadTeam(orgId: string, teamId: number): Promise<TeamRow> {
@@ -50,7 +48,11 @@ export class TeamsService {
     return row;
   }
 
-  async listTeams(orgId: string, query: ListTeamsQuery) {
+  async listTeams(
+    orgId: string,
+    query: ListTeamsQuery,
+    _callerMembershipId: number | null,
+  ) {
     const { cursor, pageSize } = query;
     const pos = decodeCursor(cursor);
     const conds = [
@@ -74,6 +76,7 @@ export class TeamsService {
         memberCount: sql<number>`(
           SELECT CAST(COUNT(*) AS INT) FROM ${projectTeamMembers}
           WHERE ${projectTeamMembers.teamId} = ${projectTeams.id}
+          AND ${projectTeamMembers.orgId} = ${projectTeams.orgId}
         )`,
       })
       .from(projectTeams)
@@ -119,14 +122,17 @@ export class TeamsService {
     return { ...team, members };
   }
 
-  async createTeam(orgId: string, userId: string, input: CreateTeamInput) {
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+  async createTeam(
+    orgId: string,
+    userId: string,
+    _callerMembershipId: number | null,
+    input: CreateTeamInput,
+  ) {
     try {
       const [row] = await this.db
         .insert(projectTeams)
         .values({
           orgId,
-          pmWorkspaceId,
           name: input.name,
           key: input.key,
           icon: input.icon ?? null,

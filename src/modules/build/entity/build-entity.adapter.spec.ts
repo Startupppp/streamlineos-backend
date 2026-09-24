@@ -86,13 +86,13 @@ function makeAdapter(keys: string[], rows: Record<string, unknown>[] = []) {
 }
 
 describe("BuildEntityAdapter", () => {
-  it("claims the Build reference types, including the legacy ticket name", () => {
+  it("claims the Build reference types, with cycle replacing the retired sprint card and the legacy ticket name kept", () => {
     const { adapter } = makeAdapter([]);
     expect([...adapter.types].sort()).toEqual([
+      "cycle",
       "incident",
       "project",
       "release",
-      "sprint",
       "task",
       "ticket",
     ]);
@@ -106,7 +106,7 @@ describe("BuildEntityAdapter", () => {
 
     const allowed = makeAdapter(
       ["build:tickets:view"],
-      [{ id: 1, title: "T", status: "TODO", ticketNumber: 3, projectKey: "W" }],
+      [{ id: 1, title: "T", status: "TODO", ticketNumber: 3, projectId: 1, projectKey: "W" }],
     );
     const [result] = await allowed.adapter.resolve(ACTOR, [
       { type: "task", id: "1" },
@@ -120,7 +120,7 @@ describe("BuildEntityAdapter", () => {
         title: "T",
         subtitle: "W-3",
         status: "TODO",
-        href: "/build/tickets/1",
+        href: "/build/1/tickets/W-3",
       },
     });
   });
@@ -129,7 +129,7 @@ describe("BuildEntityAdapter", () => {
     const cases: ReadonlyArray<[string, string]> = [
       ["ticket", "build:tickets:view"],
       ["project", "build:view"],
-      ["sprint", "build:sprints:view"],
+      ["cycle", "build:sprints:view"],
       ["release", "build:view"],
       ["incident", "build:incidents:view"],
     ];
@@ -194,6 +194,7 @@ describe("BuildEntityAdapter", () => {
           title: "Login is broken",
           status: "IN_PROGRESS",
           ticketNumber: 42,
+          projectId: 1,
           projectKey: "WEB",
         },
       ],
@@ -211,7 +212,7 @@ describe("BuildEntityAdapter", () => {
         title: "Login is broken",
         subtitle: "WEB-42",
         status: "IN_PROGRESS",
-        href: "/build/tickets/12",
+        href: "/build/1/tickets/WEB-42",
       },
     });
   });

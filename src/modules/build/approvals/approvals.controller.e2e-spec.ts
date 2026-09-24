@@ -28,6 +28,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/build/approvals/inbox"],
+    ["get", "/build/approvals/inbox/count"],
     ["get", "/build/1/approvals"],
     ["get", "/build/1/approvals/2"],
     ["post", "/build/1/approvals"],
@@ -46,6 +47,15 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/approvals/inbox")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+
+  it("403 on GET /build/approvals/inbox/count without build:approvals:view ability", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer())
+      .get("/build/approvals/inbox/count")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -99,7 +109,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT enforce a gate on GET /projects/1/approvals with projects:approvals:view ability", async () => {
+  it("passes the auth/RBAC gate and returns 404 (project not found) on GET /build/1/approvals with build:approvals:view ability", async () => {
     const token = await signToken({
       permissions: ["build:approvals:view"],
       enabledModules: ["build"],
@@ -107,11 +117,35 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/approvals")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  it("does NOT enforce a gate on POST /projects/1/approvals with projects:approvals:request ability", async () => {
+  it("passes the auth/RBAC gate and returns 404 (project not found) on POST /build/1/approvals with build:approvals:request ability", async () => {
+    const token = await signToken({
+      permissions: ["build:approvals:request"],
+      enabledModules: ["build"],
+    });
+    const res = await request(app.getHttpServer())
+      .post("/build/1/approvals")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "e2e-approval-create-1")
+      .send({ entityType: "task", entityId: 1, title: "Review", approverId: "user-2" });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a create without an Idempotency-Key with 400 because build.approval.create is a required fence", async () => {
+    const token = await signToken({
+      permissions: ["build:approvals:request"],
+      enabledModules: ["build"],
+    });
+    const res = await request(app.getHttpServer())
+      .post("/build/1/approvals")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ entityType: "task", entityId: 1, title: "Review", approverId: "user-2" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an entityType outside approval_entity_type with 400 before reaching the project lookup", async () => {
     const token = await signToken({
       permissions: ["build:approvals:request"],
       enabledModules: ["build"],
@@ -120,7 +154,6 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
       .post("/build/1/approvals")
       .set("Authorization", `Bearer ${token}`)
       .send({ entityType: "ticket", entityId: 1, title: "Review", approverId: "user-2" });
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(400);
   });
 });

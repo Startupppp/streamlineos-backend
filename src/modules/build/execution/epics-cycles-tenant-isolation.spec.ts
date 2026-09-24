@@ -2,6 +2,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { NotFoundException } from "@nestjs/common";
 import { EpicsService } from "./epics.service";
 import { CyclesService } from "./cycles.service";
+import { epicRowSchema } from "./dto/execution-response.schemas";
 
 type TxHandle = { insert: jest.Mock; execute: jest.Mock };
 
@@ -103,6 +104,45 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
   });
 });
 
+describe("CyclesService — cross-tenant isolation — createCycle", () => {
+  it("createCycle throws 404 before any DB write when project belongs to a different org (assertProjectInOrg missing guard)", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
+    const selectChain = { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) };
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      select: jest.fn().mockReturnValue(selectChain),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await expect(
+      svc.createCycle(ATTACKER_ORG, "u1", 1, { name: "Cycle A", startDate: "2024-01-01", endDate: "2024-01-31" }),
+    ).rejects.toThrow(NotFoundException);
+
+    expect(projectFindFirst).toHaveBeenCalled();
+    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
+    expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
+    expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
+  });
+
+  it("createCycle succeeds when project belongs to the caller's org (control — own project passes)", async () => {
+    const fakeCycle = { id: 5, orgId: OWNER_ORG, projectId: 1, name: "Cycle A", status: "draft" };
+    const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
+    const returning = jest.fn().mockResolvedValue([fakeCycle]);
+    const values = jest.fn().mockReturnValue({ returning });
+    const selectChain = { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) };
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      select: jest.fn().mockReturnValue(selectChain),
+      insert: jest.fn().mockReturnValue({ values }),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    const result = await svc.createCycle(OWNER_ORG, "u1", 1, { name: "Cycle A", startDate: "2024-01-01", endDate: "2024-01-31" });
+    expect(result).toEqual(fakeCycle);
+    expect(projectFindFirst).toHaveBeenCalled();
+  });
+});
+
 describe("CyclesService — cross-tenant isolation", () => {
   it("listCycles refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
@@ -138,5 +178,104 @@ describe("CyclesService — cross-tenant isolation", () => {
 
     const result = await svc.listCycles(OWNER_ORG, 1, {});
     expect(result).toHaveLength(1);
+  });
+});
+
+describe("epicRowSchema — response contract completeness", () => {
+  const baseEpicRow = {
+    id: 1,
+    orgId: "org1",
+    title: "Big epic",
+    description: null,
+    type: "EPIC",
+    status: "TODO",
+    priority: "MEDIUM",
+    projectId: 1,
+    ticketNumber: 42,
+    cycleId: null,
+    epicId: null,
+    assigneeMembershipId: null,
+    points: null,
+    storyPoints: null,
+    startDate: null,
+    dueDate: null,
+    estimate: null,
+    completionPercentage: 0,
+    rank: "0|hzzzzz:",
+    timeSpent: "0",
+    version: 1,
+    deletedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  it("epicRowSchema preserves assignee when present — listEpics result must not strip the assignee field", () => {
+    const itemWithAssignee = {
+      ...baseEpicRow,
+      assignee: { user: { id: "u1", name: "Alice", firstName: "Alice", lastName: "Smith", image: null, email: "alice@example.com" } },
+    };
+
+    const parsed = epicRowSchema.parse(itemWithAssignee);
+    expect((parsed as Record<string, unknown>).assignee).toBeDefined();
+  });
+});
+
+describe("CyclesService — cross-project scope within one org — updateCycle", () => {
+  it("updateCycle constrains the UPDATE by projectId, so a cycle of a sibling project cannot be edited through this project's URL", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue({ id: 7 });
+    const where = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 99 }]) });
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await svc.updateCycle(OWNER_ORG, 7, 99, { name: "Renamed" });
+
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(7);
+  });
+
+  it("updateCycle refuses a project the caller's org does not own, rather than trusting the cycle id alone", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      update: jest.fn(),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await expect(svc.updateCycle(ATTACKER_ORG, 7, 99, { name: "Renamed" })).rejects.toThrow(NotFoundException);
+    expect(db.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("CyclesService — cross-project scope within one org — deleteCycle", () => {
+  it("deleteCycle constrains the DELETE by projectId, so deleting through a sibling project's URL cannot detach that project's tickets", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue({ id: 7 });
+    const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 99 }]) });
+    const tx = {
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
+      delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+    };
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      transaction: jest.fn(async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await svc.deleteCycle(OWNER_ORG, 7, 99);
+
+    expect(sqlValues(deleteWhere.mock.calls[0]?.[0])).toContain(7);
+  });
+
+  it("deleteCycle refuses a project the caller's org does not own before opening a transaction", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      transaction: jest.fn(),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await expect(svc.deleteCycle(ATTACKER_ORG, 7, 99)).rejects.toThrow(NotFoundException);
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });

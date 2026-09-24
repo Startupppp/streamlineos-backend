@@ -9,6 +9,11 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatSearchService } from "./chat-search.service";
+import type { ChatChannelListService } from "./chat-channel-list.service";
+
+const searchChannelListStub = () =>
+  ({ listMemberChannelIds: jest.fn().mockResolvedValue([]) }) as unknown as ChatChannelListService;
+
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
 import type { AblyService } from "../realtime/ably.service";
@@ -114,7 +119,7 @@ describe("ChatSearchService — tenant isolation", () => {
 
   it("DENY: searchMessages binds conditions to ATTACKER_ORG and returns empty results", async () => {
     const { db, getCaptured } = makeDb();
-    const service = new ChatSearchService(db, makeEntities());
+    const service = new ChatSearchService(db, makeEntities(), searchChannelListStub());
     const actor = { orgId: ATTACKER_ORG, userId: "user-x", membershipId: 99, isOrgOwner: false };
 
     // term length < 3 → skips db.execute, goes straight to findMany
@@ -149,7 +154,7 @@ describe("ChatSearchService — tenant isolation", () => {
     const entities = {
       withResolvedReferences: jest.fn().mockImplementation((_actor: unknown, rows: unknown[]) => Promise.resolve(rows)),
     } as unknown as EntityReferenceService;
-    const service = new ChatSearchService(db, entities);
+    const service = new ChatSearchService(db, entities, searchChannelListStub());
     const actor = { orgId: OWNER_ORG, userId: "user-owner", membershipId: 10, isOrgOwner: false };
 
     const result = await service.searchMessages(actor, "hi", 20);
@@ -307,7 +312,8 @@ describe("ChatNotificationsService — orgId threading", () => {
       getSettings: jest.fn().mockResolvedValue({ defaultNotificationPreference: "ALL" }),
     } as unknown as ChatOrgSettingsService;
     const effects = {} as unknown as ExternalEffectLedger;
-    const service = new ChatNotificationsService(db, ably, orgSettings, effects);
+    const dispatch = {} as unknown as NotificationDispatchService;
+    const service = new ChatNotificationsService(db, ably, orgSettings, effects, dispatch);
     return { service, db, ably, where };
   }
 

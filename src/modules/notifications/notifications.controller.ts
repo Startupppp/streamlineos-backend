@@ -42,9 +42,11 @@ import { NoTenantTransaction } from "../../common/tenant";
 import {
   listSchema,
   snoozeSchema,
+  unreadCountSchema,
   bulkActionSchema,
   type ListInput,
   type SnoozeInput,
+  type UnreadCountInput,
   type BulkActionInput,
 } from "./dto/notification.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -74,8 +76,9 @@ export class NotificationsController {
   @Get("unread-count")
   @ResponseSchema(notificationCountResponseSchema)
   @Universal()
-  unreadCount(@CurrentUser() u: CurrentUserContext) {
-    return this.notifications.unreadCount(u.orgId, u.userId);
+  @Validate({ query: unreadCountSchema })
+  unreadCount(@Query() query: UnreadCountInput, @CurrentUser() u: CurrentUserContext) {
+    return this.notifications.unreadCount(u.orgId, u.userId, query.sourceModule);
   }
 
   @Post("events/token")

@@ -8,6 +8,7 @@ import {
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
 import { and, eq, isNull } from "drizzle-orm";
 import {
+  cycles,
   projects,
   ticketActivityLog,
   ticketAssignees,
@@ -28,6 +29,7 @@ import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { CreateTicketInput } from "./dto/projects.schemas";
 import { computeNextRunAt } from "./projects-recurrence.util";
+import { buildTicketHref, buildTicketKey } from "./build-app-paths";
 import { normalizeTicketType } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
@@ -76,6 +78,24 @@ export class ProjectsTicketsCreateService {
       if (!epicRow)
         throw new BadRequestException("Epic ticket not found in this project");
     }
+
+    if (body.cycleId != null) {
+      const [cycleRow] = await this.db
+        .select({ id: cycles.id })
+        .from(cycles)
+        .where(
+          and(
+            eq(cycles.orgId, u.orgId),
+            eq(cycles.projectId, projectId),
+            eq(cycles.id, body.cycleId),
+            isNull(cycles.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!cycleRow)
+        throw new NotFoundException("Cycle not found in this project");
+    }
+    const resolvedCycleId = body.cycleId;
 
     const reporterUserId = body.reporterId ?? u.userId;
     const allAssigneeIds = new Set<string>();
@@ -132,9 +152,8 @@ export class ProjectsTicketsCreateService {
           assigneeMembershipId,
           reporterId: reporterUserId,
           reporterMembershipId,
-          sprintId: body.sprintId,
           epicId: body.epicId,
-          cycleId: body.cycleId,
+          cycleId: resolvedCycleId,
           points: body.points,
           link: body.link,
           originalEstimate: body.originalEstimate?.toString(),
@@ -206,10 +225,8 @@ export class ProjectsTicketsCreateService {
         .where(and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)))
         .limit(1);
 
-      const ticketKey = projectRow?.key
-        ? `${projectRow.key}-${ticket.ticketNumber}`
-        : String(ticket.ticketNumber);
-      const ticketLink = `/projects/${projectId}/tickets/${encodeURIComponent(ticketKey)}`;
+      const ticketKey = buildTicketKey(projectRow?.key, ticket.ticketNumber);
+      const ticketLink = buildTicketHref(projectId, ticketKey);
 
       await this.dispatch
         .emit({
@@ -247,7 +264,7 @@ export class ProjectsTicketsCreateService {
     });
 
     void this.cache
-      .del(`projects:analytics:${u.orgId}:${projectId}`)
+      .invalidateNamespace(`build:analytics:${u.orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId: u.orgId, projectId }));
 
     return ticket;
@@ -257,7 +274,7 @@ export class ProjectsTicketsCreateService {
     orgId: string,
     actingUserId: string,
     projectId: number,
-    input: { title: string; description: string; type?: string },
+    input: { title: string; description: string; type?: string; assigneeMembershipId?: number | null },
   ): Promise<{ id: number }> {
     const feedbackActorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [actingUserId]);
     const feedbackActorMembershipId = feedbackActorMap.get(actingUserId)?.membershipId ?? null;
@@ -277,6 +294,7 @@ export class ProjectsTicketsCreateService {
           priority: "MEDIUM",
           reporterId: actingUserId,
           status: "TODO",
+          assigneeMembershipId: input.assigneeMembershipId ?? null,
         })
         .returning({ id: tickets.id });
 
@@ -294,7 +312,7 @@ export class ProjectsTicketsCreateService {
     });
 
     await this.cache
-      .del(`projects:analytics:${orgId}:${projectId}`)
+      .invalidateNamespace(`build:analytics:${orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId }));
 
     return ticket;

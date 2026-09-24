@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gt, isNull, ne, or } from "drizzle-orm";
-import { announcements, users } from "../../db/schema";
+import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { broadcasts, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -8,6 +8,8 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { type DashboardActor, type DashboardForbidden } from "./dashboard.errors";
 import { type CreateAnnouncementInput } from "./dto/dashboard.schemas";
 import { AccessService } from "../access/access.service";
+
+const HOME_ANNOUNCEMENTS_CAP = 20;
 
 @Injectable()
 export class DashboardAnnouncementsService {
@@ -25,27 +27,28 @@ export class DashboardAnnouncementsService {
         const now = new Date();
         return this.db
           .select({
-            id: announcements.id,
-            content: announcements.content,
-            isPinned: announcements.isPinned,
-            expiresAt: announcements.expiresAt,
-            createdAt: announcements.createdAt,
-            authorId: announcements.authorId,
+            id: broadcasts.id,
+            content: broadcasts.message,
+            isPinned: broadcasts.isPinned,
+            expiresAt: broadcasts.expiresAt,
+            createdAt: broadcasts.createdAt,
+            authorId: broadcasts.createdBy,
             authorName: users.name,
             authorFirstName: users.firstName,
             authorLastName: users.lastName,
           })
-          .from(announcements)
-          .innerJoin(users, eq(announcements.authorId, users.id))
+          .from(broadcasts)
+          .innerJoin(users, eq(broadcasts.createdBy, users.id))
           .where(
             and(
-              eq(announcements.orgId, orgId),
-              ne(announcements.status, "DRAFT"),
-              or(isNull(announcements.expiresAt), gt(announcements.expiresAt, now)),
+              eq(broadcasts.orgId, orgId),
+              eq(broadcasts.status, "SENT"),
+              eq(broadcasts.audienceType, "all"),
+              or(isNull(broadcasts.expiresAt), gt(broadcasts.expiresAt, now)),
             ),
           )
-          .orderBy(desc(announcements.isPinned), desc(announcements.createdAt))
-          .limit(20);
+          .orderBy(desc(broadcasts.isPinned), desc(broadcasts.createdAt))
+          .limit(HOME_ANNOUNCEMENTS_CAP);
       },
       CACHE_TTL.MEDIUM,
     );
@@ -61,20 +64,36 @@ export class DashboardAnnouncementsService {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
+    const sentAt = new Date();
     const [row] = await this.db
-      .insert(announcements)
+      .insert(broadcasts)
       .values({
         orgId,
-        authorId,
+        createdBy: authorId,
         title: input.title,
-        content: input.content,
+        message: input.content,
+        channels: ["IN_APP"],
+        audience: { type: "all" },
+        audienceType: "all",
+        status: "SENT",
+        sentAt,
         isPinned: input.isPinned ?? false,
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-        status: "PUBLISHED",
       })
-      .returning();
+      .returning({
+        id: broadcasts.id,
+        orgId: broadcasts.orgId,
+        title: broadcasts.title,
+        content: broadcasts.message,
+        isPinned: broadcasts.isPinned,
+        expiresAt: broadcasts.expiresAt,
+        status: broadcasts.status,
+        authorId: broadcasts.createdBy,
+        createdAt: broadcasts.createdAt,
+        updatedAt: broadcasts.updatedAt,
+      });
 
-    await this.cache.invalidateForOrg(orgId, CACHE_KEYS.announcementsList(orgId));
+    await this.invalidate(orgId);
     return row;
   }
 
@@ -84,10 +103,20 @@ export class DashboardAnnouncementsService {
     }
 
     await this.db
-      .delete(announcements)
-      .where(and(eq(announcements.id, id), eq(announcements.orgId, orgId)));
+      .delete(broadcasts)
+      .where(
+        and(
+          eq(broadcasts.id, id),
+          eq(broadcasts.orgId, orgId),
+          eq(broadcasts.audienceType, "all"),
+        ),
+      );
 
-    await this.cache.invalidateForOrg(orgId, CACHE_KEYS.announcementsList(orgId));
+    await this.invalidate(orgId);
     return { success: true };
+  }
+
+  private async invalidate(orgId: string) {
+    await this.cache.invalidateForOrg(orgId, CACHE_KEYS.announcementsList(orgId));
   }
 }

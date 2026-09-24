@@ -111,7 +111,7 @@ describe("HrWorkflowApproverService — cross-tenant isolation", () => {
 
   it("resolveEffectiveActor scopes delegation lookup to requesting org — cross-tenant delegation cannot elevate attacker (tenant isolation)", async () => {
     const { db, where } = makeSelectDb([]);
-    const svc = new HrWorkflowApproverService(db, makeAccessDep(), makeEmploymentDep());
+    const svc = new HrWorkflowApproverService(db, makeAccessDep(), makeEmploymentDep(), {} as never);
 
     const result = await svc.resolveEffectiveActor(
       ATTACKER_ORG,
@@ -140,7 +140,7 @@ describe("HrWorkflowApproverService — cross-tenant isolation", () => {
         objectType: null,
       },
     ]);
-    const svc = new HrWorkflowApproverService(db, makeAccessDep(), makeEmploymentDep());
+    const svc = new HrWorkflowApproverService(db, makeAccessDep(), makeEmploymentDep(), {} as never);
 
     const result = await svc.resolveEffectiveActor(
       ATTACKER_ORG,
@@ -155,12 +155,13 @@ describe("HrWorkflowApproverService — cross-tenant isolation", () => {
 
   it("resolveApprovers named_user type scopes to provided userId — no cross-org query needed (direct isolation)", async () => {
     const { db } = makeSelectDb([]);
-    const svc = new HrWorkflowApproverService(db, makeAccessDep(), makeEmploymentDep());
+    const svc = new HrWorkflowApproverService(db, makeAccessDep(), makeEmploymentDep(), {} as never);
 
     const result = await svc.resolveApprovers(
       { approverType: "named_user", approverValue: "user-in-attacker-org", stepOrder: 1, mode: "sequential", slaHours: null, name: "Step 1" },
       "subject-user",
       ATTACKER_ORG,
+      "leave_request",
     );
 
     expect(result).toEqual(["user-in-attacker-org"]);

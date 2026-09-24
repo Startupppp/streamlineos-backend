@@ -28,10 +28,18 @@ import {
 } from "./dto/governance.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { riskRowSchema } from "./dto/governance-response.schemas";
+import {
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
+import { riskPageSchema, riskRowSchema, riskStatsSchema } from "./dto/governance-response.schemas";
 
-const riskIdParams = z.object({ riskId: z.coerce.number().int().positive() }).strict();
+export const riskIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    riskId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/risks")
@@ -41,7 +49,7 @@ export class RisksController {
 
   @Get()
   @RequirePermission("build:risks:view")
-  @ResponseSchema(z.array(riskRowSchema))
+  @ResponseSchema(riskPageSchema)
   @Validate({ query: listRisksQuerySchema })
   listRisks(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -49,6 +57,16 @@ export class RisksController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listRisks(u, projectId, query);
+  }
+
+  @Get("stats")
+  @RequirePermission("build:risks:view")
+  @ResponseSchema(riskStatsSchema)
+  getRiskStats(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.getRiskStats(u, projectId);
   }
 
   @Get(":riskId")

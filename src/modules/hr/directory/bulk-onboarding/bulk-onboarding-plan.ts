@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
-import { hrEmployments, hrPeople } from "../../../../db/schema";
+import { hrEmployments, hrPeople, organizationMembers, users } from "../../../../db/schema";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
 import {
   liveEmployment,
@@ -76,6 +76,40 @@ function resolveDepartment(
   return { departmentId: resolved };
 }
 
+export async function preloadManagerUserIdsByEmail(
+  db: DbOrTx,
+  orgId: string,
+  emails: readonly string[],
+): Promise<Map<string, string>> {
+  if (emails.length === 0) return new Map();
+  const rows = await db
+    .select({ email: users.email, userId: organizationMembers.userId })
+    .from(organizationMembers)
+    .innerJoin(users, eq(users.id, organizationMembers.userId))
+    .where(
+      and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        inArray(users.email, [...emails]),
+      ),
+    );
+  return new Map(rows.map((row) => [canonicalAdmissionEmail(row.email), row.userId]));
+}
+
+function resolveReportingManager(
+  source: BulkOnboardEmployeeRow,
+  managerByEmail: ReadonlyMap<string, string>,
+): { reportingManagerUserId: string | null } | { error: string } {
+  if (source.reportingManagerUserId) return { reportingManagerUserId: source.reportingManagerUserId };
+  if (!source.reportingManagerEmail) return { reportingManagerUserId: null };
+  const managerUserId = managerByEmail.get(canonicalAdmissionEmail(source.reportingManagerEmail));
+  if (!managerUserId)
+    return {
+      error: `Reporting manager "${source.reportingManagerEmail}" is not an active member of this organization. Onboard the manager first.`,
+    };
+  return { reportingManagerUserId: managerUserId };
+}
+
 export function planBulkOnboarding(
   rows: readonly BulkOnboardEmployeeRow[],
   catalog: DepartmentCatalog,
@@ -83,6 +117,7 @@ export function planBulkOnboarding(
   employeeNumberOwner: ReadonlyMap<string, string | null>,
   roleErrors: Map<string, string>,
   globallyInactiveUserIds: ReadonlySet<string>,
+  managerByEmail: ReadonlyMap<string, string>,
 ): BulkOnboardPlan {
   const plan: BulkOnboardPlan = { accepted: [], rejected: [] };
   const claimedNumbers = new Map(
@@ -108,6 +143,12 @@ export function planBulkOnboarding(
     const department = resolveDepartment(source, catalog);
     if ("error" in department) {
       plan.rejected.push({ row, email, success: false, error: department.error });
+      continue;
+    }
+
+    const manager = resolveReportingManager(source, managerByEmail);
+    if ("error" in manager) {
+      plan.rejected.push({ row, email, success: false, error: manager.error });
       continue;
     }
 
@@ -176,6 +217,7 @@ export function planBulkOnboarding(
       designation: source.designation.trim(),
       joiningDate: source.joiningDate ? formatDateOnly(source.joiningDate) : null,
       dateOfBirth: source.dateOfBirth ? formatDateOnly(source.dateOfBirth) : null,
+      reportingManagerUserId: manager.reportingManagerUserId,
     });
     plannedEmails.add(email);
   }

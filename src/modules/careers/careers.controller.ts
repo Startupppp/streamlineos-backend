@@ -35,8 +35,10 @@ export class CareersController {
   constructor(private readonly careers: CareersService) {}
 
   @Post("resumes/upload")
+  @AuthorizedInService(
+    "CareersService.uploadResume resolves the candidate by id AND the caller's orgId, and rejects when that pair does not exist",
+  )
   @UseGuards(JwtAuthGuard)
-  @AuthorizedInService("CareersService.uploadResume re-asserts orgId on the candidate before storing")
   @UseInterceptors(FileInterceptor("file"))
   @MultipartAction({ file: "file", fields: { candidateId: "integer" }, requiredFields: ["candidateId"] })
   @Validate({ body: uploadResumeSchema })

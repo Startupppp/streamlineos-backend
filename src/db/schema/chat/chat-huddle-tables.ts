@@ -20,6 +20,8 @@ export const chatUserPresence = pgTable(
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     status: text("status").default("OFFLINE").notNull(),
+    statusMessage: text("status_message"),
+    statusExpiresAt: timestamp("status_expires_at"),
     lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
   },
   (table) => [

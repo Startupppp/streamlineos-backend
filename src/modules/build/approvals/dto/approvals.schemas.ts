@@ -14,6 +14,13 @@ export const createApprovalSchema = z.object({
 export const listApprovalsQuerySchema = z.object({
   status: z.enum(approvalStatusEnum.enumValues).optional(),
   entityType: z.enum(approvalEntityTypeEnum.enumValues).optional(),
+  cursorId: z.coerce.number().int().positive().optional(),
+  cursorDueAt: z.coerce.date().optional(),
+}).strict();
+
+export const inboxQuerySchema = z.object({
+  cursorId: z.coerce.number().int().positive().optional(),
+  cursorDueAt: z.coerce.date().optional(),
 }).strict();
 
 export const decideApprovalSchema = z.object({
@@ -29,5 +36,6 @@ export const updateApprovalSchema = z.object({
 
 export type CreateApprovalInput = z.infer<typeof createApprovalSchema>;
 export type ListApprovalsQuery = z.infer<typeof listApprovalsQuerySchema>;
+export type InboxQuery = z.infer<typeof inboxQuerySchema>;
 export type DecideApprovalInput = z.infer<typeof decideApprovalSchema>;
 export type UpdateApprovalInput = z.infer<typeof updateApprovalSchema>;

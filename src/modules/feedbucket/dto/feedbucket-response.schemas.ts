@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
-import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  cursorPageSchema,
+  successSchema,
+} from "../../../common/openapi/response-envelopes";
 
 const feedbucketWidgetThemeSchema = z.object({
   color: z.string().optional(),
@@ -8,11 +11,23 @@ const feedbucketWidgetThemeSchema = z.object({
   label: z.string().optional(),
 });
 
+const feedbucketAssigneeRulesSchema = z.object({
+  bug: z.number().int().optional(),
+  idea: z.number().int().optional(),
+  feature: z.number().int().optional(),
+  question: z.number().int().optional(),
+  praise: z.number().int().optional(),
+  other: z.number().int().optional(),
+});
+
 export const feedbucketWidgetRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   projectId: z.number().int().nullable(),
   managedProductId: z.number().int().nullable(),
+  defaultProjectId: z.number().int().nullable(),
+  defaultAssigneeMembershipId: z.number().int().nullable(),
+  assigneeRules: feedbucketAssigneeRulesSchema.nullable(),
   name: z.string(),
   publicKey: z.string(),
   allowedDomains: z.array(z.string()),
@@ -146,14 +161,27 @@ export const feedbucketSubmissionDetailSchema = feedbucketSubmissionRowSchema.an
   }),
 );
 
-export const feedbucketSubmissionListSchema = z.object({
-  data: z.array(
-    feedbucketSubmissionRowSchema.and(z.object({ widget: feedbucketWidgetRowSchema.nullable() })),
+export const feedbucketSubmissionListSchema = cursorPageSchema(
+  feedbucketSubmissionRowSchema.and(
+    z.object({ widget: feedbucketWidgetRowSchema.nullable() }),
   ),
-  total: z.number().int(),
-  page: z.number().int(),
-  limit: z.number().int(),
-  totalPages: z.number().int(),
+).extend({
+  page: z.number().int().optional(),
+  total: z.number().int().optional(),
+  totalPages: z.number().int().optional(),
+});
+
+export const feedbucketBulkSubmissionsSchema = z.object({
+  requested: z.number().int(),
+  succeeded: z.number().int(),
+  skipped: z.number().int(),
+  results: z.array(
+    z.object({
+      submissionId: z.number().int(),
+      outcome: z.enum(["updated", "deleted", "skipped"]),
+      reason: z.enum(["not_found_or_filtered"]).nullable(),
+    }),
+  ),
 });
 
 export const feedbucketConvertTicketSchema = z.object({ ticketId: z.number().int() });

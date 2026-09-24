@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import {
   surveyForms,
@@ -48,18 +48,16 @@ export class SurveyVersionService {
   }
 
   async getDraftVersion(orgId: string, surveyId: number) {
-    const existing = await this.db.query.surveyVersions.findFirst({
+    const draft = await this.db.query.surveyVersions.findFirst({
       where: and(eq(surveyVersions.orgId, orgId), eq(surveyVersions.surveyId, surveyId), isNull(surveyVersions.publishedAt)),
       orderBy: [desc(surveyVersions.versionNumber)],
     });
-    if (existing) return existing;
+    if (!draft) throw new NotFoundException("Survey draft not found");
+    return draft;
+  }
 
-    await this.assertSurveyInOrg(orgId, surveyId);
-
-    const [created] = await this.db
-      .insert(surveyVersions)
-      .values({ orgId, surveyId, versionNumber: 1 })
-      .returning();
+  async createDraftVersion(orgId: string, surveyId: number) {
+    const [created] = await this.db.insert(surveyVersions).values({ orgId, surveyId, versionNumber: 1 }).returning();
     return created;
   }
 

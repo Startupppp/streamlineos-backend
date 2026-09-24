@@ -8,7 +8,7 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ExportPageInput, ImportPagesInput } from "./dto/kb-import-export.schemas";
 import { toMarkdown, toHtml } from "./kb-export-serializer";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 type ImportJobRow = typeof kbImportJobs.$inferSelect;
 type ExportJobRow = typeof kbExportJobs.$inferSelect;
@@ -32,6 +32,7 @@ export class KbImportExportService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async exportPage(
@@ -39,7 +40,7 @@ export class KbImportExportService {
     pageId: number,
     input: ExportPageInput,
   ): Promise<ExportResult> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "view");
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
@@ -190,6 +191,9 @@ export class KbImportExportService {
         processedItems: items.length,
         succeededItems: succeeded,
         failedItems: failed,
+        errorReport: {
+          itemTitles: items.map((item) => item.title),
+        },
         createdById: user.userId,
       })
       .returning();

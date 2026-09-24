@@ -13,9 +13,14 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { AskInput } from "./dto/kb-ai.schemas";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
-import { ASK_SYSTEM_PROMPT, buildKbAskContext } from "./kb-ask-context";
-
-const MAX_CONTEXT_ARTICLES = 6;
+import {
+  ASK_SYSTEM_PROMPT,
+  assemblePassages,
+  buildKbContext,
+  kbDocumentKey,
+  KB_ASK_MAX_CONTEXT_DOCUMENTS,
+  type KbContextPassage,
+} from "./kb-ask-context";
 
 export type AskCitation =
   | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null; updatedAt: Date }
@@ -86,7 +91,7 @@ export class KbAskService {
         const retrievedTop = await this.search.retrieveTopArticles(
           user,
           input.question,
-          MAX_CONTEXT_ARTICLES,
+          KB_ASK_MAX_CONTEXT_DOCUMENTS,
           input.spaceId,
         );
         const retrievedSources = await this.search.retrieveTopSources(user, input.question, 4);
@@ -104,14 +109,15 @@ export class KbAskService {
         const pageIds = top
           .filter((source) => source.kind === "page")
           .map((source) => source.id);
-        const attachmentContext = await this.search.retrieveAttachmentSnippets(
+        const documentPassages = await this.search.retrieveDocumentPassages(
           user,
           input.question,
           articleIds,
           pageIds,
         );
 
-        const fullContext = buildKbAskContext(input.question, top, sources, attachmentContext);
+        const fullContext = buildKbContext(assemblePassages(top, sources, documentPassages));
+        if (fullContext.length === 0) return { kind: "no-context" as const };
 
         return { kind: "context" as const, fullContext, top, sources, citations };
       },

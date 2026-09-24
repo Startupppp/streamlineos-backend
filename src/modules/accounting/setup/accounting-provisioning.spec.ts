@@ -1,5 +1,6 @@
 import { ConflictException } from "@nestjs/common";
-import { AccountingSetupService, INVENTORY_SEAM_ROLES } from "./accounting-setup.service";
+import { INVENTORY_SEAM_ROLES } from "../kernel/system-tag-roles";
+import { AccountingSetupService } from "./accounting-setup.service";
 
 /**
  * ACC-02: "clear error if enabled but unprovisioned".

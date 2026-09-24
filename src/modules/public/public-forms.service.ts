@@ -1,15 +1,18 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { formSubmissions, projectForms } from "../../db/schema";
+import { projectForms } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
-import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { SubmissionsService } from "../build/forms/submissions.service";
 import type { PublicFormSubmitInput } from "./dto/public.schemas";
 
 @Injectable()
 export class PublicFormsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly submissions: SubmissionsService,
+  ) {}
 
   async getFormByToken(token: string) {
     const row = await withPublicToken(this.db, token, (tx) =>
@@ -34,46 +37,7 @@ export class PublicFormsService {
   }
 
   async submitByToken(token: string, input: PublicFormSubmitInput) {
-    const form = await withPublicToken(this.db, token, (tx) =>
-      tx.query.projectForms.findFirst({
-        where: and(
-          eq(projectForms.publicToken, token),
-          eq(projectForms.isPublic, true),
-          eq(projectForms.isActive, true),
-          isNull(projectForms.deletedAt),
-        ),
-        columns: {
-          id: true,
-          orgId: true,
-          projectId: true,
-          isActive: true,
-        },
-      }),
-    );
-    if (!form) throw new NotFoundException("Form not found or no longer active");
-    if (!form.isActive) throw new BadRequestException("Form is not accepting submissions");
-
-    const submission = await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const [inserted] = await tx
-          .insert(formSubmissions)
-          .values({
-            orgId: form.orgId,
-            formId: form.id,
-            projectId: form.projectId,
-            values: input.values,
-            status: "submitted",
-            submittedByName: input.submittedByName ?? null,
-            submittedById: null,
-          })
-          .returning({ id: formSubmissions.id });
-        return inserted;
-      },
-      { orgId: form.orgId },
-    );
-
-    if (!submission) throw new BadRequestException("Failed to create submission");
+    const submission = await this.submissions.submitPublicForm(token, input);
     return { id: submission.id, message: "Submission received successfully" };
   }
 }

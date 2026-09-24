@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, or, sql, type SQL } from "drizzle-orm";
+import { pendingApprovalsForActorCondition } from "./build-inbox-count.service";
 import { projectApprovals, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -7,7 +8,19 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
 import { loadApproval } from "./approval-lookup";
-import type { ListApprovalsQuery } from "./dto/approvals.schemas";
+import type { InboxQuery, ListApprovalsQuery } from "./dto/approvals.schemas";
+
+function listApprovalsKeyset(cursorId: number | undefined, cursorDueAt: Date | undefined): SQL | undefined {
+  if (cursorId === undefined) return undefined;
+  if (cursorDueAt !== undefined) {
+    return or(
+      gt(projectApprovals.dueAt, cursorDueAt),
+      and(eq(projectApprovals.dueAt, cursorDueAt), gt(projectApprovals.id, cursorId)),
+      isNull(projectApprovals.dueAt),
+    );
+  }
+  return and(isNull(projectApprovals.dueAt), gt(projectApprovals.id, cursorId));
+}
 
 @Injectable()
 export class ApprovalsReadService {
@@ -16,7 +29,7 @@ export class ApprovalsReadService {
     private readonly access: AccessService,
   ) {}
 
-  async getInbox(orgId: string, membershipId: number) {
+  async getInbox(orgId: string, membershipId: number, query: InboxQuery) {
     return this.db
       .select({
         id: projectApprovals.id,
@@ -34,18 +47,8 @@ export class ApprovalsReadService {
       })
       .from(projectApprovals)
       .innerJoin(projects, eq(projects.id, projectApprovals.projectId))
-      .where(
-        and(
-          eq(projectApprovals.orgId, orgId),
-          eq(projectApprovals.approverMembershipId, membershipId),
-          or(
-            eq(projectApprovals.status, "pending"),
-            eq(projectApprovals.status, "escalated"),
-          ),
-          isNull(projectApprovals.deletedAt),
-        ),
-      )
-      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`)
+      .where(and(pendingApprovalsForActorCondition(orgId, membershipId), listApprovalsKeyset(query.cursorId, query.cursorDueAt)))
+      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`, asc(projectApprovals.id))
       .limit(100);
   }
 
@@ -62,13 +65,15 @@ export class ApprovalsReadService {
           isNull(projectApprovals.deletedAt),
           query.status ? eq(projectApprovals.status, query.status) : undefined,
           query.entityType ? eq(projectApprovals.entityType, query.entityType) : undefined,
+          listApprovalsKeyset(query.cursorId, query.cursorDueAt),
         ),
       )
-      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`)
+      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`, asc(projectApprovals.id))
       .limit(100);
   }
 
-  async getApproval(orgId: string, projectId: number, approvalId: number) {
-    return loadApproval(this.db, orgId, projectId, approvalId);
+  async getApproval(u: CurrentUserContext, projectId: number, approvalId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    return loadApproval(this.db, u.orgId, projectId, approvalId);
   }
 }

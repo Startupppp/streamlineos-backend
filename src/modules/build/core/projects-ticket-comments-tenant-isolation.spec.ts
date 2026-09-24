@@ -69,7 +69,7 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
     const db = makeDb(null);
     const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
-    await expect(svc.addComment(u, 99, { content: "hack", parentCommentId: undefined } as never)).rejects.toThrow(NotFoundException);
+    await expect(svc.addComment(u, 10, 99, { content: "hack", parentCommentId: undefined } as never)).rejects.toThrow(NotFoundException);
   });
 
   it("resolves without throwing for the owning org (same-tenant control)", async () => {
@@ -77,6 +77,6 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
     const db = makeDb(ticket);
     const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
-    await expect(svc.addComment(u, 1, { content: "hello", parentCommentId: undefined } as never)).resolves.not.toThrow();
+    await expect(svc.addComment(u, 10, 1, { content: "hello", parentCommentId: undefined } as never)).resolves.not.toThrow();
   });
 });

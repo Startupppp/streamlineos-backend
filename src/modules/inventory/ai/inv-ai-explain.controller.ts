@@ -76,6 +76,7 @@ export class InvAiExplainController {
 
   @Post("insights/:insightId/explain")
   @BodylessAction()
+  @NoTenantTransaction()
   @ResponseSchema(explainInsightResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -125,6 +126,7 @@ export class InvAiExplainController {
 
   @Get("digest")
   @ResponseSchema(digestResponseSchema)
+  @NoTenantTransaction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
@@ -147,6 +149,7 @@ export class InvAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
   @Validate({ body: reorderProposalBodySchema })
+  @NoTenantTransaction()
   getReorderProposal(
     @Body() body: z.infer<typeof reorderProposalBodySchema>,
     @CurrentUser() u: CurrentUserContext,
@@ -179,6 +182,7 @@ export class InvAiExplainController {
 
   @Get("supplier-delay")
   @ResponseSchema(supplierDelayBriefingResponseSchema)
+  @NoTenantTransaction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")

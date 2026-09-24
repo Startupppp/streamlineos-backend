@@ -11,23 +11,6 @@ import type { Db } from "../../../../db/drizzle.module";
 import type { TimesheetsAuditService } from "../timesheets-audit.service";
 import type { RateResolverService } from "../rate-resolver.service";
 
-/**
- * `ApprovalsBulkService.bulkReject`, and the batch writes in
- * `lib/rejection-transition.ts` it runs inside one transaction.
- *
- * Nothing asserted this path before: making `applyBulkRejection` throw left
- * every timesheets suite green. The single-period rejection is covered by
- * `period-lifecycle-outbox.spec.ts`; this file is the batch. What it pins:
- * only periods past the approver's guard are written, every write is tenant
- * scoped and on the transaction, each period gets its own audit row, event
- * and notice, and a worker whose membership no longer resolves is rejected
- * without being announced.
- *
- * The real service and the real transition over a fake database. `db.update`
- * and `db.insert` outside the transaction throw, so a write that escaped it
- * fails loudly instead of passing on a row written after the commit.
- */
-
 const ORG = "org-1";
 const APPROVER_MEMBERSHIP = 77;
 const REASON = "Thursday's hours are missing";
@@ -55,14 +38,12 @@ const APPROVER = {
   principal: humanSessionPrincipal(APPROVER_MEMBERSHIP, false),
 } as unknown as CurrentUserContext;
 
-/** Three submitted periods, one worker each, all routed to the approver. */
 const CANDIDATES = [
   { id: 41, status: "SUBMITTED", userMembershipId: 11, currentApproverMembershipId: 77 },
   { id: 42, status: "SUBMITTED", userMembershipId: 12, currentApproverMembershipId: 77 },
   { id: 43, status: "SUBMITTED", userMembershipId: 13, currentApproverMembershipId: 77 },
 ];
 
-/** What the batch UPDATE hands back for one period, `event_seq` already bumped. */
 function transitionRow(id: number, eventSeq: number, userMembershipId: number) {
   return {
     id,
@@ -82,9 +63,7 @@ const query = (where: unknown) =>
   dialect.sqlToQuery(where as Parameters<PgDialect["sqlToQuery"]>[0]);
 
 interface Options {
-  /** Periods the guard refuses with a ForbiddenException. */
   forbid?: number[];
-  /** Periods whose guard fails some other way. */
   guardErrors?: Map<number, Error>;
   members?: readonly Member[];
   transitions?: ReturnType<typeof transitionRow>[];
@@ -105,7 +84,6 @@ function harness(options: Options = {}) {
       return CANDIDATES;
     }
     if (table === organizationMembers) {
-      // A member lookup that does not bind this organisation answers nothing.
       const bound = query(where).params;
       if (!bound.includes(ORG)) return [];
       return members.filter((m) => m.orgId === ORG && bound.includes(m.id));
@@ -169,7 +147,6 @@ function harness(options: Options = {}) {
       audits.push({ handle, row });
       return Promise.resolve();
     },
-    /** The batch writes its audit rows as one chained INSERT; each row is still recorded. */
     recordMany: (handle: unknown, rows: readonly Record<string, unknown>[]) => {
       for (const row of rows) audits.push({ handle, row });
       return Promise.resolve();
@@ -177,7 +154,6 @@ function harness(options: Options = {}) {
   } as unknown as TimesheetsAuditService;
 
   const approvals = {
-    /** The batch resolves the approver's delegations in one read; nobody here delegates. */
     activeDelegationsToActor: () => Promise.resolve(new Set<number>()),
     assertCanActOnPeriod: (_u: unknown, period: { id: number }) => {
       if (options.forbid?.includes(period.id))
@@ -230,7 +206,6 @@ describe("bulk rejection", () => {
       expect(bound).not.toContain(43);
     }
     expect(h.audits.map((a) => a.row.entityId)).toEqual(["41", "42"]);
-    // A plain refusal is the expected case, not something to log.
     expect(warn).not.toHaveBeenCalled();
   });
 

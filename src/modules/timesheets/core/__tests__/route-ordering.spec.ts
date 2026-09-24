@@ -1,29 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-/**
- * TS-11. A literal route must be declared before the `:param` route that would
- * otherwise swallow it.
- *
- * `GET /timesheets/periods/overdue` and `GET /timesheets/periods/:periodId` are
- * the same shape to a router, and Nest matches in declaration order. Put
- * `overdue` second and every request for the overdue queue reaches `getPeriod`
- * instead, where `ParseIntPipe` rejects the word "overdue" — a 400 that reads
- * like a client bug and is nothing of the kind.
- *
- * `periods.controller.ts` carries a comment saying so. A comment is not a
- * guard: the next person to add `@Get("summary")` will add it at the bottom of
- * the file, which is where handlers go, and nothing will complain until
- * somebody opens the page.
- *
- * Deliberately narrower than `app-route-uniqueness.spec.ts`, which normalises
- * every param to `:param` and so cannot see this at all — to it, `overdue` and
- * `:periodId` are two different paths, and they are, right up until one of them
- * is matched first. Measured across all 300+ controllers in `src/modules` at the
- * time of writing, this ordering error appears nowhere; that is worth keeping
- * true here, where the failure has a name and a ticket.
- */
-
 const TIMESHEETS_ROOT = join(__dirname, "..", "..");
 
 const CONTROLLER = /@Controller\(\s*(?:"([^"]*)"|'([^']*)')?\s*\)/g;
@@ -45,14 +22,6 @@ function controllerFiles(dir: string, found: string[] = []): string[] {
   return found;
 }
 
-/**
- * Routes in declaration order, grouped by the `@Controller` they belong to.
- *
- * A file may hold more than one `@Controller`, so the routes are segmented at
- * each decorator rather than attributed to the first one — reading a single
- * prefix per file is what manufactured eleven phantom collisions in
- * `app-route-uniqueness.spec.ts` before it was fixed the same way.
- */
 export function declaredRoutes(source: string, file: string): Declared[] {
   const marks: Array<{ at: number; base: string }> = [];
   CONTROLLER.lastIndex = 0;
@@ -82,15 +51,6 @@ export function declaredRoutes(source: string, file: string): Declared[] {
 
 const segments = (path: string): string[] => (path === "" ? [] : path.split("/"));
 
-/**
- * Whether `earlier`, declared first, matches every request meant for `later`.
- *
- * True when the two have the same number of segments, differ only where
- * `earlier` holds a parameter and `later` holds a literal, and differ at least
- * once that way. Two literals must be identical; a parameter opposite a
- * parameter is the same route, which `app-route-uniqueness.spec.ts` already
- * owns.
- */
 export function shadows(earlier: string, later: string): boolean {
   const a = segments(earlier);
   const b = segments(later);
@@ -162,13 +122,9 @@ describe("timesheets route declaration order", () => {
   it("detects the ordering it exists to prevent, so the check is proven to bite", () => {
     expect(shadows(":periodId", "overdue")).toBe(true);
     expect(shadows(":periodId/entries", "current/entries")).toBe(true);
-    // The safe direction: a literal declared first shadows nothing.
     expect(shadows("overdue", ":periodId")).toBe(false);
-    // Different depth, different route.
     expect(shadows(":periodId", "overdue/summary")).toBe(false);
-    // Two literals that differ are simply two routes.
     expect(shadows("current", "overdue")).toBe(false);
-    // Two parameters at the same position are the same route, owned elsewhere.
     expect(shadows(":periodId", ":id")).toBe(false);
   });
 });

@@ -33,6 +33,7 @@ import { MAPPED_LEGACY_KINDS, type MappedLegacyKind } from "./party-legacy-seam"
  */
 
 const PARTY: PartyRow = {
+  tier: null,
   partyId: "party-1",
   organizationId: "org-1",
   partyType: "CUSTOMER",

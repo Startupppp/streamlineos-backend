@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, Optional } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   leaveBalances,
   leaveRequests,
@@ -20,10 +20,14 @@ import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
 import type { ScopedRead } from "../../access/scoped-read";
 import { LeaveLedgerService } from "./leave-ledger.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
-import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
+import { boundHrReadLimit, HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
+import type { ListTeamLeaveRequestsQuery } from "./dto/leaves.schemas";
+import { countPendingLeavesRoutedTo, pendingLeavesRoutedToPage, type LeaveInboxRow } from "./leave-inbox-reads";
+import type { DescKeysetPosition } from "../../../common/pagination/desc-keyset";
 
 const TEAM_LEAVES_CAP = 500;
 
+// Display identity only — `leavesTeamItemSchema.user` exposes nothing more, and designation is an employment fact.
 const TEAM_RELATIONS = {
   user: {
     columns: {
@@ -31,9 +35,7 @@ const TEAM_RELATIONS = {
       name: true as const,
       firstName: true as const,
       lastName: true as const,
-      email: true as const,
       image: true as const,
-      designation: true as const,
     },
   },
   leaveType: { columns: { id: true as const, name: true as const } },
@@ -101,7 +103,13 @@ export class LeavesService {
     };
   }
 
-  async team(u: CurrentUserContext) {
+  /**
+   * One keyset page of the requests the caller may decide on. Scope resolves to the
+   * server-assigned approver; an own-scoped manager additionally sees their direct
+   * reports' PENDING requests, folded into the same predicate so the cursor stays
+   * monotonic across both sources.
+   */
+  async team(u: CurrentUserContext, query: ListTeamLeaveRequestsQuery) {
     const scope = await resolveLeavesViewScope(this.access, u);
 
     if (scope.denied) {
@@ -111,47 +119,80 @@ export class LeavesService {
     const orgId = u.orgId;
     const userId = u.userId;
     const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
-    const isAll = scope.unrestricted;
+    const limit = boundHrReadLimit(query.limit);
 
-    const baseConditions: SQL[] = [
-      scope.compose(
-        { tenant: leaveRequests.orgId, scope: leaveApprovalScope(userMembershipId) },
-        ({ sql: where }) => where,
-        () => sql`false`,
+    const visible = scope.compose(
+      { tenant: leaveRequests.orgId, scope: leaveApprovalScope(userMembershipId) },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
+    const reporteePending = scope.unrestricted
+      ? undefined
+      : await this.directReportsPendingPredicate(orgId, userId);
+
+    const rows = await this.db.query.leaveRequests.findMany({
+      where: and(
+        eq(leaveRequests.orgId, orgId),
+        reporteePending ? or(visible, reporteePending) : visible,
+        query.cursor ? lt(leaveRequests.id, query.cursor) : undefined,
+        query.status ? eq(leaveRequests.status, query.status) : undefined,
+        query.leaveTypeId ? eq(leaveRequests.leaveTypeId, query.leaveTypeId) : undefined,
+        query.to ? lte(leaveRequests.startDate, query.to) : undefined,
+        query.from ? gte(leaveRequests.endDate, query.from) : undefined,
       ),
-    ];
+      with: TEAM_RELATIONS,
+      orderBy: [desc(leaveRequests.id)],
+      limit: limit + 1,
+    });
+    const hasMore = rows.length > limit;
+    const data = hasMore ? rows.slice(0, limit) : rows;
 
-    const pendingConditions: SQL[] = [...baseConditions, eq(leaveRequests.status, "PENDING")];
-
-    const historyStart = new Date();
-    historyStart.setFullYear(historyStart.getFullYear() - 1);
-
-    const [pending, all] = await Promise.all([
-      this.queryLeaves(pendingConditions, orgId, userId, isAll),
-      this.db.query.leaveRequests.findMany({
-        where: and(...baseConditions, gte(leaveRequests.createdAt, historyStart)),
-        with: TEAM_RELATIONS,
-        orderBy: [desc(leaveRequests.createdAt)],
-        limit: TEAM_LEAVES_CAP,
-      }),
-    ]);
-
-    return { pending, all };
+    return {
+      data,
+      pageInfo: {
+        limit,
+        hasMore,
+        nextCursor: hasMore ? (data.at(-1)?.id ?? null) : null,
+      },
+    };
   }
 
-  private async queryLeaves(conditions: SQL[], orgId: string, userId: string, isAll: boolean) {
-    const base = await this.db.query.leaveRequests.findMany({
-      where: and(...conditions),
+  async pendingRoutedTo(orgId: string, approverMembershipId: number, limit: number) {
+    return this.db.query.leaveRequests.findMany({
+      where: and(
+        eq(leaveRequests.orgId, orgId),
+        eq(leaveRequests.status, "PENDING"),
+        eq(leaveRequests.approverMembershipId, approverMembershipId),
+      ),
       with: TEAM_RELATIONS,
-      orderBy: [desc(leaveRequests.createdAt)],
-      limit: TEAM_LEAVES_CAP,
+      orderBy: [asc(leaveRequests.createdAt)],
+      limit: Math.min(limit, TEAM_LEAVES_CAP),
     });
+  }
 
-    if (isAll) return base;
+  async pendingRoutedToPage(
+    orgId: string,
+    approverMembershipId: number,
+    limit: number,
+    cursor: DescKeysetPosition | null,
+  ): Promise<LeaveInboxRow[]> {
+    return pendingLeavesRoutedToPage(
+      this.db,
+      orgId,
+      approverMembershipId,
+      Math.min(limit, TEAM_LEAVES_CAP),
+      cursor,
+    );
+  }
 
+  async countPendingRoutedTo(orgId: string, approverMembershipId: number): Promise<number> {
+    return countPendingLeavesRoutedTo(this.db, orgId, approverMembershipId);
+  }
+
+  private async directReportsPendingPredicate(orgId: string, userId: string): Promise<SQL | undefined> {
     const reportingUserIds = await this.employment.getDirectReportUserIds(orgId, userId);
+    if (reportingUserIds.length === 0) return undefined;
 
-    if (reportingUserIds.length === 0) return base;
     const reporteeMemberships = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -161,23 +202,13 @@ export class LeavesService {
         inArray(organizationMembers.userId, reportingUserIds),
       ))
       .limit(reportingUserIds.length);
-    if (reporteeMemberships.length === 0) return base;
-    const alreadyFetchedIds = new Set(base.map((r) => r.id));
+    if (reporteeMemberships.length === 0) return undefined;
 
-    const reporteeRequests = await this.db.query.leaveRequests.findMany({
-      where: and(
-        eq(leaveRequests.orgId, orgId),
-        eq(leaveRequests.status, "PENDING"),
-        inArray(leaveRequests.userMembershipId, reporteeMemberships.map((member) => member.id)),
-      ),
-      with: TEAM_RELATIONS,
-      orderBy: [desc(leaveRequests.createdAt)],
-      limit: TEAM_LEAVES_CAP,
-    });
-
-    const extra = reporteeRequests.filter((r) => !alreadyFetchedIds.has(r.id));
-
-    return [...base, ...extra];
+    return and(
+      eq(leaveRequests.orgId, orgId),
+      eq(leaveRequests.status, "PENDING"),
+      inArray(leaveRequests.userMembershipId, reporteeMemberships.map((member) => member.id)),
+    );
   }
 
   async thisWeek(orgId: string) {

@@ -12,6 +12,7 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { NoTenantTransaction } from "../../../common/tenant";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { BooksService } from "../kernel/books.service";
@@ -106,6 +107,7 @@ export class ComplianceController {
   @Post("documents/:documentType/:documentId/submit")
   @ResponseSchema(submitDocumentResponseSchema)
   @BodylessAction()
+  @NoTenantTransaction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   @Idempotent("accounting.compliance.document.submit")
@@ -114,9 +116,6 @@ export class ComplianceController {
     @Param("documentId") documentId: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    const book = await this.books.findDefault(user.orgId);
-    if (!book) throw new NotFoundException("Accounting is not enabled for this organisation");
-
     const adapter = this.transport.resolve();
     if (!adapter) {
       /*
@@ -130,49 +129,35 @@ export class ComplianceController {
       );
     }
 
-    const [state] = await this.compliance.get(user.orgId, book.id, documentType, documentId);
-    if (!state) {
-      throw new NotFoundException("No compliance decision has been recorded for that document");
-    }
-    if (state.status === "not_required") {
-      throw new ConflictException(
-        "This document is not reportable, so there is nothing to file.",
-      );
-    }
-
-    const payload = await this.compliance.payloadForDocument(
+    const filing = await this.compliance.fileDocument(
       user.orgId,
-      book.id,
       documentType,
       documentId,
+      adapter,
     );
-    if (!payload) {
+
+    if (filing.outcome === "no-book")
+      throw new NotFoundException("Accounting is not enabled for this organisation");
+    if (filing.outcome === "no-decision")
+      throw new NotFoundException("No compliance decision has been recorded for that document");
+    if (filing.outcome === "not-reportable")
+      throw new ConflictException("This document is not reportable, so there is nothing to file.");
+    if (filing.outcome === "no-payload")
       throw new ConflictException(
         "This document's details could not be read for filing. Only accounting's own AR " +
           "documents can be filed; a legacy invoice cannot.",
       );
-    }
 
-    const result = await this.compliance.submitToTransport(
-      user.orgId,
-      book.id,
-      documentType,
-      documentId,
-      adapter,
-      payload,
-    );
-
-    const states = await this.compliance.get(user.orgId, book.id, documentType, documentId);
     /*
       The row this adapter wrote, found by its transport rather than by
       position — the decision row for `irp` is still there beside it, and
       reading the wrong one would report a mock submission through the
       narrative of an obligation nobody acted on.
     */
-    const written = states.find((state) => state.transport === adapter.transport);
+    const written = filing.states.find((state) => state.transport === adapter.transport);
 
     return {
-      result,
+      result: filing.result,
       transport: this.transport.describe(),
       /*
         The narrative of what the adapter wrote, so a mock submission comes

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Logger } from "@nestjs/common";
 import { and, eq, gt, isNull, lt } from "drizzle-orm";
-import { invitationEvents, invitations, organizationMembers, organizations } from "../../../db/schema";
+import { invitationStatusEnum, invitationEvents, invitations, organizationMembers, organizations } from "../../../db/schema";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { Db } from "../../../db/drizzle.module";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -112,4 +112,39 @@ export async function lockPendingInvitation(
     throw new ConflictException("Invitation has already been accepted");
   }
   return invitation;
+}
+
+type InvitationStatus = (typeof invitationStatusEnum.enumValues)[number];
+
+type TransitionPatch = Partial<
+  Pick<
+    typeof invitations.$inferInsert,
+    "acceptedAt" | "acceptedMembershipId" | "declinedAt" | "revokedAt" | "revokedByMembershipId"
+  >
+>;
+
+export async function invitationTransition(
+  tx: DbOrTx,
+  params: {
+    invitationId: string;
+    orgId: string | null;
+    from: InvitationStatus;
+    to: InvitationStatus;
+    patch?: TransitionPatch;
+  },
+): Promise<{ id: string } | null> {
+  const { invitationId, orgId, from, to, patch } = params;
+  const rows = await tx
+    .update(invitations)
+    .set({ status: to, ...(patch ?? {}) })
+    .where(
+      and(
+        eq(invitations.id, invitationId),
+        ...(orgId === null ? [] : [eq(invitations.orgId, orgId)]),
+        eq(invitations.status, from),
+        isNull(invitations.acceptedAt),
+      ),
+    )
+    .returning({ id: invitations.id });
+  return rows[0] ?? null;
 }

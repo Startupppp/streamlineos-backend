@@ -21,28 +21,45 @@ import { TestRunsService } from "./test-runs.service";
 import {
   createBugFromResultSchema,
   createTestRunSchema,
+  runResultsQuerySchema,
   testRunListQuerySchema,
   updateTestResultSchema,
   updateTestRunSchema,
   type CreateBugFromResultInput,
   type CreateTestRunInput,
+  type RunResultsQuery,
   type TestRunListQuery,
   type UpdateTestResultInput,
   type UpdateTestRunInput,
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
-  testRunListItemSchema,
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
+import {
+  testRunListPageSchema,
   testRunDetailSchema,
-  testRunRowSchema,
+  testRunResultPageSchema,
   testRunResultRowSchema,
+  testRunRowSchema,
   bugRowSchema,
 } from "./dto/qa-response.schemas";
 
-const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
-const runIdresultIdParams = z.object({ runId: z.coerce.number().int().positive(), resultId: z.coerce.number().int().positive() }).strict();
+export const runIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    runId: z.coerce.number().int().positive(),
+  })
+  .strict();
+export const runIdresultIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    runId: z.coerce.number().int().positive(),
+    resultId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/test-runs")
@@ -52,7 +69,7 @@ export class TestRunsController {
 
   @Get()
   @RequirePermission("build:qa:view")
-  @ResponseSchema(z.array(testRunListItemSchema))
+  @ResponseSchema(testRunListPageSchema)
   @Validate({ query: testRunListQuerySchema })
   listRuns(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -71,7 +88,20 @@ export class TestRunsController {
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getRun(u.orgId, projectId, runId);
+    return this.svc.getRun(u, projectId, runId);
+  }
+
+  @Get(":runId/results")
+  @RequirePermission("build:qa:view")
+  @ResponseSchema(testRunResultPageSchema)
+  @Validate({ params: runIdParams, query: runResultsQuerySchema })
+  listRunResults(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("runId", ParseIntPipe) runId: number,
+    @Query() query: RunResultsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.listRunResults(u, projectId, runId, query);
   }
 
   @Post()
@@ -97,7 +127,7 @@ export class TestRunsController {
     @Body() body: UpdateTestRunInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateRun(u.orgId, u.userId, projectId, runId, body);
+    return this.svc.updateRun(u, projectId, runId, body);
   }
 
   @Delete(":runId")
@@ -110,7 +140,7 @@ export class TestRunsController {
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteRun(u.orgId, projectId, runId);
+    return this.svc.deleteRun(u, projectId, runId);
   }
 
   @Patch(":runId/results/:resultId")
@@ -124,7 +154,7 @@ export class TestRunsController {
     @Body() body: UpdateTestResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateResult(u.orgId, projectId, runId, resultId, body, u.userId);
+    return this.svc.updateResult(u, projectId, runId, resultId, body);
   }
 
   @Post(":runId/results/:resultId/bug")
@@ -139,6 +169,6 @@ export class TestRunsController {
     @Body() body: CreateBugFromResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createBugFromResult(u.orgId, u.userId, projectId, runId, resultId, body);
+    return this.svc.createBugFromResultConsolidated(u, projectId, runId, resultId, body);
   }
 }

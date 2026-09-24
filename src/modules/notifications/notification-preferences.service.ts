@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import type { UpdatePreferenceInput, EventPreferenceInput, CreateSuppressionInput } from "./dto/preference.schemas";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationConsentService, type ConsentChannel } from "./notification-consent.service";
+import { NotificationRoutingService } from "./notification-routing.service";
 import { ALL_CHANNELS, type NotificationChannel } from "./notification.types";
 
 type EventPrefMap = Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>;
@@ -56,6 +57,7 @@ export class NotificationPreferencesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationEventRegistryService,
     private readonly consents: NotificationConsentService,
+    private readonly routing: NotificationRoutingService,
   ) {}
 
   private memberPredicate(userId: string, membershipId: number | null | undefined) {
@@ -75,11 +77,12 @@ export class NotificationPreferencesService {
   }
 
   async getEffective(orgId: string, userId: string, membershipId?: number | null) {
-    const [prefs, orgPolicy] = await Promise.all([
+    const [prefs, orgPolicy, availability] = await Promise.all([
       this.get(orgId, userId, membershipId),
       this.db.query.notificationPolicyDefaults.findFirst({
         where: and(eq(notificationPolicyDefaults.orgId, orgId), eq(notificationPolicyDefaults.scopeType, "ORG"), isNull(notificationPolicyDefaults.scopeId)),
       }),
+      this.routing.loadOrgAvailability(orgId),
     ]);
     return {
       ...prefs,
@@ -87,6 +90,7 @@ export class NotificationPreferencesService {
         defaultChannels: orgPolicy?.defaultChannels ?? [],
         canUserOverride: orgPolicy?.canUserOverride ?? true,
       },
+      availableChannels: [...availability],
     };
   }
 

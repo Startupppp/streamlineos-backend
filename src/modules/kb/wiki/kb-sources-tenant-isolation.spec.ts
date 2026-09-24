@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbSourcesService } from "./kb-sources.service";
 import { kbSourcesListQuerySchema } from "./dto/kb-sources.schemas";
@@ -20,6 +21,10 @@ describe("KbSourcesService — cross-tenant isolation", () => {
   const storage = {} as never;
   const indexing = {} as never;
   const config = {} as never;
+  const authMock = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+  };
 
   function makeDb() {
     const wheres: unknown[] = [];
@@ -43,7 +48,7 @@ describe("KbSourcesService — cross-tenant isolation", () => {
 
   it("scopes source list to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbSourcesService(db, storage, indexing, config, {} as never);
+    const svc = new KbSourcesService(db, storage, indexing, config, {} as never, authMock as never);
 
     await svc.list(ATTACKER, FIRST_PAGE);
 
@@ -55,7 +60,7 @@ describe("KbSourcesService — cross-tenant isolation", () => {
 
   it("returns sources for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbSourcesService(db, storage, indexing, config, {} as never);
+    const svc = new KbSourcesService(db, storage, indexing, config, {} as never, authMock as never);
 
     const page = await svc.list(OWNER, FIRST_PAGE);
 

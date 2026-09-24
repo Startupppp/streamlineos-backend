@@ -16,6 +16,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PeriodsService } from "./periods.service";
+import { PeriodsSubmitService } from "./periods-submit.service";
 import { TimesheetOverdueService } from "./overdue.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 import { overdueQuerySchema, type OverdueQuery } from "./dto/overdue.schemas";
@@ -29,6 +30,7 @@ import {
   periodDetailResponseSchema,
   overdueQueueResponseSchema,
 } from "./dto/timesheets-response.schemas";
+import { periodApproverPreviewSchema } from "./dto/timesheets-approvals-response.schemas";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +40,7 @@ const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }
 export class TimesheetPeriodsController {
   constructor(
     private readonly periods: PeriodsService,
+    private readonly submitter: PeriodsSubmitService,
     private readonly overdue: TimesheetOverdueService,
   ) {}
 
@@ -59,16 +62,6 @@ export class TimesheetPeriodsController {
     return this.periods.getCurrent(u);
   }
 
-  /**
-   * TS-11. Declared before `:periodId` because Nest matches in declaration
-   * order: below it, `GET /timesheets/periods/overdue` would reach the handler
-   * with the `ParseIntPipe` and 400 on the word "overdue".
-   *
-   * `timesheets:approvals:view` rather than a new key. The queue lists other
-   * people's late timesheets, which is precisely the standing the approvals
-   * queue already grants, and the same `DataScope` narrows it — a `team`
-   * approver sees their team, not the organisation.
-   */
   @Get("overdue")
   @RequirePermission("timesheets:approvals:view")
   @Validate({ query: overdueQuerySchema })
@@ -89,6 +82,17 @@ export class TimesheetPeriodsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.periods.getPeriod(u, periodId);
+  }
+
+  @Get(":periodId/approver")
+  @RequirePermission("timesheets:entries:view")
+  @Validate({ params: periodIdParams })
+  @ResponseSchema(periodApproverPreviewSchema)
+  previewApprover(
+    @Param("periodId", ParseIntPipe) periodId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.submitter.previewApprover(u, periodId);
   }
 
   @Post(":periodId/submit")

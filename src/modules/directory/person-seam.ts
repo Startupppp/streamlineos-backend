@@ -1,12 +1,14 @@
-import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
   organizationMembers,
   organizationPeople,
+  users,
   workers,
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
+import type { AmbiguousCandidate } from "../../common/types/ambiguous-candidate";
 
 export type PersonSubject =
   | { kind: "user"; userId: string }
@@ -19,7 +21,10 @@ export type PersonEmployment = {
   lifecycleStatus: string;
 };
 
-export type PersonResolutionPath = "membership" | "payee-worker" | "person-record";
+export type PersonResolutionPath =
+  | "membership"
+  | "payee-worker"
+  | "person-record";
 
 export type PayableIdentity =
   | { kind: "user"; userId: string }
@@ -45,9 +50,7 @@ function unresolved(subject: PersonSubject): PersonResolution {
   return { status: "unresolved", subject };
 }
 
-function resolved(
-  person: Omit<ResolvedPerson, "payable">,
-): PersonResolution {
+function resolved(person: Omit<ResolvedPerson, "payable">): PersonResolution {
   return {
     status: "resolved",
     person: { ...person, payable: person.payableAs !== null },
@@ -271,7 +274,11 @@ async function resolvePersonRecord(
  * would 404 its own tenant's non-payee worker, which is a behaviour change and not a tenant guard.
  * Callers that need the payroll bar keep `assertPayrollWorkerPayeeEligible`.
  */
-export async function workerBelongsToOrg(db: Db, orgId: string, workerId: string): Promise<boolean> {
+export async function workerBelongsToOrg(
+  db: Db,
+  orgId: string,
+  workerId: string,
+): Promise<boolean> {
   const [row] = await db
     .select({ workerId: workers.workerId })
     .from(workers)
@@ -300,6 +307,7 @@ export type PersonIdentity = {
   organizationPersonId: string;
   userId: string | null;
   workerId: string | null;
+  workerNumber: (typeof workers.$inferSelect)["workerNumber"];
   displayName: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -324,7 +332,9 @@ export async function resolvePeopleIdentities(
   const identities = new Map<string, PersonIdentity>();
   if (subjects.length === 0) return identities;
 
-  const userIds = subjects.filter((s) => s.kind === "user").map((s) => s.userId);
+  const userIds = subjects
+    .filter((s) => s.kind === "user")
+    .map((s) => s.userId);
   const workerIds = subjects
     .filter((s) => s.kind === "worker")
     .map((s) => s.workerId);
@@ -351,6 +361,7 @@ export async function resolvePeopleIdentities(
       workEmail: organizationPeople.workEmail,
       avatarUrl: organizationPeople.avatarUrl,
       workerId: workers.workerId,
+      workerNumber: workers.workerNumber,
       isPayee: workers.isPayee,
       membershipId: organizationMembers.id,
     })
@@ -358,7 +369,10 @@ export async function resolvePeopleIdentities(
     .leftJoin(
       workers,
       and(
-        eq(workers.organizationPersonId, organizationPeople.organizationPersonId),
+        eq(
+          workers.organizationPersonId,
+          organizationPeople.organizationPersonId,
+        ),
         eq(workers.organizationId, organizationPeople.organizationId),
         isNull(workers.deletedAt),
       ),
@@ -383,6 +397,7 @@ export async function resolvePeopleIdentities(
       organizationPersonId: row.organizationPersonId,
       userId: row.userId ?? null,
       workerId: row.workerId ?? null,
+      workerNumber: row.workerNumber ?? null,
       displayName: row.displayName ?? null,
       firstName: row.firstName ?? null,
       lastName: row.lastName ?? null,
@@ -399,7 +414,10 @@ export async function resolvePeopleIdentities(
       identity,
     );
     if (identity.userId)
-      identities.set(subjectKey({ kind: "user", userId: identity.userId }), identity);
+      identities.set(
+        subjectKey({ kind: "user", userId: identity.userId }),
+        identity,
+      );
     if (identity.workerId)
       identities.set(
         subjectKey({ kind: "worker", workerId: identity.workerId }),
@@ -412,4 +430,156 @@ export async function resolvePeopleIdentities(
     if (!requested.has(key)) identities.delete(key);
 
   return identities;
+}
+
+export type PersonNameResolution =
+  | { status: "resolved"; userId: string; displayName?: string; email?: string }
+  | { status: "unresolved" }
+  | { status: "ambiguous"; candidates: readonly AmbiguousCandidate[] };
+
+export const NAME_RESOLUTION_MAX_NAMES = 20;
+export const NAME_RESOLUTION_MAX_CANDIDATES = 10;
+export const NAME_RESOLUTION_MIN_PARTIAL_CHARS = 3;
+
+const displayKey = sql<string>`lower(coalesce(${organizationPeople.displayName}, ${users.name}, ''))`;
+const fullNameKey = sql<string>`lower(trim(coalesce(${organizationPeople.firstName}, ${users.firstName}, '') || ' ' || coalesce(${organizationPeople.lastName}, ${users.lastName}, '')))`;
+const emailKey = sql<string>`lower(coalesce(${organizationPeople.workEmail}, ${users.email}, ''))`;
+
+function likePattern(needle: string): string {
+  return `%${needle.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+}
+
+export function peopleByNameQuery(
+  db: Db,
+  orgId: string,
+  needleKeys: readonly string[],
+) {
+  const matches: SQL[] = [];
+  for (const needle of needleKeys) {
+    matches.push(sql`${displayKey} = ${needle}`);
+    matches.push(sql`${fullNameKey} = ${needle}`);
+    matches.push(sql`${emailKey} = ${needle}`);
+    if (needle.length < NAME_RESOLUTION_MIN_PARTIAL_CHARS) continue;
+    matches.push(sql`${displayKey} like ${likePattern(needle)}`);
+    matches.push(sql`${fullNameKey} like ${likePattern(needle)}`);
+  }
+
+  return db
+    .select({
+      userId: organizationMembers.userId,
+      displayName: sql<
+        string | null
+      >`coalesce(${organizationPeople.displayName}, ${users.name})`,
+      firstName: sql<
+        string | null
+      >`coalesce(${organizationPeople.firstName}, ${users.firstName})`,
+      lastName: sql<
+        string | null
+      >`coalesce(${organizationPeople.lastName}, ${users.lastName})`,
+      workEmail: sql<
+        string | null
+      >`coalesce(${organizationPeople.workEmail}, ${users.email})`,
+      displayKey,
+      fullNameKey,
+      emailKey,
+    })
+    .from(organizationMembers)
+    .innerJoin(
+      users,
+      and(
+        eq(users.id, organizationMembers.userId),
+        eq(users.isActive, true),
+        isNull(users.deletedAt),
+      ),
+    )
+    .leftJoin(
+      organizationPeople,
+      and(
+        eq(organizationPeople.userId, organizationMembers.userId),
+        eq(organizationPeople.organizationId, organizationMembers.orgId),
+        isNull(organizationPeople.deletedAt),
+      ),
+    )
+    .where(
+      and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        or(...matches),
+      ),
+    )
+    .limit(NAME_RESOLUTION_MAX_NAMES * (NAME_RESOLUTION_MAX_CANDIDATES + 1));
+}
+
+export async function resolvePeopleByName(
+  db: Db,
+  orgId: string,
+  names: readonly string[],
+): Promise<Map<string, PersonNameResolution>> {
+  const resolutions = new Map<string, PersonNameResolution>();
+  const needles = new Map<string, string>();
+  for (const name of names.slice(0, NAME_RESOLUTION_MAX_NAMES)) {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) continue;
+    resolutions.set(trimmed, { status: "unresolved" });
+    needles.set(trimmed.toLowerCase(), trimmed);
+  }
+  if (needles.size === 0) return resolutions;
+
+  const rows = await peopleByNameQuery(db, orgId, [...needles.keys()]);
+
+  const exact = new Map<string, typeof rows>();
+  const partial = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const keys = [row.displayKey, row.fullNameKey];
+    for (const [key, needle] of needles) {
+      const bucket =
+        keys.includes(key) || row.emailKey === key
+          ? exact
+          : keys.some((k) => k.includes(key))
+            ? partial
+            : undefined;
+      if (bucket === undefined) continue;
+      const found = bucket.get(needle) ?? [];
+      if (!found.includes(row)) found.push(row);
+      bucket.set(needle, found);
+    }
+  }
+
+  const byNeedle = new Map<string, typeof rows>();
+  for (const needle of needles.values()) {
+    const chosen = exact.get(needle) ?? partial.get(needle);
+    if (chosen !== undefined) byNeedle.set(needle, chosen);
+  }
+
+  for (const [needle, bucket] of byNeedle) {
+    if (bucket.length > 1) {
+      resolutions.set(needle, {
+        status: "ambiguous",
+        candidates: bucket
+          .slice(0, NAME_RESOLUTION_MAX_CANDIDATES)
+          .map((row) => ({
+            label:
+              row.displayName ??
+              `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim(),
+            ...(row.workEmail !== null ? { hint: row.workEmail } : {}),
+          })),
+      });
+      continue;
+    }
+    const [row] = bucket;
+    if (row?.userId) {
+      const nameText =
+        row.displayName ??
+        `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
+      const displayName = nameText !== "" ? nameText : undefined;
+      resolutions.set(needle, {
+        status: "resolved",
+        userId: row.userId,
+        displayName,
+        ...(row.workEmail !== null ? { email: row.workEmail } : {}),
+      });
+    }
+  }
+
+  return resolutions;
 }

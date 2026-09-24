@@ -57,7 +57,7 @@ const ACKNOWLEDGEMENT_WRITERS = [
 ];
 
 const isAllowedWriter = (relPath: string): boolean =>
-  ACKNOWLEDGEMENT_WRITERS.some((allowed) => relPath.includes(allowed));
+  ACKNOWLEDGEMENT_WRITERS.some((allowed) => relPath.replaceAll("\\", "/").includes(allowed));
 
 describe("nothing claims a document was filed", () => {
   it("scans a real number of files", () => {

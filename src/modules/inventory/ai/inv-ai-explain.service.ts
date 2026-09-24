@@ -1,9 +1,15 @@
-import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { invAiInsights } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   VendorScorecardService,
   type VendorScorecard,
@@ -22,12 +28,6 @@ import {
   type InsightNarration,
 } from "./inv-ai-narration";
 
-/**
- * F4. The narration helpers and the restraint rules moved to
- * `inv-ai-narration.ts` when the reorder proposal became its own service
- * (`proposals/inv-ai-proposal.service.ts`). Re-exported here because they are
- * this service's response type and callers already import them from it.
- */
 export type { ExplainFactor, InsightNarration } from "./inv-ai-narration";
 
 const FEATURE_KEY = "inv.insight-explain" as const;
@@ -52,7 +52,12 @@ export interface SupplierDelayBriefingResult {
     vendorId: number;
     vendorName: string;
     insightCount: number;
-    insights: Array<{ id: number; title: string; body: string; severity: string }>;
+    insights: Array<{
+      id: number;
+      title: string;
+      body: string;
+      severity: string;
+    }>;
     performance: VendorScorecard;
   }>;
   narration: string;
@@ -62,7 +67,10 @@ export interface SupplierDelayBriefingResult {
 function buildOpsBriefUserPrompt(brief: InventoryOpsBrief): string {
   const lines = brief.signals
     .filter((signal) => signal.count > 0)
-    .map((signal) => `- ${signal.label}: ${signal.count} (worst severity ${signal.severity})`);
+    .map(
+      (signal) =>
+        `- ${signal.label}: ${signal.count} (worst severity ${signal.severity})`,
+    );
   return [
     "These counts were computed by the inventory engine. Do not recompute or adjust them.",
     ...lines,
@@ -99,7 +107,14 @@ function buildDigestUserPrompt(groups: DigestGroup[]): string {
   ].join("\n");
 }
 
-function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorName: string; insightCount: number; performance: VendorScorecard }>): string {
+function buildDelayBriefingUserPrompt(
+  vendors: Array<{
+    vendorId: number;
+    vendorName: string;
+    insightCount: number;
+    performance: VendorScorecard;
+  }>,
+): string {
   return [
     "Supplier delay briefing — all performance figures are pre-computed (do not invent or modify any numbers):",
     JSON.stringify(vendors, null, 2),
@@ -148,7 +163,9 @@ export class InvAiExplainService {
      * tables and would be refused on a bare pool connection. Everything after
      * it is projection over an aggregate already in memory.
      */
-    const brief = await readEvidence(this.db, orgId, () => this.insights.getOpsBrief(orgId));
+    const brief = await readEvidence(this.db, orgId, () =>
+      this.insights.getOpsBrief(orgId),
+    );
 
     if (brief.totalSignals === 0) {
       // Short-circuit before the provider. Paying a model to write "nothing is
@@ -193,9 +210,6 @@ export class InvAiExplainService {
 
     return {
       brief,
-      // The brief is an aggregate, so there are no row ids to cite and the
-      // allowlist is empty. A model that invents one is refused by the same
-      // path that refuses one anywhere else.
       narration: toNarration(
         result.data,
         [],
@@ -211,10 +225,22 @@ export class InvAiExplainService {
     };
   }
 
-  async explainInsight(orgId: string, userId: string, insightId: number): Promise<InsightNarration> {
-    const insight = await this.db.query.invAiInsights.findFirst({
-      where: and(eq(invAiInsights.id, insightId), eq(invAiInsights.orgId, orgId)),
-    });
+  async explainInsight(
+    orgId: string,
+    userId: string,
+    insightId: number,
+  ): Promise<InsightNarration> {
+    const insight = await runInTenantTransaction(
+      this.db,
+      () =>
+        this.db.query.invAiInsights.findFirst({
+          where: and(
+            eq(invAiInsights.id, insightId),
+            eq(invAiInsights.orgId, orgId),
+          ),
+        }),
+      { orgId },
+    );
 
     if (!insight) throw new NotFoundException("Insight not found");
 
@@ -246,12 +272,6 @@ export class InvAiExplainService {
       throw new ServiceUnavailableException(result.message);
     }
 
-    // The allowlist is the rows this method actually read. Anything else the
-    // model cites is invented, however plausible the number looks.
-    // These are the keys `collectCandidates` actually writes into sourceRefs --
-    // `variantId`, not `productVariantId`. Guessing the name here would have
-    // produced an empty allowlist, which rejects every citation as invented and
-    // fails every explain call.
     const allowed = referencesFrom([
       ["insight", insight.id],
       ["product_variant", sourceRefs["variantId"]],
@@ -282,24 +302,50 @@ export class InvAiExplainService {
     );
   }
 
-  async getDigest(orgId: string, userId: string, narrate: boolean): Promise<InventoryDigest> {
-    const rows = await this.db.query.invAiInsights.findMany({
-      where: and(eq(invAiInsights.orgId, orgId), eq(invAiInsights.status, "NEW")),
-      columns: { id: true, insightType: true, severity: true, title: true, body: true },
-      limit: 100,
-    });
+  async getDigest(
+    orgId: string,
+    userId: string,
+    narrate: boolean,
+  ): Promise<InventoryDigest> {
+    const rows = await readEvidence(this.db, orgId, () =>
+      this.db.query.invAiInsights.findMany({
+        where: and(
+          eq(invAiInsights.orgId, orgId),
+          eq(invAiInsights.status, "NEW"),
+        ),
+        columns: {
+          id: true,
+          insightType: true,
+          severity: true,
+          title: true,
+          body: true,
+        },
+        limit: 100,
+      }),
+    );
 
     const groupMap = new Map<string, DigestGroup>();
     for (const row of rows) {
       let group = groupMap.get(row.insightType);
       if (!group) {
-        group = { insightType: row.insightType, count: 0, severityCounts: {}, samples: [] };
+        group = {
+          insightType: row.insightType,
+          count: 0,
+          severityCounts: {},
+          samples: [],
+        };
         groupMap.set(row.insightType, group);
       }
       group.count++;
-      group.severityCounts[row.severity] = (group.severityCounts[row.severity] ?? 0) + 1;
+      group.severityCounts[row.severity] =
+        (group.severityCounts[row.severity] ?? 0) + 1;
       if (group.samples.length < 3) {
-        group.samples.push({ id: row.id, title: row.title, body: row.body, severity: row.severity });
+        group.samples.push({
+          id: row.id,
+          title: row.title,
+          body: row.body,
+          severity: row.severity,
+        });
       }
     }
 
@@ -334,11 +380,22 @@ export class InvAiExplainService {
     userId: string,
     vendorId?: number,
   ): Promise<SupplierDelayBriefingResult> {
-    const insightRows = await this.db.query.invAiInsights.findMany({
-      where: and(eq(invAiInsights.orgId, orgId), eq(invAiInsights.insightType, "vendor_delay")),
-      columns: { id: true, title: true, body: true, severity: true, sourceRefs: true },
-      limit: 100,
-    });
+    const insightRows = await readEvidence(this.db, orgId, () =>
+      this.db.query.invAiInsights.findMany({
+        where: and(
+          eq(invAiInsights.orgId, orgId),
+          eq(invAiInsights.insightType, "vendor_delay"),
+        ),
+        columns: {
+          id: true,
+          title: true,
+          body: true,
+          severity: true,
+          sourceRefs: true,
+        },
+        limit: 100,
+      }),
+    );
 
     const filteredInsights = vendorId
       ? insightRows.filter((r) => {
@@ -364,25 +421,26 @@ export class InvAiExplainService {
 
     // C4. One batched read rather than a scorecard per vendor: the old shape ran
     // seven queries for every delayed supplier in the briefing.
-    const scorecards = await this.scorecards.scorecardsFor(
-      orgId,
-      Array.from(vendorMap.keys()),
+    const scorecards = await readEvidence(this.db, orgId, () =>
+      this.scorecards.scorecardsFor(orgId, Array.from(vendorMap.keys())),
     );
     const vendors = Array.from(vendorMap.entries()).flatMap(([vId, entry]) => {
       const performance = scorecards.get(vId);
       if (!performance) return [];
-      return [{
-        vendorId: vId,
-        vendorName: entry.vendorName,
-        insightCount: entry.insights.length,
-        insights: entry.insights.map((i) => ({
-          id: i.id,
-          title: i.title,
-          body: i.body,
-          severity: i.severity,
-        })),
-        performance,
-      }];
+      return [
+        {
+          vendorId: vId,
+          vendorName: entry.vendorName,
+          insightCount: entry.insights.length,
+          insights: entry.insights.map((i) => ({
+            id: i.id,
+            title: i.title,
+            body: i.body,
+            severity: i.severity,
+          })),
+          performance,
+        },
+      ];
     });
 
     const narration =
@@ -403,7 +461,8 @@ export class InvAiExplainService {
                 promptVersion: 1,
               },
             });
-            if (!result.ok) throw new ServiceUnavailableException(result.message);
+            if (!result.ok)
+              throw new ServiceUnavailableException(result.message);
             return result.data;
           })();
 

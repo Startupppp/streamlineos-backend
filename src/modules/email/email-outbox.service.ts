@@ -27,14 +27,45 @@ function resolveScope(explicitOrgId: string | null | undefined): {
   organizationId: string | null;
   scope: "PLATFORM" | "TENANT";
 } {
-  const orgId = explicitOrgId ?? getTenantContext()?.orgId ?? null;
-  return orgId ? { organizationId: orgId, scope: "TENANT" } : { organizationId: null, scope: "PLATFORM" };
+  if (explicitOrgId) return { organizationId: explicitOrgId, scope: "TENANT" };
+  if (explicitOrgId === null) return { organizationId: null, scope: "PLATFORM" };
+
+  const ambient = getTenantContext()?.orgId ?? null;
+  if (ambient) return { organizationId: ambient, scope: "TENANT" };
+
+  throw new Error(
+    "email outbox: no organization to attribute this send to. Pass organizationId: null for mail that genuinely has no tenant (verification, password reset), or send inside a tenant context.",
+  );
 }
 
 type DurableEmailOptions = Pick<
   EmailOptions,
   "to" | "subject" | "html" | "text" | "organizationId" | "recipientUserId"
 >;
+
+export const INLINE_SEND_BUDGET_MS = 5_000;
+
+export const NO_EMAIL_PROVIDER_REASON =
+  "No email provider is configured, so the email could not be sent.";
+
+export const SUPPRESSED_RECIPIENT_REASON =
+  "The address is on the email suppression list after a bounce or unsubscribe, so no email was sent.";
+
+export type EmailQueueOutcome = { queued: true } | { queued: false; reason: string };
+
+function isPresent(value: string | string[] | undefined): boolean {
+  if (value === undefined) return false;
+  return Array.isArray(value)
+    ? value.some((entry) => entry.trim().length > 0)
+    : value.trim().length > 0;
+}
+
+function rowReproducesSend(options: EmailOptions): boolean {
+  if ((options.attachments?.length ?? 0) > 0) return false;
+  if (options.headers !== undefined && Object.keys(options.headers).length > 0)
+    return false;
+  return !isPresent(options.cc) && !isPresent(options.bcc) && !isPresent(options.replyTo);
+}
 
 @Injectable()
 export class EmailOutboxService {
@@ -115,10 +146,36 @@ export class EmailOutboxService {
     return inserted.length;
   }
 
-  async enqueueOnly(options: EmailOptions): Promise<void> {
+  async enqueueOnly(options: EmailOptions): Promise<EmailQueueOutcome> {
     const filtered = await this.applySuppression(options);
-    if (!filtered) return;
+    if (!filtered) return { queued: false, reason: SUPPRESSED_RECIPIENT_REASON };
+    if (this.emailProvider.getEmailProvider() === "none") {
+      await this.recordUnsendable(filtered);
+      return { queued: false, reason: NO_EMAIL_PROVIDER_REASON };
+    }
     await this.enqueueForDelivery([filtered]);
+    return { queued: true };
+  }
+
+  private async recordUnsendable(options: DurableEmailOptions): Promise<void> {
+    const { organizationId, scope } = resolveScope(options.organizationId);
+    const toEmail = Array.isArray(options.to) ? options.to.join(",") : options.to;
+    await this.db.insert(emailOutbox).values({
+      organizationId,
+      scope,
+      toEmail,
+      subject: options.subject,
+      html: options.html,
+      text: options.text ?? null,
+      recipientUserId: options.recipientUserId ?? null,
+      status: "FAILED",
+      attempts: 1,
+      lastError: "No email provider configured",
+    });
+    this.logger.warn("EMAIL_OUTBOX: no provider configured — marked FAILED", {
+      to: toEmail,
+      subject: options.subject,
+    });
   }
 
   async enqueueAndTry(options: EmailOptions): Promise<void> {
@@ -171,16 +228,20 @@ export class EmailOutboxService {
       throw new Error("No email provider configured");
     }
 
+    const reproducible = rowReproducesSend(options);
+
     try {
-      await this.emailProvider.sendEmailOnceDirect(options);
+      await this.emailProvider.sendEmailOnceDirect(
+        options,
+        reproducible ? INLINE_SEND_BUDGET_MS : undefined,
+      );
       await this.db
         .update(emailOutbox)
         .set({ status: "SENT", sentAt: new Date(), attempts: 1 })
         .where(eq(emailOutbox.id, row.id));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      const hasAttachments = (options.attachments?.length ?? 0) > 0;
-      const retryable = !hasAttachments && isTransientError(err);
+      const retryable = reproducible && isTransientError(err);
 
       if (retryable) {
         const nextAttemptAt = new Date(Date.now() + 60_000);
@@ -198,7 +259,9 @@ export class EmailOutboxService {
         return;
       }
 
-      const reason = hasAttachments ? "has-attachments" : "non-retryable-error";
+      const reason = reproducible
+        ? "non-retryable-error"
+        : "not-reproducible-from-outbox-row";
       await this.db
         .update(emailOutbox)
         .set({ status: "FAILED", attempts: 1, lastError: `${reason}: ${errorMessage}` })

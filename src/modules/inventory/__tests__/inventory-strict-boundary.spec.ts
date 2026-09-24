@@ -33,7 +33,11 @@ function dtoModulePaths(): string[] {
       const path = join(dir, entry);
       if (statSync(path).isDirectory()) walk(path);
       else if (RESPONSE_CONTRACT.test(path)) continue;
-      else if (/\/dto\/.*\.ts$/.test(path) || /\.schemas?\.ts$/.test(path)) found.push(path);
+      else if (
+        /\/dto\/.*\.ts$/.test(path.replaceAll("\\", "/")) ||
+        /\.schemas?\.ts$/.test(path)
+      )
+        found.push(path);
     }
   };
   walk(DTO_ROOT);

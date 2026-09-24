@@ -5,7 +5,6 @@ import { LlmService } from "../providers/llm.service";
 import { EmbeddingsService } from "../providers/embeddings.service";
 import { AiUsageService } from "../services/ai-usage.service";
 import { AiGatewayService } from "./ai-gateway.service";
-import { AiResponseCacheService } from "./ai-response-cache.service";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
 import { AI_CREDIT_LEDGER } from "./credit-ledger.interface";
 
@@ -15,7 +14,6 @@ import { AI_CREDIT_LEDGER } from "./credit-ledger.interface";
     LlmService,
     EmbeddingsService,
     AiUsageService,
-    AiResponseCacheService,
     AiConcurrencyLimiter,
     AiGatewayService,
     { provide: AI_CREDIT_LEDGER, useExisting: AiCreditsService },

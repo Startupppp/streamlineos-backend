@@ -30,12 +30,22 @@ function membersHarness(insertOutcome: { throws?: unknown; returns?: unknown[] }
   const values = jest.fn().mockReturnValue({ returning });
   const insert = jest.fn().mockReturnValue({ values });
   const spaceMemberLookup = jest.fn();
+  const savedRow = insertOutcome.returns?.[0] ?? {};
   const db = {
     query: {
       kbSpaces: { findFirst: jest.fn().mockResolvedValue({ id: SPACE_ID }) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 11 }) },
       kbSpaceMembers: { findFirst: spaceMemberLookup },
     },
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        leftJoin: jest.fn().mockReturnValue({
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([savedRow]),
+          }),
+        }),
+      }),
+    }),
     insert,
   } as unknown as Db;
   const service = new KbMembersService(

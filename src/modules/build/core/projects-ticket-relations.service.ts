@@ -1,52 +1,25 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { organizationMembers, projectMembers, tickets, workItemRelations } from "../../../db/schema";
+import { tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
+import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
 import type { AddRelationInput } from "./dto/projects.schemas";
 
 @Injectable()
 export class ProjectsTicketRelationsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  private async requireMember(
-    orgId: string,
-    projectId: number,
-    userId: string,
-  ): Promise<void> {
-    const [member] = await this.db
-      .select({ id: projectMembers.id })
-      .from(projectMembers)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, projectMembers.membershipId), eq(organizationMembers.userId, userId)))
-      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projectId)))
-      .limit(1);
-    if (!member) throw new ForbiddenException("Not a project member.");
-  }
-
-  private async requireProjectTicket(
-    orgId: string,
-    projectId: number,
-    ticketId: number,
-  ): Promise<void> {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.orgId, orgId),
-        eq(tickets.projectId, projectId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-  }
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(AccessService) private readonly access: TicketReadAccess,
+  ) {}
 
   private detectBlockingCycle(
     edges: { workItemId: number; relatedWorkItemId: number; relationType: string }[],
@@ -85,8 +58,7 @@ export class ProjectsTicketRelationsService {
     projectId: number,
     ticketId: number,
   ) {
-    await this.requireProjectTicket(u.orgId, projectId, ticketId);
-    await this.requireMember(u.orgId, projectId, u.userId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
 
     const relatedTicketSelect = {
       columns: {
@@ -155,8 +127,7 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     body: AddRelationInput,
   ) {
-    await this.requireProjectTicket(u.orgId, projectId, ticketId);
-    await this.requireMember(u.orgId, projectId, u.userId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
 
     if (body.relatedTicketId === ticketId) {
       throw new BadRequestException("A ticket cannot relate to itself.");
@@ -242,8 +213,7 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     relatedId: number,
   ) {
-    await this.requireProjectTicket(u.orgId, projectId, ticketId);
-    await this.requireMember(u.orgId, projectId, u.userId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
 
     if (!relatedId)
       throw new BadRequestException("relatedId query param required.");

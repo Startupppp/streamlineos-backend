@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { PermissionCatalogSyncService } from "../modules/rbac/permission-catalog-sync.service";
 import { RoleGrantReconcilerService } from "../modules/rbac/role-grant-reconciler.service";
+import { CronLeaseService } from "../modules/cron/cron-lease.service";
 import type { Db } from "../db/drizzle.module";
 
 function loadDatabaseUrl(): string {
@@ -18,6 +19,7 @@ async function main(): Promise<void> {
     const service = new PermissionCatalogSyncService(
       db,
       new RoleGrantReconcilerService(db),
+      new CronLeaseService(null),
     );
     const cleanupRetired = process.argv.includes("--cleanup-retired");
     const { catalogSize, staleKeys, deletedKeys, retainedKeys } =

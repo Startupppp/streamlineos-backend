@@ -169,7 +169,6 @@ export class TimesheetExceptionsService {
     return this.transition(u, exceptionId, input.reason, "DISMISSED", "exception.dismissed");
   }
 
-  /** The counts an own-scoped caller sees are the counts of the rows they may list. */
   async summary(u: CurrentUserContext) {
     const read = await resolveEntriesScope(this.access, u);
     const membershipId = actingMembershipId(u.principal);

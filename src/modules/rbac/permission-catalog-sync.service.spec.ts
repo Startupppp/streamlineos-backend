@@ -1,5 +1,5 @@
 import { classifyRetiredPermissions } from "./permission-catalog-sync.service";
-import { modulesCatalog, permissions } from "../../db/schema";
+import { modulesCatalog, permissions, permissionSupportedScopes } from "../../db/schema";
 
 describe("classifyRetiredPermissions", () => {
   it("deletes only stale keys without persisted role or delegation grants", () => {
@@ -42,6 +42,7 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
       await import("./permission-catalog-sync.service");
     const { RoleGrantReconcilerService } =
       await import("./role-grant-reconciler.service");
+    const { CronLeaseService } = await import("../cron/cron-lease.service");
     let inserted: Array<Record<string, unknown>> = [];
     let conflictSet: Record<string, unknown> = {};
 
@@ -76,6 +77,7 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
     const service = new PermissionCatalogSyncService(
       db as never,
       new RoleGrantReconcilerService(db as never),
+      new CronLeaseService(null),
     );
     await service.sync().catch(() => undefined);
     return { inserted, conflictSet };
@@ -109,5 +111,54 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
   it("never invents a module the catalog does not have", async () => {
     const { inserted } = await runSync([]);
     for (const row of inserted) expect(row.administeringModuleKey).toBeNull();
+  });
+});
+
+describe("PermissionCatalogSyncService.sync — team scope not offered", () => {
+  async function runSyncScopes(catalogModules: string[]) {
+    const { PermissionCatalogSyncService } =
+      await import("./permission-catalog-sync.service");
+    const { RoleGrantReconcilerService } =
+      await import("./role-grant-reconciler.service");
+    const { CronLeaseService } = await import("../cron/cron-lease.service");
+    let scopeRows: Array<Record<string, unknown>> = [];
+
+    const db = {
+      select: () => ({
+        from: (table: unknown) => ({
+          limit: () =>
+            table === modulesCatalog
+              ? Promise.resolve(
+                  catalogModules.map((moduleKey) => ({ moduleKey })),
+                )
+              : Promise.resolve([]),
+        }),
+      }),
+      insert: (table: unknown) => ({
+        values: (rows: Array<Record<string, unknown>>) => {
+          if (table === permissionSupportedScopes) scopeRows = rows;
+          return {
+            onConflictDoUpdate: () => Promise.resolve(),
+            onConflictDoNothing: () => Promise.resolve(),
+          };
+        },
+      }),
+      selectDistinct: () => ({ from: () => Promise.resolve([]) }),
+      delete: () => ({ where: () => Promise.resolve() }),
+    };
+
+    const service = new PermissionCatalogSyncService(
+      db as never,
+      new RoleGrantReconcilerService(db as never),
+      new CronLeaseService(null),
+    );
+    await service.sync().catch(() => undefined);
+    return { scopeRows };
+  }
+
+  it("emits no team row for a scopable permission, because the query layer cannot honour a team scope without materialised org-unit membership", async () => {
+    const { scopeRows } = await runSyncScopes(["hr", "home", "crm"]);
+    const teamRows = scopeRows.filter((row) => row.scope === "team");
+    expect(teamRows).toHaveLength(0);
   });
 });

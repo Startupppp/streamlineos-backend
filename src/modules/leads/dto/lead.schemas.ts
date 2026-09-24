@@ -67,12 +67,12 @@ export const updateSchema = z.object({
 
 export const ingestSchema = z
   .object({
-    name: z.string().min(1).optional(),
-    email: z.string().email().optional(),
-    phone: z.string().optional(),
-    company: z.string().optional(),
-    source: z.string().optional(),
-    notes: z.string().optional(),
+    name: z.string().min(1).max(200).optional(),
+    email: z.string().email().max(320).optional(),
+    phone: z.string().max(50).optional(),
+    company: z.string().max(200).optional(),
+    source: z.string().max(100).optional(),
+    notes: z.string().max(5000).optional(),
   }).strict()
   .superRefine((d, ctx) => {
     if (!d.name && !d.email && !d.phone)

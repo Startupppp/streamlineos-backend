@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -14,10 +15,10 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { ClientPortalService } from "./client-portal.service";
 import { createPortalCrSchema, type CreatePortalCrInput } from "./dto/client-portal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -38,7 +39,9 @@ export class ClientPortalController {
   @RequirePermission("build:portal:view")
   @ResponseSchema(z.array(portalProjectItemSchema))
   listPortalProjects(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.listPortalProjects(u.orgId, actingMembershipId(u.principal), u.userId);
+    const membershipId = actingMembershipId(u.principal);
+    if (!membershipId) throw new ForbiddenException("No membership context");
+    return this.svc.listPortalProjects(u.orgId, membershipId);
   }
 
   @Get("projects/:projectId/overview")
@@ -49,7 +52,7 @@ export class ClientPortalController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getProjectOverview(u.orgId, actingMembershipId(u.principal), u.userId, projectId);
+    return this.svc.getProjectOverview(u, projectId);
   }
 
   @Get("projects/:projectId/change-requests")
@@ -60,7 +63,7 @@ export class ClientPortalController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listPortalChangeRequests(u.orgId, actingMembershipId(u.principal), u.userId, projectId);
+    return this.svc.listPortalChangeRequests(u, projectId);
   }
 
   @Post("projects/:projectId/change-requests")
@@ -73,6 +76,6 @@ export class ClientPortalController {
     @Body() body: CreatePortalCrInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createPortalChangeRequest(u.orgId, actingMembershipId(u.principal), u.userId, projectId, body);
+    return this.svc.createPortalChangeRequest(u, projectId, body);
   }
 }

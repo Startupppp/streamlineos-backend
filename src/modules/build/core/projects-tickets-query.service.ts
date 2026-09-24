@@ -42,7 +42,7 @@ export class ProjectsTicketsQueryService {
 
   async bulkUpdate(actor: CurrentUserContext, projectId: number, body: BulkUpdateInput) {
     const result = await bulkMutateTickets(this.db, this.access, actor, projectId, body);
-    await this.cache.del(`projects:analytics:${actor.orgId}:${projectId}`)
+    await this.cache.invalidateNamespace(`build:analytics:${actor.orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId }));
     return result;
   }

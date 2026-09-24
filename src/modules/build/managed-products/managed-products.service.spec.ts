@@ -1,9 +1,15 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { ManagedProductsService } from "./managed-products.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+
+const pgDialect = new PgDialect();
+
+function renderSql(value: unknown): string {
+  return pgDialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]).sql;
+}
 
 const ORG_ID = "org-1";
 const OTHER_ORG = "org-9";
@@ -54,10 +60,6 @@ describe("ManagedProductsService", () => {
         ManagedProductsService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
-        {
-          provide: PmWorkspacesService,
-          useValue: { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws_default") },
-        },
       ],
     }).compile();
     svc = module.get(ManagedProductsService);
@@ -103,7 +105,7 @@ describe("ManagedProductsService", () => {
       });
 
       await expect(
-        svc.createManagedProduct(ORG_ID, USER_ID, { name: "Atlas", key: "ATLAS" }),
+        svc.createManagedProduct(ORG_ID, USER_ID, null, { name: "Atlas", key: "ATLAS" }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mockAudit.log).not.toHaveBeenCalled();
     });
@@ -116,7 +118,7 @@ describe("ManagedProductsService", () => {
         }),
       });
 
-      const result = await svc.createManagedProduct(ORG_ID, USER_ID, {
+      const result = await svc.createManagedProduct(ORG_ID, USER_ID, null, {
         name: "Atlas",
         key: "ATLAS",
       });
@@ -167,6 +169,27 @@ describe("ManagedProductsService", () => {
         expect.objectContaining({ action: "managed_product.updated", orgId: ORG_ID }),
       );
     });
+
+    it("UPDATE WHERE includes isNull(deletedAt) so a concurrently soft-deleted row cannot be overwritten", async () => {
+      const existing = makeProduct();
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      let capturedWhere: unknown;
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((cond: unknown) => {
+            capturedWhere = cond;
+            return { returning: jest.fn().mockResolvedValue([existing]) };
+          }),
+        }),
+      });
+
+      await svc.updateManagedProduct(ORG_ID, USER_ID, 1, { name: "safe" });
+
+      const sql = renderSql(capturedWhere);
+      expect(sql).toMatch(/deleted_at/);
+      expect(sql).toMatch(/is null/i);
+    });
   });
 
   describe("deleteManagedProduct — soft delete", () => {
@@ -198,6 +221,89 @@ describe("ManagedProductsService", () => {
         expect.objectContaining({ action: "managed_product.deleted", orgId: ORG_ID }),
       );
     });
+
+    it("soft-delete WHERE includes isNull(deletedAt) so a concurrently double-deleted row is not touched", async () => {
+      const existing = makeProduct();
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      let capturedWhere: unknown;
+      const setSpy = jest.fn().mockReturnValue({
+        where: jest.fn().mockImplementation((cond: unknown) => {
+          capturedWhere = cond;
+          return Promise.resolve(undefined);
+        }),
+      });
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({ set: setSpy });
+
+      await svc.deleteManagedProduct(ORG_ID, USER_ID, 1);
+
+      const sql = renderSql(capturedWhere);
+      expect(sql).toMatch(/deleted_at/);
+      expect(sql).toMatch(/is null/i);
+    });
+  });
+
+  describe("getProductInsights — tenant-scoped aggregates (BSN-01-022)", () => {
+    function makeGroupedSelectChain(rows: unknown[], joined = false) {
+      const groupByChain = Promise.resolve(rows);
+      const whereChain = { groupBy: jest.fn().mockReturnValue(groupByChain) };
+      if (joined) {
+        const innerJoinChain = { where: jest.fn().mockReturnValue(whereChain) };
+        const fromChain = { innerJoin: jest.fn().mockReturnValue(innerJoinChain) };
+        return { from: jest.fn().mockReturnValue(fromChain) };
+      }
+      const fromChain = { where: jest.fn().mockReturnValue(whereChain) };
+      return { from: jest.fn().mockReturnValue(fromChain) };
+    }
+
+    it("throws 404 when the product is not found in the caller's tenant", async () => {
+      const { selectChain } = makeSelectChain([]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      await expect(svc.getProductInsights(ORG_ID, 99)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("sums project and submission counts grouped by status", async () => {
+      const product = makeProduct();
+      const { selectChain: loadChain } = makeSelectChain([product]);
+      const projectsChain = makeGroupedSelectChain([
+        { status: "ACTIVE", tally: 3 },
+        { status: "COMPLETED", tally: 1 },
+      ]);
+      const submissionsChain = makeGroupedSelectChain(
+        [{ status: "open", tally: 5 }, { status: "resolved", tally: 2 }],
+        true,
+      );
+
+      (mockDb as { select: jest.Mock }).select
+        .mockReturnValueOnce(loadChain)
+        .mockReturnValueOnce(projectsChain)
+        .mockReturnValueOnce(submissionsChain);
+
+      const result = await svc.getProductInsights(ORG_ID, 1);
+
+      expect(result.linkedProjectCount).toBe(4);
+      expect(result.projectsByStatus).toEqual({ active: 3, completed: 1, archived: 0 });
+      expect(result.submissionsByStatus).toMatchObject({ open: 5, resolved: 2, in_progress: 0 });
+    });
+
+    it("returns all zeros when no projects or submissions are linked to the product", async () => {
+      const product = makeProduct();
+      const { selectChain: loadChain } = makeSelectChain([product]);
+      const projectsChain = makeGroupedSelectChain([]);
+      const submissionsChain = makeGroupedSelectChain([], true);
+
+      (mockDb as { select: jest.Mock }).select
+        .mockReturnValueOnce(loadChain)
+        .mockReturnValueOnce(projectsChain)
+        .mockReturnValueOnce(submissionsChain);
+
+      const result = await svc.getProductInsights(ORG_ID, 1);
+
+      expect(result.linkedProjectCount).toBe(0);
+      expect(result.projectsByStatus).toEqual({ active: 0, completed: 0, archived: 0 });
+      expect(result.submissionsByStatus).toEqual({ open: 0, in_progress: 0, resolved: 0, archived: 0 });
+    });
   });
 
   describe("listManagedProducts — pagination envelope", () => {
@@ -214,7 +320,7 @@ describe("ManagedProductsService", () => {
         }),
       });
 
-      const result = await svc.listManagedProducts(ORG_ID, { limit: 20 } as never);
+      const result = await svc.listManagedProducts(ORG_ID, { limit: 20 } as never, 1);
 
       expect(result.data).toHaveLength(2);
       expect(result.pagination).toEqual({

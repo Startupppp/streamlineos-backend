@@ -1,6 +1,17 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { deals, projectMembers, projects, projectStatuses } from "../../../db/schema";
+import {
+  deals,
+  managedProducts,
+  projectMembers,
+  projects,
+  projectStatuses,
+} from "../../../db/schema";
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -9,10 +20,10 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { lockQuota } from "../../billing/core/seat-definition";
+import { buildProjectHref } from "./build-app-paths";
 
 function generateProjectKey(name: string): string {
   const namePart = name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
@@ -27,16 +38,43 @@ export class ProjectsProvisionService {
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
+
+  private async resolveManagedProductInOrg(
+    orgId: string,
+    managedProductId: number | undefined,
+  ): Promise<number | null> {
+    if (managedProductId === undefined) return null;
+    const [product] = await this.db
+      .select({ id: managedProducts.id })
+      .from(managedProducts)
+      .where(
+        and(
+          eq(managedProducts.id, managedProductId),
+          eq(managedProducts.orgId, orgId),
+          isNull(managedProducts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!product) throw new NotFoundException("Managed product not found");
+    return managedProductId;
+  }
 
   async createProject(orgId: string, creatorUserId: string, input: CreateProjectInput) {
     const projectKey = input.key ?? generateProjectKey(input.name);
 
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+    const managedProductId = await this.resolveManagedProductInOrg(
+      orgId,
+      input.managedProductId,
+    );
     const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
     const requestedManagerId = input.managerId ?? creatorUserId;
-    const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [creatorUserId, requestedManagerId, ...additionalMembers]);
+    const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [
+      creatorUserId,
+      requestedManagerId,
+      ...additionalMembers,
+      ...(input.clientId !== undefined ? [input.clientId] : []),
+    ]);
     const creator = actors.get(creatorUserId);
     const manager = actors.get(requestedManagerId);
     if (!creator || !manager || additionalMembers.some((id) => !actors.has(id)))
@@ -50,12 +88,12 @@ export class ProjectsProvisionService {
         .insert(projects)
         .values({
           orgId,
-          pmWorkspaceId,
+          managedProductId,
           key: projectKey,
           name: input.name,
           description: input.description,
           managerMembershipId: manager.membershipId,
-          clientMembershipId: input.clientId ? undefined : undefined,
+          clientMembershipId: input.clientId !== undefined ? (actors.get(input.clientId)?.membershipId ?? null) : undefined,
           startDate: input.startDate ? new Date(input.startDate) : undefined,
           endDate: input.endDate ? new Date(input.endDate) : undefined,
           status: "ACTIVE",
@@ -110,7 +148,7 @@ export class ProjectsProvisionService {
         entityId: String(project.id),
         title: "You were added to a project",
         message: `You were added to project "${input.name}" (${projectKey}).`,
-        link: `/projects/${project.id}`,
+        link: buildProjectHref(project.id),
         variables: { projectName: input.name, projectKey, projectId: project.id },
       }).catch(logSideEffectFailure("project member notification", { orgId }));
     }
@@ -133,7 +171,6 @@ export class ProjectsProvisionService {
     });
     if (!deal) throw new NotFoundException("Deal not found");
 
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
     const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [userId, ...(deal.assignedToId ? [deal.assignedToId] : [])]);
     const creator = actors.get(userId);
     const manager = actors.get(deal.assignedToId ?? userId);
@@ -152,7 +189,6 @@ export class ProjectsProvisionService {
         .insert(projects)
         .values({
           orgId,
-          pmWorkspaceId,
           key: projectKey,
           name: input.name,
           description: input.description ?? deal.notes ?? null,

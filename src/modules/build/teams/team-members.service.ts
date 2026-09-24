@@ -6,10 +6,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
-import {
-  projectTeamMembers,
-  projectWorkspaceMembers,
-} from "../../../db/schema/build/teams";
+import { projectTeamMembers } from "../../../db/schema/build/teams";
+import { buildMembers } from "../../../db/schema";
 import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -84,23 +82,21 @@ export class TeamMembersService {
     input: AddTeamMemberInput,
   ) {
     await this.teams.loadTeam(orgId, teamId);
+    const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.userId });
 
-    const [workspaceMember] = await this.db
-      .select({ id: projectWorkspaceMembers.id })
-      .from(projectWorkspaceMembers)
+    const [buildMember] = await this.db
+      .select({ id: buildMembers.id })
+      .from(buildMembers)
       .where(
         and(
-          eq(projectWorkspaceMembers.orgId, orgId),
-          eq(
-            projectWorkspaceMembers.membershipId,
-            (await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.userId })).membershipId,
-          ),
+          eq(buildMembers.orgId, orgId),
+          eq(buildMembers.membershipId, actor.membershipId),
         ),
       )
       .limit(1);
-    if (!workspaceMember) {
+    if (!buildMember) {
       throw new BadRequestException(
-        "Only Projects workspace members can be added to a team. Add this person to the workspace on the Members page first.",
+        "Only Build members can be added to a team. Add this person on the Build members page first.",
       );
     }
 
@@ -110,7 +106,7 @@ export class TeamMembersService {
         .values({
           orgId,
           teamId,
-          membershipId: (await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.userId })).membershipId,
+          membershipId: actor.membershipId,
           role: input.role ?? "member",
         })
         .returning();

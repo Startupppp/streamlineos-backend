@@ -22,7 +22,6 @@ describe("pickBestRate effective dating", () => {
 
   it("picks the rate effective on the entry date (old window)", () => {
     const best = pickBestRate(rates, { projectId: 10, date: "2026-03-15" });
-    // ties on specificity: id 1 and 3 both match; higher priority wins is 1 (0 > -1)
     expect(best?.id).toBe(1);
   });
 
@@ -43,7 +42,6 @@ describe("pickBestRate effective dating", () => {
 
   it("ignores effective windows when no date is supplied (backward compatible)", () => {
     const best = pickBestRate(rates, { projectId: 10 });
-    // all three match; ids 1 and 2 tie on priority, newest id wins
     expect(best?.id).toBe(2);
   });
 

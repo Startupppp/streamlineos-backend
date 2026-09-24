@@ -142,7 +142,7 @@ export class AgentController {
     @Body() body: AgentUpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ticketsSvc.updateTicket(u, ticketId, { status: body.status, expectedUpdatedAt: body.expectedUpdatedAt });
+    return this.ticketsSvc.updateTicket(u, null, ticketId, { status: body.status, expectedUpdatedAt: body.expectedUpdatedAt });
   }
 
   @Post("tickets/:ticketId/comments")
@@ -155,6 +155,6 @@ export class AgentController {
     @Body() body: AgentCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresourcesSvc.addComment(u, ticketId, { content: body.body });
+    return this.subresourcesSvc.addComment(u, null, ticketId, { content: body.body });
   }
 }

@@ -40,7 +40,8 @@ function emittedEventTypes(): Map<string, string> {
   const found = new Map<string, string>();
   for (const path of sourceFiles()) {
     const source = readFileSync(path, "utf8");
-    const file = path.slice(path.indexOf("modules/inventory/"));
+    const normalised = path.replaceAll("\\", "/");
+    const file = normalised.slice(normalised.indexOf("modules/inventory/"));
     for (const m of source.matchAll(/eventType:\s*["'`](inventory\.[a-z0-9._]+)["'`]/g)) {
       found.set(m[1]!, file);
     }

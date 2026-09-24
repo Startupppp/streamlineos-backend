@@ -15,7 +15,13 @@ import { randomUUID } from "node:crypto";
 import { organizations } from "../common/auth";
 import { crmCampaigns } from "../crm/campaigns";
 import { deals } from "../crm/deals";
-import { crmHealthEnum, orgSizeEnum, partyKindEnum, partyTypeEnum } from "../common/enums";
+import {
+  crmAccountTierEnum,
+  crmHealthEnum,
+  orgSizeEnum,
+  partyKindEnum,
+  partyTypeEnum,
+} from "../common/enums";
 
 /**
  * Who the organisation deals with.
@@ -283,6 +289,7 @@ export const businessParties = pgTable(
      * looking deliberately scored.
      */
     healthScore: integer("health_score"),
+    tier: crmAccountTierEnum("tier"),
     healthStatus: crmHealthEnum("health_status"),
     healthCheckedAt: timestamp("health_checked_at"),
     churnRiskScore: integer("churn_risk_score"),

@@ -20,6 +20,9 @@ export function canActOnPeriod(
 ): ApprovalDecision {
   const privileged = actor.isOrgOwner;
 
+  if (actor.membershipId === null && !privileged)
+    return { allowed: false, reason: "Approval requires a personal session" };
+
   if (
     period.userMembershipId !== null &&
     actor.membershipId !== null &&
