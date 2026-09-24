@@ -57,10 +57,10 @@ So:
 Classification is a **new column, never a new `type` value**: the frontend enum-locks `type` and one unknown value fails the
 whole list parse.
 
-**`hr_document_audiences`** `(id, org_id, document_id, kind, ref_id, created_by, created_at)` — `kind ∈ ALL_EMPLOYEES |
+**`document_audiences`** `(id, org_id, document_id, kind, ref_id, created_by, created_at)` — `kind ∈ ALL_EMPLOYEES |
 DEPARTMENT | LOCATION`; `ref_id` is an `org_units`/location id (null for `ALL_EMPLOYEES`). No rows = **HR-only**.
-Composite FK `(org_id, document_id)` → `documents`. Lives beside the document, so it goes through a documented
-`hr-table-freeze` exception (or under `db/schema/hr` with the gate's `APPROVED_EXCEPTIONS` edited, with rationale).
+Composite FK `(org_id, document_id)` → `documents`. **Not named `hr_*`**: HR's `hr_*` table count is frozen
+(`check:hr-table-freeze`), and `job_templates` set the precedent of naming a domain table without the prefix.
 
 **`kb_linked_documents`** `(id, org_id, document_id NULL, version_mode, pinned_version NULL, status, space_id NULL,
 published_by_membership_id, published_at, unpublished_by_membership_id, unpublished_at, unpublish_reason,
@@ -74,7 +74,7 @@ source_removed_at, created_at, updated_at)`
 **`kb_linked_document_audiences`** `(org_id, linked_document_id, kind, ref_id)` — the *link's* audience, which must be a
 subset of the document's (§3.4).
 
-**`hr_document_versions`** `(id, org_id, document_id, version, file_url, file_name, file_size, mime_type, status,
+**`document_versions`** `(id, org_id, document_id, version, file_url, file_name, file_size, mime_type, status,
 effective_date, uploaded_by_membership_id, approved_by_membership_id, approved_at)` — `status ∈ pending | approved |
 rejected`. `documents` keeps holding the **current approved** file, so `GET /hr/documents/:id/file` and every existing
 reader are unchanged (§3.6).
@@ -92,12 +92,18 @@ A document is **publishable** iff *all* hold:
 
 ```
 classification IN ('INTERNAL','RESTRICTED')
-AND user_id IS NULL AND user_membership_id IS NULL      -- company-level, never a person's
+AND (user_id IS NULL OR user_id = uploaded_by)          -- company-level: nobody's file but the uploader's own
 AND type IN ('POLICY','OTHER')                          -- allowlist, not a denylist
 AND is_active
 AND metadata is not a recruitment/onboarding artefact   -- no candidateId / onboarding source keys
 ```
 
+- **Why the owner rule is not just `user_id IS NULL`** (found while writing PR 1): `POST /hr/documents` assigns the
+  *uploader* as owner when no employee is chosen, and the CSV import cannot express a company-wide row at all, so an
+  HR-uploaded handbook has `user_id = uploaded_by`. A row owned by a **different** user, or with an owner and no
+  recorded uploader (import, onboarding, recruitment handoff), is that person's file. This is the same rule PR 1 uses
+  for `is_public` (`isCompanyLevelDocument` / `companyLevelDocumentSql` in `documents-helpers.ts`); the link layer reuses
+  it rather than restating it.
 - `CONFIDENTIAL` is never publishable in v1 (D5). `PERSONAL` never, by anyone, including Org Owner.
 - A stored file must sit under `documents|hr-documents|hr`; an external `https` `fileUrl` is linkable as **metadata only**
   (D7) and its entry has no *Open* action.
@@ -156,7 +162,7 @@ cursor — merging two sources' cursors is where bugs live), with the source bad
 `POST /hr/documents/:id/versions` uploads v(n+1) as `pending`; `POST …/versions/:n/approve` (needs `hr:documents:publish`
 or `manage` — decided in PR 4) atomically: marks it approved, copies `file_url/file_name/size/mime/effective_date` and the
 new `version` onto the `documents` row, and audits. A `FOLLOW_LATEST` link therefore follows the `documents` row and needs
-no propagation. A `PINNED` link resolves its `pinned_version` from `hr_document_versions`; HR sees "newer version
+no propagation. A `PINNED` link resolves its `pinned_version` from `document_versions`; HR sees "newer version
 available" when an approved version above the pin exists.
 
 ### 3.7 Deletion (D11)
@@ -241,7 +247,7 @@ computed from §3.2/§3.4, so the test cannot agree with a bug by being copied f
 
 **Reconciliation check** (`pnpm check:hr-kb-invariants`, DB-backed, exit 2 when its prerequisite is unmet like the other DB
 gates, run in CI and runnable against any environment read-only) asserts: every active link's document is publishable;
-no link exists for a `PERSONAL`/`CONFIDENTIAL`/person-owned document; `kb_linked_document_audiences ⊆ hr_document_audiences`;
+no link exists for a `PERSONAL`/`CONFIDENTIAL`/person-owned document; `kb_linked_document_audiences ⊆ document_audiences`;
 **no `kb_article_chunks`, `kb_page_attachments`, `kb_sources` or `kb_ingestion_checkpoints` row references a key under a
 sensitive folder root or equal to any `documents.file_url`**; no chunk has `source` outside the known set. It also runs
 the census for `is_public` on personal types.
@@ -251,7 +257,7 @@ the census for `is_public` on personal types.
 | # | Repo | Content | Migrations | Flag | Depends |
 |---|---|---|---|---|---|
 | 0 | BE | This plan, findings, census SQL | — | — | — |
-| 1 | BE | **Security**: SEC-01 (`isPublic` refused on personal types; NOT VALID CHECK), SEC-02/03 (scope on rich-documents, letters, template renders), SEC-04 (sensitive roots refused at KB attachment ingestion **and** at indexing read; existing offending attachments/chunks are only *reported* by a read-only query — nothing is deleted from your KB without your explicit approval), SEC-05 (ack recipients must be members; de-dupe) | 1 (NOT VALID checks; validate is a later step) | none | — |
+| 1 | BE | **Security**: SEC-01 (`isPublic` honoured only on company-level documents, on read and write), SEC-02/03 (scope on rich-documents, letters, template renders), SEC-04 (sensitive roots refused at KB attachment ingestion **and** at indexing read; existing offending attachments/chunks are only *reported* by a read-only query — nothing is deleted from your KB without your explicit approval), SEC-05 (ack recipients must be members; de-dupe) | **none** — a `CHECK` on `is_public` would fail every unrelated `UPDATE` (the expiry cron included) of a legacy row that already violates it, so the DB-level constraint waits for the census and a data decision | none | — |
 | 2 | BE | Schema + inert plumbing: `classification`, audiences, links, versions, `kb_settings` flags, `hr:documents:publish`, L2 triggers, audit registrations | 2–3 | all OFF | 1 |
 | 3 | BE+FE | Classification API + HR UI (classify, audience), `DOCUMENT_NOT_PUBLISHABLE`, shared error reference UI | — | `link` | 2 |
 | 4 | BE+FE | Publish/unpublish/link service, versions + approve, KB list/detail/open, source badge, "newer version"/"Source removed" | — | `link` | 3 |
