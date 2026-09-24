@@ -136,6 +136,13 @@ export const HR_FOUNDATION_PERMISSIONS: Permission[] = [
     scopable: true,
   },
   {
+    // Organisational authority, not a per-record one, so it is deliberately not scopable: a "publish to my team" reading would let a scoped manager decide what the whole company reads.
+    name: "hr:documents:publish",
+    resource: "hr:documents",
+    action: "publish",
+    description: "Classify company documents and publish them to the knowledge base",
+  },
+  {
     name: "hr:performance:view",
     resource: "hr:performance",
     action: "view",
