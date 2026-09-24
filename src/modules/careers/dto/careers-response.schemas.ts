@@ -32,3 +32,7 @@ export const careersApplyResponseSchema = z.object({
   id: z.string(),
   alreadyApplied: z.literal(true).optional(),
 });
+
+export const uploadResumeResponseSchema = z.object({
+  key: z.string(),
+});

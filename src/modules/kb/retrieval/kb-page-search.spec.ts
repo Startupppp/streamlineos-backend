@@ -37,7 +37,7 @@ const serialize = (value: unknown): string =>
 
 function makeCapturingDb(rows: unknown[] = []) {
   const whereClauses: unknown[] = [];
-  const chain = {
+  const chain: Record<string, jest.Mock> = {
     from: jest.fn().mockReturnThis(),
     where: jest.fn((clause: unknown) => {
       whereClauses.push(clause);

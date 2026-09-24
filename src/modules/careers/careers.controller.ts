@@ -19,10 +19,11 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { CareersService, isApplyJobNotFound } from "./careers.service";
 import { applySchema, type ApplyInput } from "./dto/careers.schemas";
 import { type UploadResumeInput } from "./dto/resumes.schemas";
-import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
   careersJobListSchema,
   careersApplyResponseSchema,
+  uploadResumeResponseSchema,
 } from "./dto/careers-response.schemas";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import type { Request } from "express";
@@ -60,6 +61,8 @@ export class CareersController {
     "CareersService.uploadResume resolves the candidate by id AND the caller's orgId, and rejects when that pair does not exist",
   )
   @UseGuards(JwtAuthGuard)
+  @ResponseSchema(uploadResumeResponseSchema)
+  @MultipartAction({ file: "file", fields: { candidateId: "integer", fileName: "string", fileType: "string" }, requiredFields: ["candidateId", "fileName", "fileType"] })
   @UseInterceptors(FileInterceptor("file"))
   async uploadResume(
     @Req() req: Request & { user: { orgId: string; userId: string } },

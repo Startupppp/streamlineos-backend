@@ -259,6 +259,14 @@ export function keysetBeforeMicros(
   return sql`(${sortColumn}, ${idColumn}) < (${sql.param(position.sortValue)}::timestamp, ${sql.param(position.id, idColumn)})`;
 }
 
+export function keysetAfterMicros(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: { readonly sortValue: string; readonly id: number },
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(position.sortValue)}::timestamp, ${sql.param(position.id, idColumn)})`;
+}
+
 /**
  * The boundary column projected as text at full precision, which is the half of
  * `keysetBeforeMicros` that has to happen in the SELECT. Reading the same column

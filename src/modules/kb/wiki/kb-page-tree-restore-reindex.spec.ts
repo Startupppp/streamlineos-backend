@@ -88,6 +88,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       db as never,
       makeAudit() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -108,6 +109,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       db as never,
       makeAudit() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -126,6 +128,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       db as never,
       makeAudit() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -145,6 +148,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       db as never,
       makeAudit() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.restore(makeUser(), 10);

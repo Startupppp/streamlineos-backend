@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { kbResearchBriefs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -170,6 +170,64 @@ export class KbResearchBriefService {
     const { visible } = await this.citationVisibility.partitionVisible(user, refs);
     if (refs.some((ref) => !visible(ref)))
       throw new NotFoundException("This research brief is no longer accessible");
+  }
+
+  async retryBrief(user: CurrentUserContext, briefId: number): Promise<{ briefId: number; jobId: number }> {
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    const rows = await this.db
+      .select({ id: kbResearchBriefs.id, status: kbResearchBriefs.status, topic: kbResearchBriefs.topic, spaceId: kbResearchBriefs.spaceId })
+      .from(kbResearchBriefs)
+      .where(
+        and(
+          eq(kbResearchBriefs.id, briefId),
+          eq(kbResearchBriefs.orgId, user.orgId),
+          eq(kbResearchBriefs.userMembershipId, membershipId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new NotFoundException("Research brief not found");
+    if (row.status !== "failed") throw new BadRequestException("Only failed briefs can be retried");
+
+    const { jobId } = await this.aiJobs.enqueue({
+      orgId: user.orgId,
+      userId: user.userId,
+      type: "kb.research-brief",
+      payload: { briefId, topic: row.topic, spaceId: row.spaceId ?? null },
+      idempotencyKey: `kb-brief-retry-${user.orgId}-${briefId}-${Date.now()}`,
+    });
+
+    await this.db
+      .update(kbResearchBriefs)
+      .set({ status: "queued", jobId, errorMessage: null, report: null, citations: null, sourceCount: 0 })
+      .where(eq(kbResearchBriefs.id, briefId));
+
+    return { briefId, jobId };
+  }
+
+  async cancelBrief(user: CurrentUserContext, briefId: number): Promise<void> {
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    const rows = await this.db
+      .select({ id: kbResearchBriefs.id, status: kbResearchBriefs.status, jobId: kbResearchBriefs.jobId })
+      .from(kbResearchBriefs)
+      .where(
+        and(
+          eq(kbResearchBriefs.id, briefId),
+          eq(kbResearchBriefs.orgId, user.orgId),
+          eq(kbResearchBriefs.userMembershipId, membershipId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new NotFoundException("Research brief not found");
+    if (row.status !== "queued") throw new BadRequestException("Only queued briefs can be cancelled");
+    if (row.jobId != null) await this.aiJobs.cancel(user.orgId, row.jobId);
+    await this.db
+      .update(kbResearchBriefs)
+      .set({ status: "failed", errorMessage: "Cancelled" })
+      .where(eq(kbResearchBriefs.id, briefId));
   }
 
   async rateBrief(user: CurrentUserContext, briefId: number, rating: "helpful" | "not_helpful"): Promise<void> {

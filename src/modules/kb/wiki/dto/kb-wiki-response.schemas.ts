@@ -103,6 +103,8 @@ export const kbPageTemplateSchema = z.object({
 
 export const kbPageTemplateListSchema = z.array(kbPageTemplateSchema);
 
+export const kbPageTemplateListPageSchema = cursorPageSchema(kbPageTemplateSchema);
+
 const kbPageContentSchema = z.record(z.string(), z.unknown()).nullable();
 
 export const kbPageSchema = z.object({

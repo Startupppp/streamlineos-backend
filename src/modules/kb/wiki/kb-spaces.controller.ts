@@ -29,7 +29,10 @@ import {
   type UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  BodylessAction,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
 import {
   kbSpaceArchiveImpactSchema,
   kbSpaceFullSchema,
@@ -39,7 +42,9 @@ import {
 import { accountableMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
-const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
+const spaceIdParams = z
+  .object({ spaceId: z.coerce.number().int().positive() })
+  .strict();
 
 @Controller("kb/spaces")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -126,6 +131,7 @@ export class KbSpacesController {
   @RequirePermission("kb:spaces:manage")
   @HttpCode(200)
   @Validate({ params: spaceIdParams })
+  @BodylessAction()
   @ResponseSchema(kbSpaceSuccessSchema)
   async archive(
     @Param("spaceId", ParseIntPipe) spaceId: number,
@@ -138,6 +144,7 @@ export class KbSpacesController {
   @RequirePermission("kb:spaces:manage")
   @HttpCode(200)
   @Validate({ params: spaceIdParams })
+  @BodylessAction()
   @ResponseSchema(kbSpaceSuccessSchema)
   async restore(
     @Param("spaceId", ParseIntPipe) spaceId: number,

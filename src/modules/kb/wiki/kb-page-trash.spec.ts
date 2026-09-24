@@ -104,7 +104,10 @@ function trashQuery(over: Record<string, unknown> = {}) {
 
 const sampleDeletedAt = new Date("2024-06-01T12:00:00.000000Z");
 
-function makeRow(id: number, deletedAt = sampleDeletedAt): Record<string, unknown> {
+function makeRow(
+  id: number,
+  deletedAt = sampleDeletedAt,
+): { id: number } & Record<string, unknown> {
   return {
     id,
     orgId: ORG_ID,
@@ -201,7 +204,7 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
     const cursor = decodeTimestampCursor(page.pagination.nextCursor ?? undefined);
     if (!cursor) throw new Error("expected a cursor");
     expect(cursor.id).toBe(page.data[page.data.length - 1]?.id);
-    expect(cursor.id).not.toBe((rows[5] as { id: number }).id);
+    expect(cursor.id).not.toBe(rows[5]?.id);
   });
 
   it("refuses a limit above the hard cap", () => {

@@ -28,7 +28,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { NoTenantTransaction } from "../../../common/tenant";
 import { z } from "zod";
-import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   commentDraftSchema,
   commentDraftWithTicketSchema,
@@ -74,6 +74,7 @@ export class CommentDraftsController {
   @ResponseSchema(generatedCommentDraftSchema)
   @Validate({ params: ticketIdParams })
   @NoTenantTransaction()
+  @BodylessAction()
   generateDraft(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { kbPageGrants, kbPages, organizationMembers } from "../../../db/schema";
@@ -25,6 +25,10 @@ import type {
   KbPageGrantsListQuery,
 } from "./dto/kb-page-grants.schemas";
 import type { KbPageGrantItem } from "./dto/kb-page-grants-response.schemas";
+import {
+  keysetBeforeMicros,
+  microsecondCursorValue,
+} from "../../../common/pagination/keyset";
 
 const GRANT_COLUMNS = {
   id: kbPageGrants.id,
@@ -54,17 +58,14 @@ export class KbPageGrantsService {
 
     const position = decodeCursor(query.cursor);
     const after = position
-      ? or(
-          lt(kbPageGrants.createdAt, new Date(position.sortValue)),
-          and(
-            eq(kbPageGrants.createdAt, new Date(position.sortValue)),
-            lt(kbPageGrants.id, Number(position.id)),
-          ),
-        )
+      ? keysetBeforeMicros(kbPageGrants.createdAt, kbPageGrants.id, {
+          sortValue: String(position.sortValue),
+          id: Number(position.id),
+        })
       : undefined;
 
     const rows = await this.db
-      .select(GRANT_COLUMNS)
+      .select({ ...GRANT_COLUMNS, createdAtMicros: microsecondCursorValue(kbPageGrants.createdAt) })
       .from(kbPageGrants)
       .where(
         and(
@@ -77,8 +78,21 @@ export class KbPageGrantsService {
       .orderBy(desc(kbPageGrants.createdAt), desc(kbPageGrants.id))
       .limit(query.limit + 1);
 
-    return buildCursorPage(rows, query.limit, (row) => ({
-      sortValue: row.createdAt.toISOString(),
+    const cursorValues = new Map(rows.map((r) => [r.id, r.createdAtMicros]));
+
+    const items: KbPageGrantItem[] = rows.map((r) => ({
+      id: r.id,
+      pageId: r.pageId,
+      membershipId: r.membershipId,
+      role: r.role,
+      access: r.access,
+      grantedByMembershipId: r.grantedByMembershipId,
+      createdAt: r.createdAt,
+      revokedAt: r.revokedAt,
+    }));
+
+    return buildCursorPage(items, query.limit, (row) => ({
+      sortValue: cursorValues.get(row.id) ?? row.createdAt.toISOString(),
       id: String(row.id),
     }));
   }

@@ -160,7 +160,7 @@ export class KbPagesController {
     @Query() query: SearchPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.search(u, query.q, query.limit);
+    return this.pages.search(u, query.q, query.limit, query.projectId);
   }
 
   @Post("pages")

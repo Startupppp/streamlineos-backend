@@ -22,6 +22,7 @@ import { withPublicToken } from "../../../common/tenant/with-public-token";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { AccessService } from "../../access/access.service";
 import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KB_PAGE_SEARCH_MAX_LIMIT } from "./dto/kb-pages.schemas";
@@ -33,12 +34,15 @@ import {
   resyncPageLinks,
   snapshotIfNeeded,
   staleRevisionConflict,
-  type KbTransaction,
 } from "./kb-page-edit.util";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
+import { fireKbMentionNotifications } from "./kb-page-mention-notifications";
+import { hashPublicToken, newPublicToken } from "./kb-public-token";
+import { withoutUnsharedToken } from "./kb-page-share-visibility";
+import { resolveProjectAccess } from "../../build/core/project-access";
 
 type PageRow = KbPageRow;
 
@@ -58,6 +62,7 @@ export class KbPagesService {
     private readonly notifications: NotificationsService,
     private readonly planLimits: PlanLimitsService,
     private readonly auth: KnowledgeAuthorizationService,
+    private readonly access: AccessService,
   ) {}
 
   private membershipId(user: CurrentUserContext): number | null {
@@ -186,26 +191,16 @@ export class KbPagesService {
 
     return {
       ...page,
-      publicToken: this.withoutUnsharedToken(user, page, canManage).publicToken,
+      publicToken: withoutUnsharedToken(
+        user,
+        page,
+        this.membershipId(user),
+        canManage,
+      ).publicToken,
       ancestors,
       isFavorite: !!fav,
       canEdit: editDecision.outcome === "allowed",
     };
-  }
-
-  private withoutUnsharedToken<
-    T extends Pick<
-      PageRow,
-      "createdById" | "createdByMembershipId" | "publicToken"
-    >,
-  >(user: CurrentUserContext, page: T, canManage: boolean): T {
-    const membershipId = this.membershipId(user);
-    const canShare =
-      user.isOrgOwner ||
-      canManage ||
-      (membershipId !== null && page.createdByMembershipId === membershipId) ||
-      (page.createdByMembershipId === null && page.createdById === user.userId);
-    return canShare ? page : { ...page, publicToken: null };
   }
 
   async update(
@@ -330,13 +325,13 @@ export class KbPagesService {
         const newMentions = extractMentionUserIds(input.content);
         const addedMentions = newMentions.filter((id) => !oldMentions.has(id));
         if (addedMentions.length > 0) {
-          this.fireMentionNotifications(
+          fireKbMentionNotifications(this.notifications, this.logger, {
             orgId,
-            addedMentions,
+            userIds: addedMentions,
             pageId,
-            updated.title,
-            user.userId,
-          ).catch((err) => {
+            pageTitle: updated.title,
+            actorId: user.userId,
+          }).catch((err) => {
             this.logger.error(`Failed to send mention notifications: ${err}`);
           });
         }
@@ -363,18 +358,24 @@ export class KbPagesService {
       return updated;
     });
 
-    return this.withoutUnsharedToken(user, result, canManage);
+    return withoutUnsharedToken(user, result, this.membershipId(user), canManage);
   }
 
   async search(
     user: CurrentUserContext,
     q: string,
     limit: number = KB_PAGE_SEARCH_MAX_LIMIT,
+    projectId?: number,
   ): Promise<{ items: KbPageSearchHit[]; hasMore: boolean; limit: number }> {
+    if (projectId !== undefined) {
+      const { hasAccess } = await resolveProjectAccess(this.db, this.access, user, projectId);
+      if (!hasAccess) throw new NotFoundException("Project not found");
+    }
     const tsquery = kbPagePrefixTsQuery(q);
     if (tsquery === null) return { items: [], hasMore: false, limit };
     const orgId = user.orgId;
     const predicate = await this.auth.visiblePagePredicate(user, "view");
+    const projectFilter = projectId !== undefined ? eq(kbPages.projectId, projectId) : undefined;
     const rows = await this.db
       .select({
         id: kbPages.id,
@@ -389,6 +390,7 @@ export class KbPagesService {
           isNull(kbPages.deletedAt),
           predicate,
           sql`${kbPages}.fts @@ ${tsquery}`,
+          ...(projectFilter !== undefined ? [projectFilter] : []),
         ),
       )
       .orderBy(sql`ts_rank(${kbPages}.fts, ${tsquery}) desc`)
@@ -430,7 +432,7 @@ export class KbPagesService {
 
     const publicToken =
       visibility === "public" && !page.publicToken
-        ? (await import("node:crypto")).randomBytes(24).toString("hex")
+        ? newPublicToken()
         : undefined;
 
     return this.db.transaction(async (tx) => {
@@ -438,7 +440,9 @@ export class KbPagesService {
         .update(kbPages)
         .set({
           visibility,
-          ...(publicToken !== undefined ? { publicToken } : {}),
+          ...(publicToken !== undefined
+            ? { publicToken, publicTokenHash: hashPublicToken(publicToken) }
+            : {}),
           aclRevision: sql`acl_revision + 1`,
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
@@ -472,11 +476,13 @@ export class KbPagesService {
     content: KbPageContent | null;
     updatedAt: Date;
   }> {
-    const page = await withPublicToken(this.db, token, (tx) =>
+    const tokenHash = hashPublicToken(token);
+    const page = await withPublicToken(this.db, tokenHash, (tx) =>
       tx.query.kbPages.findFirst({
         where: and(
-          eq(kbPages.publicToken, token),
+          eq(kbPages.publicTokenHash, tokenHash),
           eq(kbPages.visibility, "public"),
+          eq(kbPages.status, "published"),
           isNull(kbPages.deletedAt),
         ),
         columns: {
@@ -490,33 +496,5 @@ export class KbPagesService {
     );
     if (!page) throw new NotFoundException("Page not found");
     return page;
-  }
-
-  private async fireMentionNotifications(
-    orgId: string,
-    userIds: string[],
-    pageId: number,
-    pageTitle: string,
-    actorId: string,
-  ): Promise<void> {
-    for (const userId of userIds) {
-      if (userId === actorId) continue;
-      try {
-        await this.notifications.create({
-          orgId,
-          userId,
-          type: "INFO",
-          category: "SYSTEM",
-          sourceModule: "kb",
-          title: "You were mentioned in a page",
-          message: `You were mentioned in "${pageTitle || "Untitled"}"`,
-          link: `/knowledge/pages/${pageId}`,
-        });
-      } catch (err) {
-        this.logger.error(
-          `Mention notification failed for user ${userId}: ${err}`,
-        );
-      }
-    }
   }
 }

@@ -54,7 +54,7 @@ import {
 } from "../streaming";
 import { AiRequestAbortInterceptor } from "../streaming";
 import { ApiOkResponse } from "@nestjs/swagger";
-import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
 import {
   chatHistoryResponseSchema,
   chatClearHistoryResponseSchema,
@@ -243,6 +243,7 @@ export class ChatAssistantController {
   @NoTenantTransaction()
   @ResponseSchema(declineActionResponseSchema)
   @Validate({ params: declineProposalParamsSchema })
+  @BodylessAction()
   async declineProposal(
     @Param("proposalId") proposalIdParam: string,
     @CurrentUser() u: CurrentUserContext,

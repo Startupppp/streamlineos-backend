@@ -2847,6 +2847,11 @@
       "note": "5 aggregate references; space list per org is a small set; used for access resolution, not browsable pagination",
       "justification": "KB spaces per org are a small config set; space list is used for access resolution not browsable pagination; all flagged selects are bounded by org membership or inArray 2026-09-01"
     },
+    "/kb/content-health/kb-content-health.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Two .select() calls are EXISTS subqueries inside buildSignalPredicate; SQL EXISTS stops at the first matching row and never scans beyond it",
+      "justification": "Lines 124 and 139 are EXISTS subqueries returning sql`1` — the outer query is bounded by the signals() .limit() or counts() aggregate; EXISTS does not page and cannot produce an unbounded result set 2026-09-24"
+    },
     "/leads/duplicate-leads.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",

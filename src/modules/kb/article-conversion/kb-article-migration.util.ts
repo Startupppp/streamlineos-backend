@@ -11,7 +11,24 @@ import { kbArticles } from "../../../db/schema";
  */
 type ArticleRow = Pick<
   typeof kbArticles.$inferSelect,
-  "id" | "title" | "contentText" | "lastVerifiedAt" | "ownerMembershipId" | "authorId" | "visibility"
+  | "id"
+  | "title"
+  | "contentText"
+  | "lastVerifiedAt"
+  | "ownerMembershipId"
+  | "authorId"
+  | "visibility"
+  | "slug"
+  | "excerpt"
+  | "categoryId"
+  | "views"
+  | "helpfulCount"
+  | "notHelpfulCount"
+  | "seoTitle"
+  | "seoDescription"
+  | "reviewIntervalDays"
+  | "publishedAt"
+  | "archivedAt"
 > & { ownerId?: string | null };
 
 export interface MappedPage {
@@ -28,6 +45,17 @@ export interface MappedPage {
   sourceArticleId: number;
   sortOrder: number;
   parentPageId: null;
+  slug: string | null;
+  excerpt: string | null;
+  categoryId: number | null;
+  views: number;
+  helpfulCount: number;
+  notHelpfulCount: number;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  reviewIntervalDays: number | null;
+  publishedAt: Date | null;
+  archivedAt: Date | null;
 }
 
 const VERIFIED_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
@@ -70,5 +98,16 @@ export function mapArticleToPage(article: ArticleRow, sortOrder: number): Mapped
     sourceArticleId: article.id,
     sortOrder,
     parentPageId: null,
+    slug: article.slug ?? null,
+    excerpt: article.excerpt ?? null,
+    categoryId: article.categoryId ?? null,
+    views: article.views ?? 0,
+    helpfulCount: article.helpfulCount ?? 0,
+    notHelpfulCount: article.notHelpfulCount ?? 0,
+    seoTitle: article.seoTitle ?? null,
+    seoDescription: article.seoDescription ?? null,
+    reviewIntervalDays: article.reviewIntervalDays ?? null,
+    publishedAt: article.publishedAt ?? null,
+    archivedAt: article.archivedAt ?? null,
   };
 }

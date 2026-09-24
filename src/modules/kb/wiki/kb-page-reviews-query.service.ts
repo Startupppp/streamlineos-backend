@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNotNull, isNull, lt, lte, or, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   kbPageReviews,
@@ -12,7 +12,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { keysetAfterId } from "../../../common/pagination/keyset";
+import { keysetAfterId, keysetBeforeId } from "../../../common/pagination/keyset";
 import {
   buildCursorPage,
   decodeCursor,
@@ -137,22 +137,40 @@ export class KbPageReviewsQueryService {
     const position = decodeCursor(query.cursor);
     if (position) {
       if (position.sortValue === NULL_DUE_SENTINEL) {
-        conditions.push(
-          and(
-            isNull(kbPageReviews.dueAt),
-            gt(kbPageReviews.id, Number(position.id)),
-          ),
-        );
+        if (query.sortDir === "desc") {
+          conditions.push(
+            or(
+              and(isNull(kbPageReviews.dueAt), lt(kbPageReviews.id, Number(position.id))),
+              isNotNull(kbPageReviews.dueAt),
+            ),
+          );
+        } else {
+          conditions.push(
+            and(
+              isNull(kbPageReviews.dueAt),
+              gt(kbPageReviews.id, Number(position.id)),
+            ),
+          );
+        }
       } else {
-        conditions.push(
-          or(
-            keysetAfterId(kbPageReviews.dueAt, kbPageReviews.id, {
+        if (query.sortDir === "desc") {
+          conditions.push(
+            keysetBeforeId(kbPageReviews.dueAt, kbPageReviews.id, {
               sortValue: position.sortValue,
               id: position.id,
             }),
-            isNull(kbPageReviews.dueAt),
-          ),
-        );
+          );
+        } else {
+          conditions.push(
+            or(
+              keysetAfterId(kbPageReviews.dueAt, kbPageReviews.id, {
+                sortValue: position.sortValue,
+                id: position.id,
+              }),
+              isNull(kbPageReviews.dueAt),
+            ),
+          );
+        }
       }
     }
 

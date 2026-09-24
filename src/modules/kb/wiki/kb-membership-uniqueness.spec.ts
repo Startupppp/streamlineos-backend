@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Db } from "../../../db/drizzle.module";
 import { KbMembersService } from "./kb-members.service";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import type { KbAccessService } from "../core/kb-access.service";
 import type { KbIndexingService } from "../retrieval/kb-indexing.service";
 
@@ -124,9 +125,18 @@ describe("KbPageTemplatesService", () => {
   it("BITE: list is bounded — it ordered by name with no limit at all", async () => {
     const h = templatesHarness({ returns: [] });
 
-    await h.service.list(ORG);
+    await h.service.list(ORG, { limit: 50 });
 
-    expect(h.limit).toHaveBeenCalledWith(200);
+    expect(h.limit).toHaveBeenCalledWith(51);
+  });
+
+  it("BITE: the bound is the caller's page size, never a larger locally invented cap that outruns PAGE_SIZE_CAP", async () => {
+    const h = templatesHarness({ returns: [] });
+
+    await h.service.list(ORG, { limit: PAGE_SIZE_CAP });
+
+    expect(h.limit).toHaveBeenCalledWith(PAGE_SIZE_CAP + 1);
+    expect(PAGE_SIZE_CAP).toBe(100);
   });
 });
 

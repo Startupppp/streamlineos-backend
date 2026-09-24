@@ -93,6 +93,7 @@ export const searchPagesSchema = z
       .min(1)
       .max(KB_PAGE_SEARCH_MAX_LIMIT)
       .default(KB_PAGE_SEARCH_MAX_LIMIT),
+    projectId: z.coerce.number().int().positive().optional(),
   })
   .strict();
 export type SearchPagesInput = z.infer<typeof searchPagesSchema>;

@@ -3,6 +3,10 @@ import { AiModule } from "../../ai/core/ai.module";
 import { BillingModule } from "../../billing/core/billing.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { KbCoreModule } from "../core/kb-core.module";
+import { KbWikiAnalyticsController } from "../analytics/kb-wiki-analytics.controller";
+import { KbWikiAnalyticsService } from "../analytics/kb-wiki-analytics.service";
+import { KbContentHealthController } from "../content-health/kb-content-health.controller";
+import { KbContentHealthService } from "../content-health/kb-content-health.service";
 import { KbRetrievalModule } from "../retrieval/kb-retrieval.module";
 import { KbSpacesService } from "./kb-spaces.service";
 import { KbMembersService } from "./kb-members.service";
@@ -59,11 +63,17 @@ import { KbPageGrantsService } from "./kb-page-grants.service";
     KbSourcesController,
     KbPageAiController,
     KbPageGrantsController,
+    KbWikiAnalyticsController,
+    KbContentHealthController,
   ],
   providers: [
+    KbMediaService,
+    KbPageAiService,
     KbSpacesService,
     KbMembersService,
+    KbSourcesService,
     KbPagesService,
+    KbPageGrantsService,
     KbPageStatusService,
     KbPageVersionsService,
     KbPageVisitsService,
@@ -73,13 +83,11 @@ import { KbPageGrantsService } from "./kb-page-grants.service";
     KbPageCommentsService,
     KbPageTemplatesService,
     KbPageReviewsService,
-    KbPageReviewsQueryService,
-    KbPageRecordLinksService,
-    KbMediaService,
-    KbSourcesService,
     KbImportExportService,
-    KbPageAiService,
-    KbPageGrantsService,
+    KbWikiAnalyticsService,
+    KbContentHealthService,
+    KbPageRecordLinksService,
+    KbPageReviewsQueryService,
   ],
   exports: [KbPageTreeService, KbPageTrashService],
 })
