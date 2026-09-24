@@ -6,13 +6,21 @@ import type { ApprovalSourceAdapter } from "../attention/approval-adapter.regist
 import type { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type { AccessService } from "../access/access.service";
 import { UnifiedInboxService } from "./unified-inbox.service";
-import { makeBroadcasts, makeUser, ORG, UID, MEMBERSHIP } from "./approval-cursor.spec-fixtures";
+import {
+  makeBroadcasts,
+  makeUser,
+  ORG,
+  UID,
+  MEMBERSHIP,
+} from "./approval-cursor.spec-fixtures";
 import type { MailService } from "../mail/mail.service";
 import type { BuildApprovalInboxItem } from "./dto/unified-inbox.schemas";
 
 function makeMail(): MailService {
   return {
-    listMessages: jest.fn().mockResolvedValue({ messages: [], nextCursor: null, accountErrors: [] }),
+    listMessages: jest
+      .fn()
+      .mockResolvedValue({ messages: [], nextCursor: null, accountErrors: [] }),
     countUnread: jest.fn().mockResolvedValue({ unread: 0, exact: true }),
     areAllAccountsFresh: jest.fn().mockResolvedValue(true),
   } as unknown as MailService;
@@ -43,7 +51,8 @@ function item(
 }
 
 function stubAdapter(
-  overrides: Partial<ApprovalSourceAdapter> & Pick<ApprovalSourceAdapter, "module" | "kindLabel">,
+  overrides: Partial<ApprovalSourceAdapter> &
+    Pick<ApprovalSourceAdapter, "module" | "kindLabel">,
 ): ApprovalSourceAdapter {
   return {
     permission: `${overrides.module}:test:view`,
@@ -63,7 +72,9 @@ function makeBuildApprovals(): BuildApprovalsInboxService {
 
 function makeAccessHolding(granted: ReadonlySet<string>): AccessService {
   return {
-    holds: jest.fn((_user: unknown, key: string) => Promise.resolve(granted.has(key))),
+    holds: jest.fn((_user: unknown, key: string) =>
+      Promise.resolve(granted.has(key)),
+    ),
     membersWithPermission: jest.fn().mockResolvedValue([]),
   } as unknown as AccessService;
 }
@@ -76,13 +87,24 @@ function makeService(
   const db = {
     select: () => ({
       from: () => ({
-        leftJoin: () => ({ where: () => ({ orderBy: () => ({ limit: () => Promise.resolve([]) }) }) }),
+        leftJoin: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: () => Promise.resolve([]) }),
+          }),
+        }),
         where: () => Promise.resolve([{ cnt: 0 }]),
         innerJoin: () => ({ where: () => Promise.resolve([{ cnt: 0 }]) }),
       }),
     }),
   } as unknown as Db;
-  return new UnifiedInboxService(db, access, makeMail(), makeBroadcasts(), buildApprovals, registry);
+  return new UnifiedInboxService(
+    db,
+    access,
+    makeMail(),
+    makeBroadcasts(),
+    buildApprovals,
+    registry,
+  );
 }
 
 const ALL_APPROVAL_KEYS = new Set([
@@ -100,7 +122,8 @@ describe("attention adapters carry their own destination", () => {
         module: "hr",
         kindLabel: "leave",
         permission: "hr:leaves:approve",
-        fetch: () => Promise.resolve([item(7, "leave", "hr", "/hr/leaves?tab=pending")]),
+        fetch: () =>
+          Promise.resolve([item(7, "leave", "hr", "/hr/leaves?tab=pending")]),
       }),
     );
     registry.register(
@@ -108,12 +131,25 @@ describe("attention adapters carry their own destination", () => {
         module: "timesheets",
         kindLabel: "timesheet",
         permission: "timesheets:approvals:view",
-        fetch: () => Promise.resolve([item(9, "timesheet", "timesheets", "/timesheets/approvals")]),
+        fetch: () =>
+          Promise.resolve([
+            item(9, "timesheet", "timesheets", "/timesheets/approvals"),
+          ]),
       }),
     );
 
     const svc = makeService(registry, makeAccessHolding(ALL_APPROVAL_KEYS));
-    const page = await svc.list(ORG, UID, { limit: 25, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUser());
+    const page = await svc.list(
+      ORG,
+      UID,
+      {
+        limit: 25,
+        kinds: ["build_approval"],
+        unreadOnly: false,
+        eventKeys: undefined,
+      },
+      makeUser(),
+    );
 
     const byKind = new Map(
       page.items
@@ -136,19 +172,31 @@ describe("attention adapters carry their own destination", () => {
     );
 
     const svc = makeService(registry, makeAccessHolding(ALL_APPROVAL_KEYS));
-    const page = await svc.list(ORG, UID, { limit: 25, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUser());
+    const page = await svc.list(
+      ORG,
+      UID,
+      {
+        limit: 25,
+        kinds: ["build_approval"],
+        unreadOnly: false,
+        eventKeys: undefined,
+      },
+      makeUser(),
+    );
 
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.deepLink).toBeNull();
   });
 
   it("module filtering reaches only the owning approval adapter", async () => {
-    const hrFetch = jest.fn().mockResolvedValue([
-      item(7, "leave", "hr", "/hr/leaves?tab=pending"),
-    ]);
-    const timesheetFetch = jest.fn().mockResolvedValue([
-      item(9, "timesheet", "timesheets", "/timesheets/approvals"),
-    ]);
+    const hrFetch = jest
+      .fn()
+      .mockResolvedValue([item(7, "leave", "hr", "/hr/leaves?tab=pending")]);
+    const timesheetFetch = jest
+      .fn()
+      .mockResolvedValue([
+        item(9, "timesheet", "timesheets", "/timesheets/approvals"),
+      ]);
     const registry = new ApprovalAdapterRegistry();
     registry.register(
       stubAdapter({
@@ -209,7 +257,11 @@ describe("the unread badge counts every attention source, not only Build", () =>
     const buildApprovals = makeBuildApprovals();
     (buildApprovals.countPending as jest.Mock).mockResolvedValue(2);
 
-    const svc = makeService(registry, makeAccessHolding(ALL_APPROVAL_KEYS), buildApprovals);
+    const svc = makeService(
+      registry,
+      makeAccessHolding(ALL_APPROVAL_KEYS),
+      buildApprovals,
+    );
     const count = await svc.unifiedUnreadCount(ORG, UID, makeUser());
 
     expect(count.approval).toBe(9);

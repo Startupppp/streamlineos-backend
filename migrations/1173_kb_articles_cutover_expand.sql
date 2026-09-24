@@ -34,7 +34,7 @@ BEGIN
     WHERE n.nspname = 'public' AND c.relname = 'kb_pages'
       AND a.attname = 'slug' AND NOT a.attisdropped
   ) THEN
-    RAISE EXCEPTION '1173 precondition: kb_pages.slug column is absent — apply 1173a first';
+    RAISE EXCEPTION '1173 precondition: kb_pages.slug column is absent — apply 1172a first';
   END IF;
 END $$;
 --> statement-breakpoint

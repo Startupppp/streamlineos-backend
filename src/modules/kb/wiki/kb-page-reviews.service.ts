@@ -31,6 +31,7 @@ import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-a
 type ReviewRow = typeof kbPageReviews.$inferSelect;
 
 type ReviewWithContext = ReviewRow & {
+  isOverdue: boolean;
   pageTitle: string | null;
   requestedByName: string | null;
   reviewerName: string | null;
@@ -387,6 +388,9 @@ export class KbPageReviewsService {
       );
     if (!row)
       throw new InternalServerErrorException("Review not found after save");
-    return row;
+    return {
+      ...row,
+      isOverdue: row.status === "pending" && row.dueAt !== null && row.dueAt < new Date(),
+    };
   }
 }
