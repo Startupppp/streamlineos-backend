@@ -59,6 +59,8 @@ import {
   AssessmentScoreController,
 } from "./assessments/assessment.controller";
 import { VoiceScreenService } from "./voice-screen/voice-screen.service";
+import { RecruitingAnalyticsService } from "./analytics/recruiting-analytics.service";
+import { RecruitingAnalyticsController } from "./analytics/recruiting-analytics.controller";
 import {
   VoiceScreenController,
   VoiceScreenResultController,
@@ -108,6 +110,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     AssessmentScoreController,
     VoiceScreenController,
     VoiceScreenResultController,
+    RecruitingAnalyticsController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -145,6 +148,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     BgvCallbackService,
     AssessmentService,
     VoiceScreenService,
+    RecruitingAnalyticsService,
   ],
   exports: [
     RecruitmentOffersService,
