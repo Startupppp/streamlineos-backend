@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  IMPLAUSIBLE_PHONE_MESSAGE,
+  isImplausiblePhone,
+} from "../../../../common/validation/implausible-phone";
 import { ORG_MEMBER_ROLES, ORG_MEMBER_ROLE_VALUES } from "../../../../common/rbac/org-roles";
 import { canonicalEmailSchema } from "../../../users/dto/users.schemas";
 
@@ -40,7 +44,16 @@ export const setupSchema = z.object({
   companySize: z.string().min(1, "Company size is required").max(50),
   country: z.string().max(100).optional(),
   timezone: z.string().max(100).optional(),
-  phone: z.string().max(32).optional(),
+  // Optional here, and it always was — the wizard is what insists on it. What it
+  // never did was refuse a placeholder: 9999999999 satisfies every shape rule an
+  // Indian mobile has, so QA typed it and the organisation ended up carrying a
+  // contact nobody answers. This is not verification; the product sends no OTP
+  // here. It is the cheap half.
+  phone: z
+    .string()
+    .max(32)
+    .refine((value) => !isImplausiblePhone(value), IMPLAUSIBLE_PHONE_MESSAGE)
+    .optional(),
   enabledModules: z
     .array(z.enum(ORG_MODULE_KEYS))
     .min(1, "At least one module is required")
