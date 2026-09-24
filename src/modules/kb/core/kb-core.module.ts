@@ -8,6 +8,8 @@ import { KnowledgeCollectionService } from "./collection/knowledge-collection.se
 import { KbPageCollectionController } from "./kb-page-collection.controller";
 import { KbEventsService } from "./kb-events.service";
 import { KbSettingsController } from "./kb-settings.controller";
+import { KbHrLinkFlagsController } from "./kb-hr-link-flags.controller";
+import { KbHrLinkFlagsService } from "./kb-hr-link-flags.service";
 import { KbSettingsService } from "./kb-settings.service";
 import { KbTagsController } from "./kb-tags.controller";
 import { KbTagsService } from "./kb-tags.service";
@@ -19,6 +21,7 @@ import { KbTranslationsService } from "./kb-translations.service";
   controllers: [
     KbPageCollectionController,
     KbSettingsController,
+    KbHrLinkFlagsController,
     KbTagsController,
     KbTranslationsController,
   ],
@@ -30,9 +33,10 @@ import { KbTranslationsService } from "./kb-translations.service";
     KnowledgeCollectionService,
     KbEventsService,
     KbSettingsService,
+    KbHrLinkFlagsService,
     KbTagsService,
     KbTranslationsService,
   ],
-  exports: [KbCreditsService, KbAccessService, KnowledgeAuthorizationService, KnowledgeCollectionService, KbEventsService, KbSettingsService, KbTagsService, KbTranslationsService],
+  exports: [KbCreditsService, KbAccessService, KnowledgeAuthorizationService, KnowledgeCollectionService, KbEventsService, KbSettingsService, KbHrLinkFlagsService, KbTagsService, KbTranslationsService],
 })
 export class KbCoreModule {}
