@@ -362,22 +362,16 @@ export class RecruitmentCandidatesService {
     return { success: true };
   }
 
-  async remove(orgId: string, candidateId: number) {
-    const existing = await this.db.query.candidates.findFirst({
-      where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Candidate not found.");
-
-    await this.db.transaction(async (tx) => {
-      await tx.delete(candidateSlaTracking).where(and(eq(candidateSlaTracking.candidateId, candidateId), eq(candidateSlaTracking.orgId, orgId)));
-      await tx.delete(interviews).where(and(eq(interviews.candidateId, candidateId), eq(interviews.orgId, orgId)));
-      await tx.delete(candidateApplications).where(and(eq(candidateApplications.candidateId, candidateId), eq(candidateApplications.orgId, orgId)));
-      await tx.delete(candidates).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
-    });
-
-    return { success: true };
-  }
+  /*
+    `remove` is gone. It hard-deleted the candidate, their applications,
+    interviews and SLA rows while never touching `candidate_documents_vault`,
+    which left the résumé in the bucket with nothing pointing at it — and
+    returned `{ success: true }`. Deleting a candidate now goes through
+    `CandidateErasureService.eraseCandidate`, which ledgers every object before
+    attempting its delete and reports whether the store confirmed it. Do not
+    reintroduce a delete here: a second one would not be covered by that
+    service's spec, which is the only place the ordering is pinned.
+  */
 
   async moveStage(orgId: string, userId: string, candidateId: number, input: StageInput) {
     const newStage = input.stage;
