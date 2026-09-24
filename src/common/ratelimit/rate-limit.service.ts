@@ -157,6 +157,12 @@ const TIERS: Record<string, Tier> = {
   // without letting a single user monopolise the embedding + ANN budget.
   "search:global": { limit: 30, windowSecs: 60 },
   "public:job-apply": { limit: 3, windowSecs: 3600 },
+  // POST /public/board-apply/:orgSlug/:platform is a machine callback, not a
+  // human form, so the 3/hour human tier would drop a board's normal traffic on
+  // a popular role. It is HMAC-verified before anything is written, so the limit
+  // is a flood ceiling rather than the authorisation — generous enough for a
+  // real board, small enough that an unsigned flood cannot become a workload.
+  "public:board-apply": { limit: 300, windowSecs: 3600 },
   // POST /csat/:surveyId/responses is @Public and unauthenticated, and it is the
   // SECOND CSAT submit surface in the repository. The first, support-csat, is
   // "support:csat-submit" at 5/hour; this one carried nothing, so a survey id is

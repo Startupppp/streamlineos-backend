@@ -43,6 +43,8 @@ import { RecruitmentOutboxConsumer } from "./webhooks/recruitment-outbox-consume
 import { ProviderCredentialsService } from "./integrations/provider-credentials.service";
 import { JobBoardPublisherService } from "./boards/job-board-publisher.service";
 import { JobBoardOutboxConsumer } from "./boards/job-board-outbox.consumer";
+import { BoardApplyIngressService } from "./boards/board-apply-ingress.service";
+import { BoardApplyIngressController } from "./boards/board-apply-ingress.controller";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
 import { RecruitmentOnboardingStartService } from "./recruitment-onboarding-start.service";
@@ -75,6 +77,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     RecruitmentRequisitionsController,
     RecruitmentJobBoardsController,
     RecruitmentTalentPoolsController,
+    BoardApplyIngressController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -104,6 +107,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     ProviderCredentialsService,
     JobBoardPublisherService,
     JobBoardOutboxConsumer,
+    BoardApplyIngressService,
   ],
   exports: [
     RecruitmentOffersService,

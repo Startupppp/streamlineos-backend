@@ -1,8 +1,9 @@
 import request from "supertest";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   candidateApplications,
+  candidateSources,
   candidateDocumentsVault,
   candidates,
   hrEmployments,
@@ -103,7 +104,13 @@ describe(`${SEEDED_HARNESS} ATS hire golden path`, () => {
   let acceptanceToken: string;
 
   beforeAll(async () => {
-    seeded = await createSeededE2eApp();
+    /**
+     * `rawBody` on purpose: the board-apply endpoint verifies an HMAC over the
+     * exact bytes the board sent. Without it `req.rawBody` is undefined, the
+     * verifier reads an empty string and refuses every delivery — a green
+     * suite over a dead endpoint, which the harness's own comment warns about.
+     */
+    seeded = await createSeededE2eApp({ rawBody: true });
 
     org = await seedOrg(seeded.seedDb)
       .withModules("hr")
@@ -379,6 +386,168 @@ describe(`${SEEDED_HARNESS} ATS hire golden path`, () => {
       .where(eq(candidateApplications.orgId, org.orgId));
     expect(applications).toHaveLength(1);
     expect(await outboxFor("candidate.applied")).toHaveLength(1);
+  });
+
+  // ── 2b. an application arriving from a job board ──────────────────────────
+
+  /**
+   * The inbound half of distribution. A board holds no session, so the only
+   * thing standing between this endpoint and a forged candidate is the
+   * signature — and the only thing standing between a retried delivery and a
+   * duplicate person is `candidates.external_id`.
+   */
+  describe("a job board posting an application", () => {
+    const BOARD = "NAUKRI";
+    const INBOUND_SECRET = "board-inbound-secret-for-this-org";
+    const body = (
+      applicationId: string,
+      consent?: boolean,
+      email = "ravi.board@test.invalid",
+    ) =>
+      JSON.stringify({
+        applicationId,
+        jobReference: String(jobId),
+        candidate: { name: "Ravi Board", email, phone: "+919812345678" },
+        ...(consent === undefined ? {} : { consent }),
+      });
+    const signed = (raw: string) =>
+      createHmac("sha256", INBOUND_SECRET).update(raw).digest("hex");
+
+    beforeAll(async () => {
+      await seeded.seedDb.insert(candidateSources).values({
+        orgId: org.orgId,
+        platform: BOARD,
+        isActive: true,
+        meta: { inboundSecret: INBOUND_SECRET },
+        createdBy: org.members.recruiter!.userId,
+      });
+    });
+
+    it("refuses an unsigned delivery, and one signed with the wrong secret", async () => {
+      const raw = body("NAU-1", true);
+      const unsigned = await api().post(`/public/board-apply/${orgSlug}/${BOARD}`).send(raw).type("json");
+      expect(unsigned.status).toBe(401);
+
+      const wrong = await api()
+        .post(`/public/board-apply/${orgSlug}/${BOARD}`)
+        .set("x-streamline-signature", createHmac("sha256", "not-the-secret").update(raw).digest("hex"))
+        .send(raw)
+        .type("json");
+      expect(wrong.status).toBe(401);
+
+      const none = await seeded.seedDb
+        .select({ id: candidates.id })
+        .from(candidates)
+        .where(and(eq(candidates.orgId, org.orgId), eq(candidates.email, "ravi.board@test.invalid")));
+      expect(none).toHaveLength(0);
+    });
+
+    /**
+     * 404, not 401. Telling an unsigned caller that their signature was wrong
+     * for a board this organisation never connected would confirm the
+     * organisation exists and name the boards it uses.
+     */
+    it("is a 404 for a board this organisation never connected", async () => {
+      const raw = body("IND-1", true);
+      const res = await api()
+        .post(`/public/board-apply/${orgSlug}/INDEED`)
+        .set("x-streamline-signature", signed(raw))
+        .send(raw)
+        .type("json");
+      expect(res.status).toBe(404);
+    });
+
+    it("creates one candidate and one application from a signed delivery, and emits candidate.applied", async () => {
+      const before = (await outboxFor("candidate.applied")).length;
+      const raw = body("NAU-7", true);
+      const res = await api()
+        .post(`/public/board-apply/${orgSlug}/${BOARD}`)
+        .set("x-streamline-signature", signed(raw))
+        .send(raw)
+        .type("json");
+      expect(said(res)).toMatchObject({ status: 202 });
+      expect(res.body).toMatchObject({ platform: BOARD, replay: false, duplicate: false });
+      /** The board is not the candidate; the tracking token is not its to hold. */
+      expect(res.body.trackingToken).toBeUndefined();
+
+      const [candidate] = await seeded.seedDb
+        .select({
+          id: candidates.id,
+          source: candidates.source,
+          externalId: candidates.externalId,
+        })
+        .from(candidates)
+        .where(and(eq(candidates.orgId, org.orgId), eq(candidates.email, "ravi.board@test.invalid")));
+      expect(candidate).toMatchObject({ source: BOARD, externalId: `${BOARD}:NAU-7` });
+
+      const [application] = await seeded.seedDb
+        .select({ consentAt: candidateApplications.consentAt })
+        .from(candidateApplications)
+        .where(
+          and(
+            eq(candidateApplications.orgId, org.orgId),
+            eq(candidateApplications.candidateId, candidate!.id),
+          ),
+        );
+      expect(application!.consentAt).not.toBeNull();
+      expect(await outboxFor("candidate.applied")).toHaveLength(before + 1);
+    });
+
+    it("answers a retried delivery as a replay and creates no second candidate", async () => {
+      const before = (await outboxFor("candidate.applied")).length;
+      const raw = body("NAU-7", true);
+      const res = await api()
+        .post(`/public/board-apply/${orgSlug}/${BOARD}`)
+        .set("x-streamline-signature", signed(raw))
+        .send(raw)
+        .type("json");
+      expect(said(res)).toMatchObject({ status: 202 });
+      expect(res.body.replay).toBe(true);
+
+      const rows = await seeded.seedDb
+        .select({ id: candidates.id })
+        .from(candidates)
+        .where(and(eq(candidates.orgId, org.orgId), eq(candidates.email, "ravi.board@test.invalid")));
+      expect(rows).toHaveLength(1);
+      expect(await outboxFor("candidate.applied")).toHaveLength(before);
+    });
+
+    /**
+     * The DPDP rule at the seam. A board that sends no consent signal produces
+     * an application with no consent timestamp — which is exactly what stops
+     * the sequence sender from ever mailing that person.
+     *
+     * A different email on purpose. The same person applying again is a
+     * duplicate and correctly reuses their one candidate row, so reusing the
+     * address here would assert against the FIRST delivery's consent rather
+     * than this one's.
+     */
+    it("records no consent when the board sent none", async () => {
+      const raw = body("NAU-8", undefined, "meena.board@test.invalid");
+      const res = await api()
+        .post(`/public/board-apply/${orgSlug}/${BOARD}`)
+        .set("x-streamline-signature", signed(raw))
+        .send(raw)
+        .type("json");
+      expect(said(res)).toMatchObject({ status: 202 });
+
+      const [candidate] = await seeded.seedDb
+        .select({ id: candidates.id })
+        .from(candidates)
+        .where(and(eq(candidates.orgId, org.orgId), eq(candidates.externalId, `${BOARD}:NAU-8`)));
+      expect(candidate).toBeDefined();
+
+      const [application] = await seeded.seedDb
+        .select({ consentAt: candidateApplications.consentAt })
+        .from(candidateApplications)
+        .where(
+          and(
+            eq(candidateApplications.orgId, org.orgId),
+            eq(candidateApplications.candidateId, candidate!.id),
+          ),
+        );
+      expect(application!.consentAt).toBeNull();
+    });
   });
 
   // ── 3. the pipeline ───────────────────────────────────────────────────────

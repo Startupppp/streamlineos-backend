@@ -127,6 +127,22 @@ interface RecordApplicationInput {
   readonly input: ApplyInput;
   readonly answers: Record<string, string>;
   readonly resume: ResumeIntake;
+  /**
+   * Where the application came from, and whether the person actually consented.
+   *
+   * A job board apply arrives through the same door as the careers form on
+   * purpose — one apply path, per §10.3 — but it differs in two honest ways.
+   * The source is the board rather than the careers page, and consent is
+   * whatever the board's payload said: a board that does not send a consent
+   * signal produces `consentAt: null`, which is what stops the sequence sender
+   * from ever emailing that person. Defaulting it to "now" would be the
+   * comfortable lie, and it is the one DPDP actually cares about.
+   */
+  readonly origin?: {
+    readonly source: string;
+    readonly consented: boolean;
+    readonly externalId?: string | null;
+  };
 }
 
 /**
@@ -147,6 +163,7 @@ export async function recordApplication({
   input,
   answers,
   resume,
+  origin,
 }: RecordApplicationInput): Promise<ApplyResult> {
   const email = input.email.toLowerCase().trim();
   await tx.execute(
@@ -187,7 +204,8 @@ export async function recordApplication({
         phone: input.phone ?? null,
         linkedinUrl: input.linkedinUrl ?? null,
         resumeUrl: input.resumeUrl ?? null,
-        source: "CAREERS_PAGE",
+        source: origin?.source ?? "CAREERS_PAGE",
+        externalId: origin?.externalId ?? null,
         status: "NEW",
       })
       .returning({ id: candidates.id })
@@ -235,7 +253,7 @@ export async function recordApplication({
     status: "APPLIED",
     coverLetter: input.coverLetter ?? null,
     screeningAnswers: answers,
-    consentAt: new Date(),
+    consentAt: origin && !origin.consented ? null : new Date(),
     trackingToken,
   });
 
