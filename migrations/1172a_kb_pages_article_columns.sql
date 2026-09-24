@@ -4,7 +4,7 @@ SET lock_timeout = '5s';
 DO $$
 BEGIN
   IF to_regclass('public.kb_pages') IS NULL THEN
-    RAISE EXCEPTION '1173a precondition: public.kb_pages is absent';
+    RAISE EXCEPTION '1172a precondition: public.kb_pages is absent';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_attribute a
@@ -13,10 +13,10 @@ BEGIN
     WHERE n.nspname = 'public' AND c.relname = 'kb_pages'
       AND a.attname = 'external_id' AND NOT a.attisdropped
   ) THEN
-    RAISE EXCEPTION '1173a precondition: kb_pages.external_id is absent — apply 1172 first';
+    RAISE EXCEPTION '1172a precondition: kb_pages.external_id is absent — apply 1172 first';
   END IF;
   IF to_regclass('public.kb_categories') IS NULL THEN
-    RAISE EXCEPTION '1173a precondition: public.kb_categories is absent';
+    RAISE EXCEPTION '1172a precondition: public.kb_categories is absent';
   END IF;
 END $$;
 --> statement-breakpoint
