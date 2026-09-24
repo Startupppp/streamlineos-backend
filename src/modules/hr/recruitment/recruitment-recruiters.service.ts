@@ -13,6 +13,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { RecruiterActivityInput, RecruiterActivityQueryInput, UpsertPortalInput } from "./dto/jobs.schemas";
 import { SUPPORTED_BOARDS, isSupportedBoard, resolveBoard } from "./boards/job-board-adapters";
+import { ProviderCredentialsService } from "./integrations/provider-credentials.service";
 
 const RECRUITER_DIRECTORY_LIMIT = 500;
 const PORTAL_LIMIT = 100;
@@ -22,6 +23,7 @@ export class RecruitmentRecruitersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly credentials: ProviderCredentialsService,
   ) {}
 
   listPortals(orgId: string) {
@@ -96,16 +98,12 @@ export class RecruitmentRecruitersService {
       where: and(eq(candidateSources.orgId, orgId), eq(candidateSources.platform, platform)),
     });
 
-    const resolved = resolveBoard(
-      platform,
-      source ? { isActive: source.isActive, oauthToken: source.oauthToken } : null,
-    );
-    if ("status" in resolved) return { ...resolved, lastSyncedAt: source?.lastSyncedAt ?? null };
+    const credentials = await this.credentials.forPlatform(orgId, platform);
+    const resolved = resolveBoard(platform, credentials);
+    if (!("adapter" in resolved))
+      return { ...resolved, lastSyncedAt: source?.lastSyncedAt ?? null };
 
-    const result = await resolved.adapter.sync({
-      isActive: true,
-      oauthToken: source?.oauthToken ?? null,
-    });
+    const result = await resolved.adapter.sync(resolved.credentials);
     const now = new Date();
     await this.db
       .update(candidateSources)

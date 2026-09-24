@@ -335,7 +335,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("scopes job listings to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
       const cache = makeCacheMock();
-      const svc = new RecruitmentJobsService(db, cache as never, {} as never);
+      const svc = new RecruitmentJobsService(db, cache as never, {} as never, {} as never);
       const result = await svc.list(ATTACKER, { pageSize: 10, limit: 10, status: undefined, cursor: undefined });
       expect(result.items).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
@@ -346,7 +346,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("returns jobs for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const cache = makeCacheMock();
-      const svc = new RecruitmentJobsService(db, cache as never, {} as never);
+      const svc = new RecruitmentJobsService(db, cache as never, {} as never, {} as never);
       const result = await svc.list(OWNER, { pageSize: 10, limit: 10, status: undefined, cursor: undefined });
       expect(result.items).toHaveLength(1);
     });
@@ -355,7 +355,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   describe("RecruitmentOffersService", () => {
     it("scopes offers to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
-      const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
+      const svc = new RecruitmentOffersService(db, {} as never, {} as never);
       const result = await svc.listAllOffers(ATTACKER, { pageSize: 10 });
       expect(result.items).toHaveLength(0);
       expect(where).toHaveBeenCalled();
@@ -364,7 +364,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
 
     it("returns offers for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
-      const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
+      const svc = new RecruitmentOffersService(db, {} as never, {} as never);
       const result = await svc.listAllOffers(OWNER, { pageSize: 10 });
       expect(result.items).toHaveLength(1);
     });
@@ -375,7 +375,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
         { id: 1, orgId: OWNER, createdAt: new Date("2026-08-20T08:00:00.000Z") },
       ];
       const { db } = makeDb(rows);
-      const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
+      const svc = new RecruitmentOffersService(db, {} as never, {} as never);
       const result = await svc.listAllOffers(OWNER, { pageSize: 1 });
 
       expect(result.items).toEqual([rows[0]]);
@@ -409,7 +409,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   describe("RecruitmentRecruitersService", () => {
     it("scopes recruiter portals to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
-      const svc = new RecruitmentRecruitersService(db, {} as never);
+      const svc = new RecruitmentRecruitersService(db, {} as never, {} as never);
       const result = await svc.listPortals(ATTACKER);
       expect(result).toHaveLength(0);
       expect(where).toHaveBeenCalled();
@@ -418,7 +418,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
 
     it("returns recruiter portals for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
-      const svc = new RecruitmentRecruitersService(db, {} as never);
+      const svc = new RecruitmentRecruitersService(db, {} as never, {} as never);
       const result = await svc.listPortals(OWNER);
       expect(result).toHaveLength(1);
     });

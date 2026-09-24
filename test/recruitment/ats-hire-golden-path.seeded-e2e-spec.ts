@@ -7,6 +7,7 @@ import {
   candidates,
   hrEmployments,
   hrPeople,
+  jobBoardPostings,
   jobPostings,
   jobRequisitions,
   organizationPeople,
@@ -227,22 +228,42 @@ describe(`${SEEDED_HARNESS} ATS hire golden path`, () => {
   });
 
   /** Section G: no board was contacted, so nothing may say otherwise. */
-  it("reports every board as BLOCKED and writes no external posting id", async () => {
+  it("reports every board as BLOCKED, queues nothing, and writes no posting row that claims to be live", async () => {
     const published = await api()
       .post(`/hr/recruitment/jobs/${jobId}/publish`)
       .set({ ...asRecruiter(), ...idem() })
       .send({ platforms: ["LINKEDIN"] });
-    expect(published.status).toBe(201);
+    expect(said(published)).toMatchObject({ status: 201 });
     expect(JSON.stringify(published.body)).not.toContain("PUBLISHED");
-    expect(published.body.postedCount).toBe(0);
+    expect(published.body.queuedCount).toBe(0);
+    expect(published.body.blockedCount).toBe(1);
     expect(published.body.results[0]).toMatchObject({ status: "BLOCKED", code: "no-integration" });
-    expect(published.body.externalIds).toEqual({});
 
     const [row] = await seeded.seedDb
       .select({ externalPostingIds: jobPostings.externalPostingIds })
       .from(jobPostings)
       .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, org.orgId)));
     expect(row?.externalPostingIds ?? null).toBeNull();
+
+    /**
+     * The publication row exists so the board settings screen can explain the
+     * blockage — but it is BLOCKED, holds no posting id, and no outbox event
+     * was written, because there is no work anybody could do.
+     */
+    const publications = await seeded.seedDb
+      .select({
+        status: jobBoardPostings.status,
+        statusDetail: jobBoardPostings.statusDetail,
+        externalPostingId: jobBoardPostings.externalPostingId,
+      })
+      .from(jobBoardPostings)
+      .where(and(eq(jobBoardPostings.orgId, org.orgId), eq(jobBoardPostings.jobPostingId, jobId)));
+    expect(publications).toHaveLength(1);
+    expect(publications[0]).toMatchObject({ status: "BLOCKED", externalPostingId: null });
+    expect(publications[0]!.statusDetail).toContain("no-integration");
+
+    const queued = await outboxFor("job.board.publish_requested");
+    expect(queued).toHaveLength(0);
   });
 
   // ── 2. the application ────────────────────────────────────────────────────

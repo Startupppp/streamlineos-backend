@@ -31,7 +31,7 @@ describe("PublicOffersService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a missing token (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const svc = new PublicOffersService(db);
+    const svc = new PublicOffersService(db, {} as never);
     await expect(svc.getOffer(INVALID_TOKEN)).rejects.toThrow(NotFoundException);
   });
 
@@ -42,7 +42,7 @@ describe("PublicOffersService — cross-tenant isolation", () => {
       notes: null, acceptanceTokenExpiresAt: null,
     };
     const db = makeDb(offerRow);
-    const svc = new PublicOffersService(db);
+    const svc = new PublicOffersService(db, {} as never);
     const result = await svc.getOffer(VALID_TOKEN);
     expect(result).toHaveProperty("offerStatus");
   });

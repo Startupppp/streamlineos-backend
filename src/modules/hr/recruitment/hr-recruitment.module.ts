@@ -40,6 +40,9 @@ import { RecruitmentWebhooksService } from "./webhooks/recruitment-webhooks.serv
 import { HrWebhookDispatchService } from "./webhooks/hr-webhook-dispatch.service";
 import { RecruitmentWebhookEmitter } from "./webhooks/webhook-emitter.service";
 import { RecruitmentOutboxConsumer } from "./webhooks/recruitment-outbox-consumer";
+import { ProviderCredentialsService } from "./integrations/provider-credentials.service";
+import { JobBoardPublisherService } from "./boards/job-board-publisher.service";
+import { JobBoardOutboxConsumer } from "./boards/job-board-outbox.consumer";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
 import { RecruitmentOnboardingStartService } from "./recruitment-onboarding-start.service";
@@ -98,6 +101,9 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     HrWebhookDispatchService,
     RecruitmentWebhookEmitter,
     RecruitmentOutboxConsumer,
+    ProviderCredentialsService,
+    JobBoardPublisherService,
+    JobBoardOutboxConsumer,
   ],
   exports: [
     RecruitmentOffersService,

@@ -85,7 +85,7 @@ describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => 
     (runInTenantTransaction as jest.Mock).mockImplementation(
       async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
     );
-    const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as never));
+    const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as unknown as [never, never, never]));
 
     const result = await svc.applyToOrgJob(ORG_SLUG, JOB_ID, makeInput());
 
@@ -99,7 +99,7 @@ describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => 
     (runInTenantTransaction as jest.Mock).mockImplementation(
       async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
     );
-    const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as never));
+    const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as unknown as [never, never, never]));
 
     await svc.applyToOrgJob(ORG_SLUG, JOB_ID, makeInput());
 
@@ -121,7 +121,7 @@ describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => 
       (runInTenantTransaction as jest.Mock).mockImplementation(
         async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       );
-      const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as never));
+      const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as unknown as [never, never, never]));
       return { svc, tx, assertWithinLimit };
     }
 
@@ -169,7 +169,7 @@ describe("PublicCareersService.applyToOrgJob — plan limit enforcement", () => 
       (runInTenantTransaction as jest.Mock).mockImplementation(
         async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       );
-      const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as never));
+      const svc = new PublicCareersService(makeDb(), { assertWithinLimit } as never, ...(NO_FILE_DEPENDENCIES as unknown as [never, never, never]));
 
       await expect(svc.applyToOrgJob(ORG_SLUG, JOB_ID, makeInput())).rejects.toBe(unrelated);
     });

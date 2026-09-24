@@ -23,7 +23,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { formatDateOnly } from "../../../common/date";
-import { resolveBoard, type BoardOutcome } from "./boards/job-board-adapters";
+import { JobBoardPublisherService } from "./boards/job-board-publisher.service";
 import type { AssignRecruiterInput, CreateJobInput, InternalApplyInput, JobListInput, PublishJobInput, UpdateJobInput } from "./dto/jobs.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
@@ -41,6 +41,7 @@ export class RecruitmentJobsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly planLimits: PlanLimitsService,
+    private readonly publisher: JobBoardPublisherService,
   ) {}
 
   async list(orgId: string, input: JobListInput) {
@@ -247,14 +248,20 @@ export class RecruitmentJobsService {
   }
 
   /**
-   * Distribute this job to external boards.
+   * Ask for this job to be advertised on external boards.
    *
    * It answered `PUBLISHED` and stored `{platform}-{jobId}-{timestamp}` as an
    * external posting id whenever a token happened to be saved, having called
-   * nobody. Now every platform resolves through `resolveBoard`, and with no
-   * adapter registered every one of them comes back `BLOCKED` with a code the
-   * UI can explain. `externalPostingIds` is written only from an id a board
-   * actually returned.
+   * nobody. It now *queues*: each platform resolves through `resolveBoard`, a
+   * blocked one gets a `BLOCKED` publication row carrying its code, and a
+   * resolvable one gets a `QUEUED` row plus an outbox event. Nothing here talks
+   * to a board — `JobBoardOutboxConsumer` does, and it is the only code that
+   * can mark a posting `LIVE`, which it can only do from an id a vendor
+   * returned.
+   *
+   * So the answer to "did it post?" is deliberately "it is queued", which is
+   * the true answer at the moment the request returns. The board settings
+   * screen reads the publication rows for what happened next.
    *
    * Opening the job to the careers site is a different act and is a status
    * patch to `OPEN`; this endpoint was never that and no longer reads as if it
@@ -263,62 +270,24 @@ export class RecruitmentJobsService {
   async publish(orgId: string, jobId: number, input: PublishJobInput) {
     const job = await this.db.query.jobPostings.findFirst({
       where: and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)),
-      columns: {
-        id: true,
-        title: true,
-        description: true,
-        location: true,
-        status: true,
-        externalPostingIds: true,
-      },
+      columns: { id: true, status: true },
     });
     if (!job) throw new NotFoundException("Job posting not found.");
     if (job.status === "DRAFT") {
       throw new BadRequestException("Cannot publish a DRAFT job. Set status to OPEN first.");
     }
 
-    const sources = await this.db.query.candidateSources.findMany({
-      where: eq(candidateSources.orgId, orgId),
-      limit: 100,
-    });
+    const results = await this.publisher.queue(orgId, jobId, input.platforms);
+    const queued = results.filter((r) => r.status === "QUEUED").length;
+    const blocked = results.filter((r) => r.status === "BLOCKED").length;
+    await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
 
-    const results: BoardOutcome[] = [];
-    const externalIds: Record<string, string> = { ...(job.externalPostingIds ?? {}) };
-    let posted = 0;
-
-    for (const platform of input.platforms) {
-      const src = sources.find((s) => s.platform === platform) ?? null;
-      const resolved = resolveBoard(
-        platform,
-        src ? { isActive: src.isActive, oauthToken: src.oauthToken } : null,
-      );
-      if ("status" in resolved) {
-        results.push(resolved);
-        continue;
-      }
-      const outcome = await resolved.adapter.post(
-        { isActive: true, oauthToken: src?.oauthToken ?? null },
-        { jobId, title: job.title, description: job.description, location: job.location },
-      );
-      externalIds[platform.toLowerCase()] = outcome.externalPostingId;
-      results.push({
-        platform,
-        status: "POSTED",
-        externalPostingId: outcome.externalPostingId,
-        url: outcome.url,
-      });
-      posted += 1;
-    }
-
-    if (posted > 0) {
-      await this.db
-        .update(jobPostings)
-        .set({ externalPostingIds: externalIds, updatedAt: new Date() })
-        .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
-      await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
-    }
-
-    return { results, postedCount: posted, blockedCount: results.length - posted, externalIds };
+    return {
+      results,
+      queuedCount: queued,
+      blockedCount: blocked,
+      failedCount: results.length - queued - blocked,
+    };
   }
 
   async listRecruiters(orgId: string, jobId: number) {
