@@ -21,7 +21,6 @@ import {
 } from "../../kb/linked-documents/dto/kb-link-publish.schemas";
 import { kbLinkStateResponseSchema } from "../../kb/linked-documents/dto/kb-link-state-response.schemas";
 
-const PUBLISH_PERMISSION = "hr:documents:publish";
 
 /**
  * Putting an HR document in the knowledge base, from the document. Publishing is organisation-wide authority
@@ -55,7 +54,7 @@ export class DocumentKbLinkController {
   @Post("documents/:documentId/kb-link")
   @HttpCode(201)
   @Idempotent("hr.document.kb-publish")
-  @RequirePermission(PUBLISH_PERMISSION)
+  @RequirePermission("hr:documents:publish")
   @Validate({ params: kbLinkParamsSchema, body: publishLinkSchema })
   async publish(
     @Param("documentId", ParseIntPipe) documentId: number,
@@ -68,7 +67,7 @@ export class DocumentKbLinkController {
   @ResponseSchema(kbLinkStateResponseSchema)
   @Patch("documents/:documentId/kb-link")
   @Idempotent("hr.document.kb-link-update")
-  @RequirePermission(PUBLISH_PERMISSION)
+  @RequirePermission("hr:documents:publish")
   @Validate({ params: kbLinkParamsSchema, body: updateLinkSchema })
   async update(
     @Param("documentId", ParseIntPipe) documentId: number,
@@ -84,7 +83,7 @@ export class DocumentKbLinkController {
   @HttpCode(200)
   @BodylessAction()
   @Idempotent("hr.document.kb-unpublish")
-  @RequirePermission(PUBLISH_PERMISSION)
+  @RequirePermission("hr:documents:publish")
   @Validate({ params: kbLinkParamsSchema })
   async unpublish(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() currentUser: CurrentUserContext) {
     return this.links.unpublish(this.actor(currentUser), documentId);
