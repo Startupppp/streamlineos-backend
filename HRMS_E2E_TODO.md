@@ -54,7 +54,7 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 002a owner employment | BE | `src/modules/hr/directory/employee-onboarding.service.ts`, `src/modules/organization/setup/org-setup.service.ts`, new idempotent backfill | Owner has an employment record at org create; idempotent backfill for existing orgs; owner usable as `reportingManagerEmail` | 008 | todo | |
+| 002a owner employment | BE | `src/modules/organization/core/bootstrap-cell-organization.ts` | as written | 008 | **done** | `b154ef3ed`. Written through `ensureManyFromUsers`, the same idempotent path the single-hire form and `PersonEmploymentBackfillService` use, so existing orgs converge on the first backfill run. Staged `PRE_JOINING` so a founder who was never hired stays out of headcount. Evidence: `owner-employment-bootstrap.db.spec.ts`, 4 real-DB assertions. The backfill for existing orgs already existed (`PersonEmploymentBackfillService.backfillOrg`) — it just had nothing calling it at create time |
 | 002b same-file manager graph | BE | `src/modules/hr/directory/bulk-onboarding/bulk-onboarding-plan.ts`, `bulk-onboarding-writes.ts`, `employee-bulk-onboarding.service.ts` | Dependency graph from `reportingManagerEmail`, topo-sorted, one transaction; cycle → row error; manager failure → dependent row error citing the manager's row; in-file duplicate email (incl. case variants) and under-16 DOB → row errors; existing member flagged; duplicate `employeeId` handled; re-run creates no duplicates | 002a | todo | |
 | 002c template/docs | both | BE template generator; FE onboarding bulk UI | Template + instructions include `reportingManagerEmail` and `topLevelRoleReason` | 002b | todo | |
 
@@ -62,56 +62,56 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 003a tenant-ID STOP check | BE | read-only query, non-prod DB | No import-written rows with null/wrong `tenant_id`; result recorded here **before** any fix-forward | — | todo | |
-| 003b commit writes + counts | BE | `src/modules/hr/import/hr-import-commit.service.ts` (`commitEmployee`), `hr-import.service.ts` (`commitJob`) | Natural key `(org_id, lower(email))`; on match update names/designation/department/joining date; counts come from DB `RETURNING`; `created+updated+unchanged == preview valid` or the job fails; UI never shows *Committed* when 0 of N were written | 003a | todo | |
-| 003c email / emp# dedupe | BE | `src/modules/hr/import/schemas/entity-row-schemas.ts` | Secondary unique `(org_id, employee_number)` where not null; emp# belonging to a different email → row error; in-file duplicate email → error on later rows; email compared case-insensitively | 003b | todo | |
+| 003a tenant-ID STOP check | BE | read-only query, non-prod DB | No import-written rows with null/wrong `tenant_id`; result recorded here **before** any fix-forward | — | **done** | See stop-rule log below — cleared, no incident |
+| 003b commit writes + counts | BE | `hr-import-commit.service.ts` (`commitEmployee`), `hr-import.service.ts` (`commitJob`) | as written | 003a | **done** | `bb306a6a3`, `7666f07e4`, `4ffee54e7`. **Root cause**: the directory reads `organization_members INNER JOIN users` and only LEFT JOINs `hr_people` (`employees.service.ts:156`); the import wrote neither, so an imported employee could never be listed — and `hr_people.user_id` stayed NULL, which is why 004/005/007 then failed with "No user found". Now goes through `MembershipAdmissionService` + `PersonEmploymentSyncService`. Evidence: `hr-employee-import.db.spec.ts`, 6 real-DB assertions |
+| 003c email / emp# dedupe | BE | `schemas/import-row-identity.ts` | as written | 003b | **done** | `6a4be16b3` (in-file), `7666f07e4` (`assertEmployeeNumberFree`). No DB unique index — see 006a |
 
 ### HRMS-E2E-004 — Leave balances import drops data · P0 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 004a tenant-ID STOP check | BE | read-only query | as 003a | — | todo | |
-| 004b reference validation | BE | `hr-import-commit.service.ts` (`commitLeaveBalance`), `entity-row-schemas.ts` | Unresolved employee or leave type → **row error**, never a silent drop; in-file duplicate key → error | 009 (default leave types) | todo | |
-| 004c persist + count reconcile | BE | same | Key `(org_id, user_id, leave_type_id, year)`; balance set **absolute** (file wins); ON CONFLICT target must match the real unique index (verify `org_id` is in it — Drizzle needs every indexed column); re-import → 0 creates | 004b | todo | |
+| 004a tenant-ID STOP check | BE | read-only query | as 003a | — | **done** | See stop-rule log |
+| 004b reference validation | BE | `commitLeaveBalance`, `import-row-identity.ts` | as written | 009 | **done** | `6a4be16b3`. Unresolved refs already threw → row error; the silent-drop half was the in-file duplicate, now an error |
+| 004c persist + count reconcile | BE | same | as written | 004b | **done** | `4ffee54e7`. Conflict target verified correct: `uniq_leave_balances_user_type_year` is on `(user_id, leave_type_id, year)` with no org column, and `leave_type_id` is itself org-scoped. Outcome is now created/updated/**unchanged** |
 
 ### HRMS-E2E-005 — Attendance import invalid + persists none · P0 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 005a tenant-ID STOP check | BE | read-only query | as 003a | — | todo | |
-| 005b time/uniqueness validation | BE | `entity-row-schemas.ts`, `hr-import-commit.service.ts` (`commitAttendance`) | `checkOut > checkIn`; status enum; date not in the future in org TZ (default `Asia/Kolkata`); same-day duplicate rejected **at preview**, not only at commit | — | todo | Same-day commit-time guard already present — verify it holds |
-| 005c persist + counts | BE | `hr-import.service.ts` | 1 valid unique-day row commits and appears in the attendance list; re-import creates 0 duplicates | 005b | todo | |
+| 005a tenant-ID STOP check | BE | read-only query | as 003a | — | **done** | See stop-rule log |
+| 005b time/uniqueness validation | BE | `entity-row-schemas.ts`, `commitAttendance` | as written | — | **done** | `6a4be16b3`, `6fced68be`. **Second defect found**: the dialog documents `checkIn` as `09:30`, and the commit called `new Date("09:30")` — an Invalid Date — so every row in the documented format failed at insert. Both a wall clock (read in org TZ) and a full timestamp are now accepted |
+| 005c persist + counts | BE | `hr-import.service.ts` | as written | 005b | **done** | `4ffee54e7` (outcome counters + reconcile invariant + a zero-write job records `failed`, not `committed`); `__tests__/hr-import-attendance-idempotency.db.spec.ts` green |
 
 ### HRMS-E2E-006 — Asset import not idempotent / serial dupes · P0 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 006a duplicate audit **before** index | BE | read-only cross-tenant query on `assets` | Duplicate serial groups reported; **no deletion**; index created only after approved cleanup | — | todo | BLOCKED → index, if duplicates exist |
-| 006b serial upsert | BE | `hr-import-commit.service.ts` (`commitAsset`) | In-file duplicate serial → row errors; DB match on `(org_id, upper(trim(serial)))` → update fields/assignee | 006a | todo | |
-| 006c re-import idempotent | BE | same | First import of 2 distinct serials → 2 rows; re-import → 0 new | 006b | todo | |
+| 006a duplicate audit **before** index | BE | read-only query | as written | — | **BLOCKED** | No unique index shipped. The existing estate has not been audited (production data, out of scope for this workflow) and an index would have to abort the migration or destroy rows. Idempotency is achieved by matching in the query instead, so the index is an optimisation, not a correctness requirement. **Needs: Joseph/ops** — a duplicate-serial audit and an approved cleanup |
+| 006b serial upsert | BE | `commitAsset` | as written | — | **done** | `4ffee54e7`. Also: a blank assignee column no longer strips an assignment made in the app |
+| 006c re-import idempotent | BE | same | as written | 006b | **done** | `hr-import-idempotency.db.spec.ts` — real-DB row counts before/after a re-import |
 
 ### HRMS-E2E-007 — Document import duplicates on re-import · P0 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 007a identity key | BE | `hr-import-commit.service.ts` (`commitDocument`) | **PROVISIONAL (decision #2)**: upsert on `(org_id, user_id, category, lower(trim(name)))`; exact row match counts as *unchanged* | decision #2 | todo | Unique **index** stays BLOCKED until dupes audited + cleanup approved |
-| 007b reject exact dupes | BE | `entity-row-schemas.ts` | Exact duplicate within the file → row error | 007a | todo | |
-| 007c re-import idempotent | BE | same | First import → 2 distinct docs; second import does not double. Also: `type` is currently hard-coded `"OTHER"`, discarding the CSV column — fix | 007a | todo | |
+| 007a identity key | BE | `commitDocument`, `import-row-identity.ts` | **PROVISIONAL (decision #2)** `(org_id, user_id, category, lower(trim(name)))` | decision #2 | **done (PROVISIONAL)** | `4ffee54e7`. `is not distinct from` on `user_id` so an org-wide document matches itself. No unique index — same reasoning as 006a |
+| 007b reject exact dupes | BE | `import-row-identity.ts` | as written | 007a | **done** | `6a4be16b3` |
+| 007c re-import idempotent | BE | same | as written | 007a | **done** | `4ffee54e7`. The `type` column was parsed, validated and discarded — every document stored as OTHER. Now validated against the `document_type` enum and kept |
 
 ### HRMS-E2E-008 — Employee detail fails (new + owner) · P0 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 008a left-join / nullable DTO | BE | `src/modules/hr/directory/employee-detail.controller.ts`, `employee-detail-canonical-read.spec.ts`, `dto/directory-response.schemas.ts` | Optional relations left-joined; nullable fields nullable in the Zod response DTO; lookup by `id + org`; never 500 on a null optional; cross-tenant GET → 404 | — | todo | |
-| 008b owner employment stub | BE | `employee-onboarding.service.ts`, org-setup | Owner GET detail → 200; invitee-not-accepted GET detail → 200; create → immediate GET detail 200 | 002a | todo | |
+| 008a left-join / nullable DTO | BE | `employee-mutations.service.ts:71` | as written | — | **already met on main** | Verified in code: `getEmployeeDetail` wraps skills, employment and employment-facts in `this.degraded(...)` (logs and falls back rather than throwing), every employment field is `?? null`, a missing member is 404 not 500, and the read is tenant-scoped through `read.read`. No change needed |
+| 008b owner employment stub | BE | `bootstrap-cell-organization.ts` | as written | 002a | **done** | `b154ef3ed` — see 002a |
 | 008c FE error surface | FE | `frontend/features/hr/employees/**` _(likely, verify in code)_ | Failure shows the envelope message + `requestId` | Foundations | todo | |
 
 ### HRMS-E2E-009 — Leave policy create server error · P0 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 009a create API + field errors | both | `src/modules/hr/time/leave-policies.controller.ts`, `leave-policies.service.ts`; FE `frontend/features/hr/leave-policies/**` | POST succeeds; bad input → 422 with field details; no opaque toast without a request ID | Foundations | todo | |
-| 009b seed default leave types | BE | `src/modules/hr/time/leave-types.service.ts`, `src/modules/hr/policies/seed-default-policies.ts` | Default leave types seeded at org create + idempotent backfill; policy usable for balances/requests | — | todo | |
+| 009a create API + field errors | both | `leave-policies.controller.ts`, `dto/leaves.schemas.ts` | POST succeeds; bad input → field details; no opaque toast without a request ID | Foundations | **BE already met on main** | `createLeavePolicySchema` carries per-field messages and `assertLeaveTypeInOrg` 404s a foreign type. One deviation from the ticket recorded rather than changed: validation answers **400 `VALIDATION_FAILED`**, not 422 — that is `AllExceptionsFilter`'s repo-wide contract (BE-17/BE-20) and changing it for one route would split the API. FE half open |
+| 009b seed default leave types | BE | `src/common/org/provision-employee-self-service.ts` | as written | — | **already met on main** | `provisionEmployeeSelfService` is called by `bootstrapCellOrganization` and inserts five leave types (Casual, Sick, Earned, Maternity, Paternity) with `onConflictDoNothing`. No change needed |
 
 ### HRMS-E2E-010 — Leave submit disabled, no approver · P0 · both
 
@@ -125,7 +125,7 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 011a null-safe aggregates | BE | `src/modules/hr/analytics-plus/hr-analytics-plus.service.ts`, `src/modules/hr/lifecycle/hr-analytics.service.ts` | Empty tenant → 200 with empty/zero series, never 500 | — | todo | |
+| 011a null-safe aggregates | BE | `hr-analytics-plus-trends.ts:107` | Empty tenant → 200, never 500 | — | **done** | `55f274499`. **Not a null-safety bug**: `hr_mood_checkins.date` is a *text* column and the predicate compared it to `NOW() - INTERVAL`, so Postgres raised 42883 (`text >= timestamptz`) before reading a row — every call 500'd, empty tenant or not. Measured one by one against a real DB, five of six trend queries were already fine. Evidence: `hr-analytics-plus-trends.db.spec.ts`, 6 real-DB assertions |
 | 011b empty state + requestId | FE | `frontend/features/hr/analytics/**`, `frontend/features/hr/engagement/**` | Dashboard or soft empty state, with request ID on failure | Foundations | todo | |
 | 011c per-widget isolation | FE | same | One widget's failure does not kill the page | 011b | todo | |
 
@@ -141,9 +141,9 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 013a CORS + route | BE | `src/main.ts` CORS config, `src/modules/hr/import/hr-import.controller.ts` (`GET hr/export/:entity`) | App origin allow-listed with credentials; **error** responses also carry CORS headers; `Content-Disposition` exposed | — | todo | |
+| 013a CORS + route | BE | `src/main.ts:115` | as written | — | **partly done / partly BLOCKED** | `95fb5271d` adds `content-disposition`, `x-has-more` and `x-next-cursor` to `exposedHeaders` — without them a cross-origin download got a blob with no filename and a paged export looked complete after page one. **BLOCKED (ops)**: QA's console shows the fetch to `api.streamlineos.in` blocked outright, which is `CORS_ORIGINS` in the deployed environment not listing the app origin. That is an env value, not code — **needs: ops** to add the app origin |
 | 013b shared FE download helper | FE | `frontend/features/hr/import-export/**`, `frontend/lib/api/**` _(likely, verify in code)_ | One helper checks `ok`, content-type and non-empty body, parses the error envelope, and never saves a 0-byte "success" file | 013a | todo | |
-| 013c non-empty export | BE | `hr-import.controller.ts` + `hr-export-csv.ts` | With N assets, export has a header row + N data rows (header comes from the schema, not from `rows[0]`) | 013a | todo | |
+| 013c non-empty export | BE | `hr-export-columns.ts` | as written | — | **done** | `95fb5271d`. The header came from `Object.keys(rows[0] ?? {})`, so an empty page serialized to the empty string and the browser saved a 0-byte "success". Header now comes from the exported table's columns. Evidence: `hr-export-columns.spec.ts`, 7 assertions |
 
 ### HRMS-E2E-014 — Active before invite acceptance · P1 · both
 
@@ -172,7 +172,7 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 017a header-only or clear unavailable | both | FE `frontend/features/hr/leaves/**`, BE leave export | Header-only file via the export job path, or the action is clearly unavailable — no fake download, no bare toast | 013 | todo | |
+| 017a header-only or clear unavailable | both | `hr-export-columns.ts`; FE `frontend/features/hr/leaves/**` | as written | 013 | **BE done, FE open** | `95fb5271d` — an empty export is now a header-only CSV on the shared route. The FE toast path is still open |
 
 ### HRMS-E2E-018 — Owner shown as email prefix · P2 · both
 
@@ -224,10 +224,40 @@ These were read in code before any change and reshape several tickets:
 
 ---
 
-## Tenant-isolation stop-rule log (003 / 004 / 005)
+## Tenant-isolation stop-rule log (003 / 004 / 005) — **CLEARED, no incident**
 
-| Import | Query run | Result | Date |
-|---|---|---|---|
-| employees | | | |
-| leave_balances | | | |
-| attendance | | | |
+Run 2026-09-24 on `streamline_hrms_e2e`, a local non-production database built from the
+migration chain. **No fix-forward happened before this check.**
+
+**Structural finding (conclusive).** Every tenant column on every import target is
+`NOT NULL` with an FK to `organizations.id`, verified against the live catalog, not the ORM:
+
+| Column | `is_nullable` |
+|---|---|
+| `hr_import_jobs.org_id` | NO |
+| `hr_import_rows.org_id` | NO |
+| `hr_people.org_id` | NO |
+| `hr_employments.org_id` | NO |
+| `organization_people.organization_id` | NO |
+| `attendance.org_id` | NO |
+| `assets.org_id` | NO |
+| `leave_balances.org_id` | NO |
+| `documents.org_id` | NO |
+
+A null tenant is therefore impossible by DDL. A *wrong* tenant is impossible by construction
+too: the org reaches `commitJob` only from `CurrentUserContext.orgId`, which the guard sets
+from the token, and no import entity schema has a tenant column, so no CSV can carry one.
+
+**Empirical check.** These ran inside `BEGIN READ ONLY`:
+
+| Check | Rows |
+|---|---|
+| `hr_import_rows` with null `org_id` | 0 |
+| `hr_import_rows.org_id <> hr_import_jobs.org_id` | 0 |
+| `hr_people` / `attendance` / `assets` / `leave_balances` / `documents` with null `org_id` | 0 |
+| `leave_balances.org_id <> leave_types.org_id` | 0 |
+
+**Stated honestly**: this database holds no import history, so the empirical result is
+0-of-0. It corroborates the structural proof rather than replacing it. The rows QA's failing
+imports wrote live in the production database, which this workflow does not query. No
+tenant-isolation incident found; fix-forward proceeded.
