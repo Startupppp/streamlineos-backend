@@ -38,7 +38,10 @@ export const updateIncidentSchema = z.object({
   resolutionDueAt: z.coerce.date().nullish(),
   linkedTicketId: z.number().int().positive().nullish(),
   releaseId: z.number().int().positive().nullish(),
+  followUpWaiverReason: z.string().min(1).max(1000).optional(),
 }).strict();
+
+export const UNRESOLVED_FOLLOW_UP_STATUSES = ["open", "in_progress"] as const;
 
 export const addIncidentUpdateSchema = z.object({
   message: z.string().min(1),

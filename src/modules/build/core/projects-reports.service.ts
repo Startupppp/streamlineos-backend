@@ -87,7 +87,7 @@ export class ProjectsReportsService {
     const endDate = new Date(cycle.endDate);
     const days = differenceInCalendarDays(endDate, startDate) + 1;
     if (!Number.isSafeInteger(days) || days < 1 || days > MAX_BURNUP_DAYS)
-      throw new UnprocessableEntityException(`Burnup reports support sprint ranges of 1 to ${MAX_BURNUP_DAYS} days`);
+      throw new UnprocessableEntityException(`Burnup reports support cycle ranges of 1 to ${MAX_BURNUP_DAYS} days`);
 
     const cycleId = cycle.id;
     const cacheKey = `projects:burnup:${orgId}:${projectId}:${cycleId}:bounded:r${revision}`;
@@ -111,7 +111,7 @@ export class ProjectsReportsService {
           .orderBy(asc(cycleScopeEvents.createdAt), asc(cycleScopeEvents.id))
           .limit(MAX_BURNUP_EVENTS + 1);
         if (events.length > MAX_BURNUP_EVENTS)
-          throw new UnprocessableEntityException(`Burnup reports support at most ${MAX_BURNUP_EVENTS} sprint events; choose a smaller sprint`);
+          throw new UnprocessableEntityException(`Burnup reports support at most ${MAX_BURNUP_EVENTS} cycle events; choose a smaller cycle`);
 
         if (events.length > 0)
           return computeBurnupFromEvents(events, startDate, days);

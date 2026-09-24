@@ -31,8 +31,22 @@ export const linkProjectSchema = z.object({
 }).strict();
 
 export const listProgramsQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20),
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
   portfolioId: z.coerce.number().int().positive().optional(),
+}).strict();
+
+export const portfolioDetailQuerySchema = z.object({
+  projectsCursor: z.string().optional(),
+  projectsLimit: pageSizeField(20),
+  programsCursor: z.string().optional(),
+  programsLimit: pageSizeField(20),
+}).strict();
+
+export const programDetailQuerySchema = z.object({
+  projectsCursor: z.string().optional(),
+  projectsLimit: pageSizeField(20),
 }).strict();
 
 export const createProgramSchema = z.object({
@@ -54,6 +68,9 @@ export const updateProgramSchema = z.object({
 }).strict();
 
 export type ListPortfoliosQuery = z.infer<typeof listPortfoliosQuerySchema>;
+export type LinkedProjectsQuery = { cursor?: string; limit: number };
+export type PortfolioDetailQuery = z.infer<typeof portfolioDetailQuerySchema>;
+export type ProgramDetailQuery = z.infer<typeof programDetailQuerySchema>;
 export type CreatePortfolioInput = z.infer<typeof createPortfolioSchema>;
 export type UpdatePortfolioInput = z.infer<typeof updatePortfolioSchema>;
 export type LinkProjectInput = z.infer<typeof linkProjectSchema>;

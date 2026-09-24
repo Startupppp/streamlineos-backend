@@ -28,7 +28,14 @@ const SCORED = computeRoadmapPrioritization({ reach: 100, impact: 2, confidence:
 const UNSCORED = computeRoadmapPrioritization({ reach: 100, impact: 2, confidence: 50 });
 
 function summary(overrides: Partial<RoadmapAccountTierSummary> = {}): RoadmapAccountTierSummary {
-  return { linkedFeedbackCount: 0, linkedAccountCount: 0, topTier: null, ...overrides };
+  return {
+    linkedFeedbackCount: 0,
+    linkedAccountCount: 0,
+    topTier: null,
+    linkedRevenue: null,
+    revenueKnownAccountCount: 0,
+    ...overrides,
+  };
 }
 
 function groupedSelect(rows: unknown[]) {
@@ -252,5 +259,111 @@ describe("assertCrmOrganizationInOrg — a cross-tenant company id is a miss, no
     await expect(assertCrmOrganizationInOrg(db, ORG, null)).resolves.toBeUndefined();
     await expect(assertCrmOrganizationInOrg(db, ORG, undefined)).resolves.toBeUndefined();
     expect(select).not.toHaveBeenCalled();
+  });
+});
+
+describe("linked account revenue is reported as unknown rather than zero", () => {
+  function renderedProjection(projections: SelectedFields[], key: string): string {
+    const projection = projections[0];
+    expect(projection).toBeDefined();
+    return realDb.dialect.sqlToQuery(projection?.[key] as never).sql;
+  }
+
+  it("reads revenue from the account's lifetime value, the one revenue column the CRM contract supplies", () => {
+    const { db: stub, projections } = groupedSelect([]);
+    return loadRoadmapAccountTiers(stub, ORG, [1]).then(() => {
+      expect(renderedProjection(projections, "linkedRevenue")).toContain("lifetime_value");
+    });
+  });
+
+  it("returns null revenue when no linked account carries a lifetime value, so the board never reads unknown as zero", async () => {
+    const { db: stub } = groupedSelect([
+      {
+        itemId: 1,
+        linkedFeedbackCount: 4,
+        linkedAccountCount: 2,
+        topTierRank: 3,
+        linkedRevenue: null,
+        revenueKnownAccountCount: 0,
+      },
+    ]);
+    const tiers = await loadRoadmapAccountTiers(stub, ORG, [1]);
+    expect(tiers.get(1)?.linkedRevenue).toBeNull();
+    expect(tiers.get(1)?.revenueKnownAccountCount).toBe(0);
+  });
+
+  it("reports how many linked accounts the total actually covers, so a partial total is not read as complete", async () => {
+    const { db: stub } = groupedSelect([
+      {
+        itemId: 1,
+        linkedFeedbackCount: 5,
+        linkedAccountCount: 3,
+        topTierRank: 2,
+        linkedRevenue: "1500.50",
+        revenueKnownAccountCount: 2,
+      },
+    ]);
+    const tiers = await loadRoadmapAccountTiers(stub, ORG, [1]);
+    expect(tiers.get(1)?.linkedRevenue).toBe(1500.5);
+    expect(tiers.get(1)?.revenueKnownAccountCount).toBe(2);
+    expect(tiers.get(1)?.linkedAccountCount).toBe(3);
+  });
+
+  it("treats a zero total from a known account as zero, distinct from the unknown case", async () => {
+    const { db: stub } = groupedSelect([
+      {
+        itemId: 1,
+        linkedFeedbackCount: 1,
+        linkedAccountCount: 1,
+        topTierRank: 1,
+        linkedRevenue: "0",
+        revenueKnownAccountCount: 1,
+      },
+    ]);
+    expect((await loadRoadmapAccountTiers(stub, ORG, [1])).get(1)?.linkedRevenue).toBe(0);
+  });
+
+  it("counts each linked company once, so two posts from one company are two votes but one account", () => {
+    const { db: stub, projections } = groupedSelect([]);
+    return loadRoadmapAccountTiers(stub, ORG, [1]).then(() => {
+      expect(renderedProjection(projections, "linkedAccountCount")).toContain("COUNT(DISTINCT");
+      expect(renderedProjection(projections, "linkedFeedbackCount")).not.toContain("DISTINCT");
+    });
+  });
+
+  it("sums each company's balance once, keying the values by company id before they are added", () => {
+    const { db: stub, projections } = groupedSelect([]);
+    return loadRoadmapAccountTiers(stub, ORG, [1]).then(() => {
+      const sql = renderedProjection(projections, "linkedRevenue");
+      expect(sql).toContain("jsonb_object_agg");
+      expect(sql).toContain("crm_organization_id");
+    });
+  });
+
+  it("carries revenue through the weighting, so a caller reading the score also sees what it is worth", () => {
+    const weighting = applyRoadmapTierWeighting(
+      SCORED,
+      summary({
+        linkedFeedbackCount: 2,
+        linkedAccountCount: 1,
+        topTier: "enterprise",
+        linkedRevenue: 900,
+        revenueKnownAccountCount: 1,
+      }),
+    );
+    expect(weighting.tierWeighted).toBe(true);
+    expect(weighting.linkedRevenue).toBe(900);
+    expect(weighting.revenueKnownAccountCount).toBe(1);
+  });
+
+  it("carries unknown revenue through an unweighted result too, rather than dropping the field", () => {
+    const weighting = applyRoadmapTierWeighting(SCORED, summary({ linkedFeedbackCount: 1 }));
+    expect(weighting.tierWeighted).toBe(false);
+    expect(weighting.linkedRevenue).toBeNull();
+  });
+
+  it("bite proof: a COALESCE to zero on the total would report an unknown balance as nothing owed", () => {
+    const wrong = "COALESCE(SUM(lifetime_value), 0)";
+    expect(wrong).toContain("0");
   });
 });

@@ -11,7 +11,12 @@ import {
 } from "@nestjs/common";
 import { ApiOkResponse } from "@nestjs/swagger";
 import type { Response } from "express";
-import { velocityQuerySchema, type VelocityQuery } from "./dto/analytics.schemas";
+import {
+  resourceAllocationQuerySchema,
+  velocityQuerySchema,
+  type ResourceAllocationQuery,
+  type VelocityQuery,
+} from "./dto/analytics.schemas";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -36,7 +41,7 @@ import {
   criticalPathSchema,
   cycleTimeSchema,
   leadTimeSchema,
-  resourceAllocationItemSchema,
+  resourceAllocationPageSchema,
   snapshotResultSchema,
   velocitySchema,
 } from "./dto/build-reports-response.schemas";
@@ -54,10 +59,14 @@ export class ProjectsReportsController {
 
   @Get("resource-allocation")
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(resourceAllocationItemSchema))
-  async resourceAllocation(@CurrentUser() u: CurrentUserContext) {
+  @ResponseSchema(resourceAllocationPageSchema)
+  @Validate({ query: resourceAllocationQuerySchema })
+  async resourceAllocation(
+    @Query() query: ResourceAllocationQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     await this.reports.authorizeOrganization(u);
-    return this.analytics.resourceAllocation(u.orgId);
+    return this.analytics.resourceAllocation(u.orgId, query);
   }
 
   @Get(":projectId/analytics")
@@ -110,10 +119,10 @@ export class ProjectsReportsController {
   @Get(":projectId/reports/velocity")
   @RequirePermission("build:view")
   @ResponseSchema(velocitySchema)
-  @ApiOkResponse({ description: "Most recent sprint page, displayed chronologically; follow Link for older history", headers: {
-    "Link": { description: "Relative next-page link for older sprints", schema: { type: "string" } },
+  @ApiOkResponse({ description: "Most recent cycle page, displayed chronologically; follow Link for older history", headers: {
+    "Link": { description: "Relative next-page link for older cycles", schema: { type: "string" } },
     "X-Next-Cursor": { description: "Opaque next-page cursor, empty on the final page", schema: { type: "string" } },
-    "X-Has-More": { description: "Whether older sprints exist", schema: { type: "boolean" } },
+    "X-Has-More": { description: "Whether older cycles exist", schema: { type: "boolean" } },
   } })
   @Validate({ params: projectIdParams, query: velocityQuerySchema })
   async velocity(

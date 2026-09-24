@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   incidentUpdates,
@@ -15,6 +15,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { UNRESOLVED_FOLLOW_UP_STATUSES } from "./dto/incidents.schemas";
 import type {
   AddIncidentDecisionInput,
   AddIncidentUpdateInput,
@@ -186,8 +187,29 @@ export class IncidentsService {
     }
 
     const now = new Date();
+    const closing = input.status === "closed" && current.status !== "closed";
 
     const [updated] = await this.db.transaction(async (tx) => {
+      let waivedFollowUpCount = 0;
+      if (closing) {
+        const [unresolved] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(incidentFollowUpActions)
+          .where(
+            and(
+              eq(incidentFollowUpActions.orgId, u.orgId),
+              eq(incidentFollowUpActions.incidentId, incidentId),
+              isNull(incidentFollowUpActions.deletedAt),
+              inArray(incidentFollowUpActions.status, [...UNRESOLVED_FOLLOW_UP_STATUSES]),
+            ),
+          );
+        waivedFollowUpCount = unresolved?.count ?? 0;
+        if (waivedFollowUpCount > 0 && input.followUpWaiverReason === undefined)
+          throw new ConflictException(
+            `Cannot close incident with ${waivedFollowUpCount} unresolved follow-up action(s). Resolve them or supply followUpWaiverReason.`,
+          );
+      }
+
       const rows = await tx
         .update(projectIncidents)
         .set(patch)
@@ -226,6 +248,16 @@ export class IncidentsService {
         });
       }
 
+      if (closing && waivedFollowUpCount > 0 && input.followUpWaiverReason !== undefined) {
+        await tx.insert(incidentUpdates).values({
+          orgId: u.orgId,
+          incidentId,
+          message: `Closed with ${waivedFollowUpCount} unresolved follow-up action(s) waived: ${input.followUpWaiverReason}`,
+          newStatus: null,
+          createdBy: u.userId,
+        });
+      }
+
       if (
         input.severity !== undefined &&
         (SEVERITY_RANK[input.severity] ?? 2) < (SEVERITY_RANK[current.severity] ?? 2)
@@ -249,7 +281,13 @@ export class IncidentsService {
       orgId: u.orgId,
       resourceType: "project_incident",
       resourceId: String(incidentId),
-      metadata: { projectId, incidentId },
+      metadata: {
+        projectId,
+        incidentId,
+        ...(closing && input.followUpWaiverReason !== undefined
+          ? { followUpWaiverReason: input.followUpWaiverReason }
+          : {}),
+      },
     });
     return updated;
   }

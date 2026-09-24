@@ -95,14 +95,18 @@ function makeUpdateChain(returning: Record<string, unknown>[] = []) {
   return chain;
 }
 
-function makeTx(updateChain: ReturnType<typeof makeUpdateChain>) {
+function makeTx(updateChain: ReturnType<typeof makeUpdateChain>, unresolvedFollowUps = 0) {
+  const countChain = {
+    from: jest.fn(),
+    where: jest.fn().mockResolvedValue([{ count: unresolvedFollowUps }]),
+  };
+  countChain.from.mockReturnValue(countChain);
+  const values = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
   return {
+    values,
+    select: jest.fn().mockReturnValue(countChain),
     update: jest.fn().mockReturnValue(updateChain),
-    insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([]),
-      }),
-    }),
+    insert: jest.fn().mockReturnValue({ values }),
   };
 }
 
@@ -573,5 +577,128 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
 
     expect(OutboxWriter.emit).not.toHaveBeenCalled();
     expect(tx.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("IncidentsService.updateIncident unresolved follow-up close policy", () => {
+  function makeClosingDb(tx: ReturnType<typeof makeTx>, current = BASE_INCIDENT) {
+    return {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue(current) },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+  }
+
+  it("refuses to close an incident that still has unresolved follow-up actions", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 2);
+    const svc = new IncidentsService(makeClosingDb(tx), makeAccess(), mockAudit);
+
+    await expect(svc.updateIncident(makeUser("org-1"), 1, 1, { status: "closed" })).rejects.toThrow(
+      ConflictException,
+    );
+    expect(tx.update).not.toHaveBeenCalled();
+    expect(OutboxWriter.emit).not.toHaveBeenCalled();
+  });
+
+  it("names the unresolved follow-up count and the waiver field in the refusal", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 3);
+    const svc = new IncidentsService(makeClosingDb(tx), makeAccess(), mockAudit);
+
+    await expect(svc.updateIncident(makeUser("org-1"), 1, 1, { status: "closed" })).rejects.toThrow(
+      /3 unresolved follow-up action\(s\).*followUpWaiverReason/s,
+    );
+  });
+
+  it("closes an incident that has no unresolved follow-up actions", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 0);
+    const svc = new IncidentsService(makeClosingDb(tx), makeAccess(), mockAudit);
+
+    const result = await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "closed" });
+
+    expect(result).toMatchObject({ status: "closed" });
+    expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));
+    expect(OutboxWriter.emit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payload: expect.objectContaining({ oldStatus: "detected", newStatus: "closed" }),
+      }),
+    );
+  });
+
+  it("closes over unresolved follow-up actions when a waiver reason is supplied", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 2);
+    const svc = new IncidentsService(makeClosingDb(tx), makeAccess(), mockAudit);
+
+    const result = await svc.updateIncident(makeUser("org-1"), 1, 1, {
+      status: "closed",
+      followUpWaiverReason: "Tracked in the Q3 reliability programme",
+    });
+
+    expect(result).toMatchObject({ status: "closed" });
+    expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));
+  });
+
+  it("records the waived count and reason as an incident timeline entry", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 2);
+    const svc = new IncidentsService(makeClosingDb(tx), makeAccess(), mockAudit);
+
+    await svc.updateIncident(makeUser("org-1"), 1, 1, {
+      status: "closed",
+      followUpWaiverReason: "Tracked in the Q3 reliability programme",
+    });
+
+    const messages = tx.values.mock.calls.map(
+      (call) => (call as [Record<string, unknown>])[0]?.["message"],
+    );
+    expect(messages).toContainEqual(
+      "Closed with 2 unresolved follow-up action(s) waived: Tracked in the Q3 reliability programme",
+    );
+  });
+
+  it("records the waiver reason on the audit entry", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 1);
+    const svc = new IncidentsService(makeClosingDb(tx), makeAccess(), mockAudit);
+
+    await svc.updateIncident(makeUser("org-1"), 1, 1, {
+      status: "closed",
+      followUpWaiverReason: "Accepted risk",
+    });
+
+    expect(mockAudit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "incident.updated",
+        metadata: expect.objectContaining({ followUpWaiverReason: "Accepted risk" }),
+      }),
+    );
+  });
+
+  it("does not count follow-up actions when the status is not changing to closed", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "mitigating" }]);
+    const tx = makeTx(updateChain, 5);
+    const svc = new IncidentsService(makeClosingDb(tx), makeAccess(), mockAudit);
+
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "mitigating" });
+
+    expect(tx.select).not.toHaveBeenCalled();
+    expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "mitigating" }));
+  });
+
+  it("does not re-run the close policy when the incident is already closed", async () => {
+    const closed = { ...BASE_INCIDENT, status: "closed" as const };
+    const updateChain = makeUpdateChain([{ ...closed, title: "Renamed" }]);
+    const tx = makeTx(updateChain, 4);
+    const svc = new IncidentsService(makeClosingDb(tx, closed), makeAccess(), mockAudit);
+
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "closed", title: "Renamed" });
+
+    expect(tx.select).not.toHaveBeenCalled();
+    expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ title: "Renamed" }));
   });
 });

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   programProjects,
@@ -15,10 +15,14 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
   CreateProgramInput,
+  LinkedProjectsQuery,
   LinkProjectInput,
   ListProgramsQuery,
+  ProgramDetailQuery,
   UpdateProgramInput,
 } from "./dto/portfolios.schemas";
 
@@ -86,7 +90,17 @@ export class ProgramsService {
 
   async listPrograms(orgId: string, query: ListProgramsQuery) {
     const program = alias(projectPrograms, "program");
-    return this.db
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const conds = [
+      eq(program.orgId, orgId),
+      isNull(program.deletedAt),
+      query.status ? eq(program.status, query.status) : undefined,
+      query.portfolioId ? eq(program.portfolioId, query.portfolioId) : undefined,
+    ];
+    if (pos) conds.push(keysetBeforeId(program.createdAt, program.id, pos));
+
+    const rows = await this.db
       .select({
         id: program.id,
         orgId: program.orgId,
@@ -103,28 +117,31 @@ export class ProgramsService {
           SELECT CAST(COUNT(*) AS INT)
           FROM ${programProjects} link
           INNER JOIN ${projects} linked_project ON linked_project.id = link.project_id
+            AND linked_project.org_id = link.org_id
             AND linked_project.deleted_at IS NULL
           WHERE link.program_id = program.id
             AND link.org_id = program.org_id
         )`,
       })
       .from(program)
-      .where(
-        and(
-          eq(program.orgId, orgId),
-          isNull(program.deletedAt),
-          query.status ? eq(program.status, query.status) : undefined,
-          query.portfolioId
-            ? eq(program.portfolioId, query.portfolioId)
-            : undefined,
-        ),
-      )
-      .limit(100);
+      .where(and(...conds))
+      .orderBy(desc(program.createdAt), desc(program.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 
-  async getProgram(orgId: string, programId: number) {
-    const program = await this.loadProgram(orgId, programId);
-    const linkedProjects = await this.db
+  private async pageProgramProjects(
+    orgId: string,
+    programId: number,
+    query: LinkedProjectsQuery,
+  ) {
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const rows = await this.db
       .select({
         id: projects.id,
         name: projects.name,
@@ -133,16 +150,37 @@ export class ProgramsService {
         addedAt: programProjects.createdAt,
       })
       .from(programProjects)
-      .innerJoin(projects, eq(projects.id, programProjects.projectId))
+      .innerJoin(
+        projects,
+        and(
+          eq(projects.id, programProjects.projectId),
+          eq(projects.orgId, programProjects.orgId),
+        ),
+      )
       .where(
         and(
           eq(programProjects.programId, programId),
           eq(programProjects.orgId, orgId),
           isNull(projects.deletedAt),
+          pos ? keysetBeforeId(programProjects.createdAt, projects.id, pos) : undefined,
         ),
       )
-      .limit(100);
-    return { ...program, projects: linkedProjects };
+      .orderBy(desc(programProjects.createdAt), desc(projects.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.addedAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
+  }
+
+  async getProgram(orgId: string, programId: number, query: ProgramDetailQuery) {
+    const program = await this.loadProgram(orgId, programId);
+    const projects = await this.pageProgramProjects(orgId, programId, {
+      cursor: query.projectsCursor,
+      limit: query.projectsLimit,
+    });
+    return { ...program, projects };
   }
 
   async createProgram(
