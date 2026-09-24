@@ -65,8 +65,6 @@ describe("the recruiter's delete button", () => {
    * caller has no way to see, from the call site, that it skips the vault.
    */
   it("no longer exposes a candidate delete that skips the vault", () => {
-    expect(
-      (RecruitmentCandidatesService.prototype as Record<string, unknown>).remove,
-    ).toBeUndefined();
+    expect("remove" in RecruitmentCandidatesService.prototype).toBe(false);
   });
 });

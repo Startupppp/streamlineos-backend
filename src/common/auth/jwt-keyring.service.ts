@@ -1,13 +1,27 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { importJWK, exportJWK, SignJWT, jwtVerify, type JWTPayload, type JWK } from "jose";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { INTERNAL_TOKEN_AUDIENCE, INTERNAL_TOKEN_ISSUER, type BackendClaims, type ImpersonationClaims } from "./backend-claims";
 
-interface SerializedKeyEntry {
-  kid: string;
-  privateKey: JWK;
-  publicKey: JWK;
-}
+const impersonationClaimsSchema = z.object({
+  realActorUserId: z.string(),
+  realSessionId: z.string(),
+  impersonationSessionId: z.string(),
+});
+
+const jwkSchema = z.custom<JWK>((v: unknown) => {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  if (!("kty" in v)) return false;
+  return typeof v.kty === "string";
+});
+
+const signingKeyEntrySchema = z.object({
+  kid: z.string().min(1),
+  privateKey: jwkSchema,
+  publicKey: jwkSchema,
+});
+const signingKeysSchema = z.array(signingKeyEntrySchema).min(1);
 
 interface KeyEntry {
   kid: string;
@@ -64,21 +78,19 @@ export class JwtKeyringService {
       return;
     }
 
-    let entries: SerializedKeyEntry[];
+    let parsedJson: unknown;
     try {
-      entries = JSON.parse(raw) as SerializedKeyEntry[];
+      parsedJson = JSON.parse(raw);
     } catch {
       throw new Error("AUTH_SIGNING_KEYS must be a valid JSON array of {kid, privateKey, publicKey}");
     }
 
-    if (!Array.isArray(entries) || entries.length === 0) {
-      throw new Error("AUTH_SIGNING_KEYS must contain at least one key entry");
+    const keysResult = signingKeysSchema.safeParse(parsedJson);
+    if (!keysResult.success) {
+      throw new Error("AUTH_SIGNING_KEYS must be a valid JSON array of {kid, privateKey, publicKey}");
     }
 
-    for (const entry of entries) {
-      if (!entry.kid || !entry.privateKey || !entry.publicKey) {
-        throw new Error("Each AUTH_SIGNING_KEYS entry must have kid, privateKey, and publicKey");
-      }
+    for (const entry of keysResult.data) {
       if (carriesPrivateMaterial(entry.publicKey)) {
         this.logger.error(
           `AUTH_SIGNING_KEYS entry "${entry.kid}" has private key material in its publicKey slot. ` +
@@ -153,22 +165,10 @@ export class JwtKeyringService {
         const orgId = typeof rawOrgId === "string" && rawOrgId.length > 0 ? rawOrgId : null;
         if (!sub || !sessionId) return null;
         const rawImpersonation = payload["impersonation"];
-        let impersonation: ImpersonationClaims | undefined;
-        if (
-          rawImpersonation !== null &&
-          typeof rawImpersonation === "object" &&
-          !Array.isArray(rawImpersonation) &&
-          typeof (rawImpersonation as Record<string, unknown>)["realActorUserId"] === "string" &&
-          typeof (rawImpersonation as Record<string, unknown>)["realSessionId"] === "string" &&
-          typeof (rawImpersonation as Record<string, unknown>)["impersonationSessionId"] === "string"
-        ) {
-          const raw = rawImpersonation as Record<string, unknown>;
-          impersonation = {
-            realActorUserId: raw["realActorUserId"] as string,
-            realSessionId: raw["realSessionId"] as string,
-            impersonationSessionId: raw["impersonationSessionId"] as string,
-          };
-        }
+        const impersonationResult = impersonationClaimsSchema.safeParse(rawImpersonation);
+        const impersonation: ImpersonationClaims | undefined = impersonationResult.success
+          ? impersonationResult.data
+          : undefined;
         return { ...payload, sub, sessionId, orgId, impersonation };
       } catch {
         // Try next key — handles wrong-kid or expiry per-key

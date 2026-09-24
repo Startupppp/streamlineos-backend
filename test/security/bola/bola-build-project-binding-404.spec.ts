@@ -136,6 +136,7 @@ describe("BOLA probe — the five writes that never resolved the project they wr
       run: (db) =>
         new ProjectsCustomFieldsService(db, {
           resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+          scopeFor: jest.fn().mockResolvedValue("all"),
         }).createField(CALLER_ORG, FOREIGN_PROJECT_ID, {
           name: "n",
           type: "text",

@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 import { invChannelPools, invChannels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -9,6 +10,17 @@ import { INV_ERRORS } from "./stock-engine.types";
 import { InventoryAuditService } from "./inventory-audit.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { availability, hasAnyPool, type ChannelAvailability, type Tx } from "./lib/channel-availability";
+
+const poolRowSchema = z.object({
+  id: z.number(),
+  channelId: z.number(),
+  channelName: z.string(),
+  warehouseId: z.number().nullable(),
+  productVariantId: z.number(),
+  reservedQty: z.string(),
+  publishedQty: z.string(),
+  updatedAt: z.coerce.date(),
+});
 
 export type { ChannelAvailability };
 
@@ -220,13 +232,14 @@ export class ChannelPoolService {
       DO UPDATE SET reserved_qty = ${next}::numeric, updated_at = now()
       RETURNING id, channel_id, warehouse_id, product_variant_id, reserved_qty, published_qty, updated_at
     `);
+    if (!saved) throw new NotFoundException("Not found");
 
     await this.audit.insert(tx, {
       orgId,
       actorUserId: userId,
       action: cmpDec(input.deltaQty, "0") >= 0 ? "channel_pool.allocate" : "channel_pool.release",
       resourceType: "inv_channel_pool",
-      resourceId: String(saved!.id),
+      resourceId: String(saved.id),
       before: { reservedQty: current },
       after: { reservedQty: next },
       metadata: {
@@ -238,14 +251,14 @@ export class ChannelPoolService {
     });
 
     return {
-      id: Number(saved!.id),
-      channelId: Number(saved!.channel_id),
+      id: Number(saved.id),
+      channelId: Number(saved.channel_id),
       channelName: channel.name,
-      warehouseId: saved!.warehouse_id === null ? null : Number(saved!.warehouse_id),
-      productVariantId: Number(saved!.product_variant_id),
-      reservedQty: String(saved!.reserved_qty),
-      publishedQty: String(saved!.published_qty),
-      updatedAt: new Date(saved!.updated_at),
+      warehouseId: saved.warehouse_id === null ? null : Number(saved.warehouse_id),
+      productVariantId: Number(saved.product_variant_id),
+      reservedQty: String(saved.reserved_qty),
+      publishedQty: String(saved.published_qty),
+      updatedAt: new Date(saved.updated_at),
     };
   }
 
@@ -394,6 +407,7 @@ export class ChannelPoolService {
 
 /** `runIdempotent` stores JSON, so a replayed row comes back with string dates. */
 export function revivePoolRow(stored: unknown): ChannelPoolRow {
-  const value = revivedScalar(stored) as Record<string, unknown>;
-  return { ...(value as unknown as ChannelPoolRow), updatedAt: new Date(String(value.updatedAt)) };
+  const result = poolRowSchema.safeParse(revivedScalar(stored));
+  if (!result.success) throw new NotFoundException("Not found");
+  return result.data;
 }

@@ -2,9 +2,11 @@ import { escapeLikePattern, type ParamBag } from "../emit";
 import { QueryCompilationError } from "../errors";
 import {
   QUERY_LIMITS,
+  UNARY_OPERATORS,
+  BINARY_OPERATORS,
+  LIST_OPERATORS,
+  RANGE_OPERATORS,
   type ComparisonOperator,
-  type FilterNode,
-  type ScalarValue,
 } from "../query-description";
 import type { ResolvedField } from "../compile.types";
 import {
@@ -19,6 +21,22 @@ import {
 import { qualified } from "./compile-resolution";
 import { checkValue } from "./compile-values";
 
+function isComparisonOperator(op: string): op is ComparisonOperator {
+  return OPERATOR_SET.has(op);
+}
+function isUnaryOp(op: ComparisonOperator): op is (typeof UNARY_OPERATORS)[number] {
+  return UNARY_SET.has(op);
+}
+function isBinaryOp(op: ComparisonOperator): op is (typeof BINARY_OPERATORS)[number] {
+  return BINARY_SET.has(op);
+}
+function isListOp(op: ComparisonOperator): op is (typeof LIST_OPERATORS)[number] {
+  return LIST_SET.has(op);
+}
+function isRangeOp(op: ComparisonOperator): op is (typeof RANGE_OPERATORS)[number] {
+  return RANGE_SET.has(op);
+}
+
 // ── WHERE ────────────────────────────────────────────────────────────────────
 
 export function compileWhere(
@@ -28,7 +46,7 @@ export function compileWhere(
 ): string[] {
   if (filter === undefined || filter === null) return [];
   assertFilterIsWithinBudget(filter);
-  return [compileFilterNode(filter as FilterNode, resolve, params, "filter")];
+  return [compileFilterNode(filter, resolve, params, "filter")];
 }
 
 /**
@@ -47,8 +65,8 @@ function assertFilterIsWithinBudget(root: unknown): void {
   const stack: Array<{ node: unknown; depth: number }> = [{ node: root, depth: 1 }];
   let nodes = 0;
 
-  while (stack.length > 0) {
-    const { node, depth } = stack.pop()!;
+  for (let frame = stack.pop(); frame !== undefined; frame = stack.pop()) {
+    const { node, depth } = frame;
     nodes += 1;
 
     if (nodes > QUERY_LIMITS.maxFilterNodes)
@@ -65,15 +83,15 @@ function assertFilterIsWithinBudget(root: unknown): void {
       );
 
     if (node === null || typeof node !== "object") continue;
-    const shape = node as { kind?: unknown; nodes?: unknown; node?: unknown };
-    if (Array.isArray(shape.nodes))
-      for (const child of shape.nodes) stack.push({ node: child, depth: depth + 1 });
-    if (shape.node !== undefined) stack.push({ node: shape.node, depth: depth + 1 });
+    if ("nodes" in node && Array.isArray(node.nodes))
+      for (const child of node.nodes) stack.push({ node: child, depth: depth + 1 });
+    if ("node" in node && node.node !== undefined)
+      stack.push({ node: node.node, depth: depth + 1 });
   }
 }
 
 function compileFilterNode(
-  node: FilterNode,
+  node: unknown,
   resolve: (name: unknown, path: string) => ResolvedField,
   params: ParamBag,
   path: string,
@@ -81,23 +99,25 @@ function compileFilterNode(
   if (node === null || typeof node !== "object")
     throw new QueryCompilationError("malformed_description", "filter node must be an object", path);
 
+  if (!("kind" in node))
+    throw new QueryCompilationError("malformed_description", "filter node must have a kind", path);
+
   switch (node.kind) {
     case "and":
     case "or": {
-      const children = node.nodes;
-      if (!Array.isArray(children) || children.length === 0)
+      if (!("nodes" in node) || !Array.isArray(node.nodes) || node.nodes.length === 0)
         throw new QueryCompilationError(
           "malformed_description",
           `${node.kind} requires a non-empty nodes array`,
           path,
         );
-      const compiled = children.map((child, index) =>
+      const compiled = node.nodes.map((child, index) =>
         compileFilterNode(child, resolve, params, `${path}.nodes[${index}]`),
       );
       return `(${compiled.join(node.kind === "and" ? " AND " : " OR ")})`;
     }
     case "not": {
-      if (node.node === undefined || node.node === null)
+      if (!("node" in node) || node.node === undefined || node.node === null)
         throw new QueryCompilationError("malformed_description", "not requires a node", path);
       return `(NOT ${compileFilterNode(node.node, resolve, params, `${path}.node`)})`;
     }
@@ -106,24 +126,36 @@ function compileFilterNode(
     default:
       throw new QueryCompilationError(
         "malformed_description",
-        `unknown filter node kind ${JSON.stringify((node as { kind?: unknown }).kind)}`,
+        `unknown filter node kind ${JSON.stringify(node.kind)}`,
         path,
       );
   }
 }
 
 function compileComparison(
-  leaf: Extract<FilterNode, { kind: "compare" }>,
+  leaf: object,
   resolve: (name: unknown, path: string) => ResolvedField,
   params: ParamBag,
   path: string,
 ): string {
-  const operator: unknown = leaf.operator;
-  if (typeof operator !== "string" || !OPERATOR_SET.has(operator))
+  if (
+    !("operator" in leaf) ||
+    typeof leaf.operator !== "string" ||
+    !isComparisonOperator(leaf.operator)
+  )
     throw new QueryCompilationError(
       "unknown_operator",
-      `unknown operator ${JSON.stringify(operator)}`,
+      `unknown operator ${JSON.stringify("operator" in leaf ? leaf.operator : undefined)}`,
       `${path}.operator`,
+    );
+
+  const operator = leaf.operator;
+
+  if (!("field" in leaf))
+    throw new QueryCompilationError(
+      "malformed_description",
+      "compare node must have a field",
+      `${path}.field`,
     );
 
   const field = resolve(leaf.field, `${path}.field`);
@@ -136,23 +168,23 @@ function compileComparison(
       `${path}.operator`,
     );
 
-  const op = operator as ComparisonOperator;
   const cast = CAST_FOR_TYPE[field.type];
-  const bind = (value: ScalarValue, valuePath: string): string =>
+  const bind = (value: unknown, valuePath: string): string =>
     params.bind(checkValue(value, field.type, valuePath), cast);
 
-  if (UNARY_SET.has(op)) return `${column} IS ${op === "is_null" ? "" : "NOT "}NULL`;
+  if (isUnaryOp(operator)) return `${column} IS ${operator === "is_null" ? "" : "NOT "}NULL`;
 
-  if (BINARY_SET.has(op)) {
-    const value = (leaf as { value?: unknown }).value;
-    if (value === undefined)
+  if (isBinaryOp(operator)) {
+    if (!("value" in leaf))
       throw new QueryCompilationError(
         "malformed_description",
-        `operator ${op} requires a value`,
+        `operator ${operator} requires a value`,
         `${path}.value`,
       );
 
-    if (op === "contains" || op === "starts_with" || op === "ends_with") {
+    const value = leaf.value;
+
+    if (operator === "contains" || operator === "starts_with" || operator === "ends_with") {
       /**
        * `ILIKE`, not `LIKE`. A person searching a report for "acme" means the
        * company, whatever case it was typed in; a case-sensitive `contains` in a
@@ -164,25 +196,26 @@ function compileComparison(
       if (typeof value !== "string")
         throw new QueryCompilationError(
           "value_type_mismatch",
-          `operator ${op} requires a string value`,
+          `operator ${operator} requires a string value`,
           `${path}.value`,
         );
       checkValue(value, field.type, `${path}.value`);
       const escaped = escapeLikePattern(value);
       const pattern =
-        op === "contains" ? `%${escaped}%` : op === "starts_with" ? `${escaped}%` : `%${escaped}`;
+        operator === "contains"
+          ? `%${escaped}%`
+          : operator === "starts_with"
+            ? `${escaped}%`
+            : `%${escaped}`;
       return `${column} ILIKE ${params.bind(pattern)}`;
     }
 
-    const sqlOp = { eq: "=", ne: "<>", lt: "<", lte: "<=", gt: ">", gte: ">=" }[
-      op as "eq" | "ne" | "lt" | "lte" | "gt" | "gte"
-    ];
-    return `${column} ${sqlOp} ${bind(value as ScalarValue, `${path}.value`)}`;
+    const sqlOp = { eq: "=", ne: "<>", lt: "<", lte: "<=", gt: ">", gte: ">=" }[operator];
+    return `${column} ${sqlOp} ${bind(value, `${path}.value`)}`;
   }
 
-  if (LIST_SET.has(op)) {
-    const values = (leaf as { values?: unknown }).values;
-    if (!Array.isArray(values) || values.length === 0)
+  if (isListOp(operator)) {
+    if (!("values" in leaf) || !Array.isArray(leaf.values) || leaf.values.length === 0)
       /**
        * An empty list is refused rather than compiled. `IN ()` is a syntax
        * error, and the tempting fixes are both wrong: `IN (NULL)` matches
@@ -192,32 +225,31 @@ function compileComparison(
        */
       throw new QueryCompilationError(
         "malformed_description",
-        `operator ${op} requires a non-empty values array`,
+        `operator ${operator} requires a non-empty values array`,
         `${path}.values`,
       );
-    if (values.length > QUERY_LIMITS.maxInValues)
+    if (leaf.values.length > QUERY_LIMITS.maxInValues)
       throw new QueryCompilationError(
         "limit_exceeded",
-        `${op} may not carry more than ${QUERY_LIMITS.maxInValues} values`,
+        `${operator} may not carry more than ${QUERY_LIMITS.maxInValues} values`,
         `${path}.values`,
       );
-    const placeholders = values.map((value: unknown, index) =>
-      bind(value as ScalarValue, `${path}.values[${index}]`),
+    const placeholders = leaf.values.map((value, index) =>
+      bind(value, `${path}.values[${index}]`),
     );
-    return `${column} ${op === "in" ? "IN" : "NOT IN"} (${placeholders.join(", ")})`;
+    return `${column} ${operator === "in" ? "IN" : "NOT IN"} (${placeholders.join(", ")})`;
   }
 
-  if (RANGE_SET.has(op)) {
-    const { from, to } = leaf as { from?: unknown; to?: unknown };
-    if (from === undefined || to === undefined)
+  if (isRangeOp(operator)) {
+    if (!("from" in leaf) || !("to" in leaf))
       throw new QueryCompilationError(
         "malformed_description",
         "between requires both from and to",
         path,
       );
-    return `${column} BETWEEN ${bind(from as ScalarValue, `${path}.from`)} AND ${bind(to as ScalarValue, `${path}.to`)}`;
+    return `${column} BETWEEN ${bind(leaf.from, `${path}.from`)} AND ${bind(leaf.to, `${path}.to`)}`;
   }
 
   /* istanbul ignore next — the operator set above is exhaustive. */
-  throw new QueryCompilationError("unknown_operator", `unhandled operator ${op}`, path);
+  throw new QueryCompilationError("unknown_operator", `unhandled operator ${operator}`, path);
 }

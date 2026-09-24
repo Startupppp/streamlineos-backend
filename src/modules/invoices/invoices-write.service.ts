@@ -54,13 +54,20 @@ export class InvoicesWriteService {
 
     const normalizedItems =
       input.items ??
-      (input.lineItems ?? []).map((li) => ({
+      (input.lineItems ?? []).map((li): {
+        description: string;
+        hsnSacCode: string | undefined;
+        quantity: number;
+        rate: number;
+        gstRate: number;
+        timesheetEntryId: number | undefined;
+      } => ({
         description: li.description,
-        hsnSacCode: undefined as string | undefined,
+        hsnSacCode: undefined,
         quantity: li.quantity,
         rate: li.rate,
         gstRate: 0,
-        timesheetEntryId: undefined as number | undefined,
+        timesheetEntryId: undefined,
       }));
 
     const itemsWithAmounts = normalizedItems.map((it, idx) => {
