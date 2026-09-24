@@ -54,11 +54,11 @@ describe("document knowledge-base link controller", () => {
 
     await controller.publish(DOCUMENT_ID, { audiences: [{ kind: "ALL_EMPLOYEES" }] }, makeUser());
     await controller.update(DOCUMENT_ID, { versionMode: "FOLLOW_LATEST" }, makeUser());
-    await controller.unpublish(DOCUMENT_ID, makeUser());
+    await controller.unpublish(DOCUMENT_ID, { reason: "Superseded" }, makeUser());
 
     expect(links.publish).toHaveBeenCalledWith(actor, DOCUMENT_ID, { audiences: [{ kind: "ALL_EMPLOYEES" }] });
     expect(links.updateLink).toHaveBeenCalledWith(actor, DOCUMENT_ID, { versionMode: "FOLLOW_LATEST" });
-    expect(links.unpublish).toHaveBeenCalledWith(actor, DOCUMENT_ID);
+    expect(links.unpublish).toHaveBeenCalledWith(actor, DOCUMENT_ID, { reason: "Superseded" });
   });
 
   it("runs a backfill as the caller from the session, with the organisation from the session and nothing the body could name", async () => {

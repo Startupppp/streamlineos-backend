@@ -31,3 +31,9 @@ export const updateLinkSchema = z
   .refine(pinConsistent, PIN_MESSAGE)
   .refine((value) => value.audiences !== undefined || value.versionMode !== undefined, { message: "Nothing to change." });
 export type UpdateLinkInput = z.infer<typeof updateLinkSchema>;
+
+export const UNPUBLISH_REASON_MAX_LENGTH = 500;
+
+// Why an entry is being withdrawn, in the publisher's own words. Optional so a caller that sends nothing still withdraws (a DELETE with no body reaches the schema as `undefined`); blank is refused rather than stored.
+export const unpublishLinkSchema = z.object({ reason: z.string().trim().min(1).max(UNPUBLISH_REASON_MAX_LENGTH).optional() }).strict().default({});
+export type UnpublishLinkInput = z.infer<typeof unpublishLinkSchema>;

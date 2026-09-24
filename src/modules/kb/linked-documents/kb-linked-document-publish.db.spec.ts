@@ -255,6 +255,44 @@ describeDb("publishing a document to the knowledge base — real database", () =
       expect(row?.metadata).toMatchObject({ reactivated: true });
     });
 
+    it("records the reason a person gives for withdrawing, on the entry and in the audit row, with who did it and when", async () => {
+      const documentId = await doc(a);
+      const published = await service.publish(actorOf(a), documentId, {});
+
+      const withdrawn = await service.unpublish(actorOf(a), documentId, { reason: "Superseded by the 2026 handbook" });
+
+      expect(withdrawn.link).toMatchObject({ id: published.link?.id, status: "unpublished", unpublishReason: "Superseded by the 2026 handbook" });
+      const [row] = await sql`
+        select user_id, created_at, metadata from audit_logs
+        where org_id = ${a.orgId} and action = 'hr.document.kb_unpublished' and target_id = ${String(documentId)}`;
+      expect(row?.user_id).toBe(member(a, "hr").id);
+      expect(String(row?.created_at)).toMatch(/^\d{4}-\d{2}-\d{2}/);
+      expect(row?.metadata).toMatchObject({ linkId: published.link?.id, reason: "Superseded by the 2026 handbook", reasonGiven: true });
+    });
+
+    it("says in the audit row that no reason was given, rather than passing a default off as one", async () => {
+      const documentId = await doc(a);
+      await service.publish(actorOf(a), documentId, {});
+
+      await service.unpublish(actorOf(a), documentId);
+
+      const [row] = await auditRows(a, "hr.document.kb_unpublished", documentId);
+      expect(row?.metadata).toMatchObject({ reason: "manual", reasonGiven: false });
+    });
+
+    it("hides the entry from readers whatever reason is given, and keeps the reason from the readers", async () => {
+      const documentId = await doc(a);
+      const published = await service.publish(actorOf(a), documentId, {});
+      const linkId = published.link?.id ?? -1;
+      await service.unpublish(actorOf(a), documentId, { reason: "Contains an outdated salary table" });
+
+      const asReader = { orgId: a.orgId, userId: member(a, "onedept").id, canPublish: false };
+      expect((await query.list(asReader, { limit: 100 })).data.map((item) => item.id)).not.toContain(linkId);
+      await expect(query.get(asReader, linkId)).rejects.toBeInstanceOf(NotFoundException);
+      const asPublisher = await query.get({ orgId: a.orgId, userId: member(a, "hr").id, canPublish: true }, linkId);
+      expect(asPublisher.unpublishReason).toBe("Contains an outdated salary table");
+    });
+
     it("shows a publisher that the document taking itself out of the shareable set also took the entry down, and says why", async () => {
       const documentId = await doc(a);
       const published = await service.publish(actorOf(a), documentId, {});

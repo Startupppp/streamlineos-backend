@@ -9,7 +9,7 @@ import { AccessService } from "../../access/access.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { resolveDocumentsScope } from "./performance-scope";
 import { KbLinkedDocumentPublishService, type PublishActor } from "../../kb/linked-documents/kb-linked-document-publish.service";
 import { KbLinkedDocumentBackfillService } from "../../kb/linked-documents/kb-linked-document-backfill.service";
@@ -17,8 +17,10 @@ import { backfillInputSchema, backfillResultSchema, type BackfillInput } from ".
 import {
   kbLinkParamsSchema,
   publishLinkSchema,
+  unpublishLinkSchema,
   updateLinkSchema,
   type PublishLinkInput,
+  type UnpublishLinkInput,
   type UpdateLinkInput,
 } from "../../kb/linked-documents/dto/kb-link-publish.schemas";
 import { kbLinkStateResponseSchema } from "../../kb/linked-documents/dto/kb-link-state-response.schemas";
@@ -91,15 +93,18 @@ export class DocumentKbLinkController {
     return this.links.updateLink(this.actor(currentUser), documentId, body);
   }
 
-  // Answers with the document's state (200), not 204: the caller redraws from it.
+  // Answers with the document's state (200), not 204: the caller redraws from it. The body is optional: a caller that sends none withdraws without a reason.
   @ResponseSchema(kbLinkStateResponseSchema)
   @Delete("documents/:documentId/kb-link")
   @HttpCode(200)
-  @BodylessAction()
   @Idempotent("hr.document.kb-unpublish")
   @RequirePermission("hr:documents:publish")
-  @Validate({ params: kbLinkParamsSchema })
-  async unpublish(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() currentUser: CurrentUserContext) {
-    return this.links.unpublish(this.actor(currentUser), documentId);
+  @Validate({ params: kbLinkParamsSchema, body: unpublishLinkSchema })
+  async unpublish(
+    @Param("documentId", ParseIntPipe) documentId: number,
+    @Body() body: UnpublishLinkInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.links.unpublish(this.actor(currentUser), documentId, body);
   }
 }

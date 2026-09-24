@@ -14,7 +14,7 @@ import { judgeAudience } from "./kb-link-judge";
 import { loadLinkState } from "./kb-link-state";
 import { MAX_DOCUMENT_AUDIENCES } from "./dto/document-audience-entry.schema";
 import type { KbLinkState } from "./dto/kb-link-state-response.schemas";
-import type { PublishLinkInput, UpdateLinkInput } from "./dto/kb-link-publish.schemas";
+import type { PublishLinkInput, UnpublishLinkInput, UpdateLinkInput } from "./dto/kb-link-publish.schemas";
 
 type Reader = Pick<TenantTx, "select">;
 
@@ -157,15 +157,17 @@ export class KbLinkedDocumentPublishService {
     );
   }
 
-  async unpublish(actor: PublishActor, documentId: number): Promise<KbLinkState> {
+  async unpublish(actor: PublishActor, documentId: number, input: UnpublishLinkInput = {}): Promise<KbLinkState> {
     const { orgId } = actor;
+    // "manual" is the code for a withdrawal nobody explained; the audit row says whether a reason was really given.
+    const reason = input.reason ?? "manual";
     await this.flags.assertEnabled(orgId, "link");
     return runInTenantTransaction(
       this.db,
       async (tx) => {
         const [link] = await tx
           .update(kbLinkedDocuments)
-          .set({ status: "unpublished", unpublishedAt: new Date(), unpublishedByMembershipId: actor.membershipId, unpublishReason: "manual", updatedAt: new Date() })
+          .set({ status: "unpublished", unpublishedAt: new Date(), unpublishedByMembershipId: actor.membershipId, unpublishReason: reason, updatedAt: new Date() })
           .where(and(eq(kbLinkedDocuments.orgId, orgId), eq(kbLinkedDocuments.documentId, documentId), eq(kbLinkedDocuments.status, "active")))
           .returning({ id: kbLinkedDocuments.id });
         if (!link) throw new NotFoundException("This document is not in the knowledge base.");
@@ -175,7 +177,7 @@ export class KbLinkedDocumentPublishService {
           orgId,
           targetId: String(documentId),
           targetType: "document",
-          metadata: { linkId: link.id, reason: "manual" },
+          metadata: { linkId: link.id, reason, reasonGiven: input.reason !== undefined },
         });
         return loadLinkState(tx, orgId, documentId);
       },

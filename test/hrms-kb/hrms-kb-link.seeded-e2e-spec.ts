@@ -376,6 +376,54 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
     });
   });
 
+  describe("withdrawing with a reason", () => {
+    it("records the reason a publisher gives, shows it to publishers only, and still withdraws with no body at all", async () => {
+      const withReason = await document(home, "POLICY", fileKey());
+      const bodyless = await document(home, "POLICY", fileKey());
+      for (const id of [withReason, bodyless]) {
+        expect((await send("patch", `/hr/documents/${id}/classification`, "admin", { classification: "INTERNAL" })).status).toBe(200);
+        await send("put", `/hr/documents/${id}/audiences`, "admin", { audiences: [{ kind: "ALL_EMPLOYEES" }] });
+        expect((await send("post", `/hr/documents/${id}/kb-link`, "admin", {})).status).toBe(201);
+      }
+
+      const withdrawn = await send("delete", `/hr/documents/${withReason}/kb-link`, "admin", { reason: "Superseded by the 2026 handbook" });
+      const plain = await send("delete", `/hr/documents/${bodyless}/kb-link`, "admin");
+
+      expect(withdrawn.status).toBe(200);
+      expect(withdrawn.body.link).toMatchObject({ status: "unpublished", unpublishReason: "Superseded by the 2026 handbook" });
+      expect(plain.status).toBe(200);
+      expect(plain.body.link).toMatchObject({ status: "unpublished", unpublishReason: "manual" });
+      const [audit] = await auditFor(home.orgId, "hr.document.kb_unpublished", withReason);
+      expect(audit?.metadata).toMatchObject({ reason: "Superseded by the 2026 handbook", reasonGiven: true });
+      const linkOf = withdrawn.body.link.id;
+      expect((await get(`/kb/linked-documents/${linkOf}`, "admin")).body.unpublishReason).toBe("Superseded by the 2026 handbook");
+      expect((await get(`/kb/linked-documents/${linkOf}`, "inDept")).status).toBe(404);
+    });
+
+    it("refuses a blank or oversized reason and an unknown key, and leaves the entry live", async () => {
+      const id = await document(home, "POLICY", fileKey());
+      await send("patch", `/hr/documents/${id}/classification`, "admin", { classification: "INTERNAL" });
+      await send("put", `/hr/documents/${id}/audiences`, "admin", { audiences: [{ kind: "ALL_EMPLOYEES" }] });
+      await send("post", `/hr/documents/${id}/kb-link`, "admin", {});
+
+      for (const body of [{ reason: "   " }, { reason: "x".repeat(501) }, { reason: "ok", status: "active" }])
+        expect((await send("delete", `/hr/documents/${id}/kb-link`, "admin", body)).status).toBe(400);
+
+      expect((await get(`/hr/documents/${id}/kb-link`, "admin")).body.link.status).toBe("active");
+    });
+
+    it("refuses someone who cannot publish, and the reason changes nothing for them", async () => {
+      const id = await document(home, "POLICY", fileKey());
+      await send("patch", `/hr/documents/${id}/classification`, "admin", { classification: "INTERNAL" });
+      await send("put", `/hr/documents/${id}/audiences`, "admin", { audiences: [{ kind: "ALL_EMPLOYEES" }] });
+      await send("post", `/hr/documents/${id}/kb-link`, "admin", {});
+
+      expect((await send("delete", `/hr/documents/${id}/kb-link`, "manager", { reason: "because" })).status).toBe(403);
+
+      expect((await get(`/hr/documents/${id}/kb-link`, "admin")).body.link.status).toBe("active");
+    });
+  });
+
   describe("taking it back", () => {
     it("takes an entry away from every reader on the next request when its document leaves the shareable set", async () => {
       const response = await send("patch", `/hr/documents/${policyId}/classification`, "admin", { classification: "PERSONAL" });
