@@ -83,7 +83,14 @@ export const vendorSubmissionItemSchema = z.object({
   candidateLastName: z.string().nullable(),
   candidateEmail: z.string().nullable(),
   jobTitle: z.string().nullable(),
-  margin: z.string().nullable(),
+  /*
+    `margin` became three fields. The amount alone could not say whether a
+    placement was below cost or simply unpriced, and a desk quoting a percentage
+    needs the percentage the client will read — of the bill rate, not the pay.
+  */
+  marginAmount: z.string().nullable(),
+  marginPercent: z.number().nullable(),
+  negative: z.boolean(),
 });
 
 export const vendorSubmissionRawSchema = z.object({
