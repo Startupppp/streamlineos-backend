@@ -6224,6 +6224,13 @@
       "when": 1803000010343,
       "tag": "1128_candidate_whatsapp_consent",
       "breakpoints": true
+    },
+    {
+      "idx": 1017,
+      "version": "7",
+      "when": 1803000010344,
+      "tag": "1129_identity_verification",
+      "breakpoints": true
     }
   ]
 }

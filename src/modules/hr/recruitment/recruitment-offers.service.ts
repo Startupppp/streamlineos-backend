@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { IdentityService } from "./identity/identity.service";
 import { and, desc, eq } from "drizzle-orm";
 import { candidateOffers, candidates, type OfferNegotiationDirection } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -48,6 +49,7 @@ export class RecruitmentOffersService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly acceptance: RecruitmentOfferAcceptanceService,
+    private readonly identity: IdentityService,
   ) {}
 
   async listOffers(orgId: string, candidateId: number) {
@@ -109,6 +111,22 @@ export class RecruitmentOffersService {
    */
   async approveOffer(orgId: string, userId: string, offerId: number, remarks?: string) {
     const offer = await this.findOffer(orgId, offerId);
+
+    /*
+      The identity policy bites here, at approval, rather than at acceptance.
+
+      A role marked as requiring verification is one somebody decided the check
+      matters for, and the question has to be settled before the candidate is
+      asked to answer. Gating the candidate's acceptance instead would strand
+      them in front of a button they cannot make work and cannot fix — the
+      recruiter is the one who can run the check.
+
+      UNAVAILABLE blocks the same as FAILED. A policy that switches itself off
+      when the integration is missing is not a policy.
+    */
+    const gate = await this.identity.gateForOffer(orgId, offer.candidateId, offer.jobPostingId);
+    if (!gate.allowed) throw new BadRequestException(gate.reason);
+
     const result = await approveOffer(this.db, this.audit, orgId, offer, userId, remarks);
     this.acceptance.deferStatusEffects(orgId, offer.candidateId, offerId, "SENT", offer.offerStatus, {
       offeredSalary: offer.offeredSalary,

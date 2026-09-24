@@ -90,6 +90,15 @@ export const jobPostings = pgTable("job_postings", {
   externalPostingIds: jsonb("external_posting_ids").$type<Record<string, string>>(),
   isInternal: boolean("is_internal").notNull().default(false),
   screeningQuestions: jsonb("screening_questions").$type<ScreeningQuestion[]>(),
+  /**
+   * Whether an offer for this job may only be finalised against a verified
+   * identity.
+   *
+   * Per job rather than per organisation: some roles are regulated and most
+   * are not, and an org-wide switch would either block ordinary hiring or
+   * leave the regulated roles ungated.
+   */
+  requiresIdentityVerification: boolean("requires_identity_verification").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

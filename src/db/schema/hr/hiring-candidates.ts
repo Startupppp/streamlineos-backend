@@ -54,6 +54,20 @@ export const candidates = pgTable("candidates", {
    */
   whatsappOptInAt: timestamp("whatsapp_opt_in_at"),
   whatsappOptOutAt: timestamp("whatsapp_opt_out_at"),
+  /**
+   * Identity verification, holding no identity number.
+   *
+   * `identityReference` is the vendor's case id and `identityLast4` is the
+   * trailing characters a recruiter uses to confirm they are looking at the
+   * right document. A full PAN or Aadhaar in a recruitment database is a
+   * liability with no use case behind it, so there is no column for one.
+   */
+  identityStatus: text("identity_status").$type<
+    "NOT_STARTED" | "PENDING" | "VERIFIED" | "FAILED" | "UNAVAILABLE"
+  >(),
+  identityReference: text("identity_reference"),
+  identityLast4: text("identity_last4"),
+  identityVerifiedAt: timestamp("identity_verified_at"),
   sourceUrl: text("source_url"),
   location: text("location"),
   gender: text("gender").$type<"MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY" | null>(),
