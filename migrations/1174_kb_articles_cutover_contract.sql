@@ -330,9 +330,9 @@ ALTER TABLE "public"."kb_page_restrictions"
   FOREIGN KEY ("org_id", "page_id") REFERENCES "public"."kb_pages" ("org_id", "id") ON DELETE CASCADE;
 --> statement-breakpoint
 
--- kb_article_chunks keeps its name and its article_id column; only its anchors
--- move. attachment_id widens to bigint because kb_page_attachments.id is a
--- bigint identity column, and an integer column cannot carry that foreign key.
+-- kb_article_chunks keeps its name; its anchors move. attachment_id widens to
+-- bigint because kb_page_attachments.id is a bigint identity column, and an
+-- integer column cannot carry that foreign key.
 ALTER TABLE "public"."kb_article_chunks"
   DROP CONSTRAINT IF EXISTS "fk_kb_chunks_org_attachment";
 --> statement-breakpoint
@@ -348,6 +348,26 @@ ALTER TABLE "public"."kb_article_chunks"
 ALTER TABLE "public"."kb_article_chunks"
   ADD CONSTRAINT "fk_kb_chunks_org_attachment"
   FOREIGN KEY ("org_id", "attachment_id") REFERENCES "public"."kb_page_attachments" ("org_id", "id") ON DELETE CASCADE;
+--> statement-breakpoint
+
+-- article_id was the last anchor pointing at the table this migration drops, and
+-- with kb_articles gone nothing can ever write it again. Every path now anchors on
+-- page_id: the outbox delete consumer purges an 'article' event by page_id because
+-- a support article IS a kb_pages row, the attachment indexer stores the parent
+-- page so candidate retrieval (which requires page_id IS NOT NULL) can reach the
+-- chunk, and the retention sweep that scanned for article-anchored rows was
+-- deleted outright because it could no longer match one. Measured immediately
+-- before writing this: kb_article_chunks holds 124 rows, 0 with a non-null
+-- article_id, so the drop loses nothing. DROP COLUMN would cascade to both
+-- indexes on its own; they are named here so the rollback has an exact list.
+DROP INDEX IF EXISTS "public"."idx_kb_chunks_article";
+--> statement-breakpoint
+
+DROP INDEX IF EXISTS "public"."idx_kb_chunks_org_article";
+--> statement-breakpoint
+
+ALTER TABLE "public"."kb_article_chunks"
+  DROP COLUMN IF EXISTS "article_id";
 --> statement-breakpoint
 
 -- The three article tables whose page-side equivalent already exists. The
@@ -378,6 +398,15 @@ ALTER TABLE "public"."support_knowledge_gaps"
 --> statement-breakpoint
 
 DROP TABLE "public"."kb_articles";
+--> statement-breakpoint
+
+-- app.search_kb_article_ids (0453) is a SECURITY DEFINER function whose body reads
+-- public.kb_articles. A function body is not resolved until it is called, so the
+-- DROP TABLE above leaves it in place and it raises 42P01 on first use instead of
+-- failing here. Its one caller now calls app.search_kb_page_ids (0498), which
+-- returns ids across every content type, so the article surface filters by
+-- content_type after the id lookup rather than inside the function.
+DROP FUNCTION IF EXISTS app.search_kb_article_ids(text, integer);
 --> statement-breakpoint
 
 DROP TYPE IF EXISTS "public"."kb_article_status";

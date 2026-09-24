@@ -205,11 +205,13 @@ describe("Store 4 of 5 — vector chunks, by declared cascade and by explicit de
     );
   });
 
-  it("article_id kept its column but lost its parent when kb_articles was dropped, so only the outbox purge reaches an article_body chunk", () => {
+  it("drops article_id with its parent, so no chunk can be anchored to a table that no longer exists", () => {
     const articleParent = chunkForeignKeys.find((fk) => fk.name === "fk_kb_chunks_org_article");
+    const columns = getTableConfig(kbArticleChunks).columns.map((c) => c.name);
 
     expect(articleParent).toBeUndefined();
-    expect(getTableConfig(kbArticleChunks).columns.map((c) => c.name)).toContain("article_id");
+    expect(columns).not.toContain("article_id");
+    expect(columns).toContain("page_id");
   });
 
   it("every surviving content parent cascades, so none is left to an application delete alone", () => {

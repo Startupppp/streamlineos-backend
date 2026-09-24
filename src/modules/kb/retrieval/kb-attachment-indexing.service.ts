@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { kbArticleChunks, kbPageAttachments, kbPages } from "../../../db/schema";
+import {
+  kbArticleChunks,
+  kbPageAttachments,
+  kbPages,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -58,7 +62,11 @@ export class KbAttachmentIndexingService {
     chunks: string[],
   ): Promise<number[][]> {
     return embedChunksWithResumption(
-      { aiGateway: this.aiGateway, checkpoint: this.checkpoint, logger: this.logger },
+      {
+        aiGateway: this.aiGateway,
+        checkpoint: this.checkpoint,
+        logger: this.logger,
+      },
       { orgId, contentType, contentId, contentHash, chunks },
     );
   }
@@ -89,9 +97,22 @@ export class KbAttachmentIndexingService {
       return stored.chunkCount;
     }
 
-    const embeddings = await this.embed(orgId, "source", sourceId, contentHash, chunks);
+    const embeddings = await this.embed(
+      orgId,
+      "source",
+      sourceId,
+      contentHash,
+      chunks,
+    );
 
-    await replaceSourceChunks(this.db, orgId, sourceId, chunks, embeddings, contentHash);
+    await replaceSourceChunks(
+      this.db,
+      orgId,
+      sourceId,
+      chunks,
+      embeddings,
+      contentHash,
+    );
 
     return chunks.length;
   }
@@ -124,14 +145,19 @@ export class KbAttachmentIndexingService {
         pageAclRevision: kbPages.aclRevision,
       })
       .from(kbPageAttachments)
-      .leftJoin(kbPages, and(
-        eq(kbPages.id, kbPageAttachments.pageId),
-        eq(kbPages.orgId, kbPageAttachments.orgId),
-      ))
-      .where(and(
-        eq(kbPageAttachments.id, attachmentId),
-        eq(kbPageAttachments.orgId, orgId),
-      ))
+      .leftJoin(
+        kbPages,
+        and(
+          eq(kbPages.id, kbPageAttachments.pageId),
+          eq(kbPages.orgId, kbPageAttachments.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(kbPageAttachments.id, attachmentId),
+          eq(kbPageAttachments.orgId, orgId),
+        ),
+      )
       .limit(1);
 
     if (
@@ -156,7 +182,10 @@ export class KbAttachmentIndexingService {
       // No KB bucket override, deliberately: kb_article_attachments rows carry a fileKey
       // the client obtained from POST /storage/upload, which writes to the DEFAULT bucket
       // with no override. Adding one here would 404 the read wherever the buckets differ.
-      const { body } = await this.storage.getFileStream(orgId, attachment.fileKey);
+      const { body } = await this.storage.getFileStream(
+        orgId,
+        attachment.fileKey,
+      );
       const buffer = await streamToBuffer(body);
       text = await extractAttachmentText(buffer, attachment.mimeType);
     } catch (err) {
@@ -171,7 +200,10 @@ export class KbAttachmentIndexingService {
 
     if (chunks.length === 0) {
       await this.removeAttachmentChunks(orgId, attachmentId);
-      return { chunks: 0, warning: `${attachment.fileName}: no extractable text` };
+      return {
+        chunks: 0,
+        warning: `${attachment.fileName}: no extractable text`,
+      };
     }
 
     const aclRevision = attachment.pageAclRevision ?? 1;
@@ -180,18 +212,36 @@ export class KbAttachmentIndexingService {
     const stored = await loadDerivedChunkState(this.db, family);
     if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
       if (stored.aclRevision !== aclRevision) {
-        this.logger.log("KB attachment ACL updated (text unchanged)", { orgId, attachmentId, aclRevision });
+        this.logger.log("KB attachment ACL updated (text unchanged)", {
+          orgId,
+          attachmentId,
+          aclRevision,
+        });
         await updateDerivedChunkAcl(this.db, family, aclRevision);
       }
       return { chunks: stored.chunkCount, warning: null };
     }
 
-    const embeddings = await this.embed(orgId, "attachment", attachmentId, contentHash, chunks);
-
-    await replaceAttachmentChunks(this.db, orgId, attachmentId, null, chunks, embeddings, {
+    const embeddings = await this.embed(
+      orgId,
+      "attachment",
+      attachmentId,
       contentHash,
-      aclRevision,
-    });
+      chunks,
+    );
+
+    await replaceAttachmentChunks(
+      this.db,
+      orgId,
+      attachmentId,
+      attachment.pageId,
+      chunks,
+      embeddings,
+      {
+        contentHash,
+        aclRevision,
+      },
+    );
 
     return { chunks: chunks.length, warning: null };
   }
@@ -255,22 +305,38 @@ export class KbAttachmentIndexingService {
     const stored = await loadDerivedChunkState(this.db, family);
     if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
       if (stored.aclRevision !== page.aclRevision) {
-        this.logger.log("KB page document ACL updated (text unchanged)", { orgId, pageId });
+        this.logger.log("KB page document ACL updated (text unchanged)", {
+          orgId,
+          pageId,
+        });
         await updateDerivedChunkAcl(this.db, family, page.aclRevision);
       }
       return { chunks: stored.chunkCount, warning: null };
     }
 
-    const embeddings = await this.embed(orgId, "page_document", pageId, contentHash, chunks);
-
-    await replacePageDocumentChunks(this.db, orgId, pageId, chunks, embeddings, {
+    const embeddings = await this.embed(
+      orgId,
+      "page_document",
+      pageId,
       contentHash,
-      pageVisibility: page.visibility,
-      pageProjectId: page.projectId,
-      pageCreatedById: page.createdById,
-      pageCreatedByMembershipId: page.createdByMembershipId,
-      aclRevision: page.aclRevision,
-    });
+      chunks,
+    );
+
+    await replacePageDocumentChunks(
+      this.db,
+      orgId,
+      pageId,
+      chunks,
+      embeddings,
+      {
+        contentHash,
+        aclRevision: page.aclRevision,
+        pageProjectId: page.projectId,
+        pageVisibility: page.visibility,
+        pageCreatedById: page.createdById,
+        pageCreatedByMembershipId: page.createdByMembershipId,
+      },
+    );
 
     return { chunks: chunks.length, warning: null };
   }

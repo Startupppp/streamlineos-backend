@@ -10,7 +10,6 @@ const PRUNE_BATCH_SIZE = 500;
 
 export interface KbChunkRetentionResult {
   orgsProcessed: number;
-  articleChunksPruned: number;
   pageChunksPruned: number;
 }
 
@@ -21,44 +20,17 @@ export class CronKbChunkRetentionService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async pruneStaleChunks(): Promise<KbChunkRetentionResult> {
-    let articleChunksPruned = 0;
     let pageChunksPruned = 0;
 
     const result = await forEachOrg(this.db, "kb-chunk-retention", async (tx, orgId) => {
-      articleChunksPruned += await this.pruneArticleChunksForOrg(tx, orgId);
       pageChunksPruned += await this.prunePageChunksForOrg(tx, orgId);
     });
 
     this.logger.log(
-      `KB chunk retention: pruned ${articleChunksPruned} article chunks, ${pageChunksPruned} page chunks across ${result.succeeded} orgs`,
+      `KB chunk retention: pruned ${pageChunksPruned} page chunks across ${result.succeeded} orgs`,
     );
 
-    return { orgsProcessed: result.succeeded, articleChunksPruned, pageChunksPruned };
-  }
-
-  private async pruneArticleChunksForOrg(tx: TenantTx, orgId: string): Promise<number> {
-    let pruned = 0;
-
-    for (;;) {
-      const rows = await tx
-        .select({ id: kbArticleChunks.id })
-        .from(kbArticleChunks)
-        .where(and(
-          eq(kbArticleChunks.orgId, orgId),
-          isNotNull(kbArticleChunks.articleId),
-          isNull(kbArticleChunks.pageId),
-        ))
-        .limit(PRUNE_BATCH_SIZE);
-
-      if (rows.length === 0) break;
-      await tx.delete(kbArticleChunks).where(
-        inArray(kbArticleChunks.id, rows.map((r) => r.id)),
-      );
-      pruned += rows.length;
-      if (rows.length < PRUNE_BATCH_SIZE) break;
-    }
-
-    return pruned;
+    return { orgsProcessed: result.succeeded, pageChunksPruned };
   }
 
   private async prunePageChunksForOrg(tx: TenantTx, orgId: string): Promise<number> {

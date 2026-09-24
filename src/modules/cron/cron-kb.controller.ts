@@ -157,7 +157,7 @@ export class CronKbController {
       const result = outcome.result;
       return {
         success: true,
-        message: `KB chunk retention: pruned ${result.articleChunksPruned} article chunks, ${result.pageChunksPruned} page chunks across ${result.orgsProcessed} orgs`,
+        message: `KB chunk retention: pruned ${result.pageChunksPruned} page chunks across ${result.orgsProcessed} orgs`,
         ...result,
       };
     } catch (error) {

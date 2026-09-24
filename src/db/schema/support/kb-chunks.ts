@@ -29,7 +29,6 @@ export const kbArticleChunks = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    articleId: integer("article_id"),
     pageId: integer("page_id"),
     attachmentId: bigint("attachment_id", { mode: "number" }),
     sourceId: integer("source_id"),
@@ -51,8 +50,6 @@ export const kbArticleChunks = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_kb_chunks_article").on(table.articleId),
-    index("idx_kb_chunks_org_article").on(table.orgId, table.articleId),
     index("idx_kb_chunks_org_page").on(table.orgId, table.pageId),
     index("idx_kb_chunks_org_source").on(table.orgId, table.sourceId),
     index("idx_kb_chunks_org_page_acl")

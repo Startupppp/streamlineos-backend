@@ -358,11 +358,50 @@ ALTER TABLE "public"."kb_article_chunks"
   ON DELETE CASCADE;
 --> statement-breakpoint
 
+-- The column has to exist before the foreign key that references it. The forward
+-- migration dropped article_id once kb_articles was gone; restoring it nullable
+-- is exact, because the forward drop was proven to discard 0 non-null values and
+-- nothing has written the column since.
+ALTER TABLE "public"."kb_article_chunks"
+  ADD COLUMN IF NOT EXISTS "article_id" integer;
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS "idx_kb_chunks_article"
+  ON "public"."kb_article_chunks" ("article_id");
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS "idx_kb_chunks_org_article"
+  ON "public"."kb_article_chunks" ("org_id", "article_id");
+--> statement-breakpoint
+
 ALTER TABLE "public"."kb_article_chunks"
   ADD CONSTRAINT "fk_kb_chunks_org_article"
   FOREIGN KEY ("org_id", "article_id")
   REFERENCES "public"."kb_articles" ("org_id", "id")
   ON DELETE CASCADE;
+--> statement-breakpoint
+
+-- Restored verbatim from 0453. kb_articles exists again by this point in the
+-- rollback, so the body resolves.
+CREATE OR REPLACE FUNCTION app.search_kb_article_ids(p_q text, p_limit integer)
+RETURNS SETOF integer
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, app
+AS $$
+  SELECT a.id
+  FROM public.kb_articles a
+  WHERE a.org_id = app.current_org_id()
+    AND a.fts @@ websearch_to_tsquery('english', p_q)
+  LIMIT p_limit
+$$;
+--> statement-breakpoint
+
+REVOKE ALL ON FUNCTION app.search_kb_article_ids(text, integer) FROM PUBLIC;
+--> statement-breakpoint
+
+GRANT EXECUTE ON FUNCTION app.search_kb_article_ids(text, integer) TO streamline_app;
 --> statement-breakpoint
 
 ALTER TABLE "public"."kb_events"
