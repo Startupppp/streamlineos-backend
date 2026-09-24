@@ -1,15 +1,16 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import {
-  kbArticleAttachments,
-  kbArticleComments,
-  kbArticleFeedback,
-  kbArticles,
+  kbPageAttachments,
+  kbPageComments,
+  kbPageFeedback,
+  kbPages,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
+import { supportArticlePredicate } from "../../kb/help-centre/kb-article-page-scope";
 import { isOwnOrgStorageKey } from "../../storage/storage-key";
 import { StorageService } from "../../storage/storage.service";
 import type {
@@ -27,8 +28,13 @@ export class SupportKbEngagementService {
   ) {}
 
   private async ensureArticle(orgId: string, articleId: number) {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId), isNull(kbArticles.archivedAt)),
+    const article = await this.db.query.kbPages.findFirst({
+      where: and(
+        eq(kbPages.id, articleId),
+        eq(kbPages.orgId, orgId),
+        supportArticlePredicate(),
+        isNull(kbPages.archivedAt),
+      ),
       columns: { id: true },
     });
     if (!article) throw new NotFoundException("Article not found");
@@ -38,16 +44,16 @@ export class SupportKbEngagementService {
     await this.ensureArticle(orgId, articleId);
     return this.db
       .select({
-        id: kbArticleFeedback.id,
-        articleId: kbArticleFeedback.articleId,
-        helpful: kbArticleFeedback.helpful,
-        comment: kbArticleFeedback.comment,
-        visitorId: kbArticleFeedback.visitorId,
-        createdAt: kbArticleFeedback.createdAt,
+        id: kbPageFeedback.id,
+        articleId: kbPageFeedback.pageId,
+        helpful: kbPageFeedback.helpful,
+        comment: kbPageFeedback.comment,
+        visitorId: kbPageFeedback.visitorId,
+        createdAt: kbPageFeedback.createdAt,
       })
-      .from(kbArticleFeedback)
-      .where(and(eq(kbArticleFeedback.articleId, articleId), eq(kbArticleFeedback.orgId, orgId)))
-      .orderBy(desc(kbArticleFeedback.createdAt))
+      .from(kbPageFeedback)
+      .where(and(eq(kbPageFeedback.pageId, articleId), eq(kbPageFeedback.orgId, orgId)))
+      .orderBy(desc(kbPageFeedback.createdAt))
       .limit(100);
   }
 
@@ -55,19 +61,19 @@ export class SupportKbEngagementService {
     await this.ensureArticle(orgId, articleId);
     return this.db
       .select({
-        id: kbArticleComments.id,
-        articleId: kbArticleComments.articleId,
-        body: kbArticleComments.content,
-        userId: kbArticleComments.authorId,
+        id: kbPageComments.id,
+        articleId: kbPageComments.pageId,
+        body: kbPageComments.content,
+        userId: kbPageComments.authorId,
         userName: users.name,
         userImage: users.image,
-        createdAt: kbArticleComments.createdAt,
-        updatedAt: kbArticleComments.updatedAt,
+        createdAt: kbPageComments.createdAt,
+        updatedAt: kbPageComments.updatedAt,
       })
-      .from(kbArticleComments)
-      .leftJoin(users, and(eq(kbArticleComments.authorId, users.id), isNull(users.deletedAt)))
-      .where(and(eq(kbArticleComments.articleId, articleId), eq(kbArticleComments.orgId, orgId)))
-      .orderBy(desc(kbArticleComments.createdAt))
+      .from(kbPageComments)
+      .leftJoin(users, and(eq(kbPageComments.authorId, users.id), isNull(users.deletedAt)))
+      .where(and(eq(kbPageComments.pageId, articleId), eq(kbPageComments.orgId, orgId)))
+      .orderBy(desc(kbPageComments.createdAt))
       .limit(100);
   }
 
@@ -75,9 +81,16 @@ export class SupportKbEngagementService {
     await this.ensureArticle(orgId, articleId);
 
     const [inserted] = await this.db
-      .insert(kbArticleComments)
-      .values({ orgId, articleId, authorId: userId, content: input.body })
-      .returning();
+      .insert(kbPageComments)
+      .values({ orgId, pageId: articleId, authorId: userId, content: input.body })
+      .returning({
+        id: kbPageComments.id,
+        articleId: kbPageComments.pageId,
+        body: kbPageComments.content,
+        userId: kbPageComments.authorId,
+        createdAt: kbPageComments.createdAt,
+        updatedAt: kbPageComments.updatedAt,
+      });
 
     const author = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
@@ -85,28 +98,23 @@ export class SupportKbEngagementService {
     });
 
     return {
-      id: inserted.id,
-      articleId: inserted.articleId,
-      body: inserted.content,
-      userId: inserted.authorId,
+      ...inserted,
       userName: author?.name ?? null,
       userImage: author?.image ?? null,
-      createdAt: inserted.createdAt,
-      updatedAt: inserted.updatedAt,
     };
   }
 
   async deleteComment(orgId: string, articleId: number, commentId: number) {
     const [deleted] = await this.db
-      .delete(kbArticleComments)
+      .delete(kbPageComments)
       .where(
         and(
-          eq(kbArticleComments.id, commentId),
-          eq(kbArticleComments.articleId, articleId),
-          eq(kbArticleComments.orgId, orgId),
+          eq(kbPageComments.id, commentId),
+          eq(kbPageComments.pageId, articleId),
+          eq(kbPageComments.orgId, orgId),
         ),
       )
-      .returning();
+      .returning({ id: kbPageComments.id });
 
     if (!deleted) throw new NotFoundException("Comment not found");
     return { success: true };
@@ -116,19 +124,23 @@ export class SupportKbEngagementService {
     await this.ensureArticle(orgId, articleId);
     return this.db
       .select({
-        id: kbArticleAttachments.id,
-        articleId: kbArticleAttachments.articleId,
-        fileName: kbArticleAttachments.fileName,
-        fileSize: kbArticleAttachments.fileSize,
-        mimeType: kbArticleAttachments.mimeType,
-        uploadedBy: kbArticleAttachments.uploadedBy,
-        createdAt: kbArticleAttachments.createdAt,
+        id: kbPageAttachments.id,
+        articleId: kbPageAttachments.pageId,
+        fileName: kbPageAttachments.fileName,
+        fileSize: kbPageAttachments.fileSize,
+        mimeType: kbPageAttachments.mimeType,
+        uploadedBy: kbPageAttachments.uploadedById,
+        createdAt: kbPageAttachments.createdAt,
       })
-      .from(kbArticleAttachments)
+      .from(kbPageAttachments)
       .where(
-        and(eq(kbArticleAttachments.articleId, articleId), eq(kbArticleAttachments.orgId, orgId)),
+        and(
+          eq(kbPageAttachments.pageId, articleId),
+          eq(kbPageAttachments.orgId, orgId),
+          isNull(kbPageAttachments.deletedAt),
+        ),
       )
-      .orderBy(desc(kbArticleAttachments.createdAt))
+      .orderBy(desc(kbPageAttachments.createdAt))
       .limit(100);
   }
 
@@ -143,25 +155,25 @@ export class SupportKbEngagementService {
       throw new BadRequestException("Invalid file reference");
 
     const [inserted] = await this.db
-      .insert(kbArticleAttachments)
+      .insert(kbPageAttachments)
       .values({
         orgId,
-        articleId,
+        pageId: articleId,
         fileName: input.fileName,
         fileKey: input.fileKey,
         fileUrl: input.fileUrl ?? null,
         fileSize: input.fileSize,
         mimeType: input.mimeType,
-        uploadedBy: userId,
+        uploadedById: userId,
       })
       .returning({
-        id: kbArticleAttachments.id,
-        articleId: kbArticleAttachments.articleId,
-        fileName: kbArticleAttachments.fileName,
-        fileSize: kbArticleAttachments.fileSize,
-        mimeType: kbArticleAttachments.mimeType,
-        uploadedBy: kbArticleAttachments.uploadedBy,
-        createdAt: kbArticleAttachments.createdAt,
+        id: kbPageAttachments.id,
+        articleId: kbPageAttachments.pageId,
+        fileName: kbPageAttachments.fileName,
+        fileSize: kbPageAttachments.fileSize,
+        mimeType: kbPageAttachments.mimeType,
+        uploadedBy: kbPageAttachments.uploadedById,
+        createdAt: kbPageAttachments.createdAt,
       });
 
     return inserted;
@@ -169,15 +181,16 @@ export class SupportKbEngagementService {
 
   async deleteAttachment(orgId: string, articleId: number, attachmentId: number) {
     const [deleted] = await this.db
-      .delete(kbArticleAttachments)
+      .delete(kbPageAttachments)
       .where(
         and(
-          eq(kbArticleAttachments.id, attachmentId),
-          eq(kbArticleAttachments.articleId, articleId),
-          eq(kbArticleAttachments.orgId, orgId),
+          eq(kbPageAttachments.id, attachmentId),
+          eq(kbPageAttachments.pageId, articleId),
+          eq(kbPageAttachments.orgId, orgId),
+          isNull(kbPageAttachments.deletedAt),
         ),
       )
-      .returning({ fileKey: kbArticleAttachments.fileKey });
+      .returning({ fileKey: kbPageAttachments.fileKey });
 
     if (!deleted) throw new NotFoundException("Attachment not found");
 
@@ -208,16 +221,17 @@ export class SupportKbEngagementService {
   async getAttachmentDownloadUrl(orgId: string, articleId: number, attachmentId: number) {
     const [row] = await this.db
       .select({
-        fileKey: kbArticleAttachments.fileKey,
-        fileName: kbArticleAttachments.fileName,
-        mimeType: kbArticleAttachments.mimeType,
+        fileKey: kbPageAttachments.fileKey,
+        fileName: kbPageAttachments.fileName,
+        mimeType: kbPageAttachments.mimeType,
       })
-      .from(kbArticleAttachments)
+      .from(kbPageAttachments)
       .where(
         and(
-          eq(kbArticleAttachments.id, attachmentId),
-          eq(kbArticleAttachments.articleId, articleId),
-          eq(kbArticleAttachments.orgId, orgId),
+          eq(kbPageAttachments.id, attachmentId),
+          eq(kbPageAttachments.pageId, articleId),
+          eq(kbPageAttachments.orgId, orgId),
+          isNull(kbPageAttachments.deletedAt),
         ),
       )
       .limit(1);

@@ -2,9 +2,12 @@ import { NotFoundException } from "@nestjs/common";
 import { SQL, is } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
+import type { AuditService } from "../../../common/audit/audit.service";
 import { PortalClientService } from "./portal-client.service";
 
 const dialect = new PgDialect();
+
+const makeAudit = () => ({ log: jest.fn() }) as unknown as AuditService;
 
 function renderSql(predicate: unknown): string {
   if (!is(predicate, SQL)) throw new Error("predicate is not a drizzle SQL instance");
@@ -22,7 +25,7 @@ describe("PortalClientService — expiresAt enforced at query level (Requirement
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db);
+    const svc = new PortalClientService(db, makeAudit());
     await expect(svc.getProjectOverview("org-1", "mem-1", 1)).rejects.toThrow(NotFoundException);
 
     expect(where).toHaveBeenCalledTimes(1);
@@ -39,7 +42,7 @@ describe("PortalClientService — expiresAt enforced at query level (Requirement
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db);
+    const svc = new PortalClientService(db, makeAudit());
     await svc.listGrantedProjects("org-1", "mem-1");
 
     expect(where).toHaveBeenCalledTimes(1);
@@ -52,7 +55,7 @@ describe("PortalClientService — expiresAt enforced at query level (Requirement
         from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }),
       }),
     } as unknown as Db;
-    const svc = new PortalClientService(db);
+    const svc = new PortalClientService(db, makeAudit());
     const result = await svc.listGrantedProjects("org-1", "mem-1");
     expect(result).toHaveLength(0);
   });
@@ -66,7 +69,7 @@ describe("PortalClientService — expiresAt enforced at query level (Requirement
         .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: listWhere }) })
         .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: projectWhere }) }),
     } as unknown as Db;
-    const svc = new PortalClientService(db);
+    const svc = new PortalClientService(db, makeAudit());
     const result = await svc.listGrantedProjects("org-1", "mem-1");
     expect(result).toHaveLength(1);
     expect(result[0]).toHaveProperty("id", 7);
@@ -78,7 +81,7 @@ describe("PortalClientService — expiresAt enforced at query level (Requirement
         from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }),
       }),
     } as unknown as Db;
-    const svc = new PortalClientService(db);
+    const svc = new PortalClientService(db, makeAudit());
     await expect(svc.getProjectOverview("org-1", "mem-1", 5)).rejects.toThrow(NotFoundException);
   });
 });

@@ -247,6 +247,6 @@ export class ProjectsTicketsController {
     @Query("force") force: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.deleteTicket(u.orgId, u.userId, projectId, ticketId, force === "true");
+    return this.tickets.deleteTicket(u, projectId, ticketId, force === "true");
   }
 }

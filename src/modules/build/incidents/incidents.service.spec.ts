@@ -7,21 +7,53 @@ jest.mock("../../../common/outbox/outbox-writer", () => ({
 }));
 
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import { IncidentsService } from "./incidents.service";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import type { AuditService } from "../../../common/audit/audit.service";
-import type { AccessService } from "../../access/access.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { projectIncidents } from "../../../db/schema";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { assertProjectAccess } from "../core/project-access";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import {
+  addIncidentUpdateSchema,
+  incidentChildrenQuerySchema,
+} from "./dto/incidents.schemas";
+import {
+  incidentDetailSchema,
+  incidentFollowUpActionRowSchema,
+  incidentRowSchema,
+  incidentUpdateRowSchema,
+} from "./dto/incidents-response.schemas";
 
-const mockAudit = { log: jest.fn() } as unknown as AuditService;
+type IncidentAudit = jest.Mocked<Pick<AuditService, "log">>;
+type IncidentAccess = jest.Mocked<Pick<AccessService, "resolveUserPermissions">>;
 
-function makeAccess(perms: Set<string> = new Set()): AccessService {
+const mockAudit: IncidentAudit = { log: jest.fn() };
+
+function makeAccess(perms: Set<string> = new Set()): IncidentAccess {
   return {
     resolveUserPermissions: jest.fn().mockResolvedValue(perms),
-  } as unknown as AccessService;
+  };
+}
+
+async function makeService(
+  db: object,
+  access: IncidentAccess = makeAccess(),
+  audit: IncidentAudit = mockAudit,
+): Promise<IncidentsService> {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      IncidentsService,
+      { provide: DRIZZLE, useValue: db },
+      { provide: AccessService, useValue: access },
+      { provide: AuditService, useValue: audit },
+    ],
+  }).compile();
+  return moduleRef.get(IncidentsService);
 }
 
 function makeUser(orgId: string, userId = "user-1"): CurrentUserContext {
@@ -56,7 +88,7 @@ function makeSelectChain(rows: unknown[]) {
 beforeEach(() => {
   jest.resetAllMocks();
   jest.mocked(assertProjectAccess).mockResolvedValue(undefined);
-  (OutboxWriter.emit as jest.Mock).mockResolvedValue(undefined);
+  jest.mocked(OutboxWriter.emit).mockResolvedValue(undefined);
 });
 
 const BASE_INCIDENT = {
@@ -84,6 +116,9 @@ const BASE_INCIDENT = {
   updatedAt: new Date("2024-01-01T10:00:00Z"),
 };
 
+type IncidentStatus = (typeof projectIncidents.$inferSelect)["status"];
+type IncidentFixture = Omit<typeof BASE_INCIDENT, "status"> & { status: IncidentStatus };
+
 function makeUpdateChain(returning: Record<string, unknown>[] = []) {
   const chain = {
     set: jest.fn(),
@@ -95,14 +130,18 @@ function makeUpdateChain(returning: Record<string, unknown>[] = []) {
   return chain;
 }
 
-function makeTx(updateChain: ReturnType<typeof makeUpdateChain>) {
+function makeTx(updateChain: ReturnType<typeof makeUpdateChain>, unresolvedFollowUps = 0) {
+  const countChain = {
+    from: jest.fn(),
+    where: jest.fn().mockResolvedValue([{ count: unresolvedFollowUps }]),
+  };
+  countChain.from.mockReturnValue(countChain);
+  const values = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
   return {
+    values,
+    select: jest.fn().mockReturnValue(countChain),
     update: jest.fn().mockReturnValue(updateChain),
-    insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([]),
-      }),
-    }),
+    insert: jest.fn().mockReturnValue({ values }),
   };
 }
 
@@ -119,7 +158,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "investigating" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -140,7 +179,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "mitigating" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -162,7 +201,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "resolved" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -183,7 +222,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "postmortem" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -206,7 +245,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "resolved" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -225,7 +264,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "detected" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -247,7 +286,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "investigating" });
 
     expect(tx.insert).toHaveBeenCalled();
@@ -268,7 +307,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "detected" });
 
     expect(tx.insert).not.toHaveBeenCalled();
@@ -285,7 +324,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { severity: "critical" });
 
     expect(tx.insert).toHaveBeenCalled();
@@ -305,7 +344,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { severity: "medium" });
 
     expect(tx.insert).not.toHaveBeenCalled();
@@ -323,7 +362,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "investigating" });
 
     expect(OutboxWriter.emit).toHaveBeenCalledWith(
@@ -348,7 +387,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "detected" });
 
     expect(OutboxWriter.emit).not.toHaveBeenCalled();
@@ -381,7 +420,7 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       select: jest.fn().mockReturnValue(selectChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     const result = await svc.getIncident(makeUser("org-1"), 1, 1);
 
     expect(result).toMatchObject({ ...BASE_INCIDENT, updates });
@@ -408,7 +447,7 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       select: jest.fn().mockReturnValue(selectChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     const result = await svc.getIncident(makeUser("org-1"), 1, 1);
 
     expect(result.updates).toEqual([]);
@@ -422,8 +461,106 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       },
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await expect(svc.getIncident(makeUser("org-1"), 1, 999)).rejects.toThrow(NotFoundException);
+  });
+
+  it("returns bounded child collections with reachable continuation cursors", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => ({
+      id: 101 - index,
+      orgId: "org-1",
+      incidentId: 1,
+      message: `Update ${String(index + 1)}`,
+      newStatus: null,
+      createdBy: "user-1",
+      createdAt: new Date("2024-01-01T10:30:00Z"),
+      createdByName: "User One",
+      createdByEmail: "user@example.com",
+    }));
+    const updatesChain = makeSelectChain(rows);
+    const decisionsChain = makeSelectChain([]);
+    const followUpsChain = makeSelectChain([]);
+    const mockDb = {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT }) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(updatesChain)
+        .mockReturnValueOnce(decisionsChain)
+        .mockReturnValueOnce(followUpsChain),
+    };
+
+    const svc = await makeService(mockDb);
+    const result = await svc.getIncident(makeUser("org-1"), 1, 1);
+
+    expect(updatesChain.limit).toHaveBeenCalledWith(101);
+    expect(result.updates).toHaveLength(100);
+    expect(result.childrenPagination.updates).toEqual({
+      limit: 100,
+      hasMore: true,
+      nextCursor: 2,
+    });
+  });
+});
+
+describe("incident response enum contracts", () => {
+  const incident = {
+    ...BASE_INCIDENT,
+    releaseId: null,
+  };
+
+  it("rejects unknown incident status and severity values", () => {
+    expect(incidentRowSchema.safeParse({ ...incident, status: "unknown" }).success).toBe(false);
+    expect(incidentRowSchema.safeParse({ ...incident, severity: "unknown" }).success).toBe(false);
+  });
+
+  it("rejects unknown update and follow-up status values", () => {
+    expect(incidentUpdateRowSchema.safeParse({
+      id: 1,
+      orgId: "org-1",
+      incidentId: 1,
+      message: "Changed",
+      newStatus: "unknown",
+      createdBy: "user-1",
+      createdAt: new Date(),
+    }).success).toBe(false);
+    expect(incidentFollowUpActionRowSchema.safeParse({
+      id: 1,
+      orgId: "org-1",
+      incidentId: 1,
+      title: "Follow up",
+      description: null,
+      ownerId: null,
+      status: "unknown",
+      dueAt: null,
+      createdBy: "user-1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).success).toBe(false);
+  });
+
+  it("requires continuation metadata on incident detail responses", () => {
+    const result = incidentDetailSchema.safeParse({
+      ...incident,
+      updates: [],
+      decisions: [],
+      followUpActions: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts returned child cursors as the next detail request", () => {
+    expect(incidentChildrenQuerySchema.parse({
+      limit: "25",
+      updatesCursor: "75",
+      decisionsCursor: "50",
+      followUpActionsCursor: "40",
+    })).toEqual({
+      limit: 25,
+      updatesCursor: 75,
+      decisionsCursor: 50,
+      followUpActionsCursor: 40,
+    });
   });
 });
 
@@ -438,7 +575,7 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
       query: { projectIncidents: { findFirst: jest.fn() } },
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     } as unknown as Db;
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
 
     await expect(svc.listIncidents(u, 1, {})).rejects.toThrow(ForbiddenException);
   });
@@ -448,7 +585,7 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
       query: { projectIncidents: { findFirst: jest.fn() } },
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     } as unknown as Db;
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
 
     await expect(svc.listIncidents(u, 1, {})).resolves.toEqual([]);
   });
@@ -460,7 +597,7 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
     const mockDb = {
       query: { projectIncidents: { findFirst: jest.fn() } },
     } as unknown as Db;
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
 
     await expect(svc.getIncident(u, 1, 1)).rejects.toThrow(ForbiddenException);
   });
@@ -472,9 +609,35 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
     const mockDb = {
       query: { projectIncidents: { findFirst: jest.fn() } },
     } as unknown as Db;
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
 
     await expect(svc.addUpdate(u, 1, 1, { message: "test" })).rejects.toThrow(ForbiddenException);
+  });
+
+  it("REJECTS a non-member update before loading the incident", async () => {
+    const denied = new NotFoundException("Project not found");
+    jest.mocked(assertProjectAccess).mockRejectedValueOnce(denied);
+    const findFirst = jest.fn();
+    const mockDb = {
+      query: { projectIncidents: { findFirst } },
+    };
+    const svc = await makeService(mockDb);
+
+    await expect(svc.updateIncident(u, 1, 1, { title: "Denied" })).rejects.toBe(denied);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("REJECTS a non-member delete before loading the incident", async () => {
+    const denied = new NotFoundException("Project not found");
+    jest.mocked(assertProjectAccess).mockRejectedValueOnce(denied);
+    const findFirst = jest.fn();
+    const mockDb = {
+      query: { projectIncidents: { findFirst } },
+    };
+    const svc = await makeService(mockDb);
+
+    await expect(svc.deleteIncident(u, 1, 1)).rejects.toBe(denied);
+    expect(findFirst).not.toHaveBeenCalled();
   });
 });
 
@@ -487,7 +650,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
       },
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await expect(
       svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Reopen attempt", newStatus: "investigating" }),
     ).rejects.toThrow(ConflictException);
@@ -511,7 +674,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     const result = await svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Postmortem note" });
 
     expect(result).toMatchObject({ message: "Postmortem note" });
@@ -536,7 +699,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Investigating", newStatus: "investigating" });
 
     expect(OutboxWriter.emit).toHaveBeenCalledWith(
@@ -568,10 +731,189 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
       transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
+    const svc = await makeService(mockDb);
     await svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Still detected", newStatus: "detected" });
 
     expect(OutboxWriter.emit).not.toHaveBeenCalled();
     expect(tx.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses the update endpoint close path while unresolved follow-ups remain", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 2);
+    const mockDb = {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue(BASE_INCIDENT) },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    };
+    const svc = await makeService(mockDb);
+
+    await expect(
+      svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Closing", newStatus: "closed" }),
+    ).rejects.toThrow(ConflictException);
+    expect(tx.insert).not.toHaveBeenCalled();
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
+  it("closes through the update endpoint when unresolved follow-ups have a waiver", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 2);
+    const mockDb = {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue(BASE_INCIDENT) },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    };
+    const svc = await makeService(mockDb);
+
+    await expect(svc.addUpdate(makeUser("org-1"), 1, 1, {
+      message: "Closing",
+      newStatus: "closed",
+      followUpWaiverReason: "Accepted risk",
+    })).resolves.toBeUndefined();
+    expect(tx.update).toHaveBeenCalledTimes(1);
+    const messages = tx.values.mock.calls.map(
+      (call) => (call as [Record<string, unknown>])[0]?.["message"],
+    );
+    expect(messages).toContainEqual(
+      "Closed with 2 unresolved follow-up action(s) waived: Accepted risk",
+    );
+  });
+
+  it("accepts a nonblank waiver and rejects a blank waiver at the validation boundary", () => {
+    expect(addIncidentUpdateSchema.safeParse({
+      message: "Closing",
+      newStatus: "closed",
+      followUpWaiverReason: "Accepted risk",
+    }).success).toBe(true);
+    expect(addIncidentUpdateSchema.safeParse({
+      message: "Closing",
+      newStatus: "closed",
+      followUpWaiverReason: "   ",
+    }).success).toBe(false);
+  });
+});
+
+describe("IncidentsService.updateIncident unresolved follow-up close policy", () => {
+  function makeClosingDb(tx: ReturnType<typeof makeTx>, current: IncidentFixture = BASE_INCIDENT) {
+    return {
+      query: {
+        projectIncidents: { findFirst: jest.fn().mockResolvedValue(current) },
+      },
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+  }
+
+  it("refuses to close an incident that still has unresolved follow-up actions", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 2);
+    const svc = await makeService(makeClosingDb(tx));
+
+    await expect(svc.updateIncident(makeUser("org-1"), 1, 1, { status: "closed" })).rejects.toThrow(
+      ConflictException,
+    );
+    expect(tx.update).not.toHaveBeenCalled();
+    expect(OutboxWriter.emit).not.toHaveBeenCalled();
+  });
+
+  it("names the unresolved follow-up count and the waiver field in the refusal", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 3);
+    const svc = await makeService(makeClosingDb(tx));
+
+    await expect(svc.updateIncident(makeUser("org-1"), 1, 1, { status: "closed" })).rejects.toThrow(
+      /3 unresolved follow-up action\(s\).*followUpWaiverReason/s,
+    );
+  });
+
+  it("closes an incident that has no unresolved follow-up actions", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 0);
+    const svc = await makeService(makeClosingDb(tx));
+
+    const result = await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "closed" });
+
+    expect(result).toMatchObject({ status: "closed" });
+    expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));
+    expect(OutboxWriter.emit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payload: expect.objectContaining({ oldStatus: "detected", newStatus: "closed" }),
+      }),
+    );
+  });
+
+  it("closes over unresolved follow-up actions when a waiver reason is supplied", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 2);
+    const svc = await makeService(makeClosingDb(tx));
+
+    const result = await svc.updateIncident(makeUser("org-1"), 1, 1, {
+      status: "closed",
+      followUpWaiverReason: "Tracked in the Q3 reliability programme",
+    });
+
+    expect(result).toMatchObject({ status: "closed" });
+    expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));
+  });
+
+  it("records the waived count and reason as an incident timeline entry", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 2);
+    const svc = await makeService(makeClosingDb(tx));
+
+    await svc.updateIncident(makeUser("org-1"), 1, 1, {
+      status: "closed",
+      followUpWaiverReason: "Tracked in the Q3 reliability programme",
+    });
+
+    const messages = tx.values.mock.calls.map(
+      (call) => (call as [Record<string, unknown>])[0]?.["message"],
+    );
+    expect(messages).toContainEqual(
+      "Closed with 2 unresolved follow-up action(s) waived: Tracked in the Q3 reliability programme",
+    );
+  });
+
+  it("records the waiver reason on the audit entry", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "closed" }]);
+    const tx = makeTx(updateChain, 1);
+    const svc = await makeService(makeClosingDb(tx));
+
+    await svc.updateIncident(makeUser("org-1"), 1, 1, {
+      status: "closed",
+      followUpWaiverReason: "Accepted risk",
+    });
+
+    expect(mockAudit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "incident.updated",
+        metadata: expect.objectContaining({ followUpWaiverReason: "Accepted risk" }),
+      }),
+    );
+  });
+
+  it("does not count follow-up actions when the status is not changing to closed", async () => {
+    const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "mitigating" }]);
+    const tx = makeTx(updateChain, 5);
+    const svc = await makeService(makeClosingDb(tx));
+
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "mitigating" });
+
+    expect(tx.select).not.toHaveBeenCalled();
+    expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "mitigating" }));
+  });
+
+  it("does not re-run the close policy when the incident is already closed", async () => {
+    const closed: IncidentFixture = { ...BASE_INCIDENT, status: "closed" };
+    const updateChain = makeUpdateChain([{ ...closed, title: "Renamed" }]);
+    const tx = makeTx(updateChain, 4);
+    const svc = await makeService(makeClosingDb(tx, closed));
+
+    await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "closed", title: "Renamed" });
+
+    expect(tx.select).not.toHaveBeenCalled();
+    expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ title: "Renamed" }));
   });
 });

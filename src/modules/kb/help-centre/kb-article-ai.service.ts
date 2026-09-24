@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
-import { kbArticles } from "../../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { kbPages } from "../../../db/schema";
+import { supportArticlePredicate } from "./kb-article-page-scope";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -25,15 +26,9 @@ function body(title: string, content: string): string {
   return `Article title: "${title}"\n\nContent:\n${content || "(no content yet)"}`;
 }
 
-/**
- * One row per action, so the buffered and the streamed representation of an
- * action are the same prompt, the same ceiling and the same feature key by
- * construction rather than by two copies staying in step. The prompts are
- * unchanged from the four methods this table replaced, and they are NOT the
- * wiki page prompts — the two surfaces word theirs differently and a shared
- * table would have silently rewritten eight of them.
- */
-const ARTICLE_AI_ACTIONS: Readonly<Record<KbDocAiAction, KbArticleAiActionSpec>> = {
+const ARTICLE_AI_ACTIONS: Readonly<
+  Record<KbDocAiAction, KbArticleAiActionSpec>
+> = {
   summarize: {
     maxTokens: 512,
     system:
@@ -44,7 +39,8 @@ const ARTICLE_AI_ACTIONS: Readonly<Record<KbDocAiAction, KbArticleAiActionSpec>>
     maxTokens: 512,
     system:
       "You are a knowledge base assistant. Answer the user's question using ONLY the content of the article provided. If the article does not contain the answer, say so clearly. Never fabricate information.",
-    user: (title, content, question) => `${body(title, content)}\n\nQuestion: ${question ?? ""}`,
+    user: (title, content, question) =>
+      `${body(title, content)}\n\nQuestion: ${question ?? ""}`,
   },
   improve: {
     maxTokens: 1024,
@@ -71,40 +67,59 @@ export class KbArticleAiService {
   ) {}
 
   private async assertArticle(user: CurrentUserContext, articleId: number) {
-    const row = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
-      columns: { id: true, orgId: true, spaceId: true, title: true, contentText: true },
+    const row = await this.db.query.kbPages.findFirst({
+      where: and(
+        eq(kbPages.id, articleId),
+        eq(kbPages.orgId, user.orgId),
+        isNull(kbPages.deletedAt),
+        supportArticlePredicate(),
+      ),
+      columns: {
+        id: true,
+        orgId: true,
+        spaceId: true,
+        title: true,
+        contentText: true,
+      },
     });
     if (!row) throw new NotFoundException("Article not found");
     await this.access.assertCanViewArticle(user, row);
-    return { title: row.title, content: (row.contentText ?? "").slice(0, MAX_ARTICLE_TEXT) };
+    return {
+      title: row.title,
+      content: (row.contentText ?? "").slice(0, MAX_ARTICLE_TEXT),
+    };
   }
 
-  private prompt(action: KbDocAiAction, doc: { title: string; content: string }, question?: string) {
+  private prompt(
+    action: KbDocAiAction,
+    doc: { title: string; content: string },
+    question?: string,
+  ) {
     const spec = ARTICLE_AI_ACTIONS[action];
-    return { spec, prompt: { system: spec.system, user: spec.user(doc.title, doc.content, question) } };
+    return {
+      spec,
+      prompt: {
+        system: spec.system,
+        user: spec.user(doc.title, doc.content, question),
+      },
+    };
   }
 
-  /**
-   * The single place either representation of an action reads the article, and
-   * the reason it is a method rather than two call sites: the tenant-scoped read
-   * and `assertCanViewArticle` must run in a transaction that COMMITS before the
-   * provider call, on the buffered path exactly as on the streamed one.
-   *
-   * This only releases the connection because the route carries
-   * `@NoTenantTransaction()`. `runInTenantTransaction` reuses an ambient request
-   * transaction rather than opening a short one, so on a route that keeps the
-   * request transaction this wrapper is a no-op and the pooled connection stays
-   * pinned for the whole provider round trip regardless — which is what the four
-   * buffered handlers did until they were given the decorator.
-   */
   private loadArticle(user: CurrentUserContext, articleId: number) {
-    return runInTenantTransaction(this.db, () => this.assertArticle(user, articleId), {
-      orgId: user.orgId,
-    });
+    return runInTenantTransaction(
+      this.db,
+      () => this.assertArticle(user, articleId),
+      {
+        orgId: user.orgId,
+      },
+    );
   }
 
-  private auditAction(user: CurrentUserContext, articleId: number, action: KbDocAiAction): void {
+  private auditAction(
+    user: CurrentUserContext,
+    articleId: number,
+    action: KbDocAiAction,
+  ): void {
     this.audit.log({
       action: `ai.kb.article-${action}`,
       userId: user.userId,
@@ -114,15 +129,6 @@ export class KbArticleAiService {
     });
   }
 
-  /**
-   * The buffered representation. It reads through `loadArticle` for the same
-   * reason `stream` does: `invokeTextWithUsage` is a provider round trip, and a
-   * pooled connection held open across it is idle-in-transaction for the whole
-   * of it. `withTenant` sets `idle_in_transaction_session_timeout` to 60s, so a
-   * slow provider does not merely make one request slow — the server kills the
-   * transaction while the borrow is still outstanding, which under pool pressure
-   * is a tenant-wide failure shape rather than a latency one.
-   */
   private async run(
     user: CurrentUserContext,
     articleId: number,
@@ -146,20 +152,6 @@ export class KbArticleAiService {
     return { text: result.data, aiUsage: result.aiUsage };
   }
 
-  /**
-   * The streamed representation of the same four actions, and the one the help
-   * centre panel opens. Same gateway, same feature key as the buffered sibling,
-   * so the two cannot start metering differently.
-   *
-   * The visibility check goes through the same `loadArticle` as the buffered
-   * sibling, so its short tenant transaction COMMITS BEFORE the provider call,
-   * which is the whole point: the route carries `@NoTenantTransaction()` because
-   * `respondWithAiTextStream` awaits the pipe, so the request-scoped transaction
-   * would otherwise stay open and idle for the entire stream — up to the 60s
-   * stream deadline, which is the same 60s as the
-   * `idle_in_transaction_session_timeout` `withTenant` sets — pinning a pooled
-   * connection to the provider for its duration.
-   */
   async stream(
     user: CurrentUserContext,
     articleId: number,

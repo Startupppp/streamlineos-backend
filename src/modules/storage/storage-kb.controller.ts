@@ -6,11 +6,12 @@ import {
   Param,
   Query,
 } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { kbArticleAttachments, kbArticles } from "../../db/schema";
+import { kbPageAttachments, kbPages } from "../../db/schema";
+import { supportArticlePredicate } from "../kb/help-centre/kb-article-page-scope";
 import { StorageService } from "./storage.service";
 import {
   kbAttachmentsQuerySchema,
@@ -30,7 +31,7 @@ import { z } from "zod";
 const slugParams = z.object({ slug: z.string().min(1) }).strict();
 
 type AttachmentResponse = Pick<
-  typeof kbArticleAttachments.$inferSelect,
+  typeof kbPageAttachments.$inferSelect,
   "id" | "fileName" | "fileSize" | "mimeType" | "createdAt"
 > & { downloadUrl: string | null };
 
@@ -59,22 +60,24 @@ export class StorageKbController {
       org,
       async (tx) => {
         const [article] = await tx
-          .select({ id: kbArticles.id })
-          .from(kbArticles)
+          .select({ id: kbPages.id })
+          .from(kbPages)
           .where(
             and(
-              eq(kbArticles.orgId, org),
-              eq(kbArticles.slug, slug),
-              eq(kbArticles.status, "published"),
-              eq(kbArticles.visibility, "public"),
+              eq(kbPages.orgId, org),
+              eq(kbPages.slug, slug),
+              eq(kbPages.status, "published"),
+              eq(kbPages.visibility, "public"),
+              supportArticlePredicate(),
             ),
           );
 
         if (!article) throw new NotFoundException("Article not found");
 
         const where = and(
-          eq(kbArticleAttachments.articleId, article.id),
-          eq(kbArticleAttachments.orgId, org),
+          eq(kbPageAttachments.pageId, article.id),
+          eq(kbPageAttachments.orgId, org),
+          isNull(kbPageAttachments.deletedAt),
         );
 
         // The count is what makes the envelope worth having: a `page` query param with no total
@@ -82,19 +85,19 @@ export class StorageKbController {
         const [pageRows, [total]] = await Promise.all([
           tx
             .select({
-              id: kbArticleAttachments.id,
-              fileName: kbArticleAttachments.fileName,
-              fileKey: kbArticleAttachments.fileKey,
-              fileSize: kbArticleAttachments.fileSize,
-              mimeType: kbArticleAttachments.mimeType,
-              createdAt: kbArticleAttachments.createdAt,
+              id: kbPageAttachments.id,
+              fileName: kbPageAttachments.fileName,
+              fileKey: kbPageAttachments.fileKey,
+              fileSize: kbPageAttachments.fileSize,
+              mimeType: kbPageAttachments.mimeType,
+              createdAt: kbPageAttachments.createdAt,
             })
-            .from(kbArticleAttachments)
+            .from(kbPageAttachments)
             .where(where)
-            .orderBy(desc(kbArticleAttachments.createdAt))
+            .orderBy(desc(kbPageAttachments.createdAt))
             .limit(limit)
             .offset(offset),
-          tx.select({ total: count() }).from(kbArticleAttachments).where(where),
+          tx.select({ total: count() }).from(kbPageAttachments).where(where),
         ]);
 
         return { rows: pageRows, countRow: total };

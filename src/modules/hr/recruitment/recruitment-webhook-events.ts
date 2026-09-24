@@ -25,7 +25,7 @@ export const RECRUITMENT_EVENT_SAMPLE_PAYLOADS: Record<RecruitmentEvent, Record<
     `reason` is a code from the closed catalog in
     `disposition/rejection-reasons.ts`, not the prose this sample used to
     promise. A subscriber keying on prose breaks the first time a label is
-    reworded, and until migration 1185 the emitter sent no reason at all — the
+    reworded, and until migration 1187 the emitter sent no reason at all — the
     documented field arrived undefined on every delivery.
   */
   "candidate.rejected": {

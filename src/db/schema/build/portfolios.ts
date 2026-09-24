@@ -51,6 +51,14 @@ export const projectPrograms = build.table("project_programs", {
 }, (t) => [
   foreignKey({ columns: [t.orgId, t.portfolioId], foreignColumns: [projectPortfolios.orgId, projectPortfolios.id], name: "fk_project_programs_org_portfolio" }).onDelete("set null"),
   index("idx_project_programs_org_status").on(t.orgId, t.status).where(sql`deleted_at IS NULL`),
+  index("idx_project_programs_org_created_page").on(t.orgId, t.createdAt.desc(), t.id.desc()).where(sql`deleted_at IS NULL`),
+  index("idx_project_programs_org_updated_page").on(t.orgId, t.updatedAt.desc(), t.id.desc()).where(sql`deleted_at IS NULL`),
+  index("idx_project_programs_org_name_page").on(t.orgId, t.name.asc(), t.id.asc()).where(sql`deleted_at IS NULL`),
+  index("idx_project_programs_org_owner").on(t.orgId, t.ownerId).where(sql`deleted_at IS NULL AND owner_id IS NOT NULL`),
+  index("idx_project_programs_org_health").on(t.orgId, t.health).where(sql`deleted_at IS NULL AND health IS NOT NULL`),
+  index("idx_project_programs_org_portfolio").on(t.orgId, t.portfolioId).where(sql`deleted_at IS NULL AND portfolio_id IS NOT NULL`),
+  index("idx_project_programs_name_trgm").using("gin", t.name.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
+  index("idx_project_programs_description_trgm").using("gin", t.description.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
   index("idx_project_programs_portfolio").on(t.portfolioId),
   unique("uniq_project_programs_org_id").on(t.orgId, t.id),
 ]);
@@ -80,5 +88,6 @@ export const programProjects = build.table("program_projects", {
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_program_projects_org_project" }).onDelete("cascade"),
   uniqueIndex("uq_program_projects").on(t.programId, t.projectId),
   index("idx_program_projects_project").on(t.projectId),
+  index("idx_program_projects_org_project_program").on(t.orgId, t.projectId, t.programId),
   unique("uniq_program_projects_org_id").on(t.orgId, t.id),
 ]);

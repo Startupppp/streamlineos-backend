@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gt, isNull, ne, sql } from "drizzle-orm";
-import { kbArticles, kbPages } from "../../../db/schema";
+import { kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -14,9 +14,7 @@ import {
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 import { embedChunksWithResumption } from "./kb-embedding-resumption";
-import { indexArticleContent } from "./kb-article-indexing";
 import {
-  deleteArticleChunks,
   deletePageChunks,
   loadPageChunkState,
   replacePageBodyChunks,
@@ -71,18 +69,8 @@ export class KbIndexingService {
     orgId: string,
     articleId: number,
     signal?: AbortSignal,
-  ): Promise<void> {
-    return indexArticleContent(
-      {
-        db: this.db,
-        aiGateway: this.aiGateway,
-        checkpoint: this.checkpoint,
-        logger: this.logger,
-      },
-      orgId,
-      articleId,
-      signal,
-    );
+  ): Promise<number> {
+    return this.indexPage(orgId, articleId, signal);
   }
 
   async reindexPageOnRequest(orgId: string, pageId: number): Promise<number> {
@@ -232,27 +220,15 @@ export class KbIndexingService {
     return chunks.length;
   }
 
-  async removeArticleChunks(orgId: string, articleId: number): Promise<void> {
-    await deleteArticleChunks(this.db, orgId, articleId);
-  }
-
   async removePageChunks(orgId: string, pageId: number): Promise<void> {
     await deletePageChunks(this.db, orgId, pageId);
   }
 
   async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
-    await Promise.all([
-      this.db
-        .update(kbPages)
-        .set({ aclRevision: sql`acl_revision + 1` })
-        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
-      this.db
-        .update(kbArticles)
-        .set({ aclRevision: sql`acl_revision + 1` })
-        .where(
-          and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId)),
-        ),
-    ]);
+    await this.db
+      .update(kbPages)
+      .set({ aclRevision: sql`acl_revision + 1` })
+      .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId)));
 
     const deferred = registerAfterCommit(() =>
       this.syncAclRevisionForSpace(orgId, spaceId),
@@ -261,26 +237,15 @@ export class KbIndexingService {
   }
 
   async syncAclRevisionForSpace(orgId: string, spaceId: number): Promise<void> {
-    await Promise.all([
-      this.db.execute(sql`
-        UPDATE kb_article_chunks c
-        SET acl_revision = p.acl_revision
-        FROM kb_pages p
-        WHERE c.page_id = p.id
-          AND c.org_id = ${orgId}
-          AND p.space_id = ${spaceId}
-          AND c.acl_revision != p.acl_revision
-      `),
-      this.db.execute(sql`
-        UPDATE kb_article_chunks c
-        SET acl_revision = a.acl_revision
-        FROM kb_articles a
-        WHERE c.article_id = a.id
-          AND c.org_id = ${orgId}
-          AND a.space_id = ${spaceId}
-          AND c.acl_revision != a.acl_revision
-      `),
-    ]);
+    await this.db.execute(sql`
+      UPDATE kb_article_chunks c
+      SET acl_revision = p.acl_revision
+      FROM kb_pages p
+      WHERE c.page_id = p.id
+        AND c.org_id = ${orgId}
+        AND p.space_id = ${spaceId}
+        AND c.acl_revision != p.acl_revision
+    `);
   }
 
   async reindexAllPages(

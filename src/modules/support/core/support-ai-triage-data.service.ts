@@ -2,8 +2,8 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   kbArticleChunks,
-  kbArticleRestrictions,
-  kbArticles,
+  kbPageRestrictions,
+  kbPages,
   kbSpaces,
   supportAiSuggestions,
   supportTickets,
@@ -13,6 +13,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
 import { KbAccessService } from "../../kb/core/kb-access.service";
+import { supportArticlePredicate } from "../../kb/help-centre/kb-article-page-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
@@ -138,49 +139,50 @@ export class SupportAiTriageDataService {
       this.db,
       async () => {
         const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
-        const kar = kbArticleRestrictions;
+        const kpr = kbPageRestrictions;
         const restrictionFilter = sql`(
           NOT EXISTS (
-            SELECT 1 FROM ${kar}
-            WHERE ${kar.articleId} = ${kbArticles.id}
-              AND ${kar.orgId} = ${user.orgId}
-              AND ${kar.level} = 'view'
+            SELECT 1 FROM ${kpr}
+            WHERE ${kpr.pageId} = ${kbPages.id}
+              AND ${kpr.orgId} = ${user.orgId}
+              AND ${kpr.level} = 'view'
           )
           OR EXISTS (
-            SELECT 1 FROM ${kar}
-            WHERE ${kar.articleId} = ${kbArticles.id}
-              AND ${kar.orgId} = ${user.orgId}
-              AND ${kar.level} = 'view'
-              AND (${scope.principal.membershipId !== null ? sql`${kar.membershipId} = ${scope.principal.membershipId} OR ` : sql``}${
+            SELECT 1 FROM ${kpr}
+            WHERE ${kpr.pageId} = ${kbPages.id}
+              AND ${kpr.orgId} = ${user.orgId}
+              AND ${kpr.level} = 'view'
+              AND (${scope.principal.membershipId !== null ? sql`${kpr.membershipId} = ${scope.principal.membershipId} OR ` : sql``}${
                 scope.principal.roleSlugs.length > 0
-                  ? sql`${kar.role} = ANY(${scope.principal.roleSlugs})`
+                  ? sql`${kpr.role} = ANY(${scope.principal.roleSlugs})`
                   : sql`false`
               })
           )
         )`;
         return this.db
           .select({
-            articleId: kbArticles.id,
-            title: kbArticles.title,
-            slug: kbArticles.slug,
+            articleId: kbPages.id,
+            title: kbPages.title,
+            slug: kbPages.slug,
             similarity: sql<number>`(1 - (${distance}))::float8`,
           })
           .from(kbArticleChunks)
-          .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
+          .innerJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
           .innerJoin(
             kbSpaces,
             and(
-              eq(kbSpaces.id, kbArticles.spaceId),
+              eq(kbSpaces.id, kbPages.spaceId),
               isNull(kbSpaces.deletedAt),
             ),
           )
           .where(
             and(
               eq(kbArticleChunks.orgId, user.orgId),
-              eq(kbArticles.orgId, user.orgId),
+              eq(kbPages.orgId, user.orgId),
               eq(kbSpaces.orgId, user.orgId),
-              eq(kbArticles.status, "published"),
-              inArray(kbArticles.spaceId, scope.accessibleSpaceIds),
+              supportArticlePredicate(),
+              eq(kbPages.status, "published"),
+              inArray(kbPages.spaceId, scope.accessibleSpaceIds),
               restrictionFilter,
             ),
           )
@@ -199,7 +201,7 @@ export class SupportAiTriageDataService {
       .map((r) => ({
         articleId: r.articleId,
         title: r.title,
-        url: `/support/kb/articles/${r.slug}`,
+        url: `/support/kb/articles/${r.slug ?? r.articleId}`,
       }));
   }
 }

@@ -50,7 +50,7 @@ export class ProjectsTicketChecklistsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getChecklists(u.orgId, projectId, ticketId);
+    return this.subresources.getChecklists(u, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/checklists")
@@ -64,7 +64,7 @@ export class ProjectsTicketChecklistsController {
     @Body() body: CreateChecklistInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.createChecklist(u.orgId, projectId, ticketId, body);
+    return this.subresources.createChecklist(u, projectId, ticketId, body);
   }
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId")
@@ -78,7 +78,7 @@ export class ProjectsTicketChecklistsController {
     @Body() body: UpdateChecklistInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.updateChecklist(u.orgId, projectId, ticketId, checklistId, body);
+    return this.subresources.updateChecklist(u, projectId, ticketId, checklistId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/checklists/:checklistId")
@@ -92,7 +92,7 @@ export class ProjectsTicketChecklistsController {
     @Param("checklistId", ParseIntPipe) checklistId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.deleteChecklist(u.orgId, projectId, ticketId, checklistId);
+    return this.subresources.deleteChecklist(u, projectId, ticketId, checklistId);
   }
 
   @Post(":projectId/tickets/:ticketId/checklists/:checklistId/items")
@@ -107,7 +107,7 @@ export class ProjectsTicketChecklistsController {
     @Body() body: CreateChecklistItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.createChecklistItem(u.orgId, projectId, ticketId, checklistId, body);
+    return this.subresources.createChecklistItem(u, projectId, ticketId, checklistId, body);
   }
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
@@ -122,7 +122,7 @@ export class ProjectsTicketChecklistsController {
     @Body() body: UpdateChecklistItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.updateChecklistItem(u.orgId, projectId, ticketId, checklistId, itemId, body);
+    return this.subresources.updateChecklistItem(u, projectId, ticketId, checklistId, itemId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
@@ -137,6 +137,6 @@ export class ProjectsTicketChecklistsController {
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.deleteChecklistItem(u.orgId, projectId, ticketId, checklistId, itemId);
+    return this.subresources.deleteChecklistItem(u, projectId, ticketId, checklistId, itemId);
   }
 }

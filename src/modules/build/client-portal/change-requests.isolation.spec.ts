@@ -1,6 +1,10 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChangeRequestsService } from "./change-requests.service";
 import { listCrQuerySchema } from "./dto/change-requests.schemas";
+import {
+  changeRequestDetailSchema,
+  changeRequestListPageSchema,
+} from "./dto/change-requests-response.schemas";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -542,6 +546,15 @@ describe("listCrQuerySchema — new filter fields", () => {
     expect(() => listCrQuerySchema.parse({ releaseId: "0" })).toThrow();
   });
 
+  it("accepts affectedTicketId so a work item's change requests can be filtered", () => {
+    const result = listCrQuerySchema.parse({ affectedTicketId: "77" });
+    expect(result.affectedTicketId).toBe(77);
+  });
+
+  it("rejects affectedTicketId of zero because ticket ids are always positive", () => {
+    expect(() => listCrQuerySchema.parse({ affectedTicketId: "0" })).toThrow();
+  });
+
   it("accepts clientVisible=true to return only client-facing change requests", () => {
     const result = listCrQuerySchema.parse({ clientVisible: "true" });
     expect(result.clientVisible).toBe(true);
@@ -554,6 +567,46 @@ describe("listCrQuerySchema — new filter fields", () => {
 
   it("rejects an unknown query key so no undeclared filter silently poisons the query", () => {
     expect(() => listCrQuerySchema.parse({ undeclaredFilter: "x" })).toThrow();
+  });
+});
+
+describe("change request affected-work response contracts", () => {
+  const responseRow = {
+    affectedItemCount: 2,
+    id: 1,
+    orgId: "org-1",
+    projectId: 10,
+    crNumber: 4,
+    title: "Expand the portal",
+    description: null,
+    impact: null,
+    estimateMinutes: null,
+    budgetImpactCents: null,
+    timelineImpactDays: null,
+    status: "submitted",
+    requestedById: null,
+    approvalOwnerId: null,
+    approvalOwnerMembershipId: null,
+    decisionComment: null,
+    decidedAt: null,
+    releaseId: null,
+    clientVisible: false,
+    createdBy: null,
+    createdAt: new Date("2026-09-23T00:00:00.000Z"),
+    updatedAt: new Date("2026-09-23T00:00:00.000Z"),
+    deletedAt: null,
+  };
+
+  it("requires the affected item count on a change request detail", () => {
+    expect(changeRequestDetailSchema.parse(responseRow).affectedItemCount).toBe(2);
+  });
+
+  it("requires the affected item count on every change request list row", () => {
+    const page = changeRequestListPageSchema.parse({
+      data: [responseRow],
+      pagination: { limit: 25, hasMore: false, nextCursor: null },
+    });
+    expect(page.data[0]?.affectedItemCount).toBe(2);
   });
 });
 
@@ -687,6 +740,14 @@ describe("ChangeRequestsService — releaseId and clientVisible filters", () => 
     const db = makeWhereCapturingDb();
     const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
     const result = await svc.listChangeRequests(u, 1, { releaseId: 5, clientVisible: true });
+    expect(result).toHaveProperty("data");
+    expect(result).toHaveProperty("pagination");
+  });
+
+  it("resolves successfully when affectedTicketId scopes the list to linked work", async () => {
+    const db = makeWhereCapturingDb();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, { affectedTicketId: 77 });
     expect(result).toHaveProperty("data");
     expect(result).toHaveProperty("pagination");
   });

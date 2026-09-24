@@ -77,7 +77,7 @@ export const candidates = pgTable("candidates", {
    * `modules/hr/recruitment/disposition/rejection-reasons.ts` because the
    * schema does not depend on a feature module — the same reason
    * `identityStatus` above inlines its own. `rejection-reasons.spec.ts` reads
-   * this file and migration 1185 and fails when either drifts from the catalog,
+   * this file and migration 1187 and fails when either drifts from the catalog,
    * so the three copies cannot disagree silently.
    *
    * A label is never stored. Teams reword labels, and a stored label makes last
@@ -150,7 +150,7 @@ export const candidateApplications = pgTable("candidate_applications", {
    * `consentAt` on its own records only that somebody clicked something on some
    * date — it cannot be honoured, evidenced or expired, which is how a résumé
    * vault ends up growing forever. `consentPurpose` is constrained to
-   * `CANDIDATE_CONSENT_PURPOSES` by a CHECK (migration 1187); the retention
+   * `CANDIDATE_CONSENT_PURPOSES` by a CHECK (migration 1189); the retention
    * policy and the erasure decision that read these columns live in
    * `modules/hr/recruitment/consent/candidate-consent.ts`.
    *

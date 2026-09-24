@@ -1,7 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import { kbArticles } from "../../../db/schema";
 import type { KbAccessService } from "../core/kb-access.service";
 import type { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { KbSpacesService } from "./kb-spaces.service";
@@ -30,13 +29,20 @@ function cursorOf(condition: SQL | undefined): number {
   return Number(params[params.length - 1]);
 }
 
+function renderOf(condition: SQL | undefined): string {
+  if (condition === undefined) throw new Error("the space content select ran with no WHERE clause");
+  return dialect.sqlToQuery(condition).sql;
+}
+
 function makeTx(
   emitted: Emitted[],
   articleIds: number[],
   pageIds: number[],
   cursors: number[],
+  predicates: string[],
   deleted = true,
 ) {
+  let batch = 0;
   return {
     execute: jest.fn().mockResolvedValue([]),
     update: () => ({
@@ -46,19 +52,24 @@ function makeTx(
         }),
       }),
     }),
-    select: (projection: { id: unknown }) => {
-      const ids = projection.id === kbArticles.id ? articleIds : pageIds;
+    select: () => {
       return {
         from: () => ({
           where: (condition: SQL | undefined) => {
+            const ids = batch === 0 ? articleIds : pageIds;
             const afterId = cursorOf(condition);
             cursors.push(afterId);
+            predicates.push(renderOf(condition));
             if (cursors.length > 12)
               throw new Error(`keyset loop never advanced past ${afterId}`);
             const remaining = ids.filter((id) => id > afterId);
             const chain: SelectChain = {
               orderBy: () => chain,
-              limit: (n: number) => Promise.resolve(remaining.slice(0, n).map((id) => ({ id }))),
+              limit: (n: number) => {
+                const rows = remaining.slice(0, n);
+                if (rows.length < n) batch += 1;
+                return Promise.resolve(rows.map((id) => ({ id })));
+              },
             };
             return chain;
           },
@@ -77,9 +88,10 @@ function makeTx(
 function makeService(emitted: Emitted[], articleIds: number[], pageIds: number[]) {
   const invalidate = jest.fn().mockResolvedValue(undefined);
   const cursors: number[] = [];
+  const predicates: string[] = [];
   const db = {
     transaction: (fn: (tx: unknown) => Promise<unknown>) =>
-      fn(makeTx(emitted, articleIds, pageIds, cursors)),
+      fn(makeTx(emitted, articleIds, pageIds, cursors, predicates)),
     execute: jest.fn().mockResolvedValue([]),
   } as unknown as Db;
   const access = {
@@ -90,6 +102,7 @@ function makeService(emitted: Emitted[], articleIds: number[], pageIds: number[]
     svc: new KbSpacesService(db, access, indexing, {} as never),
     invalidate,
     cursors,
+    predicates,
   };
 }
 
@@ -131,13 +144,27 @@ describe("KB space soft delete purges the space's chunks", () => {
     expect(emitted.filter((e) => e.eventType === "kb.content.delete")).toHaveLength(BATCH + 3);
   });
 
+  it("reads both content families from kb_pages and separates them by content_type, not by table", async () => {
+    const emitted: Emitted[] = [];
+    const { svc, predicates } = makeService(emitted, [11], [21]);
+
+    await svc.remove(ORG, SPACE);
+
+    expect(predicates).toHaveLength(2);
+    for (const predicate of predicates) {
+      expect(predicate).toContain(`"kb_pages"`);
+      expect(predicate).toContain("content_type");
+    }
+    expect(predicates[0]).not.toEqual(predicates[1]);
+  });
+
   it("bites: a space whose soft delete matched nothing emits no events at all", async () => {
     const emitted: Emitted[] = [];
     const invalidate = jest.fn().mockResolvedValue(undefined);
     const cursors: number[] = [];
     const db = {
       transaction: (fn: (tx: unknown) => Promise<unknown>) =>
-        fn(makeTx(emitted, [11], [21], cursors, false)),
+        fn(makeTx(emitted, [11], [21], cursors, [], false)),
       execute: jest.fn().mockResolvedValue([]),
     } as unknown as Db;
     const svc = new KbSpacesService(

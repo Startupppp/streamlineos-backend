@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../common/auth/principal";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import {
   addReactionSchema,
@@ -108,7 +107,7 @@ export class ProjectsTicketCommentsController {
     @Body() body: AddReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji, actingMembershipId(u.principal), ticketId, projectId);
+    return this.subresources.addReaction(u, projectId, ticketId, commentId, body.emoji);
   }
 
   @Delete(":projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji")
@@ -123,6 +122,6 @@ export class ProjectsTicketCommentsController {
     @Param("emoji") emoji: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeReaction(commentId, u.userId, u.orgId, decodeURIComponent(emoji), actingMembershipId(u.principal), ticketId, projectId);
+    return this.subresources.removeReaction(u, projectId, ticketId, commentId, decodeURIComponent(emoji));
   }
 }

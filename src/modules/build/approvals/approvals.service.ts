@@ -166,6 +166,7 @@ export class ApprovalsService {
       if (!(await this.access.holds(user, "build:approvals:manage"))) {
         throw new NotFoundException("Approval not found");
       }
+      await assertProjectAccess(this.db, this.access, user, projectId);
     }
 
     if (!DECIDABLE.has(approval.status)) {
@@ -195,12 +196,13 @@ export class ApprovalsService {
   }
 
   async updateApproval(
-    orgId: string,
-    userId: string,
+    user: CurrentUserContext,
     projectId: number,
     approvalId: number,
     input: UpdateApprovalInput,
   ) {
+    const { orgId, userId } = user;
+    await assertProjectAccess(this.db, this.access, user, projectId);
     await loadApproval(this.db, orgId, projectId, approvalId);
 
     const patch: ApprovalPatch = {};
@@ -256,7 +258,9 @@ export class ApprovalsService {
     return updated;
   }
 
-  async softDeleteApproval(orgId: string, userId: string, projectId: number, approvalId: number) {
+  async softDeleteApproval(user: CurrentUserContext, projectId: number, approvalId: number) {
+    const { orgId, userId } = user;
+    await assertProjectAccess(this.db, this.access, user, projectId);
     await loadApproval(this.db, orgId, projectId, approvalId);
     await this.db
       .update(projectApprovals)

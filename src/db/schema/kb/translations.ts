@@ -11,15 +11,15 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
-import { kbArticles } from "../support/kb";
+import { kbPages } from "./pages";
 import { kbTranslationStatusEnum } from "../common/enums";
 
-export const kbArticleTranslations = pgTable(
-  "kb_article_translations",
+export const kbPageTranslations = pgTable(
+  "kb_page_translations",
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    articleId: integer("article_id").notNull(),
+    pageId: integer("page_id").notNull(),
     locale: text("locale").notNull(),
     title: text("title").notNull(),
     content: text("content").default("").notNull(),
@@ -30,13 +30,13 @@ export const kbArticleTranslations = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_kb_article_translations").on(table.articleId, table.locale),
-    index("idx_kb_article_translations_org_article").on(table.orgId, table.articleId),
-    unique("uniq_kb_article_translations_org_id").on(table.orgId, table.id),
-    foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_article_translations_org_article" }).onDelete("cascade"),
+    uniqueIndex("uniq_kb_page_translations").on(table.pageId, table.locale),
+    index("idx_kb_page_translations_org_page").on(table.orgId, table.pageId),
+    unique("uniq_kb_page_translations_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_translations_org_page" }).onDelete("cascade"),
   ],
 );
 
-export const kbArticleTranslationsRelations = relations(kbArticleTranslations, ({ one }) => ({
-  article: one(kbArticles, { fields: [kbArticleTranslations.articleId], references: [kbArticles.id] }),
+export const kbPageTranslationsRelations = relations(kbPageTranslations, ({ one }) => ({
+  page: one(kbPages, { fields: [kbPageTranslations.pageId], references: [kbPages.id] }),
 }));

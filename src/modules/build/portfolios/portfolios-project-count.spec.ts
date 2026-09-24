@@ -4,6 +4,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PortfoliosService } from "./portfolios.service";
 import { ProgramsService } from "./programs.service";
+import { listProgramsQuerySchema } from "./dto/portfolios.schemas";
 
 type AnySelect = PgSelectBase<never, never, never>;
 
@@ -11,6 +12,8 @@ interface RenderedDb {
   readonly db: Db;
   render(): string;
 }
+
+const PROGRAM_LIST_QUERY = listProgramsQuerySchema.parse({});
 
 function renderingDb(): RenderedDb {
   const dialect = new PgDialect();
@@ -70,7 +73,7 @@ it("correlates the portfolio project count to the outer portfolio row", async ()
 it("counts program projects from a relation that exists in the statement", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
 
   const sql = render();
   expect(sql).toContain('"build"."program_projects"');
@@ -81,7 +84,7 @@ it("counts program projects from a relation that exists in the statement", async
 it("correlates the program project count to the outer program row", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
 
   const sql = render();
   expect(sql).toMatch(/program_id\s*=\s*"?program"?\."?id"?/);
@@ -101,7 +104,7 @@ it("declares the outer portfolio alias that the project count correlates against
 it("declares the outer program alias that the project count correlates against", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
 
   expect(render()).toMatch(/"project_programs"\s+"program"/);
 });
@@ -117,7 +120,7 @@ it("joins the schema-qualified projects relation when counting portfolio project
 it("joins the schema-qualified projects relation when counting program projects", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
 
   expect(render()).toContain('"build"."projects"');
 });
@@ -136,7 +139,7 @@ it("qualifies both portfolio correlation columns with their own relation", async
 it("qualifies both program correlation columns with their own relation", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
 
   const sql = render();
   expect(sql).toContain("link.program_id = program.id");
@@ -151,7 +154,7 @@ it("keeps the soft-delete fence qualified in both project count subqueries", asy
   await new PortfoliosService(portfolios.db, {} as AuditService).listPortfolios("org-1", {
     limit: 20,
   });
-  await new ProgramsService(programs.db, {} as AuditService).listPrograms("org-1", {});
+  await new ProgramsService(programs.db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
 
   for (const sql of [portfolios.render(), programs.render()]) {
     expect(sql).toContain("linked_project.id = link.project_id");

@@ -192,7 +192,7 @@ describe("labels are display-only", () => {
 });
 
 /**
- * The catalog lives in three files — this module, migration 1185's CHECK
+ * The catalog lives in three files — this module, migration 1187's CHECK
  * constraint and the Drizzle `$type` on `candidates` — because the schema does
  * not import from a feature module. Three hand-kept copies drift, and the drift
  * is invisible until a recruiter picks a new code and the insert is refused by
@@ -203,8 +203,8 @@ describe("the catalog matches what the database and the schema allow", () => {
     return Array.from(text.matchAll(/["']([A-Z][A-Z_]+)["']/g), (m) => m[1] ?? "");
   }
 
-  it("matches the CHECK constraint in migrations/1185_rejection_reason.sql", () => {
-    const sql = readFileSync(resolve(REPO_ROOT, "migrations/1185_rejection_reason.sql"), "utf8");
+  it("matches the CHECK constraint in migrations/1187_rejection_reason.sql", () => {
+    const sql = readFileSync(resolve(REPO_ROOT, "migrations/1187_rejection_reason.sql"), "utf8");
     const clause = /chk_candidates_rejection_reason[\s\S]*?IN \(([^)]*)\)/.exec(sql)?.[1];
     /* Asserted before the comparison so a moved or renamed file fails loudly
        instead of comparing two empty lists and passing. */
@@ -228,7 +228,7 @@ describe("the catalog matches what the database and the schema allow", () => {
    * application check is the good error message; the constraint is the floor.
    */
   it("keeps the OTHER-needs-a-note pairing in the migration too", () => {
-    const sql = readFileSync(resolve(REPO_ROOT, "migrations/1185_rejection_reason.sql"), "utf8");
+    const sql = readFileSync(resolve(REPO_ROOT, "migrations/1187_rejection_reason.sql"), "utf8");
     expect(sql).toContain("chk_candidates_rejection_other_note");
     expect(sql).toMatch(/rejection_reason" IS DISTINCT FROM 'OTHER'/);
   });

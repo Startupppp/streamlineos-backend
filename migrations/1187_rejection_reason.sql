@@ -1,4 +1,4 @@
--- 1185 — Recruitment: why a candidate was rejected
+-- 1187 — Recruitment: why a candidate was rejected
 --
 -- A reject used to be a drag onto a column: it moved the stage, it could send
 -- an email, and it recorded nothing about why. The only account of why anybody

@@ -315,7 +315,7 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
 });
 
 /*
- * The control, and the reason it is here rather than a fourth fix: kb_article_attachments
+ * The control, and the reason it is here rather than a fourth fix: kb_page_attachments
  * rows carry a fileKey the client obtained from POST /storage/upload, which writes with NO
  * override. The read is therefore already symmetric with its upload, and threading the KB
  * bucket into it would 404 the read wherever the two buckets differ. This test fails if
@@ -335,14 +335,15 @@ describe("KB article attachments — the read stays on the bucket /storage/uploa
     );
     const put = only(sent, "PutObjectCommand");
 
-    // `indexAttachment` resolves the attachment and its article's acl_revision in one
+    // `indexAttachment` resolves the attachment and its page's acl_revision in one
     // joined select, so the stub answers that chain rather than a relational findFirst.
     const attachmentRow = {
-      articleId: 3,
+      pageId: 3,
       fileKey: uploaded.key,
       mimeType: "text/plain",
       fileName: "handbook.txt",
-      articleAclRevision: 4,
+      deletedAt: null,
+      pageAclRevision: 4,
     };
     const db = {
       select: () => ({

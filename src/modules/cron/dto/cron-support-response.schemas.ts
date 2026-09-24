@@ -37,7 +37,6 @@ export const kbChunkRetentionSweepResponseSchema = z.union([
     success: z.literal(true),
     message: z.string(),
     orgsProcessed: z.number().int().nonnegative(),
-    articleChunksPruned: z.number().int().nonnegative(),
     pageChunksPruned: z.number().int().nonnegative(),
   }),
 ]);

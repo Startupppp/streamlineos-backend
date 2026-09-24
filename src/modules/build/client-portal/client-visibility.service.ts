@@ -47,7 +47,9 @@ export class ClientVisibilityService {
     return { tickets: ticketList, milestones: milestoneList };
   }
 
-  async toggleTicketVisibility(orgId: string, userId: string, projectId: number, ticketId: number, clientVisible: boolean) {
+  async toggleTicketVisibility(u: CurrentUserContext, projectId: number, ticketId: number, clientVisible: boolean) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const existing = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)),
       columns: { id: true },
@@ -68,7 +70,9 @@ export class ClientVisibilityService {
     return { id: ticketId, clientVisible };
   }
 
-  async toggleMilestoneVisibility(orgId: string, userId: string, projectId: number, milestoneId: number, clientVisible: boolean) {
+  async toggleMilestoneVisibility(u: CurrentUserContext, projectId: number, milestoneId: number, clientVisible: boolean) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const existing = await this.db.query.projectMilestones.findFirst({
       where: and(
         eq(projectMilestones.id, milestoneId),
@@ -94,7 +98,9 @@ export class ClientVisibilityService {
     return { id: milestoneId, clientVisible };
   }
 
-  async toggleCommentVisibility(orgId: string, userId: string, projectId: number, commentId: number, clientVisible: boolean) {
+  async toggleCommentVisibility(u: CurrentUserContext, projectId: number, commentId: number, clientVisible: boolean) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [row] = await this.db
       .select({ id: ticketComments.id })
       .from(ticketComments)
@@ -122,7 +128,9 @@ export class ClientVisibilityService {
     return { id: commentId, clientVisible };
   }
 
-  async toggleAttachmentVisibility(orgId: string, userId: string, projectId: number, attachmentId: number, clientVisible: boolean) {
+  async toggleAttachmentVisibility(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [row] = await this.db
       .select({ id: ticketAttachments.id })
       .from(ticketAttachments)

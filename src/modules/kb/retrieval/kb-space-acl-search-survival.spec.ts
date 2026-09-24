@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbPages, kbSpaces } from "../../../db/schema";
+import { kbPages, kbSpaces } from "../../../db/schema";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbSpacesService } from "../wiki/kb-spaces.service";
 
@@ -20,7 +20,6 @@ interface PageRow {
 }
 interface ChunkRow {
   pageId: number | null;
-  articleId: number | null;
   aclRevision: number;
 }
 
@@ -31,16 +30,15 @@ function render(node: unknown): { text: string; params: unknown[] } {
 
 class KbStore {
   readonly pages = new Map<number, PageRow>();
-  readonly articles = new Map<number, PageRow>();
   readonly chunks: ChunkRow[] = [];
 
   seed(): void {
     this.pages.set(PAGE, { spaceId: SPACE, aclRevision: 1 });
     this.pages.set(OTHER_PAGE, { spaceId: OTHER_SPACE, aclRevision: 1 });
-    this.articles.set(ARTICLE, { spaceId: SPACE, aclRevision: 1 });
-    this.chunks.push({ pageId: PAGE, articleId: null, aclRevision: 1 });
-    this.chunks.push({ pageId: OTHER_PAGE, articleId: null, aclRevision: 1 });
-    this.chunks.push({ pageId: null, articleId: ARTICLE, aclRevision: 1 });
+    this.pages.set(ARTICLE, { spaceId: SPACE, aclRevision: 1 });
+    this.chunks.push({ pageId: PAGE, aclRevision: 1 });
+    this.chunks.push({ pageId: OTHER_PAGE, aclRevision: 1 });
+    this.chunks.push({ pageId: ARTICLE, aclRevision: 1 });
   }
 
   searchablePageIds(): number[] {
@@ -49,17 +47,6 @@ class KbStore {
       if (chunk.pageId === null) continue;
       const page = this.pages.get(chunk.pageId);
       if (page !== undefined && page.aclRevision === chunk.aclRevision) ids.add(chunk.pageId);
-    }
-    return [...ids].sort((a, b) => a - b);
-  }
-
-  searchableArticleIds(): number[] {
-    const ids = new Set<number>();
-    for (const chunk of this.chunks) {
-      if (chunk.articleId === null) continue;
-      const article = this.articles.get(chunk.articleId);
-      if (article !== undefined && article.aclRevision === chunk.aclRevision)
-        ids.add(chunk.articleId);
     }
     return [...ids].sort((a, b) => a - b);
   }
@@ -89,9 +76,6 @@ function makeDb(store: KbStore) {
           if (table === kbPages) {
             bumpedTables.push("kb_pages");
             applyBump(store.pages, spaceId);
-          } else if (table === kbArticles) {
-            bumpedTables.push("kb_articles");
-            applyBump(store.articles, spaceId);
           }
         };
         const settled = Promise.resolve().then(() => {
@@ -115,18 +99,12 @@ function makeDb(store: KbStore) {
     const [orgId, spaceId] = params;
     if (orgId !== ORG) throw new Error("sync lost its org predicate");
     if (typeof spaceId !== "number") throw new Error("sync lost its space predicate");
-    const viaPages = text.includes("kb_pages");
-    syncedTables.push(viaPages ? "kb_pages" : "kb_articles");
+    expect(text).toContain("kb_pages");
+    syncedTables.push("kb_pages");
     for (const chunk of store.chunks) {
-      if (viaPages && chunk.pageId !== null) {
-        const page = store.pages.get(chunk.pageId);
-        if (page !== undefined && page.spaceId === spaceId) chunk.aclRevision = page.aclRevision;
-      }
-      if (!viaPages && chunk.articleId !== null) {
-        const article = store.articles.get(chunk.articleId);
-        if (article !== undefined && article.spaceId === spaceId)
-          chunk.aclRevision = article.aclRevision;
-      }
+      if (chunk.pageId === null) continue;
+      const page = store.pages.get(chunk.pageId);
+      if (page !== undefined && page.spaceId === spaceId) chunk.aclRevision = page.aclRevision;
     }
     return [];
   });
@@ -184,15 +162,14 @@ describe("KbSpacesService.update — a space-property ACL change keeps content s
     const indexing = makeIndexing(db);
     const { service, access } = makeSpaces(db, indexing);
 
-    expect(store.searchablePageIds()).toEqual([PAGE, OTHER_PAGE]);
-    expect(store.searchableArticleIds()).toEqual([ARTICLE]);
+    expect(store.searchablePageIds()).toEqual([PAGE, OTHER_PAGE, ARTICLE]);
 
     await service.update(ORG, SPACE, { audience: "internal" });
 
     expect(store.searchablePageIds()).toContain(PAGE);
-    expect(store.searchableArticleIds()).toContain(ARTICLE);
-    expect(bumpedTables.sort()).toEqual(["kb_articles", "kb_pages"]);
-    expect(syncedTables.sort()).toEqual(["kb_articles", "kb_pages"]);
+    expect(store.searchablePageIds()).toContain(ARTICLE);
+    expect(bumpedTables).toEqual(["kb_pages"]);
+    expect(syncedTables).toEqual(["kb_pages"]);
     expect(access.invalidateAccessibleSpaceIds).toHaveBeenCalledWith(ORG);
   });
 
@@ -206,7 +183,7 @@ describe("KbSpacesService.update — a space-property ACL change keeps content s
     await service.update(ORG, SPACE, { isPublicHelpCenter: true });
 
     expect(store.searchablePageIds()).toContain(PAGE);
-    expect(store.searchableArticleIds()).toContain(ARTICLE);
+    expect(store.searchablePageIds()).toContain(ARTICLE);
   });
 
   it("a non-ACL property change neither bumps nor desynchronises anything", async () => {
@@ -249,7 +226,7 @@ describe("KbSpacesService.update — a space-property ACL change keeps content s
     await service.update(ORG, SPACE, { audience: "internal" });
 
     expect(store.searchablePageIds()).not.toContain(PAGE);
-    expect(store.searchableArticleIds()).not.toContain(ARTICLE);
+    expect(store.searchablePageIds()).not.toContain(ARTICLE);
 
     await service.update(ORG, SPACE, { description: "an unrelated later edit" });
 

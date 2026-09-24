@@ -89,7 +89,7 @@ describe("KbIngestionCheckpointService — cross-tenant isolation", () => {
 describe("KbArticleReindexService — cross-tenant isolation", () => {
   it("reindexArticle: throws NotFoundException for an article in a different org (deny)", async () => {
     const findFirst = jest.fn().mockResolvedValue(null);
-    const db = { query: { kbArticles: { findFirst } } } as unknown as Db;
+    const db = { query: { kbPages: { findFirst } } } as unknown as Db;
     const indexing = {} as never;
     const attachmentIndexing = {} as never;
     const svc = new KbArticleReindexService(db, indexing, attachmentIndexing);
@@ -107,8 +107,8 @@ describe("KbArticleReindexService — cross-tenant isolation", () => {
     const chunksFrom = jest.fn().mockReturnValue({ where: chunksWhere });
     const db = {
       query: {
-        kbArticles: { findFirst },
-        kbArticleAttachments: { findMany: attachmentsFindMany },
+        kbPages: { findFirst },
+        kbPageAttachments: { findMany: attachmentsFindMany },
       },
       select: jest.fn().mockReturnValue({ from: chunksFrom }),
     } as unknown as Db;
@@ -128,11 +128,11 @@ describe("KbIndexingService — cross-tenant isolation", () => {
     const deletedWhere = jest.fn().mockResolvedValue([]);
     const makeTx = () => ({
       execute: jest.fn().mockResolvedValue(undefined),
-      query: { kbArticles: { findFirst } },
+      query: { kbPages: { findFirst } },
       delete: jest.fn().mockReturnValue({ where: deletedWhere }),
     });
     const db = {
-      query: { kbArticles: { findFirst } },
+      query: { kbPages: { findFirst } },
       delete: jest.fn().mockReturnValue({ where: deletedWhere }),
       transaction: jest.fn().mockImplementation(async (fn: (tx: ReturnType<typeof makeTx>) => unknown) => fn(makeTx())),
     } as unknown as Db;
@@ -156,11 +156,11 @@ describe("KbIndexingService — cross-tenant isolation", () => {
     const deleteWhere = jest.fn().mockResolvedValue([]);
     const makeTx = () => ({
       execute: jest.fn().mockResolvedValue(undefined),
-      query: { kbArticles: { findFirst } },
+      query: { kbPages: { findFirst } },
       delete: jest.fn().mockReturnValue({ where: deleteWhere }),
     });
     const db = {
-      query: { kbArticles: { findFirst } },
+      query: { kbPages: { findFirst } },
       delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       transaction: jest.fn().mockImplementation(async (fn: (tx: ReturnType<typeof makeTx>) => unknown) => fn(makeTx())),
     } as unknown as Db;

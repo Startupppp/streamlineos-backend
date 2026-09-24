@@ -28,7 +28,7 @@ function makeDb(parent: { id: number | string } | undefined) {
       clientAccountActivities: { findMany },
       invoices: { findFirst },
       payments: { findMany },
-      kbArticles: { findFirst },
+      kbPages: { findFirst },
       okrGoals: { findFirst },
       travelRequests: { findFirst },
       hrCompCycles: { findFirst },

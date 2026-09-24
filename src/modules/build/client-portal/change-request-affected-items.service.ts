@@ -92,6 +92,7 @@ export class ChangeRequestAffectedItemsService {
         and(
           eq(changeRequestAffectedItems.orgId, orgId),
           eq(changeRequestAffectedItems.changeRequestId, changeRequestId),
+          isNull(tickets.deletedAt),
           position
             ? keysetBeforeId(changeRequestAffectedItems.createdAt, changeRequestAffectedItems.id, position)
             : undefined,

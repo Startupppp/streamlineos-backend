@@ -104,7 +104,7 @@ describe("CronKbChunkRetentionService — cross-tenant isolation", () => {
     const svc = new CronKbChunkRetentionService(db);
 
     const result = await svc.pruneStaleChunks();
-    expect(result.articleChunksPruned).toBe(0);
+    expect(result.pageChunksPruned).toBe(0);
     expect(selectWhere).toHaveBeenCalled();
     expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
   });

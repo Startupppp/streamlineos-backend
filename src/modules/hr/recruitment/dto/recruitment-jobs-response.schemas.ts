@@ -62,7 +62,7 @@ export const jobApplicationSchema = z.object({
    * wording was shown, it means nothing to a reader, and a hash on screen
    * invites somebody to treat it as an identifier.
    *
-   * All four are null on every application created before migration 1187, and
+   * All four are null on every application created before migration 1189, and
    * the UI says so rather than rendering a blank.
    */
   consentAt: nullableWireDate(),

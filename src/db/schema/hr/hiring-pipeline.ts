@@ -61,7 +61,7 @@ export const candidateOffers = pgTable("candidate_offers", {
   offeredSalary: decimal("offered_salary", { precision: 15, scale: 2 }),
   offeredDesignation: text("offered_designation"),
   /**
-   * The structured CTC (migration 1186), additive beside `offeredSalary` and
+   * The structured CTC (migration 1188), additive beside `offeredSalary` and
    * never a replacement for it: the hire handoff, the negotiation flow and the
    * offer letter all still read `offeredSalary`, and the two are reconciled by
    * `compensation/ctc-breakdown.ts` rather than by one shadowing the other.

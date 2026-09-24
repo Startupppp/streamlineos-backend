@@ -1,11 +1,17 @@
 import { Injectable, Inject, NotFoundException, ConflictException } from "@nestjs/common";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
-import { ticketCustomFieldValues, tickets } from "../../../db/schema";
+import { ticketCustomFieldValues } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/custom-fields.schemas";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
 import { assertProjectInOrg } from "./project-access";
+import {
+  assertTicketReadAccess,
+  type TicketReadAccess,
+} from "./build-ticket-read-access";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const BUILD_ENTITY_TYPE = "build_ticket" as const;
@@ -24,7 +30,34 @@ type BuildFieldShape = {
 
 @Injectable()
 export class ProjectsCustomFieldsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(AccessService)
+    private readonly access: TicketReadAccess,
+  ) {}
+
+  private async assertFieldDefinitionsInProject(
+    orgId: string,
+    projectId: number,
+    fieldIds: readonly number[],
+  ): Promise<void> {
+    const wanted = [...new Set(fieldIds)];
+    if (wanted.length === 0) return;
+    const rows = await this.db
+      .select({ id: customFieldDefinitions.id })
+      .from(customFieldDefinitions)
+      .where(
+        and(
+          eq(customFieldDefinitions.orgId, orgId),
+          eq(customFieldDefinitions.entityType, BUILD_ENTITY_TYPE),
+          eq(customFieldDefinitions.projectId, projectId),
+          inArray(customFieldDefinitions.id, wanted),
+        ),
+      );
+    const found = new Set(rows.map((row) => row.id));
+    if (wanted.some((id) => !found.has(id)))
+      throw new NotFoundException("Custom field not found");
+  }
 
   private toBuildField(
     def: typeof customFieldDefinitions.$inferSelect,
@@ -59,10 +92,6 @@ export class ProjectsCustomFieldsService {
   }
 
   async createField(orgId: string, projectId: number, data: CreateCustomFieldInput) {
-    // `listFields` above already resolves the project. Without the same assertion here the row
-    // landed under the caller's own organisation carrying ANOTHER organisation's project id —
-    // 201 where the contract requires 404, and a definition addressed to a project that is not
-    // the tenant's.
     await assertProjectInOrg(this.db, orgId, projectId);
     const [field] = await this.db
       .insert(customFieldDefinitions)
@@ -142,17 +171,9 @@ export class ProjectsCustomFieldsService {
     return { success: true };
   }
 
-  async getTicketValues(orgId: string, projectId: number, ticketId: number) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+  async getTicketValues(u: CurrentUserContext, projectId: number, ticketId: number) {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    const { orgId } = u;
 
     const rows = await this.db
       .select({
@@ -208,23 +229,21 @@ export class ProjectsCustomFieldsService {
   }
 
   async upsertTicketValues(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     data: UpsertCustomFieldValuesInput,
   ) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    const { orgId } = u;
 
     if (data.values.length === 0) return { success: true };
+
+    await this.assertFieldDefinitionsInProject(
+      orgId,
+      projectId,
+      data.values.map(({ fieldId }) => fieldId),
+    );
 
     await this.db
       .insert(ticketCustomFieldValues)

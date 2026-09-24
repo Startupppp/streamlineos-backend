@@ -42,7 +42,7 @@ function joinChain(): Record<string, unknown> {
   return chain;
 }
 
-function makeDb(table: "kbPages" | "kbArticles", row: unknown): Db {
+function makeDb(table: "kbPages", row: unknown): Db {
   return {
     query: { [table]: { findFirst: jest.fn().mockResolvedValue(row) } },
     select: jest.fn().mockImplementation(() => ({ from: jest.fn().mockReturnValue(joinChain()) })),
@@ -74,7 +74,7 @@ const SURFACES: Surface[] = [
     keyPrefix: "kb.article-",
     build: (gateway, row) =>
       new KbArticleAiService(
-        makeDb("kbArticles", row),
+        makeDb("kbPages", row),
         { assertCanViewArticle: jest.fn().mockResolvedValue(undefined) } as never,
         gateway as never,
         { log: jest.fn() } as never,

@@ -76,7 +76,7 @@ describe("KB vector candidate retrieval binds the tenant in the predicate", () =
     expect(wheres).toHaveLength(1);
     const where = wheres[0];
     expect(boundOrgIds(where, "kb_article_chunks")).toEqual([ORG]);
-    expect(boundOrgIds(where, "kb_articles")).toEqual([ORG]);
+    expect(boundOrgIds(where, "kb_pages")).toEqual([ORG]);
   });
 
   it("pageVectorCandidates binds the caller's org on the chunk AND the page side", async () => {
@@ -99,7 +99,7 @@ describe("KB vector candidate retrieval binds the tenant in the predicate", () =
 
     const where = wheres[0];
     expect(boundOrgIds(where, "kb_article_chunks")).toEqual([OTHER_ORG]);
-    expect(boundOrgIds(where, "kb_articles")).toEqual([OTHER_ORG]);
+    expect(boundOrgIds(where, "kb_pages")).toEqual([OTHER_ORG]);
     expect(boundOrgIds(where, "kb_article_chunks")).not.toContain(ORG);
   });
 

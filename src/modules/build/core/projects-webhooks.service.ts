@@ -94,7 +94,7 @@ export class ProjectsWebhooksService {
         deliveredAt: webhookDeliveries.deliveredAt,
       })
       .from(webhookDeliveries)
-      .where(eq(webhookDeliveries.webhookId, webhookId))
+      .where(and(eq(webhookDeliveries.orgId, orgId), eq(webhookDeliveries.webhookId, webhookId)))
       .orderBy(desc(webhookDeliveries.deliveredAt))
       .limit(20);
   }

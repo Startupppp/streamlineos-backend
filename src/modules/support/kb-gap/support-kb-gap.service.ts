@@ -7,8 +7,8 @@ import {
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import {
-  kbArticles,
   kbEvents,
+  kbPages,
   kbSpaces,
   organizationMembers,
   supportKnowledgeGaps,
@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbArticlesService } from "../../kb/help-centre/kb-articles.service";
+import { supportArticlePredicate } from "../../kb/help-centre/kb-article-page-scope";
 import { KbEventsService } from "../../kb/core/kb-events.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { logger } from "../../../common/logger/logger.service";
@@ -209,10 +210,18 @@ export class SupportKbGapService {
         evidence: supportKnowledgeGaps.evidence,
         createdAt: supportKnowledgeGaps.createdAt,
         updatedAt: supportKnowledgeGaps.updatedAt,
-        proposedArticleTitle: kbArticles.title,
+        proposedArticleTitle: kbPages.title,
       })
       .from(supportKnowledgeGaps)
-      .leftJoin(kbArticles, and(eq(kbArticles.id, supportKnowledgeGaps.proposedArticleId), isNull(kbArticles.archivedAt)))
+      .leftJoin(
+        kbPages,
+        and(
+          eq(kbPages.orgId, supportKnowledgeGaps.orgId),
+          eq(kbPages.id, supportKnowledgeGaps.proposedArticleId),
+          supportArticlePredicate(),
+          isNull(kbPages.archivedAt),
+        ),
+      )
       .where(
         and(
           eq(supportKnowledgeGaps.orgId, orgId),

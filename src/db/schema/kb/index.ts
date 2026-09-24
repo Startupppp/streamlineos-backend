@@ -1,6 +1,5 @@
 export * from "./spaces";
 export * from "./restrictions";
-export * from "./versions";
 export * from "./translations";
 export * from "./tags";
 export * from "./events";
@@ -14,3 +13,4 @@ export * from "./chat";
 export * from "./settings";
 export * from "./research-briefs";
 export * from "./attachments";
+export * from "./page-feedback";

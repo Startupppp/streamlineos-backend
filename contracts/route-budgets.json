@@ -317,6 +317,29 @@
         "measuredReadPathP99Ms"
       ],
       "caveat": "measuredDbCalls is deliberately left to the db-call-count instrument: the capture's requestDbCalls is a strict superset of the handler statement count that maxDbCalls describes (authentication, permission resolution and module entitlement are in it), so it is recorded as requestDbCalls and never as measuredDbCalls. Latency is loopback, single-process, uncompressed and cache-cold, so it excludes pool wait, network and gzip — it is a lower bound on production latency and an upper bound on the cache-hit path."
+    },
+    "production-http-probe": {
+      "what": "Sequential requests to the deployed production endpoint using its normal request stack and production database.",
+      "populates": [
+        "measuredLatencyP95Ms",
+        "measuredResponseBytes",
+        "measuredLatencyP50Ms",
+        "measuredLatencyP99Ms",
+        "measuredResponseBytesP50",
+        "measuredResponseBytesP95",
+        "measuredResponseBytesP99"
+      ],
+      "doesNotPopulate": [
+        "measuredDbCalls",
+        "measuredDownstreamCalls",
+        "measuredMemoryMb",
+        "measuredRequestDbCalls",
+        "measuredBufferBlocks",
+        "measuredReadPathP50Ms",
+        "measuredReadPathP95Ms",
+        "measuredReadPathP99Ms"
+      ],
+      "caveat": "The probe observes deployed end-to-end latency and payload size but does not instrument process memory, downstream calls, or database statement counts. The merge gate preserves it only while no seeded capture slot exists and its recorded ceilings still match the budget."
     }
   },
   "budgets": {
@@ -11785,6 +11808,97 @@
       "measuredResponseBytesP50": 92,
       "measuredResponseBytesP95": 92,
       "measuredResponseBytesP99": 92
+    },
+    "GET /cron/build-daily-snapshots": {
+      "kind": "worker-batch",
+      "class": "worker",
+      "maxDbCalls": 1,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 4096,
+      "maxLatencyP95Ms": 600000,
+      "maxMemoryMb": 256,
+      "maxBatchSize": 200,
+      "maxDurationMs": 600000,
+      "maxDbCallsPerOrg": 801,
+      "dbCallBasis": "counted-call-path",
+      "dbCallNote": "Counted from CronBuildSnapshotsService.snapshotAllProjects and ProjectsReportsService.snapshot. The organisation-independent term is the first organizations page. Per organisation: one ACTIVE-project query capped at 201 rows, then at most 200 projects. Each project performs four statements: assertProjectInOrg, the report-revision project read, one grouped ticket-state aggregate, and one multi-row daily-snapshot upsert. Worst case is 1 + 200 x 4 = 801 statements per organisation. Tenant-context setup statements are excluded consistently with the route budget counter.",
+      "latencyCeilingBasis": "lease-window-derived",
+      "latencyCeilingNote": "The 600000 ms ceiling and duration bound are the worker's 600-second CronLeaseService lease. Exceeding it permits a later tick to overlap the still-running sweep.",
+      "responseBytesBasis": "counted-response-shape",
+      "responseBytesNote": "The response contains success, one message, and five non-negative integer counters. It contains no project rows or identifiers.",
+      "note": "Daily Build report snapshots for at most 200 ACTIVE projects per organisation.",
+      "measuredDownstreamCalls": null,
+      "measuredResponseBytes": 181,
+      "measuredMemoryMb": null,
+      "measuredLatencyP95Ms": 13635.62,
+      "measuredBufferBlocks": null,
+      "measuredReadPathP50Ms": null,
+      "measuredReadPathP95Ms": null,
+      "measuredReadPathP99Ms": null,
+      "measurement": null,
+      "measuredBatchSize": 9,
+      "measuredDurationMs": 13635.62,
+      "httpMeasurement": {
+        "status": "measured",
+        "method": "production-http-probe",
+        "declaredCeilings": {
+          "maxLatencyP95Ms": 600000,
+          "maxResponseBytes": 4096
+        },
+        "routeClass": "worker",
+        "scoredAgainstPrdCeiling": false,
+        "prdCeilingMs": null,
+        "recordedFrom": "10 sequential requests to the deployed production endpoint on 2026-09-24",
+        "worstProfile": {
+          "measuredLatencyP95Ms": "production",
+          "measuredResponseBytes": "production",
+          "measuredLatencyP50Ms": "production",
+          "measuredLatencyP99Ms": "production",
+          "measuredResponseBytesP50": "production",
+          "measuredResponseBytesP95": "production",
+          "measuredResponseBytesP99": "production"
+        },
+        "requestDbCalls": null,
+        "gucCalls": null,
+        "profiles": {
+          "production": {
+            "status": "measured",
+            "tenant": "production",
+            "samples": 10,
+            "latencyP50Ms": 12980.52,
+            "latencyP95Ms": 13635.62,
+            "latencyP99Ms": 13635.62,
+            "downstreamCalls": null,
+            "downstreamAccounting": null,
+            "deferredDownstreamCalls": null,
+            "deferredFailures": null,
+            "deferredDownstreamTargets": null,
+            "responseBytes": 181,
+            "memoryMb": null,
+            "memoryMbPercentiles": null,
+            "responseBytesPercentiles": {
+              "p50": 181,
+              "p95": 181,
+              "p99": 181,
+              "min": 181,
+              "max": 181
+            },
+            "requestDbCalls": null,
+            "gucCalls": null,
+            "prdCeilingMs": null,
+            "overPrdCeiling": false
+          }
+        }
+      },
+      "measuredRequestDbCalls": null,
+      "measuredLatencyP50Ms": 12980.52,
+      "measuredLatencyP99Ms": 13635.62,
+      "measuredMemoryMbP50": null,
+      "measuredMemoryMbP95": null,
+      "measuredMemoryMbP99": null,
+      "measuredResponseBytesP50": 181,
+      "measuredResponseBytesP95": 181,
+      "measuredResponseBytesP99": 181
     },
     "GET /cron/build-retention-prune": {
       "kind": "worker-batch",

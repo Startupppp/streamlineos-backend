@@ -1,29 +1,32 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   incidentUpdates,
   incidentDecisions,
   incidentFollowUpActions,
   projectIncidents,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { TenantTx } from "../../../db/drizzle.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { UNRESOLVED_FOLLOW_UP_STATUSES } from "./dto/incidents.schemas";
 import type {
   AddIncidentDecisionInput,
   AddIncidentUpdateInput,
   CreateFollowUpActionInput,
   CreateIncidentInput,
+  IncidentChildrenQuery,
   ListIncidentsQuery,
   UpdateFollowUpActionInput,
   UpdateIncidentInput,
 } from "./dto/incidents.schemas";
+import { loadIncidentChildren } from "./incident-children";
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
@@ -60,6 +63,31 @@ export class IncidentsService {
     return patch;
   }
 
+  private async enforceClosePolicy(
+    tx: TenantTx,
+    orgId: string,
+    incidentId: number,
+    waiverReason: string | undefined,
+  ): Promise<number> {
+    const [unresolved] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(incidentFollowUpActions)
+      .where(
+        and(
+          eq(incidentFollowUpActions.orgId, orgId),
+          eq(incidentFollowUpActions.incidentId, incidentId),
+          isNull(incidentFollowUpActions.deletedAt),
+          inArray(incidentFollowUpActions.status, [...UNRESOLVED_FOLLOW_UP_STATUSES]),
+        ),
+      );
+    const count = unresolved?.count ?? 0;
+    if (count > 0 && !waiverReason)
+      throw new ConflictException(
+        `Cannot close incident with ${count} unresolved follow-up action(s). Resolve them or supply followUpWaiverReason.`,
+      );
+    return count;
+  }
+
   async listIncidents(u: CurrentUserContext, projectId: number, query: ListIncidentsQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
@@ -78,45 +106,15 @@ export class IncidentsService {
       .limit(100);
   }
 
-  async getIncident(u: CurrentUserContext, projectId: number, incidentId: number) {
+  async getIncident(
+    u: CurrentUserContext,
+    projectId: number,
+    incidentId: number,
+    query: IncidentChildrenQuery = { limit: 100 },
+  ) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const incident = await this.loadIncident(u.orgId, projectId, incidentId);
-    const updates = await this.db
-      .select({
-        id: incidentUpdates.id,
-        orgId: incidentUpdates.orgId,
-        incidentId: incidentUpdates.incidentId,
-        message: incidentUpdates.message,
-        newStatus: incidentUpdates.newStatus,
-        createdBy: incidentUpdates.createdBy,
-        createdAt: incidentUpdates.createdAt,
-        createdByName: users.name,
-        createdByEmail: users.email,
-      })
-      .from(incidentUpdates)
-      .leftJoin(users, eq(users.id, incidentUpdates.createdBy))
-      .where(and(eq(incidentUpdates.incidentId, incidentId), eq(incidentUpdates.orgId, u.orgId)))
-      .orderBy(desc(incidentUpdates.createdAt))
-      .limit(100);
-    const decisions = await this.db
-      .select()
-      .from(incidentDecisions)
-      .where(and(eq(incidentDecisions.incidentId, incidentId), eq(incidentDecisions.orgId, u.orgId)))
-      .orderBy(desc(incidentDecisions.createdAt))
-      .limit(100);
-    const followUpActions = await this.db
-      .select()
-      .from(incidentFollowUpActions)
-      .where(
-        and(
-          eq(incidentFollowUpActions.incidentId, incidentId),
-          eq(incidentFollowUpActions.orgId, u.orgId),
-          isNull(incidentFollowUpActions.deletedAt),
-        ),
-      )
-      .orderBy(desc(incidentFollowUpActions.createdAt))
-      .limit(100);
-    return { ...incident, updates, decisions, followUpActions };
+    return { ...incident, ...(await loadIncidentChildren(this.db, u.orgId, incidentId, query)) };
   }
 
   async createIncident(u: CurrentUserContext, projectId: number, input: CreateIncidentInput) {
@@ -166,6 +164,7 @@ export class IncidentsService {
     incidentId: number,
     input: UpdateIncidentInput,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const current = await this.loadIncident(u.orgId, projectId, incidentId);
     const patch: IncidentPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -186,8 +185,19 @@ export class IncidentsService {
     }
 
     const now = new Date();
+    const closing = input.status === "closed" && current.status !== "closed";
+    const followUpWaiverReason = input.followUpWaiverReason?.trim() || undefined;
 
     const [updated] = await this.db.transaction(async (tx) => {
+      let waivedFollowUpCount = 0;
+      if (closing)
+        waivedFollowUpCount = await this.enforceClosePolicy(
+          tx,
+          u.orgId,
+          incidentId,
+          followUpWaiverReason,
+        );
+
       const rows = await tx
         .update(projectIncidents)
         .set(patch)
@@ -226,6 +236,16 @@ export class IncidentsService {
         });
       }
 
+      if (closing && waivedFollowUpCount > 0 && followUpWaiverReason !== undefined) {
+        await tx.insert(incidentUpdates).values({
+          orgId: u.orgId,
+          incidentId,
+          message: `Closed with ${waivedFollowUpCount} unresolved follow-up action(s) waived: ${followUpWaiverReason}`,
+          newStatus: null,
+          createdBy: u.userId,
+        });
+      }
+
       if (
         input.severity !== undefined &&
         (SEVERITY_RANK[input.severity] ?? 2) < (SEVERITY_RANK[current.severity] ?? 2)
@@ -249,12 +269,19 @@ export class IncidentsService {
       orgId: u.orgId,
       resourceType: "project_incident",
       resourceId: String(incidentId),
-      metadata: { projectId, incidentId },
+      metadata: {
+        projectId,
+        incidentId,
+        ...(closing && followUpWaiverReason !== undefined
+          ? { followUpWaiverReason }
+          : {}),
+      },
     });
     return updated;
   }
 
   async deleteIncident(u: CurrentUserContext, projectId: number, incidentId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
     await this.db
       .update(projectIncidents)
@@ -290,8 +317,13 @@ export class IncidentsService {
     }
 
     const now = new Date();
+    const closing = input.newStatus === "closed" && current.status !== "closed";
+    const followUpWaiverReason = input.followUpWaiverReason?.trim() || undefined;
 
     const [update] = await this.db.transaction(async (tx) => {
+      const waivedFollowUpCount = closing
+        ? await this.enforceClosePolicy(tx, u.orgId, incidentId, followUpWaiverReason)
+        : 0;
       const rows = await tx.insert(incidentUpdates).values({
         orgId: u.orgId,
         incidentId,
@@ -330,6 +362,15 @@ export class IncidentsService {
         });
       }
 
+      if (closing && waivedFollowUpCount > 0 && followUpWaiverReason !== undefined)
+        await tx.insert(incidentUpdates).values({
+          orgId: u.orgId,
+          incidentId,
+          message: `Closed with ${waivedFollowUpCount} unresolved follow-up action(s) waived: ${followUpWaiverReason}`,
+          newStatus: null,
+          createdBy: u.userId,
+        });
+
       return rows;
     });
 
@@ -339,16 +380,16 @@ export class IncidentsService {
       orgId: u.orgId,
       resourceType: "project_incident",
       resourceId: String(incidentId),
-      metadata: { projectId, incidentId, updateId: update?.id },
+      metadata: {
+        projectId,
+        incidentId,
+        updateId: update?.id,
+        ...(closing && followUpWaiverReason !== undefined ? { followUpWaiverReason } : {}),
+      },
     });
     return update;
   }
 
-  /**
-   * Postmortem field: decisions. An append-only log — insert + list, same
-   * shape as `addUpdate` above minus the status-transition side effects,
-   * because a decision does not itself move the incident's lifecycle state.
-   */
   async addDecision(
     u: CurrentUserContext,
     projectId: number,
@@ -380,11 +421,6 @@ export class IncidentsService {
     return decision;
   }
 
-  /**
-   * Postmortem field: follow-up actions. No closed-incident guard — the
-   * normal time to record these is the postmortem itself, which runs after
-   * the incident is closed.
-   */
   async addFollowUpAction(
     u: CurrentUserContext,
     projectId: number,

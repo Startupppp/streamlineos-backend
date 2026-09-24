@@ -3,6 +3,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { DataScope } from "../../../common/rbac/data-scope";
 import { FormsService } from "./forms.service";
 import { createFormSchema, updateFormSchema } from "./dto/forms.schemas";
 
@@ -11,6 +12,12 @@ describe("FormsService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
   const audit = { log: jest.fn() } as never;
   const mockAccess = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
+
+  beforeEach(() => {
+    jest.mocked(mockAccess.resolveUserPermissions).mockResolvedValue(
+      new Map<string, DataScope>([["build:manage", "all"]]),
+    );
+  });
 
   function makeU(orgId: string): CurrentUserContext {
     return {
@@ -94,19 +101,23 @@ describe("FormsService — project-membership gate (BOLA)", () => {
 
   const u = makeU("org-1");
 
-  it("REJECTS a non-member with ForbiddenException", async () => {
+  it("REJECTS a non-member before any form read or mutation", async () => {
     const mockDb = {
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn() },
       },
-      select: jest.fn()
-        .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([])),
+      select: jest.fn().mockReturnValue(makeSelectChain([])),
+      update: jest.fn(),
     } as unknown as Db;
     const svc = new FormsService(mockDb, makeAccess(), audit);
 
     await expect(svc.listForms(u, 1, {})).rejects.toThrow(ForbiddenException);
+    await expect(svc.getForm(u, 1, 1)).rejects.toThrow(ForbiddenException);
+    await expect(svc.updateForm(u, 1, 1, { isPublic: true })).rejects.toThrow(ForbiddenException);
+    await expect(svc.deleteForm(u, 1, 1)).rejects.toThrow(ForbiddenException);
+    expect(mockDb.query.projectForms.findFirst).not.toHaveBeenCalled();
+    expect(mockDb.update).not.toHaveBeenCalled();
   });
 
   it("ALLOWS a direct project member", async () => {
@@ -233,6 +244,12 @@ describe("FormsService — optimistic concurrency (dirty-version conflict)", () 
   const STORED_DATE = new Date("2024-01-15T10:00:00.000Z");
   const STALE_VERSION = "2024-01-14T09:00:00.000Z";
 
+  beforeEach(() => {
+    jest.mocked(mockAccess.resolveUserPermissions).mockResolvedValue(
+      new Map<string, DataScope>([["build:manage", "all"]]),
+    );
+  });
+
   function makeU(): CurrentUserContext {
     return {
       userId: "user-1",
@@ -269,6 +286,7 @@ describe("FormsService — optimistic concurrency (dirty-version conflict)", () 
   it("throws ConflictException when the provided version does not match stored updatedAt", async () => {
     const db = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
       },
     } as unknown as Db;
@@ -288,6 +306,7 @@ describe("FormsService — optimistic concurrency (dirty-version conflict)", () 
 
     const db = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
       },
       update: updateMock,
@@ -310,6 +329,7 @@ describe("FormsService — optimistic concurrency (dirty-version conflict)", () 
 
     const db = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
       },
       update: updateMock,

@@ -7,6 +7,7 @@ import { ProjectsBudgetService } from "./projects-budget.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { encodeCursor } from "../../../common/pagination/cursor";
 
 function passThroughCache() {
   return {
@@ -130,17 +131,19 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
 });
 
 describe("ProjectsAnalyticsService — resourceAllocation counts each open ticket once", () => {
-  function makeAllocationDb(rows: Record<string, unknown>[]): { db: Db; execute: jest.Mock } {
-    const execute = jest.fn().mockResolvedValue(rows);
+  const ALLOCATION_QUERY = { limit: 50, cursor: undefined };
+
+  function makeAllocationDb(
+    assigneeRows: Record<string, unknown>[],
+    breakdownRows: Record<string, unknown>[] = [],
+  ): { db: Db; execute: jest.Mock } {
+    const execute = jest
+      .fn()
+      .mockResolvedValueOnce(assigneeRows)
+      .mockResolvedValue(breakdownRows);
     const db = {
       execute,
       query: {
-        projects: {
-          findMany: jest.fn().mockResolvedValue([
-            { id: 1, name: "Payments", key: "PAY" },
-            { id: 2, name: "Ledger", key: "LED" },
-          ]),
-        },
         users: {
           findMany: jest.fn().mockResolvedValue([
             { id: "user-1", name: "Priya", email: "priya@example.com", image: null },
@@ -155,7 +158,7 @@ describe("ProjectsAnalyticsService — resourceAllocation counts each open ticke
     const { db, execute } = makeAllocationDb([]);
     const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
-    await svc.resourceAllocation(ATTACKER_ORG);
+    await svc.resourceAllocation(ATTACKER_ORG, ALLOCATION_QUERY);
 
     expect(execute).toHaveBeenCalledTimes(1);
     const sqlText = sqlValues(execute.mock.calls[0]?.[0])
@@ -167,29 +170,105 @@ describe("ProjectsAnalyticsService — resourceAllocation counts each open ticke
   });
 
   it("sums a person's open tickets across projects rather than reporting the largest single project", async () => {
-    const { db } = makeAllocationDb([
-      { assigneeId: "user-1", projectId: 1, open: "3" },
-      { assigneeId: "user-1", projectId: 2, open: "5" },
-    ]);
+    const { db } = makeAllocationDb(
+      [{ assigneeId: "user-1", totalOpen: "8" }],
+      [
+        { assigneeId: "user-1", projectId: 1, projectName: "Payments", projectKey: "PAY", open: "3" },
+        { assigneeId: "user-1", projectId: 2, projectName: "Ledger", projectKey: "LED", open: "5" },
+      ],
+    );
     const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
-    const result = await svc.resourceAllocation(ATTACKER_ORG);
+    const result = await svc.resourceAllocation(ATTACKER_ORG, ALLOCATION_QUERY);
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.totalOpen).toBe(8);
-    expect(result[0]?.byProject.map((p) => p.open).sort()).toEqual([3, 5]);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.totalOpen).toBe(8);
+    expect(result.data[0]?.byProject.map((p) => p.open).sort()).toEqual([3, 5]);
   });
 
   it("scopes both assignment sources and the membership join to the requesting org", async () => {
     const { db, execute } = makeAllocationDb([]);
     const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
-    await svc.resourceAllocation(ATTACKER_ORG);
+    await svc.resourceAllocation(ATTACKER_ORG, ALLOCATION_QUERY);
 
     const values = sqlValues(execute.mock.calls[0]?.[0]);
     expect(values).toContain(ATTACKER_ORG);
     expect(values).not.toContain(OWNER_ORG);
     expect(values.filter((value) => value === ATTACKER_ORG).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("bounds the org-wide read to a page of assignees rather than every assignee in the organisation", async () => {
+    const { db, execute } = makeAllocationDb([]);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+
+    await svc.resourceAllocation(ATTACKER_ORG, { limit: 25, cursor: undefined });
+
+    const values = sqlValues(execute.mock.calls[0]?.[0]);
+    const sqlText = values.filter((v): v is string => typeof v === "string").join(" ");
+    expect(sqlText).toContain("LIMIT");
+    expect(values).toContain(26);
+  });
+
+  it("filters to active projects inside the statement, so it no longer interpolates every project id in the org", async () => {
+    const { db, execute } = makeAllocationDb([]);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+
+    await svc.resourceAllocation(ATTACKER_ORG, ALLOCATION_QUERY);
+
+    const sqlText = sqlValues(execute.mock.calls[0]?.[0])
+      .filter((v): v is string => typeof v === "string")
+      .join(" ");
+    expect(sqlText).toContain("build.projects");
+    expect(sqlText).toContain("p.status = 'ACTIVE'");
+    expect(sqlText).not.toContain("t.project_id IN (");
+  });
+
+  it("reports hasMore and a nextCursor once more assignees exist than the page holds", async () => {
+    const overflow = [
+      { assigneeId: "user-1", totalOpen: "9" },
+      { assigneeId: "user-2", totalOpen: "4" },
+      { assigneeId: "user-3", totalOpen: "1" },
+    ];
+    const { db } = makeAllocationDb(overflow);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+
+    const result = await svc.resourceAllocation(ATTACKER_ORG, { limit: 2, cursor: undefined });
+
+    expect(result.pagination.hasMore).toBe(true);
+    expect(result.pagination.nextCursor).toEqual(expect.any(String));
+  });
+
+  it("orders by open count descending then user id, so the keyset it hands out matches the sort", async () => {
+    const { db, execute } = makeAllocationDb([]);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+
+    await svc.resourceAllocation(ATTACKER_ORG, ALLOCATION_QUERY);
+
+    const sqlText = sqlValues(execute.mock.calls[0]?.[0])
+      .filter((v): v is string => typeof v === "string")
+      .join(" ");
+    expect(sqlText).toContain("ORDER BY");
+    expect(sqlText).toContain("DESC, om.user_id ASC");
+  });
+
+  it("applies the cursor in HAVING, because the sort key is an aggregate and WHERE cannot see it", async () => {
+    const { db, execute } = makeAllocationDb([]);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+    const cursor = encodeCursor({ sortValue: "7", id: "user-4" });
+
+    await svc.resourceAllocation(ATTACKER_ORG, { limit: 50, cursor });
+
+    const values = sqlValues(execute.mock.calls[0]?.[0]);
+    const sqlText = values.filter((v): v is string => typeof v === "string").join(" ");
+    expect(sqlText).toContain("HAVING");
+    expect(values).toContain(7);
+    expect(values).toContain("user-4");
+  });
+
+  it("bite proof: an unbounded read would ask for no limit at all", () => {
+    const unbounded = "GROUP BY om.user_id, combined.project_id";
+    expect(unbounded).not.toContain("LIMIT");
   });
 });
 

@@ -34,15 +34,7 @@ function build(spaceIds: number[]) {
   (selectChain as { then?: unknown }).then = (res: (v: unknown) => unknown) =>
     Promise.resolve([]).then(res);
 
-  const versionsFindMany = jest.fn((opts: { where: SQL }) => {
-    capturedWheres.push(opts.where);
-    return Promise.resolve([]);
-  });
-
-  const db = {
-    select: jest.fn().mockReturnValue(selectChain),
-    query: { kbArticleVersions: { findMany: versionsFindMany } },
-  };
+  const db = { select: jest.fn().mockReturnValue(selectChain) };
 
   const assertArticleViewable = jest.fn().mockResolvedValue(undefined);
   const access = {

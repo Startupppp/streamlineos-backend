@@ -38,10 +38,8 @@ function makeUser(): CurrentUserContext {
 const passageRow = {
   content: "Reset your password from the account page.",
   chunkIndex: 0,
-  articleId: 11,
-  pageId: null,
-  articleTitle: "Password reset",
-  pageTitle: null,
+  pageId: 11,
+  title: "Password reset",
 };
 
 const sourceRow = {
@@ -182,11 +180,11 @@ describe("retrieveDocumentPassages degrades to lexical rather than answering wit
 
     const where = wheres[wheres.length - 1] as SQL;
     expect(boundOrgIds(where, "kb_article_chunks")).toEqual([ORG]);
-    expect(boundOrgIds(where, "kb_articles")).toEqual([ORG]);
+    expect(boundOrgIds(where, "kb_pages")).toEqual([ORG]);
     const { text, params } = render(where);
-    const status = /"kb_articles"\."status"\s*=\s*\$(\d+)/.exec(text);
+    const status = /"kb_pages"\."status"\s*=\s*\$(\d+)/.exec(text);
     expect(params[Number(status?.[1]) - 1]).toBe("published");
-    expect(text).toContain("kb_article_restrictions");
+    expect(text).toContain("kb_page_restrictions");
   });
 });
 

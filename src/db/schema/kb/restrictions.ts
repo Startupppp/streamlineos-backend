@@ -10,17 +10,17 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, organizationMembers } from "../common/auth";
-import { kbArticles } from "../support/kb";
+import { kbPages } from "./pages";
 
 export const KB_RESTRICTION_LEVELS = ["view", "edit"] as const;
 export type KbRestrictionLevel = (typeof KB_RESTRICTION_LEVELS)[number];
 
-export const kbArticleRestrictions = pgTable(
-  "kb_article_restrictions",
+export const kbPageRestrictions = pgTable(
+  "kb_page_restrictions",
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    articleId: integer("article_id").notNull(),
+    pageId: integer("page_id").notNull(),
     membershipId: integer("membership_id"),
     role: text("role"),
     team: text("team"),
@@ -28,16 +28,16 @@ export const kbArticleRestrictions = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_kb_article_restrictions_article").on(table.articleId),
-    index("idx_kb_article_restrictions_org_membership").on(table.orgId, table.membershipId),
-    index("idx_kb_article_restrictions_org_article").on(table.orgId, table.articleId),
-    unique("uniq_kb_article_restrictions_org_id").on(table.orgId, table.id),
-    foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_article_restrictions_org_article" }).onDelete("cascade"),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_article_restrictions_org_membership" }).onDelete("cascade"),
+    index("idx_kb_page_restrictions_page").on(table.pageId),
+    index("idx_kb_page_restrictions_org_membership").on(table.orgId, table.membershipId),
+    index("idx_kb_page_restrictions_org_page").on(table.orgId, table.pageId),
+    unique("uniq_kb_page_restrictions_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_restrictions_org_page" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_restrictions_org_membership" }).onDelete("cascade"),
   ],
 );
 
-export const kbArticleRestrictionsRelations = relations(kbArticleRestrictions, ({ one }) => ({
-  article: one(kbArticles, { fields: [kbArticleRestrictions.articleId], references: [kbArticles.id] }),
-  membership: one(organizationMembers, { fields: [kbArticleRestrictions.membershipId], references: [organizationMembers.id] }),
+export const kbPageRestrictionsRelations = relations(kbPageRestrictions, ({ one }) => ({
+  page: one(kbPages, { fields: [kbPageRestrictions.pageId], references: [kbPages.id] }),
+  membership: one(organizationMembers, { fields: [kbPageRestrictions.membershipId], references: [organizationMembers.id] }),
 }));

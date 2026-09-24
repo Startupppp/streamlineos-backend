@@ -1,4 +1,4 @@
--- 1186 — Recruitment: the structured CTC behind an offer
+-- 1188 — Recruitment: the structured CTC behind an offer
 --
 -- `offered_salary` stays exactly where it is. It is live — the hire handoff
 -- builds a salary structure from it, the negotiation flow counters against it

@@ -2,7 +2,7 @@
  * `articleRestrictionFilter`'s role branch has to bind an ARRAY, and only Postgres can say
  * whether it does.
  *
- * The predicate read `sql\`${kar.role} = ANY(${principal.roleSlugs})\``. A bare JS array
+ * The predicate read `sql\`${kpr.role} = ANY(${principal.roleSlugs})\``. A bare JS array
  * interpolated into a drizzle `sql` template does not become one array parameter — it
  * expands to a parenthesised parameter LIST, so the statement Postgres received was
  * `= ANY(($1, $2))` (`op ANY/ALL (array) requires array on right side`) or, with a single
@@ -30,7 +30,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../../../db/schema";
-import { kbArticles } from "../../../db/schema";
+import { kbPages } from "../../../db/schema";
 import { createTenantAwareDb } from "../../../common/tenant/tenant-db";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { KbCandidateService } from "./kb-candidate.service";
@@ -76,24 +76,24 @@ describe("KB article restriction filter binds role slugs as an array", () => {
     });
 
     const [open] = await owner<{ id: number }[]>`
-      INSERT INTO kb_articles (org_id, title, slug, status)
-      VALUES (${ORG}, 'Open handbook', ${`open-${suffix}`}, 'published') RETURNING id`;
+      INSERT INTO kb_pages (org_id, title, slug, status, content_type)
+      VALUES (${ORG}, 'Open handbook', ${`open-${suffix}`}, 'published', 'support_article') RETURNING id`;
     const [restricted] = await owner<{ id: number }[]>`
-      INSERT INTO kb_articles (org_id, title, slug, status)
-      VALUES (${ORG}, 'Role handbook', ${`role-${suffix}`}, 'published') RETURNING id`;
+      INSERT INTO kb_pages (org_id, title, slug, status, content_type)
+      VALUES (${ORG}, 'Role handbook', ${`role-${suffix}`}, 'published', 'support_article') RETURNING id`;
     if (!open || !restricted) throw new Error("seed: article insert failed");
     openArticleId = open.id;
     roleArticleId = restricted.id;
 
     await owner`
-      INSERT INTO kb_article_restrictions (org_id, article_id, role, level)
+      INSERT INTO kb_page_restrictions (org_id, page_id, role, level)
       VALUES (${ORG}, ${roleArticleId}, ${ROLE_A}, 'view')`;
   }, 180_000);
 
   afterAll(async () => {
     if (owner) {
-      await owner`DELETE FROM kb_article_restrictions WHERE org_id = ${ORG}`;
-      await owner`DELETE FROM kb_articles WHERE org_id = ${ORG}`;
+      await owner`DELETE FROM kb_page_restrictions WHERE org_id = ${ORG}`;
+      await owner`DELETE FROM kb_pages WHERE org_id = ${ORG}`;
       await owner`DELETE FROM organizations WHERE id = ${ORG}`;
       await owner`DELETE FROM users WHERE id = ${PROBE_USER}`;
       await owner.end({ timeout: 5 });
@@ -107,12 +107,12 @@ describe("KB article restriction filter binds role slugs as an array", () => {
       await tx.execute(sql`SELECT set_config('app.organization_id', ${ORG}, true)`);
       return runWithTenantContext({ orgId: ORG, audience: "INTERNAL", tx }, async () => {
         const rows = await tx
-          .select({ id: kbArticles.id })
-          .from(kbArticles)
+          .select({ id: kbPages.id })
+          .from(kbPages)
           .where(
             and(
-              eq(kbArticles.orgId, ORG),
-              inArray(kbArticles.id, [openArticleId, roleArticleId]),
+              eq(kbPages.orgId, ORG),
+              inArray(kbPages.id, [openArticleId, roleArticleId]),
               candidates.articleRestrictionFilter(ORG, {
                 userId: PROBE_USER,
                 membershipId,

@@ -3,9 +3,8 @@ import { KbCoreModule } from "./core/kb-core.module";
 import { KbRetrievalModule } from "./retrieval/kb-retrieval.module";
 import { KbHelpCentreModule } from "./help-centre/kb-help-centre.module";
 import { KbWikiModule } from "./wiki/kb-wiki.module";
-import { KbArticleConversionModule } from "./article-conversion/kb-article-conversion.module";
 
-const KB_MODULES = [KbCoreModule, KbRetrievalModule, KbHelpCentreModule, KbWikiModule, KbArticleConversionModule];
+const KB_MODULES = [KbCoreModule, KbRetrievalModule, KbHelpCentreModule, KbWikiModule];
 
 @Module({
   imports: KB_MODULES,

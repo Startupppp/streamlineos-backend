@@ -11,7 +11,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, organizationMembers } from "../common/auth";
-import { kbArticles } from "../support/kb";
 
 export const KB_EVENT_TYPES = [
   "view",
@@ -50,13 +49,11 @@ export const kbEvents = pgTable(
     // which is NOT NULL, so the parent DELETE aborts on the child table. 0662
     // repaired that; regenerating these from Drizzle would reinstall it.
     // `check:composite-fk-set-null` fails if it comes back.
-    foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_events_org_article" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.actorMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_events_org_actor_membership" }).onDelete("set null"),
   ],
 );
 
 export const kbEventsRelations = relations(kbEvents, ({ one }) => ({
   organization: one(organizations, { fields: [kbEvents.orgId], references: [organizations.id] }),
-  article: one(kbArticles, { fields: [kbEvents.articleId], references: [kbArticles.id] }),
   actorMembership: one(organizationMembers, { fields: [kbEvents.actorMembershipId], references: [organizationMembers.id] }),
 }));

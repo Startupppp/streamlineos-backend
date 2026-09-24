@@ -22,10 +22,12 @@ import {
   createPortfolioSchema,
   linkProjectSchema,
   listPortfoliosQuerySchema,
+  portfolioDetailQuerySchema,
   updatePortfolioSchema,
   type CreatePortfolioInput,
   type LinkProjectInput,
   type ListPortfoliosQuery,
+  type PortfolioDetailQuery,
   type UpdatePortfolioInput,
 } from "./dto/portfolios.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -61,12 +63,13 @@ export class PortfoliosController {
   @Get("portfolios/:portfolioId")
   @RequirePermission("build:portfolios:view")
   @ResponseSchema(portfolioDetailSchema)
-  @Validate({ params: portfolioIdParams })
+  @Validate({ params: portfolioIdParams, query: portfolioDetailQuerySchema })
   getPortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
+    @Query() query: PortfolioDetailQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getPortfolio(u.orgId, portfolioId);
+    return this.svc.getPortfolio(u.orgId, portfolioId, query);
   }
 
   @Post("portfolios")

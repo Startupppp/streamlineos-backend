@@ -42,6 +42,8 @@ export interface RoadmapAccountTierSummary {
   linkedFeedbackCount: number;
   linkedAccountCount: number;
   topTier: RoadmapAccountTier | null;
+  linkedRevenue: number | null;
+  revenueKnownAccountCount: number;
 }
 
 export interface RoadmapTierWeighting {
@@ -52,12 +54,16 @@ export interface RoadmapTierWeighting {
   unweightedReason: RoadmapTierUnweightedReason | null;
   linkedFeedbackCount: number;
   linkedAccountCount: number;
+  linkedRevenue: number | null;
+  revenueKnownAccountCount: number;
 }
 
 const EMPTY_ACCOUNT_TIER_SUMMARY: RoadmapAccountTierSummary = {
   linkedFeedbackCount: 0,
   linkedAccountCount: 0,
   topTier: null,
+  linkedRevenue: null,
+  revenueKnownAccountCount: 0,
 };
 
 function unweighted(
@@ -73,6 +79,8 @@ function unweighted(
     unweightedReason,
     linkedFeedbackCount: summary.linkedFeedbackCount,
     linkedAccountCount: summary.linkedAccountCount,
+    linkedRevenue: summary.linkedRevenue,
+    revenueKnownAccountCount: summary.revenueKnownAccountCount,
   };
 }
 
@@ -95,6 +103,8 @@ export function applyRoadmapTierWeighting(
     unweightedReason: null,
     linkedFeedbackCount: summary.linkedFeedbackCount,
     linkedAccountCount: summary.linkedAccountCount,
+    linkedRevenue: summary.linkedRevenue,
+    revenueKnownAccountCount: summary.revenueKnownAccountCount,
   };
 }
 
@@ -109,6 +119,19 @@ function topTierRankExpression() {
       sql`WHEN ${businessParties.tier}::text = ${tier} THEN ${ROADMAP_TIER_RANKS[tier]}::int`,
   );
   return sql`MAX(CASE ${sql.join(branches, sql` `)} ELSE NULL END)`;
+}
+
+function linkedRevenueExpression() {
+  const knownValues = sql`jsonb_object_agg(
+      ${feedbackPosts.crmOrganizationId}::text,
+      ${businessParties.lifetimeValue}
+    ) FILTER (
+      WHERE ${feedbackPosts.crmOrganizationId} IS NOT NULL
+        AND ${businessParties.lifetimeValue} IS NOT NULL
+    )`;
+  return sql<
+    string | null
+  >`(SELECT SUM(entry.value::numeric) FROM jsonb_each_text(COALESCE(${knownValues}, '{}'::jsonb)) AS entry(key, value))`;
 }
 
 /**
@@ -129,10 +152,12 @@ export async function loadRoadmapAccountTiers(
     .select({
       itemId: feedbackPosts.linkedRoadmapItemId,
       linkedFeedbackCount: sql<number>`COUNT(*)::int`.mapWith(Number),
-      linkedAccountCount: sql<number>`COUNT(${feedbackPosts.crmOrganizationId})::int`.mapWith(
-        Number,
-      ),
+      linkedAccountCount:
+        sql<number>`COUNT(DISTINCT ${feedbackPosts.crmOrganizationId})::int`.mapWith(Number),
       topTierRank: topTierRankExpression(),
+      linkedRevenue: linkedRevenueExpression(),
+      revenueKnownAccountCount: sql<number>`COUNT(DISTINCT ${feedbackPosts.crmOrganizationId})
+        FILTER (WHERE ${businessParties.lifetimeValue} IS NOT NULL)::int`.mapWith(Number),
     })
     .from(feedbackPosts)
     .leftJoin(
@@ -159,10 +184,16 @@ export async function loadRoadmapAccountTiers(
   for (const row of rows) {
     if (row.itemId === null) continue;
     const rank = row.topTierRank === null || row.topTierRank === undefined ? null : Number(row.topTierRank);
+    const revenueKnownAccountCount = Number(row.revenueKnownAccountCount ?? 0);
     resolved.set(row.itemId, {
       linkedFeedbackCount: Number(row.linkedFeedbackCount),
       linkedAccountCount: Number(row.linkedAccountCount),
       topTier: rank === null ? null : (TIER_BY_RANK.get(rank) ?? null),
+      linkedRevenue:
+        revenueKnownAccountCount === 0 || row.linkedRevenue === null || row.linkedRevenue === undefined
+          ? null
+          : roundToScoreDecimals(Number(row.linkedRevenue)),
+      revenueKnownAccountCount,
     });
   }
   return resolved;

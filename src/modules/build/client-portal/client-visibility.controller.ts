@@ -56,7 +56,7 @@ export class ClientVisibilityController {
     @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.toggleTicketVisibility(u.orgId, u.userId, projectId, ticketId, body.clientVisible);
+    return this.svc.toggleTicketVisibility(u, projectId, ticketId, body.clientVisible);
   }
 
   @Patch("milestones/:milestoneId")
@@ -69,7 +69,7 @@ export class ClientVisibilityController {
     @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.toggleMilestoneVisibility(u.orgId, u.userId, projectId, milestoneId, body.clientVisible);
+    return this.svc.toggleMilestoneVisibility(u, projectId, milestoneId, body.clientVisible);
   }
 
   @Patch("comments/:commentId")
@@ -82,7 +82,7 @@ export class ClientVisibilityController {
     @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.toggleCommentVisibility(u.orgId, u.userId, projectId, commentId, body.clientVisible);
+    return this.svc.toggleCommentVisibility(u, projectId, commentId, body.clientVisible);
   }
 
   @Patch("attachments/:attachmentId")
@@ -95,6 +95,6 @@ export class ClientVisibilityController {
     @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.toggleAttachmentVisibility(u.orgId, u.userId, projectId, attachmentId, body.clientVisible);
+    return this.svc.toggleAttachmentVisibility(u, projectId, attachmentId, body.clientVisible);
   }
 }

@@ -28,7 +28,7 @@ describe("SupportKbService — cross-tenant isolation", () => {
     return {
       query: {
         kbCategories: { findMany: findManyCategories, findFirst: jest.fn().mockResolvedValue(null) },
-        kbArticles: { findFirst: findFirstArticle },
+        kbPages: { findFirst: findFirstArticle },
         kbTags: { findFirst: jest.fn().mockResolvedValue(null) },
         users: { findFirst: jest.fn().mockResolvedValue(null) },
       },

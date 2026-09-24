@@ -9,7 +9,7 @@ export default [
       "None: a changeRequestId belonging to a different project 404s at getChangeRequest before any affected-item row is read.",
     evidence: [
       { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 68, anchor: /await this\.changeRequests\.getChangeRequest\(u, projectId, changeRequestId\);/, note: "binds the change request to id+orgId+projectId; 404 on mismatch" },
-      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 148, anchor: /eq\(changeRequests\.projectId, projectId\),/, note: "getChangeRequest's own WHERE re-binds projectId" },
+      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 165, anchor: /eq\(changeRequests\.projectId, projectId\),/, note: "getChangeRequest's own WHERE re-binds projectId" },
     ],
   },
   {
@@ -21,8 +21,8 @@ export default [
     blastRadius:
       "None: both the change request and the ticket must genuinely belong to the URL's project, or the call 404s before any row is written.",
     evidence: [
-      { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 117, anchor: /await this\.changeRequests\.getChangeRequest\(u, projectId, changeRequestId\);/, note: "binds the change request to id+orgId+projectId; 404 on mismatch" },
-      { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 124, anchor: /if \(!ticket \|\| ticket\.projectId !== projectId\) \{/, note: "explicit compare: the body-supplied ticketId must belong to this exact project too" },
+      { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 118, anchor: /await this\.changeRequests\.getChangeRequest\(u, projectId, changeRequestId\);/, note: "binds the change request to id+orgId+projectId; 404 on mismatch" },
+      { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 125, anchor: /if \(!ticket \|\| ticket\.projectId !== projectId\) \{/, note: "explicit compare: the body-supplied ticketId must belong to this exact project too" },
     ],
   },
   {
@@ -34,8 +34,8 @@ export default [
     blastRadius:
       "None: a changeRequestId belonging to a different project 404s at getChangeRequest, and an affectedItemId belonging to a different change request 404s at the follow-up lookup, before any row is deleted.",
     evidence: [
-      { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 169, anchor: /await this\.changeRequests\.getChangeRequest\(u, projectId, changeRequestId\);/, note: "binds the change request to id+orgId+projectId; 404 on mismatch" },
-      { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 178, anchor: /eq\(changeRequestAffectedItems\.changeRequestId, changeRequestId\),/, note: "the affected-item lookup re-binds changeRequestId, itself already proven project-scoped" },
+      { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 170, anchor: /await this\.changeRequests\.getChangeRequest\(u, projectId, changeRequestId\);/, note: "binds the change request to id+orgId+projectId; 404 on mismatch" },
+      { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 179, anchor: /eq\(changeRequestAffectedItems\.changeRequestId, changeRequestId\),/, note: "the affected-item lookup re-binds changeRequestId, itself already proven project-scoped" },
     ],
   },
 ];

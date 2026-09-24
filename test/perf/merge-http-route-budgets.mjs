@@ -183,6 +183,42 @@ export function planRoute(key, budget, slots) {
         : { status: "unmeasured", tenant: s.tenant, reason: s.reason ?? "no reason recorded", httpStatus: s.httpStatus ?? null };
   }
 
+  if (measuredSlots.length === 0 && slots.length === 0) {
+    const existing = budget.httpMeasurement;
+    if (
+      existing?.status === "measured" &&
+      existing.method === "production-http-probe" &&
+      typeof existing.recordedFrom === "string" &&
+      existing.recordedFrom.length > 0 &&
+      existing.profiles !== null &&
+      typeof existing.profiles === "object" &&
+      Object.keys(existing.profiles).length > 0
+    ) {
+      const declared = existing.declaredCeilings;
+      const fields = {};
+      const drift = [];
+      for (const field of HTTP_FIELDS) {
+        const value = budget[field.measured];
+        if (typeof value === "number") fields[field.measured] = value;
+        if (
+          typeof value === "number" &&
+          field.ceiling !== null &&
+          (declared === null || typeof declared !== "object" || declared[field.ceiling] !== budget[field.ceiling])
+        )
+          drift.push(field.ceiling);
+      }
+      if (drift.length === 0 && Object.keys(fields).length > 0) return { fields, http: existing };
+      return {
+        fields: {},
+        http: {
+          ...existing,
+          status: "refused",
+          reason: `the production probe's declared ceilings do not match: ${[...new Set(drift)].join(", ") || "no measured fields"}`,
+        },
+      };
+    }
+  }
+
   if (measuredSlots.length === 0) {
     const reasons = [...new Set(slots.map((s) => s.reason).filter(Boolean))];
     return {
@@ -330,6 +366,9 @@ function main() {
   const breaches = breachesFrom(budgets);
 
   const measuredRoutes = Object.values(plans).filter((p) => p.http.status === "measured").length;
+  const productionProbes = Object.values(plans).filter(
+    (p) => p.http.status === "measured" && p.http.method === "production-http-probe",
+  ).length;
   process.stdout.write(
     `[merge-http-route-budgets] ${String(measuredRoutes)}/${String(cov.total)} budgets carry an HTTP measurement ` +
       `(${String(filled)} values written, ${String(cleared)} stale values cleared)\n`,
@@ -395,9 +434,9 @@ function main() {
     fieldCoverage: cov.per,
     mergedBy: "test/perf/merge-http-route-budgets.mjs",
     honesty:
-      "Every number here came from the capture recorded in contracts/benchmark-manifest.json under " +
-      "`requestLevel`. A route the capture declined keeps a null and an httpMeasurement block " +
-      "naming the reason; no field is estimated, carried forward, or filled from a database-side proxy.",
+      "Standard measurements came from the capture recorded in contracts/benchmark-manifest.json under `requestLevel`. " +
+      `${String(productionProbes)} explicitly tagged production HTTP probe(s) were preserved because no seeded capture slot exists and their recorded ceilings still match. ` +
+      "A route the seeded capture declined keeps a null and an httpMeasurement block naming the reason; no field is estimated or filled from a database-side proxy.",
   };
   writeFileSync(ROUTE_BUDGETS_PATH, `${JSON.stringify(contract, null, 2)}\n`);
   process.stdout.write("[merge-http-route-budgets] wrote contracts/route-budgets.json\n");
@@ -494,6 +533,25 @@ function selfTest() {
   const noSlot = planRoute("GET /x", budget, []);
   check("a budget the capture never reached is unmeasured, not measured-at-zero", noSlot.http.status === "unmeasured" && Object.keys(noSlot.fields).length === 0);
 
+  const productionProbe = {
+    ...budget,
+    measuredLatencyP95Ms: 20,
+    measuredResponseBytes: 900,
+    httpMeasurement: {
+      status: "measured",
+      method: "production-http-probe",
+      recordedFrom: "ten sequential production requests",
+      declaredCeilings: { maxLatencyP95Ms: 500, maxResponseBytes: 1000 },
+      profiles: { production: { status: "measured", samples: 10 } },
+    },
+  };
+  const preservedProbe = planRoute("GET /x", productionProbe, []);
+  check("an explicit production probe survives an older capture with no route slot", preservedProbe.fields.measuredLatencyP95Ms === 20 && preservedProbe.http.method === "production-http-probe");
+  const movedProbe = planRoute("GET /x", { ...productionProbe, maxResponseBytes: 999 }, []);
+  check("a production probe is refused when its recorded ceiling moves", movedProbe.http.status === "refused" && Object.keys(movedProbe.fields).length === 0);
+  const failedProbe = planRoute("GET /x", productionProbe, [slot({ status: "unmeasured", reason: "route answered HTTP 500" })]);
+  check("a failed seeded capture supersedes an older production probe", failedProbe.http.status === "unmeasured" && Object.keys(failedProbe.fields).length === 0);
+
   const moved = planRoute("GET /x", { ...budget, maxResponseBytes: 999999 }, [slot({})]);
   check("a ceiling edited after the capture refuses the association", moved.http.status === "refused");
   check("the refusal names the field whose ceiling moved", moved.http.reason.includes("maxResponseBytes"));
@@ -531,7 +589,7 @@ function selfTest() {
   check("measuredMemoryMbP95 is populated from memoryMbPercentiles.p95", measured.fields.measuredMemoryMbP95 === 3);
   check("measuredResponseBytesP50 is populated from responseBytesPercentiles.p50", measured.fields.measuredResponseBytesP50 === 800);
 
-  const total = 32;
+  const total = 35;
   if (failures.length > 0) {
     for (const f of failures) process.stderr.write(`  FAIL  ${f}\n`);
     process.stderr.write(`[merge-http-route-budgets] self-test ${String(total - failures.length)}/${String(total)}\n`);

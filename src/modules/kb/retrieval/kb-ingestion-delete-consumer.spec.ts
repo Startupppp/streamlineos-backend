@@ -1,6 +1,16 @@
+import { PgDialect } from "drizzle-orm/pg-core";
+import { is, SQL } from "drizzle-orm";
 import { KbIngestionDeleteConsumer } from "./kb-ingestion-delete-consumer";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
 import { kbArticleChunks } from "../../../db/schema";
+
+const dialect = new PgDialect();
+
+function renderWhere(clause: unknown): { sql: string; params: unknown[] } {
+  if (!is(clause, SQL)) return { sql: "", params: [] };
+  const query = dialect.sqlToQuery(clause);
+  return { sql: query.sql, params: [...query.params] };
+}
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(),
@@ -90,8 +100,8 @@ describe("KbIngestionDeleteConsumer", () => {
       expect(txDelete).toHaveBeenCalledWith(kbArticleChunks);
     });
 
-    it("purges article chunks inside a tenant transaction", async () => {
-      const { tx, txDelete } = makeTx();
+    it("anchors an article delete on page_id, because a support article IS a kb_pages row", async () => {
+      const { tx, txDelete, deleteWhere } = makeTx();
       getRunMock().mockImplementation(
         async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<void>) => fn(tx),
       );
@@ -100,6 +110,31 @@ describe("KbIngestionDeleteConsumer", () => {
       await consumer.handle(makeEvent("article", ARTICLE_ID));
 
       expect(txDelete).toHaveBeenCalledWith(kbArticleChunks);
+      const { sql, params } = renderWhere(deleteWhere.mock.calls[0]?.[0]);
+      expect(sql).toContain(`"page_id"`);
+      expect(sql).not.toContain(`"article_id"`);
+      expect(params).toContain(ARTICLE_ID);
+      expect(params).toContain(ORG_ID);
+    });
+
+    it("anchors article and page deletes on the same column, so neither content type can be missed", async () => {
+      getRunMock().mockImplementation(
+        async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<void>) => fn(tx),
+      );
+      const { consumer } = buildConsumer();
+
+      const rendered: string[] = [];
+      for (const contentType of ["article", "page"]) {
+        const { tx, deleteWhere } = makeTx();
+        getRunMock().mockImplementation(
+          async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<void>) => fn(tx),
+        );
+        await consumer.handle(makeEvent(contentType, PAGE_ID));
+        rendered.push(renderWhere(deleteWhere.mock.calls[0]?.[0]).sql);
+      }
+
+      expect(rendered[0]).toContain(`"page_id"`);
+      expect(rendered[0]).toBe(rendered[1]);
     });
 
     it("rejects an unknown contentType at the Zod schema boundary before any DB call", async () => {

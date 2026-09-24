@@ -15,6 +15,11 @@ import {
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
 
 const ORG = "org-1";
 const OTHER_ORG = "org-2";
@@ -275,6 +280,21 @@ function makeU(orgId = ORG): CurrentUserContext {
   };
 }
 
+beforeEach(() => {
+  jest.mocked(assertTicketReadAccess).mockImplementation(
+    async (_db, _access, u, projectId, ticketId) => {
+      const ticketProject =
+        ticketId === TICKET_A
+          ? PROJECT_A
+          : ticketId === TICKET_B
+            ? PROJECT_B
+            : projectId;
+      if (u.orgId !== ORG || ticketProject !== projectId)
+        throw new NotFoundException("Ticket not found");
+    },
+  );
+});
+
 function makeSubresources(store: Store) {
   const fixture = makeDb(store);
   const checklists = new ProjectsTicketChecklistsService(fixture.db);
@@ -300,27 +320,27 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
   it("getSubtasks answers 404 for a same-org ticket that belongs to another project", async () => {
     const { svc } = makeSubresources(makeStore());
 
-    await expect(svc.getSubtasks(ORG, PROJECT_A, TICKET_B)).rejects.toThrow(NotFoundException);
+    await expect(svc.getSubtasks(makeU(), PROJECT_A, TICKET_B)).rejects.toThrow(NotFoundException);
   });
 
   it("getSubtasks returns the subtask that belongs to the URL project (control)", async () => {
     const { svc } = makeSubresources(makeStore());
 
-    const rows = await svc.getSubtasks(ORG, PROJECT_A, TICKET_A);
+    const rows = await svc.getSubtasks(makeU(), PROJECT_A, TICKET_A);
     expect(rows.map((row) => row.id)).toEqual([SUBTASK_IN_PROJECT]);
   });
 
   it("getSubtasks omits a child row that names this parent but sits in another project", async () => {
     const { svc } = makeSubresources(makeStore());
 
-    const rows = await svc.getSubtasks(ORG, PROJECT_A, TICKET_A);
+    const rows = await svc.getSubtasks(makeU(), PROJECT_A, TICKET_A);
     expect(rows.map((row) => row.id)).not.toContain(SUBTASK_OUT_OF_PROJECT);
   });
 
   it("getWatchers answers 404 for a same-org ticket that belongs to another project", async () => {
     const { svc } = makeSubresources(makeStore());
 
-    await expect(svc.getWatchers(ORG, PROJECT_A, TICKET_B)).rejects.toThrow(NotFoundException);
+    await expect(svc.getWatchers(makeU(), PROJECT_A, TICKET_B)).rejects.toThrow(NotFoundException);
   });
 
   it("getWatchers reads the ticket that belongs to the URL project (control)", async () => {
@@ -328,7 +348,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
     store.watchers.push({ id: 1, orgId: ORG, ticketId: TICKET_A, membershipId: MEMBERSHIP_ID, createdAt: new Date(0) });
     const { svc } = makeSubresources(store);
 
-    await expect(svc.getWatchers(ORG, PROJECT_A, TICKET_A)).resolves.toHaveLength(1);
+    await expect(svc.getWatchers(makeU(), PROJECT_A, TICKET_A)).resolves.toHaveLength(1);
   });
 
   it("getWatchers does not return another organisation's watcher row for the same ticket id", async () => {
@@ -336,7 +356,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
     store.watchers.push({ id: 1, orgId: OTHER_ORG, ticketId: TICKET_A, membershipId: MEMBERSHIP_ID, createdAt: new Date(0) });
     const { svc } = makeSubresources(store);
 
-    await expect(svc.getWatchers(ORG, PROJECT_A, TICKET_A)).resolves.toEqual([]);
+    await expect(svc.getWatchers(makeU(), PROJECT_A, TICKET_A)).resolves.toEqual([]);
   });
 
   it("addWatcher does not attach a watcher to a same-org ticket owned by another project", async () => {
@@ -380,7 +400,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.addLabel(ORG, "user-7", PROJECT_A, TICKET_B, { labelId: LABEL_ID }),
+      svc.addLabel(makeU(), PROJECT_A, TICKET_B, { labelId: LABEL_ID }),
     ).rejects.toThrow(NotFoundException);
     expect(store.labelMappings).toHaveLength(0);
   });
@@ -390,7 +410,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.addLabel(ORG, "user-7", PROJECT_A, TICKET_A, { labelId: LABEL_ID }),
+      svc.addLabel(makeU(), PROJECT_A, TICKET_A, { labelId: LABEL_ID }),
     ).resolves.toEqual({ success: true });
     expect(store.labelMappings).toHaveLength(1);
   });
@@ -426,7 +446,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.updateChecklist(ORG, PROJECT_A, TICKET_A, CHECKLIST_B, { title: "hijacked" }),
+      svc.updateChecklist(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B, { title: "hijacked" }),
     ).rejects.toThrow(NotFoundException);
     expect(store.checklists.find((row) => row.id === CHECKLIST_B)?.title).toBe("checklist-b");
   });
@@ -436,7 +456,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.updateChecklist(ORG, PROJECT_A, TICKET_A, CHECKLIST_A, { title: "checklist-a-v2" }),
+      svc.updateChecklist(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, { title: "checklist-a-v2" }),
     ).resolves.toMatchObject({ id: CHECKLIST_A, title: "checklist-a-v2" });
   });
 
@@ -445,7 +465,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.updateChecklist(ORG, PROJECT_A, TICKET_B, CHECKLIST_B, { title: "hijacked" }),
+      svc.updateChecklist(makeU(), PROJECT_A, TICKET_B, CHECKLIST_B, { title: "hijacked" }),
     ).rejects.toThrow(NotFoundException);
     expect(store.checklists.find((row) => row.id === CHECKLIST_B)?.title).toBe("checklist-b");
   });
@@ -454,7 +474,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const store = makeStore();
     const { svc } = makeSubresources(store);
 
-    await expect(svc.deleteChecklist(ORG, PROJECT_A, TICKET_A, CHECKLIST_B)).rejects.toThrow(
+    await expect(svc.deleteChecklist(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B)).rejects.toThrow(
       NotFoundException,
     );
     expect(store.checklists.some((row) => row.id === CHECKLIST_B)).toBe(true);
@@ -464,7 +484,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const store = makeStore();
     const { svc } = makeSubresources(store);
 
-    await expect(svc.deleteChecklist(ORG, PROJECT_A, TICKET_A, CHECKLIST_A)).resolves.toEqual({
+    await expect(svc.deleteChecklist(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A)).resolves.toEqual({
       success: true,
     });
     expect(store.checklists.some((row) => row.id === CHECKLIST_A)).toBe(false);
@@ -475,7 +495,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.createChecklistItem(ORG, PROJECT_A, TICKET_A, CHECKLIST_B, { text: "x", order: 0 }),
+      svc.createChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B, { text: "x", order: 0 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.items.filter((row) => row.checklistId === CHECKLIST_B)).toHaveLength(1);
   });
@@ -485,7 +505,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.createChecklistItem(ORG, PROJECT_A, TICKET_A, CHECKLIST_A, { text: "x", order: 0 }),
+      svc.createChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, { text: "x", order: 0 }),
     ).resolves.toMatchObject({ checklistId: CHECKLIST_A, text: "x" });
     expect(store.items.filter((row) => row.checklistId === CHECKLIST_A)).toHaveLength(2);
   });
@@ -495,7 +515,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.updateChecklistItem(ORG, PROJECT_A, TICKET_A, CHECKLIST_B, ITEM_B, { text: "hijacked" }),
+      svc.updateChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B, ITEM_B, { text: "hijacked" }),
     ).rejects.toThrow(NotFoundException);
     expect(store.items.find((row) => row.id === ITEM_B)?.text).toBe("item-b");
   });
@@ -505,7 +525,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.updateChecklistItem(ORG, PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_B, { text: "hijacked" }),
+      svc.updateChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_B, { text: "hijacked" }),
     ).rejects.toThrow(NotFoundException);
     expect(store.items.find((row) => row.id === ITEM_B)?.text).toBe("item-b");
   });
@@ -515,7 +535,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.updateChecklistItem(ORG, PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A, { text: "item-a-v2" }),
+      svc.updateChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A, { text: "item-a-v2" }),
     ).resolves.toMatchObject({ id: ITEM_A, text: "item-a-v2" });
   });
 
@@ -524,7 +544,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.updateChecklistItem(OTHER_ORG, PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A, { text: "hijacked" }),
+      svc.updateChecklistItem(makeU(OTHER_ORG), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A, { text: "hijacked" }),
     ).rejects.toThrow(NotFoundException);
     expect(store.items.find((row) => row.id === ITEM_A)?.text).toBe("item-a");
   });
@@ -534,7 +554,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.deleteChecklistItem(ORG, PROJECT_A, TICKET_A, CHECKLIST_B, ITEM_B),
+      svc.deleteChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B, ITEM_B),
     ).rejects.toThrow(NotFoundException);
     expect(store.items.some((row) => row.id === ITEM_B)).toBe(true);
   });
@@ -544,7 +564,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.deleteChecklistItem(ORG, PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_B),
+      svc.deleteChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_B),
     ).rejects.toThrow(NotFoundException);
     expect(store.items.some((row) => row.id === ITEM_B)).toBe(true);
   });
@@ -554,7 +574,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
     const { svc } = makeSubresources(store);
 
     await expect(
-      svc.deleteChecklistItem(ORG, PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A),
+      svc.deleteChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A),
     ).resolves.toEqual({ success: true });
     expect(store.items.some((row) => row.id === ITEM_A)).toBe(false);
   });

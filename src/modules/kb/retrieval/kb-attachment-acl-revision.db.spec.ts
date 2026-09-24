@@ -1,22 +1,3 @@
-/**
- * An attachment chunk written at the wrong ACL revision is invisible to retrieval.
- *
- * `articleVectorCandidates` inner-joins `kb_article_chunks.acl_revision = kb_articles.acl_revision`
- * with `=`. `KbAttachmentIndexingService.indexAttachment` named no `acl_revision` on its insert,
- * so every attachment chunk took the column default of 1. Any article whose revision had
- * already moved past 1 — every space membership change calls `bumpSpaceAclRevision`, which
- * increments it — therefore lost its attachments from vector retrieval the moment they were
- * (re)indexed, and got them back only when an unrelated space-wide bump happened to run
- * `syncAclRevisionForSpace` over them. No error, no log: /kb/ask simply stopped citing the PDF.
- *
- * This is a real-database spec because the defect IS the join: a mocked db returns whatever
- * it was told to, and the question is what Postgres does with two unequal integers.
- *
- *   APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
- *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable \
- *   pnpm test:db-specs --testPathPattern="kb-attachment-acl-revision.db"
- */
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -35,7 +16,7 @@ import {
 const suffix = randomUUID().slice(0, 8);
 const ORG = `kbacl-${suffix}`;
 const PROBE_USER = `kbacl-user-${suffix}`;
-/** The article's revision. Anything above the chunk column default of 1 exposes the defect. */
+/** The page's revision. Anything above the chunk column default of 1 exposes the defect. */
 const ARTICLE_ACL_REVISION = 5;
 const DIM = 1536;
 const CONTENT_HASH = "b".repeat(64);
@@ -45,7 +26,7 @@ function embedding(seed: number): number[] {
   return Array.from({ length: DIM }, (_, i) => Math.sin((i + 1) * seed));
 }
 
-describe("KB attachment chunks carry the parent article's ACL revision", () => {
+describe("KB attachment chunks carry the parent page's ACL revision", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let appDb: ReturnType<typeof createTenantAwareDb>;
@@ -60,10 +41,16 @@ describe("KB attachment chunks carry the parent article's ACL revision", () => {
     const ownerUrl = process.env.DATABASE_URL;
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
-      throw new Error("kb-attachment-acl-revision.db.spec.ts requires DATABASE_URL (owner) and APP_DATABASE_URL (RLS role)");
+      throw new Error(
+        "kb-attachment-acl-revision.db.spec.ts requires DATABASE_URL (owner) and APP_DATABASE_URL (RLS role)",
+      );
 
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });
-    appClient = postgres(appUrl, { prepare: false, max: 2, connect_timeout: 30 });
+    appClient = postgres(appUrl, {
+      prepare: false,
+      max: 2,
+      connect_timeout: 30,
+    });
     base = drizzle(appClient, { schema });
     appDb = createTenantAwareDb(Object.assign(base, { __client: appClient }));
     candidates = new KbCandidateService(appDb);
@@ -84,14 +71,14 @@ describe("KB attachment chunks carry the parent article's ACL revision", () => {
 
     // The article sits above revision 1 — the state a space membership change leaves behind.
     const [article] = await owner<{ id: number }[]>`
-      INSERT INTO kb_articles (org_id, space_id, title, slug, content, content_text, status, acl_revision)
-      VALUES (${ORG}, ${spaceId}, 'Employee handbook', ${`handbook-${suffix}`}, 'body', 'body', 'published', ${ARTICLE_ACL_REVISION})
+      INSERT INTO kb_pages (org_id, space_id, title, slug, content_text, status, content_type, acl_revision)
+      VALUES (${ORG}, ${spaceId}, 'Employee handbook', ${`handbook-${suffix}`}, 'body', 'published', 'support_article', ${ARTICLE_ACL_REVISION})
       RETURNING id`;
     articleId = article?.id ?? 0;
 
     const [attachment] = await owner<{ id: number }[]>`
-      INSERT INTO kb_article_attachments (org_id, article_id, file_name, file_key, mime_type)
-      VALUES (${ORG}, ${articleId}, 'handbook.pdf', ${`kb/${suffix}/handbook.pdf`}, 'application/pdf')
+      INSERT INTO kb_page_attachments (org_id, page_id, file_name, file_key, mime_type, file_size)
+      VALUES (${ORG}, ${articleId}, 'handbook.pdf', ${`kb/${suffix}/handbook.pdf`}, 'application/pdf', 1024)
       RETURNING id`;
     attachmentId = attachment?.id ?? 0;
 
@@ -115,7 +102,9 @@ describe("KB attachment chunks carry the parent article's ACL revision", () => {
   /** One tenant transaction with the GUC set, the way the ingestion consumer runs. */
   async function inTenant<T>(fn: () => Promise<T>): Promise<T> {
     return base.transaction(async (tx) => {
-      await tx.execute(sql`SELECT set_config('app.organization_id', ${ORG}, true)`);
+      await tx.execute(
+        sql`SELECT set_config('app.organization_id', ${ORG}, true)`,
+      );
       return runWithTenantContext({ orgId: ORG, audience: "INTERNAL", tx }, fn);
     });
   }
@@ -123,7 +112,7 @@ describe("KB attachment chunks carry the parent article's ACL revision", () => {
   /** The insert `indexAttachment` used to issue: every column except `acl_revision`. */
   async function insertLegacyAttachmentChunk(): Promise<void> {
     await owner`
-      INSERT INTO kb_article_chunks (org_id, article_id, attachment_id, source, chunk_index, content, embedding, embedding_model)
+      INSERT INTO kb_article_chunks (org_id, page_id, attachment_id, source, chunk_index, content, embedding, embedding_model)
       VALUES (${ORG}, ${articleId}, ${attachmentId}, 'attachment', 0, 'handbook chunk', ${queryVector}, 'text-embedding-3-small')`;
   }
 
@@ -136,17 +125,32 @@ describe("KB attachment chunks carry the parent article's ACL revision", () => {
     expect(row?.acl_revision).not.toBe(ARTICLE_ACL_REVISION);
 
     const found = await inTenant(() =>
-      candidates.articleVectorCandidates(ORG, [spaceId], queryVector, 10, PRINCIPAL, null),
+      candidates.articleVectorCandidates(
+        ORG,
+        [spaceId],
+        queryVector,
+        10,
+        PRINCIPAL,
+        null,
+      ),
     );
     expect(found).toEqual([]);
   }, 120_000);
 
   it("the shipped writer carries the article's revision, and the article is retrievable", async () => {
     await inTenant(() =>
-      replaceAttachmentChunks(appDb, ORG, attachmentId, articleId, ["handbook chunk"], [embedding(0.7)], {
-        contentHash: CONTENT_HASH,
-        aclRevision: ARTICLE_ACL_REVISION,
-      }),
+      replaceAttachmentChunks(
+        appDb,
+        ORG,
+        attachmentId,
+        null,
+        ["handbook chunk"],
+        [embedding(0.7)],
+        {
+          contentHash: CONTENT_HASH,
+          aclRevision: ARTICLE_ACL_REVISION,
+        },
+      ),
     );
 
     const [row] = await owner<{ acl_revision: number; content_hash: string }[]>`
@@ -155,20 +159,37 @@ describe("KB attachment chunks carry the parent article's ACL revision", () => {
     expect(row?.content_hash).toBe(CONTENT_HASH);
 
     const found = await inTenant(() =>
-      candidates.articleVectorCandidates(ORG, [spaceId], queryVector, 10, PRINCIPAL, null),
+      candidates.articleVectorCandidates(
+        ORG,
+        [spaceId],
+        queryVector,
+        10,
+        PRINCIPAL,
+        null,
+      ),
     );
     expect(found).toContain(articleId);
   }, 120_000);
 
   it("the stored state is what the skip-if-unchanged short-circuit reads", async () => {
     await inTenant(() =>
-      replaceAttachmentChunks(appDb, ORG, attachmentId, articleId, ["a", "b", "c"], [embedding(0.7), embedding(1.1), embedding(1.9)], {
-        contentHash: CONTENT_HASH,
-        aclRevision: ARTICLE_ACL_REVISION,
-      }),
+      replaceAttachmentChunks(
+        appDb,
+        ORG,
+        attachmentId,
+        null,
+        ["a", "b", "c"],
+        [embedding(0.7), embedding(1.1), embedding(1.9)],
+        {
+          contentHash: CONTENT_HASH,
+          aclRevision: ARTICLE_ACL_REVISION,
+        },
+      ),
     );
 
-    const state = await inTenant(() => loadDerivedChunkState(appDb, attachmentChunks(ORG, attachmentId)));
+    const state = await inTenant(() =>
+      loadDerivedChunkState(appDb, attachmentChunks(ORG, attachmentId)),
+    );
     expect(state).toEqual({
       contentHash: CONTENT_HASH,
       aclRevision: ARTICLE_ACL_REVISION,
@@ -178,17 +199,29 @@ describe("KB attachment chunks carry the parent article's ACL revision", () => {
 
   it("an ACL-only change moves the revision without touching the vectors", async () => {
     await inTenant(() =>
-      replaceAttachmentChunks(appDb, ORG, attachmentId, articleId, ["handbook chunk"], [embedding(0.7)], {
-        contentHash: CONTENT_HASH,
-        aclRevision: ARTICLE_ACL_REVISION,
-      }),
+      replaceAttachmentChunks(
+        appDb,
+        ORG,
+        attachmentId,
+        null,
+        ["handbook chunk"],
+        [embedding(0.7)],
+        {
+          contentHash: CONTENT_HASH,
+          aclRevision: ARTICLE_ACL_REVISION,
+        },
+      ),
     );
     const [before] = await owner<{ embedding: string }[]>`
       SELECT embedding::text AS embedding FROM kb_article_chunks WHERE org_id = ${ORG} AND attachment_id = ${attachmentId}`;
 
-    await owner`UPDATE kb_articles SET acl_revision = ${ARTICLE_ACL_REVISION + 1} WHERE org_id = ${ORG} AND id = ${articleId}`;
+    await owner`UPDATE kb_pages SET acl_revision = ${ARTICLE_ACL_REVISION + 1} WHERE org_id = ${ORG} AND id = ${articleId}`;
     await inTenant(() =>
-      updateDerivedChunkAcl(appDb, attachmentChunks(ORG, attachmentId), ARTICLE_ACL_REVISION + 1),
+      updateDerivedChunkAcl(
+        appDb,
+        attachmentChunks(ORG, attachmentId),
+        ARTICLE_ACL_REVISION + 1,
+      ),
     );
 
     const [after] = await owner<{ acl_revision: number; embedding: string }[]>`
@@ -197,10 +230,17 @@ describe("KB attachment chunks carry the parent article's ACL revision", () => {
     expect(after?.embedding).toBe(before?.embedding);
 
     const found = await inTenant(() =>
-      candidates.articleVectorCandidates(ORG, [spaceId], queryVector, 10, PRINCIPAL, null),
+      candidates.articleVectorCandidates(
+        ORG,
+        [spaceId],
+        queryVector,
+        10,
+        PRINCIPAL,
+        null,
+      ),
     );
     expect(found).toContain(articleId);
 
-    await owner`UPDATE kb_articles SET acl_revision = ${ARTICLE_ACL_REVISION} WHERE org_id = ${ORG} AND id = ${articleId}`;
+    await owner`UPDATE kb_pages SET acl_revision = ${ARTICLE_ACL_REVISION} WHERE org_id = ${ORG} AND id = ${articleId}`;
   }, 120_000);
 });
