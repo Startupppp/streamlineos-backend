@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrPeople,
@@ -26,10 +26,19 @@ import {
   type DocumentMetadataRow,
 } from "./schemas/entity-row-schemas";
 import type { HrImportEntity } from "./dto/import-job.dto";
+import { normalizeCode, normalizeName } from "./schemas/import-row-identity";
+
+/**
+ * What a committed row did. A rollback may only undo `created` rows: an import
+ * that updated a record the operator already had must not delete it when the job
+ * is rolled back, and an `unchanged` row touched nothing to undo.
+ */
+export type CommitOutcome = "created" | "updated" | "unchanged";
 
 export interface CommitRef {
   table: string;
   id: number;
+  outcome: CommitOutcome;
 }
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -113,7 +122,7 @@ export class HrImportCommitService {
           designation: row.designation ?? null,
         })
         .onConflictDoNothing();
-      return { table: "hr_people", id: person.id };
+      return { table: "hr_people", id: person.id, outcome: "created" };
     }
 
     const existing = await tx
@@ -144,7 +153,7 @@ export class HrImportCommitService {
           throw err;
         });
 
-    return { table: "hr_people", id: existingRow.id };
+    return { table: "hr_people", id: existingRow.id, outcome: "updated" };
   }
 
   private async commitLeaveBalance(tx: Tx, orgId: string, row: LeaveBalanceRow): Promise<CommitRef> {
@@ -176,6 +185,26 @@ export class HrImportCommitService {
     const balance = String(typeof row.balance === "number" ? row.balance : parseFloat(String(row.balance)));
     const year = typeof row.year === "number" ? row.year : parseInt(String(row.year));
 
+    // The upsert already set the balance absolutely — the file wins over whatever
+    // was there — but it could not say whether the row was new, so a re-import
+    // reported the same "valid" count as a first import and an operator had no
+    // way to tell a no-op apart from a fresh load. The prior read is what turns
+    // that into created/updated. `uniq_leave_balances_user_type_year` is on
+    // (user_id, leave_type_id, year) with no org column, and leave_type_id is
+    // itself org-scoped, so the conflict target below matches that index exactly.
+    const [before] = await tx
+      .select({ id: leaveBalances.id, balance: leaveBalances.balance })
+      .from(leaveBalances)
+      .where(
+        and(
+          eq(leaveBalances.orgId, orgId),
+          eq(leaveBalances.userId, userId),
+          eq(leaveBalances.leaveTypeId, leaveTypeId),
+          eq(leaveBalances.year, year),
+        ),
+      )
+      .limit(1);
+
     const [lb] = await tx
       .insert(leaveBalances)
       .values({ orgId, userId, leaveTypeId, balance, year })
@@ -186,7 +215,12 @@ export class HrImportCommitService {
       .returning({ id: leaveBalances.id });
 
     if (!lb) throw new Error("Failed to upsert leave balance");
-    return { table: "leave_balances", id: lb.id };
+    if (!before) return { table: "leave_balances", id: lb.id, outcome: "created" };
+    return {
+      table: "leave_balances",
+      id: lb.id,
+      outcome: Number(before.balance) === Number(balance) ? "unchanged" : "updated",
+    };
   }
 
   private async commitAttendance(tx: Tx, orgId: string, row: AttendanceRow): Promise<CommitRef> {
@@ -254,7 +288,7 @@ export class HrImportCommitService {
     if (!rec) {
       throw new Error(`Failed to import attendance for ${row.employeeEmail} on ${row.date}`);
     }
-    return { table: "attendance", id: rec.id };
+    return { table: "attendance", id: rec.id, outcome: "created" };
   }
 
   private async commitAsset(tx: Tx, orgId: string, row: AssetRow): Promise<CommitRef> {
@@ -276,24 +310,68 @@ export class HrImportCommitService {
       assignedTo = person[0]?.userId ?? null;
     }
 
+    const fields = {
+      name: row.name,
+      type: row.type,
+      brand: row.brand ?? null,
+      model: row.model ?? null,
+      status: row.status ?? ("AVAILABLE" as const),
+      purchaseDate: row.purchaseDate || null,
+      location: row.location ?? null,
+    };
+
+    // A serial number is the asset's identity: it is what is engraved on the
+    // machine and what an operator re-uploads a corrected sheet against. Without
+    // this lookup the importer inserted unconditionally, so re-importing the same
+    // file doubled the estate — QA's four-row sheet became eight assets with
+    // QA-SN-0001 present six times.
+    //
+    // The match is `upper(trim(serial))` rather than a unique index because the
+    // existing estate has not been audited for duplicates yet (HRMS-E2E-006a);
+    // an index would have to abort the migration or destroy rows. Matching in the
+    // query makes re-imports idempotent now and leaves the index to a migration
+    // once a cleanup is approved.
+    const serial = normalizeCode(row.serialNumber);
+    if (serial !== "") {
+      const [existing] = await tx
+        .select({ id: assets.id })
+        .from(assets)
+        .where(
+          and(
+            eq(assets.orgId, orgId),
+            sql`upper(trim(${assets.serialNumber})) = ${serial}`,
+          ),
+        )
+        .orderBy(asc(assets.id))
+        .limit(1);
+
+      if (existing) {
+        await tx
+          .update(assets)
+          .set({
+            ...fields,
+            // A blank assignee column means "not stated", not "unassign": an
+            // import that omits the column must not strip an assignment made in
+            // the app. Unassigning stays an explicit action in the assets UI.
+            ...(assignedTo === null ? {} : { assignedTo }),
+          })
+          .where(and(eq(assets.id, existing.id), eq(assets.orgId, orgId)));
+        return { table: "assets", id: existing.id, outcome: "updated" };
+      }
+    }
+
     const [asset] = await tx
       .insert(assets)
       .values({
         orgId,
-        name: row.name,
-        type: row.type,
-        brand: row.brand ?? null,
-        model: row.model ?? null,
+        ...fields,
         serialNumber: row.serialNumber ?? null,
         assignedTo,
-        status: row.status ?? "AVAILABLE",
-        purchaseDate: row.purchaseDate || null,
-        location: row.location ?? null,
       })
       .returning({ id: assets.id });
 
     if (!asset) throw new Error("Failed to insert asset");
-    return { table: "assets", id: asset.id };
+    return { table: "assets", id: asset.id, outcome: "created" };
   }
 
   private async commitDocument(tx: Tx, orgId: string, row: DocumentMetadataRow): Promise<CommitRef> {
@@ -312,22 +390,55 @@ export class HrImportCommitService {
 
     const userId = person[0]?.userId ?? null;
 
+    const fields = {
+      // The CSV's `type` column used to be parsed, validated and then thrown
+      // away: every imported document was stored as OTHER. `document_type` is an
+      // enum, so the row schema now rejects a value outside it rather than
+      // quietly flattening OFFER_LETTER and ID_PROOF into one bucket.
+      type: row.type,
+      category: row.category ?? null,
+      fileUrl: row.fileUrl,
+      expiryDate: row.expiryDate || null,
+      isActive: true,
+    };
+
+    // PROVISIONAL identity — open product decision #2. A document is the same
+    // document when it is the same person's, in the same category, under the same
+    // name. Without this the importer inserted unconditionally and re-running a
+    // sheet doubled the file: QA's three rows became six.
+    //
+    // `is not distinct from` is what makes the org-wide document (userId null)
+    // match itself; plain equality never matches NULL, so those rows would double
+    // on every re-import. No unique index backs this yet — see decision #2.
+    const [existing] = await tx
+      .select({ id: documents.id })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.orgId, orgId),
+          sql`${documents.userId} is not distinct from ${userId}`,
+          sql`lower(trim(coalesce(${documents.category}, ''))) = ${normalizeName(row.category)}`,
+          sql`lower(trim(${documents.name})) = ${normalizeName(row.name)}`,
+        ),
+      )
+      .orderBy(asc(documents.id))
+      .limit(1);
+
+    if (existing) {
+      await tx
+        .update(documents)
+        .set({ ...fields, name: row.name })
+        .where(and(eq(documents.id, existing.id), eq(documents.orgId, orgId)));
+      return { table: "documents", id: existing.id, outcome: "updated" };
+    }
+
     const [doc] = await tx
       .insert(documents)
-      .values({
-        orgId,
-        userId,
-        name: row.name,
-        type: "OTHER",
-        category: row.category ?? null,
-        fileUrl: row.fileUrl,
-        expiryDate: row.expiryDate || null,
-        isActive: true,
-      })
+      .values({ orgId, userId, name: row.name, ...fields })
       .returning({ id: documents.id });
 
     if (!doc) throw new Error("Failed to insert document metadata");
-    return { table: "documents", id: doc.id };
+    return { table: "documents", id: doc.id, outcome: "created" };
   }
 
   async rollbackRef(tx: Tx, ref: CommitRef): Promise<void> {

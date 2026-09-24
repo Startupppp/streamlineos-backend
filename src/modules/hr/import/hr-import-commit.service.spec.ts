@@ -78,7 +78,7 @@ describe("HrImportCommitService.commitEmployee", () => {
       designation: "Admiral",
     });
 
-    expect(ref).toEqual({ table: "hr_people", id: 42 });
+    expect(ref).toEqual({ table: "hr_people", id: 42, outcome: "created" });
     expect(insertCall).toBe(3);
   });
 
@@ -114,7 +114,7 @@ describe("HrImportCommitService.commitEmployee", () => {
       designation: "Admiral",
     });
 
-    expect(ref).toEqual({ table: "hr_people", id: 77 });
+    expect(ref).toEqual({ table: "hr_people", id: 77, outcome: "updated" });
     expect((tx.update as jest.Mock)).toHaveBeenCalled();
   });
 
@@ -149,7 +149,7 @@ describe("HrImportCommitService.commitEmployee", () => {
       joiningDate: "",
     });
 
-    expect(ref).toEqual({ table: "hr_people", id: 77 });
+    expect(ref).toEqual({ table: "hr_people", id: 77, outcome: "updated" });
     expect((tx.update as jest.Mock)).not.toHaveBeenCalled();
   });
 });

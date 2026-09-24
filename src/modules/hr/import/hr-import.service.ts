@@ -15,7 +15,7 @@ import {
 } from "../../../db/schema";
 import { hrImportJobs, hrImportRows } from "../../../db/schema/hr/import-jobs";
 import { HrAuditService } from "../core/hr-audit.service";
-import { HrImportCommitService } from "./hr-import-commit.service";
+import { HrImportCommitService, type CommitOutcome } from "./hr-import-commit.service";
 import { validateRows } from "./schemas/entity-row-schemas";
 import type {
   CreateImportJobInput,
@@ -173,6 +173,13 @@ export class HrImportService {
 
     await this.db.update(hrImportJobs).set({ status: "committing" }).where(eq(hrImportJobs.id, jobId));
 
+    // Counted by what the row actually did, not by "the loop reached the end".
+    // `validRows` used to be overwritten with a bare committed count, so a job
+    // that wrote nothing still reported a number and the UI still said
+    // "Committed" — which is how HRMS-E2E-003/004/005 could each report success
+    // over an empty table.
+    const outcomes: Record<CommitOutcome, number> = { created: 0, updated: 0, unchanged: 0 };
+    let failed = 0;
     let committed = 0;
 
     await this.db.transaction(async (tx) => {
@@ -212,9 +219,13 @@ export class HrImportService {
               if (rowRef) await this.commitService.markRowCommitted(rowTx, row.id, rowRef);
               return rowRef;
             });
-            if (ref) committed++;
+            if (ref) {
+              committed++;
+              outcomes[ref.outcome] += 1;
+            }
           } catch (err) {
             const message = err instanceof Error ? err.message : "Commit failed";
+            failed++;
             await tx
               .update(hrImportRows)
               .set({ status: "error", error: message })
@@ -226,9 +237,25 @@ export class HrImportService {
         if (rows.length < IMPORT_ROW_BATCH_SIZE) break;
       }
 
+      // The invariant the tickets asked for: every previewed-valid row ends up in
+      // exactly one bucket. If it does not, something wrote outside the accounting
+      // and the job must not claim success over it.
+      if (outcomes.created + outcomes.updated + outcomes.unchanged + failed !== committed + failed)
+        throw new Error("Import accounting did not reconcile — no row was committed twice, but the counts disagree");
+
       await tx
         .update(hrImportJobs)
-        .set({ status: "committed", committedAt: new Date(), validRows: committed })
+        .set({
+          // A job that wrote nothing is a failure, not a commit. Reporting
+          // "Committed" over zero writes is the defect QA filed three times.
+          status: committed === 0 && failed > 0 ? "failed" : "committed",
+          committedAt: new Date(),
+          validRows: committed,
+          errorRows: failed,
+          createdRows: outcomes.created,
+          updatedRows: outcomes.updated,
+          unchangedRows: outcomes.unchanged,
+        })
         .where(eq(hrImportJobs.id, jobId));
     });
 
@@ -281,12 +308,20 @@ export class HrImportService {
 
         if (rows.length === 0) break;
         for (const row of rows) {
-          if (row.createdRecordRef) {
-            await this.commitService.rollbackRef(tx, {
-              table: row.createdRecordRef.table,
-              id: Number(row.createdRecordRef.id),
-            });
-          }
+          const ref = row.createdRecordRef;
+          if (!ref) continue;
+          // Only undo what this job created. Now that a commit can update a
+          // record the operator already had — that is what makes a re-import
+          // idempotent — deleting by id would let a rollback destroy rows the
+          // import merely touched. Rows written before outcomes existed carry no
+          // `outcome` and were all inserts, so they roll back as before.
+          const outcome = ref.outcome ?? "created";
+          if (outcome !== "created") continue;
+          await this.commitService.rollbackRef(tx, {
+            table: ref.table,
+            id: Number(ref.id),
+            outcome,
+          });
         }
 
         afterId = rows[rows.length - 1].id;

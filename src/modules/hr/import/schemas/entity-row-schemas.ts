@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ATTENDANCE_RECORD_STATUSES } from "../../../../db/schema/hr/attendance-status";
+import { documentTypeEnum } from "../../../../db/schema/common/enums";
 import type { HrImportEntity } from "../dto/import-job.dto";
 import { findInFileDuplicates } from "./import-row-identity";
 
@@ -126,7 +127,13 @@ export const assetRowSchema = z.object({
 export const documentMetadataRowSchema = z.object({
   employeeEmail: emailSchema,
   name: z.string().min(1, "Document name is required"),
-  type: z.string().min(1, "Document type is required"),
+  // The column used to be `z.string()`, parsed and then discarded: every imported
+  // document was stored as OTHER whatever the file said. Validating against the
+  // `document_type` enum is what lets the commit keep the value — and tells the
+  // operator which words the column accepts instead of silently flattening them.
+  type: z.enum(documentTypeEnum.enumValues, {
+    message: `Document type must be one of: ${documentTypeEnum.enumValues.join(", ")}`,
+  }),
   fileUrl: z.string().url({ message: "Invalid file URL" }),
   category: z.string().optional(),
   expiryDate: isoDateOrBlank.optional(),
