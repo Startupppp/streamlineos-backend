@@ -30,6 +30,7 @@ import type {
   BulkOnboardWriteOutcome,
   PlannedEmployee,
 } from "./bulk-onboarding.types";
+import { managersFirst } from "./bulk-onboarding-graph";
 
 export interface BulkOnboardWriteDeps {
   admission: MembershipAdmissionService;
@@ -175,12 +176,53 @@ export async function writeBulkOnboarding(
     employments.map((employment) => [employment.userId, employment.employmentId]),
   );
 
-  for (const employee of admitted) {
-    if (employee.reportingManagerUserId === null) continue;
+  // A manager introduced by this same file has no user id until now, which is
+  // why the plan carried the email instead. Reporting lines are the one part of
+  // this write that depends on order, so they are assigned managers-first: a
+  // line whose manager was created moments earlier in the same transaction must
+  // not be written before the manager's own line exists, or an org chart read
+  // between the two sees a report with no parent.
+  const userIdByEmail = new Map(admitted.map((employee) => [employee.email, employee.userId]));
+  const byEmail = new Map(admitted.map((employee) => [employee.email, employee]));
+  const managerOrder = managersFirst(
+    admitted.map((employee) => employee.email),
+    admitted
+      .filter((employee) => employee.reportingManagerEmail !== null)
+      .map((employee) => ({
+        row: employee.row,
+        email: employee.email,
+        managerEmail: employee.reportingManagerEmail ?? "",
+      })),
+  );
+
+  for (const email of managerOrder) {
+    const employee = byEmail.get(email);
+    if (!employee) continue;
+    const managerUserId =
+      employee.reportingManagerUserId ??
+      (employee.reportingManagerEmail === null
+        ? null
+        : (userIdByEmail.get(employee.reportingManagerEmail) ?? null));
+
+    if (managerUserId === null) {
+      if (employee.reportingManagerEmail === null) continue;
+      // The plan rejects a row whose in-file manager it rejected, so reaching
+      // here means the manager failed admission after passing its screen — a
+      // race, not a file error. The employee exists; saying so beats writing a
+      // reporting line to nobody.
+      rejected.push({
+        row: employee.row,
+        email: employee.email,
+        success: false,
+        error: `Created, but the reporting manager "${employee.reportingManagerEmail}" could not be linked because that row did not complete. Set the manager on the employee's profile.`,
+      });
+      continue;
+    }
+
     await deps.reportingLines.assign(
       orgId,
       employee.userId,
-      employee.reportingManagerUserId,
+      managerUserId,
       employee.joiningDate ?? formatDateOnly(new Date()),
       actor.userId,
       tx,

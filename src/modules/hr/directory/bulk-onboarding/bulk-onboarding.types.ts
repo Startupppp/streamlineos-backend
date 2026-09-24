@@ -23,6 +23,12 @@ export interface PlannedEmployee {
   joiningDate: string | null;
   dateOfBirth: string | null;
   reportingManagerUserId: string | null;
+  /**
+   * Set when the manager is another row of the same file. It cannot be a user id
+   * at plan time because that person does not exist yet; the write phase
+   * resolves it once everyone has been admitted.
+   */
+  reportingManagerEmail: string | null;
 }
 
 export interface AdmittedEmployee extends PlannedEmployee {
