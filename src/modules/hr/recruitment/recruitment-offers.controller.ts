@@ -33,6 +33,7 @@ import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   candidateOfferSchema,
+  candidateOfferWithPreviewSchema,
   offerVersionSchema,
   offerNegotiationSchema,
   successSchema,
@@ -48,7 +49,7 @@ export class RecruitmentOffersController {
   constructor(private readonly offers: RecruitmentOffersService) {}
 
   @Get()
-  @ResponseSchema(z.array(candidateOfferSchema))
+  @ResponseSchema(z.array(candidateOfferWithPreviewSchema))
   @RequirePermission("hr:offers:view")
   @Validate({ params: candidateIdParams })
   list(@Param("candidateId", ParseIntPipe) candidateId: number, @CurrentUser() u: CurrentUserContext) {

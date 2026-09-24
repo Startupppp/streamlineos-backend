@@ -79,6 +79,7 @@ export {
 
 export {
   candidateOfferSchema,
+  candidateOfferWithPreviewSchema,
   offerVersionSchema,
   offerNegotiationSchema,
   offerListResponseSchema,
@@ -97,6 +98,7 @@ export {
   vaultDocumentSchema,
   vaultAccessLogItemSchema,
   candidateActivityEventSchema,
+  candidateErasureResponseSchema,
 } from "./recruitment-candidate-records-response.schemas";
 
 export { successSchema } from "../../../../common/openapi/response-envelopes";

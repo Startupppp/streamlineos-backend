@@ -19,6 +19,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
 import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
+import { CandidateErasureService } from "./consent/candidate-erasure.service";
 import {
   bgvStatusSchema,
   bulkImportSchema,
@@ -60,6 +61,7 @@ import {
   candidateDetailSchema,
   candidateMoveStageResponseSchema,
   candidateSlaTrackingSchema,
+  candidateErasureResponseSchema,
   jobApplicationSchema,
   successSchema,
 } from "./dto/recruitment-response.schemas";
@@ -73,6 +75,7 @@ export class RecruitmentCandidatesController {
   constructor(
     private readonly candidates: RecruitmentCandidatesService,
     private readonly ops: RecruitmentCandidateOpsService,
+    private readonly erasure: CandidateErasureService,
   ) {}
 
   @Get()
@@ -184,6 +187,26 @@ export class RecruitmentCandidatesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.candidates.remove(u.orgId, candidateId);
+  }
+
+  /**
+   * Erase this candidate's personal data, résumé vault included.
+   *
+   * Separate from `DELETE :candidateId`, which returns 204 and therefore cannot
+   * say anything. This route exists because the answer is not always "done":
+   * the stored objects live in a service this process does not own, so the
+   * response reports whether the vault is confirmed clear or merely queued, and
+   * the caller must not report erasure to the candidate on the latter.
+   */
+  @Delete(":candidateId/personal-data")
+  @ResponseSchema(candidateErasureResponseSchema)
+  @RequirePermission("hr:requisitions:manage")
+  @Validate({ params: candidateIdParams })
+  erasePersonalData(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.erasure.eraseCandidate(u.orgId, candidateId, u.userId);
   }
 
   @Patch(":candidateId/stage")

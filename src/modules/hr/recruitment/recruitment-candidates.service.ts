@@ -37,6 +37,11 @@ import {
   UPDATE_TRANSITIONS,
   type CandidateStage,
 } from "./recruitment-candidate-stages";
+import {
+  decideRejection,
+  REJECTION_REASON_LABELS,
+  type RejectionReason,
+} from "./disposition/rejection-reasons";
 import type {
   CandidateListInput,
   CreateCandidateInput,
@@ -52,6 +57,12 @@ interface RoleNotification {
   message: string;
   link?: string;
   metadata?: Record<string, unknown>;
+}
+
+/** What a passing `decideRejection` leaves for the write to carry. */
+interface Disposition {
+  reason: RejectionReason;
+  note: string | null;
 }
 
 @Injectable()
@@ -283,6 +294,20 @@ export class RecruitmentCandidatesService {
       }
     }
 
+    /*
+      The PATCH endpoint rejects too, and it is the path the candidate detail
+      page uses. Gating only `moveStage` would have left the board asking for a
+      reason while the profile card beside it still rejected with nothing —
+      a required field with a second door is not a required field.
+
+      Only a status that actually changes is gated, matching `moveStage`'s
+      no-op return. A PATCH that restates the status a candidate already has
+      must not demand a reason, and must not wipe the one already recorded.
+    */
+    const nextStatus =
+      input.status !== undefined && input.status !== existing.status ? input.status : null;
+    const disposition = nextStatus === null ? null : this.dispositionFor(nextStatus, input);
+
     const updateFields: Partial<typeof candidates.$inferInsert> = { updatedAt: new Date() };
     if (input.firstName !== undefined) updateFields.firstName = input.firstName;
     if (input.lastName !== undefined) updateFields.lastName = input.lastName;
@@ -296,6 +321,12 @@ export class RecruitmentCandidatesService {
     if (input.skills !== undefined) updateFields.skills = input.skills;
     if (input.source !== undefined) updateFields.source = input.source;
     if (input.status !== undefined) updateFields.status = input.status;
+    if (nextStatus !== null) {
+      /* Same clearing rule as `moveStage`: a reason describes the current
+         disposition, so a status change that is not a reject removes it. */
+      updateFields.rejectionReason = disposition?.reason ?? null;
+      updateFields.rejectionNote = disposition?.note ?? null;
+    }
     if (input.notes !== undefined) updateFields.notes = input.notes;
     if (input.rating !== undefined) updateFields.rating = input.rating;
     if (input.resumeUrl !== undefined) updateFields.resumeUrl = input.resumeUrl || null;
@@ -306,9 +337,15 @@ export class RecruitmentCandidatesService {
       await this.notifyPermissionHolders(orgId, "hr:interviews:manage", {
         type: "INFO",
         title: "Candidate Rejected",
-        message: `${existing.firstName} ${existing.lastName} has been moved to Rejected.`,
+        message: `${existing.firstName} ${existing.lastName} has been moved to Rejected${
+          disposition ? ` — ${REJECTION_REASON_LABELS[disposition.reason]}` : ""
+        }.`,
         link: `/hr/recruitment/candidates/${candidateId}`,
-        metadata: { candidateId, stage: "REJECTED" },
+        metadata: {
+          candidateId,
+          stage: "REJECTED",
+          rejectionReason: disposition?.reason ?? null,
+        },
       });
 
       const emailTarget = input.email ?? existing.email;
@@ -365,10 +402,31 @@ export class RecruitmentCandidatesService {
       );
     }
 
+    /*
+      Decided before anything is written, and it throws rather than defaulting.
+      A reject that moved the stage first and only then discovered it had no
+      reason would leave a candidate marked REJECTED with an empty disposition,
+      and nothing downstream could tell that row apart from one recorded before
+      this rule existed.
+    */
+    const disposition = this.dispositionFor(newStage, input);
+
     const [updated] = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .update(candidates)
-        .set({ status: newStage, updatedAt: new Date() })
+        .set({
+          status: newStage,
+          /*
+            Cleared on every move that is not a reject, which includes the
+            re-open edge REJECTED → SCREENING. A reason left behind on somebody
+            who is back in the pipeline renders on their detail page as a live
+            rejection, and a report counting rejection reasons would count a
+            candidate still being interviewed.
+          */
+          rejectionReason: disposition?.reason ?? null,
+          rejectionNote: disposition?.note ?? null,
+          updatedAt: new Date(),
+        })
         .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)))
         .returning();
 
@@ -441,6 +499,16 @@ export class RecruitmentCandidatesService {
           jobPostingId: latestApplication?.jobPostingId ?? null,
           fromStage: currentStage,
           toStage: newStage,
+          /*
+            `recruitment-webhook-events.ts` has documented a `reason` on
+            `candidate.rejected` since the event existed, and nothing ever sent
+            one — a subscriber reading the sample payload built a field that
+            arrived undefined on every delivery. The code travels, not the
+            label: a subscriber keying on prose would break the next time the
+            wording changed.
+          */
+          reason: disposition?.reason ?? null,
+          reasonNote: disposition?.note ?? null,
         },
         occurredAt: new Date(),
       });
@@ -458,6 +526,7 @@ export class RecruitmentCandidatesService {
         from: existing.status,
         to: newStage,
         candidateName: `${existing.firstName} ${existing.lastName}`,
+        rejectionReason: disposition?.reason ?? null,
       },
     });
 
@@ -465,9 +534,16 @@ export class RecruitmentCandidatesService {
       await this.notifyPermissionHolders(orgId, "hr:interviews:manage", {
         type: "INFO",
         title: "Candidate Rejected",
-        message: `${existing.firstName} ${existing.lastName} has been moved to Rejected.`,
+        /*
+          The label is rendered here and the code is what the metadata carries.
+          A notification is read once by a person; the metadata is what a
+          later query groups by, and a reworded label must not split it.
+        */
+        message: `${existing.firstName} ${existing.lastName} has been moved to Rejected${
+          disposition ? ` — ${REJECTION_REASON_LABELS[disposition.reason]}` : ""
+        }.`,
         link: `/hr/recruitment/candidates/${candidateId}`,
-        metadata: { candidateId, stage: newStage },
+        metadata: { candidateId, stage: newStage, rejectionReason: disposition?.reason ?? null },
       });
 
       if (existing.email) {
@@ -506,6 +582,28 @@ export class RecruitmentCandidatesService {
       .catch(() => undefined);
 
     return { id: updated.id, stage: updated.status, changed: true };
+  }
+
+  /**
+   * The disposition a move to `stage` must carry, or null when the stage is not
+   * a rejection.
+   *
+   * One helper for both write paths rather than the check inlined twice. Two
+   * copies drift, and the copy that drifts is the one nobody wrote a test for —
+   * which is how the PATCH endpoint would end up as the quiet way to reject
+   * somebody without saying why.
+   */
+  private dispositionFor(
+    stage: CandidateStage,
+    input: { rejectionReason?: string; rejectionNote?: string },
+  ): Disposition | null {
+    if (stage !== "REJECTED") return null;
+    const decision = decideRejection({
+      reason: input.rejectionReason,
+      note: input.rejectionNote,
+    });
+    if (!decision.allowed) throw new UnprocessableEntityException(decision.message);
+    return { reason: decision.reason, note: decision.note };
   }
 
   private async dispatchRejectionEmail(

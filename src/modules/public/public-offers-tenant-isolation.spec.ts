@@ -37,7 +37,7 @@ describe("PublicOffersService — cross-tenant isolation", () => {
 
   it("returns the offer for a valid token (control — correct token)", async () => {
     const offerRow = {
-      id: 1, orgId: "org-owner", offerStatus: "PENDING", offeredSalary: 50000,
+      id: 1, orgId: "org-owner", offerStatus: "PENDING", offeredSalary: "50000.00",
       offeredDesignation: "Engineer", joiningDate: null, validUntil: null,
       notes: null, acceptanceTokenExpiresAt: null,
     };

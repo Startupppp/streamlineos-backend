@@ -66,6 +66,9 @@ import { IdentityService } from "./identity/identity.service";
 import { IdentityController } from "./identity/identity.controller";
 import { InternalMobilityService } from "./internal-mobility/internal-mobility.service";
 import { AtsSandboxService } from "./developer/ats-sandbox.service";
+import { CandidateErasureService } from "./consent/candidate-erasure.service";
+import { JobTemplatesController } from "./templates/job-templates.controller";
+import { JobTemplatesService } from "./templates/job-templates.service";
 import { AtsSandboxController } from "./developer/ats-sandbox.controller";
 import { InternalMobilityController } from "./internal-mobility/internal-mobility.controller";
 import {
@@ -99,6 +102,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     UserApiTokensModule,
   ],
   controllers: [
+    JobTemplatesController,
     RecruitmentCandidateDocumentsController,
     RecruitmentCandidatesController,
     RecruitmentPipelineController,
@@ -171,6 +175,8 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     IdentityService,
     InternalMobilityService,
     AtsSandboxService,
+    CandidateErasureService,
+    JobTemplatesService,
   ],
   exports: [
     RecruitmentOffersService,

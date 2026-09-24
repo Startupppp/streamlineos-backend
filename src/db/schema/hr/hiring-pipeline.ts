@@ -60,6 +60,22 @@ export const candidateOffers = pgTable("candidate_offers", {
   offerStatus: text("offer_status").notNull().default("DRAFT"),
   offeredSalary: decimal("offered_salary", { precision: 15, scale: 2 }),
   offeredDesignation: text("offered_designation"),
+  /**
+   * The structured CTC (migration 1186), additive beside `offeredSalary` and
+   * never a replacement for it: the hire handoff, the negotiation flow and the
+   * offer letter all still read `offeredSalary`, and the two are reconciled by
+   * `compensation/ctc-breakdown.ts` rather than by one shadowing the other.
+   *
+   * Nullable permanently. A zero variable and an unentered variable are
+   * different facts, and a default of 0 would state the first while meaning the
+   * second on a candidate-facing page.
+   */
+  ctcFixed: decimal("ctc_fixed", { precision: 15, scale: 2 }),
+  ctcVariable: decimal("ctc_variable", { precision: 15, scale: 2 }),
+  ctcJoiningBonus: decimal("ctc_joining_bonus", { precision: 15, scale: 2 }),
+  ctcEquityValue: decimal("ctc_equity_value", { precision: 15, scale: 2 }),
+  ctcEmployerPf: decimal("ctc_employer_pf", { precision: 15, scale: 2 }),
+  ctcGratuity: decimal("ctc_gratuity", { precision: 15, scale: 2 }),
   joiningDate: date("joining_date"),
   offerLetterUrl: text("offer_letter_url"),
   validUntil: date("valid_until"),

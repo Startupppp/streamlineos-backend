@@ -53,6 +53,22 @@ export const jobApplicationSchema = z.object({
   notes: z.string().nullable(),
   screeningAnswers: z.record(z.string(), z.string()).nullable(),
   status: z.string().optional(),
+  /**
+   * What the candidate agreed to and when it runs out.
+   *
+   * Declared on the wire so a recruiter looking at the record can see the
+   * purpose and the expiry without opening the database. `consentTextHash` is
+   * deliberately NOT exposed: it is an integrity artifact for proving what
+   * wording was shown, it means nothing to a reader, and a hash on screen
+   * invites somebody to treat it as an identifier.
+   *
+   * All four are null on every application created before migration 1187, and
+   * the UI says so rather than rendering a blank.
+   */
+  consentAt: nullableWireDate(),
+  consentPurpose: z.string().nullable(),
+  consentVersion: z.string().nullable(),
+  retainUntil: nullableWireDate(),
   updatedAt: wireDate(),
 });
 
