@@ -1,4 +1,11 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { SQL, and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import {
   certifications,
@@ -27,7 +34,24 @@ import {
   documentOwnerScope,
   documentReadableScope,
   formatDateString,
+  isCompanyLevelDocument,
 } from "./documents-helpers";
+
+// Refused rather than clamped: silently storing `false` would tell the caller their document is public when it is not.
+function assertPublicFlagEligible(
+  isPublic: boolean,
+  row: { type: string; userId: string | null; uploadedBy: string | null },
+): void {
+  if (!isPublic || isCompanyLevelDocument(row)) return;
+  throw new HttpException(
+    {
+      code: "DOCUMENT_NOT_PUBLIC_ELIGIBLE",
+      message:
+        "Only a company policy or general document that belongs to no employee can be made public.",
+    },
+    HttpStatus.UNPROCESSABLE_ENTITY,
+  );
+}
 
 @Injectable()
 export class DocumentsService {
@@ -178,6 +202,11 @@ export class DocumentsService {
     const orgId = read.orgId;
     const userId = read.actorId;
     const targetUserId = input.userId ?? userId;
+    assertPublicFlagEligible(input.isPublic ?? false, {
+      type: input.type,
+      userId: targetUserId,
+      uploadedBy: userId,
+    });
     const targetMember = await read.read(
       {
         tenant: organizationMembers.orgId,
@@ -255,9 +284,20 @@ export class DocumentsService {
     const orgId = read.orgId;
     const doc = await this.db.query.documents.findFirst({
       where: this.scopedWhere(read, membershipId, [eq(documents.id, documentId)]) ?? sql`false`,
-      columns: { id: true, userId: true, name: true },
+      columns: { id: true, userId: true, name: true, type: true, isPublic: true, uploadedBy: true },
     });
     if (!doc) throw new NotFoundException("Document not found.");
+
+    // Only a request that touches the flag, the type or the owner is judged, so a legacy row that is
+    // already public-and-personal can still have its name or expiry edited; the read path stops
+    // honouring the flag on such a row regardless (documentReadableScope).
+    if (input.isPublic !== undefined || input.type !== undefined || input.userId !== undefined) {
+      assertPublicFlagEligible(input.isPublic ?? doc.isPublic, {
+        type: input.type ?? doc.type,
+        userId: input.userId !== undefined ? input.userId : doc.userId,
+        uploadedBy: doc.uploadedBy,
+      });
+    }
 
     const requestedUserId = input.userId;
     const targetMember =

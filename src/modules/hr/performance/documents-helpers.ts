@@ -17,10 +17,46 @@ export function documentOwnerScope(
   };
 }
 
-// A public document is readable by anyone who may read documents at all, so it widens the ownership arm rather than bypassing the scope.
+/**
+ * Types that describe the company rather than a person. Everything else on the enum (contracts,
+ * certificates, ID proofs, payslips, offer letters, resumes) is about an individual and is never
+ * company-wide, whatever a flag on the row says. An allowlist, so a value added to the enum later
+ * is personal until someone decides otherwise.
+ */
+export const COMPANY_LEVEL_DOCUMENT_TYPES = ["POLICY", "OTHER"] as const;
+
+/**
+ * A document is company-level when it is a company type and belongs to nobody but the person who
+ * filed it. `POST /hr/documents` assigns the uploader as owner when no employee is chosen, so
+ * "owned by the uploader" is how an HR-uploaded handbook looks; a row owned by a *different* user is
+ * that user's file. Rows with no uploader (import, onboarding, recruitment handoff) and an owner are
+ * personal.
+ */
+export function isCompanyLevelDocument(row: {
+  type: string;
+  userId: string | null;
+  uploadedBy: string | null;
+}): boolean {
+  return (
+    (COMPANY_LEVEL_DOCUMENT_TYPES as readonly string[]).includes(row.type) &&
+    (row.userId === null || row.userId === row.uploadedBy)
+  );
+}
+
+// The SQL twin of isCompanyLevelDocument; keep the two in step (documents-helpers.spec.ts pins that).
+export function companyLevelDocumentSql(): SQL {
+  return sql`(${documents.type} IN ('POLICY', 'OTHER') AND (${documents.userId} IS NULL OR ${documents.userId} = ${documents.uploadedBy}))`;
+}
+
+/**
+ * A public document is readable by anyone who may read documents at all, so it widens the ownership
+ * arm rather than bypassing the scope. `isPublic` is honoured only on a company-level document: the
+ * flag was accepted on any type, and ids are serial, so a payslip or ID proof marked public was
+ * enumerable through the file route by every viewer.
+ */
 export function documentReadableScope(actorId: string, membershipId?: number | null): OwnershipScope {
   const owner = documentOwnerScope(actorId, membershipId);
-  const isPublic = eq(documents.isPublic, true);
+  const isPublic = sql`(${documents.isPublic} = true AND ${companyLevelDocumentSql()})`;
   return {
     own: or(isPublic, owner.own) ?? isPublic,
     team: or(isPublic, owner.team) ?? isPublic,

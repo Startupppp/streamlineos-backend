@@ -192,4 +192,42 @@ describe("client-supplied object keys are bound to the caller's tenant at the se
       svc.createAttachment(ORG_A, 42, "user-1", VALID_KB_INPUT),
     ).resolves.toEqual({ id: 1 });
   });
+
+  /**
+   * The org prefix is not the whole boundary. A KB attachment row is later read by the indexer,
+   * text-extracted and embedded, so a key in the caller's OWN organisation but under an HR, payroll
+   * or onboarding folder would turn a personal file into KB text. `isOwnOrgStorageKey` alone accepts
+   * all of these.
+   */
+  it.each([
+    "hr-documents",
+    "documents",
+    "hr",
+    "payroll",
+    "payslips",
+    "onboarding",
+    "onboarding-docs",
+    "resignations",
+    "candidate-vault",
+    "esign",
+    "gdpr-exports",
+  ])("the KB attachment route refuses a key under the caller's own %s folder", async (folder) => {
+    const svc = new SupportKbEngagementService(kbDb(), {} as never);
+    await expect(
+      svc.createAttachment(ORG_A, 42, "user-1", {
+        ...VALID_KB_INPUT,
+        fileKey: `${ORG_A}/${folder}/0b9c1c62-Aadhaar-card.pdf`,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("the KB attachment route refuses the same keys behind a region prefix", async () => {
+    const svc = new SupportKbEngagementService(kbDb(), {} as never);
+    await expect(
+      svc.createAttachment(ORG_A, 42, "user-1", {
+        ...VALID_KB_INPUT,
+        fileKey: `eu/${ORG_A}/hr-documents/0b9c1c62-offer-letter.pdf`,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 });

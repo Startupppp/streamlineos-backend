@@ -18,6 +18,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
+import { resolveDocumentsScope } from "../performance/performance-scope";
 import { HrTemplatesService } from "./hr-templates.service";
 import {
   createTemplateSchema,
@@ -167,11 +168,14 @@ export class HrTemplatesController {
   @ResponseSchema(hrTemplateRendersListSchema)
   @RequirePermission("hr:templates:view")
   @Validate({ params: templateIdParams, query: templateRendersQuerySchema })
-  listRenders(
+  async listRenders(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Query() query: TemplateRendersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    // Every row is a letter rendered for one employee, `outputHtml` and `contextSnapshot` included, so it is read at the same reach as the letters list: organisation-wide document access, not merely the template key.
+    const scope = await resolveDocumentsScope(this.access, u);
+    if (!scope.unrestricted) throw new ForbiddenException("Organization-wide document access is required.");
     return this.service.listRenders(u.orgId, templateId, query);
   }
 }
