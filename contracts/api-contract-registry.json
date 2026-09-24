@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-23T22:37:59.231Z",
+  "generatedAt": "2026-09-24T02:56:38.313Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -31352,6 +31352,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /kb/pages/full-search": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbSearchController_searchPages",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /kb/pages/import": {
       "classification": "internal",
       "classificationOverride": null,
@@ -31660,6 +31671,28 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /kb/spaces/{spaceId}/archive": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbSpacesController_archive",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/spaces/{spaceId}/archive-impact": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbSpacesController_archiveImpact",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /kb/spaces/{spaceId}/categories": {
       "classification": "internal",
       "classificationOverride": null,
@@ -31709,6 +31742,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbMembersController_remove",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/spaces/{spaceId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbSpacesController_restore",
       "owner": null,
       "version": "1",
       "consumers": [],
