@@ -246,6 +246,21 @@ export const inviteDeliverySchema = z.object({
 
 export type InviteDelivery = z.infer<typeof inviteDeliverySchema>;
 
+/**
+ * A join link handed to an administrator to pass on directly.
+ *
+ * The token lives in `inviteUrl` and nowhere else — not in a log, not in the
+ * audit row, not in a second field — so the response is the only copy and the
+ * caller is expected to hand it over rather than keep it.
+ */
+export const inviteLinkSchema = z.object({
+  inviteUrl: z.string().url(),
+  expiresAt: z.string(),
+  email: z.string().email(),
+});
+
+export type InviteLink = z.infer<typeof inviteLinkSchema>;
+
 export const employeeCountsSchema = z.object({
   active: z.number().int(),
   inactive: z.number().int(),

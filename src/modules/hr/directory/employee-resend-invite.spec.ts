@@ -121,6 +121,27 @@ describe("EmployeeOnboardingService.resendInvite", () => {
       invite: { sent: false, reason: "No email provider is configured." },
     });
 
+    // Two retirements, in this order and for different reasons. The first runs
+    // before the new token is issued and retires every earlier invite, so a link
+    // forwarded last week stops working the moment a fresh one is minted. The
+    // second is the compensation: the mail could not be queued, so the token
+    // just issued is retired too and nobody is left holding a link that was
+    // never delivered.
+    expect(harness.updated).toEqual([
+      { table: "magic_link_tokens", set: expect.objectContaining({ usedAt: expect.any(Date) }) },
+      { table: "magic_link_tokens", set: expect.objectContaining({ usedAt: expect.any(Date) }) },
+    ]);
+  });
+
+  it("retires every earlier invite before issuing a new one", async () => {
+    const harness = harnessWith([memberRow()]);
+    const { service } = buildService(harness.db);
+
+    await service.resendInvite(ACTOR as never, TARGET);
+
+    // A resend used to mint another token and leave every earlier one live until
+    // its seven-day expiry, so an invite resent to correct a mistake did not
+    // recall the first link.
     expect(harness.updated).toEqual([
       { table: "magic_link_tokens", set: expect.objectContaining({ usedAt: expect.any(Date) }) },
     ]);
