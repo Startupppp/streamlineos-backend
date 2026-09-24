@@ -173,6 +173,8 @@ const TIERS: Record<string, Tier> = {
   "public:assessment-score": { limit: 300, windowSecs: 3600 },
   /** One result per call, plus retries. */
   "public:voice-screen-result": { limit: 300, windowSecs: 3600 },
+  /** Candidates reply in bursts; a busy tenant sees a few hundred an hour. */
+  "public:whatsapp-inbound": { limit: 600, windowSecs: 3600 },
   // POST /csat/:surveyId/responses is @Public and unauthenticated, and it is the
   // SECOND CSAT submit surface in the repository. The first, support-csat, is
   // "support:csat-submit" at 5/hour; this one carried nothing, so a survey id is

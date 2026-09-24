@@ -6217,6 +6217,13 @@
       "when": 1803000010342,
       "tag": "1127_assessment_and_voice_screen",
       "breakpoints": true
+    },
+    {
+      "idx": 1016,
+      "version": "7",
+      "when": 1803000010343,
+      "tag": "1128_candidate_whatsapp_consent",
+      "breakpoints": true
     }
   ]
 }

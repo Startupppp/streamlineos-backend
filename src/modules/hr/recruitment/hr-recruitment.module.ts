@@ -60,6 +60,11 @@ import {
 } from "./assessments/assessment.controller";
 import { VoiceScreenService } from "./voice-screen/voice-screen.service";
 import { RecruitingAnalyticsService } from "./analytics/recruiting-analytics.service";
+import { WhatsappService } from "./whatsapp/whatsapp.service";
+import {
+  WhatsappController,
+  WhatsappInboundController,
+} from "./whatsapp/whatsapp.controller";
 import { RecruitingAnalyticsController } from "./analytics/recruiting-analytics.controller";
 import {
   VoiceScreenController,
@@ -111,6 +116,8 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     VoiceScreenController,
     VoiceScreenResultController,
     RecruitingAnalyticsController,
+    WhatsappController,
+    WhatsappInboundController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -149,6 +156,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     AssessmentService,
     VoiceScreenService,
     RecruitingAnalyticsService,
+    WhatsappService,
   ],
   exports: [
     RecruitmentOffersService,

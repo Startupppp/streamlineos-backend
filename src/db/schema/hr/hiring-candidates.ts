@@ -44,6 +44,16 @@ export const candidates = pgTable("candidates", {
   bgvSource: text("bgv_source").$type<"MANUAL" | "AGENCY">(),
   /** The agency's own case identifier, so a verdict traces back to its report. */
   bgvReference: text("bgv_reference"),
+  /**
+   * When this candidate agreed to be messaged on WhatsApp, and when they
+   * withdrew.
+   *
+   * Two timestamps rather than a status, because DPDP asks when — and because a
+   * single column cannot distinguish somebody who opted out from somebody who
+   * was never asked, which is the pair the send gate exists to tell apart.
+   */
+  whatsappOptInAt: timestamp("whatsapp_opt_in_at"),
+  whatsappOptOutAt: timestamp("whatsapp_opt_out_at"),
   sourceUrl: text("source_url"),
   location: text("location"),
   gender: text("gender").$type<"MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY" | null>(),
@@ -56,6 +66,7 @@ export const candidates = pgTable("candidates", {
   index("idx_candidates_email").on(table.email),
   index("idx_candidates_org_status").on(table.orgId, table.status),
   index("idx_candidates_org_created").on(table.orgId, table.createdAt),
+  index("idx_candidates_org_phone").on(table.orgId, table.phone).where(sql`${table.phone} is not null`),
 ]);
 
 export const candidateResumes = pgTable("candidate_resumes", {
