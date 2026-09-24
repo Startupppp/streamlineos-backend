@@ -57,7 +57,7 @@ export const GLOBAL_TABLES = new Set([
 // /** Reads that want the deleted row, each with the reason
 export const PURGE_READS = new Map([
   [
-    "src/modules/kb/wiki/kb-page-tree.service.ts::kbPages",
+    "src/modules/kb/wiki/kb-page-trash.service.ts::kbPages",
     "hardDelete reads the page in order to purge it; excluding deleted rows would make a deleted page unpurgeable",
   ],
 ]);
@@ -94,6 +94,39 @@ export function parseSchema(sources) {
 }
 
 /**
+ * A soft-delete clause is not always spelled at the call site. The KB reads
+ * compose theirs from a named helper — `supportArticlePredicate()` renders
+ * `content_type = 'support_article' AND deleted_at IS NULL` — so the predicate
+ * is really applied, but the word `deletedAt` never appears inside the findFirst
+ * parens. Measured 2026-09-24: that reported four correctly-filtered KB reads as
+ * unguarded, and the remedy the gate printed (`add isNull(kbPages.deletedAt)`)
+ * was redundant on all four.
+ *
+ * The helpers are resolved rather than named, so this cannot rot into an
+ * allowlist: a function counts only while its own body still applies
+ * `isNull(<table>.deletedAt)`. A helper that stops filtering stops excusing its
+ * callers on the same run, and they fail as they should.
+ */
+export function softDeletePredicateHelpers(sources) {
+  const names = new Set();
+  for (const src of sources) {
+    for (const m of src.matchAll(/export\s+(?:function|const)\s+(\w+)/g)) {
+      const brace = src.indexOf("{", m.index);
+      if (brace === -1) continue;
+      const body = balanced(src, brace);
+      if (body && /isNull\(\s*\w+\.deletedAt\s*\)/.test(body)) names.add(m[1]);
+    }
+  }
+  return names;
+}
+
+function callsSoftDeleteHelper(predicates, helpers) {
+  for (const name of helpers)
+    if (new RegExp(`\\b${name}\\s*\\(`).test(predicates)) return true;
+  return false;
+}
+
+/**
  * ADR 0005: a ScopedRead spends its predicates in the runner spec, not in the
  * findFirst call — `read.read({ tenant, scope, and: [...] }, ({ sql: where }) =>
  * db.query.x.findFirst({ where }))`. The tenant and soft-delete clauses are then
@@ -114,7 +147,7 @@ export function scopedReadSpecFor(src, index, body) {
 }
 
 // Classify each findFirst by what the code does with the result
-export function parseFindFirst(src, tables) {
+export function parseFindFirst(src, tables, softDeleteHelpers = new Set()) {
   const found = [];
   for (const m of src.matchAll(/\.query\.(\w+)\.findFirst\(/g)) {
     const table = tables[m[1]];
@@ -136,7 +169,9 @@ export function parseFindFirst(src, tables) {
       line: src.slice(0, m.index).split("\n").length,
       shape,
       hasTenant: /\.orgId|\.organizationId/.test(predicates),
-      hasSoftDelete: /deletedAt/.test(predicates),
+      hasSoftDelete:
+        /deletedAt/.test(predicates) ||
+        callsSoftDeleteHelper(predicates, softDeleteHelpers),
     });
   }
   return found;
@@ -226,9 +261,31 @@ if (args.includes("--self-test")) {
     `    );`,
     `    if (!space) throw new NotFoundException("Space not found");`,
     `  }`,
+    ``,
+    `  async h(orgId: string, spaceId: number) {`,
+    `    const space = await this.db.query.kbSpaces.findFirst({`,
+    `      where: and(`,
+    `        eq(kbSpaces.id, spaceId),`,
+    `        eq(kbSpaces.orgId, orgId),`,
+    `        supportArticlePredicate(),`,
+    `      ),`,
+    `    });`,
+    `    if (!space) throw new NotFoundException("Space not found");`,
+    `  }`,
   ].join("\n");
 
-  const found = parseFindFirst(source, schema);
+  const helperSource = [
+    `export function supportArticlePredicate(): SQL {`,
+    `  return sql\`(\${eq(kbSpaces.contentType, "x")} and \${isNull(kbSpaces.deletedAt)})\`;`,
+    `}`,
+    `export function contentTypeOnly(): SQL {`,
+    `  return ne(kbSpaces.contentType, "x");`,
+    `}`,
+  ].join("\n");
+
+  const helpers = softDeletePredicateHelpers([helperSource]);
+  const found = parseFindFirst(source, schema, helpers);
+  const foundBlind = parseFindFirst(source, schema);
   const at = (line) => found.find((f) => f.line === line);
   const offenders = found.filter(
     (f) =>
@@ -242,7 +299,11 @@ if (args.includes("--self-test")) {
     schemaSeesSoftDelete: schema["kbSpaces"].softDelete === true,
     schemaSeesTenant: schema["kbSpaces"].tenant === true,
     schemaSeesGlobalTableHasNoTenant: schema["users"].tenant === false,
-    findsAllSevenCalls: found.length === 7,
+    findsAllEightCalls: found.length === 8,
+    helperResolvedFromItsBodyNotItsName: helpers.has("supportArticlePredicate"),
+    helperWithoutSoftDeleteIsNotResolved: !helpers.has("contentTypeOnly"),
+    helperComposedReadCountsAsGuarded: found[7]?.hasSoftDelete === true,
+    helperWideningIsNotUnconditional: foundBlind[7]?.hasSoftDelete === false,
     unguardedReadIsAread: at(2)?.shape === "read" && at(2)?.hasSoftDelete === false,
     guardedReadPasses: at(9)?.shape === "read" && at(9)?.hasSoftDelete === true,
     scopedReadSpecIsInspected:
@@ -285,10 +346,14 @@ function walkTs(dir) {
 
 const schema = parseSchema(walkTs(SCHEMA_DIR).map((f) => readFileSync(f, "utf8")));
 
+const sourceFiles = SCAN_DIRS.filter(existsSync).flatMap(walkTs);
+const sourceText = new Map(sourceFiles.map((f) => [f, readFileSync(f, "utf8")]));
+const softDeleteHelpers = softDeletePredicateHelpers(sourceText.values());
+
 const reads = [];
-for (const file of SCAN_DIRS.filter(existsSync).flatMap(walkTs)) {
+for (const file of sourceFiles) {
   const rel = relative(BACKEND_ROOT, file).replace(/\\/g, "/");
-  for (const f of parseFindFirst(readFileSync(file, "utf8"), schema))
+  for (const f of parseFindFirst(sourceText.get(file), schema, softDeleteHelpers))
     reads.push({ ...f, file: rel });
 }
 
