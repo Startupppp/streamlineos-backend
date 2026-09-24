@@ -48,6 +48,7 @@ import { BoardApplyIngressController } from "./boards/board-apply-ingress.contro
 import { RecruitmentIntegrationsService } from "./integrations/recruitment-integrations.service";
 import { RecruitmentIntegrationsController } from "./integrations/recruitment-integrations.controller";
 import { SourcedProfileService } from "./sourcing-extension/sourced-profile.service";
+import { NurtureMetricsService } from "./nurture/nurture-metrics.service";
 import { SourcingExtensionController } from "./sourcing-extension/sourcing-extension.controller";
 import { UserApiTokensModule } from "../../api-tokens/user/user-api-tokens.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
@@ -119,6 +120,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     BoardApplyIngressService,
     RecruitmentIntegrationsService,
     SourcedProfileService,
+    NurtureMetricsService,
   ],
   exports: [
     RecruitmentOffersService,

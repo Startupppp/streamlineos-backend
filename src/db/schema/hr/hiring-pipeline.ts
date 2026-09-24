@@ -127,12 +127,30 @@ export type EmailSequenceTrigger = "MANUAL" | "CANDIDATE_ADDED" | "APPLICATION_R
  * a silent skip: a recruiter looking at the enrollment can see why nothing
  * went out. The column is `text`, so this needs no migration.
  */
+export const EMAIL_SEQUENCE_ENROLLMENT_STATUSES = [
+  "ACTIVE",
+  "COMPLETED",
+  "UNSUBSCRIBED",
+  "BOUNCED",
+  "HELD_NO_CONSENT",
+  /** Stopped because the address is on the email suppression list. */
+  "STOPPED_SUPPRESSED",
+  /** Stopped because they applied after being enrolled — the campaign worked. */
+  "STOPPED_APPLIED",
+  /** Stopped because they wrote in and a person should take over. */
+  "STOPPED_REPLIED",
+  /** Stopped because the candidate is hired or rejected. */
+  "STOPPED_CLOSED",
+] as const;
+
+/**
+ * An array as well as a union, so the worker that writes these and the contract
+ * that parses them read from one list. The union alone let `HELD_NO_CONSENT` be
+ * added here while the frontend contract still narrowed to four values, and
+ * every sequence with one held enrollment threw on parse.
+ */
 export type EmailSequenceEnrollmentStatus =
-  | "ACTIVE"
-  | "COMPLETED"
-  | "UNSUBSCRIBED"
-  | "BOUNCED"
-  | "HELD_NO_CONSENT";
+  (typeof EMAIL_SEQUENCE_ENROLLMENT_STATUSES)[number];
 
 export const emailSequences = pgTable("email_sequences", {
   id: serial("id").primaryKey(),

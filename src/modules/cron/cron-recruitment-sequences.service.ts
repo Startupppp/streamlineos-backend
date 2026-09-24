@@ -1,7 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, isNotNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, lte } from "drizzle-orm";
 import {
   candidateApplications,
+  candidateMessages,
   candidates,
   emailSequenceEnrollments,
   emailSequenceSteps,
@@ -13,6 +14,12 @@ import type { TenantTx } from "../../common/tenant/with-tenant";
 import { forEachOrg } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
+import { EmailSuppressionService } from "../email/email-suppression.service";
+import {
+  decideStop,
+  type EnrollmentFacts,
+  type EnrollmentStatus,
+} from "../hr/recruitment/nurture/nurture-stop-conditions";
 
 /**
  * The sender for candidate email sequences.
@@ -32,6 +39,11 @@ import { EmailService } from "../email/email.service";
  * EMAIL only. `email_sequence_steps` carries a subject and an HTML body and no
  * channel column, so there is no WhatsApp step to send and no opt-in to check
  * for one. WhatsApp is ATS-W1-012 and is not built.
+ *
+ * Every stop condition is decided by `decideStop`, not here, so the precedence
+ * between them is pinned by a test rather than by the order these branches
+ * happen to sit in. What this file owns is gathering the facts that decision
+ * needs — one read each, on the row that is about to be mailed.
  */
 
 const ENROLLMENT_BATCH = 200;
@@ -41,6 +53,8 @@ export type SequenceSendOutcome = {
   completed: number;
   heldWithoutConsent: number;
   skippedInactive: number;
+  /** Enrollments closed by a stop condition this tick, keyed by the status written. */
+  stopped: Partial<Record<EnrollmentStatus, number>>;
 };
 
 interface DueEnrollment {
@@ -48,6 +62,7 @@ interface DueEnrollment {
   sequenceId: number;
   candidateId: number;
   currentStep: number;
+  enrolledAt: Date;
 }
 
 @Injectable()
@@ -55,6 +70,7 @@ export class CronRecruitmentSequencesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
+    private readonly suppression: EmailSuppressionService,
   ) {}
 
   async sendDueSequenceSteps(): Promise<SequenceSendOutcome> {
@@ -63,6 +79,7 @@ export class CronRecruitmentSequencesService {
       completed: 0,
       heldWithoutConsent: 0,
       skippedInactive: 0,
+      stopped: {},
     };
     const now = new Date();
 
@@ -73,6 +90,7 @@ export class CronRecruitmentSequencesService {
           sequenceId: emailSequenceEnrollments.sequenceId,
           candidateId: emailSequenceEnrollments.candidateId,
           currentStep: emailSequenceEnrollments.currentStep,
+          enrolledAt: emailSequenceEnrollments.enrolledAt,
         })
         .from(emailSequenceEnrollments)
         .where(
@@ -111,26 +129,38 @@ export class CronRecruitmentSequencesService {
 
     const candidate = await tx.query.candidates.findFirst({
       where: and(eq(candidates.id, enrollment.candidateId), eq(candidates.orgId, orgId)),
-      columns: { email: true, firstName: true, lastName: true },
+      columns: { email: true, firstName: true, lastName: true, status: true },
     });
 
-    /**
-     * The consent gate. `HELD_NO_CONSENT` is a stored reason a recruiter can
-     * read on the enrollment, and it clears `next_send_at`, so the worker does
-     * not keep picking the row up and re-deciding it every tick.
-     */
-    const consented = candidate?.email ? await this.hasConsent(tx, orgId, enrollment.candidateId) : false;
-    if (!consented) {
+    /*
+      Every stop condition, decided together.
+
+      They are gathered before the step is read rather than after, because a
+      campaign that has already done its job should cost one decision and no
+      send — and because a stopped enrollment clears `next_send_at`, so the
+      worker does not pick the row up and re-decide it on every tick for the
+      rest of its life.
+    */
+    const facts = await this.gatherFacts(tx, orgId, enrollment, candidate?.email ?? null);
+    const decision = decideStop(facts);
+    if (decision.stop) {
       await tx
         .update(emailSequenceEnrollments)
-        .set({ status: "HELD_NO_CONSENT", nextSendAt: null })
+        .set({ status: decision.status, nextSendAt: null })
         .where(
           and(
             eq(emailSequenceEnrollments.id, enrollment.id),
             eq(emailSequenceEnrollments.orgId, orgId),
           ),
         );
-      outcome.heldWithoutConsent += 1;
+      outcome.stopped[decision.status] = (outcome.stopped[decision.status] ?? 0) + 1;
+      /*
+        `heldWithoutConsent` predates `stopped` and the cron controller still
+        reports it, so it stays a first-class counter rather than becoming one
+        key among eight. Removing it would silently blank a number an operator
+        already watches.
+      */
+      if (decision.status === "HELD_NO_CONSENT") outcome.heldWithoutConsent += 1;
       return;
     }
 
@@ -186,6 +216,39 @@ export class CronRecruitmentSequencesService {
       return;
     }
 
+    /*
+      The sent step becomes a candidate message.
+
+      Without this there is no record that a campaign ever contacted anybody:
+      `sent` was a counter in a cron return value that nothing persisted, so
+      "how many did this campaign send" had no answer and "did they reply" had
+      nothing to compare a reply against. It is a real outbound message to the
+      candidate, so `candidate_messages` is where it belongs — and it is what
+      makes the reply detection above work at all.
+
+      Failing to record it must not un-send the mail, which has already left. So
+      this is deliberately not fatal: the step still advances and the failure is
+      logged rather than retried, because a retry would send the mail twice.
+    */
+    try {
+      await tx.insert(candidateMessages).values({
+        orgId,
+        candidateId: enrollment.candidateId,
+        direction: "OUTBOUND",
+        channel: "EMAIL",
+        subject: next.subject,
+        body: next.htmlBody,
+        sentAt: now,
+        externalId: `sequence:${enrollment.sequenceId}:step:${next.stepOrder}:enrollment:${enrollment.id}`,
+      });
+    } catch (error) {
+      logger.error("[recruitment-sequences] step sent but not recorded", {
+        orgId,
+        enrollmentId: enrollment.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     const following = steps[enrollment.currentStep + 1];
     const nextSendAt = following
       ? new Date(now.getTime() + following.delayDays * 24 * 60 * 60 * 1000)
@@ -209,6 +272,38 @@ export class CronRecruitmentSequencesService {
   }
 
   /**
+   * One read per condition, on the enrollment about to be mailed.
+   *
+   * Gathered rather than short-circuited, so `decideStop` sees the whole
+   * picture and the precedence between conditions lives in one tested place. It
+   * is four small indexed lookups against a row we are already about to send
+   * mail to, which is not where this worker's cost is.
+   */
+  private async gatherFacts(
+    tx: TenantTx,
+    orgId: string,
+    enrollment: DueEnrollment,
+    candidateEmail: string | null,
+  ): Promise<EnrollmentFacts> {
+    const [hasConsent, appliedAfterEnrolmentAt, repliedAfterEnrolmentAt, suppressed, candidateStatus] =
+      await Promise.all([
+        this.hasConsent(tx, orgId, enrollment.candidateId),
+        this.appliedSince(tx, orgId, enrollment.candidateId, enrollment.enrolledAt),
+        this.repliedSince(tx, orgId, enrollment.candidateId, enrollment.enrolledAt),
+        this.isSuppressed(candidateEmail, orgId),
+        this.candidateStatus(tx, orgId, enrollment.candidateId),
+      ]);
+
+    return {
+      suppressed,
+      hasConsent: candidateEmail ? hasConsent : false,
+      appliedAfterEnrolmentAt,
+      repliedAfterEnrolmentAt,
+      candidateStatus,
+    };
+  }
+
+  /**
    * Consent is on the application, not the candidate, because that is where the
    * public apply records it. Any application of theirs carrying a `consent_at`
    * is enough — they agreed to be contacted about working here.
@@ -226,5 +321,89 @@ export class CronRecruitmentSequencesService {
       )
       .limit(1);
     return row !== undefined;
+  }
+
+  /**
+   * An application filed after the enrollment began.
+   *
+   * "After" is load-bearing. Most nurture targets are past applicants, so an
+   * unbounded "have they ever applied" would stop every campaign on its first
+   * tick and report the campaign as having converted somebody it never
+   * contacted.
+   */
+  private async appliedSince(
+    tx: TenantTx,
+    orgId: string,
+    candidateId: number,
+    since: Date,
+  ): Promise<Date | null> {
+    const [row] = await tx
+      .select({ appliedAt: candidateApplications.appliedAt })
+      .from(candidateApplications)
+      .where(
+        and(
+          eq(candidateApplications.orgId, orgId),
+          eq(candidateApplications.candidateId, candidateId),
+          gt(candidateApplications.appliedAt, since),
+        ),
+      )
+      .orderBy(desc(candidateApplications.appliedAt))
+      .limit(1);
+    return row?.appliedAt ?? null;
+  }
+
+  /**
+   * An inbound message since the enrollment began.
+   *
+   * Inbound only: the outbound rows this worker writes are the campaign talking
+   * to itself, and counting one would stop every sequence immediately after its
+   * first step.
+   */
+  private async repliedSince(
+    tx: TenantTx,
+    orgId: string,
+    candidateId: number,
+    since: Date,
+  ): Promise<Date | null> {
+    const [row] = await tx
+      .select({ sentAt: candidateMessages.sentAt })
+      .from(candidateMessages)
+      .where(
+        and(
+          eq(candidateMessages.orgId, orgId),
+          eq(candidateMessages.candidateId, candidateId),
+          eq(candidateMessages.direction, "INBOUND"),
+          gt(candidateMessages.sentAt, since),
+        ),
+      )
+      .orderBy(desc(candidateMessages.sentAt))
+      .limit(1);
+    return row?.sentAt ?? null;
+  }
+
+  private async candidateStatus(
+    tx: TenantTx,
+    orgId: string,
+    candidateId: number,
+  ): Promise<string | null> {
+    const row = await tx.query.candidates.findFirst({
+      where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+      columns: { status: true },
+    });
+    return row?.status ?? null;
+  }
+
+  /**
+   * Read through `EmailSuppressionService` rather than with a query here, so
+   * this worker and `EmailOutboxService` agree about who must not be mailed.
+   *
+   * Without it the outbox would silently drop each step while the enrollment
+   * stayed ACTIVE and rescheduled itself forever — a campaign that reads as
+   * running and sends nothing.
+   */
+  private async isSuppressed(email: string | null, orgId: string): Promise<boolean> {
+    if (!email) return false;
+    const suppressed = await this.suppression.findSuppressed([email], orgId);
+    return suppressed.size > 0;
   }
 }

@@ -6189,6 +6189,13 @@
       "when": 1803000010338,
       "tag": "1123_job_board_publication_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1012,
+      "version": "7",
+      "when": 1803000010339,
+      "tag": "1124_talent_pool_tags",
+      "breakpoints": true
     }
   ]
 }
