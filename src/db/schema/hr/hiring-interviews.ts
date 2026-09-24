@@ -40,6 +40,15 @@ export const interviews = pgTable("interviews", {
   transcriptRetainUntil: timestamp("transcript_retain_until"),
   transcriptStoredAt: timestamp("transcript_stored_at"),
   transcriptStoredByMembershipId: integer("transcript_stored_by_membership_id"),
+  /**
+   * The vendor's own invitation or call id, for an ASSESSMENT or VOICE_SCREEN.
+   *
+   * A score webhook finds its row through this rather than through candidate
+   * details echoed back at us, which keeps the callback payload to an id and a
+   * result.
+   */
+  externalRef: text("external_ref"),
+  externalPlatform: text("external_platform"),
   remindersSent: jsonb("reminders_sent").$type<Record<string, boolean>>().notNull().default({}),
   calendarSyncToken: text("calendar_sync_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -56,6 +65,7 @@ export const interviews = pgTable("interviews", {
   foreignKey({ columns: [table.orgId, table.interviewerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_interviews_interviewer_actor" }).onDelete("restrict"),
   foreignKey({ columns: [table.orgId, table.transcriptStoredByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_interviews_transcript_stored_by" }).onDelete("restrict"),
   index("idx_interviews_transcript_retention").on(table.orgId, table.transcriptRetainUntil).where(sql`${table.transcript} is not null`),
+  uniqueIndex("uq_interviews_org_external_ref").on(table.orgId, table.externalPlatform, table.externalRef).where(sql`${table.externalRef} is not null`),
 ]);
 
 export const interviewScorecards = pgTable("interview_scorecards", {

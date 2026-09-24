@@ -33,15 +33,17 @@ import type {
   ScheduleInterviewInput,
   SelfScheduleInput,
 } from "./dto/interview-scheduling.schemas";
+import { interviewTypeEnum } from "../../../db/schema/common/enums";
 
-const INTERVIEW_TYPES = [
-  "PHONE",
-  "VIDEO",
-  "ONSITE",
-  "TECHNICAL",
-  "HR",
-  "FINAL",
-] as const;
+/**
+ * Read off the column's own enum rather than restated.
+ *
+ * The restated copy fell behind the moment ASSESSMENT and VOICE_SCREEN were
+ * added: rows the database accepts stopped type-checking here, and
+ * `coerceInterviewType` would have quietly rewritten an assessment as a video
+ * call.
+ */
+const INTERVIEW_TYPES = interviewTypeEnum.enumValues;
 type InterviewType = (typeof INTERVIEW_TYPES)[number];
 
 const FORMAT_TO_TYPE: Record<"VIDEO" | "PHONE" | "IN_PERSON", InterviewType> = {

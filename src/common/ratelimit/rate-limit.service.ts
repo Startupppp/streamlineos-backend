@@ -169,6 +169,10 @@ const TIERS: Record<string, Tier> = {
    * URL cannot be used to hammer the signature check.
    */
   "public:bgv-callback": { limit: 120, windowSecs: 3600 },
+  /** One score per invitation, plus retries. 300 an hour covers a campus drive. */
+  "public:assessment-score": { limit: 300, windowSecs: 3600 },
+  /** One result per call, plus retries. */
+  "public:voice-screen-result": { limit: 300, windowSecs: 3600 },
   // POST /csat/:surveyId/responses is @Public and unauthenticated, and it is the
   // SECOND CSAT submit surface in the repository. The first, support-csat, is
   // "support:csat-submit" at 5/hour; this one carried nothing, so a survey id is

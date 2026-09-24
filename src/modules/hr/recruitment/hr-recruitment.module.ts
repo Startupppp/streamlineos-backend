@@ -53,6 +53,16 @@ import { BgvService } from "./bgv/bgv.service";
 import { BgvController } from "./bgv/bgv.controller";
 import { BgvCallbackService } from "./bgv/bgv-callback.service";
 import { BgvCallbackController } from "./bgv/bgv-callback.controller";
+import { AssessmentService } from "./assessments/assessment.service";
+import {
+  AssessmentController,
+  AssessmentScoreController,
+} from "./assessments/assessment.controller";
+import { VoiceScreenService } from "./voice-screen/voice-screen.service";
+import {
+  VoiceScreenController,
+  VoiceScreenResultController,
+} from "./voice-screen/voice-screen.controller";
 import { SourcingExtensionController } from "./sourcing-extension/sourcing-extension.controller";
 import { UserApiTokensModule } from "../../api-tokens/user/user-api-tokens.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
@@ -94,6 +104,10 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     SourcingExtensionController,
     BgvController,
     BgvCallbackController,
+    AssessmentController,
+    AssessmentScoreController,
+    VoiceScreenController,
+    VoiceScreenResultController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -129,6 +143,8 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     NurtureMetricsService,
     BgvService,
     BgvCallbackService,
+    AssessmentService,
+    VoiceScreenService,
   ],
   exports: [
     RecruitmentOffersService,
