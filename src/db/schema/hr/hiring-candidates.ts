@@ -33,6 +33,41 @@ export const candidates = pgTable("candidates", {
   bgvNotes: text("bgv_notes"),
   bgvInitiatedAt: timestamp("bgv_initiated_at"),
   bgvCompletedAt: timestamp("bgv_completed_at"),
+  /**
+   * Who asserted the verdict in `bgv_status`.
+   *
+   * A CLEARED typed in by a recruiter and a CLEARED returned by a verification
+   * agency are different claims with different evidence behind them. Without
+   * this column they were the same row, and an offer policy that requires an
+   * agency check could be satisfied by somebody ticking a box.
+   */
+  bgvSource: text("bgv_source").$type<"MANUAL" | "AGENCY">(),
+  /** The agency's own case identifier, so a verdict traces back to its report. */
+  bgvReference: text("bgv_reference"),
+  /**
+   * When this candidate agreed to be messaged on WhatsApp, and when they
+   * withdrew.
+   *
+   * Two timestamps rather than a status, because DPDP asks when — and because a
+   * single column cannot distinguish somebody who opted out from somebody who
+   * was never asked, which is the pair the send gate exists to tell apart.
+   */
+  whatsappOptInAt: timestamp("whatsapp_opt_in_at"),
+  whatsappOptOutAt: timestamp("whatsapp_opt_out_at"),
+  /**
+   * Identity verification, holding no identity number.
+   *
+   * `identityReference` is the vendor's case id and `identityLast4` is the
+   * trailing characters a recruiter uses to confirm they are looking at the
+   * right document. A full PAN or Aadhaar in a recruitment database is a
+   * liability with no use case behind it, so there is no column for one.
+   */
+  identityStatus: text("identity_status").$type<
+    "NOT_STARTED" | "PENDING" | "VERIFIED" | "FAILED" | "UNAVAILABLE"
+  >(),
+  identityReference: text("identity_reference"),
+  identityLast4: text("identity_last4"),
+  identityVerifiedAt: timestamp("identity_verified_at"),
   sourceUrl: text("source_url"),
   location: text("location"),
   gender: text("gender").$type<"MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY" | null>(),
@@ -45,6 +80,7 @@ export const candidates = pgTable("candidates", {
   index("idx_candidates_email").on(table.email),
   index("idx_candidates_org_status").on(table.orgId, table.status),
   index("idx_candidates_org_created").on(table.orgId, table.createdAt),
+  index("idx_candidates_org_phone").on(table.orgId, table.phone).where(sql`${table.phone} is not null`),
 ]);
 
 export const candidateResumes = pgTable("candidate_resumes", {
@@ -60,6 +96,16 @@ export const candidateResumes = pgTable("candidate_resumes", {
   uniqueIndex("uniq_candidate_resumes_candidate_id").on(table.candidateId),
 ]);
 
+/**
+ * Where a manager's answer on an internal application can be.
+ *
+ * `NOT_REQUIRED` is a real answer rather than a null: an org that has no head
+ * on the applicant's department still produces an application, and recording
+ * that no approval was ever needed keeps "nobody has decided yet" (`PENDING`)
+ * from covering two different situations.
+ */
+export type InternalManagerDecision = "PENDING" | "APPROVED" | "DECLINED" | "NOT_REQUIRED";
+
 export const candidateApplications = pgTable("candidate_applications", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -72,6 +118,20 @@ export const candidateApplications = pgTable("candidate_applications", {
   notes: text("notes"),
   trackingToken: text("tracking_token").unique(),
   screeningAnswers: jsonb("screening_answers").$type<Record<string, string>>(),
+  /**
+   * The internal-mobility half of an application, NULL on every external one.
+   *
+   * `internalManagerDecision` is what says "this is an internal move" — a
+   * separate boolean would have to be backfilled and could then disagree with
+   * the decision sitting beside it. `internalManagerNotifiedAt` records when
+   * the manager was told, which is not when the row was written: an internal
+   * application stays confidential until it reaches interview.
+   */
+  internalManagerMembershipId: integer("internal_manager_membership_id"),
+  internalManagerDecision: text("internal_manager_decision").$type<InternalManagerDecision>(),
+  internalManagerDecidedAt: timestamp("internal_manager_decided_at"),
+  internalManagerNote: text("internal_manager_note"),
+  internalManagerNotifiedAt: timestamp("internal_manager_notified_at"),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_candidate_applications_org_candidate" }).onDelete("cascade"),
@@ -79,6 +139,10 @@ export const candidateApplications = pgTable("candidate_applications", {
   unique("uniq_candidate_applications_org_id").on(table.orgId, table.id),
   index("idx_applications_candidate").on(table.candidateId),
   index("idx_applications_job").on(table.jobPostingId),
+  foreignKey({ columns: [table.orgId, table.internalManagerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_candidate_applications_internal_manager" }).onDelete("set null"),
+  index("idx_candidate_applications_internal_manager")
+    .on(table.orgId, table.internalManagerMembershipId, table.internalManagerDecision)
+    .where(sql`${table.internalManagerDecision} IS NOT NULL`),
 ]);
 
 export type ReferralStatus = "SUBMITTED" | "REVIEWING" | "HIRED" | "REJECTED" | "BONUS_PAID";

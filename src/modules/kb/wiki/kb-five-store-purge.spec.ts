@@ -1,6 +1,6 @@
 import { PgDialect, getTableConfig } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
-import { kbArticleChunks, kbPages, kbArticles, kbSpaces } from "../../../db/schema";
+import { kbArticleChunks, kbPages, kbSpaces } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
@@ -171,12 +171,6 @@ describe("Store 3 of 5 — keyword index, removed by the row itself because fts 
     expect(fts?.generated).toMatchObject({ type: "always", mode: "stored" });
   });
 
-  it("kb_articles.fts is the same shape, so an article delete needs no index statement either", () => {
-    const fts = getTableConfig(kbArticles).columns.find((c) => c.name === "fts");
-
-    expect(fts?.generated).toMatchObject({ type: "always", mode: "stored" });
-  });
-
   it("the GIN index keyword search rides is declared on that generated column", () => {
     const index = getTableConfig(kbPages).indexes.find((i) => i.config.name === "idx_kb_pages_fts");
 
@@ -198,7 +192,7 @@ describe("Store 4 of 5 — vector chunks, by declared cascade and by explicit de
     foreignColumns: fk.reference().foreignColumns.map((c) => c.name),
   }));
 
-  it("cascades from its page and its article through a composite tenant foreign key", () => {
+  it("cascades from its page through a composite tenant foreign key", () => {
     expect(chunkForeignKeys).toEqual(
       expect.arrayContaining([
         {
@@ -207,20 +201,23 @@ describe("Store 4 of 5 — vector chunks, by declared cascade and by explicit de
           columns: ["org_id", "page_id"],
           foreignColumns: ["org_id", "id"],
         },
-        {
-          name: "fk_kb_chunks_org_article",
-          onDelete: "cascade",
-          columns: ["org_id", "article_id"],
-          foreignColumns: ["org_id", "id"],
-        },
       ]),
     );
   });
 
-  it("every content parent cascades, so none is left to an application delete alone", () => {
+  it("drops article_id with its parent, so no chunk can be anchored to a table that no longer exists", () => {
+    const articleParent = chunkForeignKeys.find((fk) => fk.name === "fk_kb_chunks_org_article");
+    const columns = getTableConfig(kbArticleChunks).columns.map((c) => c.name);
+
+    expect(articleParent).toBeUndefined();
+    expect(columns).not.toContain("article_id");
+    expect(columns).toContain("page_id");
+  });
+
+  it("every surviving content parent cascades, so none is left to an application delete alone", () => {
     const parents = chunkForeignKeys.filter((fk) => fk.name.startsWith("fk_kb_chunks_org_"));
 
-    expect(parents).toHaveLength(4);
+    expect(parents).toHaveLength(3);
     expect(parents.every((fk) => fk.onDelete === "cascade")).toBe(true);
     expect(parents.every((fk) => fk.columns[0] === "org_id")).toBe(true);
   });

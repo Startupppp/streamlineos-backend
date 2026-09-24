@@ -8,11 +8,18 @@ export const talentPools = pgTable("talent_pools", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
+  /**
+   * Short labels a recruiter filters pools by — "java", "bengaluru", "2026
+   * grads". An array rather than a table because nothing joins to a tag, and
+   * `hr_*` is frozen at its current table count.
+   */
+  tags: text("tags").array().notNull().default([]),
   createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_talent_pools_org_id").on(table.orgId, table.id),
+  index("idx_talent_pools_tags").using("gin", table.tags),
 ]);
 
 export const talentPoolMembers = pgTable("talent_pool_members", {

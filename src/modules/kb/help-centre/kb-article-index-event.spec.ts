@@ -18,17 +18,37 @@ describe("KbArticlesService — kb.content.index outbox event", () => {
   const ORG = "org-1";
   const ARTICLE_ID = 77;
 
-  const ARTICLE_ROW = {
+  const PAGE_ROW = {
     id: ARTICLE_ID,
     orgId: ORG,
+    spaceId: 1,
+    categoryId: null,
     title: "Doc",
-    content: "{}",
+    slug: "doc",
     excerpt: null,
+    content: { type: "doc", content: [] },
+    contentText: "",
     status: "published",
+    visibility: "org",
+    createdById: "user-1",
+    ownerMembershipId: 9,
+    trustState: "unverified",
+    verifiedUntil: null,
+    views: 0,
+    helpfulCount: 0,
+    notHelpfulCount: 0,
+    seoTitle: null,
+    seoDescription: null,
+    reviewIntervalDays: null,
     publishedAt: new Date(),
-    contentRevision: 4,
+    archivedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
     aclRevision: 2,
+    contentRevision: 4,
   };
+
+  const VERSION_ROW = { title: "Doc", content: { type: "doc", content: [] }, contentText: "", excerpt: null };
 
   const user = {
     orgId: ORG,
@@ -41,21 +61,28 @@ describe("KbArticlesService — kb.content.index outbox event", () => {
 
   let emit: jest.SpyInstance;
 
-  function makeDb() {
+  function thenable(rows: unknown[]): Record<string, unknown> {
+    const node: Record<string, unknown> = {};
+    const self = (): unknown => node;
+    node.from = self;
+    node.innerJoin = self;
+    node.where = self;
+    node.orderBy = self;
+    node.limit = self;
+    node.then = (resolve: (value: unknown[]) => unknown): Promise<unknown> =>
+      Promise.resolve(rows).then(resolve);
+    return node;
+  }
+
+  function makeDb(selectResults: unknown[][], returnedRow: unknown = PAGE_ROW) {
+    const queue = [...selectResults];
     const tx = {
-      query: {
-        kbArticles: { findFirst: jest.fn().mockResolvedValue({ publishedAt: null }) },
-      },
+      select: jest.fn().mockImplementation(() => thenable(queue.shift() ?? [])),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([ARTICLE_ROW]),
+            returning: jest.fn().mockResolvedValue([returnedRow]),
           }),
-        }),
-      }),
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue([{ max: 3 }]),
         }),
       }),
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
@@ -75,7 +102,7 @@ describe("KbArticlesService — kb.content.index outbox event", () => {
   });
 
   it("archive emits the reindex event on the write transaction", async () => {
-    const { db, tx } = makeDb();
+    const { db, tx } = makeDb([]);
     await new KbArticlesService(db, access, events).archive(user, ARTICLE_ID);
 
     expect(emit).toHaveBeenCalledTimes(1);
@@ -83,21 +110,21 @@ describe("KbArticlesService — kb.content.index outbox event", () => {
   });
 
   it("unpublish emits the reindex event", async () => {
-    const { db } = makeDb();
+    const { db } = makeDb([]);
     await new KbArticlesService(db, access, events).unpublish(user, ARTICLE_ID);
 
     expect(emit).toHaveBeenCalledTimes(1);
   });
 
   it("publish emits the reindex event", async () => {
-    const { db } = makeDb();
+    const { db } = makeDb([[{ publishedAt: null }], [{ max: 3 }]]);
     await new KbArticlesService(db, access, events).publish(user, ARTICLE_ID);
 
     expect(emit).toHaveBeenCalledTimes(1);
   });
 
   it("carries the article's own revision counters, not placeholders", async () => {
-    const { db } = makeDb();
+    const { db } = makeDb([]);
     await new KbArticlesService(db, access, events).archive(user, ARTICLE_ID);
 
     const input = emit.mock.calls[0][1] as {
@@ -114,36 +141,18 @@ describe("KbArticlesService — kb.content.index outbox event", () => {
     expect(input.payload).toMatchObject({
       contentType: "article",
       contentId: ARTICLE_ID,
-      contentRevision: ARTICLE_ROW.contentRevision,
-      aclRevision: ARTICLE_ROW.aclRevision,
+      contentRevision: PAGE_ROW.contentRevision,
+      aclRevision: PAGE_ROW.aclRevision,
     });
   });
 
   it("restoreVersion emits only when the restored article is published", async () => {
-    const { db, tx } = makeDb();
-    tx.query.kbArticles.findFirst.mockResolvedValue({ publishedAt: null });
-    const txWithVersion = tx as unknown as {
-      query: { kbArticleVersions?: { findFirst: jest.Mock } };
-    };
-    txWithVersion.query.kbArticleVersions = {
-      findFirst: jest.fn().mockResolvedValue({ title: "Doc", content: "{}", excerpt: null }),
-    };
-
-    await new KbArticlesService(db, access, events).restoreVersion(user, ARTICLE_ID, 2);
+    const published = makeDb([[VERSION_ROW], [{ max: 3 }]]);
+    await new KbArticlesService(published.db, access, events).restoreVersion(user, ARTICLE_ID, 2);
     expect(emit).toHaveBeenCalledTimes(1);
 
     emit.mockClear();
-    const draft = makeDb();
-    (draft.tx as unknown as { query: Record<string, unknown> }).query.kbArticleVersions = {
-      findFirst: jest.fn().mockResolvedValue({ title: "Doc", content: "{}", excerpt: null }),
-    };
-    draft.tx.update.mockReturnValue({
-      set: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([{ ...ARTICLE_ROW, status: "draft" }]),
-        }),
-      }),
-    });
+    const draft = makeDb([[VERSION_ROW], [{ max: 3 }]], { ...PAGE_ROW, status: "draft" });
     await new KbArticlesService(draft.db, access, events).restoreVersion(user, ARTICLE_ID, 2);
     expect(emit).not.toHaveBeenCalled();
   });

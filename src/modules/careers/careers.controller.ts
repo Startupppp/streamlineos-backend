@@ -1,9 +1,6 @@
 import {
   Body,
   Controller,
-  Get,
-  HttpCode,
-  NotFoundException,
   Post,
   Req,
   UploadedFile,
@@ -11,50 +8,39 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Public } from "../../common/auth/public.decorator";
-import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
-import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
-import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
-import { CareersService, isApplyJobNotFound } from "./careers.service";
-import { applySchema, type ApplyInput } from "./dto/careers.schemas";
-import { type UploadResumeInput } from "./dto/resumes.schemas";
+import { CareersService } from "./careers.service";
+import { uploadResumeSchema, type UploadResumeInput } from "./dto/resumes.schemas";
 import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
-import {
-  careersJobListSchema,
-  careersApplyResponseSchema,
-  uploadResumeResponseSchema,
-} from "./dto/careers-response.schemas";
+/*
+  Only the upload's response schema. `careersJobListSchema` and
+  `careersApplyResponseSchema` describe the two endpoints ATS-CORE-005 removed —
+  the org-less job list that leaked every tenant's openings, and the weaker
+  second apply door. The file itself is restored because main added
+  `uploadResumeResponseSchema` to the one endpoint that survives.
+*/
+import { uploadResumeResponseSchema } from "./dto/careers-response.schemas";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { Request } from "express";
 
+/**
+ * What is left of the legacy careers surface after the apply door was collapsed
+ * onto `POST /public/careers/:orgSlug/jobs/:jobId/apply`.
+ *
+ * `GET /careers` listed every organisation's open jobs with no org slug — one
+ * unauthenticated request returned the hiring plans of every tenant on the
+ * platform — and `POST /careers/apply` was a second, weaker apply that took a
+ * bare `jobPostingId` and so inferred the tenant from the id. Both are gone.
+ * The org-scoped endpoint now does everything the legacy one did (consent,
+ * screening answers, `candidate.applied`) and everything it did not.
+ *
+ * The authenticated résumé upload stays: it is a recruiter attaching a file to
+ * a candidate that already exists, which is not an apply at all.
+ */
 @Controller("careers")
 export class CareersController {
   constructor(private readonly careers: CareersService) {}
-
-  @Public()
-  @Get()
-  @ResponseSchema(careersJobListSchema)
-  list() {
-    return this.careers.listOpenJobs();
-  }
-
-  @Public()
-  @Post("apply")
-  @HttpCode(201)
-  @UseGuards(RateLimitGuard)
-  @UseRateLimit("public:job-apply")
-  @Validate({ body: applySchema })
-  @ResponseSchema(careersApplyResponseSchema)
-  async apply(@Body() body: ApplyInput) {
-    const result = await this.careers.apply(body);
-    if (isApplyJobNotFound(result)) {
-      throw new NotFoundException(
-        "Job posting not found or is no longer accepting applications.",
-      );
-    }
-    return result;
-  }
 
   @Post("resumes/upload")
   @AuthorizedInService(
@@ -64,6 +50,8 @@ export class CareersController {
   @ResponseSchema(uploadResumeResponseSchema)
   @MultipartAction({ file: "file", fields: { candidateId: "integer", fileName: "string", fileType: "string" }, requiredFields: ["candidateId", "fileName", "fileType"] })
   @UseInterceptors(FileInterceptor("file"))
+  @MultipartAction({ file: "file", fields: { candidateId: "integer" }, requiredFields: ["candidateId"] })
+  @Validate({ body: uploadResumeSchema })
   async uploadResume(
     @Req() req: Request & { user: { orgId: string; userId: string } },
     @UploadedFile() file: Express.Multer.File,

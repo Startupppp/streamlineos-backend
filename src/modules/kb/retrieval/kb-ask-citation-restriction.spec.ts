@@ -11,7 +11,7 @@ import type { AskCitation } from "./kb-ask.service";
 
 /**
  * Article visibility has TWO ACL dimensions: the owner DataScope, and the per-article
- * `kb_article_restrictions` rows. Retrieval applies both on the way in. The post-answer
+ * `kb_page_restrictions` rows. Retrieval applies both on the way in. The post-answer
  * citation re-verification — whose whole reason to exist is the window between retrieval
  * and the model's reply — re-applied only the owner half, so an article restricted during
  * that window was still handed back as a citation with its title, slug and space.
@@ -33,12 +33,12 @@ const RESTRICTED_ARTICLE = { id: 11, title: "Board compensation memo", slug: "bo
 const ASKER_MEMBERSHIP = 7;
 const PRIVILEGED_MEMBERSHIP = 999;
 
-/** `kb_article_restrictions` rows: article 11 is viewable only by membership 999. */
+/** `kb_page_restrictions` rows: article 11 is viewable only by membership 999. */
 const RESTRICTIONS = [
   { articleId: RESTRICTED_ARTICLE.id, membershipId: PRIVILEGED_MEMBERSHIP, level: "view" },
 ];
 
-const MEMBERSHIP_COLUMN = '"kb_article_restrictions"."membership_id" = $';
+const MEMBERSHIP_COLUMN = '"kb_page_restrictions"."membership_id" = $';
 
 interface CompiledWhere {
   sql: string;
@@ -53,7 +53,7 @@ function compile(where: SQL | undefined): CompiledWhere {
 
 /** Article ids the predicate confines the read to. */
 function articleIdsBoundIn(compiled: CompiledWhere): number[] | undefined {
-  const marker = '"kb_articles"."id" in (';
+  const marker = '"kb_pages"."id" in (';
   const at = compiled.sql.indexOf(marker);
   if (at === -1) return undefined;
   const close = compiled.sql.indexOf(")", at);
@@ -106,7 +106,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
         from: jest.fn((table: unknown) => ({
           where: jest.fn((where: SQL) => {
             const name = getTableName(table as Parameters<typeof getTableName>[0]);
-            if (name !== "kb_articles") return Promise.resolve([]);
+            if (name !== "kb_pages") return Promise.resolve([]);
             const compiled = compile(where);
             articleWheres.push(compiled);
             const allowed = articleIdsBoundIn(compiled);
@@ -220,7 +220,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
 
     expect(articleWheres.length).toBeGreaterThan(0);
     for (const compiled of articleWheres) {
-      expect(compiled.sql).toContain("kb_article_restrictions");
+      expect(compiled.sql).toContain("kb_page_restrictions");
       expect(restrictionMembershipIn(compiled)).toBe(ASKER_MEMBERSHIP);
     }
   });
@@ -238,7 +238,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
 });
 
 /**
- * The article restriction tests above cover the `kb_article_restrictions` ACL
+ * The article restriction tests above cover the `kb_page_restrictions` ACL
  * dimension applied by `visibleArticles`. `visiblePages` is the parallel seam
  * for the wiki-page half of the product — it delegates authorization to
  * `visiblePagePredicate`, whose contract is that it returns a Drizzle SQL

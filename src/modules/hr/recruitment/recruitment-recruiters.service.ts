@@ -12,8 +12,9 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { RecruiterActivityInput, RecruiterActivityQueryInput, UpsertPortalInput } from "./dto/jobs.schemas";
+import { SUPPORTED_BOARDS, isSupportedBoard, resolveBoard } from "./boards/job-board-adapters";
+import { ProviderCredentialsService } from "./integrations/provider-credentials.service";
 
-const SYNC_PLATFORMS = ["LINKEDIN", "NAUKRI", "INDEED"];
 const RECRUITER_DIRECTORY_LIMIT = 500;
 const PORTAL_LIMIT = 100;
 
@@ -22,6 +23,7 @@ export class RecruitmentRecruitersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly credentials: ProviderCredentialsService,
   ) {}
 
   listPortals(orgId: string) {
@@ -75,33 +77,44 @@ export class RecruitmentRecruitersService {
     return { record: created, created: true };
   }
 
+  /**
+   * Pull new applications from a source portal.
+   *
+   * It stamped `lastSyncedAt` and returned `SYNC_INITIATED` with "New
+   * applications will appear in the ATS pipeline shortly", having contacted
+   * nobody — a recruiter who read that and waited would wait forever. With no
+   * adapter registered the answer is `BLOCKED` and a code, and `lastSyncedAt`
+   * is NOT stamped, because nothing synced.
+   */
   async syncPortal(orgId: string, rawPlatform: string) {
     const platform = rawPlatform.toUpperCase();
-    if (!SYNC_PLATFORMS.includes(platform)) {
-      throw new BadRequestException(`Unsupported platform: ${rawPlatform}. Supported: ${SYNC_PLATFORMS.join(", ")}`);
+    if (!isSupportedBoard(platform)) {
+      throw new BadRequestException(
+        `Unsupported platform: ${rawPlatform}. Supported: ${SUPPORTED_BOARDS.join(", ")}`,
+      );
     }
 
     const source = await this.db.query.candidateSources.findFirst({
       where: and(eq(candidateSources.orgId, orgId), eq(candidateSources.platform, platform)),
     });
-    if (!source) throw new NotFoundException(`No ${platform} integration configured for this organization.`);
-    if (!source.isActive) {
-      throw new BadRequestException(`${platform} integration is disabled. Enable it in integration settings first.`);
-    }
-    if (!source.oauthToken) {
-      throw new BadRequestException(`No API token configured for ${platform}. Please authenticate via the integration settings.`);
-    }
 
+    const credentials = await this.credentials.forPlatform(orgId, platform);
+    const resolved = resolveBoard(platform, credentials);
+    if (!("adapter" in resolved))
+      return { ...resolved, lastSyncedAt: source?.lastSyncedAt ?? null };
+
+    const result = await resolved.adapter.sync(resolved.credentials);
+    const now = new Date();
     await this.db
       .update(candidateSources)
-      .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
-      .where(eq(candidateSources.id, source.id));
+      .set({ lastSyncedAt: now, lastSyncCount: result.fetched, updatedAt: now })
+      .where(eq(candidateSources.id, source?.id ?? -1));
 
     return {
       platform,
-      status: "SYNC_INITIATED",
-      lastSyncedAt: new Date().toISOString(),
-      message: `Sync initiated for ${platform}. New applications will appear in the ATS pipeline shortly.`,
+      status: "SYNCED" as const,
+      fetched: result.fetched,
+      lastSyncedAt: now.toISOString(),
     };
   }
 

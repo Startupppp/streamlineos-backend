@@ -83,13 +83,45 @@ export const jobShareResponseSchema = z.object({
   careersPageLink: z.string(),
 });
 
-export const jobPublishResponseSchema = z.object({
-  results: z.array(z.object({
+/**
+ * One entry per board asked for, and the vocabulary a publish request can
+ * honestly answer with at the moment it returns.
+ *
+ * There is no `PUBLISHED` member and no `POSTED` member, because at the instant
+ * this response is written nothing has been sent: `publish` queues, and
+ * `JobBoardOutboxConsumer` is what talks to the vendor. `QUEUED` is therefore
+ * the true positive answer, and it carries the `postingId` so the caller can
+ * follow the row to `LIVE` or `FAILED`.
+ *
+ * `BLOCKED` carries a machine-readable `code` so the UI can say WHICH problem
+ * this is — "not connected" and "we cannot post to this board yet" need
+ * different actions from the recruiter.
+ */
+export const jobBoardOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
     platform: z.string(),
-    status: z.string(),
-  })),
-  publishedCount: z.number().int(),
-  externalIds: z.record(z.string(), z.string()),
+    status: z.literal("BLOCKED"),
+    code: z.enum(["no-integration", "inactive", "needs-keys", "not-implemented"]),
+    message: z.string(),
+  }),
+  z.object({
+    platform: z.string(),
+    status: z.literal("QUEUED"),
+    postingId: z.number().int(),
+  }),
+  z.object({
+    platform: z.string(),
+    status: z.literal("FAILED"),
+    message: z.string(),
+    httpStatus: z.number().int().nullable(),
+  }),
+]);
+
+export const jobPublishResponseSchema = z.object({
+  results: z.array(jobBoardOutcomeSchema),
+  queuedCount: z.number().int(),
+  blockedCount: z.number().int(),
+  failedCount: z.number().int(),
 });
 
 export const internalJobSchema = z.object({
@@ -126,7 +158,13 @@ export const jobBoardPostingSchema = z.object({
   jobPostingId: z.number().int(),
   platform: z.string(),
   externalPostUrl: z.string().nullable(),
+  /** The id the board returned, or null when no board ever confirmed one. */
+  externalPostingId: z.string().nullable(),
   status: z.string(),
+  /** Why the row is in that status — a blocked code, or the vendor's refusal. */
+  statusDetail: z.string().nullable(),
+  lastAttemptAt: nullableWireDate(),
+  lastSyncedAt: nullableWireDate(),
   postedBy: z.string().nullable(),
   postedAt: nullableWireDate(),
   expiryDate: nullableWireDate(),

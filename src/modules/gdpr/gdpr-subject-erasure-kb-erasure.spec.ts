@@ -3,6 +3,9 @@ import type { SessionsService } from "../sessions/sessions.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 import { chatAttachments, gdprExportJobs, users } from "../../db/schema";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { supportArticlePredicate } from "../kb/help-centre/kb-article-page-scope";
+import { subjectAuthoredPage } from "./gdpr-subject-erasure-authored-content";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -65,10 +68,10 @@ interface KbDbOpts {
   kbMsgDeleted?: unknown[];
   kbConvDeleted?: unknown[];
   kbPageChunkDeleted?: unknown[];
-  kbArticleChunkDeleted?: unknown[];
+  kbAuthoredPageChunkDeleted?: unknown[];
   kbSourceChunkDeleted?: unknown[];
   kbAttachmentChunkDeleted?: unknown[];
-  authoredArticleIds?: Array<{ id: number }>;
+  authoredPageIds?: Array<{ id: number }>;
   ownedSourceIds?: Array<{ id: number }>;
   uploadedAttachmentIds?: Array<{ id: number }>;
 }
@@ -77,7 +80,7 @@ interface KbDbOpts {
  * Builds a mock db whose tx.delete dispatches correctly for the KB erasure path.
  *
  * The service always deletes kbArticleChunks at least once (for page-authored chunks),
- * then conditionally once more for article-authored chunks (when authoredArticleIds is
+ * then conditionally once more for chunks of pages the subject authored (when authoredPageIds is
  * non-empty), once more for source-uploaded chunks (when ownedSourceIds is non-empty),
  * and once more for attachment-uploaded chunks (when uploadedAttachmentIds is non-empty).
  * The round-robin here mirrors that same conditional to stay in sync.
@@ -87,10 +90,10 @@ function makeKbDb(opts: KbDbOpts = {}) {
     kbMsgDeleted = [],
     kbConvDeleted = [],
     kbPageChunkDeleted = [],
-    kbArticleChunkDeleted = [],
+    kbAuthoredPageChunkDeleted = [],
     kbSourceChunkDeleted = [],
     kbAttachmentChunkDeleted = [],
-    authoredArticleIds = [],
+    authoredPageIds = [],
     ownedSourceIds = [],
     uploadedAttachmentIds = [],
   } = opts;
@@ -98,10 +101,10 @@ function makeKbDb(opts: KbDbOpts = {}) {
   const kbMsgDeleteChain = chain(kbMsgDeleted);
   const kbConvDeleteChain = chain(kbConvDeleted);
 
-  // Mirror the service's conditional: page is always first, then article (if any),
-  // then source (if any), then attachment (if any). Matches the exact call order.
+  // Mirror the service's conditional: denormalised page-author chunks are always first,
+  // then authored pages (if any), then source (if any), then attachment (if any).
   const kbChunkChains: ReturnType<typeof chain>[] = [chain(kbPageChunkDeleted)];
-  if (authoredArticleIds.length > 0) kbChunkChains.push(chain(kbArticleChunkDeleted));
+  if (authoredPageIds.length > 0) kbChunkChains.push(chain(kbAuthoredPageChunkDeleted));
   if (ownedSourceIds.length > 0) kbChunkChains.push(chain(kbSourceChunkDeleted));
   if (uploadedAttachmentIds.length > 0) kbChunkChains.push(chain(kbAttachmentChunkDeleted));
 
@@ -119,7 +122,7 @@ function makeKbDb(opts: KbDbOpts = {}) {
         if (txSelectCount === 1) return chain([{ id: 10 }]);
         if (txSelectCount === 2) return chain([{ id: 20 }]);
         // Slot 3 used to be the other-org membership guard. It is no longer read on `tx`.
-        if (txSelectCount === 3) return chain(authoredArticleIds);
+        if (txSelectCount === 3) return chain(authoredPageIds);
         if (txSelectCount === 4) return chain(ownedSourceIds);
         if (txSelectCount === 5) return chain(uploadedAttachmentIds);
         return chain([]);
@@ -309,13 +312,13 @@ describe("GdprSubjectErasureService — kb_article_chunks from pages", () => {
   });
 });
 
-// ─── KB article chunks (article-authored) ────────────────────────────────────
+// ─── KB article chunks (page-authored by the subject) ─────────────────────────
 
-describe("GdprSubjectErasureService — kb_article_chunks from articles", () => {
-  it("deletes article chunks when the subject has authored articles", async () => {
+describe("GdprSubjectErasureService — kb_article_chunks from pages the subject authored", () => {
+  it("deletes chunks for every page the subject authored, owned or last edited", async () => {
     const { db } = makeKbDb({
-      authoredArticleIds: [{ id: 7 }],
-      kbArticleChunkDeleted: [{ id: 200 }],
+      authoredPageIds: [{ id: 7 }],
+      kbAuthoredPageChunkDeleted: [{ id: 200 }],
     });
     const svc = buildService(db);
 
@@ -324,10 +327,10 @@ describe("GdprSubjectErasureService — kb_article_chunks from articles", () => 
     expect(result.tablesAnonymised).toContain("kb_article_chunks");
   });
 
-  it("skips the article chunk delete when the subject has authored no articles", async () => {
-    // No articles → only 3 delete calls: messages, conversations, page-chunks.
-    // With articles → 4 delete calls (article chunks added).
-    const { db, tx } = makeKbDb({ authoredArticleIds: [] });
+  it("skips the authored-page chunk delete when the subject authored no page", async () => {
+    // No authored pages → only 3 delete calls: messages, conversations, page-chunks.
+    // With authored pages → 4 delete calls (authored-page chunks added).
+    const { db, tx } = makeKbDb({ authoredPageIds: [] });
     const svc = buildService(db);
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
@@ -335,10 +338,10 @@ describe("GdprSubjectErasureService — kb_article_chunks from articles", () => 
     expect(kbDeleteCalls(tx)).toBe(3);
   });
 
-  it("(bite proof) kb_article_chunks absent when article chunk delete returns no rows and no page chunks", async () => {
+  it("(bite proof) kb_article_chunks absent when the authored-page chunk delete returns no rows and no page chunks", async () => {
     const { db } = makeKbDb({
-      authoredArticleIds: [{ id: 7 }],
-      kbArticleChunkDeleted: [],
+      authoredPageIds: [{ id: 7 }],
+      kbAuthoredPageChunkDeleted: [],
     });
     const svc = buildService(db);
 
@@ -405,34 +408,34 @@ describe("GdprSubjectErasureService — dry-run KB preview", () => {
 
 // ─── Completeness across the batch boundary ───────────────────────────────────
 //
-// The SELECT for authored-article IDs and owned-source IDs must carry NO LIMIT,
-// so every article/source the subject owns contributes its chunks to the erasure.
-// These specs prove that with TOTAL_ARTICLES > FIXTURE_BATCH, all chunks are erased.
-// The bite proof shrinks the fixture's SELECT result to FIXTURE_BATCH < TOTAL_ARTICLES
+// The SELECT for authored-page IDs and owned-source IDs must carry NO LIMIT,
+// so every page/source the subject owns contributes its chunks to the erasure.
+// These specs prove that with TOTAL_PAGES > FIXTURE_BATCH, all chunks are erased.
+// The bite proof shrinks the fixture's SELECT result to FIXTURE_BATCH < TOTAL_PAGES
 // and demonstrates that the "toContain" assertion then fails — confirming the spec
 // is sensitive to the completeness of the ID set passed to the DELETE.
 
-const TOTAL_ARTICLES = 5;
+const TOTAL_PAGES = 5;
 const FIXTURE_BATCH = 3;
 
-function makeCompletenessDb(opts: { selectedArticleCount: number }) {
-  const { selectedArticleCount } = opts;
-  const selectedArticles = Array.from(
-    { length: selectedArticleCount },
+function makeCompletenessDb(opts: { selectedPageCount: number }) {
+  const { selectedPageCount } = opts;
+  const selectedPages = Array.from(
+    { length: selectedPageCount },
     (_, i) => ({ id: i + 1 }),
   );
   return makeKbDb({
-    authoredArticleIds: selectedArticles,
+    authoredPageIds: selectedPages,
     kbPageChunkDeleted: [],
-    kbArticleChunkDeleted:
-      selectedArticleCount >= TOTAL_ARTICLES ? [{ id: 9999 }] : [],
+    kbAuthoredPageChunkDeleted:
+      selectedPageCount >= TOTAL_PAGES ? [{ id: 9999 }] : [],
     ownedSourceIds: [],
   });
 }
 
-describe("GdprSubjectErasureService — article-chunk completeness across the batch boundary", () => {
-  it("erases article chunks for all TOTAL_ARTICLES authored articles when SELECT is unlimited", async () => {
-    const { db } = makeCompletenessDb({ selectedArticleCount: TOTAL_ARTICLES });
+describe("GdprSubjectErasureService — authored-page chunk completeness across the batch boundary", () => {
+  it("erases chunks for all TOTAL_PAGES authored pages when SELECT is unlimited", async () => {
+    const { db } = makeCompletenessDb({ selectedPageCount: TOTAL_PAGES });
     const svc = buildService(db);
 
     const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
@@ -440,16 +443,16 @@ describe("GdprSubjectErasureService — article-chunk completeness across the ba
     expect(result.tablesAnonymised).toContain("kb_article_chunks");
   });
 
-  it("(bite proof) SELECT limited to FIXTURE_BATCH leaves article chunks for remaining articles un-erased", async () => {
-    // Shrinking the fixture's batch to FIXTURE_BATCH (3) < TOTAL_ARTICLES (5) simulates
-    // the old LIMIT 1000 behavior on a subject with 5 authored articles.
+  it("(bite proof) SELECT limited to FIXTURE_BATCH leaves chunks for the remaining pages un-erased", async () => {
+    // Shrinking the fixture's batch to FIXTURE_BATCH (3) < TOTAL_PAGES (5) simulates
+    // the old LIMIT 1000 behavior on a subject with 5 authored pages.
     // The fixture DELETE mock returns [] because only a subset of IDs were covered,
     // so "kb_article_chunks" is NOT pushed to tablesAnonymised.
     // Asserting toContain then FAILS — proving the spec detects the compliance gap.
-    // To verify this bite: change { selectedArticleCount: FIXTURE_BATCH } to
-    // { selectedArticleCount: TOTAL_ARTICLES } — the assertion passes, confirming
+    // To verify this bite: change { selectedPageCount: FIXTURE_BATCH } to
+    // { selectedPageCount: TOTAL_PAGES } — the assertion passes, confirming
     // the fixture, not the source, drives the outcome.
-    const { db } = makeCompletenessDb({ selectedArticleCount: FIXTURE_BATCH });
+    const { db } = makeCompletenessDb({ selectedPageCount: FIXTURE_BATCH });
     const svc = buildService(db);
 
     const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
@@ -477,12 +480,12 @@ describe("GdprSubjectErasureService — KB erasure idempotency", () => {
 
 // ─── KB article chunks (attachment-uploaded) ──────────────────────────────────
 //
-// A subject may upload a file as an attachment to an article they did NOT author.
-// Those attachment-sourced chunks reference the subject via kbArticleAttachments.uploadedBy
-// and are NOT covered by the article-authored deletion. They must be erased separately.
+// A subject may upload a file as an attachment to a page they did NOT author.
+// Those attachment-sourced chunks reference the subject via kbPageAttachments.uploadedById
+// and are NOT covered by the authored-page deletion. They must be erased separately.
 
 describe("GdprSubjectErasureService — kb_article_chunks from uploaded attachments", () => {
-  it("deletes attachment chunks when the subject has uploaded attachments to any article", async () => {
+  it("deletes attachment chunks when the subject has uploaded attachments to any page", async () => {
     const { db } = makeKbDb({
       uploadedAttachmentIds: [{ id: 11 }],
       kbAttachmentChunkDeleted: [{ id: 500 }],
@@ -539,5 +542,37 @@ describe("GdprSubjectErasureService — kb_article_chunks from uploaded attachme
     await expect(
       svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false }),
     ).resolves.toMatchObject({ blocked: false, dryRun: false });
+  });
+});
+
+// ─── Authorship predicate ─────────────────────────────────────
+
+describe("subjectAuthoredPage — which kb_pages rows erasure reaches", () => {
+  const dialect = new PgDialect();
+  const rendered = dialect.sqlToQuery(subjectAuthoredPage("user-kb-subject", 42)).sql;
+
+  it.each([
+    "created_by_id",
+    "owner_user_id",
+    "last_edited_by_id",
+    "created_by_membership_id",
+    "owner_membership_id",
+    "last_edited_by_membership_id",
+  ])("names %s, so an authorship column added to kb_pages cannot silently escape erasure", (column) => {
+    expect(rendered).toContain(column);
+  });
+
+  it("does not name deleted_by_id, because archiving another person's page does not make its text the subject's data", () => {
+    expect(rendered).not.toContain("deleted_by_id");
+  });
+
+  it("does not filter content_type, so wiki pages the subject authored are erased alongside support articles", () => {
+    expect(rendered).not.toContain("content_type");
+    expect(dialect.sqlToQuery(supportArticlePredicate()).sql).toContain("content_type");
+  });
+
+  it("does not filter deleted_at, so a soft-deleted page the subject authored is still erased", () => {
+    expect(rendered).not.toContain("deleted_at");
+    expect(dialect.sqlToQuery(supportArticlePredicate()).sql).toContain("deleted_at");
   });
 });

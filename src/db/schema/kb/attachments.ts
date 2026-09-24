@@ -21,6 +21,7 @@ export const kbPageAttachments = pgTable(
     pageId: integer("page_id"),
     fileKey: text("file_key").notNull(),
     fileName: text("file_name").notNull(),
+    fileUrl: text("file_url"),
     mimeType: text("mime_type").notNull(),
     fileSize: integer("file_size").notNull(),
     sha256: text("sha256"),

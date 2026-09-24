@@ -33,15 +33,18 @@ import type {
   ScheduleInterviewInput,
   SelfScheduleInput,
 } from "./dto/interview-scheduling.schemas";
+import { interviewTypeEnum } from "../../../db/schema/common/enums";
+import { ChatNotifyService } from "../recruitment/chat-notify/chat-notify.service";
 
-const INTERVIEW_TYPES = [
-  "PHONE",
-  "VIDEO",
-  "ONSITE",
-  "TECHNICAL",
-  "HR",
-  "FINAL",
-] as const;
+/**
+ * Read off the column's own enum rather than restated.
+ *
+ * The restated copy fell behind the moment ASSESSMENT and VOICE_SCREEN were
+ * added: rows the database accepts stopped type-checking here, and
+ * `coerceInterviewType` would have quietly rewritten an assessment as a video
+ * call.
+ */
+const INTERVIEW_TYPES = interviewTypeEnum.enumValues;
 type InterviewType = (typeof INTERVIEW_TYPES)[number];
 
 const FORMAT_TO_TYPE: Record<"VIDEO" | "PHONE" | "IN_PERSON", InterviewType> = {
@@ -85,6 +88,7 @@ export class HrInterviewSchedulingService {
     private readonly notifications: NotificationsService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly chatNotify: ChatNotifyService,
   ) {}
 
   async createInterview(orgId: string, input: CreateInterviewInput) {
@@ -435,6 +439,21 @@ export class HrInterviewSchedulingService {
       scheduledAt: interview.scheduledAt.toISOString(),
       durationMinutes: interview.duration ?? 60,
       meetingLink: interview.meetingLink ?? null,
+    });
+
+    /*
+      The chat notice is fire-and-forget by design and cannot throw — the
+      interview is already scheduled, and the interviewer already has the email
+      and the calendar invite this would merely repeat. A workspace being
+      unreachable must not fail the request.
+    */
+    await this.chatNotify.notifyInterview(orgId, {
+      interviewId: interview.id,
+      candidateId: interview.candidateId,
+      jobPostingId: null,
+      scheduledAt: interview.scheduledAt,
+      durationMinutes: interview.duration ?? 60,
+      kind: "assigned",
     });
   }
 

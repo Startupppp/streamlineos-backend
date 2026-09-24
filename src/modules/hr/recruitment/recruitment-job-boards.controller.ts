@@ -30,7 +30,7 @@ export class RecruitmentJobBoardsController {
 
   @Get()
   @ResponseSchema(z.array(jobBoardPostingSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: jobIdParams })
   list(@CurrentUser() u: CurrentUserContext, @Param("jobId", ParseIntPipe) jobId: number) {
     return this.service.list(u.orgId, jobId);
@@ -39,7 +39,7 @@ export class RecruitmentJobBoardsController {
   @Post()
   @HttpCode(201)
   @ResponseSchema(jobBoardPostingSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobIdParams, body: createJobBoardPostingSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -51,7 +51,7 @@ export class RecruitmentJobBoardsController {
 
   @Patch(":postingId")
   @ResponseSchema(jobBoardPostingSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobAndPostingIdParams, body: updateJobBoardPostingSchema })
   update(
     @CurrentUser() u: CurrentUserContext,
@@ -65,7 +65,7 @@ export class RecruitmentJobBoardsController {
   @Delete(":postingId")
   @HttpCode(204)
   @NoContentResponse()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: jobAndPostingIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,

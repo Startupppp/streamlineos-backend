@@ -6,14 +6,15 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   helpdeskTickets,
   hrHelpdeskComments,
-  kbArticles,
+  kbPages,
   users,
 } from "../../../db/schema";
+import { supportArticlePredicate } from "../../kb/help-centre/kb-article-page-scope";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -547,42 +548,42 @@ export class HrHelpdeskService {
     const term = input.query;
     const like = `%${term}%`;
 
+    const inScope = and(
+      eq(kbPages.orgId, orgId),
+      eq(kbPages.status, "published"),
+      supportArticlePredicate(),
+      isNotNull(kbPages.slug),
+    );
+
     const fallback = and(
-      eq(kbArticles.orgId, orgId),
-      eq(kbArticles.status, "published"),
-      or(
-        sql`${kbArticles.title} ILIKE ${like}`,
-        sql`${kbArticles.excerpt} ILIKE ${like}`,
-      ),
+      inScope,
+      or(sql`${kbPages.title} ILIKE ${like}`, sql`${kbPages.excerpt} ILIKE ${like}`),
     );
 
     const rows = await this.db.execute(
-      sql`SELECT app.search_kb_article_ids(${term}, ${KB_SUGGEST_CAP + 1}) AS id`,
+      sql`SELECT app.search_kb_page_ids(${term}, ${KB_SUGGEST_CAP + 1}) AS id`,
     );
 
     const articleWhere = rows.length === 0
       ? sql`false`
       : rows.length > KB_SUGGEST_CAP
       ? fallback
-      : and(
-          eq(kbArticles.orgId, orgId),
-          eq(kbArticles.status, "published"),
-          inArray(kbArticles.id, rows.map((r) => Number(r["id"]))),
-        );
+      : and(inScope, inArray(kbPages.id, rows.map((r) => Number(r["id"]))));
 
     const articles = await this.db
       .select({
-        id: kbArticles.id,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        excerpt: kbArticles.excerpt,
+        id: kbPages.id,
+        title: kbPages.title,
+        slug: kbPages.slug,
+        excerpt: kbPages.excerpt,
         source: sql<string>`'article'`,
       })
-      .from(kbArticles)
+      .from(kbPages)
       .where(articleWhere)
-      .orderBy(desc(kbArticles.updatedAt))
+      .orderBy(desc(kbPages.updatedAt))
       .limit(5);
 
-    return { results: articles.slice(0, 5) };
+    const slugged = articles.flatMap((r) => (r.slug === null ? [] : [{ ...r, slug: r.slug }]));
+    return { results: slugged };
   }
 }

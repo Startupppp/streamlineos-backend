@@ -1,6 +1,6 @@
 import { ConflictException, Injectable } from "@nestjs/common";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { paragraphize } from "../article-conversion/kb-article-migration.util";
+import { paragraphize } from "../help-centre/lib/kb-page-content";
 import { KbResearchBriefService } from "../retrieval/kb-research-brief.service";
 import { KbPagesService } from "./kb-pages.service";
 import type { ConvertBriefToPageInput } from "./dto/kb-brief-to-page.schemas";

@@ -4,7 +4,7 @@ import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbMembersService } from "../wiki/kb-members.service";
 import { KbIndexingService } from "./kb-indexing.service";
-import { kbPages, kbArticles } from "../../../db/schema";
+import { kbPages } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -184,7 +184,7 @@ describe("KB removed-member ACL revision mechanism", () => {
   const makeIndexing = (db: unknown) =>
     new KbIndexingService(db as never, undefined as never, undefined as never);
 
-  it("removing a non-admin member bumps aclRevision on kbPages and kbArticles for that space", async () => {
+  it("removing a non-admin member bumps aclRevision on the one kbPages table for that space", async () => {
     const member = {
       id: 10,
       orgId: "org-1",
@@ -204,7 +204,6 @@ describe("KB removed-member ACL revision mechanism", () => {
     expect(result.success).toBe(true);
     const updatedTables = db.update.mock.calls.map(([table]: [unknown]) => table);
     expect(updatedTables).toContain(kbPages);
-    expect(updatedTables).toContain(kbArticles);
   });
 
   it("removing a member also bumps aclRevision when the removed member held admin role", async () => {
@@ -235,6 +234,5 @@ describe("KB removed-member ACL revision mechanism", () => {
     expect(result.success).toBe(true);
     const updatedTables = db.update.mock.calls.map(([table]: [unknown]) => table);
     expect(updatedTables).toContain(kbPages);
-    expect(updatedTables).toContain(kbArticles);
   });
 });

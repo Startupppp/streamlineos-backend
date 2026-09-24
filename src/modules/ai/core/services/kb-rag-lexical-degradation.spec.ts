@@ -40,11 +40,18 @@ type EmbedBehaviour =
 function makeHarness(embed: EmbedBehaviour, rows: unknown[] = [chunkRow]) {
   const wheres: SQL[] = [];
   const orders: SQL[] = [];
+  const joins: SQL[] = [];
   const projections: Record<string, unknown>[] = [];
   const chain: Record<string, jest.Mock> = {
     from: jest.fn(() => chain),
-    innerJoin: jest.fn(() => chain),
-    leftJoin: jest.fn(() => chain),
+    innerJoin: jest.fn((_table: unknown, on: SQL) => {
+      joins.push(on);
+      return chain;
+    }),
+    leftJoin: jest.fn((_table: unknown, on: SQL) => {
+      joins.push(on);
+      return chain;
+    }),
     where: jest.fn((cond: SQL) => {
       wheres.push(cond);
       return chain;
@@ -82,7 +89,7 @@ function makeHarness(embed: EmbedBehaviour, rows: unknown[] = [chunkRow]) {
     embedQueryWithCredit,
   };
   const service = new KbRagRetrievalService(db as never, aiGateway as never);
-  return { service, wheres, orders, projections };
+  return { service, wheres, orders, joins, projections };
 }
 
 describe("public KB retrieveContext degrades to lexical rather than taking the feature down with a 503", () => {
@@ -132,12 +139,33 @@ describe("public KB retrieveContext degrades to lexical rather than taking the f
     const { text, params } = render(wheres[0] as SQL);
     const org = /"kb_article_chunks"\."org_id"\s*=\s*\$(\d+)/.exec(text);
     expect(params[Number(org?.[1]) - 1]).toBe(ORG);
-    const status = /"kb_articles"\."status"\s*=\s*\$(\d+)/.exec(text);
+    const status = /"kb_pages"\."status"\s*=\s*\$(\d+)/.exec(text);
     expect(params[Number(status?.[1]) - 1]).toBe("published");
-    const visibility = /"kb_articles"\."visibility"\s*=\s*\$(\d+)/.exec(text);
+    const visibility = /"kb_pages"\."visibility"\s*=\s*\$(\d+)/.exec(text);
     expect(params[Number(visibility?.[1]) - 1]).toBe("public");
     expect(text).toContain('"kb_spaces"."audience" in');
     expect(text).toContain('"kb_spaces"."deleted_at" is null');
+  });
+
+  it("restricts the corpus to live support articles, so a wiki page is never quoted to an anonymous asker", async () => {
+    const { service, wheres } = makeHarness({ mode: "failure", kind: "provider_unavailable" });
+
+    await service.retrieveContext(ORG, QUESTION);
+
+    const { text, params } = render(wheres[0] as SQL);
+    const contentType = /"kb_pages"\."content_type"\s*=\s*\$(\d+)/.exec(text);
+    expect(params[Number(contentType?.[1]) - 1]).toBe("support_article");
+    expect(text).toContain('"kb_pages"."deleted_at" is null');
+  });
+
+  it("anchors chunks on page_id, because article_id no longer resolves to a table", async () => {
+    const { service, joins } = makeHarness({ mode: "failure", kind: "provider_unavailable" });
+
+    await service.retrieveContext(ORG, QUESTION);
+
+    const { text } = render(joins[0] as SQL);
+    expect(text).toContain('"kb_article_chunks"."page_id"');
+    expect(text).not.toContain('"kb_article_chunks"."article_id"');
   });
 
   it("narrows the lexical fallback to articles whose own text matches, never the whole public corpus", async () => {
@@ -146,7 +174,7 @@ describe("public KB retrieveContext degrades to lexical rather than taking the f
     await service.retrieveContext(ORG, QUESTION);
 
     const { text, params } = render(wheres[0] as SQL);
-    expect(text).toContain('"kb_articles"."fts" @@ websearch_to_tsquery');
+    expect(text).toContain('"kb_pages"."fts" @@ websearch_to_tsquery');
     expect(params).toContain(QUESTION);
   });
 

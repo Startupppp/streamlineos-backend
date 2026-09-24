@@ -1,15 +1,22 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbArticleChunks, kbPages } from "../../../db/schema";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { kbArticleChunks, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
+import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { queryVectorChunkIds } from "./kb-vector-candidate-query";
 import { buildArticleRestrictionPredicate } from "./kb-article-restriction-predicate";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
+
+export const KB_HELP_CENTRE_CONTENT_TYPE = "support_article";
+
+export function wikiPagePredicate(): SQL {
+  return sql`(${isNull(kbPages.deletedAt)} AND ${ne(kbPages.contentType, KB_HELP_CENTRE_CONTENT_TYPE)})`;
+}
 
 @Injectable()
 export class KbCandidateService {
@@ -46,20 +53,21 @@ export class KbCandidateService {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
     const keywordCond = await this.resolveArticleKeywordCondition(query, tsquery, 500);
     const conditions: SQL[] = [
-      eq(kbArticles.orgId, orgId),
-      inArray(kbArticles.spaceId, spaceIds),
-      eq(kbArticles.status, "published"),
+      eq(kbPages.orgId, orgId),
+      supportArticlePredicate(),
+      inArray(kbPages.spaceId, spaceIds),
+      eq(kbPages.status, "published"),
       keywordCond,
       this.articleRestrictionFilter(orgId, principal),
     ];
     if (ownerScopeFilter) conditions.push(ownerScopeFilter);
-    if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
+    if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
 
     const rows = await this.db
-      .select({ id: kbArticles.id })
-      .from(kbArticles)
+      .select({ id: kbPages.id })
+      .from(kbPages)
       .where(and(...conditions))
-      .orderBy(desc(this.keywordRank(tsquery)), desc(kbArticles.updatedAt))
+      .orderBy(desc(this.keywordRank(tsquery)), desc(kbPages.updatedAt))
       .limit(pool);
     return rows.map((row) => row.id);
   }
@@ -73,52 +81,15 @@ export class KbCandidateService {
     ownerScopeFilter: SQL | null,
     spaceId?: number,
   ): Promise<number[]> {
-    try {
-      const cap = pool * 4;
-      const chunkIds = await this.vectorChunkIds(orgId, vector, cap);
-      if (chunkIds.length === 0) return [];
-
-      const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
-      const conditions: SQL[] = [
-        eq(kbArticleChunks.orgId, orgId),
-        eq(kbArticles.orgId, orgId),
-        inArray(kbArticleChunks.id, chunkIds),
-        isNotNull(kbArticleChunks.articleId),
-        inArray(kbArticles.spaceId, spaceIds),
-        eq(kbArticles.status, "published"),
-        this.articleRestrictionFilter(orgId, principal),
-      ];
-      if (ownerScopeFilter) conditions.push(ownerScopeFilter);
-      if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
-
-      const rows = await this.db
-        .select({ articleId: kbArticleChunks.articleId })
-        .from(kbArticleChunks)
-        .innerJoin(kbArticles, and(
-          eq(kbArticles.id, kbArticleChunks.articleId),
-          eq(kbArticleChunks.aclRevision, kbArticles.aclRevision),
-        ))
-        .where(and(...conditions))
-        .orderBy(distance)
-        .limit(cap);
-
-      const seen = new Set<number>();
-      const result: number[] = [];
-      for (const row of rows) {
-        const id = row.articleId;
-        if (id === null || seen.has(id)) continue;
-        seen.add(id);
-        result.push(id);
-        if (result.length >= pool) break;
-      }
-      return result;
-    } catch (err) {
-      this.logger.warn("KB article vector candidate retrieval failed", {
-        orgId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return [];
-    }
+    const conditions: SQL[] = [
+      inArray(kbPages.spaceId, spaceIds),
+      eq(kbPages.status, "published"),
+      supportArticlePredicate(),
+      this.articleRestrictionFilter(orgId, principal),
+    ];
+    if (ownerScopeFilter) conditions.push(ownerScopeFilter);
+    if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
+    return this.pageIdsNearest(orgId, vector, pool, conditions, "KB article");
   }
 
   async pageKeywordCandidates(
@@ -128,14 +99,14 @@ export class KbCandidateService {
     pageVisibility: SQL,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
-    const keywordCond = await this.resolvePageKeywordCondition(query, pool, tsquery);
+    const keywordCond = await this.resolveArticleKeywordCondition(query, tsquery, pool);
     const rows = await this.db
       .select({ id: kbPages.id })
       .from(kbPages)
       .where(
         and(
           eq(kbPages.orgId, orgId),
-          isNull(kbPages.deletedAt),
+          wikiPagePredicate(),
           pageVisibility,
           keywordCond,
         ),
@@ -151,48 +122,13 @@ export class KbCandidateService {
     pool: number,
     chunkVisibility: SQL,
   ): Promise<number[]> {
-    try {
-      const cap = pool * 4;
-      const chunkIds = await this.vectorChunkIds(orgId, vector, cap);
-      if (chunkIds.length === 0) return [];
-
-      const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
-      const rows = await this.db
-        .select({ pageId: kbArticleChunks.pageId })
-        .from(kbArticleChunks)
-        .innerJoin(kbPages, and(
-          eq(kbPages.id, kbArticleChunks.pageId),
-          eq(kbArticleChunks.aclRevision, kbPages.aclRevision),
-        ))
-        .where(
-          and(
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbPages.orgId, orgId),
-            inArray(kbArticleChunks.id, chunkIds),
-            isNotNull(kbArticleChunks.pageId),
-            chunkVisibility,
-          ),
-        )
-        .orderBy(distance)
-        .limit(cap);
-
-      const seen = new Set<number>();
-      const result: number[] = [];
-      for (const row of rows) {
-        const id = row.pageId;
-        if (id === null || seen.has(id)) continue;
-        seen.add(id);
-        result.push(id);
-        if (result.length >= pool) break;
-      }
-      return result;
-    } catch (err) {
-      this.logger.warn("KB page vector candidate retrieval failed", {
-        orgId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return [];
-    }
+    return this.pageIdsNearest(
+      orgId,
+      vector,
+      pool,
+      [wikiPagePredicate(), chunkVisibility],
+      "KB page",
+    );
   }
 
   /**
@@ -241,12 +177,56 @@ export class KbCandidateService {
     return text.slice(start, start + SNIPPET_LENGTH).trim();
   }
 
-  private async resolvePageKeywordCondition(q: string, cap: number, tsquery: SQL): Promise<SQL> {
-    const term = `%${q}%`;
-    const fallback = sql`(fts @@ ${tsquery} OR (numnode(${tsquery}) = 0 AND ${kbPages.title} ILIKE ${term}))`;
-    const rows = await this.db.execute(sql`SELECT app.search_kb_page_ids(${q}, ${cap + 1}) AS id`);
-    if (rows.length === 0 || rows.length > cap) return fallback;
-    const ids = rows.map((r) => Number(r["id"]));
-    return inArray(kbPages.id, ids);
+  private async pageIdsNearest(
+    orgId: string,
+    vector: string,
+    pool: number,
+    extraConditions: SQL[],
+    label: string,
+  ): Promise<number[]> {
+    try {
+      const cap = pool * 4;
+      const chunkIds = await this.vectorChunkIds(orgId, vector, cap);
+      if (chunkIds.length === 0) return [];
+
+      const rows = await this.db
+        .select({ pageId: kbArticleChunks.pageId })
+        .from(kbArticleChunks)
+        .innerJoin(
+          kbPages,
+          and(
+            eq(kbPages.id, kbArticleChunks.pageId),
+            eq(kbArticleChunks.aclRevision, kbPages.aclRevision),
+          ),
+        )
+        .where(
+          and(
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbPages.orgId, orgId),
+            inArray(kbArticleChunks.id, chunkIds),
+            isNotNull(kbArticleChunks.pageId),
+            ...extraConditions,
+          ),
+        )
+        .orderBy(sql`${kbArticleChunks.embedding} <=> ${vector}::vector`)
+        .limit(cap);
+
+      const seen = new Set<number>();
+      const result: number[] = [];
+      for (const row of rows) {
+        const id = row.pageId;
+        if (id === null || seen.has(id)) continue;
+        seen.add(id);
+        result.push(id);
+        if (result.length >= pool) break;
+      }
+      return result;
+    } catch (err) {
+      this.logger.warn(`${label} vector candidate retrieval failed`, {
+        orgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return [];
+    }
   }
 }

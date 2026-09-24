@@ -7,6 +7,7 @@ export const talentPoolSchema = z.object({
   orgId: z.string(),
   name: z.string(),
   description: z.string().nullable(),
+  tags: z.array(z.string()),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),

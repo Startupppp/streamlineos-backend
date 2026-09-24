@@ -157,6 +157,12 @@ export class RecruitmentSourcingController {
   @RequirePermission("hr:requisitions:view")
   @Validate({ params: vendorIdParams })
   async listSubmissions(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
+    /**
+     * Vendor fee and margin are money, so the narrower rung of the same family
+     * the rest of this desk uses decides it. It read `hr:employees:manage`,
+     * which nothing else on this controller checks any more and which the
+     * sidebar never grants.
+     */
     const canViewFinancials =
       u.isOrgOwner || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
     return this.sourcing.listSubmissions(u.orgId, vendorId, canViewFinancials);

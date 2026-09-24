@@ -82,17 +82,17 @@ function makeHarness(options: { scope?: string; isAdmin?: boolean } = {}) {
 }
 
 describe("retrieveDocumentPassages applies the article ACL itself", () => {
-  it("binds the caller's org and the published status to kb_articles, not just the id list", async () => {
+  it("binds the caller's org and the published status to kb_pages, not just the id list", async () => {
     const { service, wheres } = makeHarness();
 
     await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     expect(wheres).toHaveLength(1);
     const where = wheres[0];
-    expect(boundOrgIds(where, "kb_articles")).toEqual([ORG]);
+    expect(boundOrgIds(where, "kb_pages")).toEqual([ORG]);
     expect(boundOrgIds(where, "kb_article_chunks")).toEqual([ORG]);
     const { text, params } = render(where);
-    const status = /"kb_articles"\."status"\s*=\s*\$(\d+)/.exec(text);
+    const status = /"kb_pages"\."status"\s*=\s*\$(\d+)/.exec(text);
     expect(status).not.toBeNull();
     expect(params[Number(status?.[1]) - 1]).toBe("published");
   });
@@ -103,7 +103,7 @@ describe("retrieveDocumentPassages applies the article ACL itself", () => {
     await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text } = render(wheres[0]);
-    expect(text).toContain("kb_article_restrictions");
+    expect(text).toContain("kb_page_restrictions");
     expect(text).toMatch(/not exists/i);
   });
 
@@ -113,7 +113,7 @@ describe("retrieveDocumentPassages applies the article ACL itself", () => {
     await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text, params } = render(wheres[0]);
-    const owner = /"kb_articles"\."owner_membership_id"\s*=\s*\$(\d+)/.exec(text);
+    const owner = /"kb_pages"\."owner_membership_id"\s*=\s*\$(\d+)/.exec(text);
     expect(owner).not.toBeNull();
     expect(params[Number(owner?.[1]) - 1]).toBe(MEMBERSHIP);
   });
@@ -132,7 +132,7 @@ describe("retrieveDocumentPassages applies the article ACL itself", () => {
     await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text } = render(wheres[0]);
-    expect(text).not.toContain("kb_article_restrictions");
-    expect(boundOrgIds(wheres[0], "kb_articles")).toEqual([ORG]);
+    expect(text).not.toContain("kb_page_restrictions");
+    expect(boundOrgIds(wheres[0], "kb_pages")).toEqual([ORG]);
   });
 });

@@ -10,7 +10,7 @@ import { ProgramsService } from "./programs.service";
 type AnySelect = PgSelectBase<never, never, never>;
 
 const migration = readFileSync(
-  join(__dirname, "..", "..", "..", "..", "migrations", "1178_project_programs_list_indexes.sql"),
+  join(__dirname, "..", "..", "..", "..", "migrations", "1186_project_programs_list_indexes.sql"),
   "utf8",
 );
 

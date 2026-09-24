@@ -40,25 +40,31 @@ function makeArticleHarness(options: { isAdmin: boolean }): ArticleHarness {
   const updated: Record<string, unknown>[] = [];
   let deletes = 0;
 
-  const returningRow = [{ id: COMMENT_ID, articleId: ARTICLE_ID, authorId: AUTHOR }];
-  const authorChain: Record<string, jest.Mock> = {
-    leftJoin: jest.fn(() => authorChain),
-    where: jest.fn().mockResolvedValue([
-      {
-        comment: { id: COMMENT_ID, articleId: ARTICLE_ID, authorId: AUTHOR },
-        authorName: "Author",
-      },
-    ]),
+  const returningRow = [{ id: COMMENT_ID }];
+  const commentRow = {
+    id: COMMENT_ID,
+    orgId: ORG,
+    articleId: ARTICLE_ID,
+    authorId: AUTHOR,
+    content: "hello",
+    parentId: null,
+    resolvedAt: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    authorName: "Author",
   };
+  const commentChain: Record<string, unknown> = {};
+  const self = (): unknown => commentChain;
+  commentChain.from = self;
+  commentChain.innerJoin = self;
+  commentChain.leftJoin = self;
+  commentChain.where = self;
+  commentChain.limit = self;
+  commentChain.then = (resolve: (value: unknown[]) => unknown): Promise<unknown> =>
+    Promise.resolve([commentRow]).then(resolve);
+
   const db = {
-    query: {
-      kbArticleComments: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValue({ id: COMMENT_ID, authorId: AUTHOR, articleId: ARTICLE_ID }),
-      },
-    },
-    select: jest.fn().mockReturnValue({ from: jest.fn(() => authorChain) }),
+    select: jest.fn(() => commentChain),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockImplementation((patch: Record<string, unknown>) => {
         updated.push(patch);

@@ -293,6 +293,12 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
       if (!text) throw new BadRequestException("resumeText is required");
     }
 
+    /*
+      Both sides of this merge are load-bearing and the return block below
+      references both: `main` added the tenant-scoped candidate lookup, this
+      branch added `heuristic`, which says whether the regex fallback produced
+      the fields rather than the model. Taking either alone does not compile.
+    */
     const candidate = await runInTenantTransaction(
       this.db,
       async (tx) => {
@@ -312,7 +318,7 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
       { orgId },
     );
 
-    const parsed = await this.parseResumeText(text, orgId, userId);
+    const { parsed, heuristic } = await this.parseResumeText(text, orgId, userId);
 
     await runInTenantTransaction(
       this.db,
@@ -330,6 +336,13 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
 
     return {
       parsed,
+      /**
+       * True when the AI gateway refused or failed and the regex fallback
+       * produced these fields. The caller renders a different label for it: a
+       * heuristic extraction that quietly claims to be an AI parse is how a
+       * recruiter ends up trusting a name picked by a capitalisation rule.
+       */
+      heuristic,
       suggestions: {
         firstName:
           parsed.name && !candidate.firstName
@@ -356,7 +369,7 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
     text: string,
     orgId: string,
     userId: string,
-  ): Promise<ParsedResume> {
+  ): Promise<{ parsed: ParsedResume; heuristic: boolean }> {
     const trimmed = text.slice(0, 12000);
     const gatewayResult = await this.gateway.invokeStructured({
       actor: { orgId, userId },
@@ -372,8 +385,8 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
       },
     });
 
-    if (!gatewayResult.ok) return this.fallbackExtract(trimmed);
-    return gatewayResult.data;
+    if (!gatewayResult.ok) return { parsed: this.fallbackExtract(trimmed), heuristic: true };
+    return { parsed: gatewayResult.data, heuristic: false };
   }
 
   private fallbackExtract(text: string): ParsedResume {

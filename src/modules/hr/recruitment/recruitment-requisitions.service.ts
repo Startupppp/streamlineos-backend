@@ -1,9 +1,21 @@
-import { Inject, Injectable, NotFoundException, BadRequestException, ConflictException } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  UnprocessableEntityException,
+} from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { jobRequisitions, jobPostings, headcountRequests } from "../../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
-import type { CreateRequisitionInput, UpdateRequisitionInput } from "./dto/requisitions.schemas";
+import {
+  REQUISITION_TRANSITIONS,
+  type CreateRequisitionInput,
+  type RequisitionStatus,
+  type UpdateRequisitionInput,
+} from "./dto/requisitions.schemas";
 
 @Injectable()
 export class RecruitmentRequisitionsService {
@@ -118,31 +130,68 @@ export class RecruitmentRequisitionsService {
     return { jobId: job.id, jobTitle: job.title };
   }
 
-  async submit(orgId: string, id: number) {
-    const [req] = await this.db.update(jobRequisitions)
-      .set({ status: "PENDING_APPROVAL", updatedAt: new Date() })
-      .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId))).returning();
-    if (!req) throw new NotFoundException("Requisition not found");
+  /**
+   * The one place a requisition's status changes.
+   *
+   * The `WHERE status = <from>` is not belt-and-braces over the read above it:
+   * it is the serialisation. Two approvers clicking at once both read
+   * `PENDING_APPROVAL`, and without the predicate both writes succeed and the
+   * second overwrites the first's `approverId`. A zero-row result means somebody
+   * else moved it, which is a 409 rather than a 404.
+   */
+  private async transition(
+    orgId: string,
+    id: number,
+    to: RequisitionStatus,
+    extra: Partial<typeof jobRequisitions.$inferInsert> = {},
+  ) {
+    const current = await this.findOrThrow(orgId, id);
+    const from = current.status as RequisitionStatus;
+    const allowed = REQUISITION_TRANSITIONS[from] ?? [];
+    if (!allowed.includes(to))
+      throw new UnprocessableEntityException(
+        `Cannot move requisition from ${from} to ${to}. Valid next: ${allowed.join(", ") || "none"}.`,
+      );
+
+    const [req] = await this.db
+      .update(jobRequisitions)
+      .set({ status: to, updatedAt: new Date(), ...extra })
+      .where(
+        and(
+          eq(jobRequisitions.id, id),
+          eq(jobRequisitions.orgId, orgId),
+          eq(jobRequisitions.status, from),
+        ),
+      )
+      .returning();
+    if (!req)
+      throw new ConflictException("This requisition was changed by someone else. Reload and try again.");
     return req;
+  }
+
+  async submit(orgId: string, id: number) {
+    return this.transition(orgId, id, "PENDING_APPROVAL");
   }
 
   async approve(orgId: string, id: number, approverId: string) {
-    const [req] = await this.db.update(jobRequisitions)
-      .set({ status: "APPROVED", approverId, approvedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId))).returning();
-    if (!req) throw new NotFoundException("Requisition not found");
-    return req;
+    return this.transition(orgId, id, "APPROVED", { approverId, approvedAt: new Date() });
   }
 
   async reject(orgId: string, id: number, approverId: string, reason: string) {
-    const [req] = await this.db.update(jobRequisitions)
-      .set({ status: "REJECTED", approverId, rejectionReason: reason, updatedAt: new Date() })
-      .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId))).returning();
-    if (!req) throw new NotFoundException("Requisition not found");
-    return req;
+    return this.transition(orgId, id, "REJECTED", { approverId, rejectionReason: reason });
   }
 
+  /**
+   * Terms may only change while the requisition is still being written or is
+   * waiting for a decision. Editing the budget or the headcount of an APPROVED
+   * requisition would change what was approved after the fact.
+   */
   async update(orgId: string, id: number, data: UpdateRequisitionInput) {
+    const current = await this.findOrThrow(orgId, id);
+    if (current.status !== "DRAFT" && current.status !== "PENDING_APPROVAL")
+      throw new UnprocessableEntityException(
+        `A ${current.status} requisition can no longer be edited.`,
+      );
     await this.validateHeadcountLink(orgId, data.headcountId);
 
     const [req] = await this.db.update(jobRequisitions)

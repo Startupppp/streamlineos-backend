@@ -54,7 +54,7 @@ function makeDb(rows: unknown[]) {
 }
 
 function build(db: Db) {
-  return new RecruitmentJobsService(db, {} as never, {} as never);
+  return new RecruitmentJobsService(db, {} as never, {} as never, {} as never, {} as never);
 }
 
 describe("internal openings — the department under the name the client reads", () => {

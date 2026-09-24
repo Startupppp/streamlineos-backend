@@ -116,7 +116,7 @@ describe("KbSearchService — restriction enforcement", () => {
 
     expect(db.execute).toHaveBeenCalled();
     const statement = db.execute.mock.calls[0]?.[0];
-    expect(JSON.stringify(statement)).toContain("app.search_kb_article_ids");
+    expect(JSON.stringify(statement)).toContain("app.search_kb_page_ids");
   });
 
   it("returns empty array when query is blank", async () => {

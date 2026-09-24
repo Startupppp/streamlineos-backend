@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -11,6 +12,7 @@ import {
   candidateApplications,
   candidateSources,
   candidates,
+  hrJobLevels,
   jobPostings,
   jobRecruiters,
   orgUnits,
@@ -23,11 +25,12 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { formatDateOnly } from "../../../common/date";
+import { JobBoardPublisherService } from "./boards/job-board-publisher.service";
 import type { AssignRecruiterInput, CreateJobInput, InternalApplyInput, JobListInput, PublishJobInput, UpdateJobInput } from "./dto/jobs.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { InternalMobilityService } from "./internal-mobility/internal-mobility.service";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 
-type PublishStatus = "PUBLISHED" | "NO_INTEGRATION" | "INACTIVE" | "NO_TOKEN";
 
 const SHARE_PLATFORMS = [
   { key: "LINKEDIN", name: "LinkedIn", baseUrl: "https://www.linkedin.com/sharing/share-offsite/?url=" },
@@ -41,6 +44,8 @@ export class RecruitmentJobsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly planLimits: PlanLimitsService,
+    private readonly publisher: JobBoardPublisherService,
+    private readonly mobility: InternalMobilityService,
   ) {}
 
   async list(orgId: string, input: JobListInput) {
@@ -246,51 +251,47 @@ export class RecruitmentJobsService {
     return job;
   }
 
+  /**
+   * Ask for this job to be advertised on external boards.
+   *
+   * It answered `PUBLISHED` and stored `{platform}-{jobId}-{timestamp}` as an
+   * external posting id whenever a token happened to be saved, having called
+   * nobody. It now *queues*: each platform resolves through `resolveBoard`, a
+   * blocked one gets a `BLOCKED` publication row carrying its code, and a
+   * resolvable one gets a `QUEUED` row plus an outbox event. Nothing here talks
+   * to a board — `JobBoardOutboxConsumer` does, and it is the only code that
+   * can mark a posting `LIVE`, which it can only do from an id a vendor
+   * returned.
+   *
+   * So the answer to "did it post?" is deliberately "it is queued", which is
+   * the true answer at the moment the request returns. The board settings
+   * screen reads the publication rows for what happened next.
+   *
+   * Opening the job to the careers site is a different act and is a status
+   * patch to `OPEN`; this endpoint was never that and no longer reads as if it
+   * might be.
+   */
   async publish(orgId: string, jobId: number, input: PublishJobInput) {
     const job = await this.db.query.jobPostings.findFirst({
       where: and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)),
+      columns: { id: true, status: true },
     });
     if (!job) throw new NotFoundException("Job posting not found.");
     if (job.status === "DRAFT") {
       throw new BadRequestException("Cannot publish a DRAFT job. Set status to OPEN first.");
     }
 
-    const sources = await this.db.query.candidateSources.findMany({
-      where: eq(candidateSources.orgId, orgId),
-      limit: 100,
-    });
+    const results = await this.publisher.queue(orgId, jobId, input.platforms);
+    const queued = results.filter((r) => r.status === "QUEUED").length;
+    const blocked = results.filter((r) => r.status === "BLOCKED").length;
+    await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
 
-    const results: Array<{ platform: string; status: PublishStatus }> = [];
-    const externalIds: Record<string, string> = { ...(job.externalPostingIds ?? {}) };
-
-    for (const platform of input.platforms) {
-      const src = sources.find((s) => s.platform === platform);
-      if (!src) {
-        results.push({ platform, status: "NO_INTEGRATION" });
-        continue;
-      }
-      if (!src.isActive) {
-        results.push({ platform, status: "INACTIVE" });
-        continue;
-      }
-      if (!src.oauthToken) {
-        results.push({ platform, status: "NO_TOKEN" });
-        continue;
-      }
-      externalIds[platform.toLowerCase()] = `${platform.toLowerCase()}-${jobId}-${Date.now()}`;
-      results.push({ platform, status: "PUBLISHED" });
-    }
-
-    const publishedCount = results.filter((r) => r.status === "PUBLISHED").length;
-    if (publishedCount > 0) {
-      await this.db
-        .update(jobPostings)
-        .set({ externalPostingIds: externalIds, updatedAt: new Date() })
-        .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
-      await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
-    }
-
-    return { results, publishedCount, externalIds };
+    return {
+      results,
+      queuedCount: queued,
+      blockedCount: blocked,
+      failedCount: results.length - queued - blocked,
+    };
   }
 
   async listRecruiters(orgId: string, jobId: number) {
@@ -415,9 +416,22 @@ export class RecruitmentJobsService {
         eq(jobPostings.isInternal, true),
         eq(jobPostings.status, "OPEN"),
       ),
-      columns: { id: true },
+      columns: { id: true, jobLevelId: true },
     });
     if (!job) throw new NotFoundException("Job not found or not accepting internal applications");
+
+    /*
+      Employment and grade first, before anything is written.
+
+      This route is reachable by anybody holding a recruitment view permission,
+      which on some plans includes external recruiters and agency users —
+      "internal" is not a synonym for "logged in". The rules themselves live in
+      `internal-mobility/` so the tenure arithmetic, the probation case and the
+      grade distance are settled by tests rather than here.
+    */
+    const jobLevelRank = await this.jobLevelRank(orgId, job.jobLevelId);
+    const gate = await this.mobility.gateApply(orgId, userId, jobLevelRank);
+    if (!gate.allowed) throw new ForbiddenException(gate.reason);
 
     const applicant = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
@@ -443,6 +457,13 @@ export class RecruitmentJobsService {
           firstName: applicantName.split(" ")[0] || "Employee",
           lastName: applicantName.split(" ").slice(1).join(" ") || "",
           email: applicantEmail,
+          /*
+            `INTERNAL` was not in `CANDIDATE_SOURCES`, so every internally
+            applied candidate carried a source the candidate filter could not
+            select and neither intake sheet could set — they were invisible to
+            the one screen that would show an internal-mobility pipeline. The
+            value is now in the shared list on both sides.
+          */
           source: "INTERNAL",
         })
         .returning({ id: candidates.id });
@@ -469,6 +490,14 @@ export class RecruitmentJobsService {
         coverLetter: input.coverLetter,
         notes: input.notes,
         status: "APPLIED",
+        /*
+          The manager is recorded now and told later. `managerMaySee` keeps the
+          application confidential until it reaches interview, so resolving the
+          reporting line at apply time is about writing down who the decision
+          will belong to — not about telling them.
+        */
+        internalManagerMembershipId: gate.managerMembershipId,
+        internalManagerDecision: this.mobility.initialDecision(gate.managerMembershipId),
       })
       .returning();
 
@@ -481,5 +510,21 @@ export class RecruitmentJobsService {
       columns: { id: true },
     });
     if (!job) throw new NotFoundException("Job not found");
+  }
+  /**
+   * The rank behind a job's level, or null when the opening is not graded.
+   *
+   * Ranks rather than level names, because `hr_job_levels.name` is the org's
+   * own label and carries no order — sorting on one is how "L10" lands below
+   * "L9".
+   */
+  private async jobLevelRank(orgId: string, jobLevelId: number | null): Promise<number | null> {
+    if (jobLevelId === null) return null;
+    const [level] = await this.db
+      .select({ rank: hrJobLevels.rank })
+      .from(hrJobLevels)
+      .where(and(eq(hrJobLevels.orgId, orgId), eq(hrJobLevels.id, jobLevelId)))
+      .limit(1);
+    return level?.rank ?? null;
   }
 }

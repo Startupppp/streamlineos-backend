@@ -38,7 +38,7 @@ describe("KbArticleAiService — cross-tenant isolation", () => {
     const wheres: unknown[] = [];
     const surface = {
       query: {
-        kbArticles: {
+        kbPages: {
           findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
             wheres.push(opts.where);
             return Promise.resolve(articleRow);
@@ -65,6 +65,7 @@ describe("KbArticleAiService — cross-tenant isolation", () => {
     const vals = wheres.flatMap(w => sqlValues(w));
     expect(vals).toContain(ATTACKER);
     expect(vals).not.toContain(OWNER);
+    expect(vals).toContain("support_article");
   });
 
   it("returns summary for an article in the owning org (same-tenant control)", async () => {

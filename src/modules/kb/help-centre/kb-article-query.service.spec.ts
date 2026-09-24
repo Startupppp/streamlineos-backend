@@ -45,12 +45,12 @@ function articleRow(id: number, updatedAt: Date) {
     slug: `article-${id}`,
     excerpt: null,
     status: "published" as const,
-    visibility: "internal" as const,
+    visibility: "org" as const,
     tags: [],
-    ownerId: "user-1",
+    ownerMembershipId: 1,
     helpfulCount: 0,
     notHelpfulCount: 0,
-    lastVerifiedAt: null,
+    verifiedAt: null,
     updatedAt,
   };
 }
@@ -148,6 +148,17 @@ describe("KbArticleQueryService — keyset pagination", () => {
 
     expect(result.items).toHaveLength(2);
     expect(result.nextCursor).toBeNull();
+  });
+
+  it("publishes the article visibility vocabulary, never the kb_pages one", async () => {
+    const t = new Date("2025-01-01T00:00:00.000Z");
+    const { db } = buildChain([[articleRow(1, t)]]);
+    const svc = new KbArticleQueryService(db as never, makeAccessService([1]) as never);
+
+    const result = await svc.list(user as never, { limit: 10, cursor: undefined }, ALL);
+
+    expect(result.items[0]?.visibility).toBe("internal");
+    expect(result.items[0]?.lastVerifiedAt).toBeNull();
   });
 
   it("returns empty result when scope is none without querying the db", async () => {

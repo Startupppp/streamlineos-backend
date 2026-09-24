@@ -6536,15 +6536,71 @@
     {
       "idx": 1061,
       "version": "7",
-      "when": 1803000010691,
-      "tag": "1177_roadmap_search_id_probe",
+      "when": 1803000010682,
+      "tag": "1177_job_board_publication_state",
       "breakpoints": true
     },
     {
       "idx": 1062,
       "version": "7",
+      "when": 1803000010683,
+      "tag": "1178_talent_pool_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 1063,
+      "version": "7",
+      "when": 1803000010684,
+      "tag": "1179_interview_transcripts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1064,
+      "version": "7",
+      "when": 1803000010685,
+      "tag": "1180_bgv_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 1065,
+      "version": "7",
+      "when": 1803000010686,
+      "tag": "1181_assessment_and_voice_screen",
+      "breakpoints": true
+    },
+    {
+      "idx": 1066,
+      "version": "7",
+      "when": 1803000010687,
+      "tag": "1182_candidate_whatsapp_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 1067,
+      "version": "7",
+      "when": 1803000010688,
+      "tag": "1183_identity_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 1068,
+      "version": "7",
+      "when": 1803000010689,
+      "tag": "1184_internal_mobility",
+      "breakpoints": true
+    },
+    {
+      "idx": 1069,
+      "version": "7",
+      "when": 1803000010691,
+      "tag": "1185_roadmap_search_id_probe",
+      "breakpoints": true
+    },
+    {
+      "idx": 1070,
+      "version": "7",
       "when": 1803000010701,
-      "tag": "1178_project_programs_list_indexes",
+      "tag": "1186_project_programs_list_indexes",
       "breakpoints": true
     }
   ]

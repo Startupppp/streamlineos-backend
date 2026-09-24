@@ -164,7 +164,7 @@ describe("client-supplied object keys are bound to the caller's tenant at the se
 
   function kbDb(): Db {
     return {
-      query: { kbArticles: { findFirst: async () => ({ id: 42 }) } },
+      query: { kbPages: { findFirst: async () => ({ id: 42 }) } },
       insert: () => ({ values: () => ({ returning: async () => [{ id: 1 }] }) }),
     } as unknown as Db;
   }

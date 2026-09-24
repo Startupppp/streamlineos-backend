@@ -1,13 +1,14 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
-import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import {
-  kbArticleAttachments,
   kbArticleChunks,
-  kbArticles,
   kbEvents,
+  kbPageAttachments,
+  kbPages,
   kbSpaces,
 } from "../../../../db/schema";
+import { supportArticlePredicate } from "../../../kb/help-centre/kb-article-page-scope";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiGatewayService, type EmbedQueryResult } from "../gateway/ai-gateway.service";
@@ -81,11 +82,11 @@ function vectorRanking(vector: string): KbChunkRanking {
 
 function lexicalRanking(question: string): KbChunkRanking {
   const tsquery = sql`websearch_to_tsquery('english', ${question})`;
-  const rank = sql`ts_rank(${kbArticles.fts}, ${tsquery})`;
+  const rank = sql`ts_rank(${kbPages.fts}, ${tsquery})`;
   return {
     similarity: sql<number>`(${rank})::float8`,
     order: desc(rank),
-    match: sql`${kbArticles.fts} @@ ${tsquery}`,
+    match: sql`${kbPages.fts} @@ ${tsquery}`,
   };
 }
 
@@ -107,14 +108,15 @@ export class KbRagRetrievalService {
       this.db,
       async (tx) => {
         const [row] = await tx
-          .select({ id: kbArticles.id })
-          .from(kbArticles)
-          .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
+          .select({ id: kbPages.id })
+          .from(kbPages)
+          .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
           .where(
             and(
-              eq(kbArticles.orgId, orgId),
-              eq(kbArticles.status, "published"),
-              eq(kbArticles.visibility, "public"),
+              eq(kbPages.orgId, orgId),
+              eq(kbPages.status, "published"),
+              eq(kbPages.visibility, "public"),
+              supportArticlePredicate(),
               inArray(kbSpaces.audience, ["public", "mixed"]),
               isNull(kbSpaces.deletedAt),
             ),
@@ -206,35 +208,39 @@ export class KbRagRetrievalService {
       async (tx) => {
         const conditions: SQL[] = [
           eq(kbArticleChunks.orgId, orgId),
-          eq(kbArticles.status, "published"),
-          eq(kbArticles.visibility, "public"),
+          eq(kbPages.status, "published"),
+          eq(kbPages.visibility, "public"),
+          supportArticlePredicate(),
+          isNotNull(kbPages.slug),
           inArray(kbSpaces.audience, ["public", "mixed"]),
           isNull(kbSpaces.deletedAt),
         ];
-        if (articleId !== undefined) conditions.push(eq(kbArticleChunks.articleId, articleId));
+        if (articleId !== undefined) conditions.push(eq(kbArticleChunks.pageId, articleId));
         if (ranking.match !== undefined) conditions.push(ranking.match);
 
         const pool = await tx
           .select({
             id: kbArticleChunks.id,
-            articleId: kbArticles.id,
+            articleId: kbPages.id,
             attachmentId: kbArticleChunks.attachmentId,
             source: kbArticleChunks.source,
             content: kbArticleChunks.content,
-            title: kbArticles.title,
-            slug: kbArticles.slug,
-            attachmentName: kbArticleAttachments.fileName,
+            title: kbPages.title,
+            slug: kbPages.slug,
+            attachmentName: kbPageAttachments.fileName,
             similarity: ranking.similarity,
           })
           .from(kbArticleChunks)
-          .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
-          .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-          .leftJoin(kbArticleAttachments, eq(kbArticleAttachments.id, kbArticleChunks.attachmentId))
+          .innerJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
+          .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
+          .leftJoin(kbPageAttachments, eq(kbPageAttachments.id, kbArticleChunks.attachmentId))
           .where(and(...conditions))
           .orderBy(ranking.order)
           .limit(Math.min(SEARCH_POOL_K, PAGE_SIZE_CAP));
 
-        return pool.slice(0, DEFAULT_TOP_K);
+        return pool
+          .flatMap((row) => (row.slug === null ? [] : [{ ...row, slug: row.slug }]))
+          .slice(0, DEFAULT_TOP_K);
       },
       { orgId },
     );

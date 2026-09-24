@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Inject } from "@nestjs/common";
-import { and, asc, count, eq, gt } from "drizzle-orm";
-import { kbArticles, kbArticleChunks, kbArticleAttachments } from "../../../db/schema";
+import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
+import { kbArticleChunks, kbPageAttachments, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { sql } from "drizzle-orm";
+import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 
@@ -27,16 +28,17 @@ export class KbArticleReindexService {
     nextArticleId: number | null;
   }> {
     const articles = await this.db
-      .select({ id: kbArticles.id })
-      .from(kbArticles)
+      .select({ id: kbPages.id })
+      .from(kbPages)
       .where(
         and(
-          eq(kbArticles.orgId, orgId),
-          eq(kbArticles.status, "published"),
-          gt(kbArticles.id, afterArticleId),
+          eq(kbPages.orgId, orgId),
+          supportArticlePredicate(),
+          eq(kbPages.status, "published"),
+          gt(kbPages.id, afterArticleId),
         ),
       )
-      .orderBy(asc(kbArticles.id))
+      .orderBy(asc(kbPages.id))
       .limit(REINDEX_BATCH_SIZE + 1);
 
     const batch = articles.slice(0, REINDEX_BATCH_SIZE);
@@ -78,18 +80,15 @@ export class KbArticleReindexService {
     orgId: string,
     articleId: number,
   ): Promise<{ chunks: number; warnings: string[] }> {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!article) throw new NotFoundException("Article not found");
+    await this.assertArticleExists(orgId, articleId);
 
     await this.indexing.indexArticle(orgId, articleId);
 
-    const attachments = await this.db.query.kbArticleAttachments.findMany({
+    const attachments = await this.db.query.kbPageAttachments.findMany({
       where: and(
-        eq(kbArticleAttachments.articleId, articleId),
-        eq(kbArticleAttachments.orgId, orgId),
+        eq(kbPageAttachments.pageId, articleId),
+        eq(kbPageAttachments.orgId, orgId),
+        isNull(kbPageAttachments.deletedAt),
       ),
       columns: { id: true },
     });
@@ -100,23 +99,14 @@ export class KbArticleReindexService {
       if (result.warning) warnings.push(result.warning);
     }
 
-    const [row] = await this.db
-      .select({ chunks: count() })
-      .from(kbArticleChunks)
-      .where(and(eq(kbArticleChunks.articleId, articleId), eq(kbArticleChunks.orgId, orgId)));
-
-    return { chunks: row?.chunks ?? 0, warnings };
+    return { chunks: await this.countChunks(orgId, articleId), warnings };
   }
 
   async getArticleIndexStatus(
     orgId: string,
     articleId: number,
   ): Promise<{ chunks: number; lastIndexedAt: string | null }> {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!article) throw new NotFoundException("Article not found");
+    await this.assertArticleExists(orgId, articleId);
 
     const [row] = await this.db
       .select({
@@ -124,8 +114,28 @@ export class KbArticleReindexService {
         lastIndexedAt: sql<string | null>`max(${kbArticleChunks.createdAt})::text`,
       })
       .from(kbArticleChunks)
-      .where(and(eq(kbArticleChunks.articleId, articleId), eq(kbArticleChunks.orgId, orgId)));
+      .where(and(eq(kbArticleChunks.pageId, articleId), eq(kbArticleChunks.orgId, orgId)));
 
     return { chunks: row?.chunks ?? 0, lastIndexedAt: row?.lastIndexedAt ?? null };
+  }
+
+  private async assertArticleExists(orgId: string, articleId: number): Promise<void> {
+    const article = await this.db.query.kbPages.findFirst({
+      where: and(
+        eq(kbPages.id, articleId),
+        eq(kbPages.orgId, orgId),
+        supportArticlePredicate(),
+      ),
+      columns: { id: true },
+    });
+    if (!article) throw new NotFoundException("Article not found");
+  }
+
+  private async countChunks(orgId: string, articleId: number): Promise<number> {
+    const [row] = await this.db
+      .select({ chunks: count() })
+      .from(kbArticleChunks)
+      .where(and(eq(kbArticleChunks.pageId, articleId), eq(kbArticleChunks.orgId, orgId)));
+    return row?.chunks ?? 0;
   }
 }

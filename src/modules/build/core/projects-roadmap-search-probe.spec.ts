@@ -14,7 +14,7 @@ const MIGRATION = join(
   "..",
   "..",
   "migrations",
-  "1177_roadmap_search_id_probe.sql",
+  "1185_roadmap_search_id_probe.sql",
 );
 
 function migrationText(): string {

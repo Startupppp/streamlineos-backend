@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  UnprocessableEntityException,
   UseGuards,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
@@ -94,6 +95,19 @@ export class StorageVaultController {
       accessedBy: u.userId,
       action: "VIEW",
     });
+
+    /**
+     * An infected object has no authorised reader. The row's `av_result` was
+     * returned to the caller and otherwise ignored, so a document a scanner had
+     * flagged still produced a signed URL. `PENDING` is not refused — that is
+     * the normal state for a file uploaded where no scanner is configured, and
+     * blocking it would make every résumé unreadable on such a deployment —
+     * but the response says the file is unscanned so the UI can warn.
+     */
+    if (doc.avResult === "INFECTED")
+      throw new UnprocessableEntityException(
+        "This file was flagged by malware scanning and cannot be downloaded.",
+      );
 
     const key =
       doc.s3Key.trim().length > 0 ? doc.s3Key : this.storage.getFileKeyFromUrl(doc.fileUrl);

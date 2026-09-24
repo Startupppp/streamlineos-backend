@@ -131,8 +131,8 @@ describe("KB ACL revision gate — stale chunks cannot surface in vector search"
     expect(joins.length).toBeGreaterThanOrEqual(2);
     const rendered = joins.map(renderSql);
     for (const text of rendered) expectStrictFence(text);
-    expect(rendered.some((text) => text.includes('"kb_articles"."acl_revision"'))).toBe(true);
-    expect(rendered.some((text) => text.includes('"kb_pages"."acl_revision"'))).toBe(true);
+    expect(rendered.every((text) => text.includes('"kb_pages"."acl_revision"'))).toBe(true);
+    expect(rendered.some((text) => text.includes("kb_articles"))).toBe(false);
   });
 
   it("pageVectorCandidates joins on the same plain equality, so a page chunk that trails its page is dropped", async () => {
@@ -148,7 +148,7 @@ describe("KB ACL revision gate — stale chunks cannot surface in vector search"
 
   it("BITE: the assertion rejects the null-escape arm it exists to forbid", () => {
     const nullEscape =
-      '("kb_articles"."id" = "kb_article_chunks"."article_id" and ("kb_article_chunks"."acl_revision" = "kb_articles"."acl_revision" or "kb_article_chunks"."acl_revision" is null))';
+      '("kb_pages"."id" = "kb_article_chunks"."page_id" and ("kb_article_chunks"."acl_revision" = "kb_pages"."acl_revision" or "kb_article_chunks"."acl_revision" is null))';
     expect(() => expectStrictFence(nullEscape)).toThrow(/fence escaped by IS NULL/);
   });
 });

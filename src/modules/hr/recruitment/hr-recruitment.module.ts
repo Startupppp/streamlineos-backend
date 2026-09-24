@@ -41,10 +41,63 @@ import { RecruitmentWebhooksService } from "./webhooks/recruitment-webhooks.serv
 import { HrWebhookDispatchService } from "./webhooks/hr-webhook-dispatch.service";
 import { RecruitmentWebhookEmitter } from "./webhooks/webhook-emitter.service";
 import { RecruitmentOutboxConsumer } from "./webhooks/recruitment-outbox-consumer";
+import { ProviderCredentialsService } from "./integrations/provider-credentials.service";
+import { JobBoardPublisherService } from "./boards/job-board-publisher.service";
+import { JobBoardOutboxConsumer } from "./boards/job-board-outbox.consumer";
+import { BoardApplyIngressService } from "./boards/board-apply-ingress.service";
+import { BoardApplyIngressController } from "./boards/board-apply-ingress.controller";
+import { RecruitmentIntegrationsService } from "./integrations/recruitment-integrations.service";
+import { RecruitmentIntegrationsController } from "./integrations/recruitment-integrations.controller";
+import { SourcedProfileService } from "./sourcing-extension/sourced-profile.service";
+import { NurtureMetricsService } from "./nurture/nurture-metrics.service";
+import { BgvService } from "./bgv/bgv.service";
+import { BgvController } from "./bgv/bgv.controller";
+import { BgvCallbackService } from "./bgv/bgv-callback.service";
+import { BgvCallbackController } from "./bgv/bgv-callback.controller";
+import { AssessmentService } from "./assessments/assessment.service";
+import {
+  AssessmentController,
+  AssessmentScoreController,
+} from "./assessments/assessment.controller";
+import { VoiceScreenService } from "./voice-screen/voice-screen.service";
+import { RecruitingAnalyticsService } from "./analytics/recruiting-analytics.service";
+import { WhatsappService } from "./whatsapp/whatsapp.service";
+import { IdentityService } from "./identity/identity.service";
+import { IdentityController } from "./identity/identity.controller";
+import { InternalMobilityService } from "./internal-mobility/internal-mobility.service";
+import { AtsSandboxService } from "./developer/ats-sandbox.service";
+import { AtsSandboxController } from "./developer/ats-sandbox.controller";
+import { InternalMobilityController } from "./internal-mobility/internal-mobility.controller";
+import {
+  WhatsappController,
+  WhatsappInboundController,
+} from "./whatsapp/whatsapp.controller";
+import { RecruitingAnalyticsController } from "./analytics/recruiting-analytics.controller";
+import {
+  VoiceScreenController,
+  VoiceScreenResultController,
+} from "./voice-screen/voice-screen.controller";
+import { SourcingExtensionController } from "./sourcing-extension/sourcing-extension.controller";
+import { UserApiTokensModule } from "../../api-tokens/user/user-api-tokens.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
+import { RecruitmentOnboardingStartService } from "./recruitment-onboarding-start.service";
+import { MembershipAdmissionModule } from "../../organization/core/membership-admission.module";
+import { OnboardingModule } from "../onboarding/core/onboarding.module";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, AiModule, BillingModule, AccessModule, OutboxModule],
+  imports: [
+    NotificationsModule,
+    AutomationModule,
+    AiModule,
+    BillingModule,
+    AccessModule,
+    OutboxModule,
+    MembershipAdmissionModule,
+    OnboardingModule,
+    /** The sourcing extension mints its token through the account token service rather than a second one. */
+    UserApiTokensModule,
+  ],
   controllers: [
     RecruitmentCandidateDocumentsController,
     RecruitmentCandidatesController,
@@ -61,6 +114,21 @@ import { OutboxModule } from "../../../common/outbox/outbox.module";
     RecruitmentRequisitionsController,
     RecruitmentJobBoardsController,
     RecruitmentTalentPoolsController,
+    BoardApplyIngressController,
+    RecruitmentIntegrationsController,
+    SourcingExtensionController,
+    BgvController,
+    BgvCallbackController,
+    AssessmentController,
+    AssessmentScoreController,
+    VoiceScreenController,
+    VoiceScreenResultController,
+    RecruitingAnalyticsController,
+    WhatsappController,
+    WhatsappInboundController,
+    IdentityController,
+    InternalMobilityController,
+    AtsSandboxController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -81,11 +149,37 @@ import { OutboxModule } from "../../../common/outbox/outbox.module";
     RecruitmentJobBoardsService,
     RecruitmentTalentPoolsService,
     RecruitmentHandoffService,
+    RecruitmentOfferAcceptanceService,
+    RecruitmentOnboardingStartService,
     RecruitmentWebhooksService,
     HrWebhookDispatchService,
     RecruitmentWebhookEmitter,
     RecruitmentOutboxConsumer,
+    ProviderCredentialsService,
+    JobBoardPublisherService,
+    JobBoardOutboxConsumer,
+    BoardApplyIngressService,
+    RecruitmentIntegrationsService,
+    SourcedProfileService,
+    NurtureMetricsService,
+    BgvService,
+    BgvCallbackService,
+    AssessmentService,
+    VoiceScreenService,
+    RecruitingAnalyticsService,
+    WhatsappService,
+    IdentityService,
+    InternalMobilityService,
+    AtsSandboxService,
   ],
-  exports: [RecruitmentOffersService, RecruitmentRequisitionsService, RecruitmentWebhooksService, HrWebhookDispatchService, RecruitmentOutboxConsumer],
+  exports: [
+    RecruitmentOffersService,
+    RecruitmentRequisitionsService,
+    RecruitmentWebhooksService,
+    HrWebhookDispatchService,
+    RecruitmentOutboxConsumer,
+    /** The public offer page runs the same acceptance effect as the internal button. */
+    RecruitmentOfferAcceptanceService,
+  ],
 })
 export class HrRecruitmentModule {}

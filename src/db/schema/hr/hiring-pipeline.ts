@@ -120,7 +120,37 @@ export const offerNegotiations = pgTable("offer_negotiations", {
 ]);
 
 export type EmailSequenceTrigger = "MANUAL" | "CANDIDATE_ADDED" | "APPLICATION_RECEIVED" | "STAGE_CHANGED" | "OFFER_SENT";
-export type EmailSequenceEnrollmentStatus = "ACTIVE" | "COMPLETED" | "UNSUBSCRIBED" | "BOUNCED";
+/**
+ * `HELD_NO_CONSENT` is written by the sequence sender when it reaches a step
+ * for a candidate whose applications carry no `consent_at` — either they never
+ * gave it, or it was withdrawn since they enrolled. It is a stored reason, not
+ * a silent skip: a recruiter looking at the enrollment can see why nothing
+ * went out. The column is `text`, so this needs no migration.
+ */
+export const EMAIL_SEQUENCE_ENROLLMENT_STATUSES = [
+  "ACTIVE",
+  "COMPLETED",
+  "UNSUBSCRIBED",
+  "BOUNCED",
+  "HELD_NO_CONSENT",
+  /** Stopped because the address is on the email suppression list. */
+  "STOPPED_SUPPRESSED",
+  /** Stopped because they applied after being enrolled — the campaign worked. */
+  "STOPPED_APPLIED",
+  /** Stopped because they wrote in and a person should take over. */
+  "STOPPED_REPLIED",
+  /** Stopped because the candidate is hired or rejected. */
+  "STOPPED_CLOSED",
+] as const;
+
+/**
+ * An array as well as a union, so the worker that writes these and the contract
+ * that parses them read from one list. The union alone let `HELD_NO_CONSENT` be
+ * added here while the frontend contract still narrowed to four values, and
+ * every sequence with one held enrollment threw on parse.
+ */
+export type EmailSequenceEnrollmentStatus =
+  (typeof EMAIL_SEQUENCE_ENROLLMENT_STATUSES)[number];
 
 export const emailSequences = pgTable("email_sequences", {
   id: serial("id").primaryKey(),

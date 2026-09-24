@@ -13,7 +13,10 @@ import {
   interviews,
   organizations,
 } from "../../../db/schema";
+import { randomUUID } from "node:crypto";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { nextAggregateVersion } from "../../../common/outbox/aggregate-version";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -26,6 +29,14 @@ import { AutomationService } from "../../automation/automation.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { AccessService } from "../../access/access.service";
 import { getCandidateRejectionEmail } from "../../email/templates/recruitment";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { InternalMobilityService } from "./internal-mobility/internal-mobility.service";
+import {
+  APPLICATION_STATUS_FOR_STAGE,
+  STAGE_TRANSITIONS,
+  UPDATE_TRANSITIONS,
+  type CandidateStage,
+} from "./recruitment-candidate-stages";
 import type {
   CandidateListInput,
   CreateCandidateInput,
@@ -33,27 +44,7 @@ import type {
   UpdateCandidateInput,
 } from "./dto/candidates.schemas";
 
-type CandidateStage = "NEW" | "SCREENING" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED";
-
 const CANDIDATE_SEARCH_CAP = 500;
-
-const UPDATE_TRANSITIONS: Record<string, CandidateStage[]> = {
-  NEW: ["SCREENING", "REJECTED"],
-  SCREENING: ["NEW", "INTERVIEW", "REJECTED"],
-  INTERVIEW: ["SCREENING", "OFFER", "REJECTED"],
-  OFFER: ["INTERVIEW", "HIRED", "REJECTED"],
-  HIRED: [],
-  REJECTED: ["SCREENING"],
-};
-
-const STAGE_TRANSITIONS: Record<CandidateStage, CandidateStage[]> = {
-  NEW: ["SCREENING", "REJECTED"],
-  SCREENING: ["INTERVIEW", "REJECTED"],
-  INTERVIEW: ["OFFER", "REJECTED"],
-  OFFER: ["HIRED", "REJECTED"],
-  HIRED: [],
-  REJECTED: ["SCREENING"],
-};
 
 interface RoleNotification {
   type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
@@ -74,6 +65,7 @@ export class RecruitmentCandidatesService {
     private readonly automation: AutomationService,
     private readonly planLimits: PlanLimitsService,
     private readonly access: AccessService,
+    private readonly mobility: InternalMobilityService,
   ) {}
 
   async list(orgId: string, input: CandidateListInput) {
@@ -396,6 +388,63 @@ export class RecruitmentCandidatesService {
           set: { enteredAt: new Date(), breachedAt: null, status: "ON_TRACK", updatedAt: new Date() },
         });
 
+      /**
+       * The application follows the card. These were two unrelated stories:
+       * the recruiter moved the candidate to Interview and the candidate's own
+       * `/application-status/:token` page still said "Applied", for the whole
+       * pipeline. Same transaction, so they cannot disagree again.
+       */
+      const latestApplication = await tx.query.candidateApplications.findFirst({
+        where: and(
+          eq(candidateApplications.orgId, orgId),
+          eq(candidateApplications.candidateId, candidateId),
+        ),
+        columns: { id: true, jobPostingId: true },
+        orderBy: (t, { desc: d }) => [d(t.appliedAt)],
+      });
+      const applicationStatus = APPLICATION_STATUS_FOR_STAGE[newStage];
+      if (latestApplication && applicationStatus)
+        await tx
+          .update(candidateApplications)
+          .set({ status: applicationStatus, updatedAt: new Date() })
+          .where(
+            and(
+              eq(candidateApplications.id, latestApplication.id),
+              eq(candidateApplications.orgId, orgId),
+            ),
+          );
+
+      /**
+       * The webhook consumer and the delivery cron were built for these names
+       * and nothing emitted them, so a tenant could subscribe to
+       * `candidate.moved` and never receive one. `candidate.hired` is the same
+       * event an offer acceptance emits — consumers dedupe on event id, which
+       * is why both may legitimately fire for one hire.
+       */
+      const aggregate = {
+        organizationId: orgId,
+        aggregateType: "candidate",
+        aggregateId: String(candidateId),
+      };
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        ...aggregate,
+        aggregateVersion: await nextAggregateVersion(tx, aggregate),
+        eventType:
+          newStage === "REJECTED"
+            ? "candidate.rejected"
+            : newStage === "HIRED"
+              ? "candidate.hired"
+              : "candidate.moved",
+        payload: {
+          candidateId,
+          jobPostingId: latestApplication?.jobPostingId ?? null,
+          fromStage: currentStage,
+          toStage: newStage,
+        },
+        occurredAt: new Date(),
+      });
+
       return [row];
     });
 
@@ -429,6 +478,21 @@ export class RecruitmentCandidatesService {
           existing.email,
         ).catch(() => undefined);
       }
+    }
+
+    /*
+      The applicant's own manager, told at interview and not before.
+
+      Deferred rather than awaited inside the transaction: the notice is a
+      write to another aggregate plus a lookup, and holding the pooled
+      connection for it would make a slow notifications table a slow board. The
+      service never throws, so a failure here is logged and the stage move —
+      which the recruiter already made — stands.
+    */
+    const movedToStatus = APPLICATION_STATUS_FOR_STAGE[newStage];
+    if (movedToStatus) {
+      const notify = () => this.mobility.notifyManagerIfVisible(orgId, candidateId, movedToStatus);
+      if (!registerAfterCommit(notify)) await notify();
     }
 
     void this.automation

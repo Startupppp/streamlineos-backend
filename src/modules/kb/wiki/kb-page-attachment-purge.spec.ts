@@ -44,9 +44,7 @@ const mockTenantTx = {
 
 import {
   attemptPageAttachmentPurge,
-  recordArticleAttachmentPurge,
   recordPageAttachmentPurge,
-  KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE,
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE,
 } from "./kb-page-attachment-purge";
 
@@ -222,63 +220,6 @@ describe("recordPageAttachmentPurge — the write-ahead record is opened before 
     await expect(recordPageAttachmentPurge(db as never, ORG, [10])).rejects.toThrow(
       "23514 storage_pending_purge",
     );
-  });
-});
-
-describe("recordArticleAttachmentPurge — the article cascade gets the same write-ahead row", () => {
-  beforeEach(resetPurgeCaptures);
-
-  it("records every attachment key of the article in the DEFAULT bucket", async () => {
-    const db = attachmentDb([
-      { id: 4, fileKey: "uploads/org-1/handbook.pdf" },
-      { id: 5, fileKey: "uploads/org-1/policy.docx" },
-    ]);
-
-    const keys = await recordArticleAttachmentPurge(db as never, ORG, [77]);
-
-    expect(keys).toEqual(["uploads/org-1/handbook.pdf", "uploads/org-1/policy.docx"]);
-    expect(insertedRows(0)).toEqual([
-      {
-        orgId: ORG,
-        storageKey: "uploads/org-1/handbook.pdf",
-        purpose: KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE,
-        bucket: "default",
-        status: "pending",
-      },
-      {
-        orgId: ORG,
-        storageKey: "uploads/org-1/policy.docx",
-        purpose: KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE,
-        bucket: "default",
-        status: "pending",
-      },
-    ]);
-  });
-
-  it("bites: it never records the KB bucket, which would delete nothing and confirm the row away", async () => {
-    const db = attachmentDb([{ id: 4, fileKey: "uploads/org-1/handbook.pdf" }]);
-
-    await recordArticleAttachmentPurge(db as never, ORG, [77]);
-
-    expect(insertedRows(0).map((r) => r.bucket)).toEqual(["default"]);
-    expect(insertedRows(0).map((r) => r.bucket)).not.toContain("kb");
-  });
-
-  it("walks the cursor rather than reading every attachment of a large article at once", async () => {
-    const db = attachmentDb(keyRows(700, "uploads/org-1"));
-
-    const keys = await recordArticleAttachmentPurge(db as never, ORG, [77]);
-
-    expect(db.cursors).toEqual([0, 500]);
-    expect(db.pageSizes).toEqual([CHUNK, CHUNK]);
-    expect(keys).toHaveLength(700);
-  });
-
-  it("reads nothing and writes nothing for an empty article set", async () => {
-    const db = attachmentDb([{ id: 1, fileKey: "k" }]);
-    await expect(recordArticleAttachmentPurge(db as never, ORG, [])).resolves.toEqual([]);
-    expect(db.select).not.toHaveBeenCalled();
-    expect(mockInsertValues).not.toHaveBeenCalled();
   });
 });
 

@@ -24,11 +24,21 @@ export class RecruitmentPipelineController {
 
   @Get("pipeline")
   @ResponseSchema(pipelineResponseSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   getPipeline(@CurrentUser() u: CurrentUserContext) {
     return this.pipeline.pipeline(u.orgId);
   }
 
+  /**
+   * `hr:sensitive:view`, not `hr:requisitions:view`.
+   *
+   * The report groups `candidates.gender` — a protected characteristic — so
+   * anyone who could open a requisition could read an org-wide demographic
+   * breakdown. The sibling `bgv-compliance` read already carries the sensitive
+   * key and the frontend hook always asked for it; the route was the half that
+   * was wrong, and relaxing the hook to match would have been papering over a
+   * real disclosure from the client.
+   */
   @Get("diversity-report")
   @ResponseSchema(diversityReportSchema)
   @RequirePermission("hr:sensitive:view")

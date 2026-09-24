@@ -17,23 +17,45 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
-  kbArticleFeedback,
-  kbArticles,
   kbCategories,
+  kbPageFeedback,
+  kbPages,
   kbSpaces,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetBeforeId } from "../../common/pagination/keyset";
+import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
+import { supportArticlePredicate } from "../kb/help-centre/kb-article-page-scope";
 import type { KbFeedbackInput, KbListInput } from "./dto/public.schemas";
+
+function anonymouslyReadableArticle(org: string): (SQL | undefined)[] {
+  return [
+    eq(kbPages.orgId, org),
+    supportArticlePredicate(),
+    isNull(kbPages.deletedAt),
+    eq(kbPages.status, "published"),
+    eq(kbPages.visibility, "public"),
+    inArray(kbSpaces.audience, ["public", "mixed"]),
+    isNull(kbSpaces.deletedAt),
+  ];
+}
+
+const articleTagNames = sql<string[]>`ARRAY(
+  SELECT kt.name FROM kb_page_tags kpt
+  JOIN kb_tags kt ON kt.id = kpt.tag_id
+  WHERE kpt.page_id = ${kbPages.id}
+  ORDER BY kt.name
+)`;
 
 @Injectable()
 export class KbService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(input: KbListInput) {
-    const { org, categoryId, search, pageSize, cursor } = input;
+    const { org, categoryId, search, cursor } = input;
+    const pageSize = Math.min(input.pageSize, PAGE_SIZE_CAP);
     const position = cursor === undefined ? undefined : decodeCursor(cursor);
     if (cursor !== undefined && !position)
       throw new BadRequestException("Invalid pagination cursor");
@@ -53,52 +75,38 @@ export class KbService {
       )
       .orderBy(asc(kbCategories.sortOrder), asc(kbCategories.name));
 
-    const conditions: SQL[] = [
-      eq(kbArticles.orgId, org),
-      eq(kbArticles.status, "published"),
-      eq(kbArticles.visibility, "public"),
-      inArray(kbSpaces.audience, ["public", "mixed"]),
-      isNull(kbSpaces.deletedAt),
-    ];
-    if (categoryId) conditions.push(eq(kbArticles.categoryId, categoryId));
+    const conditions: (SQL | undefined)[] = anonymouslyReadableArticle(org);
+    if (categoryId) conditions.push(eq(kbPages.categoryId, categoryId));
     if (search) {
       const term = `%${search}%`;
-      const match = or(
-        ilike(kbArticles.title, term),
-        ilike(kbArticles.excerpt, term),
-      );
+      const match = or(ilike(kbPages.title, term), ilike(kbPages.excerpt, term));
       if (match) conditions.push(match);
     }
 
     const articles = await this.db
       .select({
-        id: kbArticles.id,
-        categoryId: kbArticles.categoryId,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        excerpt: kbArticles.excerpt,
-        views: kbArticles.views,
-        helpfulCount: kbArticles.helpfulCount,
-        notHelpfulCount: kbArticles.notHelpfulCount,
-        tags: sql<string[]>`ARRAY(
-          SELECT kt.name FROM kb_article_tags kat
-          JOIN kb_tags kt ON kt.id = kat.tag_id
-          WHERE kat.article_id = ${kbArticles.id}
-          ORDER BY kt.name
-        )`,
-        publishedAt: kbArticles.publishedAt,
+        id: kbPages.id,
+        categoryId: kbPages.categoryId,
+        title: kbPages.title,
+        slug: kbPages.slug,
+        excerpt: kbPages.excerpt,
+        views: kbPages.views,
+        helpfulCount: kbPages.helpfulCount,
+        notHelpfulCount: kbPages.notHelpfulCount,
+        tags: articleTagNames,
+        publishedAt: kbPages.publishedAt,
       })
-      .from(kbArticles)
-      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
+      .from(kbPages)
+      .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
       .where(
         and(
           ...conditions,
           position
-            ? keysetBeforeId(kbArticles.publishedAt, kbArticles.id, position)
+            ? keysetBeforeId(kbPages.publishedAt, kbPages.id, position)
             : undefined,
         ),
       )
-      .orderBy(desc(kbArticles.publishedAt), desc(kbArticles.id))
+      .orderBy(desc(kbPages.publishedAt), desc(kbPages.id))
       .limit(pageSize + 1);
 
     const page = buildCursorPage(articles, pageSize, (article) => ({
@@ -111,101 +119,80 @@ export class KbService {
   async getArticle(slug: string, org: string) {
     const [article] = await this.db
       .select({
-        id: kbArticles.id,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        excerpt: kbArticles.excerpt,
-        content: kbArticles.content,
-        categoryId: kbArticles.categoryId,
+        id: kbPages.id,
+        title: kbPages.title,
+        slug: kbPages.slug,
+        excerpt: kbPages.excerpt,
+        content: kbPages.contentText,
+        categoryId: kbPages.categoryId,
         categoryName: kbCategories.name,
         categorySlug: kbCategories.slug,
-        views: kbArticles.views,
-        helpfulCount: kbArticles.helpfulCount,
-        notHelpfulCount: kbArticles.notHelpfulCount,
-        tags: sql<string[]>`ARRAY(
-          SELECT kt.name FROM kb_article_tags kat
-          JOIN kb_tags kt ON kt.id = kat.tag_id
-          WHERE kat.article_id = ${kbArticles.id}
-          ORDER BY kt.name
-        )`,
-        seoTitle: kbArticles.seoTitle,
-        seoDescription: kbArticles.seoDescription,
-        publishedAt: kbArticles.publishedAt,
-        updatedAt: kbArticles.updatedAt,
+        views: kbPages.views,
+        helpfulCount: kbPages.helpfulCount,
+        notHelpfulCount: kbPages.notHelpfulCount,
+        tags: articleTagNames,
+        seoTitle: kbPages.seoTitle,
+        seoDescription: kbPages.seoDescription,
+        publishedAt: kbPages.publishedAt,
+        updatedAt: kbPages.updatedAt,
       })
-      .from(kbArticles)
-      .leftJoin(kbCategories, eq(kbArticles.categoryId, kbCategories.id))
-      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-      .where(
-        and(
-          eq(kbArticles.orgId, org),
-          eq(kbArticles.slug, slug),
-          eq(kbArticles.status, "published"),
-          eq(kbArticles.visibility, "public"),
-          inArray(kbSpaces.audience, ["public", "mixed"]),
-          isNull(kbSpaces.deletedAt),
-        ),
-      );
+      .from(kbPages)
+      .leftJoin(kbCategories, eq(kbPages.categoryId, kbCategories.id))
+      .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
+      .where(and(...anonymouslyReadableArticle(org), eq(kbPages.slug, slug)));
 
     if (!article) throw new NotFoundException("Article not found");
 
     await this.db
-      .update(kbArticles)
-      .set({ views: sql`${kbArticles.views} + 1` })
-      .where(eq(kbArticles.id, article.id));
+      .update(kbPages)
+      .set({ views: sql`coalesce(${kbPages.views}, 0) + 1` })
+      .where(and(eq(kbPages.orgId, org), eq(kbPages.id, article.id)));
 
-    return { ...article, views: article.views + 1 };
+    return { ...article, views: (article.views ?? 0) + 1 };
   }
 
   async submitFeedback(slug: string, org: string, input: KbFeedbackInput) {
     const { helpful, comment, visitorId } = input;
 
     const [article] = await this.db
-      .select({ id: kbArticles.id })
-      .from(kbArticles)
-      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-      .where(
-        and(
-          eq(kbArticles.orgId, org),
-          eq(kbArticles.slug, slug),
-          eq(kbArticles.status, "published"),
-          eq(kbArticles.visibility, "public"),
-          inArray(kbSpaces.audience, ["public", "mixed"]),
-          isNull(kbSpaces.deletedAt),
-        ),
-      );
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
+      .where(and(...anonymouslyReadableArticle(org), eq(kbPages.slug, slug)));
 
     if (!article) throw new NotFoundException("Article not found");
 
     const recorded = await this.db.transaction(async (tx) => {
       const inserted = await tx
-        .insert(kbArticleFeedback)
+        .insert(kbPageFeedback)
         .values({
           orgId: org,
-          articleId: article.id,
+          pageId: article.id,
           helpful,
           comment: comment ?? null,
           visitorId: visitorId ?? null,
         })
         .onConflictDoNothing({
           target: [
-            kbArticleFeedback.orgId,
-            kbArticleFeedback.articleId,
-            kbArticleFeedback.visitorId,
+            kbPageFeedback.orgId,
+            kbPageFeedback.pageId,
+            kbPageFeedback.visitorId,
           ],
         })
-        .returning({ id: kbArticleFeedback.id });
+        .returning({ id: kbPageFeedback.id });
 
       if (inserted.length === 0) return false;
 
       await tx
-        .update(kbArticles)
+        .update(kbPages)
         .set(
           helpful
-            ? { helpfulCount: sql`${kbArticles.helpfulCount} + 1` }
-            : { notHelpfulCount: sql`${kbArticles.notHelpfulCount} + 1` },
+            ? { helpfulCount: sql`coalesce(${kbPages.helpfulCount}, 0) + 1` }
+            : {
+                notHelpfulCount: sql`coalesce(${kbPages.notHelpfulCount}, 0) + 1`,
+              },
         )
-        .where(eq(kbArticles.id, article.id));
+        .where(and(eq(kbPages.orgId, org), eq(kbPages.id, article.id)));
       return true;
     });
 

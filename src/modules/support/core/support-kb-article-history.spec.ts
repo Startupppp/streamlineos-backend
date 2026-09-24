@@ -29,8 +29,8 @@ function makeCurrent(contentRevision: number) {
     status: "published",
     publishedAt: new Date("2026-01-01T00:00:00Z"),
     title: "Reset password",
-    content: "old body",
-    visibility: "internal",
+    contentText: "old body",
+    visibility: "org",
     contentRevision,
   };
 }
@@ -40,7 +40,6 @@ function makeUpdated(contentRevision: number) {
     id: ARTICLE_ID,
     orgId: ORG_ID,
     title: "Reset password",
-    content: "new body",
     excerpt: null,
     status: "published",
     visibility: "internal",
@@ -56,6 +55,7 @@ function chain(result: unknown[]) {
   node.innerJoin = self;
   node.where = self;
   node.orderBy = self;
+  node.limit = (): Promise<unknown[]> => Promise.resolve(result);
   node.then = (resolve: (rows: unknown[]) => unknown): Promise<unknown> =>
     Promise.resolve(result).then(resolve);
   return node;
@@ -84,10 +84,9 @@ function makeDb(current: unknown, updateResult: unknown[]) {
     }),
   };
 
+  const dbSelectResults: unknown[][] = [[current]];
   const db = {
-    query: {
-      kbArticles: { findFirst: jest.fn().mockResolvedValue(current) },
-    },
+    select: jest.fn().mockImplementation(() => chain(dbSelectResults.shift() ?? [])),
     transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx)),
   } as unknown as Db;
 
@@ -98,7 +97,7 @@ function makeDb(current: unknown, updateResult: unknown[]) {
 describe("SupportKbService.updateArticle — history, revision bump and lost-update guard", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("snapshots the edit into kb_article_versions with the next version number", async () => {
+  it("snapshots the edit into kb_page_versions with the next version number", async () => {
     const { db, insertedVersions } = makeDb(makeCurrent(7), [makeUpdated(8)]);
     const svc = new SupportKbService(db);
 
@@ -107,9 +106,9 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
     expect(insertedVersions).toHaveLength(1);
     expect(insertedVersions[0]).toMatchObject({
       orgId: ORG_ID,
-      articleId: ARTICLE_ID,
+      pageId: ARTICLE_ID,
       versionNumber: 5,
-      content: "new body",
+      contentText: "new body",
       authorId: "user-9",
     });
   });
@@ -124,9 +123,9 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
     const emitted = jest.mocked(OutboxWriter.emit).mock.calls[0]?.[1];
     expect(emitted).toMatchObject({
       eventType: "kb.content.index",
-      aggregateType: "kb_article",
+      aggregateType: "kb_page",
       aggregateId: String(ARTICLE_ID),
-      payload: { contentType: "article", contentId: ARTICLE_ID, contentRevision: 8 },
+      payload: { contentType: "page", contentId: ARTICLE_ID, contentRevision: 8 },
     });
   });
 

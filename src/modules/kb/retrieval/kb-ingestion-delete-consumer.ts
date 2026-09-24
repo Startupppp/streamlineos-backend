@@ -54,22 +54,13 @@ export class KbIngestionDeleteConsumer implements OutboxEventConsumer, OnModuleI
   ): Promise<void> {
     switch (contentType) {
       case "page":
-        await tx
-          .delete(kbArticleChunks)
-          .where(
-            and(
-              eq(kbArticleChunks.orgId, orgId),
-              eq(kbArticleChunks.pageId, contentId),
-            ),
-          );
-        return;
       case "article":
         await tx
           .delete(kbArticleChunks)
           .where(
             and(
               eq(kbArticleChunks.orgId, orgId),
-              eq(kbArticleChunks.articleId, contentId),
+              eq(kbArticleChunks.pageId, contentId),
             ),
           );
         return;

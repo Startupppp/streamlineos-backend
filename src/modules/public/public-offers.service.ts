@@ -17,11 +17,15 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { RecruitmentOfferAcceptanceService } from "../hr/recruitment/recruitment-offer-acceptance.service";
 import type { OfferRespondInput } from "./dto/public.schemas";
 
 @Injectable()
 export class PublicOffersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly acceptance: RecruitmentOfferAcceptanceService,
+  ) {}
 
   async getOffer(token: string) {
     const offer = await withPublicToken(this.db, token, (tx) =>
@@ -86,40 +90,88 @@ export class PublicOffersService {
       throw new ConflictException("This offer can no longer be responded to.");
     }
 
-    return runInTenantTransaction(
+    const orgId = offer.orgId;
+
+    const outcome = await runInTenantTransaction(
       this.db,
       async (tx) => {
         if (input.action === "counter") {
+          const claimed = await this.acceptance.claimResponse(tx, orgId, offer.id, "COUNTERED");
+          if (!claimed) return null;
           await tx.insert(offerNegotiations).values({
-            orgId: offer.orgId,
+            orgId,
             offerId: offer.id,
             direction: "CANDIDATE_COUNTER",
             proposedSalary: input.counterSalary !== undefined ? String(input.counterSalary) : null,
             message: input.counterMessage,
           });
-          await tx
-            .update(candidateOffers)
-            .set({ offerStatus: "COUNTERED", respondedAt: new Date(), updatedAt: new Date() })
-            .where(eq(candidateOffers.id, offer.id));
-          return { success: true, status: "COUNTERED" };
+          return { status: "COUNTERED" as const, claimed, terms: null };
         }
 
-        const newStatus = input.action === "accept" ? "ACCEPTED" : "DECLINED";
+        const newStatus = input.action === "accept" ? ("ACCEPTED" as const) : ("DECLINED" as const);
+        const claimed = await this.acceptance.claimResponse(
+          tx,
+          orgId,
+          offer.id,
+          newStatus,
+          input.action === "decline" ? { notes: input.declineReason ?? null } : {},
+        );
+        if (!claimed) return null;
 
-        await tx
-          .update(candidateOffers)
-          .set({
-            offerStatus: newStatus,
-            respondedAt: new Date(),
-            ...(input.action === "decline" ? { notes: input.declineReason ?? null } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(candidateOffers.id, offer.id));
+        /**
+         * The seat closing commits with the acceptance. Candidate `HIRED`,
+         * application `ACCEPTED`, the opening consumed, the requisition filled
+         * and `candidate.hired` / `hire.handoff` in the outbox — the same
+         * transaction, so a rollback leaves none of it.
+         */
+        if (newStatus === "ACCEPTED")
+          await this.acceptance.completeAcceptedOffer(tx, orgId, {
+            id: offer.id,
+            candidateId: claimed.candidateId,
+            jobPostingId: claimed.jobPostingId,
+          });
 
-        return { success: true, status: newStatus };
+        const terms = await tx.query.candidateOffers.findFirst({
+          where: eq(candidateOffers.id, offer.id),
+          columns: { offeredSalary: true, joiningDate: true, validUntil: true },
+        });
+
+        /**
+         * Registered INSIDE the transaction, not after it.
+         * `registerAfterCommit` writes to the ambient tenant context, and this
+         * is a public route: the context exists only for the duration of this
+         * callback, and `openTenantTransaction` drains the hooks the moment it
+         * returns. Registering afterwards found no context, fell back to
+         * running inline with no tenant GUC, and every query in the handoff
+         * died `42501` — an accepted offer with no employee and an error in a
+         * log nobody reads.
+         */
+        this.acceptance.deferStatusEffects(
+          orgId,
+          claimed.candidateId,
+          offer.id,
+          newStatus,
+          offer.offerStatus,
+          {
+            offeredSalary: terms?.offeredSalary ?? null,
+            joiningDate: terms?.joiningDate ?? null,
+            validUntil: terms?.validUntil ?? null,
+          },
+        );
+
+        return { status: newStatus, claimed, terms: terms ?? null };
       },
-      { orgId: offer.orgId },
+      { orgId },
     );
+
+    /**
+     * Null means another request answered this offer first — the conditional
+     * update matched no row. That is the same refusal the pre-read gives, just
+     * decided where it is actually safe to decide it.
+     */
+    if (!outcome) throw new ConflictException("This offer can no longer be responded to.");
+
+    return { success: true, status: outcome.status };
   }
 
   async getBookingLink(token: string) {

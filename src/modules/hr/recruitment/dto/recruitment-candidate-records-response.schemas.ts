@@ -29,6 +29,12 @@ export const compositeScoreResultSchema = z.object({
 });
 
 export const resumeParseResponseSchema = z.object({
+  /**
+   * True when the AI gateway was unavailable and a regex fallback produced
+   * `parsed`. Present in the contract so the screen can label it, rather than
+   * showing a heuristic guess as an AI extraction.
+   */
+  heuristic: z.boolean(),
   parsed: z.object({
     name: z.string().nullable(),
     email: z.string().nullable(),

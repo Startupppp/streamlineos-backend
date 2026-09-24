@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../billing/core/billing.module";
+import { HrRecruitmentModule } from "../hr/recruitment/hr-recruitment.module";
 import { BuildFormsModule } from "../build/forms/build-forms.module";
 import { PublicController } from "./public.controller";
 import { PublicCareersService } from "./public-careers.service";
@@ -22,7 +23,14 @@ import { TurnstileService } from "../../common/security/turnstile.service";
 import { PublicPricingService } from "./pricing.service";
 
 @Module({
-  imports: [AuthModule, CrmAutomationStudioModule, BillingModule, BuildFormsModule],
+  imports: [
+    AuthModule,
+    CrmAutomationStudioModule,
+    BillingModule,
+    /* Both sides added one. Taking either alone drops the other's providers. */
+    HrRecruitmentModule,
+    BuildFormsModule,
+  ],
   controllers: [WaitlistAdmissionController, PublicController],
   providers: [
     PublicCareersService,

@@ -50,7 +50,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
     const inserted: InsertedRow[] = [];
     const db = {
       query: {
-        kbArticles: { findFirst },
+        kbPages: { findFirst },
         users: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       select: jest.fn().mockReturnValue(makeSelectChain(opts.selectRows ?? [])),

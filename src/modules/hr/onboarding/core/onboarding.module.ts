@@ -40,5 +40,11 @@ import { OnboardingSubmissionService } from "./onboarding-submission.service";
     OnboardingSubmissionService,
   ],
   controllers: [OnboardingController, HrOnboardingAdminController],
+  /**
+   * Exported so the recruitment desk can START onboarding for someone who
+   * accepted an offer, rather than re-implementing the checklist. Recruitment
+   * calls `initiate`; it does not own any of the logic behind it.
+   */
+  exports: [OnboardingInitiationService],
 })
 export class OnboardingModule {}

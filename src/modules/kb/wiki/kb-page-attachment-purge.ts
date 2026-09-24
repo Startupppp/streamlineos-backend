@@ -1,11 +1,10 @@
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import { kbArticleAttachments, kbPageAttachments, kbPages } from "../../../db/schema";
+import { kbPageAttachments, kbPages } from "../../../db/schema";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { markPurge, openPurgeRecords, PURGE_BOOKKEEPING_CHUNK } from "./kb-purge-ledger";
 
 export const KB_PAGE_ATTACHMENT_PURGE_PURPOSE = "kb:page:purge";
-export const KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE = "support:kb-article:delete";
 export const KB_ORPHAN_MEDIA_PURGE_PURPOSE = "kb:media-orphan:purge";
 
 const ORPHAN_MEDIA_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -58,43 +57,6 @@ export async function recordPageAttachmentPurge(
     afterId = last.id;
   }
   return openPurgeRecords(db, orgId, [...seen], KB_PAGE_ATTACHMENT_PURGE_PURPOSE, "kb");
-}
-
-/**
- * `kb_article_attachments` cascades away with its article through
- * `fk_kb_article_attachments_org_article`, exactly as the page table does, and
- * its objects live in the DEFAULT bucket because the client obtained the key
- * from `POST /storage/upload`, which writes with no override.
- */
-export async function recordArticleAttachmentPurge(
-  db: Db,
-  orgId: string,
-  articleIds: number[],
-): Promise<string[]> {
-  if (articleIds.length === 0) return [];
-
-  const seen = new Set<string>();
-  let afterId = 0;
-  for (;;) {
-    const batch = await db
-      .select({ id: kbArticleAttachments.id, fileKey: kbArticleAttachments.fileKey })
-      .from(kbArticleAttachments)
-      .where(
-        and(
-          eq(kbArticleAttachments.orgId, orgId),
-          inArray(kbArticleAttachments.articleId, articleIds),
-          gt(kbArticleAttachments.id, afterId),
-        ),
-      )
-      .orderBy(asc(kbArticleAttachments.id))
-      .limit(PURGE_BOOKKEEPING_CHUNK);
-    for (const r of batch) if (r.fileKey.trim().length > 0) seen.add(r.fileKey);
-    const last = batch[batch.length - 1];
-    if (batch.length < PURGE_BOOKKEEPING_CHUNK || last === undefined) break;
-    afterId = last.id;
-  }
-
-  return openPurgeRecords(db, orgId, [...seen], KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE, "default");
 }
 
 /**

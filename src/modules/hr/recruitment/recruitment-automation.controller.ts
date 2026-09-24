@@ -17,6 +17,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RecruitmentAutomationService } from "./recruitment-automation.service";
+import { NurtureMetricsService } from "./nurture/nurture-metrics.service";
+import { ENROLLMENT_STATUSES } from "./nurture/nurture-stop-conditions";
 import {
   createAutomationSchema,
   createSequenceSchema,
@@ -54,11 +56,29 @@ const automationIdParams = z.object({ automationId: z.coerce.number().int().posi
 const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
 const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
 
+/**
+ * Built from the same list the worker writes, so a new stop reason cannot reach
+ * the wire without a key here to carry it.
+ */
+const nurtureMetricsSchema = z.object({
+  sequenceId: z.number().int(),
+  enrolled: z.number().int(),
+  sent: z.number().int(),
+  replied: z.number().int(),
+  converted: z.number().int(),
+  byStatus: z.object(
+    Object.fromEntries(ENROLLMENT_STATUSES.map((status) => [status, z.number().int()])),
+  ),
+});
+
 @RequireModule("hr")
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentAutomationController {
-  constructor(private readonly automation: RecruitmentAutomationService) {}
+  constructor(
+    private readonly automation: RecruitmentAutomationService,
+    private readonly metrics: NurtureMetricsService,
+  ) {}
 
   @Get("automations")
   @ResponseSchema(z.array(pipelineAutomationWithCreatorSchema))
@@ -207,5 +227,24 @@ export class RecruitmentAutomationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automation.enrollSequence(u.orgId, sequenceId, body);
+  }
+
+  /**
+   * How a campaign is actually doing.
+   *
+   * Gated on `view` rather than `manage`, matching the sequence read beside it:
+   * a recruiter who can see the campaign can see whether it worked, and hiding
+   * the numbers behind the edit permission would leave the people who read them
+   * asking someone else to screenshot the page.
+   */
+  @Get("email-sequences/:sequenceId/metrics")
+  @ResponseSchema(nurtureMetricsSchema)
+  @RequirePermission("hr:requisitions:view")
+  @Validate({ params: sequenceIdParams })
+  sequenceMetrics(
+    @Param("sequenceId", ParseIntPipe) sequenceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.metrics.forSequence(u.orgId, sequenceId);
   }
 }

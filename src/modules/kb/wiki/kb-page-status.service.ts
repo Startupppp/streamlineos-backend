@@ -167,6 +167,7 @@ export class KbPageStatusService {
         trustState: "verified",
         verifiedById: user.userId,
         verifiedByMembershipId: this.membershipId(user),
+        verifiedAt: now,
         verifiedUntil,
         nextReviewAt,
         lastEditedById: user.userId,
