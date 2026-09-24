@@ -43,9 +43,39 @@ export function isCompanyLevelDocument(row: {
   );
 }
 
-// The SQL twin of isCompanyLevelDocument; keep the two in step (documents-helpers.spec.ts pins that).
+/** What a person may set a document to before it can be linked into the knowledge base. CONFIDENTIAL and PERSONAL never can be. */
+export const PUBLISHABLE_CLASSIFICATIONS = ["INTERNAL", "RESTRICTED"] as const;
+
+// Recruitment hand-off stamps these on the row it creates; a document carrying either is a hiring artefact whatever else it says.
+const HIRING_ARTEFACT_METADATA_KEYS = ["candidateId", "offerId"] as const;
+
+/**
+ * May this document be linked into the knowledge base? The TypeScript twin of the database function
+ * `app.hr_document_is_publishable` (migration 1200), which is what actually stops a write; this one lets
+ * the service refuse first, with a message, instead of surfacing a check violation. The two are pinned
+ * against each other over a grid of rows in documents-publishable-parity.db.spec.ts.
+ */
+export function isPublishableDocument(row: {
+  type: string;
+  userId: string | null;
+  uploadedBy: string | null;
+  classification: string;
+  isActive: boolean;
+  metadata: Record<string, unknown> | null;
+}): boolean {
+  const metadata = row.metadata;
+  return (
+    row.isActive &&
+    PUBLISHABLE_CLASSIFICATIONS.some((classification) => classification === row.classification) &&
+    isCompanyLevelDocument(row) &&
+    !HIRING_ARTEFACT_METADATA_KEYS.some((key) => metadata !== null && Object.hasOwn(metadata, key))
+  );
+}
+
+// The SQL twin of isCompanyLevelDocument; keep the two in step (documents-publishable-parity.db.spec.ts pins that).
 export function companyLevelDocumentSql(): SQL {
-  return sql`(${documents.type} IN ('POLICY', 'OTHER') AND (${documents.userId} IS NULL OR ${documents.userId} = ${documents.uploadedBy}))`;
+  // coalesce: an owner with no recorded uploader compares NULL, which must read as "not company-level", never "unknown".
+  return sql`coalesce(${documents.type} IN ('POLICY', 'OTHER') AND (${documents.userId} IS NULL OR ${documents.userId} = ${documents.uploadedBy}), false)`;
 }
 
 /**

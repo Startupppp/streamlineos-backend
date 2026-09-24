@@ -15,3 +15,4 @@ export * from "./research-briefs";
 export * from "./attachments";
 export * from "./page-feedback";
 export * from "./purge-ledger";
+export * from "./linked-documents";
