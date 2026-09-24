@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   GoneException,
   Inject,
   Injectable,
@@ -22,6 +23,7 @@ import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-tra
 import { EmailService } from "../../email/email.service";
 import { getBookingConfirmationEmail } from "../../email/templates/interviews";
 import type { BookInterviewInput } from "./dto/interview-scheduling.schemas";
+import { InterviewAvailabilityService } from "./calendar/interview-availability.service";
 
 const TYPE_MAP: Record<string, "VIDEO" | "PHONE" | "ONSITE"> = {
   VIDEO: "VIDEO",
@@ -34,6 +36,7 @@ export class HrInterviewBookingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
+    private readonly availability: InterviewAvailabilityService,
   ) {}
 
   async book(token: string, input: BookInterviewInput) {
@@ -80,6 +83,38 @@ export class HrInterviewBookingService {
         const endDate = new Date(
           slotStart.getTime() + link.durationMinutes * 60_000,
         );
+
+        /*
+          The interviewer's diary is re-checked here, not trusted from the slot
+          list the link was created with.
+
+          `available_slots` is a snapshot taken when a recruiter generated the
+          link, and a candidate may click it days later — by which time another
+          candidate booked the same interviewer at the same hour through a
+          different link. A reservation held on this link could not catch that,
+          because the two links are separate rows; a read inside this
+          transaction can, because the interview the other booking wrote is
+          already committed by the time this one looks.
+        */
+        const panelMembershipIds = link.interviewers
+          .map((interviewer) => interviewer.userMembershipId)
+          .filter((membershipId): membershipId is number => membershipId !== null);
+        const conflicts = await this.availability.conflictsFor(
+          link.orgId,
+          panelMembershipIds.length > 0 ? panelMembershipIds : [link.createdByMembershipId],
+          { start: slotStart, end: endDate },
+        );
+        if (conflicts.length > 0) {
+          /*
+            409 rather than 400: the request was valid when it was sent and the
+            world changed underneath it, which is exactly what a conflict
+            status means. The message avoids naming who is busy or what they
+            are doing — this endpoint is public and the caller is a candidate.
+          */
+          throw new ConflictException(
+            "That time has just been taken. Pick another slot.",
+          );
+        }
 
         const [claimed] = await tx
           .update(interviewBookingLinks)
