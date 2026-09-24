@@ -37,6 +37,7 @@ export type { Db } from "./drizzle.types";
             maxConcurrent: config.max,
             maxQueueDepth: config.admission.queueDepth,
             acquireTimeoutMs: config.admission.acquireTimeoutMs,
+            laneCapOverrides: { background: config.admission.backgroundLaneMax },
           });
         const client = instrumentPostgresClient(postgres(config.connectionString, config.options));
         return createTenantAwareDb(Object.assign(drizzle(client, { schema }), { __client: client }));

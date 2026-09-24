@@ -444,15 +444,16 @@ export class KbPagesService {
       throw new NotFoundException("Page not found");
     }
 
-    const tokenColumns = publicTokenColumnsFor(visibility, page.publicToken);
+    const { bumpRevision, ...tokenFields } = publicTokenColumnsFor(visibility, page.publicToken);
 
     return this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbPages)
         .set({
           visibility,
-          ...tokenColumns,
+          ...tokenFields,
           aclRevision: sql`acl_revision + 1`,
+          ...(bumpRevision ? { publicTokenRevision: sql`public_token_revision + 1` } : {}),
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
@@ -484,6 +485,7 @@ export class KbPagesService {
     coverImage: string | null;
     content: KbPageContent | null;
     updatedAt: Date;
+    publicTokenRevision: number;
   }> {
     const tokenHash = hashPublicToken(token);
     const page = await withPublicToken(this.db, tokenHash, (tx) =>
@@ -500,6 +502,7 @@ export class KbPagesService {
           coverImage: true,
           content: true,
           updatedAt: true,
+          publicTokenRevision: true,
         },
       }),
     );

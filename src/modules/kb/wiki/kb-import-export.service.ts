@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, max, or, sql, type SQL } from "drizzle-orm";
 import { kbPages, kbImportJobs, kbExportJobs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -9,9 +9,21 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ExportPageInput, ImportPagesInput } from "./dto/kb-import-export.schemas";
 import { toMarkdown, toHtml } from "./kb-export-serializer";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import {
+  buildCursorPage,
+  decodeTimestampCursor,
+  type CursorPage,
+} from "../../../common/pagination/cursor";
+import {
+  keysetBeforeMicros,
+  microsecondCursorValue,
+} from "../../../common/pagination/keyset";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 type ImportJobRow = typeof kbImportJobs.$inferSelect;
 type ExportJobRow = typeof kbExportJobs.$inferSelect;
+type ImportJobPage = CursorPage<ImportJobRow>;
+type ExportJobPage = CursorPage<ExportJobRow>;
 
 type ExportResult = {
   jobId: number;
@@ -81,13 +93,34 @@ export class KbImportExportService {
     return { jobId: job.id, format: input.format, content };
   }
 
-  async listExportJobs(orgId: string): Promise<ExportJobRow[]> {
-    return this.db
-      .select()
+  async listExportJobs(orgId: string, cursor?: string): Promise<ExportJobPage> {
+    const position = decodeTimestampCursor(cursor);
+    const filters: SQL[] = [eq(kbExportJobs.orgId, orgId)];
+    if (position)
+      filters.push(keysetBeforeMicros(kbExportJobs.createdAt, kbExportJobs.id, position));
+    const rows = await this.db
+      .select({
+        id: kbExportJobs.id,
+        orgId: kbExportJobs.orgId,
+        scopeType: kbExportJobs.scopeType,
+        scopeId: kbExportJobs.scopeId,
+        format: kbExportJobs.format,
+        status: kbExportJobs.status,
+        fileKey: kbExportJobs.fileKey,
+        expiresAt: kbExportJobs.expiresAt,
+        createdById: kbExportJobs.createdById,
+        createdAt: kbExportJobs.createdAt,
+        updatedAt: kbExportJobs.updatedAt,
+        createdAtText: microsecondCursorValue(kbExportJobs.createdAt),
+      })
       .from(kbExportJobs)
-      .where(eq(kbExportJobs.orgId, orgId))
-      .orderBy(desc(kbExportJobs.createdAt))
-      .limit(100);
+      .where(and(...filters))
+      .orderBy(desc(kbExportJobs.createdAt), desc(kbExportJobs.id))
+      .limit(PAGE_SIZE_CAP + 1);
+    return buildCursorPage(rows, PAGE_SIZE_CAP, (row) => ({
+      sortValue: row.createdAtText ?? "",
+      id: String(row.id),
+    }));
   }
 
   async importPages(
@@ -235,12 +268,36 @@ export class KbImportExportService {
     return { jobId: job.id, succeeded, failed, total: items.length };
   }
 
-  async listImportJobs(orgId: string): Promise<ImportJobRow[]> {
-    return this.db
-      .select()
+  async listImportJobs(orgId: string, cursor?: string): Promise<ImportJobPage> {
+    const position = decodeTimestampCursor(cursor);
+    const filters: SQL[] = [eq(kbImportJobs.orgId, orgId)];
+    if (position)
+      filters.push(keysetBeforeMicros(kbImportJobs.createdAt, kbImportJobs.id, position));
+    const rows = await this.db
+      .select({
+        id: kbImportJobs.id,
+        orgId: kbImportJobs.orgId,
+        sourceType: kbImportJobs.sourceType,
+        fileKey: kbImportJobs.fileKey,
+        status: kbImportJobs.status,
+        totalItems: kbImportJobs.totalItems,
+        processedItems: kbImportJobs.processedItems,
+        succeededItems: kbImportJobs.succeededItems,
+        failedItems: kbImportJobs.failedItems,
+        duplicateItems: kbImportJobs.duplicateItems,
+        errorReport: kbImportJobs.errorReport,
+        createdById: kbImportJobs.createdById,
+        createdAt: kbImportJobs.createdAt,
+        updatedAt: kbImportJobs.updatedAt,
+        createdAtText: microsecondCursorValue(kbImportJobs.createdAt),
+      })
       .from(kbImportJobs)
-      .where(eq(kbImportJobs.orgId, orgId))
-      .orderBy(desc(kbImportJobs.createdAt))
-      .limit(100);
+      .where(and(...filters))
+      .orderBy(desc(kbImportJobs.createdAt), desc(kbImportJobs.id))
+      .limit(PAGE_SIZE_CAP + 1);
+    return buildCursorPage(rows, PAGE_SIZE_CAP, (row) => ({
+      sortValue: row.createdAtText ?? "",
+      id: String(row.id),
+    }));
   }
 }

@@ -124,3 +124,37 @@ describe("KbPagesService.setVisibility — public share tokens", () => {
     expect(minted.publicToken).not.toBe("already-shared-token");
   });
 });
+
+describe("KbPagesService.setVisibility — public share token revision", () => {
+  it("bumps the revision when minting a new token, so CDN caches are invalidated on first share", async () => {
+    const { db, setValues } = makeDb(null);
+
+    await makeService(db).setVisibility(makeUser(), 1, "public", false);
+
+    expect(setValues[0]).toHaveProperty("publicTokenRevision");
+  });
+
+  it("bumps the revision when revoking a share, so CDN caches cannot keep serving a page that is no longer public", async () => {
+    const { db, setValues } = makeDb("existing-token");
+
+    await makeService(db).setVisibility(makeUser(), 1, "private", false);
+
+    expect(setValues[0]).toHaveProperty("publicTokenRevision");
+  });
+
+  it("bumps the revision when clearing a shared page to org visibility, so the CDN does not serve stale content", async () => {
+    const { db, setValues } = makeDb("existing-token");
+
+    await makeService(db).setVisibility(makeUser(), 1, "org", false);
+
+    expect(setValues[0]).toHaveProperty("publicTokenRevision");
+  });
+
+  it("does not bump the revision when the page is already public with an existing token, so stable shares have a stable ETag", async () => {
+    const { db, setValues } = makeDb("existing-token");
+
+    await makeService(db).setVisibility(makeUser(), 1, "public", false);
+
+    expect(setValues[0]).not.toHaveProperty("publicTokenRevision");
+  });
+});

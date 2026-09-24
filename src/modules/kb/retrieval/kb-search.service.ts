@@ -11,6 +11,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { KbSearchMetrics } from "../core/telemetry/kb-search-metrics";
 import { kbArticleChunks, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -157,6 +158,37 @@ export class KbSearchService {
     pageSize: number;
     totalPages: number;
   }> {
+    const metrics = KbSearchMetrics.begin({ orgId: user.orgId });
+    try {
+      return await this.searchMeasured(user, input, scope, metrics);
+    } catch (error) {
+      metrics.finish("error");
+      throw error;
+    }
+  }
+
+  private async searchMeasured(
+    user: CurrentUserContext,
+    input: SearchInput,
+    scope: ScopedRead,
+    metrics: KbSearchMetrics,
+  ): Promise<{
+    items: {
+      id: number;
+      spaceId: number | null;
+      categoryId: number | null;
+      title: string;
+      slug: string;
+      excerpt: string | null;
+      status: "draft" | "in_review" | "published" | "archived";
+      updatedAt: Date;
+      snippet: string;
+    }[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> {
     const empty = {
       items: [],
       total: 0,
@@ -164,10 +196,16 @@ export class KbSearchService {
       pageSize: input.pageSize,
       totalPages: 0,
     };
-    if (scope.denied) return empty;
+    if (scope.denied) {
+      metrics.finish("denied");
+      return empty;
+    }
 
     const ids = await this.access.getAccessibleSpaceIds(user);
-    if (ids.length === 0) return empty;
+    if (ids.length === 0) {
+      metrics.finish("not_found");
+      return empty;
+    }
 
     const isAdmin = await this.access.isAdmin(user);
     const principal = await this.access.getPrincipalIds(user);
@@ -250,6 +288,7 @@ export class KbSearchService {
       },
     );
 
+    metrics.finish(total > 0 ? "found" : "not_found", { results: total });
     return {
       items,
       total,

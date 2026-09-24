@@ -22,6 +22,7 @@ export interface EnqueueInput {
   runAt?: Date;
   maxAttempts?: number;
   idempotencyKey?: string;
+  correlationId?: string;
 }
 
 export interface ListJobsOptions {
@@ -80,6 +81,7 @@ export class AiJobsService {
           runAt: input.runAt ?? new Date(),
           maxAttempts: input.maxAttempts ?? 3,
           idempotencyKey: input.idempotencyKey ?? null,
+          correlationId: input.correlationId ?? null,
         })
         .returning({ id: aiJobs.id });
 
@@ -191,7 +193,7 @@ export class AiJobsService {
       RETURNING
         id, org_id, user_id, user_membership_id, type, payload, status, priority,
         attempts, max_attempts, idempotency_key, run_at,
-        locked_by, locked_at, last_error, result, created_at, updated_at
+        locked_by, locked_at, last_error, result, correlation_id, created_at, updated_at
     `);
 
     return claimed.map((row) => ({
@@ -210,6 +212,8 @@ export class AiJobsService {
       maxAttempts: Number(row["max_attempts"]),
       idempotencyKey:
         row["idempotency_key"] != null ? String(row["idempotency_key"]) : null,
+      correlationId:
+        row["correlation_id"] != null ? String(row["correlation_id"]) : null,
       runAt: new Date(String(row["run_at"])),
       lockedBy: row["locked_by"] != null ? String(row["locked_by"]) : null,
       lockedAt:

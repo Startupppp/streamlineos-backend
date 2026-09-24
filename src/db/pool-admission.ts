@@ -1,35 +1,6 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
 import { logger } from "../common/logger/logger.service";
 
-/**
- * Backpressure in front of the driver's wait queue.
- *
- * postgres-js exposes no acquire or queue timeout — its option parser has no
- * such key, and its pool handler ends
- * `busy.length ? go(busy.shift(), query) : queries.push(query)`, so once every
- * connection is checked out a query is pushed onto an unbounded FIFO and waits
- * forever. Only `end()`/`destroy()` ever rejects a waiter. `connect_timeout`
- * bounds a *new* connection's handshake, not the wait for a checked-out one to
- * come back. `pool-telemetry` already sees this and logs "Database pool
- * saturated"; logging is not shedding, so a database that slows down turns
- * into an application that never answers.
- *
- * The gate therefore sits *before* the driver, not around it. A waiter that
- * gives up here has never been handed to postgres-js, so a shed request runs
- * no statement — which is the whole reason this is not implemented as a race
- * against `sql.begin()`: abandoning that promise sheds the caller and still
- * executes the query later, which on a write is a phantom write.
- *
- * Capacity is per lane because a multi-region deployment opens one pool per
- * region (`region.module.ts` builds each secondary with the same `max`), so a
- * single global counter sized at one pool's `max` would under-admit by a
- * factor of the region count.
- *
- * Inert until `configurePoolAdmission` is called, which happens exactly where
- * the pool itself is built. Unit tests and scripts that never construct a pool
- * are never gated by one.
- */
-
 export const DEFAULT_ACQUIRE_TIMEOUT_MS = 5_000;
 export const DEFAULT_QUEUE_DEPTH_FACTOR = 4;
 
@@ -39,6 +10,7 @@ export interface PoolAdmissionConfig {
   maxConcurrent: number;
   maxQueueDepth: number;
   acquireTimeoutMs: number;
+  laneCapOverrides?: Record<string, number>;
 }
 
 export interface PoolAdmissionSnapshot {
@@ -123,8 +95,10 @@ class PoolAdmissionGate {
     if (!config) return () => {};
 
     const lane = this.laneFor(laneKey);
+    const effectiveCap =
+      this.config.laneCapOverrides?.[laneKey] ?? this.config.maxConcurrent;
 
-    if (lane.active < config.maxConcurrent) {
+    if (lane.active < effectiveCap) {
       lane.active += 1;
       return this.releaseFor(lane);
     }
@@ -156,7 +130,8 @@ class PoolAdmissionGate {
         }, config.acquireTimeoutMs),
       };
       lane.queue.push(waiter);
-      if (lane.queue.length > this.peakQueued) this.peakQueued = lane.queue.length;
+      if (lane.queue.length > this.peakQueued)
+        this.peakQueued = lane.queue.length;
     });
 
     const waitedMs = Date.now() - queuedAt;

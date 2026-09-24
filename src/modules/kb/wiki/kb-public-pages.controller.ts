@@ -1,4 +1,5 @@
-﻿import { Controller, Get, HttpException, HttpStatus, NotFoundException, Param, Request } from "@nestjs/common";
+﻿import { Controller, Get, HttpException, HttpStatus, NotFoundException, Param, Res, Request } from "@nestjs/common";
+import type { Response } from "express";
 import { z } from "zod";
 import { Public } from "../../../common/auth/public.decorator";
 import { KbPagesService } from "./kb-pages.service";
@@ -26,6 +27,7 @@ export class KbPublicPagesController {
   async getPublicPage(
     @Param("token") token: string,
     @Request() req: { ip?: string; headers: Record<string, string> },
+    @Res({ passthrough: true }) res: Response,
   ): Promise<unknown> {
     const ip = resolveClientIpOr(req, "unknown");
     const result = await this.rateLimit.check("public:kb", ip);
@@ -33,6 +35,9 @@ export class KbPublicPagesController {
       throw new HttpException({ message: "Too many requests. Try again later." }, HttpStatus.TOO_MANY_REQUESTS);
     const parsed = tokenParamSchema.safeParse(token);
     if (!parsed.success) throw new NotFoundException("Page not found");
-    return this.pages.getPublicPage(parsed.data);
+    const { publicTokenRevision, ...page } = await this.pages.getPublicPage(parsed.data);
+    res.setHeader("ETag", `"${page.updatedAt.getTime()}-${publicTokenRevision}"`);
+    res.setHeader("Cache-Control", "public, no-cache");
+    return page;
   }
 }

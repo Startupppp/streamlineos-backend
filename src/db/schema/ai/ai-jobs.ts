@@ -18,6 +18,7 @@ export const aiJobs = pgTable("ai_jobs", {
   attempts: integer("attempts").default(0).notNull(),
   maxAttempts: integer("max_attempts").default(3).notNull(),
   idempotencyKey: varchar("idempotency_key", { length: 120 }),
+  correlationId: varchar("correlation_id", { length: 128 }),
   runAt: timestamp("run_at").defaultNow().notNull(),
   lockedBy: varchar("locked_by", { length: 64 }),
   lockedAt: timestamp("locked_at"),
@@ -31,6 +32,7 @@ export const aiJobs = pgTable("ai_jobs", {
   index("idx_ai_jobs_expired_lease").on(table.lockedAt).where(sql`status = 'RUNNING'`),
   index("idx_ai_jobs_org_created_at").on(table.orgId, table.createdAt),
   index("idx_ai_jobs_org_type_status").on(table.orgId, table.type, table.status),
+  index("idx_ai_jobs_correlation_id").on(table.correlationId).where(sql`${table.correlationId} IS NOT NULL`),
   unique("uniq_ai_jobs_org_id").on(table.orgId, table.id),
   foreignKey({
     columns: [table.orgId, table.userMembershipId],

@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -31,6 +32,7 @@ import {
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
+const jobListQuery = z.object({ cursor: z.string().optional() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -51,9 +53,13 @@ export class KbImportExportController {
 
   @Get("import-jobs")
   @RequirePermission("kb:pages:import")
+  @Validate({ query: jobListQuery })
   @ResponseSchema(kbImportJobListSchema)
-  async listImportJobs(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.importExport.listImportJobs(u.orgId);
+  async listImportJobs(
+    @Query("cursor") cursor: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.importExport.listImportJobs(u.orgId, cursor);
   }
 
   @Post("pages/:pageId/export")
@@ -70,8 +76,12 @@ export class KbImportExportController {
 
   @Get("export-jobs")
   @RequirePermission("kb:pages:export")
+  @Validate({ query: jobListQuery })
   @ResponseSchema(kbExportJobListSchema)
-  async listExportJobs(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.importExport.listExportJobs(u.orgId);
+  async listExportJobs(
+    @Query("cursor") cursor: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.importExport.listExportJobs(u.orgId, cursor);
   }
 }

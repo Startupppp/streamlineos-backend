@@ -56,6 +56,7 @@ export const kbPages = pgTable(
     visibility: text("visibility").notNull().default("org").$type<"private" | "org" | "public">(),
     publicToken: text("public_token"),
     publicTokenHash: text("public_token_hash"),
+    publicTokenRevision: integer("public_token_revision").notNull().default(1),
     status: text("status").notNull().default("draft").$type<"draft" | "in_review" | "published" | "archived">(),
     contentType: text("content_type").notNull().default("note").$type<"note" | "sop" | "policy" | "support_article" | "troubleshooting" | "decision_record" | "meeting_notes" | "runbook" | "project_brief" | "playbook">(),
     trustState: text("trust_state").notNull().default("unverified").$type<"unverified" | "verified" | "verification_expired">(),

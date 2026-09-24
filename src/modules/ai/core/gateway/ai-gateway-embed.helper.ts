@@ -80,7 +80,7 @@ export class AiGatewayEmbedHelper {
       return { ok: false, kind: "cancelled", message: CANCELLED_MESSAGE, correlationId };
     }
 
-    const reservation = await this.reserve(orgId, feature, charge, correlationId);
+    const reservation = await this.reserve(orgId, feature, charge, correlationId, texts.length);
     if (!reservation.ok) {
       call.finish("quota_exceeded");
       return reservation.failure;
@@ -105,6 +105,7 @@ export class AiGatewayEmbedHelper {
     feature: string,
     charge: boolean,
     correlationId: string,
+    batchCount = 1,
   ): Promise<Reservation> {
     if (!charge) return { ok: true, reservationId: 0 };
     try {
@@ -113,7 +114,7 @@ export class AiGatewayEmbedHelper {
         orgId,
         userId: null,
         feature,
-        credits: getReserveEstimateMilli(feature),
+        credits: getReserveEstimateMilli(feature) * batchCount,
         ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
       return { ok: true, reservationId: reserved.reservationId };

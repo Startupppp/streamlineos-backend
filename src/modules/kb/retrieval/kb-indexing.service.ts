@@ -10,6 +10,7 @@ import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import {
   KbIndexingMetrics,
   kbIndexingOutcomeForError,
+  type KbIndexingContentType,
 } from "../core/telemetry/kb-indexing-metrics";
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
@@ -70,7 +71,7 @@ export class KbIndexingService {
     articleId: number,
     signal?: AbortSignal,
   ): Promise<number> {
-    return this.indexPage(orgId, articleId, signal);
+    return this.indexPage(orgId, articleId, signal, "article");
   }
 
   async reindexPageOnRequest(orgId: string, pageId: number): Promise<number> {
@@ -95,8 +96,9 @@ export class KbIndexingService {
     orgId: string,
     pageId: number,
     signal?: AbortSignal,
+    contentType: KbIndexingContentType = "page",
   ): Promise<number> {
-    const metrics = KbIndexingMetrics.begin({ contentType: "page", orgId });
+    const metrics = KbIndexingMetrics.begin({ contentType, orgId });
     try {
       return await this.indexPageMeasured(orgId, pageId, metrics, signal);
     } catch (error) {

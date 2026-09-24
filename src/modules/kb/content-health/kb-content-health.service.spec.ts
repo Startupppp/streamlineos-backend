@@ -152,12 +152,45 @@ describe("KbContentHealthService — signals", () => {
     await svc.signals(makeUser(), makeQuery("broken_link"));
     expect(renderedWhere(wheres)).toContain("kb_page_links");
   });
+
+  it("returns the page for an overexposed signal when one matches, so the empty case is not the only reachable outcome", async () => {
+    const { db } = makeCapturingDb([PAGE_ROW]);
+    const svc = new KbContentHealthService(db, auth as never);
+    const result = await svc.signals(makeUser(), makeQuery("overexposed"));
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.id).toBe(PAGE_ROW.id);
+  });
+
+  it("references kb_spaces in the overexposed predicate to check is_public_help_center, not just the pages visibility column alone", async () => {
+    const { db, wheres } = makeCapturingDb([PAGE_ROW]);
+    const svc = new KbContentHealthService(db, auth as never);
+    await svc.signals(makeUser(), makeQuery("overexposed"));
+    const rendered = renderedWhere(wheres);
+    expect(rendered).toContain("kb_spaces");
+    expect(rendered).toContain("is_public_help_center");
+  });
+
+  it("returns the page for a duplicate_candidate signal when one matches, so the empty case is not the only reachable outcome", async () => {
+    const { db } = makeCapturingDb([PAGE_ROW]);
+    const svc = new KbContentHealthService(db, auth as never);
+    const result = await svc.signals(makeUser(), makeQuery("duplicate_candidate"));
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.id).toBe(PAGE_ROW.id);
+  });
+
+  it("self-joins kb_pages on content_text for the duplicate_candidate signal, so the join is not a vacuous always-true clause", async () => {
+    const { db, wheres } = makeCapturingDb([PAGE_ROW]);
+    const svc = new KbContentHealthService(db, auth as never);
+    await svc.signals(makeUser(), makeQuery("duplicate_candidate"));
+    const rendered = renderedWhere(wheres);
+    expect(rendered).toContain("content_text");
+  });
 });
 
 describe("KbContentHealthService — counts", () => {
   afterEach(() => jest.resetAllMocks());
 
-  it("returns counts for all six signal types", async () => {
+  it("returns counts for all eight signal types including overexposed and duplicate_candidate", async () => {
     const countRow = { count: 3 };
     const db = {
       select: jest.fn().mockReturnValue({
@@ -168,11 +201,11 @@ describe("KbContentHealthService — counts", () => {
     } as unknown as Db;
     const svc = new KbContentHealthService(db, auth as never);
     const result = await svc.counts(makeUser());
-    expect(result.counts).toHaveLength(6);
+    expect(result.counts).toHaveLength(8);
     expect(result.counts.every((c) => c.count === 3)).toBe(true);
   });
 
-  it("gives each of the six counts a distinct signal type, so one predicate is not being counted six times", async () => {
+  it("gives each of the eight counts a distinct signal type, so one predicate is not being counted eight times", async () => {
     const db = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
@@ -186,10 +219,10 @@ describe("KbContentHealthService — counts", () => {
     );
 
     const types = result.counts.map((c) => c.signalType);
-    expect(new Set(types).size).toBe(6);
+    expect(new Set(types).size).toBe(8);
   });
 
-  it("builds a different predicate per signal, so the six counts are not the same query repeated", async () => {
+  it("builds a different predicate per signal, so the eight counts are not the same query repeated", async () => {
     const { db, wheres } = makeCapturingDb([{ count: 3 }]);
     const capturing = db as unknown as { select: jest.Mock };
     capturing.select = jest.fn(() => {
@@ -207,7 +240,7 @@ describe("KbContentHealthService — counts", () => {
     const outer = wheres
       .map((w) => renderedWhere([w]))
       .filter((text) => text.includes('"kb_pages"."deleted_at" is null'));
-    expect(outer).toHaveLength(6);
+    expect(outer).toHaveLength(8);
     expect(new Set(outer).size).toBeGreaterThanOrEqual(5);
 
     const everything = renderedWhere(wheres);

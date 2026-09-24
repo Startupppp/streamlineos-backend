@@ -36,8 +36,8 @@ export const kbExportJobSchema = z.object({
   updatedAt: wireDate(),
 });
 
-export const kbImportJobListSchema = z.array(kbImportJobSchema);
-export const kbExportJobListSchema = z.array(kbExportJobSchema);
+export const kbImportJobListSchema = cursorPageSchema(kbImportJobSchema);
+export const kbExportJobListSchema = cursorPageSchema(kbExportJobSchema);
 
 export const kbImportResultSchema = z.object({
   jobId: z.number().int(),

@@ -26,6 +26,7 @@ function makeJob(overrides: Partial<AiJob> = {}): AiJob {
     attempts: 0,
     maxAttempts: 3,
     idempotencyKey: null,
+    correlationId: null,
     runAt: new Date(),
     lockedBy: null,
     lockedAt: null,
@@ -258,8 +259,42 @@ describe("AiJobsService", () => {
 });
 
 describe("AiJobsWorkerService", () => {
-  function buildWorker(db: MockDb, jobsSvc: AiJobsService, handlers: ReturnType<typeof buildHandlerRegistry>): AiJobsWorkerService {
-    return new AiJobsWorkerService(jobsSvc, handlers.registry, db as never, handlers.handlerList);
+  function makeClaimRow(job: AiJob): Record<string, unknown> {
+    return {
+      id: job.id,
+      org_id: job.orgId,
+      user_id: job.userId,
+      user_membership_id: job.userMembershipId,
+      type: job.type,
+      payload: job.payload,
+      status: job.status,
+      priority: job.priority,
+      attempts: job.attempts,
+      max_attempts: job.maxAttempts,
+      idempotency_key: job.idempotencyKey,
+      correlation_id: job.correlationId,
+      run_at: job.runAt.toISOString(),
+      locked_by: job.lockedBy,
+      locked_at: job.lockedAt?.toISOString() ?? null,
+      last_error: job.lastError,
+      result: job.result,
+      created_at: job.createdAt.toISOString(),
+      updated_at: job.updatedAt.toISOString(),
+    };
+  }
+
+  function buildExecuteDb(job: AiJob | null, updateChain?: ReturnType<typeof buildUpdateChain>): MockDb {
+    let execCallCount = 0;
+    const claimRow = job ? makeClaimRow(job) : null;
+    const db = buildDb({
+      execute: jest.fn(() => {
+        const idx = execCallCount++;
+        if (idx === 0) return Promise.resolve(claimRow ? [{ org_id: (claimRow["org_id"] as string) }] : []);
+        return Promise.resolve(claimRow ? [claimRow] : []);
+      }),
+    });
+    if (updateChain) db.update.mockReturnValue(updateChain);
+    return db;
   }
 
   function buildHandlerRegistry(type: string, result: Record<string, unknown> | Error) {
@@ -276,11 +311,15 @@ describe("AiJobsWorkerService", () => {
     return { registry, handlerList };
   }
 
+  function buildWorker(db: MockDb, jobsSvc: AiJobsService, handlers: ReturnType<typeof buildHandlerRegistry>): AiJobsWorkerService {
+    return new AiJobsWorkerService(jobsSvc, handlers.registry, db as never, handlers.handlerList);
+  }
+
   it("completes job when handler succeeds — passes orgId to complete()", async () => {
     const job = makeJob({ id: 1, orgId: "org-abc", type: "send.email" });
-    const db = buildDb();
+    const db = buildExecuteDb(job);
     const jobsSvc = new AiJobsService(db as never);
-    jest.spyOn(jobsSvc, "claimBatch").mockResolvedValue([job]);
+    jest.spyOn(jobsSvc, "reclaimExpiredLeases").mockResolvedValue(0);
     jest.spyOn(jobsSvc, "complete").mockResolvedValue();
 
     const handlers = buildHandlerRegistry("send.email", { sent: true });
@@ -294,9 +333,9 @@ describe("AiJobsWorkerService", () => {
 
   it("calls fail with orgId when handler throws", async () => {
     const job = makeJob({ id: 1, orgId: "org-abc", type: "send.email" });
-    const db = buildDb();
+    const db = buildExecuteDb(job);
     const jobsSvc = new AiJobsService(db as never);
-    jest.spyOn(jobsSvc, "claimBatch").mockResolvedValue([job]);
+    jest.spyOn(jobsSvc, "reclaimExpiredLeases").mockResolvedValue(0);
     jest.spyOn(jobsSvc, "fail").mockResolvedValue();
 
     const handlers = buildHandlerRegistry("send.email", new Error("smtp down"));
@@ -308,12 +347,11 @@ describe("AiJobsWorkerService", () => {
   });
 
   it("marks job DEAD immediately for unknown handler type", async () => {
-    const job = makeJob({ id: 1, type: "unknown.type", maxAttempts: 3 });
-    const db = buildDb();
+    const job = makeJob({ id: 1, orgId: "org-1", type: "unknown.type", maxAttempts: 3 });
     const updateChain = buildUpdateChain([{ id: 1 }]);
-    db.update.mockReturnValue(updateChain);
+    const db = buildExecuteDb(job, updateChain);
     const jobsSvc = new AiJobsService(db as never);
-    jest.spyOn(jobsSvc, "claimBatch").mockResolvedValue([job]);
+    jest.spyOn(jobsSvc, "reclaimExpiredLeases").mockResolvedValue(0);
 
     const registry = new AiJobHandlerRegistry();
     const worker = new AiJobsWorkerService(jobsSvc, registry, db as never, null);
@@ -326,9 +364,9 @@ describe("AiJobsWorkerService", () => {
   });
 
   it("returns zero counts when no jobs are claimed", async () => {
-    const db = buildDb();
+    const db = buildExecuteDb(null);
     const jobsSvc = new AiJobsService(db as never);
-    jest.spyOn(jobsSvc, "claimBatch").mockResolvedValue([]);
+    jest.spyOn(jobsSvc, "reclaimExpiredLeases").mockResolvedValue(0);
 
     const registry = new AiJobHandlerRegistry();
     const worker = new AiJobsWorkerService(jobsSvc, registry, db as never, null);

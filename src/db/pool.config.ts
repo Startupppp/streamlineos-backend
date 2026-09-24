@@ -1,19 +1,27 @@
 import { z } from "zod";
 import type postgres from "postgres";
 import { SEAM_BUDGETS } from "../common/observability/seam-budgets";
-import { DEFAULT_ACQUIRE_TIMEOUT_MS, DEFAULT_QUEUE_DEPTH_FACTOR } from "./pool-admission";
-import { createRdsIamPasswordProvider, isRdsIamAuthEnabled, rdsRegionFor } from "./rds-iam-auth";
+import {
+  DEFAULT_ACQUIRE_TIMEOUT_MS,
+  DEFAULT_QUEUE_DEPTH_FACTOR,
+} from "./pool-admission";
+import {
+  createRdsIamPasswordProvider,
+  isRdsIamAuthEnabled,
+  rdsRegionFor,
+} from "./rds-iam-auth";
 
 export type PoolOptions = NonNullable<Parameters<typeof postgres>[1]>;
 
 const NEON_HOST = /\.neon\.tech/i;
 const POOLED_HOST = /-pooler\./i;
 const AWS_RDS_HOST = /\.rds\.amazonaws\.com$/i;
-const AURORA_HOST = /\.(?:cluster|cluster-ro)-[a-z0-9-]+\.[a-z0-9-]+\.rds\.amazonaws\.com$/i;
+const AURORA_HOST =
+  /\.(?:cluster|cluster-ro)-[a-z0-9-]+\.[a-z0-9-]+\.rds\.amazonaws\.com$/i;
 
 const DEFAULT_APPLICATION_NAME = "streamlineos-api";
 const PINNED_TIME_ZONE = "UTC";
-const DEFAULT_SLOW_ACQUIRE_MS = SEAM_BUDGETS['db.pool.wait'].thresholdMs;
+const DEFAULT_SLOW_ACQUIRE_MS = SEAM_BUDGETS["db.pool.wait"].thresholdMs;
 const DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5;
 const DIRECT_ENDPOINT_SAFE_MAX = 10;
 
@@ -24,15 +32,12 @@ const optionalInt = (min: number) =>
   z.preprocess(emptyToUndefined, z.coerce.number().int().min(min).optional());
 
 const optionalBool = () =>
-  z.preprocess(
-    (v) => {
-      if (v === undefined || v === "") return undefined;
-      if (v === "true" || v === "1") return true;
-      if (v === "false" || v === "0") return false;
-      return v;
-    },
-    z.boolean().optional(),
-  );
+  z.preprocess((v) => {
+    if (v === undefined || v === "") return undefined;
+    if (v === "true" || v === "1") return true;
+    if (v === "false" || v === "0") return false;
+    return v;
+  }, z.boolean().optional());
 
 const optionalConnectionUrl = z.preprocess(
   emptyToUndefined,
@@ -43,16 +48,36 @@ const optionalConnectionUrl = z.preprocess(
       try {
         const parsed = new URL(value);
         if (!["postgres:", "postgresql:"].includes(parsed.protocol))
-          context.addIssue({ code: "custom", message: "must use postgres:// or postgresql://" });
-        if (!parsed.username || !parsed.hostname || !parsed.pathname || parsed.pathname === "/")
-          context.addIssue({ code: "custom", message: "must include a user, host and database name" });
+          context.addIssue({
+            code: "custom",
+            message: "must use postgres:// or postgresql://",
+          });
+        if (
+          !parsed.username ||
+          !parsed.hostname ||
+          !parsed.pathname ||
+          parsed.pathname === "/"
+        )
+          context.addIssue({
+            code: "custom",
+            message: "must include a user, host and database name",
+          });
         if (AWS_RDS_HOST.test(parsed.hostname)) {
           const sslMode = parsed.searchParams.get("sslmode")?.toLowerCase();
-          if (!sslMode || !["require", "verify-ca", "verify-full"].includes(sslMode))
-            context.addIssue({ code: "custom", message: "AWS RDS/Aurora URLs must enable sslmode" });
+          if (
+            !sslMode ||
+            !["require", "verify-ca", "verify-full"].includes(sslMode)
+          )
+            context.addIssue({
+              code: "custom",
+              message: "AWS RDS/Aurora URLs must enable sslmode",
+            });
         }
       } catch {
-        context.addIssue({ code: "custom", message: "must be a valid PostgreSQL URL" });
+        context.addIssue({
+          code: "custom",
+          message: "must be a valid PostgreSQL URL",
+        });
       }
     })
     .optional(),
@@ -109,16 +134,11 @@ export interface ResolvedPoolConfig {
   warnings: string[];
 }
 
-/**
- * postgres-js has no acquire or queue timeout to set, so the bound lives in
- * front of the driver instead (`db/pool-admission.ts`). These are its numbers.
- * `enabled: false` restores the previous behaviour — an unbounded wait — and is
- * a deliberate line in a deployment config, never a default.
- */
 export interface PoolAdmissionTuning {
   enabled: boolean;
   queueDepth: number;
   acquireTimeoutMs: number;
+  backgroundLaneMax: number;
 }
 
 export function normalizeDatabaseUrl(url: string): string {
@@ -165,10 +185,14 @@ function buildRdsIamPassword(
     username = decodeURIComponent(url.username);
     if (url.port) port = Number(url.port);
   } catch {
-    throw new Error("[db-pool] DB_IAM_AUTH is set but the connection string is not a valid URL");
+    throw new Error(
+      "[db-pool] DB_IAM_AUTH is set but the connection string is not a valid URL",
+    );
   }
   if (!username)
-    throw new Error("[db-pool] DB_IAM_AUTH is set but the connection string has no username");
+    throw new Error(
+      "[db-pool] DB_IAM_AUTH is set but the connection string has no username",
+    );
   const region = rdsRegionFor(host, env);
   if (!region)
     throw new Error(
@@ -182,7 +206,9 @@ function buildRdsIamPassword(
  * `options=-c …` with 08P01, so they are applied per transaction with
  * `set_config(…, is_local => true)` instead — verified against the live endpoint.
  */
-export function resolveTransactionGuards(env: NodeJS.ProcessEnv): TransactionGuards {
+export function resolveTransactionGuards(
+  env: NodeJS.ProcessEnv,
+): TransactionGuards {
   const tuning = parsePoolEnv(env);
   return {
     statementTimeoutMs: tuning.DB_STATEMENT_TIMEOUT_MS ?? 30_000,
@@ -200,17 +226,6 @@ function parsePoolEnv(env: NodeJS.ProcessEnv): z.infer<typeof poolEnvSchema> {
   throw new Error(`[db-pool] Invalid pool configuration:\n${issues}`);
 }
 
-/**
- * 1388 of the schema's timestamp columns are `timestamp without time zone`. The
- * driver writes a JS Date as a `timestamptz` literal and reads a naive column back
- * with a bare `new Date(text)`, so the value only survives the round trip while the
- * session's TimeZone and the process's TZ agree. Measured against PostgreSQL 18.4:
- * with the session on `Asia/Kolkata` and the process on UTC, `2026-09-02T12:00:00Z`
- * reads back as `17:30:00Z`; pinning the session to UTC while the process stays on
- * `Asia/Kolkata` shifts it the other way, to `06:30:00Z`. Pinning the session is
- * therefore only half the fix — the image sets `TZ=UTC` for the other half, and a
- * process running anywhere else gets told below.
- */
 export function describeTimezoneRisk(utcOffsetMinutes: number): string | null {
   if (utcOffsetMinutes === 0) return null;
   const hours = -utcOffsetMinutes / 60;
@@ -233,16 +248,11 @@ export function resolvePoolMax(env: NodeJS.ProcessEnv): number {
   const host = hostOf(connectionString);
   const probe = host || connectionString;
   if (POOLED_HOST.test(probe)) return DEFAULT_POOL_MAX;
-  if (NEON_HOST.test(probe) || AWS_RDS_HOST.test(host)) return CONSTRAINED_ENDPOINT_POOL_MAX;
+  if (NEON_HOST.test(probe) || AWS_RDS_HOST.test(host))
+    return CONSTRAINED_ENDPOINT_POOL_MAX;
   return DEFAULT_POOL_MAX;
 }
 
-/**
- * Defaults differ by endpoint because the constraints do: a Neon compute suspends
- * when idle and caps `max_connections` low on a direct endpoint, while its
- * transaction-mode pooler multiplexes many clients onto few server connections
- * but cannot serve prepared statements.
- */
 export function resolvePoolConfig(
   env: NodeJS.ProcessEnv,
   runtime: PoolRuntime = { utcOffsetMinutes: new Date().getTimezoneOffset() },
@@ -264,13 +274,16 @@ export function resolvePoolConfig(
 
   const max = resolvePoolMax(env);
   const idleTimeout =
-    tuning.DB_POOL_IDLE_TIMEOUT ?? (isNeon || isAwsRds ? 15 : isDevelopment ? 20 : 60);
+    tuning.DB_POOL_IDLE_TIMEOUT ??
+    (isNeon || isAwsRds ? 15 : isDevelopment ? 20 : 60);
   // Aurora Serverless can take longer to accept a connection while resuming from
   // zero ACUs. Keep the connect budget generous and release idle clients quickly
   // enough that this process doesn't prevent an otherwise-idle cluster pausing.
-  const connectTimeout = tuning.DB_POOL_CONNECT_TIMEOUT ?? (isNeon || isAwsRds ? 30 : 15);
+  const connectTimeout =
+    tuning.DB_POOL_CONNECT_TIMEOUT ?? (isNeon || isAwsRds ? 30 : 15);
   const maxLifetime =
-    tuning.DB_POOL_MAX_LIFETIME ?? (isNeon ? 60 * 4 : isAwsRds ? 60 * 15 : 60 * 30);
+    tuning.DB_POOL_MAX_LIFETIME ??
+    (isNeon ? 60 * 4 : isAwsRds ? 60 * 15 : 60 * 30);
   const guards = resolveTransactionGuards(env);
 
   const connection: NonNullable<PoolOptions["connection"]> = {
@@ -306,7 +319,9 @@ export function resolvePoolConfig(
     options,
     isPooled,
     connectionString,
-    replicaConnectionString: replicaRaw ? normalizeDatabaseUrl(replicaRaw) : undefined,
+    replicaConnectionString: replicaRaw
+      ? normalizeDatabaseUrl(replicaRaw)
+      : undefined,
     warnings: collectWarnings({
       max,
       isNeon,
@@ -319,8 +334,11 @@ export function resolvePoolConfig(
     }),
     admission: {
       enabled: tuning.DB_POOL_ADMISSION_ENABLED ?? true,
-      queueDepth: tuning.DB_POOL_QUEUE_DEPTH ?? max * DEFAULT_QUEUE_DEPTH_FACTOR,
-      acquireTimeoutMs: tuning.DB_POOL_ACQUIRE_TIMEOUT_MS ?? DEFAULT_ACQUIRE_TIMEOUT_MS,
+      queueDepth:
+        tuning.DB_POOL_QUEUE_DEPTH ?? max * DEFAULT_QUEUE_DEPTH_FACTOR,
+      acquireTimeoutMs:
+        tuning.DB_POOL_ACQUIRE_TIMEOUT_MS ?? DEFAULT_ACQUIRE_TIMEOUT_MS,
+      backgroundLaneMax: Math.max(1, Math.floor(max * 0.25)),
     },
     role: env.APP_DATABASE_URL ? "application" : "owner",
     slowAcquireMs: tuning.DB_SLOW_ACQUIRE_MS ?? DEFAULT_SLOW_ACQUIRE_MS,

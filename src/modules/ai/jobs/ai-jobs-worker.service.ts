@@ -5,6 +5,8 @@ import { aiJobs } from "../../../db/schema";
 import { and, eq } from "drizzle-orm";
 import { AiJobsService } from "./ai-jobs.service";
 import { AiJobHandlerRegistry, AI_JOB_HANDLERS, type AiJobHandler } from "./ai-job-handler";
+import { AiJobsFairClaimer, FAIR_CLAIM_DEFAULT_PER_ORG_LIMIT } from "./ai-jobs-fair-claimer";
+import { poolAdmission } from "../../../db/pool-admission";
 
 export interface FlushResult {
   claimed: number;
@@ -15,6 +17,7 @@ export interface FlushResult {
 @Injectable()
 export class AiJobsWorkerService {
   private readonly logger = new Logger(AiJobsWorkerService.name);
+  private readonly claimer: AiJobsFairClaimer;
 
   constructor(
     private readonly jobs: AiJobsService,
@@ -25,15 +28,29 @@ export class AiJobsWorkerService {
     for (const handler of handlers ?? []) {
       registry.register(handler);
     }
+    this.claimer = new AiJobsFairClaimer(db);
   }
 
   async flush(limit = 25): Promise<FlushResult> {
+    const release = await poolAdmission.acquire("background");
+    try {
+      return await this.runFlush(limit);
+    } finally {
+      release();
+    }
+  }
+
+  private async runFlush(limit: number): Promise<FlushResult> {
     const workerId = `worker-${process.pid}-${Date.now()}`;
     const reclaimed = await this.jobs.reclaimExpiredLeases();
     if (reclaimed > 0) {
       this.logger.warn("Reclaimed AI jobs from expired leases", { reclaimed });
     }
-    const batch = await this.jobs.claimBatch(workerId, limit);
+    const batch = await this.claimer.claim(
+      workerId,
+      limit,
+      FAIR_CLAIM_DEFAULT_PER_ORG_LIMIT,
+    );
     const result: FlushResult = { claimed: batch.length, completed: 0, failed: 0 };
 
     for (const job of batch) {

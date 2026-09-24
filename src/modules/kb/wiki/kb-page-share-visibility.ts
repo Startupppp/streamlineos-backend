@@ -4,6 +4,7 @@ import { hashPublicToken, newPublicToken } from "./kb-public-token";
 export interface PublicTokenColumns {
   publicToken?: string | null;
   publicTokenHash?: string | null;
+  bumpRevision: boolean;
 }
 
 export function publicTokenColumnsFor(
@@ -11,11 +12,11 @@ export function publicTokenColumnsFor(
   existingToken: string | null,
 ): PublicTokenColumns {
   if (visibility !== "public")
-    return { publicToken: null, publicTokenHash: null };
+    return { publicToken: null, publicTokenHash: null, bumpRevision: true };
 
-  if (existingToken !== null) return {};
+  if (existingToken !== null) return { bumpRevision: false };
   const token = newPublicToken();
-  return { publicToken: token, publicTokenHash: hashPublicToken(token) };
+  return { publicToken: token, publicTokenHash: hashPublicToken(token), bumpRevision: true };
 }
 
 export interface ShareTokenBearer {

@@ -19,14 +19,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type {
-  BulkPageIdsInput,
-  TrashPagesQuery,
-} from "./dto/kb-pages.schemas";
-import {
-  KB_PAGE_LIST_COLUMNS,
-  type KbPageListItem,
-} from "./kb-page-columns";
+import type { BulkPageIdsInput, TrashPagesQuery } from "./dto/kb-pages.schemas";
+import { KB_PAGE_LIST_COLUMNS, type KbPageListItem } from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { StorageService } from "../../storage/storage.service";
 import {
@@ -47,6 +41,15 @@ import {
 } from "../../../common/pagination/keyset";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { collectSubtreeIds } from "./kb-page-subtree.util";
+import {
+  isStoreComplete,
+  markStoreComplete,
+  markStoreFailed,
+  openMultiStoreLedger,
+  purgeFavoritesForPages,
+  purgeLinksForPages,
+  purgeVisitsForPages,
+} from "./kb-multi-store-purge";
 
 export interface BulkPageResult {
   pageId: number;
@@ -77,11 +80,15 @@ export class KbPageTrashService {
     const subtreeIds = await this.db.transaction((tx) =>
       collectSubtreeIds(tx, orgId, pageId),
     );
+
+    await openMultiStoreLedger(this.db, orgId, subtreeIds);
     const purgeKeys = await recordPageAttachmentPurge(
       this.db,
       orgId,
       subtreeIds,
     );
+
+    await this.executePreDeleteStores(orgId, subtreeIds);
 
     await this.db.transaction(async (tx) => {
       await tx.delete(kbPages).where(
@@ -95,6 +102,11 @@ export class KbPageTrashService {
       );
     });
 
+    for (const id of subtreeIds)
+      await markStoreComplete(this.db, orgId, id, "page_rows").catch(
+        () => undefined,
+      );
+
     await attemptPageAttachmentPurge(
       this.db,
       this.storage,
@@ -102,6 +114,11 @@ export class KbPageTrashService {
       purgeKeys,
       this.config.R2_KB_BUCKET_NAME,
     );
+
+    for (const id of subtreeIds)
+      await markStoreComplete(this.db, orgId, id, "blobs").catch(
+        () => undefined,
+      );
 
     this.audit.log({
       action: "kb.page.permanently_deleted",
@@ -111,6 +128,59 @@ export class KbPageTrashService {
       resourceId: String(pageId),
       metadata: { pageTitle: page.title },
     });
+  }
+
+  private async executePreDeleteStores(
+    orgId: string,
+    subtreeIds: number[],
+  ): Promise<void> {
+    for (const id of subtreeIds) {
+      if (!(await isStoreComplete(this.db, orgId, id, "visits"))) {
+        try {
+          await purgeVisitsForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "visits");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "visits",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "favorites"))) {
+        try {
+          await purgeFavoritesForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "favorites");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "favorites",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "source_links"))) {
+        try {
+          await purgeLinksForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "source_links");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "source_links",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+    }
   }
 
   async emptyTrash(user: CurrentUserContext): Promise<{ purgedCount: number }> {
@@ -128,7 +198,9 @@ export class KbPageTrashService {
       if (trashed.length === 0) break;
 
       const ids = trashed.map((p) => p.id);
+      await openMultiStoreLedger(this.db, orgId, ids);
       const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, ids);
+      await this.executePreDeleteStores(orgId, ids);
 
       const deleted = await this.db
         .delete(kbPages)
@@ -179,7 +251,9 @@ export class KbPageTrashService {
       if (expired.length === 0) break;
 
       const ids = expired.map((p) => p.id);
+      await openMultiStoreLedger(this.db, orgId, ids);
       const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, ids);
+      await this.executePreDeleteStores(orgId, ids);
       await this.db.delete(kbPages).where(
         and(
           eq(kbPages.orgId, orgId),

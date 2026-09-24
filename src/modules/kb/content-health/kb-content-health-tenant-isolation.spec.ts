@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbContentHealthService } from "./kb-content-health.service";
+import type { ContentHealthSignalsQuery } from "./dto/kb-content-health.schemas";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -54,6 +55,10 @@ function makeUser(orgId: string) {
   } as never;
 }
 
+function makeQuery(signalType: ContentHealthSignalsQuery["signalType"]): ContentHealthSignalsQuery {
+  return { signalType, limit: 10, afterId: undefined, spaceId: undefined };
+}
+
 describe("KbContentHealthService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
@@ -73,6 +78,24 @@ describe("KbContentHealthService — cross-tenant isolation", () => {
     const { db, wheres } = makeDb();
     const svc = new KbContentHealthService(db, auth as never);
     await svc.signals(makeUser(ATTACKER), { signalType: "stale", limit: 10, afterId: undefined, spaceId: undefined }).catch(() => {});
+    const vals = wheres.flatMap((w) => sqlValues(w));
+    expect(vals).toContain(ATTACKER);
+    expect(vals).not.toContain(OWNER);
+  });
+
+  it("overexposed subquery carries the attacker org_id in both the pages and kb_spaces conditions, never the owner org", async () => {
+    const { db, wheres } = makeDb();
+    const svc = new KbContentHealthService(db, auth as never);
+    await svc.signals(makeUser(ATTACKER), makeQuery("overexposed")).catch(() => {});
+    const vals = wheres.flatMap((w) => sqlValues(w));
+    expect(vals).toContain(ATTACKER);
+    expect(vals).not.toContain(OWNER);
+  });
+
+  it("duplicate_candidate self-join carries only the attacker org_id, preventing a cross-tenant content_text match", async () => {
+    const { db, wheres } = makeDb();
+    const svc = new KbContentHealthService(db, auth as never);
+    await svc.signals(makeUser(ATTACKER), makeQuery("duplicate_candidate")).catch(() => {});
     const vals = wheres.flatMap((w) => sqlValues(w));
     expect(vals).toContain(ATTACKER);
     expect(vals).not.toContain(OWNER);

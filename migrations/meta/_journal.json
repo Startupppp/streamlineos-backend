@@ -6637,6 +6637,13 @@
       "when": 1803000010706,
       "tag": "1191_hr_import_job_outcome_counts",
       "breakpoints": true
+    },
+    {
+      "idx": 1076,
+      "version": "7",
+      "when": 1803000010707,
+      "tag": "1192_kb_pages_public_token_revision",
+      "breakpoints": true
     }
   ]
 }

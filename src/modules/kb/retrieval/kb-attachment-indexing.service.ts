@@ -9,6 +9,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { StorageService } from "../../storage/storage.service";
+import {
+  KbIndexingMetrics,
+  kbIndexingOutcomeForError,
+} from "../core/telemetry/kb-indexing-metrics";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 import { embedChunksWithResumption } from "./kb-embedding-resumption";
 import {
@@ -44,12 +48,14 @@ export class KbAttachmentIndexingService {
     contentId: number,
     contentHash: string,
     chunks: string[],
+    metrics?: KbIndexingMetrics,
   ): Promise<number[][]> {
     return embedChunksWithResumption(
       {
         aiGateway: this.aiGateway,
         checkpoint: this.checkpoint,
         logger: this.logger,
+        metrics,
       },
       { orgId, contentType, contentId, contentHash, chunks },
     );
@@ -60,45 +66,43 @@ export class KbAttachmentIndexingService {
     sourceId: number,
     text: string,
   ): Promise<number> {
-    if (!this.aiGateway.isEmbeddingConfigured()) return 0;
-    const chunks = chunkText(text);
+    const metrics = KbIndexingMetrics.begin({ contentType: "article", orgId });
+    try {
+      if (!this.aiGateway.isEmbeddingConfigured()) {
+        metrics.finish("embedding_unavailable");
+        return 0;
+      }
+      const chunks = chunkText(text);
 
-    if (chunks.length === 0) {
-      await this.removeSourceChunks(orgId, sourceId);
-      return 0;
+      if (chunks.length === 0) {
+        await this.removeSourceChunks(orgId, sourceId);
+        metrics.finish("skipped_no_content");
+        return 0;
+      }
+
+      const contentHash = sha256(text);
+      const family = sourceChunks(orgId, sourceId);
+      const stored = await loadDerivedChunkState(this.db, family);
+      if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
+        this.logger.log("KB source text unchanged — reusing stored chunks", {
+          orgId,
+          sourceId,
+          chunks: stored.chunkCount,
+        });
+        metrics.finish("reused", { reused: true });
+        return stored.chunkCount;
+      }
+
+      const embeddings = await this.embed(orgId, "source", sourceId, contentHash, chunks, metrics);
+
+      await replaceSourceChunks(this.db, orgId, sourceId, chunks, embeddings, contentHash);
+
+      metrics.finish("indexed", { chunks: chunks.length, reused: false });
+      return chunks.length;
+    } catch (error) {
+      metrics.finish(kbIndexingOutcomeForError(error));
+      throw error;
     }
-
-    // The hash is over the SOURCE text, not the rejoined chunks (backend CLAUDE.md §7).
-    const contentHash = sha256(text);
-    const family = sourceChunks(orgId, sourceId);
-    const stored = await loadDerivedChunkState(this.db, family);
-    if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
-      this.logger.log("KB source text unchanged — reusing stored chunks", {
-        orgId,
-        sourceId,
-        chunks: stored.chunkCount,
-      });
-      return stored.chunkCount;
-    }
-
-    const embeddings = await this.embed(
-      orgId,
-      "source",
-      sourceId,
-      contentHash,
-      chunks,
-    );
-
-    await replaceSourceChunks(
-      this.db,
-      orgId,
-      sourceId,
-      chunks,
-      embeddings,
-      contentHash,
-    );
-
-    return chunks.length;
   }
 
   async removeSourceChunks(orgId: string, sourceId: number): Promise<void> {
@@ -116,9 +120,20 @@ export class KbAttachmentIndexingService {
     orgId: string,
     attachmentId: number,
   ): Promise<{ chunks: number; warning: string | null }> {
-    // One statement rather than two: the parent's `acl_revision` is what the candidate join
-    // equates against, so it has to be read here and written onto every chunk below. The join
-    // is LEFT because an attachment whose page row is gone still has chunks to clear.
+    const metrics = KbIndexingMetrics.begin({ contentType: "attachment", orgId });
+    try {
+      return await this.indexAttachmentMeasured(orgId, attachmentId, metrics);
+    } catch (error) {
+      metrics.finish(kbIndexingOutcomeForError(error));
+      throw error;
+    }
+  }
+
+  private async indexAttachmentMeasured(
+    orgId: string,
+    attachmentId: number,
+    metrics: KbIndexingMetrics,
+  ): Promise<{ chunks: number; warning: string | null }> {
     const [attachment] = await this.db
       .select({
         pageId: kbPageAttachments.pageId,
@@ -145,18 +160,21 @@ export class KbAttachmentIndexingService {
       )
       .limit(1);
 
-    if (
-      !attachment ||
-      attachment.deletedAt !== null ||
-      attachment.pageDeletedAt !== null ||
-      !this.aiGateway.isEmbeddingConfigured()
-    ) {
+    if (!attachment || attachment.deletedAt !== null || attachment.pageDeletedAt !== null) {
       await this.removeAttachmentChunks(orgId, attachmentId);
+      metrics.finish("skipped_no_content");
+      return { chunks: 0, warning: null };
+    }
+
+    if (!this.aiGateway.isEmbeddingConfigured()) {
+      await this.removeAttachmentChunks(orgId, attachmentId);
+      metrics.finish("embedding_unavailable");
       return { chunks: 0, warning: null };
     }
 
     if (!isExtractableMime(attachment.mimeType)) {
       await this.removeAttachmentChunks(orgId, attachmentId);
+      metrics.finish("skipped_no_content");
       return {
         chunks: 0,
         warning: `${attachment.fileName}: unsupported file type`,
@@ -165,17 +183,12 @@ export class KbAttachmentIndexingService {
 
     let text: string;
     try {
-      // No KB bucket override, deliberately: kb_article_attachments rows carry a fileKey
-      // the client obtained from POST /storage/upload, which writes to the DEFAULT bucket
-      // with no override. Adding one here would 404 the read wherever the buckets differ.
-      const { body } = await this.storage.getFileStream(
-        orgId,
-        attachment.fileKey,
-      );
+      const { body } = await this.storage.getFileStream(orgId, attachment.fileKey);
       const buffer = await streamToBuffer(body);
       text = await extractAttachmentText(buffer, attachment.mimeType);
     } catch (err) {
       this.logger.error(`Attachment extract failed (${attachmentId}): ${err}`);
+      metrics.finish("error");
       return {
         chunks: 0,
         warning: `${attachment.fileName}: could not read file`,
@@ -186,6 +199,7 @@ export class KbAttachmentIndexingService {
 
     if (chunks.length === 0) {
       await this.removeAttachmentChunks(orgId, attachmentId);
+      metrics.finish("skipped_no_content");
       return {
         chunks: 0,
         warning: `${attachment.fileName}: no extractable text`,
@@ -204,17 +218,14 @@ export class KbAttachmentIndexingService {
           aclRevision,
         });
         await updateDerivedChunkAcl(this.db, family, aclRevision);
+        metrics.finish("acl_only", { reused: true });
+      } else {
+        metrics.finish("reused", { reused: true });
       }
       return { chunks: stored.chunkCount, warning: null };
     }
 
-    const embeddings = await this.embed(
-      orgId,
-      "attachment",
-      attachmentId,
-      contentHash,
-      chunks,
-    );
+    const embeddings = await this.embed(orgId, "attachment", attachmentId, contentHash, chunks, metrics);
 
     await replaceAttachmentChunks(
       this.db,
@@ -223,12 +234,10 @@ export class KbAttachmentIndexingService {
       attachment.pageId,
       chunks,
       embeddings,
-      {
-        contentHash,
-        aclRevision,
-      },
+      { contentHash, aclRevision },
     );
 
+    metrics.finish("indexed", { chunks: chunks.length, reused: false });
     return { chunks: chunks.length, warning: null };
   }
 
@@ -253,8 +262,32 @@ export class KbAttachmentIndexingService {
     mimeType: string,
     fileName: string,
   ): Promise<{ chunks: number; warning: string | null }> {
-    if (!this.aiGateway.isEmbeddingConfigured() || !isExtractableMime(mimeType))
+    const metrics = KbIndexingMetrics.begin({ contentType: "attachment", orgId });
+    try {
+      return await this.indexPageDocumentMeasured(orgId, pageId, buffer, mimeType, fileName, metrics);
+    } catch (error) {
+      metrics.finish(kbIndexingOutcomeForError(error));
+      throw error;
+    }
+  }
+
+  private async indexPageDocumentMeasured(
+    orgId: string,
+    pageId: number,
+    buffer: Buffer,
+    mimeType: string,
+    fileName: string,
+    metrics: KbIndexingMetrics,
+  ): Promise<{ chunks: number; warning: string | null }> {
+    if (!this.aiGateway.isEmbeddingConfigured()) {
+      metrics.finish("embedding_unavailable");
       return { chunks: 0, warning: null };
+    }
+
+    if (!isExtractableMime(mimeType)) {
+      metrics.finish("skipped_no_content");
+      return { chunks: 0, warning: null };
+    }
 
     const page = await this.db.query.kbPages.findFirst({
       where: and(
@@ -271,7 +304,10 @@ export class KbAttachmentIndexingService {
       },
     });
 
-    if (!page) return { chunks: 0, warning: null };
+    if (!page) {
+      metrics.finish("skipped_no_content");
+      return { chunks: 0, warning: null };
+    }
 
     let text: string;
     try {
@@ -283,12 +319,15 @@ export class KbAttachmentIndexingService {
         mimeType,
         error: err instanceof Error ? err.message : String(err),
       });
+      metrics.finish("error");
       return { chunks: 0, warning: `${fileName}: could not read file` };
     }
 
     const chunks = chunkText(text);
-    if (chunks.length === 0)
+    if (chunks.length === 0) {
+      metrics.finish("skipped_no_content");
       return { chunks: 0, warning: `${fileName}: no extractable text` };
+    }
 
     const contentHash = sha256(text);
     const family = pageDocumentChunks(orgId, pageId);
@@ -300,17 +339,14 @@ export class KbAttachmentIndexingService {
           pageId,
         });
         await updateDerivedChunkAcl(this.db, family, page.aclRevision);
+        metrics.finish("acl_only", { reused: true });
+      } else {
+        metrics.finish("reused", { reused: true });
       }
       return { chunks: stored.chunkCount, warning: null };
     }
 
-    const embeddings = await this.embed(
-      orgId,
-      "page_document",
-      pageId,
-      contentHash,
-      chunks,
-    );
+    const embeddings = await this.embed(orgId, "page_document", pageId, contentHash, chunks, metrics);
 
     await replacePageDocumentChunks(
       this.db,
@@ -328,6 +364,7 @@ export class KbAttachmentIndexingService {
       },
     );
 
+    metrics.finish("indexed", { chunks: chunks.length, reused: false });
     return { chunks: chunks.length, warning: null };
   }
 }

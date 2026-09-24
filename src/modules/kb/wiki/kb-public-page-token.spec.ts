@@ -34,6 +34,7 @@ function buildPage() {
     coverImage: null,
     content: null,
     updatedAt: new Date("2025-01-01T00:00:00Z"),
+    publicTokenRevision: 1,
   };
 }
 
@@ -124,5 +125,22 @@ describe("KbPagesService.getPublicPage — share links resolve by hash, never by
     const bound = whereArgs.flatMap((w) => sqlValues(w));
     expect(bound).toContain(hashPublicToken("token-that-does-not-match"));
     expect(bound).not.toContain(TOKEN_HASH);
+  });
+
+  it("returns publicTokenRevision so the controller can key cache headers on token state changes", async () => {
+    const { db } = makeDb({ ...buildPage(), publicTokenRevision: 3 });
+
+    const result = await makeService(db).getPublicPage(RAW_TOKEN);
+
+    expect(result.publicTokenRevision).toBe(3);
+  });
+
+  it("does not include the raw token value in the result, so a response log cannot become a bearer credential", async () => {
+    const { db } = makeDb(buildPage());
+
+    const result = await makeService(db).getPublicPage(RAW_TOKEN);
+
+    expect(result).not.toHaveProperty("publicToken");
+    expect(result).not.toHaveProperty("publicTokenHash");
   });
 });
