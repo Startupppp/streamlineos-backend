@@ -388,6 +388,14 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
       expect((await get(`/kb/linked-documents/${linkId}`, "inDept")).status).toBe(404);
       expect((await get(`/kb/linked-documents/${linkId}`, "admin")).body.status).toBe("unpublished");
       expect((await get(`/hr/documents/${policyId}/kb-link`, "admin")).body.link.unpublishReason).toBe("source_no_longer_publishable");
+      // The publisher keeps the record to manage it, and the record says nothing about a document that is Personal now.
+      expect((await get(`/kb/linked-documents/${linkId}`, "admin")).body).toMatchObject({ name: null, description: null, category: null, documentType: null, fileName: null, hasFile: false });
+      const listed = (await get("/kb/linked-documents?status=all", "admin")).body.data.find((entry: { id: number }) => entry.id === linkId);
+      expect(listed).toMatchObject({ status: "unpublished", name: null, documentType: null, hasFile: false });
+      expect((await get("/kb/linked-documents?status=unpublished&q=remote%20working", "admin")).body.data).toEqual([]);
+      const neighbourView = await request(server).get("/kb/linked-documents?status=all").set({ Authorization: `Bearer ${neighbourAdminToken}` });
+      expect(neighbourView.status).toBe(200);
+      expect(neighbourView.body.data).toEqual([]);
       expect((await auditFor(home.orgId, "hr.document.classified", policyId)).length).toBeGreaterThanOrEqual(3);
     });
 

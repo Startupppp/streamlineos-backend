@@ -718,6 +718,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:hr-table-freeze:self-test && pnpm check:hr-table-freeze
 
+      # The reconciliation gate needs real tenant data, so CI can only ask whether the detector bites: 48 assertions
+      # that plant every class of violation (an active link on a document that stopped being shareable, an HR file
+      # in a KB attachment or source, a derived chunk, a wider audience, a sensitive folder) and require the named
+      # finding, plus the empty-scope case that must exit 2 and never 0. The real script against a real database
+      # runs in the DB-spec tier (check-hr-kb-invariants.db.spec.ts).
+      - name: HR-KB invariants gate can bite
+        if: ${{ !cancelled() }}
+        run: pnpm check:hr-kb-invariants:self-test
+
       # No source line may hand a secret or PII to a logger outside the redactor, and every
       # @UseRateLimit key must have a TIERS entry — an unknown key silently disables the limit
       # while the decorator still reads as protection. Self-test first: a scanner that matches

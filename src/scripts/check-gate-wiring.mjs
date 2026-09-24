@@ -104,6 +104,14 @@ const UNWIRED_BY_DESIGN = Object.freeze({
   "db:check-hr-reads": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
   "db:check-read-budgets": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
   "db:check-request-txn": "needs a booted app plus a live database. Owner: gate-wiring.",
+  "check:hr-kb-invariants":
+    "reconciles a live tenant database's knowledge-base links, attachments, sources and chunks " +
+    "against its HR documents, so it needs HR_KB_DATABASE_URL pointing at real tenant data " +
+    "(a table owner or BYPASSRLS role, which it makes explicit with row_security = off) and a hermetic " +
+    "job has none. MEASURED 2026-09-25: exit 2 (INCONCLUSIVE, not a pass) with no URL, with an " +
+    "unreadable database, and for an organisation with no documents. ci.yml runs its self-test " +
+    "(48 assertions over the detector) and the DB-spec tier runs the real script against a seeded " +
+    "database, planting each violation class. Owner: gate-wiring.",
   "check:timing-slo":
     "analyses a timing-sample FILE emitted by a live run, not the repository. It takes a " +
     "required --slo=<class> (ordinary-sql, complex-sql, ordinary-request, complex-request, " +

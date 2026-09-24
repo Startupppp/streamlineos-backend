@@ -28,21 +28,28 @@ const pinned = sql`(${kbLinkedDocuments.versionMode} = 'PINNED')`;
 // A pinned entry reads its file from the pinned version; a following one reads whatever the document currently is.
 const fileRef = sql<string | null>`(CASE WHEN ${pinned} THEN ${documentVersions.fileUrl} ELSE ${documents.fileUrl} END)`;
 
+// What an entry says about its DOCUMENT is said only while that document is shareable right now, judged by the same
+// database function as every other read. A publisher may open the record of an entry that is no longer live (to
+// manage it), and that record must not carry the name, type or file of a document that has since become personal,
+// confidential, an employee's, or has been removed: it is masked in SQL, so it never leaves the database.
+const shareableNow = sql`app.hr_document_is_publishable(${documents})`;
+const whenShareable = (value: SQL) => sql`(CASE WHEN ${shareableNow} THEN ${value} END)`;
+
 const PROJECTION = {
   id: kbLinkedDocuments.id,
-  name: documents.name,
-  description: documents.description,
-  category: documents.category,
-  tags: sql<string[] | null>`${documents.tags}`,
-  documentType: sql<string | null>`${documents.type}::text`,
-  effectiveDate: sql<string | null>`(CASE WHEN ${pinned} THEN ${documentVersions.effectiveDate} ELSE ${documents.effectiveDate} END)::text`,
-  version: sql<number | null>`(CASE WHEN ${pinned} THEN ${kbLinkedDocuments.pinnedVersion} ELSE ${documents.version} END)`,
+  name: sql<string | null>`${whenShareable(sql`${documents.name}`)}`,
+  description: sql<string | null>`${whenShareable(sql`${documents.description}`)}`,
+  category: sql<string | null>`${whenShareable(sql`${documents.category}`)}`,
+  tags: sql<string[] | null>`${whenShareable(sql`${documents.tags}`)}`,
+  documentType: sql<string | null>`${whenShareable(sql`${documents.type}::text`)}`,
+  effectiveDate: sql<string | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${documentVersions.effectiveDate} ELSE ${documents.effectiveDate} END)::text`)}`,
+  version: sql<number | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${kbLinkedDocuments.pinnedVersion} ELSE ${documents.version} END)`)}`,
   publishedAt: kbLinkedDocuments.publishedAt,
   // An external https link is metadata only: there is no stored file to open.
-  hasFile: sql<boolean>`coalesce(${fileRef} <> '' AND ${fileRef} !~* '^https?://', false)`,
-  fileName: sql<string | null>`(CASE WHEN ${pinned} THEN ${documentVersions.fileName} ELSE ${documents.fileName} END)`,
-  fileSize: sql<number | null>`(CASE WHEN ${pinned} THEN ${documentVersions.fileSize} ELSE ${documents.fileSize} END)`,
-  mimeType: sql<string | null>`(CASE WHEN ${pinned} THEN ${documentVersions.mimeType} ELSE ${documents.mimeType} END)`,
+  hasFile: sql<boolean>`coalesce(${whenShareable(sql`${fileRef} <> '' AND ${fileRef} !~* '^https?://'`)}, false)`,
+  fileName: sql<string | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${documentVersions.fileName} ELSE ${documents.fileName} END)`)}`,
+  fileSize: sql<number | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${documentVersions.fileSize} ELSE ${documents.fileSize} END)`)}`,
+  mimeType: sql<string | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${documentVersions.mimeType} ELSE ${documents.mimeType} END)`)}`,
   status: kbLinkedDocuments.status,
   versionMode: kbLinkedDocuments.versionMode,
   pinnedVersion: kbLinkedDocuments.pinnedVersion,
@@ -141,7 +148,8 @@ export class KbLinkedDocumentQueryService {
     if (query.q !== undefined && !search) return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
 
     const conditions: SQL[] = [eq(kbLinkedDocuments.orgId, caller.orgId)];
-    if (search) conditions.push(search.match);
+    // Words match a document's own fields, so they only find a document that is shareable now, whatever status is asked for.
+    if (search) conditions.push(search.match, shareableNow);
     if (status === "active") conditions.push(await this.visibility(caller));
     else if (status === "all") conditions.push(publisherCanSeeRecord);
     else conditions.push(eq(kbLinkedDocuments.status, status));
