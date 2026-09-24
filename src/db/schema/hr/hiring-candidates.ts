@@ -96,6 +96,16 @@ export const candidateResumes = pgTable("candidate_resumes", {
   uniqueIndex("uniq_candidate_resumes_candidate_id").on(table.candidateId),
 ]);
 
+/**
+ * Where a manager's answer on an internal application can be.
+ *
+ * `NOT_REQUIRED` is a real answer rather than a null: an org that has no head
+ * on the applicant's department still produces an application, and recording
+ * that no approval was ever needed keeps "nobody has decided yet" (`PENDING`)
+ * from covering two different situations.
+ */
+export type InternalManagerDecision = "PENDING" | "APPROVED" | "DECLINED" | "NOT_REQUIRED";
+
 export const candidateApplications = pgTable("candidate_applications", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -108,6 +118,20 @@ export const candidateApplications = pgTable("candidate_applications", {
   notes: text("notes"),
   trackingToken: text("tracking_token").unique(),
   screeningAnswers: jsonb("screening_answers").$type<Record<string, string>>(),
+  /**
+   * The internal-mobility half of an application, NULL on every external one.
+   *
+   * `internalManagerDecision` is what says "this is an internal move" — a
+   * separate boolean would have to be backfilled and could then disagree with
+   * the decision sitting beside it. `internalManagerNotifiedAt` records when
+   * the manager was told, which is not when the row was written: an internal
+   * application stays confidential until it reaches interview.
+   */
+  internalManagerMembershipId: integer("internal_manager_membership_id"),
+  internalManagerDecision: text("internal_manager_decision").$type<InternalManagerDecision>(),
+  internalManagerDecidedAt: timestamp("internal_manager_decided_at"),
+  internalManagerNote: text("internal_manager_note"),
+  internalManagerNotifiedAt: timestamp("internal_manager_notified_at"),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_candidate_applications_org_candidate" }).onDelete("cascade"),
@@ -115,6 +139,10 @@ export const candidateApplications = pgTable("candidate_applications", {
   unique("uniq_candidate_applications_org_id").on(table.orgId, table.id),
   index("idx_applications_candidate").on(table.candidateId),
   index("idx_applications_job").on(table.jobPostingId),
+  foreignKey({ columns: [table.orgId, table.internalManagerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_candidate_applications_internal_manager" }).onDelete("set null"),
+  index("idx_candidate_applications_internal_manager")
+    .on(table.orgId, table.internalManagerMembershipId, table.internalManagerDecision)
+    .where(sql`${table.internalManagerDecision} IS NOT NULL`),
 ]);
 
 export type ReferralStatus = "SUBMITTED" | "REVIEWING" | "HIRED" | "REJECTED" | "BONUS_PAID";

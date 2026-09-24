@@ -5,6 +5,12 @@ const NAME_REGEX = /[a-zA-Z]/;
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
 
 const CANDIDATE_STATUSES = ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const;
+/**
+ * `INTERNAL` was written by the internal-mobility apply path and was missing
+ * from this list, so every internally applied candidate carried a source the
+ * filter could not select and neither intake sheet could set — invisible on the
+ * one screen that would show an internal pipeline.
+ */
 const CANDIDATE_SOURCES = [
   "LINKEDIN",
   "NAUKRI",
@@ -14,6 +20,7 @@ const CANDIDATE_SOURCES = [
   "DIRECT",
   "JOB_PORTAL",
   "CAMPUS",
+  "INTERNAL",
 ] as const;
 
 export const candidateListSchema = z

@@ -84,6 +84,13 @@ function build(options: {
     { runAutomationsForEvent: () => Promise.resolve() } as never,
     undefined as never,
     { membersWithPermission: () => Promise.resolve([]) } as never,
+    /*
+      The internal-mobility notice. A real double rather than `undefined`,
+      because `moveStage` calls it on every transition that maps to an
+      application status — an undefined here would only fail on whichever case
+      the next person happened to write a test for.
+    */
+    { notifyManagerIfVisible: () => Promise.resolve() } as never,
   );
 
   return { service, calls, updates, inserts };

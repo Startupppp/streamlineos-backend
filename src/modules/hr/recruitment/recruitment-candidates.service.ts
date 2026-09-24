@@ -29,6 +29,8 @@ import { AutomationService } from "../../automation/automation.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { AccessService } from "../../access/access.service";
 import { getCandidateRejectionEmail } from "../../email/templates/recruitment";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { InternalMobilityService } from "./internal-mobility/internal-mobility.service";
 import {
   APPLICATION_STATUS_FOR_STAGE,
   STAGE_TRANSITIONS,
@@ -63,6 +65,7 @@ export class RecruitmentCandidatesService {
     private readonly automation: AutomationService,
     private readonly planLimits: PlanLimitsService,
     private readonly access: AccessService,
+    private readonly mobility: InternalMobilityService,
   ) {}
 
   async list(orgId: string, input: CandidateListInput) {
@@ -475,6 +478,21 @@ export class RecruitmentCandidatesService {
           existing.email,
         ).catch(() => undefined);
       }
+    }
+
+    /*
+      The applicant's own manager, told at interview and not before.
+
+      Deferred rather than awaited inside the transaction: the notice is a
+      write to another aggregate plus a lookup, and holding the pooled
+      connection for it would make a slow notifications table a slow board. The
+      service never throws, so a failure here is logged and the stage move —
+      which the recruiter already made — stands.
+    */
+    const movedToStatus = APPLICATION_STATUS_FOR_STAGE[newStage];
+    if (movedToStatus) {
+      const notify = () => this.mobility.notifyManagerIfVisible(orgId, candidateId, movedToStatus);
+      if (!registerAfterCommit(notify)) await notify();
     }
 
     void this.automation

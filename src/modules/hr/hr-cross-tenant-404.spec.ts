@@ -228,6 +228,7 @@ describe("hr — a write against an id the caller's org does not own answers 404
         cache as unknown as ConstructorParameters<typeof RecruitmentJobsService>[1],
         stub<ConstructorParameters<typeof RecruitmentJobsService>[2]>(),
         stub<ConstructorParameters<typeof RecruitmentJobsService>[3]>(),
+        stub<ConstructorParameters<typeof RecruitmentJobsService>[4]>(),
       );
 
     it("refuses a job posting the org does not own, does not touch the cache, and scopes the write to the caller's org", async () => {

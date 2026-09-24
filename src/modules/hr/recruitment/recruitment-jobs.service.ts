@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -11,6 +12,7 @@ import {
   candidateApplications,
   candidateSources,
   candidates,
+  hrJobLevels,
   jobPostings,
   jobRecruiters,
   orgUnits,
@@ -26,6 +28,7 @@ import { formatDateOnly } from "../../../common/date";
 import { JobBoardPublisherService } from "./boards/job-board-publisher.service";
 import type { AssignRecruiterInput, CreateJobInput, InternalApplyInput, JobListInput, PublishJobInput, UpdateJobInput } from "./dto/jobs.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { InternalMobilityService } from "./internal-mobility/internal-mobility.service";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 
@@ -42,6 +45,7 @@ export class RecruitmentJobsService {
     private readonly cache: CacheService,
     private readonly planLimits: PlanLimitsService,
     private readonly publisher: JobBoardPublisherService,
+    private readonly mobility: InternalMobilityService,
   ) {}
 
   async list(orgId: string, input: JobListInput) {
@@ -412,9 +416,22 @@ export class RecruitmentJobsService {
         eq(jobPostings.isInternal, true),
         eq(jobPostings.status, "OPEN"),
       ),
-      columns: { id: true },
+      columns: { id: true, jobLevelId: true },
     });
     if (!job) throw new NotFoundException("Job not found or not accepting internal applications");
+
+    /*
+      Employment and grade first, before anything is written.
+
+      This route is reachable by anybody holding a recruitment view permission,
+      which on some plans includes external recruiters and agency users —
+      "internal" is not a synonym for "logged in". The rules themselves live in
+      `internal-mobility/` so the tenure arithmetic, the probation case and the
+      grade distance are settled by tests rather than here.
+    */
+    const jobLevelRank = await this.jobLevelRank(orgId, job.jobLevelId);
+    const gate = await this.mobility.gateApply(orgId, userId, jobLevelRank);
+    if (!gate.allowed) throw new ForbiddenException(gate.reason);
 
     const applicant = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
@@ -440,6 +457,13 @@ export class RecruitmentJobsService {
           firstName: applicantName.split(" ")[0] || "Employee",
           lastName: applicantName.split(" ").slice(1).join(" ") || "",
           email: applicantEmail,
+          /*
+            `INTERNAL` was not in `CANDIDATE_SOURCES`, so every internally
+            applied candidate carried a source the candidate filter could not
+            select and neither intake sheet could set — they were invisible to
+            the one screen that would show an internal-mobility pipeline. The
+            value is now in the shared list on both sides.
+          */
           source: "INTERNAL",
         })
         .returning({ id: candidates.id });
@@ -466,6 +490,14 @@ export class RecruitmentJobsService {
         coverLetter: input.coverLetter,
         notes: input.notes,
         status: "APPLIED",
+        /*
+          The manager is recorded now and told later. `managerMaySee` keeps the
+          application confidential until it reaches interview, so resolving the
+          reporting line at apply time is about writing down who the decision
+          will belong to — not about telling them.
+        */
+        internalManagerMembershipId: gate.managerMembershipId,
+        internalManagerDecision: this.mobility.initialDecision(gate.managerMembershipId),
       })
       .returning();
 
@@ -478,5 +510,21 @@ export class RecruitmentJobsService {
       columns: { id: true },
     });
     if (!job) throw new NotFoundException("Job not found");
+  }
+  /**
+   * The rank behind a job's level, or null when the opening is not graded.
+   *
+   * Ranks rather than level names, because `hr_job_levels.name` is the org's
+   * own label and carries no order — sorting on one is how "L10" lands below
+   * "L9".
+   */
+  private async jobLevelRank(orgId: string, jobLevelId: number | null): Promise<number | null> {
+    if (jobLevelId === null) return null;
+    const [level] = await this.db
+      .select({ rank: hrJobLevels.rank })
+      .from(hrJobLevels)
+      .where(and(eq(hrJobLevels.orgId, orgId), eq(hrJobLevels.id, jobLevelId)))
+      .limit(1);
+    return level?.rank ?? null;
   }
 }

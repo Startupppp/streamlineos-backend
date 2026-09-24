@@ -63,6 +63,8 @@ import { RecruitingAnalyticsService } from "./analytics/recruiting-analytics.ser
 import { WhatsappService } from "./whatsapp/whatsapp.service";
 import { IdentityService } from "./identity/identity.service";
 import { IdentityController } from "./identity/identity.controller";
+import { InternalMobilityService } from "./internal-mobility/internal-mobility.service";
+import { InternalMobilityController } from "./internal-mobility/internal-mobility.controller";
 import {
   WhatsappController,
   WhatsappInboundController,
@@ -121,6 +123,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     WhatsappController,
     WhatsappInboundController,
     IdentityController,
+    InternalMobilityController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -161,6 +164,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     RecruitingAnalyticsService,
     WhatsappService,
     IdentityService,
+    InternalMobilityService,
   ],
   exports: [
     RecruitmentOffersService,

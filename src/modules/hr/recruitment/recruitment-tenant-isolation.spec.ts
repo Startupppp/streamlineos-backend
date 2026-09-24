@@ -271,6 +271,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const svc = new RecruitmentCandidatesService(
         db, cache as never, {} as never, {} as never,
         {} as never, {} as never, {} as never, {} as never,
+        {} as never,
       );
       const result = await svc.list(ATTACKER, { limit: 10, cursor: undefined, status: undefined, source: undefined, jobId: undefined, search: undefined });
       expect(result.data).toHaveLength(0);
@@ -285,6 +286,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const svc = new RecruitmentCandidatesService(
         db, cache as never, {} as never, {} as never,
         {} as never, {} as never, {} as never, {} as never,
+        {} as never,
       );
       const result = await svc.list(OWNER, { limit: 10, cursor: undefined, status: undefined, source: undefined, jobId: undefined, search: undefined });
       expect(result.data).toHaveLength(1);
@@ -335,7 +337,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("scopes job listings to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
       const cache = makeCacheMock();
-      const svc = new RecruitmentJobsService(db, cache as never, {} as never, {} as never);
+      const svc = new RecruitmentJobsService(db, cache as never, {} as never, {} as never, {} as never);
       const result = await svc.list(ATTACKER, { pageSize: 10, limit: 10, status: undefined, cursor: undefined });
       expect(result.items).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
@@ -346,7 +348,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("returns jobs for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const cache = makeCacheMock();
-      const svc = new RecruitmentJobsService(db, cache as never, {} as never, {} as never);
+      const svc = new RecruitmentJobsService(db, cache as never, {} as never, {} as never, {} as never);
       const result = await svc.list(OWNER, { pageSize: 10, limit: 10, status: undefined, cursor: undefined });
       expect(result.items).toHaveLength(1);
     });

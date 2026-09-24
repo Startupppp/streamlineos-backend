@@ -6231,6 +6231,13 @@
       "when": 1803000010344,
       "tag": "1129_identity_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 1018,
+      "version": "7",
+      "when": 1803000010345,
+      "tag": "1130_internal_mobility",
+      "breakpoints": true
     }
   ]
 }
