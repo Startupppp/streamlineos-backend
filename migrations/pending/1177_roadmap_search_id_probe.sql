@@ -1,6 +1,6 @@
--- 1175: index-backed roadmap item search under RLS.
+-- 1177: index-backed roadmap item search under RLS.
 --
--- Rollback: migrations/pending/1175_roadmap_search_id_probe.down.sql
+-- Rollback: migrations/pending/1177_roadmap_search_id_probe.down.sql
 --
 -- UNJOURNALLED ON PURPOSE. Not registered in meta/_journal.json, so drizzle-kit migrate
 -- will not run it. Preconditions for moving it up are at the bottom of this header.
@@ -65,7 +65,7 @@
 --      true, split the two index statements into a CONCURRENTLY bundle with an
 --      out-of-transaction runner the way hr-audit-cursor/0400 needs, because
 --      drizzle-kit migrate wraps this file in one transaction.
---   4. Phase 1 should confirm the number 1175 is still free when it is registered; the
+--   4. Phase 1 should confirm the number 1177 is still free when it is registered; the
 --      applied set reached 1174 when this was written.
 
 SET lock_timeout = '5s';
@@ -112,19 +112,19 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'app' AND p.proname = 'search_roadmap_item_ids';
   IF body IS NULL THEN
-    RAISE EXCEPTION '1175: app.search_roadmap_item_ids() is absent after creation';
+    RAISE EXCEPTION '1177: app.search_roadmap_item_ids() is absent after creation';
   END IF;
   IF NOT secdef THEN
-    RAISE EXCEPTION '1175: the probe is not SECURITY DEFINER, so it stays inside the RLS barrier and indexes nothing';
+    RAISE EXCEPTION '1177: the probe is not SECURITY DEFINER, so it stays inside the RLS barrier and indexes nothing';
   END IF;
   IF body NOT LIKE '%app.current_org_id()%' THEN
-    RAISE EXCEPTION '1175: the probe does not scope to app.current_org_id(), so it would read across tenants';
+    RAISE EXCEPTION '1177: the probe does not scope to app.current_org_id(), so it would read across tenants';
   END IF;
   IF body LIKE '%p_org%' THEN
-    RAISE EXCEPTION '1175: the probe takes the org as a parameter, which fails open instead of 42501';
+    RAISE EXCEPTION '1177: the probe takes the org as a parameter, which fails open instead of 42501';
   END IF;
   IF body NOT LIKE '%LIMIT p_limit%' THEN
-    RAISE EXCEPTION '1175: the probe is unbounded, which is slower than the seq scan for a broad term';
+    RAISE EXCEPTION '1177: the probe is unbounded, which is slower than the seq scan for a broad term';
   END IF;
 END
 $$;
