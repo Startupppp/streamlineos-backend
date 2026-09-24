@@ -1,5 +1,15 @@
+import { PgDialect } from "drizzle-orm/pg-core";
+import { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbTranslationsService } from "./kb-translations.service";
+
+const dialect = new PgDialect();
+
+function render(condition: unknown): string {
+  if (!(condition instanceof SQL))
+    throw new Error("the query ran with no SQL condition");
+  return dialect.sqlToQuery(condition).sql;
+}
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -17,13 +27,13 @@ describe("KbTranslationsService — cross-tenant isolation", () => {
   function makeDb(wheres: unknown[], articleRow: unknown) {
     return {
       query: {
-        kbArticles: {
+        kbPages: {
           findFirst: jest.fn().mockImplementation(({ where } = {}) => {
             wheres.push(where);
             return Promise.resolve(articleRow);
           }),
         },
-        kbArticleTranslations: {
+        kbPageTranslations: {
           findFirst: jest.fn().mockResolvedValue(undefined),
         },
       },
@@ -59,5 +69,34 @@ describe("KbTranslationsService — cross-tenant isolation", () => {
     const result = await svc.list(OWNER, 1);
 
     expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("resolves the id against support articles only, so a wiki page id cannot open the article route", async () => {
+    const wheres: unknown[] = [];
+    const svc = new KbTranslationsService(makeDb(wheres, { id: 1, orgId: OWNER }));
+
+    await svc.list(OWNER, 1);
+
+    const lookup = render(wheres[0]);
+    expect(lookup).toContain("content_type");
+    expect(lookup).toContain("deleted_at");
+  });
+
+  it("bites: the translation row query itself carries neither filter, because it is keyed by the page the lookup already vetted", async () => {
+    const wheres: unknown[] = [];
+    const svc = new KbTranslationsService(makeDb(wheres, { id: 1, orgId: OWNER }));
+
+    await svc.list(OWNER, 1);
+
+    const rows = render(wheres[1]);
+    expect(rows).toContain("kb_page_translations");
+    expect(rows).not.toContain("content_type");
+  });
+
+  it("a missing support article is a 404 on every verb that takes a locale", async () => {
+    const svc = new KbTranslationsService(makeDb([], undefined));
+
+    await expect(svc.get(OWNER, 1, "fr")).rejects.toThrow("Article not found");
+    await expect(svc.remove(OWNER, 1, "fr")).rejects.toThrow("Article not found");
   });
 });

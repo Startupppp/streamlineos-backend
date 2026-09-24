@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, isNotNull, lt, or, isNull, sql } from "drizzle-orm";
-import { kbArticles } from "../../../db/schema";
+import { and, asc, eq, isNotNull, lt, lte, or, sql } from "drizzle-orm";
+import { kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveWindowedTotal, totalOverWindow, withoutTotal } from "../../../common/pagination/window-count";
+import { resolveWindowedTotal, totalOverWindow } from "../../../common/pagination/window-count";
+import { articleLastVerifiedAt, supportArticlePredicate } from "./kb-article-page-scope";
 
 type VerificationQueueItem = {
   id: number;
@@ -41,53 +42,62 @@ export class KbVerificationService {
       return { items: [], total: 0, page, pageSize: capped, totalPages: 0 };
     }
 
-    const overdue = and(
-      isNotNull(kbArticles.reviewIntervalDays),
-      lt(
-        sql`${kbArticles.lastVerifiedAt} + (${kbArticles.reviewIntervalDays} || ' days')::interval`,
-        sql`now()`,
-      ),
+    const scheduledReviewReached = lte(kbPages.nextReviewAt, sql`now()`);
+    const trustLapsed = or(
+      eq(kbPages.trustState, "verification_expired"),
+      lt(kbPages.verifiedUntil, sql`now()`),
     );
-
-    const neverVerified = and(
-      isNotNull(kbArticles.reviewIntervalDays),
-      isNull(kbArticles.lastVerifiedAt),
+    const neverVerifiedOnACadence = and(
+      eq(kbPages.trustState, "unverified"),
+      isNotNull(kbPages.reviewIntervalDays),
     );
 
     const where = and(
-      eq(kbArticles.orgId, user.orgId),
-      eq(kbArticles.status, "published"),
-      or(overdue, neverVerified),
+      eq(kbPages.orgId, user.orgId),
+      supportArticlePredicate(),
+      eq(kbPages.status, "published"),
+      or(scheduledReviewReached, trustLapsed, neverVerifiedOnACadence),
     );
 
     const offset = (page - 1) * capped;
     const rows = await this.db
       .select({
         total: totalOverWindow,
-        id: kbArticles.id,
-        spaceId: kbArticles.spaceId,
-        categoryId: kbArticles.categoryId,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        ownerMembershipId: kbArticles.ownerMembershipId,
-        reviewIntervalDays: kbArticles.reviewIntervalDays,
-        lastVerifiedAt: kbArticles.lastVerifiedAt,
-        updatedAt: kbArticles.updatedAt,
+        id: kbPages.id,
+        spaceId: kbPages.spaceId,
+        categoryId: kbPages.categoryId,
+        title: kbPages.title,
+        slug: sql<string>`coalesce(${kbPages.slug}, '')`,
+        ownerMembershipId: kbPages.ownerMembershipId,
+        reviewIntervalDays: kbPages.reviewIntervalDays,
+        trustState: kbPages.trustState,
+        verifiedUntil: kbPages.verifiedUntil,
+        updatedAt: kbPages.updatedAt,
       })
-      .from(kbArticles)
+      .from(kbPages)
       .where(where)
-      .orderBy(asc(kbArticles.lastVerifiedAt))
+      .orderBy(asc(kbPages.nextReviewAt), asc(kbPages.id))
       .limit(capped)
       .offset(offset);
 
     const total = await resolveWindowedTotal(rows, offset, async () => {
       const [countRow] = await this.db
         .select({ count: sql<number>`count(*)::int` })
-        .from(kbArticles)
+        .from(kbPages)
         .where(where);
       return Number(countRow?.count ?? 0);
     });
-    const items = withoutTotal(rows);
+    const items = rows.map((row) => ({
+      id: row.id,
+      spaceId: row.spaceId,
+      categoryId: row.categoryId,
+      title: row.title,
+      slug: row.slug,
+      ownerMembershipId: row.ownerMembershipId,
+      reviewIntervalDays: row.reviewIntervalDays,
+      lastVerifiedAt: articleLastVerifiedAt({ trustState: row.trustState, verifiedUntil: row.verifiedUntil }),
+      updatedAt: row.updatedAt,
+    }));
 
     return { items, total, page, pageSize: capped, totalPages: Math.ceil(total / capped) };
   }

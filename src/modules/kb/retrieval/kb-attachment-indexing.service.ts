@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { kbArticleChunks, kbArticles, kbArticleAttachments, kbPages } from "../../../db/schema";
+import { kbArticleChunks, kbPageAttachments, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -31,7 +31,7 @@ import {
  * full price, so `POST /kb/articles/reindex-all` run twice while debugging a retrieval
  * complaint billed the tenant twice for every attachment it owns. (2) No `acl_revision` on
  * the insert, so the rows took the column default of 1 while `articleVectorCandidates` joins
- * `kb_article_chunks.acl_revision = kb_articles.acl_revision` with `=`. An attachment indexed
+ * `kb_article_chunks.acl_revision = kb_pages.acl_revision` with `=`. An attachment indexed
  * after its article's revision had moved past 1 — any space membership change calls
  * `bumpSpaceAclRevision` — was written at 1, matched nothing, and stayed out of vector
  * retrieval until an unrelated space-wide bump happened to resync it.
@@ -113,27 +113,32 @@ export class KbAttachmentIndexingService {
   ): Promise<{ chunks: number; warning: string | null }> {
     // One statement rather than two: the parent's `acl_revision` is what the candidate join
     // equates against, so it has to be read here and written onto every chunk below. The join
-    // is LEFT because an attachment whose article row is gone still has chunks to clear.
+    // is LEFT because an attachment whose page row is gone still has chunks to clear.
     const [attachment] = await this.db
       .select({
-        articleId: kbArticleAttachments.articleId,
-        fileKey: kbArticleAttachments.fileKey,
-        mimeType: kbArticleAttachments.mimeType,
-        fileName: kbArticleAttachments.fileName,
-        articleAclRevision: kbArticles.aclRevision,
+        pageId: kbPageAttachments.pageId,
+        fileKey: kbPageAttachments.fileKey,
+        mimeType: kbPageAttachments.mimeType,
+        fileName: kbPageAttachments.fileName,
+        deletedAt: kbPageAttachments.deletedAt,
+        pageAclRevision: kbPages.aclRevision,
       })
-      .from(kbArticleAttachments)
-      .leftJoin(kbArticles, and(
-        eq(kbArticles.id, kbArticleAttachments.articleId),
-        eq(kbArticles.orgId, kbArticleAttachments.orgId),
+      .from(kbPageAttachments)
+      .leftJoin(kbPages, and(
+        eq(kbPages.id, kbPageAttachments.pageId),
+        eq(kbPages.orgId, kbPageAttachments.orgId),
       ))
       .where(and(
-        eq(kbArticleAttachments.id, attachmentId),
-        eq(kbArticleAttachments.orgId, orgId),
+        eq(kbPageAttachments.id, attachmentId),
+        eq(kbPageAttachments.orgId, orgId),
       ))
       .limit(1);
 
-    if (!attachment || !this.aiGateway.isEmbeddingConfigured()) {
+    if (
+      !attachment ||
+      attachment.deletedAt !== null ||
+      !this.aiGateway.isEmbeddingConfigured()
+    ) {
       await this.removeAttachmentChunks(orgId, attachmentId);
       return { chunks: 0, warning: null };
     }
@@ -169,9 +174,7 @@ export class KbAttachmentIndexingService {
       return { chunks: 0, warning: `${attachment.fileName}: no extractable text` };
     }
 
-    // A chunk with no article is never reached by `articleVectorCandidates` (it filters
-    // `article_id IS NOT NULL`), so the column default is only ever the fallback for one.
-    const aclRevision = attachment.articleAclRevision ?? 1;
+    const aclRevision = attachment.pageAclRevision ?? 1;
     const contentHash = sha256(text);
     const family = attachmentChunks(orgId, attachmentId);
     const stored = await loadDerivedChunkState(this.db, family);
@@ -185,7 +188,7 @@ export class KbAttachmentIndexingService {
 
     const embeddings = await this.embed(orgId, "attachment", attachmentId, contentHash, chunks);
 
-    await replaceAttachmentChunks(this.db, orgId, attachmentId, attachment.articleId, chunks, embeddings, {
+    await replaceAttachmentChunks(this.db, orgId, attachmentId, null, chunks, embeddings, {
       contentHash,
       aclRevision,
     });

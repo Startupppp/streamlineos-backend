@@ -15,14 +15,14 @@ function makeDb(executeRows: Array<Record<string, unknown>>) {
 }
 
 describe("article keyword search has one plan", () => {
-  it("resolves to an id list from app.search_kb_article_ids when the term is selective", async () => {
+  it("resolves to an id list from app.search_kb_page_ids when the term is selective", async () => {
     const db = makeDb([{ id: 7 }, { id: 9 }]);
     const cond = await resolveArticleKeywordSql(db, "onboarding", articleTsquery("onboarding"), 500);
     const { sql: text, params } = dialect.sqlToQuery(cond);
 
     expect(db.execute).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(db.execute.mock.calls[0])).toContain("app.search_kb_article_ids");
-    expect(text).toContain('"kb_articles"."id" in');
+    expect(JSON.stringify(db.execute.mock.calls[0])).toContain("app.search_kb_page_ids");
+    expect(text).toContain('"kb_pages"."id" in');
     expect(params).toEqual([7, 9]);
     expect(text).not.toContain("ilike");
   });
@@ -79,16 +79,44 @@ describe("KbArticleQueryService.list shares that plan", () => {
   const user = { orgId: ORG, userId: USER, principal: humanSessionPrincipal(1, false) } as never;
   const query = { limit: 20, search: "onboarding" } as never;
 
-  it("routes ?search= through app.search_kb_article_ids rather than a leading-wildcard ilike", async () => {
+  it("routes ?search= through app.search_kb_page_ids rather than a leading-wildcard ilike", async () => {
     const { svc, captured, execute } = makeService([{ id: 7 }]);
     await svc.list(user, query, ScopedRead.of(ORG, USER, "all"));
 
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(execute.mock.calls[0])).toContain("app.search_kb_article_ids");
+    expect(JSON.stringify(execute.mock.calls[0])).toContain("app.search_kb_page_ids");
     const { sql: text, params } = dialect.sqlToQuery(captured.where as SQL);
     expect(text).not.toContain("ilike");
     expect(params).not.toContain("%onboarding%");
     expect(params).toContain(7);
+  });
+
+  it("narrows the id list app.search_kb_page_ids returned to support articles, because that function does not filter content_type", async () => {
+    const { svc, captured } = makeService([{ id: 7 }]);
+    await svc.list(user, query, ScopedRead.of(ORG, USER, "all"));
+    const { sql: text, params } = dialect.sqlToQuery(captured.where as SQL);
+
+    expect(text).toContain('"kb_pages"."content_type" =');
+    expect(params).toContain("support_article");
+    expect(text).toContain('"kb_pages"."deleted_at" is null');
+  });
+
+  it("keeps the keyword hit reachable alongside that narrowing, so the article the term matched is still returned (positive control)", async () => {
+    const { svc, captured } = makeService([{ id: 7 }]);
+    await svc.list(user, query, ScopedRead.of(ORG, USER, "all"));
+    const { sql: text, params } = dialect.sqlToQuery(captured.where as SQL);
+
+    expect(text).toContain('"kb_pages"."id" in');
+    expect(params).toContain(7);
+  });
+
+  it("bites: the content_type test is an allow-list equality, never a deny-list that would admit an unseen content type", async () => {
+    const { svc, captured } = makeService([{ id: 7 }]);
+    await svc.list(user, query, ScopedRead.of(ORG, USER, "all"));
+    const { sql: text } = dialect.sqlToQuery(captured.where as SQL);
+
+    expect(text).not.toContain('"kb_pages"."content_type" <>');
+    expect(text).not.toContain('"kb_pages"."content_type" not in');
   });
 
   it("agrees with the search endpoint's condition for the same term and cap", async () => {

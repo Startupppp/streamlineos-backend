@@ -23,8 +23,11 @@ const makeCheckpoint = () => ({
 
 interface StoredChunk {
   contentHash: string;
+  pageVisibility: string;
+  pageProjectId: number | null;
+  pageCreatedById: string | null;
+  pageCreatedByMembershipId: number | null;
   aclRevision: number;
-  contentRevision: number;
 }
 
 /**
@@ -48,7 +51,6 @@ function makeDb(stored: StoredChunk | null) {
     insert: jest.fn().mockReturnValue({ values: insertValues }),
     execute: jest.fn().mockResolvedValue([]),
     query: {
-      kbArticles: { findFirst: jest.fn() },
       kbPages: { findFirst: jest.fn().mockResolvedValue(null) },
     },
   };
@@ -65,19 +67,40 @@ function makeDb(stored: StoredChunk | null) {
 
 const TEXT = "an article whose body did not change";
 
+const STORED: StoredChunk = {
+  contentHash: sha256(TEXT),
+  pageVisibility: "org",
+  pageProjectId: null,
+  pageCreatedById: "user-1",
+  pageCreatedByMembershipId: 1,
+  aclRevision: 3,
+};
+
+function articleRow(overrides: Record<string, unknown> = {}) {
+  return {
+    status: "published",
+    visibility: "org",
+    deletedAt: null,
+    contentText: TEXT,
+    projectId: null,
+    createdById: "user-1",
+    createdByMembershipId: 1,
+    aclRevision: 3,
+    contentRevision: 9,
+    ...overrides,
+  };
+}
+
+/**
+ * A help-centre article is a `kb_pages` row now, so `indexArticle` is the page
+ * indexing path and the ACL it carries onto each chunk is the page ACL tuple.
+ */
 describe("KbIndexingService.indexArticle — an ACL move with unchanged text", () => {
   it("updates the chunk ACL in place and never re-embeds", async () => {
-    const { db, update, setSpy, insertValues } = makeDb({
-      contentHash: sha256(TEXT),
-      aclRevision: 3,
-      contentRevision: 9,
-    });
-    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
-      status: "published",
-      contentText: TEXT,
-      aclRevision: 4,
-      contentRevision: 9,
-    });
+    const { db, update, setSpy, insertValues } = makeDb(STORED);
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue(
+      articleRow({ aclRevision: 4 }),
+    );
 
     const embeddings = makeEmbeddings();
     const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
@@ -85,22 +108,21 @@ describe("KbIndexingService.indexArticle — an ACL move with unchanged text", (
 
     expect(embeddings.embedBatchWithCredit).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledTimes(1);
-    expect(setSpy).toHaveBeenCalledWith({ aclRevision: 4, contentRevision: 9 });
+    expect(setSpy).toHaveBeenCalledWith({
+      pageVisibility: "org",
+      pageProjectId: null,
+      pageCreatedById: "user-1",
+      pageCreatedByMembershipId: 1,
+      aclRevision: 4,
+    });
     expect(insertValues).not.toHaveBeenCalled();
   });
 
   it("BITE — without the branch the chunks keep the stale revision, which the candidate gate joins with = and so drops the article from retrieval entirely", async () => {
-    const { db, setSpy } = makeDb({
-      contentHash: sha256(TEXT),
-      aclRevision: 3,
-      contentRevision: 9,
-    });
-    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
-      status: "published",
-      contentText: TEXT,
-      aclRevision: 4,
-      contentRevision: 9,
-    });
+    const { db, setSpy } = makeDb(STORED);
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue(
+      articleRow({ aclRevision: 4 }),
+    );
 
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
@@ -110,37 +132,27 @@ describe("KbIndexingService.indexArticle — an ACL move with unchanged text", (
     expect(written.aclRevision).not.toBe(3);
   });
 
-  it("a content revision that moved on its own is carried too", async () => {
-    const { db, setSpy } = makeDb({
-      contentHash: sha256(TEXT),
-      aclRevision: 3,
-      contentRevision: 9,
-    });
-    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
-      status: "published",
-      contentText: TEXT,
-      aclRevision: 3,
-      contentRevision: 10,
-    });
+  it("a visibility change with no revision bump is carried too", async () => {
+    const { db, setSpy } = makeDb(STORED);
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue(
+      articleRow({ visibility: "public" }),
+    );
 
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
 
-    expect(setSpy).toHaveBeenCalledWith({ aclRevision: 3, contentRevision: 10 });
+    expect(setSpy).toHaveBeenCalledWith({
+      pageVisibility: "public",
+      pageProjectId: null,
+      pageCreatedById: "user-1",
+      pageCreatedByMembershipId: 1,
+      aclRevision: 3,
+    });
   });
 
-  it("writes nothing at all when neither the text nor the revisions moved", async () => {
-    const { db, update, insertValues } = makeDb({
-      contentHash: sha256(TEXT),
-      aclRevision: 3,
-      contentRevision: 9,
-    });
-    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
-      status: "published",
-      contentText: TEXT,
-      aclRevision: 3,
-      contentRevision: 9,
-    });
+  it("writes nothing at all when neither the text nor the ACL moved", async () => {
+    const { db, update, insertValues } = makeDb(STORED);
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue(articleRow());
 
     const embeddings = makeEmbeddings();
     const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
@@ -153,16 +165,12 @@ describe("KbIndexingService.indexArticle — an ACL move with unchanged text", (
 
   it("changed text still takes the full re-embed path, not the ACL shortcut", async () => {
     const { db, update, insertValues } = makeDb({
+      ...STORED,
       contentHash: sha256("the previous body"),
-      aclRevision: 3,
-      contentRevision: 9,
     });
-    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
-      status: "published",
-      contentText: TEXT,
-      aclRevision: 4,
-      contentRevision: 10,
-    });
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue(
+      articleRow({ aclRevision: 4, contentRevision: 10 }),
+    );
 
     const embeddings = makeEmbeddings();
     const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);

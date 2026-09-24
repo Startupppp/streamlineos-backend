@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull, ne, or, type SQL } from "drizzle-orm";
-import { kbArticles, kbPages, kbSources } from "../../../db/schema";
+import { kbPages, kbSources } from "../../../db/schema";
+import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
+import { wikiPagePredicate } from "./kb-candidate.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -59,7 +61,7 @@ export class KbCitationVisibilityService {
    * dimensions, or it is blind to a revocation in exactly the window it exists to cover.
    *
    * It used to re-apply only org, accessible spaces, `status='published'` and the owner
-   * DataScope. `kb_article_restrictions` — the per-article ACL that
+   * DataScope. `kb_page_restrictions` — the per-article ACL that
    * `KbCandidateService.article{Keyword,Vector}Candidates` and
    * `KbSearchService.retrieveTopArticles` all push into the retrieval predicate — was
    * missing. An article restricted to another membership between the moment retrieval
@@ -74,16 +76,17 @@ export class KbCitationVisibilityService {
       this.search.articleRestrictionFilterFor(user),
     ]);
     const conditions: SQL[] = [
-      eq(kbArticles.orgId, user.orgId),
-      inArray(kbArticles.id, ids),
-      inArray(kbArticles.spaceId, spaceIds),
-      eq(kbArticles.status, "published"),
+      eq(kbPages.orgId, user.orgId),
+      inArray(kbPages.id, ids),
+      supportArticlePredicate(),
+      inArray(kbPages.spaceId, spaceIds),
+      eq(kbPages.status, "published"),
     ];
     if (ownerFilter) conditions.push(ownerFilter);
     if (restrictionFilter) conditions.push(restrictionFilter);
     const rows = await this.db
-      .select({ id: kbArticles.id })
-      .from(kbArticles)
+      .select({ id: kbPages.id })
+      .from(kbPages)
       .where(and(...conditions));
     return new Set(rows.map((r) => r.id));
   }
@@ -97,7 +100,7 @@ export class KbCitationVisibilityService {
         and(
           eq(kbPages.orgId, user.orgId),
           inArray(kbPages.id, ids),
-          isNull(kbPages.deletedAt),
+          wikiPagePredicate(),
           ne(kbPages.status, "archived"),
           predicate,
         ),

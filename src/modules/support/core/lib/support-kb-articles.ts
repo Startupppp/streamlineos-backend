@@ -2,14 +2,21 @@ import { HttpException, HttpStatus, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import {
-  kbArticles,
-  kbArticleTags,
-  kbArticleVersions,
+  kbPages,
+  kbPageTags,
+  kbPageVersions,
   kbTags,
 } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
-import { recordArticleAttachmentPurge } from "../../../kb/wiki/kb-page-attachment-purge";
+import {
+  articleContentToPageContent,
+  articleLastVerifiedAt,
+  articleVisibilityToPage,
+  SUPPORT_ARTICLE_CONTENT_TYPE,
+  supportArticlePredicate,
+  type ArticleVisibility,
+} from "../../../kb/help-centre/kb-article-page-scope";
 import type {
   CreateKbArticleInput,
   ListKbArticlesInput,
@@ -26,13 +33,16 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
  * feedback, comments and attachments hang off an article they do not own
  * (they live in `SupportKbEngagementService`), and categories are a separate
  * table with a separate uniqueness rule that stays on the service.
- * The functions here are the ones that WRITE `kb_articles`, so they are also
- * the only ones that need the slug and tag invariants: a slug is unique per
- * org (`uniqueArticleSlug` takes the first free `-2`, `-3`, … suffix), and
- * `syncArticleTags` is delete-then-reinsert inside the caller's transaction,
- * which is why it takes a `tx` and not a `db`. An edit that changes the title
- * or body snapshots into `kb_article_versions`, and a published content or
- * visibility change emits `kb.content.index` in the same transaction.
+ * The functions here are the ones that WRITE a support article's `kb_pages`
+ * row, so they are also the only ones that need the slug and tag invariants: a
+ * slug is unique per org across EVERY page, wiki pages included, because
+ * `uniq_kb_pages_org_slug_ref` is (org_id, slug) and knows nothing about
+ * `content_type` — `uniqueArticleSlug` therefore takes the first free `-2`,
+ * `-3`, … suffix over the whole org. `syncArticleTags` is
+ * delete-then-reinsert inside the caller's transaction, which is why it takes
+ * a `tx` and not a `db`. An edit that changes the title or body snapshots into
+ * `kb_page_versions`, and a published content or visibility change emits
+ * `kb.content.index` in the same transaction.
  *
  * `slugify` lives here rather than in the service because the slug rule is
  * an article invariant first; categories import it back out.
@@ -40,6 +50,39 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
  * Plain `db`/`tx` parameters rather than a deps bag: nothing here needs
  * anything but the connection.
  */
+
+const articleVisibility = sql<ArticleVisibility>`case when ${kbPages.visibility} = 'public' then 'public' else 'internal' end`;
+
+const articleListProjection = {
+  id: kbPages.id,
+  orgId: kbPages.orgId,
+  categoryId: kbPages.categoryId,
+  title: kbPages.title,
+  slug: sql<string>`coalesce(${kbPages.slug}, '')`,
+  excerpt: kbPages.excerpt,
+  status: kbPages.status,
+  visibility: articleVisibility,
+  authorId: kbPages.createdById,
+  views: sql<number>`coalesce(${kbPages.views}, 0)::int`,
+  helpfulCount: sql<number>`coalesce(${kbPages.helpfulCount}, 0)::int`,
+  notHelpfulCount: sql<number>`coalesce(${kbPages.notHelpfulCount}, 0)::int`,
+  publishedAt: kbPages.publishedAt,
+  createdAt: kbPages.createdAt,
+  updatedAt: kbPages.updatedAt,
+};
+
+const articleWriteProjection = {
+  ...articleListProjection,
+  aclRevision: kbPages.aclRevision,
+  contentRevision: kbPages.contentRevision,
+};
+
+const tagNameArray = sql<string[]>`ARRAY(
+    SELECT kt.name FROM kb_page_tags kpt
+    JOIN kb_tags kt ON kt.id = kpt.tag_id
+    WHERE kpt.page_id = ${kbPages.id}
+    ORDER BY kt.name
+  )`;
 
 export function slugify(value: string): string {
   return value
@@ -50,66 +93,48 @@ export function slugify(value: string): string {
 }
 
 export function listArticles(db: Db, orgId: string, query: ListKbArticlesInput) {
-  const conditions: SQL[] = [eq(kbArticles.orgId, orgId)];
-  if (query.status) conditions.push(eq(kbArticles.status, query.status));
-  if (query.visibility) conditions.push(eq(kbArticles.visibility, query.visibility));
-  if (query.categoryId) conditions.push(eq(kbArticles.categoryId, query.categoryId));
+  const conditions: SQL[] = [eq(kbPages.orgId, orgId), supportArticlePredicate()];
+  if (query.status) conditions.push(eq(kbPages.status, query.status));
+  if (query.visibility)
+    conditions.push(eq(kbPages.visibility, articleVisibilityToPage(query.visibility)));
+  if (query.categoryId) conditions.push(eq(kbPages.categoryId, query.categoryId));
   if (query.search) {
     const term = `%${query.search}%`;
-    const match = or(ilike(kbArticles.title, term), ilike(kbArticles.excerpt, term));
+    const match = or(ilike(kbPages.title, term), ilike(kbPages.excerpt, term));
     if (match) conditions.push(match);
   }
 
   return db
-    .select({
-      id: kbArticles.id,
-      orgId: kbArticles.orgId,
-      categoryId: kbArticles.categoryId,
-      title: kbArticles.title,
-      slug: kbArticles.slug,
-      excerpt: kbArticles.excerpt,
-      status: kbArticles.status,
-      visibility: kbArticles.visibility,
-      authorId: kbArticles.authorId,
-      views: kbArticles.views,
-      helpfulCount: kbArticles.helpfulCount,
-      notHelpfulCount: kbArticles.notHelpfulCount,
-      tags: sql<string[]>`ARRAY(
-          SELECT kt.name FROM kb_article_tags kat
-          JOIN kb_tags kt ON kt.id = kat.tag_id
-          WHERE kat.article_id = ${kbArticles.id}
-          ORDER BY kt.name
-        )`,
-      publishedAt: kbArticles.publishedAt,
-      createdAt: kbArticles.createdAt,
-      updatedAt: kbArticles.updatedAt,
-    })
-    .from(kbArticles)
+    .select({ ...articleListProjection, tags: tagNameArray })
+    .from(kbPages)
     .where(and(...conditions))
-    .orderBy(desc(kbArticles.updatedAt))
+    .orderBy(desc(kbPages.updatedAt))
     .limit(100);
 }
 
 export async function createArticle(db: Db, orgId: string, userId: string, input: CreateKbArticleInput) {
   const slug = await uniqueArticleSlug(db, orgId, input.title);
   const tagNames = input.tags ?? [];
+  const contentText = input.content ?? "";
 
   return db.transaction(async (tx) => {
     const [article] = await tx
-      .insert(kbArticles)
+      .insert(kbPages)
       .values({
         orgId,
         categoryId: input.categoryId ?? null,
         title: input.title,
         slug,
         excerpt: input.excerpt ?? null,
-        content: input.content ?? "",
+        content: articleContentToPageContent(undefined, contentText),
+        contentText,
+        contentType: SUPPORT_ARTICLE_CONTENT_TYPE,
         status: input.status,
-        visibility: input.visibility,
-        authorId: userId,
+        visibility: articleVisibilityToPage(input.visibility),
+        createdById: userId,
         publishedAt: input.status === "published" ? new Date() : null,
       })
-      .returning();
+      .returning(articleListProjection);
 
     const resolvedTags = await syncArticleTags(tx, orgId, article.id, tagNames);
     return { ...article, tags: resolvedTags };
@@ -117,21 +142,55 @@ export async function createArticle(db: Db, orgId: string, userId: string, input
 }
 
 export async function getArticle(db: Db, orgId: string, articleId: number) {
-  const article = await db.query.kbArticles.findFirst({
-    where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-    columns: { fts: false },
-    with: { category: { columns: { id: true, name: true, slug: true } } },
-  });
+  const [article] = await db
+    .select({
+      id: kbPages.id,
+      orgId: kbPages.orgId,
+      categoryId: kbPages.categoryId,
+      spaceId: kbPages.spaceId,
+      title: kbPages.title,
+      slug: sql<string>`coalesce(${kbPages.slug}, '')`,
+      excerpt: kbPages.excerpt,
+      content: sql<string>`coalesce(${kbPages.contentText}, '')`,
+      contentText: sql<string>`coalesce(${kbPages.contentText}, '')`,
+      status: kbPages.status,
+      visibility: articleVisibility,
+      authorId: kbPages.createdById,
+      ownerMembershipId: kbPages.ownerMembershipId,
+      views: sql<number>`coalesce(${kbPages.views}, 0)::int`,
+      helpfulCount: sql<number>`coalesce(${kbPages.helpfulCount}, 0)::int`,
+      notHelpfulCount: sql<number>`coalesce(${kbPages.notHelpfulCount}, 0)::int`,
+      seoTitle: kbPages.seoTitle,
+      seoDescription: kbPages.seoDescription,
+      reviewIntervalDays: kbPages.reviewIntervalDays,
+      trustState: kbPages.trustState,
+      verifiedUntil: kbPages.verifiedUntil,
+      publishedAt: kbPages.publishedAt,
+      archivedAt: kbPages.archivedAt,
+      createdAt: kbPages.createdAt,
+      updatedAt: kbPages.updatedAt,
+      aclRevision: kbPages.aclRevision,
+      contentRevision: kbPages.contentRevision,
+    })
+    .from(kbPages)
+    .where(and(eq(kbPages.id, articleId), eq(kbPages.orgId, orgId), supportArticlePredicate()))
+    .limit(1);
+
   if (!article) throw new NotFoundException("Article not found");
 
   const tagRows = await db
     .select({ name: kbTags.name })
-    .from(kbArticleTags)
-    .innerJoin(kbTags, eq(kbArticleTags.tagId, kbTags.id))
-    .where(and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, orgId)))
+    .from(kbPageTags)
+    .innerJoin(kbTags, eq(kbPageTags.tagId, kbTags.id))
+    .where(and(eq(kbPageTags.pageId, articleId), eq(kbTags.orgId, orgId)))
     .orderBy(asc(kbTags.name));
 
-  return { ...article, tags: tagRows.map((t) => t.name) };
+  const { trustState, verifiedUntil, ...row } = article;
+  return {
+    ...row,
+    lastVerifiedAt: articleLastVerifiedAt({ trustState, verifiedUntil }),
+    tags: tagRows.map((t) => t.name),
+  };
 }
 
 export async function updateArticle(
@@ -141,41 +200,46 @@ export async function updateArticle(
   input: UpdateKbArticleInput,
   authorId: string | null = null,
 ) {
-  const current = await db.query.kbArticles.findFirst({
-    where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-    columns: {
-      id: true,
-      slug: true,
-      status: true,
-      publishedAt: true,
-      title: true,
-      content: true,
-      visibility: true,
-      contentRevision: true,
-    },
-  });
+  const [current] = await db
+    .select({
+      id: kbPages.id,
+      slug: kbPages.slug,
+      status: kbPages.status,
+      publishedAt: kbPages.publishedAt,
+      title: kbPages.title,
+      contentText: kbPages.contentText,
+      visibility: kbPages.visibility,
+      contentRevision: kbPages.contentRevision,
+    })
+    .from(kbPages)
+    .where(and(eq(kbPages.id, articleId), eq(kbPages.orgId, orgId), supportArticlePredicate()))
+    .limit(1);
   if (!current) throw new NotFoundException("Article not found");
 
-  const values: Partial<typeof kbArticles.$inferInsert> = {
+  const nextVisibility =
+    input.visibility === undefined ? undefined : articleVisibilityToPage(input.visibility);
+
+  const values: Partial<typeof kbPages.$inferInsert> = {
     updatedAt: new Date(),
     categoryId: input.categoryId,
     excerpt: input.excerpt,
-    content: input.content,
-    visibility: input.visibility,
+    visibility: nextVisibility,
   };
+
+  if (input.content !== undefined) {
+    values.contentText = input.content;
+    values.content = articleContentToPageContent(undefined, input.content);
+  }
 
   if (input.title !== undefined) {
     values.title = input.title;
     const slug = slugify(input.title);
     if (slug && slug !== current.slug) {
-      const clash = await db.query.kbArticles.findFirst({
-        where: and(
-          eq(kbArticles.orgId, orgId),
-          eq(kbArticles.slug, slug),
-          ne(kbArticles.id, articleId),
-        ),
-        columns: { id: true },
-      });
+      const [clash] = await db
+        .select({ id: kbPages.id })
+        .from(kbPages)
+        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.slug, slug), ne(kbPages.id, articleId)))
+        .limit(1);
       if (!clash) values.slug = slug;
     }
   }
@@ -188,8 +252,8 @@ export async function updateArticle(
   }
 
   const titleChanged = input.title !== undefined && input.title !== current.title;
-  const contentChanged = input.content !== undefined && input.content !== current.content;
-  const aclChanged = input.visibility !== undefined && input.visibility !== current.visibility;
+  const contentChanged = input.content !== undefined && input.content !== (current.contentText ?? "");
+  const aclChanged = nextVisibility !== undefined && nextVisibility !== current.visibility;
 
   /**
    * The precondition comes from the client, not from the row this request just read — a
@@ -201,7 +265,7 @@ export async function updateArticle(
 
   return db.transaction(async (tx) => {
     const [updated] = await tx
-      .update(kbArticles)
+      .update(kbPages)
       .set({
         ...values,
         ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
@@ -209,12 +273,13 @@ export async function updateArticle(
       })
       .where(
         and(
-          eq(kbArticles.id, articleId),
-          eq(kbArticles.orgId, orgId),
-          ...(revisionGuard === undefined ? [] : [eq(kbArticles.contentRevision, revisionGuard)]),
+          eq(kbPages.id, articleId),
+          eq(kbPages.orgId, orgId),
+          supportArticlePredicate(),
+          ...(revisionGuard === undefined ? [] : [eq(kbPages.contentRevision, revisionGuard)]),
         ),
       )
-      .returning();
+      .returning(articleWriteProjection);
 
     if (!updated) {
       if (revisionGuard === undefined) throw new NotFoundException("Article not found");
@@ -224,18 +289,30 @@ export async function updateArticle(
       );
     }
 
-    if (titleChanged || contentChanged) await snapshotArticle(tx, orgId, updated, authorId);
+    if (titleChanged || contentChanged) {
+      await snapshotArticle(
+        tx,
+        orgId,
+        {
+          id: updated.id,
+          title: updated.title,
+          contentText: input.content ?? current.contentText ?? "",
+          excerpt: updated.excerpt,
+        },
+        authorId,
+      );
+    }
 
     if (updated.status === "published" && (contentChanged || aclChanged)) {
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
         organizationId: orgId,
-        aggregateType: "kb_article",
+        aggregateType: "kb_page",
         aggregateId: String(articleId),
         aggregateVersion: Date.now(),
         eventType: "kb.content.index",
         payload: {
-          contentType: "article",
+          contentType: "page",
           contentId: articleId,
           contentRevision: updated.contentRevision,
           aclRevision: updated.aclRevision,
@@ -252,9 +329,9 @@ export async function updateArticle(
 
     const tagRows = await tx
       .select({ name: kbTags.name })
-      .from(kbArticleTags)
-      .innerJoin(kbTags, eq(kbArticleTags.tagId, kbTags.id))
-      .where(and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, orgId)))
+      .from(kbPageTags)
+      .innerJoin(kbTags, eq(kbPageTags.tagId, kbTags.id))
+      .where(and(eq(kbPageTags.pageId, articleId), eq(kbTags.orgId, orgId)))
       .orderBy(asc(kbTags.name));
 
     return { ...updated, tags: tagRows.map((t) => t.name) };
@@ -262,35 +339,35 @@ export async function updateArticle(
 }
 
 export async function deleteArticle(db: Db, orgId: string, articleId: number) {
-  await recordArticleAttachmentPurge(db, orgId, [articleId]);
-
   const [deleted] = await db
-    .delete(kbArticles)
-    .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-    .returning();
+    .update(kbPages)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(kbPages.id, articleId), eq(kbPages.orgId, orgId), supportArticlePredicate()))
+    .returning({ id: kbPages.id });
 
   if (!deleted) throw new NotFoundException("Article not found");
   return { success: true };
 }
 
-/** Appends the article's post-edit title and body as the next row of `kb_article_versions`. */
+/** Appends the article's post-edit title and body as the next row of `kb_page_versions`. */
 async function snapshotArticle(
   tx: Tx,
   orgId: string,
-  article: { id: number; title: string; content: string; excerpt: string | null },
+  article: { id: number; title: string; contentText: string; excerpt: string | null },
   authorId: string | null,
 ): Promise<void> {
   const [row] = await tx
-    .select({ max: sql<number>`coalesce(max(${kbArticleVersions.versionNumber}), 0)::int` })
-    .from(kbArticleVersions)
-    .where(and(eq(kbArticleVersions.articleId, article.id), eq(kbArticleVersions.orgId, orgId)));
+    .select({ max: sql<number>`coalesce(max(${kbPageVersions.versionNumber}), 0)::int` })
+    .from(kbPageVersions)
+    .where(and(eq(kbPageVersions.pageId, article.id), eq(kbPageVersions.orgId, orgId)));
 
-  await tx.insert(kbArticleVersions).values({
+  await tx.insert(kbPageVersions).values({
     orgId,
-    articleId: article.id,
+    pageId: article.id,
     versionNumber: (row?.max ?? 0) + 1,
     title: article.title,
-    content: article.content,
+    content: articleContentToPageContent(undefined, article.contentText),
+    contentText: article.contentText,
     excerpt: article.excerpt,
     changeSummary: null,
     authorId,
@@ -298,8 +375,8 @@ async function snapshotArticle(
   });
 }
 
-async function syncArticleTags(tx: Tx, orgId: string, articleId: number, tagNames: string[]): Promise<string[]> {
-  await tx.delete(kbArticleTags).where(and(eq(kbArticleTags.orgId, orgId), eq(kbArticleTags.articleId, articleId)));
+async function syncArticleTags(tx: Tx, orgId: string, pageId: number, tagNames: string[]): Promise<string[]> {
+  await tx.delete(kbPageTags).where(and(eq(kbPageTags.orgId, orgId), eq(kbPageTags.pageId, pageId)));
 
   if (tagNames.length === 0) return [];
 
@@ -322,8 +399,8 @@ async function syncArticleTags(tx: Tx, orgId: string, articleId: number, tagName
 
   if (tagRows.length > 0) {
     await tx
-      .insert(kbArticleTags)
-      .values(tagRows.map((t) => ({ orgId, articleId, tagId: t.id })))
+      .insert(kbPageTags)
+      .values(tagRows.map((t) => ({ orgId, pageId, tagId: t.id })))
       .onConflictDoNothing();
   }
 
@@ -333,11 +410,11 @@ async function syncArticleTags(tx: Tx, orgId: string, articleId: number, tagName
 async function uniqueArticleSlug(db: Db, orgId: string, base: string): Promise<string> {
   const root = slugify(base) || "article";
   const rows = await db
-    .select({ slug: kbArticles.slug })
-    .from(kbArticles)
+    .select({ slug: kbPages.slug })
+    .from(kbPages)
     .where(and(
-      eq(kbArticles.orgId, orgId),
-      sql`(${kbArticles.slug} = ${root} OR ${kbArticles.slug} LIKE ${root + "-%"})`,
+      eq(kbPages.orgId, orgId),
+      sql`(${kbPages.slug} = ${root} OR ${kbPages.slug} LIKE ${root + "-%"})`,
     ));
   const taken = new Set(rows.map((r) => r.slug));
   if (!taken.has(root)) return root;

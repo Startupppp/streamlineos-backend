@@ -1,7 +1,6 @@
-import { foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
-import { kbArticles } from "./kb";
 
 export const SupportKnowledgeGapStatus = {
   OPEN: "OPEN",
@@ -34,7 +33,6 @@ export const supportKnowledgeGaps = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-  foreignKey({ columns: [table.orgId, table.proposedArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_support_knowledge_gaps_proposed_article_id_org" }).onDelete("set null"),
     uniqueIndex("uniq_support_knowledge_gaps_org_cluster").on(table.orgId, table.clusterKey),
     index("idx_support_knowledge_gaps_org_status_created").on(table.orgId, table.status, table.createdAt),
     unique("uniq_support_knowledge_gaps_org_id").on(table.orgId, table.id),
@@ -43,7 +41,6 @@ export const supportKnowledgeGaps = pgTable(
 
 export const supportKnowledgeGapsRelations = relations(supportKnowledgeGaps, ({ one }) => ({
   organization: one(organizations, { fields: [supportKnowledgeGaps.orgId], references: [organizations.id] }),
-  proposedArticle: one(kbArticles, { fields: [supportKnowledgeGaps.proposedArticleId], references: [kbArticles.id] }),
   draftedByUser: one(users, { fields: [supportKnowledgeGaps.draftedBy], references: [users.id], relationName: "gap_drafter" }),
   reviewedByUser: one(users, { fields: [supportKnowledgeGaps.reviewedBy], references: [users.id], relationName: "gap_reviewer" }),
 }));

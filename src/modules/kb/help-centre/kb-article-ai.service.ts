@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { kbArticles } from "../../../db/schema";
+import { kbPages } from "../../../db/schema";
+import { supportArticlePredicate } from "./kb-article-page-scope";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -71,8 +72,8 @@ export class KbArticleAiService {
   ) {}
 
   private async assertArticle(user: CurrentUserContext, articleId: number) {
-    const row = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
+    const row = await this.db.query.kbPages.findFirst({
+      where: and(eq(kbPages.id, articleId), eq(kbPages.orgId, user.orgId), supportArticlePredicate()),
       columns: { id: true, orgId: true, spaceId: true, title: true, contentText: true },
     });
     if (!row) throw new NotFoundException("Article not found");

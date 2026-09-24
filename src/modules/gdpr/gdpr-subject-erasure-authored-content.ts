@@ -1,14 +1,13 @@
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   aiChatConversations,
   aiChatMessages,
   chatMessages,
-  kbArticleAttachments,
   kbArticleChunks,
-  kbArticles,
   kbChatConversations,
   kbChatMessages,
   kbIngestionCheckpoints,
+  kbPageAttachments,
   kbPages,
   kbSources,
 } from "../../db/schema";
@@ -82,23 +81,35 @@ export async function anonymiseSubjectConversations(
   return { tables, chatMessageIds: chatMsgResult.map((row) => row.id) };
 }
 
-async function clearCheckpoints(
+async function clearPageCheckpoints(
   tx: TenantTx,
   orgId: string,
-  contentType: "article" | "page",
-  contentIds: number[],
+  pageIds: number[],
 ): Promise<number> {
   const removed = await tx
     .delete(kbIngestionCheckpoints)
     .where(
       and(
         eq(kbIngestionCheckpoints.orgId, orgId),
-        eq(kbIngestionCheckpoints.contentType, contentType),
-        inArray(kbIngestionCheckpoints.contentId, contentIds),
+        eq(kbIngestionCheckpoints.contentType, "page"),
+        inArray(kbIngestionCheckpoints.contentId, pageIds),
       ),
     )
     .returning({ id: kbIngestionCheckpoints.id });
   return removed.length;
+}
+
+export function subjectAuthoredPage(subjectUserId: string, membershipId: number): SQL {
+  return (
+    or(
+      eq(kbPages.createdById, subjectUserId),
+      eq(kbPages.ownerUserId, subjectUserId),
+      eq(kbPages.lastEditedById, subjectUserId),
+      eq(kbPages.createdByMembershipId, membershipId),
+      eq(kbPages.ownerMembershipId, membershipId),
+      eq(kbPages.lastEditedByMembershipId, membershipId),
+    ) ?? sql`false`
+  );
 }
 
 /**
@@ -159,16 +170,16 @@ export async function eraseSubjectKbContent(
       ERASURE_ID_PAGE,
       (cursor) =>
         tx
-          .select({ id: kbArticles.id })
-          .from(kbArticles)
+          .select({ id: kbPages.id })
+          .from(kbPages)
           .where(
             and(
-              eq(kbArticles.orgId, orgId),
-              eq(kbArticles.authorId, subjectUserId),
-              ...(cursor === null ? [] : [gt(kbArticles.id, cursor)]),
+              eq(kbPages.orgId, orgId),
+              subjectAuthoredPage(subjectUserId, membershipId),
+              ...(cursor === null ? [] : [gt(kbPages.id, cursor)]),
             ),
           )
-          .orderBy(asc(kbArticles.id))
+          .orderBy(asc(kbPages.id))
           .limit(ERASURE_ID_PAGE),
       async (ids) => {
         const removed = await tx
@@ -176,11 +187,11 @@ export async function eraseSubjectKbContent(
           .where(
             and(
               eq(kbArticleChunks.orgId, orgId),
-              inArray(kbArticleChunks.articleId, ids),
+              inArray(kbArticleChunks.pageId, ids),
             ),
           )
           .returning({ id: kbArticleChunks.id });
-        checkpointsRemoved += await clearCheckpoints(tx, orgId, "article", ids);
+        checkpointsRemoved += await clearPageCheckpoints(tx, orgId, ids);
         return removed.length;
       },
     ),
@@ -222,16 +233,16 @@ export async function eraseSubjectKbContent(
       ERASURE_ID_PAGE,
       (cursor) =>
         tx
-          .select({ id: kbArticleAttachments.id })
-          .from(kbArticleAttachments)
+          .select({ id: kbPageAttachments.id })
+          .from(kbPageAttachments)
           .where(
             and(
-              eq(kbArticleAttachments.orgId, orgId),
-              eq(kbArticleAttachments.uploadedBy, subjectUserId),
-              ...(cursor === null ? [] : [gt(kbArticleAttachments.id, cursor)]),
+              eq(kbPageAttachments.orgId, orgId),
+              eq(kbPageAttachments.uploadedById, subjectUserId),
+              ...(cursor === null ? [] : [gt(kbPageAttachments.id, cursor)]),
             ),
           )
-          .orderBy(asc(kbArticleAttachments.id))
+          .orderBy(asc(kbPageAttachments.id))
           .limit(ERASURE_ID_PAGE),
       async (ids) => {
         const removed = await tx
@@ -246,27 +257,6 @@ export async function eraseSubjectKbContent(
         return removed.length;
       },
     ),
-  );
-
-  // kb_ingestion_checkpoints keeps the chunk text and its embedding for content whose
-  // indexing was interrupted. It survives the chunk delete because it is keyed by
-  // (content_type, content_id), not by a foreign key to the chunk row.
-  checkpointsRemoved += await forEachIdPage(
-    ERASURE_ID_PAGE,
-    (cursor) =>
-      tx
-        .select({ id: kbPages.id })
-        .from(kbPages)
-        .where(
-          and(
-            eq(kbPages.orgId, orgId),
-            eq(kbPages.createdById, subjectUserId),
-            ...(cursor === null ? [] : [gt(kbPages.id, cursor)]),
-          ),
-        )
-        .orderBy(asc(kbPages.id))
-        .limit(ERASURE_ID_PAGE),
-    (ids) => clearCheckpoints(tx, orgId, "page", ids),
   );
 
   if (checkpointsRemoved > 0) tables.push("kb_ingestion_checkpoints");

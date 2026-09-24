@@ -57,15 +57,15 @@ describe("KbIndexingService.syncAclRevisionForSpace — chunk aclRevision sync",
     expect(pageSyncCall).toContain("org-x");
   });
 
-  it("executes UPDATE for article chunks referencing the given spaceId and orgId", async () => {
+  it("syncs help-centre article chunks through that same one statement, not a second one naming kb_articles", async () => {
     const { db, execute } = makeIndexingDb();
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
     await svc.syncAclRevisionForSpace("org-y", 77);
 
     const texts = extractSqlTexts(execute.mock.calls as Array<[unknown]>);
-    const articleSyncCall = texts.find((t) => t.includes("kb_articles") && t.includes("acl_revision"));
-    expect(articleSyncCall).toBeDefined();
-    expect(articleSyncCall).toContain("org-y");
+    expect(texts.filter((t) => t.includes("acl_revision"))).toHaveLength(1);
+    expect(texts.find((t) => t.includes("kb_pages"))).toContain("org-y");
+    expect(texts.some((t) => t.includes("kb_articles"))).toBe(false);
   });
 
 });
@@ -121,7 +121,7 @@ describe("KbMembersService — a membership ACL change always reaches the chunk 
     await svc.remove("org-1", 3, 20);
 
     expect(syncSpy).toHaveBeenCalledWith("org-1", 3);
-    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(db.update).toHaveBeenCalledTimes(1);
   });
 
   it("calls indexing.syncAclRevisionForSpace after adding a member", async () => {
@@ -149,6 +149,6 @@ describe("KbMembersService — a membership ACL change always reaches the chunk 
     await svc.add("org-2", 5, { spaceRole: "viewer" });
 
     expect(syncSpy).toHaveBeenCalledWith("org-2", 5);
-    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(db.update).toHaveBeenCalledTimes(1);
   });
 });

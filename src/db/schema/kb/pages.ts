@@ -17,7 +17,7 @@ import { relations, sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "../build";
 import { kbSpaces } from "./spaces";
-import { kbArticles, kbCategories } from "../support/kb";
+import { kbCategories } from "../support/kb";
 
 export type KbPageContent =
   | Record<string, unknown>
@@ -108,7 +108,6 @@ export const kbPages = pgTable(
     // `check:composite-fk-set-null` fails if it comes back.
     foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_pages_org_space" }),
     foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_kb_pages_org_parent" }),
-    foreignKey({ columns: [table.orgId, table.sourceArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_pages_org_source_article" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_kb_pages_org_project" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_created_membership" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.lastEditedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_edited_membership" }).onDelete("set null"),

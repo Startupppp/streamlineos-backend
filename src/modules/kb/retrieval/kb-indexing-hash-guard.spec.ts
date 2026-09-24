@@ -28,7 +28,7 @@ interface MockTx {
   insert: jest.Mock;
   values: jest.Mock;
   execute: jest.Mock;
-  query: { kbArticles: { findFirst: jest.Mock }; kbPages: { findFirst: jest.Mock } };
+  query: { kbPages: { findFirst: jest.Mock } };
   select: jest.Mock;
   update: jest.Mock;
 }
@@ -40,7 +40,6 @@ const makeTx = (): MockTx => ({
   values: jest.fn().mockResolvedValue(undefined),
   execute: jest.fn().mockResolvedValue([]),
   query: {
-    kbArticles: { findFirst: jest.fn().mockResolvedValue(null) },
     kbPages: { findFirst: jest.fn().mockResolvedValue(null) },
   },
   select: jest.fn().mockReturnValue({
@@ -139,9 +138,16 @@ describe("KbIndexingService — content-hash guard", () => {
   it("skips re-embedding when the stored hash matches the current article text", async () => {
     const text = "Hello world content unchanged";
     const { db } = makeDb(sha256(text));
-    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
+      visibility: "org",
+      deletedAt: null,
       contentText: text,
+      projectId: null,
+      createdById: null,
+      createdByMembershipId: null,
+      aclRevision: 1,
+      contentRevision: 1,
     });
 
     const embeddings = makeEmbeddings();
@@ -160,9 +166,16 @@ describe("KbIndexingService — content-hash guard", () => {
     tx.insert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
 
     const { db } = makeDb(sha256(oldText), tx);
-    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
+      visibility: "org",
+      deletedAt: null,
       contentText: newText,
+      projectId: null,
+      createdById: null,
+      createdByMembershipId: null,
+      aclRevision: 1,
+      contentRevision: 1,
     });
 
     const embeddings = makeEmbeddings();
@@ -180,9 +193,16 @@ describe("KbIndexingService — content-hash guard", () => {
     tx.insert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
 
     const { db } = makeDb(null, tx);
-    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
+      visibility: "org",
+      deletedAt: null,
       contentText: text,
+      projectId: null,
+      createdById: null,
+      createdByMembershipId: null,
+      aclRevision: 1,
+      contentRevision: 1,
     });
 
     const embeddings = makeEmbeddings();

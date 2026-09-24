@@ -1,12 +1,13 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { kbArticles, kbArticleRestrictions } from "../../../db/schema";
+import { kbPages, kbPageRestrictions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { accountableMembershipId, actingMembershipId } from "../../../common/auth/principal";
 import { CacheService } from "../../../common/cache/cache.service";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
+import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { AccessService } from "../../access/access.service";
 import { kbAclCacheKey, type KbAclDimension } from "./kb-acl-cache-key";
 import {
@@ -100,13 +101,13 @@ export class KbAccessService {
     }
 
     const restrictions = await this.db
-      .select({ membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
-      .from(kbArticleRestrictions)
+      .select({ membershipId: kbPageRestrictions.membershipId, role: kbPageRestrictions.role })
+      .from(kbPageRestrictions)
       .where(
         and(
-          eq(kbArticleRestrictions.orgId, row.orgId),
-          eq(kbArticleRestrictions.articleId, row.id),
-          eq(kbArticleRestrictions.level, "view"),
+          eq(kbPageRestrictions.orgId, row.orgId),
+          eq(kbPageRestrictions.pageId, row.id),
+          eq(kbPageRestrictions.level, "view"),
         ),
       );
     if (restrictions.length > 0) {
@@ -122,10 +123,7 @@ export class KbAccessService {
   }
 
   async assertArticleViewable(user: CurrentUserContext, articleId: number): Promise<void> {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
-      columns: { id: true, orgId: true, spaceId: true },
-    });
+    const article = await this.findArticle(user.orgId, articleId);
     if (!article) throw new NotFoundException("Article not found");
     await this.assertCanViewArticle(user, article);
   }
@@ -134,10 +132,7 @@ export class KbAccessService {
     user: CurrentUserContext,
     articleId: number,
   ): Promise<{ id: number; orgId: string; spaceId: number | null }> {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
-      columns: { id: true, orgId: true, spaceId: true },
-    });
+    const article = await this.findArticle(user.orgId, articleId);
     if (!article) throw new NotFoundException("Article not found");
     if (await this.isAdmin(user)) return article;
 
@@ -149,13 +144,13 @@ export class KbAccessService {
     }
 
     const restrictions = await this.db
-      .select({ membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
-      .from(kbArticleRestrictions)
+      .select({ membershipId: kbPageRestrictions.membershipId, role: kbPageRestrictions.role })
+      .from(kbPageRestrictions)
       .where(
         and(
-          eq(kbArticleRestrictions.orgId, user.orgId),
-          eq(kbArticleRestrictions.articleId, articleId),
-          eq(kbArticleRestrictions.level, "edit"),
+          eq(kbPageRestrictions.orgId, user.orgId),
+          eq(kbPageRestrictions.pageId, articleId),
+          eq(kbPageRestrictions.level, "edit"),
         ),
       );
     if (restrictions.length > 0) {
@@ -169,5 +164,19 @@ export class KbAccessService {
       if (!allowed) throw new NotFoundException("Article not found");
     }
     return article;
+  }
+
+  private async findArticle(
+    orgId: string,
+    articleId: number,
+  ): Promise<{ id: number; orgId: string; spaceId: number | null } | undefined> {
+    return this.db.query.kbPages.findFirst({
+      where: and(
+        eq(kbPages.id, articleId),
+        eq(kbPages.orgId, orgId),
+        supportArticlePredicate(),
+      ),
+      columns: { id: true, orgId: true, spaceId: true },
+    });
   }
 }

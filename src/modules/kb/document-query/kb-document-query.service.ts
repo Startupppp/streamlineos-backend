@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbPages } from "../../../db/schema";
+import { kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
@@ -11,13 +11,17 @@ import { buildArticleRestrictionPredicate } from "../retrieval/kb-article-restri
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import {
+  SUPPORT_ARTICLE_CONTENT_TYPE,
+  supportArticlePredicate,
+} from "../help-centre/kb-article-page-scope";
 
 export type KbDocumentHit =
   | {
       kind: "article";
       id: number;
       title: string;
-      slug: string;
+      slug: string | null;
       spaceId: number | null;
       excerpt: string | null;
       status: "draft" | "in_review" | "published" | "archived";
@@ -68,31 +72,32 @@ export class KbDocumentQueryService {
       const membershipId =
         user.principal === undefined ? null : actingMembershipId(user.principal);
       const domain: SQL[] = [
-        inArray(kbArticles.spaceId, spaceIds),
-        ne(kbArticles.status, "archived"),
-        sql`${kbArticles.title} ILIKE ${term}`,
+        supportArticlePredicate(),
+        inArray(kbPages.spaceId, spaceIds),
+        ne(kbPages.status, "archived"),
+        sql`${kbPages.title} ILIKE ${term}`,
       ];
       if (!isAdmin) domain.push(buildArticleRestrictionPredicate(user.orgId, principal));
 
       const where = articleRead.compose(
-        { tenant: kbArticles.orgId, scope: articleOwnerScope(membershipId), and: domain },
+        { tenant: kbPages.orgId, scope: articleOwnerScope(membershipId), and: domain },
         ({ sql: composed }) => composed,
         () => sql`false`,
       );
 
       const articleRows = await this.db
         .select({
-          id: kbArticles.id,
-          title: kbArticles.title,
-          slug: kbArticles.slug,
-          spaceId: kbArticles.spaceId,
-          excerpt: kbArticles.excerpt,
-          status: kbArticles.status,
-          updatedAt: kbArticles.updatedAt,
+          id: kbPages.id,
+          title: kbPages.title,
+          slug: kbPages.slug,
+          spaceId: kbPages.spaceId,
+          excerpt: kbPages.excerpt,
+          status: kbPages.status,
+          updatedAt: kbPages.updatedAt,
         })
-        .from(kbArticles)
+        .from(kbPages)
         .where(where)
-        .orderBy(desc(kbArticles.updatedAt))
+        .orderBy(desc(kbPages.updatedAt))
         .limit(cap);
 
       for (const row of articleRows) results.push({ kind: "article", ...row });
@@ -111,6 +116,7 @@ export class KbDocumentQueryService {
         and(
           eq(kbPages.orgId, user.orgId),
           isNull(kbPages.deletedAt),
+          ne(kbPages.contentType, SUPPORT_ARTICLE_CONTENT_TYPE),
           ne(kbPages.status, "archived"),
           sql`${kbPages.title} ILIKE ${term}`,
           predicate,

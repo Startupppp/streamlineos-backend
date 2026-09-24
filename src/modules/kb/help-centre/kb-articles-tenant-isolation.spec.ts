@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbArticlesService } from "./kb-articles.service";
 
@@ -23,37 +24,63 @@ describe("KbArticlesService — cross-tenant isolation", () => {
   const access = { assertCanViewArticle: jest.fn().mockResolvedValue(undefined) } as never;
   const events = { record: jest.fn().mockResolvedValue(undefined) } as never;
 
-  function makeDb(articleRow: unknown) {
-    const wheres: unknown[] = [];
-    return {
-      db: {
-        query: {
-          kbArticles: {
-            findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
-              wheres.push(opts.where);
-              return Promise.resolve(articleRow);
-            }),
-          },
-        },
-        select: jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockImplementation((w: unknown) => {
-                wheres.push(w);
-                return Object.assign(Promise.resolve([]), {
-                  orderBy: jest.fn().mockResolvedValue([]),
-                });
-              }),
-            }),
-          }),
-        })),
-      } as unknown as Db,
-      wheres,
-    };
+  function makeDb(results: unknown[][]) {
+    const wheres: SQL[] = [];
+    const queue = [...results];
+    const select = jest.fn(() => {
+      const rows = queue.shift() ?? [];
+      const node: Record<string, unknown> = {};
+      const self = (): unknown => node;
+      node.from = self;
+      node.leftJoin = self;
+      node.innerJoin = self;
+      node.orderBy = self;
+      node.limit = self;
+      node.where = (w: SQL): unknown => {
+        wheres.push(w);
+        return node;
+      };
+      node.then = (resolve: (value: unknown[]) => unknown): Promise<unknown> =>
+        Promise.resolve(rows).then(resolve);
+      return node;
+    });
+    return { db: { select } as unknown as Db, wheres };
   }
 
+  const PAGE_ROW = {
+    id: ARTICLE_ID,
+    orgId: OWNER,
+    spaceId: 1,
+    categoryId: 1,
+    title: "Test",
+    slug: "test",
+    excerpt: null,
+    content: null,
+    contentText: "",
+    status: "published",
+    visibility: "org",
+    createdById: "user-1",
+    ownerMembershipId: null,
+    trustState: "unverified",
+    verifiedUntil: null,
+    views: 0,
+    helpfulCount: 0,
+    notHelpfulCount: 0,
+    seoTitle: null,
+    seoDescription: null,
+    reviewIntervalDays: null,
+    publishedAt: null,
+    archivedAt: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    aclRevision: 1,
+    contentRevision: 1,
+    categoryName: "Cat",
+    categorySlug: "cat",
+  };
+
   it("throws NotFoundException for an article in another org (cross-tenant deny)", async () => {
-    const { db, wheres } = makeDb(null);
+    const { db, wheres } = makeDb([[]]);
     const svc = new KbArticlesService(db, access, events);
 
     await expect(svc.get(makeUser(ATTACKER), ARTICLE_ID)).rejects.toThrow(NotFoundException);
@@ -64,18 +91,12 @@ describe("KbArticlesService — cross-tenant isolation", () => {
   });
 
   it("returns article for the owning org (same-tenant control)", async () => {
-    const articleRow = {
-      id: ARTICLE_ID,
-      orgId: OWNER,
-      title: "Test",
-      spaceId: 1,
-      category: { id: 1, name: "Cat", slug: "cat" },
-    };
-    const { db } = makeDb(articleRow);
+    const { db } = makeDb([[PAGE_ROW], []]);
     const svc = new KbArticlesService(db, access, events);
 
     const result = await svc.get(makeUser(OWNER), ARTICLE_ID);
 
     expect(result).toHaveProperty("id", ARTICLE_ID);
+    expect(result.category).toEqual({ id: 1, name: "Cat", slug: "cat" });
   });
 });

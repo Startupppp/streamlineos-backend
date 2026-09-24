@@ -123,7 +123,7 @@ describe("Revocation dimension 1 — space membership is re-read per query, not 
 
     await run();
 
-    const articleWheres = rendered(wheres).filter((t) => t.includes(`"kb_articles"."space_id"`));
+    const articleWheres = rendered(wheres).filter((t) => t.includes(`"kb_pages"."space_id"`));
     expect(articleWheres.length).toBeGreaterThanOrEqual(2);
     expect(boundValues(wheres)).toEqual(expect.arrayContaining(GRANTED_SPACES));
   });
@@ -134,13 +134,16 @@ describe("Revocation dimension 1 — space membership is re-read per query, not 
 
     const results = await run();
 
-    expect(rendered(wheres).filter((t) => t.includes(`"kb_articles"`))).toEqual([]);
+    expect(rendered(wheres).filter((t) => t.includes(`"kb_pages"."space_id"`))).toEqual([]);
+    expect(
+      rendered(wheres).filter((t) => t.includes(`"kb_pages"."content_type" = `)),
+    ).toEqual([]);
     expect(boundValues(wheres)).not.toEqual(expect.arrayContaining(GRANTED_SPACES));
     expect(results.filter((r) => r.kind === "article")).toEqual([]);
   });
 });
 
-describe("Revocation dimension 2 — kb_article_restrictions is a live subquery on both paths", () => {
+describe("Revocation dimension 2 — kb_page_restrictions is a live subquery on both paths", () => {
   const candidates = new KbCandidateService(makeCapturingDb().db as never);
 
   it("reaches both the keyword and the vector article query", async () => {
@@ -149,7 +152,7 @@ describe("Revocation dimension 2 — kb_article_restrictions is a live subquery 
 
     await run();
 
-    const withRestrictions = rendered(wheres).filter((t) => t.includes("kb_article_restrictions"));
+    const withRestrictions = rendered(wheres).filter((t) => t.includes("kb_page_restrictions"));
     expect(withRestrictions.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -158,7 +161,7 @@ describe("Revocation dimension 2 — kb_article_restrictions is a live subquery 
       candidates.articleRestrictionFilter(ORG, { userId: "user-1", membershipId: 5, roleSlugs: ["SUPPORT"] }),
     );
 
-    expect(text).toContain("kb_article_restrictions");
+    expect(text).toContain("kb_page_restrictions");
     expect(text).toContain("NOT EXISTS");
     expect(params).toEqual(expect.arrayContaining([5, "SUPPORT", ORG]));
   });

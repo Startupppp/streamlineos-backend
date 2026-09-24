@@ -1,5 +1,5 @@
 import { and, eq, gt } from "drizzle-orm";
-import { kbArticles } from "../../../db/schema";
+import { kbPages } from "../../../db/schema";
 import { KbArticleReindexService } from "../../kb/retrieval/kb-article-reindex.service";
 import { SupportKbEngagementController } from "./support-kb-engagement.controller";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -115,8 +115,8 @@ describe("support KB reindex is resumable (PRD-C077)", () => {
         select: (shape: Record<string, unknown>) =>
           "id" in shape ? selectChain(ARTICLES) : ((selectCall += 1), countChain),
         query: {
-          kbArticles: { findFirst: async () => ({ id: 1 }) },
-          kbArticleAttachments: { findMany: async () => [] },
+          kbPages: { findFirst: async () => ({ id: 1 }) },
+          kbPageAttachments: { findMany: async () => [] },
         },
       };
 
@@ -146,9 +146,9 @@ describe("support KB reindex is resumable (PRD-C077)", () => {
 
     it("boundParams actually sees a gt() cursor — the assertion above is not vacuous", () => {
       const where = and(
-        eq(kbArticles.orgId, ORG),
-        eq(kbArticles.status, "published"),
-        gt(kbArticles.id, 137),
+        eq(kbPages.orgId, ORG),
+        eq(kbPages.status, "published"),
+        gt(kbPages.id, 137),
       );
       expect(boundParams(where)).toContain(137);
     });

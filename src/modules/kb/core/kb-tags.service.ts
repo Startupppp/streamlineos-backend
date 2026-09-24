@@ -7,7 +7,9 @@ import {
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { kbArticleTags, kbArticles, kbTags } from "../../../db/schema";
+import { kbPageTags, kbPages, kbTags } from "../../../db/schema";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { kbSlugify } from "./kb.util";
 import type {
   CreateTagInput,
@@ -42,11 +44,17 @@ export class KbTagsService {
     });
     if (existing)
       throw new ConflictException("A tag with this name already exists");
-    const [tag] = await this.db
-      .insert(kbTags)
-      .values({ orgId, name: input.name, slug })
-      .returning();
-    return tag;
+    try {
+      const [tag] = await this.db
+        .insert(kbTags)
+        .values({ orgId, name: input.name, slug })
+        .returning();
+      return tag;
+    } catch (err) {
+      if (isUniqueViolation(err))
+        throw new ConflictException("A tag with this name already exists");
+      throw err;
+    }
   }
 
   async remove(orgId: string, tagId: number): Promise<{ success: boolean }> {
@@ -59,9 +67,13 @@ export class KbTagsService {
   }
 
   async getArticleTags(orgId: string, articleId: number): Promise<ArticleTagRow[]> {
-    const article = await this.db.query.kbArticles.findFirst({
+    const article = await this.db.query.kbPages.findFirst({
       columns: { id: true },
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+      where: and(
+        eq(kbPages.id, articleId),
+        eq(kbPages.orgId, orgId),
+        supportArticlePredicate(),
+      ),
     });
     if (!article) throw new NotFoundException("Article not found");
     return this.db
@@ -73,10 +85,8 @@ export class KbTagsService {
         createdAt: kbTags.createdAt,
       })
       .from(kbTags)
-      .innerJoin(kbArticleTags, eq(kbArticleTags.tagId, kbTags.id))
-      .where(
-        and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, orgId)),
-      )
+      .innerJoin(kbPageTags, eq(kbPageTags.tagId, kbTags.id))
+      .where(and(eq(kbPageTags.pageId, articleId), eq(kbTags.orgId, orgId)))
       .orderBy(asc(kbTags.name))
       .limit(50);
   }
@@ -89,13 +99,14 @@ export class KbTagsService {
     const requestedTagIds = [...new Set(input.tagIds)];
     return this.db.transaction(async (tx) => {
       const [article] = await tx
-        .select({ id: kbArticles.id })
-        .from(kbArticles)
+        .select({ id: kbPages.id })
+        .from(kbPages)
         .where(
           and(
-            eq(kbArticles.id, articleId),
-            eq(kbArticles.orgId, orgId),
-            ne(kbArticles.status, "archived"),
+            eq(kbPages.id, articleId),
+            eq(kbPages.orgId, orgId),
+            ne(kbPages.status, "archived"),
+            supportArticlePredicate(),
           ),
         )
         .limit(1);
@@ -122,18 +133,27 @@ export class KbTagsService {
         throw new NotFoundException("One or more tag IDs not found in this organization");
 
       await tx
-        .delete(kbArticleTags)
+        .delete(kbPageTags)
         .where(
-          and(
-            eq(kbArticleTags.orgId, orgId),
-            eq(kbArticleTags.articleId, articleId),
-          ),
+          and(eq(kbPageTags.orgId, orgId), eq(kbPageTags.pageId, articleId)),
         );
 
       if (requestedTagIds.length > 0) {
-        await tx
-          .insert(kbArticleTags)
-          .values(requestedTagIds.map((tagId) => ({ orgId, articleId, tagId })));
+        try {
+          await tx.insert(kbPageTags).values(
+            requestedTagIds.map((tagId) => ({
+              orgId,
+              pageId: articleId,
+              tagId,
+            })),
+          );
+        } catch (err) {
+          if (isUniqueViolation(err))
+            throw new ConflictException(
+              "The tags on this article were changed concurrently",
+            );
+          throw err;
+        }
       }
 
       return resolvedTags;

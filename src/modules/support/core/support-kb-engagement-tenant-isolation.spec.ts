@@ -194,7 +194,7 @@ function makeDb(store: Store, ignoreTenantPredicate = false): Db {
     delete: jest.fn(deleteBuilder),
     insert: jest.fn(insertBuilder),
     query: {
-      kbArticles: { findFirst: jest.fn(findFirst("kb_articles")) },
+      kbPages: { findFirst: jest.fn(findFirst("kb_pages")) },
       users: { findFirst: jest.fn(findFirst("users")) },
     },
   } as unknown as Db;
@@ -206,38 +206,41 @@ const ORG_B = "org-attacker";
 function seed(): Store {
   return new Map<string, Row[]>([
     [
-      "kb_articles",
+      "kb_pages",
       [
-        { id: 10, orgId: ORG_A, title: "Production key rotation" },
-        { id: 20, orgId: ORG_B, title: "Attacker onboarding" },
+        { id: 10, orgId: ORG_A, title: "Production key rotation", contentType: "support_article", deletedAt: null, archivedAt: null },
+        { id: 20, orgId: ORG_B, title: "Attacker onboarding", contentType: "support_article", deletedAt: null, archivedAt: null },
+        { id: 30, orgId: ORG_A, title: "Internal wiki runbook", contentType: "note", deletedAt: null, archivedAt: null },
+        { id: 40, orgId: ORG_A, title: "Deleted article", contentType: "support_article", deletedAt: new Date("2026-01-01T00:00:00Z"), archivedAt: null },
       ],
     ],
     [
-      "kb_article_comments",
+      "kb_page_comments",
       [
         {
           id: 100,
           orgId: ORG_A,
-          articleId: 10,
+          pageId: 10,
           authorId: "user-a",
           content: "Rotate the prod signing key every Friday.",
         },
       ],
     ],
     [
-      "kb_article_attachments",
+      "kb_page_attachments",
       [
         {
           id: 1,
           orgId: ORG_A,
-          articleId: 10,
+          pageId: 10,
+          deletedAt: null,
           fileKey: "org-victim/kb-attachments/prod-runbook.pdf",
           fileName: "prod-runbook.pdf",
           mimeType: "application/pdf",
         },
       ],
     ],
-    ["kb_article_feedback", [{ id: 500, orgId: ORG_A, articleId: 10, helpful: true }]],
+    ["kb_page_feedback", [{ id: 500, orgId: ORG_A, pageId: 10, helpful: true }]],
     ["users", [{ id: "user-b", name: "Mallory", image: null }]],
   ]);
 }
@@ -371,6 +374,26 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
     });
   });
 
+  describe("kb_pages holds wiki pages too", () => {
+    it("listComments 404s on an internal wiki page in the caller's own org", async () => {
+      const service = new SupportKbEngagementService(makeDb(seed()), makeStorage().storage);
+
+      expectNotFound(await capture(() => service.listComments(ORG_A, 30)));
+    });
+
+    it("listComments 404s on a soft-deleted support article in the caller's own org", async () => {
+      const service = new SupportKbEngagementService(makeDb(seed()), makeStorage().storage);
+
+      expectNotFound(await capture(() => service.listComments(ORG_A, 40)));
+    });
+
+    it("listComments serves a live support article in the same org — the two denials above are not vacuous", async () => {
+      const service = new SupportKbEngagementService(makeDb(seed()), makeStorage().storage);
+
+      await expect(service.listComments(ORG_A, 10)).resolves.toHaveLength(1);
+    });
+  });
+
   describe("mutations", () => {
     it("deleteComment denies org B with 404 and leaves org A's row intact", async () => {
       const store = seed();
@@ -382,7 +405,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
       const error = await capture(() => service.deleteComment(actor.orgId, 10, 100));
 
       expectNotFound(error);
-      expect(store.get("kb_article_comments")).toHaveLength(1);
+      expect(store.get("kb_page_comments")).toHaveLength(1);
     });
 
     it("BITE — neutering the tenant predicate lets org B delete org A's comment", async () => {
@@ -393,7 +416,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
       );
 
       await expect(service.deleteComment(actor.orgId, 10, 100)).resolves.toEqual({ success: true });
-      expect(store.get("kb_article_comments")).toHaveLength(0);
+      expect(store.get("kb_page_comments")).toHaveLength(0);
     });
 
     it("deleteAttachment denies org B with 404 and leaves org A's row intact", async () => {
@@ -406,7 +429,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
       const error = await capture(() => service.deleteAttachment(actor.orgId, 10, 1));
 
       expectNotFound(error);
-      expect(store.get("kb_article_attachments")).toHaveLength(1);
+      expect(store.get("kb_page_attachments")).toHaveLength(1);
     });
 
     it("createComment denies org B with 404 and writes nothing", async () => {
@@ -421,7 +444,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
       );
 
       expectNotFound(error);
-      expect(store.get("kb_article_comments")).toHaveLength(1);
+      expect(store.get("kb_page_comments")).toHaveLength(1);
     });
 
     it("BITE — neutering the tenant predicate lets org B comment on org A's article", async () => {
@@ -433,8 +456,8 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
 
       await service.createComment(actor.orgId, 10, actor.userId, { body: "ping" });
 
-      expect(store.get("kb_article_comments")).toHaveLength(2);
-      expect(store.get("kb_article_comments")?.[1]).toMatchObject({ orgId: ORG_B, articleId: 10 });
+      expect(store.get("kb_page_comments")).toHaveLength(2);
+      expect(store.get("kb_page_comments")?.[1]).toMatchObject({ orgId: ORG_B, pageId: 10 });
     });
 
     it("createAttachment denies org B with 404 and writes nothing", async () => {
@@ -454,7 +477,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
       );
 
       expectNotFound(error);
-      expect(store.get("kb_article_attachments")).toHaveLength(1);
+      expect(store.get("kb_page_attachments")).toHaveLength(1);
     });
   });
 });

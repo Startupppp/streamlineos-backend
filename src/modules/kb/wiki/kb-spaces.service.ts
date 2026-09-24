@@ -16,13 +16,8 @@ import {
   ne,
   sql,
 } from "drizzle-orm";
-import {
-  kbSpaces,
-  kbSpaceMembers,
-  kbArticles,
-  kbPages,
-  kbPageLinks,
-} from "../../../db/schema";
+import { kbSpaces, kbSpaceMembers, kbPages, kbPageLinks } from "../../../db/schema";
+import { SUPPORT_ARTICLE_CONTENT_TYPE, supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
@@ -53,6 +48,8 @@ import {
 } from "../../../common/pagination/keyset";
 
 const SPACE_CONTENT_BATCH_SIZE = 500;
+
+const isWikiPage = () => ne(kbPages.contentType, SUPPORT_ARTICLE_CONTENT_TYPE);
 
 type SpaceRow = typeof kbSpaces.$inferSelect;
 
@@ -171,17 +168,18 @@ export class KbSpacesService {
     const [articleCounts, pageCounts, memberCounts] = await Promise.all([
       this.db
         .select({
-          spaceId: kbArticles.spaceId,
+          spaceId: kbPages.spaceId,
           count: sql<number>`count(*)::int`,
         })
-        .from(kbArticles)
+        .from(kbPages)
         .where(
           and(
-            eq(kbArticles.orgId, user.orgId),
-            inArray(kbArticles.spaceId, spaceIds),
+            eq(kbPages.orgId, user.orgId),
+            inArray(kbPages.spaceId, spaceIds),
+            supportArticlePredicate(),
           ),
         )
-        .groupBy(kbArticles.spaceId),
+        .groupBy(kbPages.spaceId),
       this.db
         .select({
           spaceId: kbPages.spaceId,
@@ -193,6 +191,7 @@ export class KbSpacesService {
             eq(kbPages.orgId, user.orgId),
             inArray(kbPages.spaceId, spaceIds),
             isNull(kbPages.deletedAt),
+            isWikiPage(),
             visiblePagePredicate,
           ),
         )
@@ -469,16 +468,17 @@ export class KbSpacesService {
 
         await this.emitContentDeletes(tx, orgId, "article", (afterId) =>
           tx
-            .select({ id: kbArticles.id })
-            .from(kbArticles)
+            .select({ id: kbPages.id })
+            .from(kbPages)
             .where(
               and(
-                eq(kbArticles.orgId, orgId),
-                eq(kbArticles.spaceId, spaceId),
-                gt(kbArticles.id, afterId),
+                eq(kbPages.orgId, orgId),
+                eq(kbPages.spaceId, spaceId),
+                supportArticlePredicate(),
+                gt(kbPages.id, afterId),
               ),
             )
-            .orderBy(asc(kbArticles.id))
+            .orderBy(asc(kbPages.id))
             .limit(SPACE_CONTENT_BATCH_SIZE),
         );
         await this.emitContentDeletes(tx, orgId, "page", (afterId) =>
@@ -489,6 +489,7 @@ export class KbSpacesService {
               and(
                 eq(kbPages.orgId, orgId),
                 eq(kbPages.spaceId, spaceId),
+                isWikiPage(),
                 gt(kbPages.id, afterId),
               ),
             )

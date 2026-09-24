@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
-import { kbArticleChunks, kbArticles, kbPages } from "../../db/schema";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { kbArticleChunks, kbPages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
@@ -43,17 +43,10 @@ export class CronKbChunkRetentionService {
       const rows = await tx
         .select({ id: kbArticleChunks.id })
         .from(kbArticleChunks)
-        .leftJoin(kbArticles, and(
-          eq(kbArticles.id, kbArticleChunks.articleId),
-          eq(kbArticles.orgId, orgId),
-        ))
         .where(and(
           eq(kbArticleChunks.orgId, orgId),
           isNotNull(kbArticleChunks.articleId),
-          or(
-            isNull(kbArticles.id),
-            ne(kbArticles.status, "published"),
-          ),
+          isNull(kbArticleChunks.pageId),
         ))
         .limit(PRUNE_BATCH_SIZE);
 

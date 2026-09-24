@@ -11,12 +11,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import {
-  kbArticles,
-  kbArticleChunks,
-  kbPages,
-  kbSources,
-} from "../../../db/schema";
+import { kbArticleChunks, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
@@ -29,7 +24,8 @@ import type { ScopedRead } from "../../access/scoped-read";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { KbCandidateService } from "./kb-candidate.service";
+import { KbCandidateService, wikiPagePredicate } from "./kb-candidate.service";
+import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { AccessService } from "../../access/access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
@@ -161,25 +157,17 @@ export class KbSearchService {
     pageSize: number;
     totalPages: number;
   }> {
-    if (scope.denied)
-      return {
-        items: [],
-        total: 0,
-        page: input.page,
-        pageSize: input.pageSize,
-        totalPages: 0,
-      };
+    const empty = {
+      items: [],
+      total: 0,
+      page: input.page,
+      pageSize: input.pageSize,
+      totalPages: 0,
+    };
+    if (scope.denied) return empty;
 
     const ids = await this.access.getAccessibleSpaceIds(user);
-    if (ids.length === 0) {
-      return {
-        items: [],
-        total: 0,
-        page: input.page,
-        pageSize: input.pageSize,
-        totalPages: 0,
-      };
-    }
+    if (ids.length === 0) return empty;
 
     const isAdmin = await this.access.isAdmin(user);
     const principal = await this.access.getPrincipalIds(user);
@@ -191,22 +179,23 @@ export class KbSearchService {
       500,
     );
     const domain: SQL[] = [
-      inArray(kbArticles.spaceId, ids),
-      ne(kbArticles.status, "archived"),
+      supportArticlePredicate(),
+      inArray(kbPages.spaceId, ids),
+      ne(kbPages.status, "archived"),
       keywordCond,
     ];
     if (!isAdmin)
       domain.push(
         this.candidates.articleRestrictionFilter(user.orgId, principal),
       );
-    if (input.spaceId) domain.push(eq(kbArticles.spaceId, input.spaceId));
+    if (input.spaceId) domain.push(eq(kbPages.spaceId, input.spaceId));
     // The same narrowing `GET /kb/articles` applies, in the predicate rather than
     // downstream: these rows carry article text and are what retrieval hands on.
     const membershipId =
       user.principal === undefined ? null : actingMembershipId(user.principal);
     const where = scope.compose(
       {
-        tenant: kbArticles.orgId,
+        tenant: kbPages.orgId,
         scope: articleOwnerScope(membershipId),
         and: domain,
       },
@@ -218,21 +207,21 @@ export class KbSearchService {
 
     const rows = await this.db
       .select({
-        id: kbArticles.id,
-        spaceId: kbArticles.spaceId,
-        categoryId: kbArticles.categoryId,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        excerpt: kbArticles.excerpt,
-        status: kbArticles.status,
-        updatedAt: kbArticles.updatedAt,
-        contentText: kbArticles.contentText,
+        id: kbPages.id,
+        spaceId: kbPages.spaceId,
+        categoryId: kbPages.categoryId,
+        title: kbPages.title,
+        slug: kbPages.slug,
+        excerpt: kbPages.excerpt,
+        status: kbPages.status,
+        updatedAt: kbPages.updatedAt,
+        contentText: kbPages.contentText,
       })
-      .from(kbArticles)
+      .from(kbPages)
       .where(where)
       .orderBy(
         desc(this.candidates.keywordRank(tsquery)),
-        desc(kbArticles.updatedAt),
+        desc(kbPages.updatedAt),
       )
       .limit(input.pageSize)
       .offset(offset);
@@ -241,12 +230,13 @@ export class KbSearchService {
     // connection, so concurrency here would only queue them behind each other anyway.
     const [countRow] = await this.db
       .select({ count: sql<number>`count(*)::int` })
-      .from(kbArticles)
+      .from(kbPages)
       .where(where);
     const total = countRow?.count ?? 0;
 
-    const items = rows.map(({ contentText, ...card }) => ({
+    const items = rows.map(({ contentText, slug, ...card }) => ({
       ...card,
+      slug: slug ?? "",
       snippet: this.candidates.buildSnippet(contentText, input.q),
     }));
 
@@ -359,11 +349,12 @@ export class KbSearchService {
 
     if (articleIds.length > 0) {
       const articleConditions: SQL[] = [
-        eq(kbArticles.orgId, user.orgId),
-        inArray(kbArticles.id, articleIds),
-        eq(kbArticles.status, "published"),
+        eq(kbPages.orgId, user.orgId),
+        inArray(kbPages.id, articleIds),
+        supportArticlePredicate(),
+        eq(kbPages.status, "published"),
       ];
-      if (spaceId) articleConditions.push(eq(kbArticles.spaceId, spaceId));
+      if (spaceId) articleConditions.push(eq(kbPages.spaceId, spaceId));
       if (ownerFilter) articleConditions.push(ownerFilter);
       if (!isAdmin)
         articleConditions.push(
@@ -371,19 +362,20 @@ export class KbSearchService {
         );
       const articleRows = await this.db
         .select({
-          id: kbArticles.id,
-          title: kbArticles.title,
-          slug: kbArticles.slug,
-          spaceId: kbArticles.spaceId,
-          contentText: kbArticles.contentText,
-          updatedAt: kbArticles.updatedAt,
+          id: kbPages.id,
+          title: kbPages.title,
+          slug: kbPages.slug,
+          spaceId: kbPages.spaceId,
+          contentText: kbPages.contentText,
+          updatedAt: kbPages.updatedAt,
         })
-        .from(kbArticles)
+        .from(kbPages)
         .where(and(...articleConditions));
       for (const row of articleRows) {
         results.push({
           kind: "article",
           ...row,
+          slug: row.slug ?? "",
           contentText: row.contentText ?? "",
         });
       }
@@ -403,7 +395,7 @@ export class KbSearchService {
           and(
             eq(kbPages.orgId, user.orgId),
             inArray(kbPages.id, pageIds),
-            isNull(kbPages.deletedAt),
+            wikiPagePredicate(),
             ne(kbPages.status, "archived"),
             pageVisibility,
           ),
@@ -426,11 +418,11 @@ export class KbSearchService {
   }
 
   /**
-   * The article half of the attachment predicate. It used to be `inArray(articleId, ids)`
+   * The help-centre half of the passage predicate. It used to be `inArray(pageId, ids)`
    * alone, so the method's safety was a precondition on its one caller rather than a
-   * property of the method — the page half already carried `pageVisibleTo`.
+   * property of the method — the wiki half already carried `visiblePagePredicate`.
    */
-  private async attachmentArticleScope(
+  private async articlePassageScope(
     user: CurrentUserContext,
     articleIds: number[],
   ): Promise<SQL[]> {
@@ -438,10 +430,10 @@ export class KbSearchService {
       this.articleOwnerFilterFor(user),
       this.articleRestrictionFilterFor(user),
     ]);
-    // The owner filter is a scoped read, so it already carries `kb_articles.org_id`.
     const conditions: SQL[] = [
-      inArray(kbArticleChunks.articleId, articleIds),
-      eq(kbArticles.status, "published"),
+      inArray(kbArticleChunks.pageId, articleIds),
+      supportArticlePredicate(),
+      eq(kbPages.status, "published"),
     ];
     if (ownerFilter) conditions.push(ownerFilter);
     if (restrictionFilter) conditions.push(restrictionFilter);
@@ -469,7 +461,7 @@ export class KbSearchService {
       const scope: SQL[] = [];
       if (articleIds.length > 0) {
         const articleScope = and(
-          ...(await this.attachmentArticleScope(user, articleIds)),
+          ...(await this.articlePassageScope(user, articleIds)),
         );
         if (articleScope) scope.push(articleScope);
       }
@@ -480,6 +472,7 @@ export class KbSearchService {
         );
         const pageScope = and(
           inArray(kbArticleChunks.pageId, pageIds),
+          wikiPagePredicate(),
           pagePredicate,
         );
         if (pageScope) scope.push(pageScope);
@@ -488,52 +481,36 @@ export class KbSearchService {
         .select({
           content: kbArticleChunks.content,
           chunkIndex: kbArticleChunks.chunkIndex,
-          articleId: kbArticleChunks.articleId,
           pageId: kbArticleChunks.pageId,
-          articleTitle: kbArticles.title,
-          pageTitle: kbPages.title,
+          title: kbPages.title,
         })
         .from(kbArticleChunks)
-        .leftJoin(
+        .innerJoin(
           kbPages,
           and(
             eq(kbPages.id, kbArticleChunks.pageId),
             eq(kbPages.orgId, kbArticleChunks.orgId),
           ),
         )
-        .leftJoin(
-          kbArticles,
-          and(
-            eq(kbArticles.id, kbArticleChunks.articleId),
-            eq(kbArticles.orgId, kbArticleChunks.orgId),
-          ),
-        )
         .where(and(eq(kbArticleChunks.orgId, user.orgId), or(...scope)))
         .orderBy(...ordering)
         .limit(Math.min(KB_DOCUMENT_PASSAGE_ROWS, PAGE_SIZE_CAP));
       const degraded = vector === null ? { degraded: true as const } : {};
+      const askedAsArticle = new Set(articleIds);
       return rows.flatMap<DegradableContextPassage>((row) => {
-        if (row.articleId !== null)
-          return [
-            {
-              documentKey: kbDocumentKey("article", row.articleId),
-              documentTitle: row.articleTitle ?? "",
-              passageIndex: row.chunkIndex,
-              text: row.content,
-              ...degraded,
-            },
-          ];
-        if (row.pageId !== null)
-          return [
-            {
-              documentKey: kbDocumentKey("page", row.pageId),
-              documentTitle: row.pageTitle ?? "",
-              passageIndex: row.chunkIndex,
-              text: row.content,
-              ...degraded,
-            },
-          ];
-        return [];
+        if (row.pageId === null) return [];
+        return [
+          {
+            documentKey: kbDocumentKey(
+              askedAsArticle.has(row.pageId) ? "article" : "page",
+              row.pageId,
+            ),
+            documentTitle: row.title,
+            passageIndex: row.chunkIndex,
+            text: row.content,
+            ...degraded,
+          },
+        ];
       });
     } catch (err) {
       this.logger.warn("KB document passage retrieval failed", {

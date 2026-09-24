@@ -1,12 +1,13 @@
 import { NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbArticleTags, kbArticleVersions, kbTags } from "../../../../db/schema";
+import { kbPages, kbPageTags, kbPageVersions, kbTags, type KbPageContent } from "../../../../db/schema";
 import { actingMembershipId } from "../../../../common/auth/principal";
 import { type Db } from "../../../../db/drizzle.module";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { kbSlugify } from "../../core/kb.util";
-import { KB_ARTICLE_COLUMNS, type KbArticleRow } from "../kb-article-columns";
+import { KB_ARTICLE_COLUMNS, toArticleRow, type KbArticleRow } from "../kb-article-columns";
+import { supportArticlePredicate } from "../kb-article-page-scope";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
 /**
@@ -20,7 +21,6 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
  * and was previously copied into each method:
  *
  *  - a slug unique within the org (`uniqueArticleSlug` walks `-2`, `-3`, …),
- *  - a version row in `kb_article_versions` (`snapshotArticleVersion`),
  *  - the article's tag rows, delete-then-reinsert (`syncArticleTags`),
  *  - and an outbox `kb.content.index` event so retrieval reindexes it.
  *
@@ -30,10 +30,6 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
  * on the caller's `tx` — the index event has to commit with the row it
  * describes, or a crash between them leaves retrieval serving stale content.
  *
- * `restoreArticleVersion` lives here because it is the only code that READS
- * `kb_article_versions`, and it re-derives `contentText` through
- * `extractPlainText` before writing it back.
- *
  * Plain `db`/`tx` parameters rather than a deps bag: nothing here needs
  * anything but the connection. `tx` where the work must be atomic with the
  * caller's write, `db` only for the pre-transaction slug probe.
@@ -41,30 +37,18 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 
 export type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-/** Without the generated `fts` vector, which never leaves the module (`kb-article-columns.ts`). */
 export type ArticleRow = KbArticleRow;
 
-export type SnapshotSource = { id: number; title: string; content: string; excerpt: string | null };
+export type SnapshotSource = {
+  id: number;
+  title: string;
+  content: KbPageContent | null;
+  contentText: string | null;
+  excerpt: string | null;
+};
 
 /** Only the two revision counters the index event carries. */
 export type IndexableArticle = { contentRevision: number; aclRevision: number };
-
-export function extractPlainText(content: string): string {
-  const parts: string[] = [];
-  const walk = (node: unknown): void => {
-    if (typeof node !== "object" || node === null) return;
-    if ("text" in node && typeof node.text === "string") parts.push(node.text);
-    if ("content" in node && Array.isArray(node.content)) {
-      for (const child of node.content) walk(child);
-    }
-  };
-  try {
-    walk(JSON.parse(content));
-  } catch {
-    return content;
-  }
-  return parts.join(" ");
-}
 
 export async function uniqueArticleSlug(
   db: Db,
@@ -79,15 +63,15 @@ export async function uniqueArticleSlug(
    * a round trip for every article that already carried it.
    */
   const conditions: SQL[] = [
-    eq(kbArticles.orgId, orgId),
-    sql`(${kbArticles.slug} = ${root} OR ${kbArticles.slug} LIKE ${root + "-%"})`,
+    eq(kbPages.orgId, orgId),
+    sql`(${kbPages.slug} = ${root} OR ${kbPages.slug} LIKE ${root + "-%"})`,
   ];
-  if (excludeId !== undefined) conditions.push(ne(kbArticles.id, excludeId));
+  if (excludeId !== undefined) conditions.push(ne(kbPages.id, excludeId));
   const rows = await db
-    .select({ slug: kbArticles.slug })
-    .from(kbArticles)
+    .select({ slug: kbPages.slug })
+    .from(kbPages)
     .where(and(...conditions));
-  const taken = new Set(rows.map((r) => r.slug));
+  const taken = new Set(rows.flatMap((r) => (r.slug === null ? [] : [r.slug])));
   if (!taken.has(root)) return root;
   let suffix = 2;
   while (taken.has(`${root}-${suffix}`)) suffix += 1;
@@ -100,7 +84,7 @@ export async function syncArticleTags(
   articleId: number,
   tagNames: string[],
 ): Promise<string[]> {
-  await tx.delete(kbArticleTags).where(and(eq(kbArticleTags.orgId, orgId), eq(kbArticleTags.articleId, articleId)));
+  await tx.delete(kbPageTags).where(and(eq(kbPageTags.orgId, orgId), eq(kbPageTags.pageId, articleId)));
 
   if (tagNames.length === 0) return [];
 
@@ -123,8 +107,8 @@ export async function syncArticleTags(
 
   if (tagRows.length > 0) {
     await tx
-      .insert(kbArticleTags)
-      .values(tagRows.map((t) => ({ orgId, articleId, tagId: t.id })))
+      .insert(kbPageTags)
+      .values(tagRows.map((t) => ({ orgId, pageId: articleId, tagId: t.id })))
       .onConflictDoNothing();
   }
 
@@ -138,18 +122,18 @@ export async function readArticleTags(
 ): Promise<string[]> {
   const tagRows = await tx
     .select({ name: kbTags.name })
-    .from(kbArticleTags)
-    .innerJoin(kbTags, eq(kbArticleTags.tagId, kbTags.id))
-    .where(and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, orgId)))
+    .from(kbPageTags)
+    .innerJoin(kbTags, eq(kbPageTags.tagId, kbTags.id))
+    .where(and(eq(kbPageTags.pageId, articleId), eq(kbTags.orgId, orgId)))
     .orderBy(asc(kbTags.name));
   return tagRows.map((t) => t.name);
 }
 
 async function nextVersionNumber(tx: KbTransaction, orgId: string, articleId: number): Promise<number> {
   const [row] = await tx
-    .select({ max: sql<number>`coalesce(max(${kbArticleVersions.versionNumber}), 0)::int` })
-    .from(kbArticleVersions)
-    .where(and(eq(kbArticleVersions.articleId, articleId), eq(kbArticleVersions.orgId, orgId)));
+    .select({ max: sql<number>`coalesce(max(${kbPageVersions.versionNumber}), 0)::int` })
+    .from(kbPageVersions)
+    .where(and(eq(kbPageVersions.pageId, articleId), eq(kbPageVersions.orgId, orgId)));
   return (row?.max ?? 0) + 1;
 }
 
@@ -162,12 +146,13 @@ export async function snapshotArticleVersion(
   membershipId: number | null = null,
 ): Promise<void> {
   const versionNumber = await nextVersionNumber(tx, orgId, article.id);
-  await tx.insert(kbArticleVersions).values({
+  await tx.insert(kbPageVersions).values({
     orgId,
-    articleId: article.id,
+    pageId: article.id,
     versionNumber,
     title: article.title,
     content: article.content,
+    contentText: article.contentText,
     excerpt: article.excerpt,
     changeSummary: changeSummary ?? null,
     authorId: userId,
@@ -214,26 +199,35 @@ export async function restoreArticleVersion(
 ): Promise<ArticleRow> {
   const orgId = user.orgId;
   return db.transaction(async (tx) => {
-    const version = await tx.query.kbArticleVersions.findFirst({
-      where: and(
-        eq(kbArticleVersions.articleId, articleId),
-        eq(kbArticleVersions.versionNumber, versionNumber),
-        eq(kbArticleVersions.orgId, orgId),
-      ),
-    });
+    const [version] = await tx
+      .select({
+        title: kbPageVersions.title,
+        content: kbPageVersions.content,
+        contentText: kbPageVersions.contentText,
+        excerpt: kbPageVersions.excerpt,
+      })
+      .from(kbPageVersions)
+      .where(
+        and(
+          eq(kbPageVersions.pageId, articleId),
+          eq(kbPageVersions.versionNumber, versionNumber),
+          eq(kbPageVersions.orgId, orgId),
+        ),
+      )
+      .limit(1);
     if (!version) throw new NotFoundException("Version not found");
 
     const [result] = await tx
-      .update(kbArticles)
+      .update(kbPages)
       .set({
         title: version.title,
         content: version.content,
         excerpt: version.excerpt,
-        contentText: extractPlainText(version.content),
+        contentText: version.contentText,
         /* A restore changes the content, so readers holding the old revision must see it move. */
         contentRevision: sql`content_revision + 1`,
       })
-      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+      .where(and(eq(kbPages.id, articleId), eq(kbPages.orgId, orgId), supportArticlePredicate()))
       .returning(KB_ARTICLE_COLUMNS);
     if (!result) throw new NotFoundException("Article not found");
 
@@ -248,6 +242,6 @@ export async function restoreArticleVersion(
     if (result.status === "published") {
       await emitArticleIndexEvent(tx, orgId, articleId, result);
     }
-    return result;
+    return toArticleRow(result);
   });
 }
