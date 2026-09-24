@@ -38,7 +38,7 @@ export function isCompanyLevelDocument(row: {
   uploadedBy: string | null;
 }): boolean {
   return (
-    (COMPANY_LEVEL_DOCUMENT_TYPES as readonly string[]).includes(row.type) &&
+    COMPANY_LEVEL_DOCUMENT_TYPES.some((companyType) => companyType === row.type) &&
     (row.userId === null || row.userId === row.uploadedBy)
   );
 }

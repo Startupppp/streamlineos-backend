@@ -55,7 +55,8 @@ export class ComplianceService {
     const members = await this.db
       .select({ id: organizationMembers.id, userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, recipientIds)));
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, recipientIds)))
+      .limit(recipientIds.length);
     if (members.length !== recipientIds.length)
       throw new NotFoundException("One or more recipients are not members of your organization.");
 
@@ -70,7 +71,8 @@ export class ComplianceService {
           eq(policyAcknowledgments.status, "PENDING"),
           inArray(policyAcknowledgments.userId, recipientIds),
         ),
-      );
+      )
+      .limit(recipientIds.length);
     const alreadyPending = new Set(pending.map((row) => row.userId));
 
     const values = members
