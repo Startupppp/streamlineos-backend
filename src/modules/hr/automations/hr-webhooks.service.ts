@@ -5,12 +5,19 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { createHmac, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { and, asc, count, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { hrWebhookSubscriptions, hrWebhookDeliveries } from "../../../db/schema/hr/webhooks";
 import { logger } from "../../../common/logger/logger.service";
+import {
+  isSandboxEvent,
+  samplePayloadFor,
+  sandboxBody,
+  sandboxSignature,
+  type SandboxEvent,
+} from "../recruitment/developer/sandbox-events";
 import { HR_EVENT_SAMPLE_PAYLOADS, HR_AUTOMATION_EVENTS, HR_EVENT_FIELD_DOCS } from "./hr-automation-events";
 import type { HrAutomationEvent } from "./hr-automation-events";
 import type {
@@ -27,17 +34,11 @@ import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 5;
 
-function buildSignature(secret: string, body: string): string {
-  return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
-}
 
 function backoffMs(attempt: number): number {
   return Math.min(60 * 60_000, Math.pow(2, attempt) * 60_000);
 }
 
-function isHrAutomationEvent(value: string): value is HrAutomationEvent {
-  return HR_AUTOMATION_EVENTS.some((event) => event === value);
-}
 
 @Injectable()
 export class HrWebhooksService {
@@ -188,9 +189,15 @@ export class HrWebhooksService {
     });
     if (!sub) throw new NotFoundException("Webhook subscription not found");
 
+    /*
+      The subscription's own first event, whichever vocabulary it comes from. A
+      tenant subscribed to `candidate.hired` used to be sent `employee.created`
+      here, so the thing they tested was never the thing they would receive.
+    */
     const firstEvent = sub.events[0];
-    const sampleEvent: HrAutomationEvent = firstEvent !== undefined && isHrAutomationEvent(firstEvent) ? firstEvent : "employee.created";
-    const payload = HR_EVENT_SAMPLE_PAYLOADS[sampleEvent] ?? {};
+    const sampleEvent: SandboxEvent =
+      firstEvent !== undefined && isSandboxEvent(firstEvent) ? firstEvent : "employee.created";
+    const payload = samplePayloadFor(sampleEvent);
 
     const [delivery] = await this.db
       .insert(hrWebhookDeliveries)
@@ -233,8 +240,8 @@ export class HrWebhooksService {
       .set({ status: "pending", attempts: 0, error: null, lastAttemptAt: null })
       .where(eq(hrWebhookDeliveries.id, deliveryId));
 
-    if (!isHrAutomationEvent(delivery.event)) {
-      throw new BadRequestException("Delivery references an unknown automation event");
+    if (!isSandboxEvent(delivery.event)) {
+      throw new BadRequestException("Delivery references an unknown event");
     }
     void this.attemptDelivery(
       sub.id,
@@ -313,13 +320,20 @@ export class HrWebhooksService {
     url: string,
     secret: string,
     deliveryId: number,
-    event: HrAutomationEvent,
+    /*
+      The union of both vocabularies, not just this service's own. These two
+      tables are written by `RecruitmentWebhooksService` as well, and typing the
+      parameter narrowly is what forced the three `isHrAutomationEvent` guards
+      below — each of which silently dropped the recruitment half.
+    */
+    event: SandboxEvent,
     payload: Record<string, unknown>,
     currentAttempts: number,
   ): Promise<void> {
-    const timestamp = new Date().toISOString();
-    const body = JSON.stringify({ event, data: payload, timestamp });
-    const signature = buildSignature(secret, body);
+    const at = new Date();
+    const timestamp = at.toISOString();
+    const body = sandboxBody(event, payload, at);
+    const signature = sandboxSignature(secret, body);
 
     let responseStatus: number | null = null;
     let error: string | null = null;
@@ -414,7 +428,12 @@ export class HrWebhooksService {
     await Promise.allSettled(
       eligible.map((d) => {
         const sub = subMap.get(d.subscriptionId);
-        if (!sub || !isHrAutomationEvent(d.event)) return Promise.resolve();
+        /*
+          Was `isHrAutomationEvent`, which returned false for all five hiring
+          events — so a failed `candidate.hired` delivery sat at `failed`
+          forever and was never retried, while the sweep reported success.
+        */
+        if (!sub || !isSandboxEvent(d.event)) return Promise.resolve();
         return this.attemptDelivery(
           sub.id,
           sub.url,

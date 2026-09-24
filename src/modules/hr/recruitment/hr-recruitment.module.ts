@@ -64,6 +64,8 @@ import { WhatsappService } from "./whatsapp/whatsapp.service";
 import { IdentityService } from "./identity/identity.service";
 import { IdentityController } from "./identity/identity.controller";
 import { InternalMobilityService } from "./internal-mobility/internal-mobility.service";
+import { AtsSandboxService } from "./developer/ats-sandbox.service";
+import { AtsSandboxController } from "./developer/ats-sandbox.controller";
 import { InternalMobilityController } from "./internal-mobility/internal-mobility.controller";
 import {
   WhatsappController,
@@ -124,6 +126,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     WhatsappInboundController,
     IdentityController,
     InternalMobilityController,
+    AtsSandboxController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -165,6 +168,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     WhatsappService,
     IdentityService,
     InternalMobilityService,
+    AtsSandboxService,
   ],
   exports: [
     RecruitmentOffersService,
