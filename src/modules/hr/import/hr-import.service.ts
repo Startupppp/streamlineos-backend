@@ -15,6 +15,8 @@ import {
 } from "../../../db/schema";
 import { hrImportJobs, hrImportRows } from "../../../db/schema/hr/import-jobs";
 import { HrAuditService } from "../core/hr-audit.service";
+import { CacheService } from "../../../common/cache/cache.service";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { HrImportCommitService, type CommitOutcome } from "./hr-import-commit.service";
 import { validateRows } from "./schemas/entity-row-schemas";
 import type {
@@ -37,6 +39,7 @@ export class HrImportService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: HrAuditService,
     private readonly commitService: HrImportCommitService,
+    private readonly cache: CacheService,
   ) {}
 
   async createJob(orgId: string, actorId: string, input: CreateImportJobInput) {
@@ -182,7 +185,14 @@ export class HrImportService {
     let failed = 0;
     let committed = 0;
 
-    await this.db.transaction(async (tx) => {
+    // The employees entity admits people to the organisation, so its writes go
+    // through the one owner of organization_members writes. The wrapper drains
+    // the permission-version and membership-cache invalidations after the
+    // transaction resolves — draining inside it would publish a membership the
+    // commit could still roll back.
+    await withMembershipMutations(this.cache, (membership) =>
+      this.db.transaction(async (tx) => {
+      const ctx = { orgId, actorId, membership };
       let afterId: string | undefined;
       while (true) {
         const rows = await tx
@@ -212,7 +222,7 @@ export class HrImportService {
             const ref = await tx.transaction(async (rowTx) => {
               const rowRef = await this.commitService.commitRow(
                 rowTx,
-                orgId,
+                ctx,
                 job.entity,
                 row.payload,
               );
@@ -257,7 +267,8 @@ export class HrImportService {
           unchangedRows: outcomes.unchanged,
         })
         .where(eq(hrImportJobs.id, jobId));
-    });
+      }),
+    );
 
     await this.audit.log({
       orgId,

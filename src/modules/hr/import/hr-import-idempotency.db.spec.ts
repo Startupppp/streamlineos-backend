@@ -22,6 +22,7 @@ import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
 import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import * as schema from "../../../db/schema";
 import { HrImportCommitService } from "./hr-import-commit.service";
+import { importContext, stubAdmission, stubPersonEmployment } from "./import-commit-test-harness";
 import type { CommitOutcome } from "./hr-import-commit.service";
 
 const describeDb = dbSpecSuite();
@@ -57,7 +58,7 @@ describeDb("HR import re-import idempotency — real database", () => {
     : "";
   let sql: ReturnType<typeof dbSpecClient>;
   let db: ReturnType<typeof drizzle<typeof schema>>;
-  const service = new HrImportCommitService();
+  const service = new HrImportCommitService(stubAdmission(), stubPersonEmployment());
   const orgId = `qa-import-${randomUUID()}`;
 
   const ownerId = `qa-owner-${randomUUID()}`;
@@ -101,7 +102,7 @@ describeDb("HR import re-import idempotency — real database", () => {
     return db.transaction(async (tx) => {
       const outcomes: CommitOutcome[] = [];
       for (const row of rows) {
-        const ref = await service.commitRow(tx, orgId, entity, row);
+        const ref = await service.commitRow(tx, importContext(orgId), entity, row);
         if (ref) outcomes.push(ref.outcome);
       }
       return outcomes;

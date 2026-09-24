@@ -24,6 +24,7 @@ import { sql } from "drizzle-orm";
 import * as schema from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.types";
 import { HrImportCommitService } from "../hr-import-commit.service";
+import { importContext, stubAdmission, stubPersonEmployment } from "../import-commit-test-harness";
 import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../../test/helpers/probe-org";
 
 const WORK_EMAIL = "attendance-idem-probe@synthetic.invalid";
@@ -52,7 +53,7 @@ describe("attendance import idempotency — real database", () => {
   beforeAll(async () => {
     client = connect();
     db = drizzle(client, { schema });
-    service = new HrImportCommitService();
+    service = new HrImportCommitService(stubAdmission(), stubPersonEmployment());
     // Built rather than looked up: the org this suite used to name is created by no seeder in
     // the repository, so the lookup below it threw on every machine but one.
     probe = await createProbeOrg(client, "hr-import-attendance-idem");
@@ -105,13 +106,13 @@ describe("attendance import idempotency — real database", () => {
           status: "PRESENT",
         };
 
-        const first = await service.commitRow(tx, ORG_ID, "attendance", rowPayload);
+        const first = await service.commitRow(tx, importContext(ORG_ID), "attendance", rowPayload);
         expect(first).toMatchObject({ table: "attendance" });
 
         // Re-running the same CSV row. Previously this inserted a second row
         // and reported success.
         secondAttempt = await service
-          .commitRow(tx, ORG_ID, "attendance", rowPayload)
+          .commitRow(tx, importContext(ORG_ID), "attendance", rowPayload)
           .then(() => null)
           .catch((err: unknown) => err);
 

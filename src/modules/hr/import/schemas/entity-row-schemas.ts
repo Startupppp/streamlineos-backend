@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ATTENDANCE_RECORD_STATUSES } from "../../../../db/schema/hr/attendance-status";
-import { documentTypeEnum } from "../../../../db/schema/common/enums";
+import { documentTypeEnum, genderEnum } from "../../../../db/schema/common/enums";
 import type { HrImportEntity } from "../dto/import-job.dto";
 import { findInFileDuplicates } from "./import-row-identity";
 
@@ -52,7 +52,15 @@ export const employeeRowSchema = z.object({
   employeeNumber: z.string().optional(),
   workerType: z.string().optional(),
   phone: z.string().optional(),
-  gender: z.string().optional(),
+  // `gender` is an enum on both `users` and `organization_people`. It was typed
+  // as free text here, so a row saying "male" parsed as valid and then failed at
+  // insert time with a Postgres enum error the operator could not act on.
+  gender: z
+    .enum(genderEnum.enumValues, {
+      message: `Gender must be one of: ${genderEnum.enumValues.join(", ")}`,
+    })
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   managerEmail: z.string().email().optional().or(z.literal("")),
 });
 
