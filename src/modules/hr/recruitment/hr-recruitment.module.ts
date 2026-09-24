@@ -45,6 +45,8 @@ import { JobBoardPublisherService } from "./boards/job-board-publisher.service";
 import { JobBoardOutboxConsumer } from "./boards/job-board-outbox.consumer";
 import { BoardApplyIngressService } from "./boards/board-apply-ingress.service";
 import { BoardApplyIngressController } from "./boards/board-apply-ingress.controller";
+import { RecruitmentIntegrationsService } from "./integrations/recruitment-integrations.service";
+import { RecruitmentIntegrationsController } from "./integrations/recruitment-integrations.controller";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
 import { RecruitmentOnboardingStartService } from "./recruitment-onboarding-start.service";
@@ -78,6 +80,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     RecruitmentJobBoardsController,
     RecruitmentTalentPoolsController,
     BoardApplyIngressController,
+    RecruitmentIntegrationsController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -108,6 +111,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     JobBoardPublisherService,
     JobBoardOutboxConsumer,
     BoardApplyIngressService,
+    RecruitmentIntegrationsService,
   ],
   exports: [
     RecruitmentOffersService,
