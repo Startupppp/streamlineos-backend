@@ -251,7 +251,7 @@ the census for `is_public` on personal types.
 | # | Repo | Content | Migrations | Flag | Depends |
 |---|---|---|---|---|---|
 | 0 | BE | This plan, findings, census SQL | — | — | — |
-| 1 | BE | **Security**: SEC-01 (`isPublic` refused on personal types; NOT VALID CHECK), SEC-02/03 (scope on rich-documents, letters, template renders), SEC-04 (sensitive roots refused at KB attachment ingestion **and** at indexing read; purge of any existing offending chunks), SEC-05 (ack recipients must be members; de-dupe) | 1 (NOT VALID checks; validate is a later step) | none | — |
+| 1 | BE | **Security**: SEC-01 (`isPublic` refused on personal types; NOT VALID CHECK), SEC-02/03 (scope on rich-documents, letters, template renders), SEC-04 (sensitive roots refused at KB attachment ingestion **and** at indexing read; existing offending attachments/chunks are only *reported* by a read-only query — nothing is deleted from your KB without your explicit approval), SEC-05 (ack recipients must be members; de-dupe) | 1 (NOT VALID checks; validate is a later step) | none | — |
 | 2 | BE | Schema + inert plumbing: `classification`, audiences, links, versions, `kb_settings` flags, `hr:documents:publish`, L2 triggers, audit registrations | 2–3 | all OFF | 1 |
 | 3 | BE+FE | Classification API + HR UI (classify, audience), `DOCUMENT_NOT_PUBLISHABLE`, shared error reference UI | — | `link` | 2 |
 | 4 | BE+FE | Publish/unpublish/link service, versions + approve, KB list/detail/open, source badge, "newer version"/"Source removed" | — | `link` | 3 |
