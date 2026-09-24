@@ -57,12 +57,12 @@ describe("KbImportExportService — cross-tenant isolation", () => {
     expect(vals).not.toContain(OWNER);
   });
 
-  it("returns export jobs for the owning org (same-tenant control)", async () => {
+  it("returns a cursor page for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
     const svc = new KbImportExportService(db, audit, planLimits, authMock as never);
 
     const result = await svc.listExportJobs(OWNER);
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(Array.isArray(result.items)).toBe(true);
   });
 });

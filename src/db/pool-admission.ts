@@ -96,7 +96,7 @@ class PoolAdmissionGate {
 
     const lane = this.laneFor(laneKey);
     const effectiveCap =
-      this.config.laneCapOverrides?.[laneKey] ?? this.config.maxConcurrent;
+      config.laneCapOverrides?.[laneKey] ?? config.maxConcurrent;
 
     if (lane.active < effectiveCap) {
       lane.active += 1;
