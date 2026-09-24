@@ -1,4 +1,4 @@
-import { attendanceRowSchema, todayInTimeZone } from "./entity-row-schemas";
+import { attendanceInstant, attendanceRowSchema, todayInTimeZone } from "./entity-row-schemas";
 
 /**
  * HRMS-E2E-005b. QA's fixture previewed `19:00 -> 09:00` as valid: nothing
@@ -56,5 +56,41 @@ describe("attendance import future-date check", () => {
       date: todayInTimeZone(),
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe("attendance import time formats", () => {
+  it("reads the documented HH:MM as a wall clock in the organisation's zone", () => {
+    // 09:30 in Asia/Kolkata is 04:00Z. Before this, the commit called
+    // new Date("09:30") — an Invalid Date — so every row written in the format
+    // the import dialog documents failed at insert.
+    expect(attendanceInstant("2026-09-21", "09:30")?.toISOString()).toBe("2026-09-21T04:00:00.000Z");
+  });
+
+  it("accepts seconds on a wall clock", () => {
+    expect(attendanceInstant("2026-09-21", "09:30:45")?.toISOString()).toBe("2026-09-21T04:00:45.000Z");
+  });
+
+  it("passes a full timestamp through unchanged", () => {
+    expect(attendanceInstant("2026-09-21", "2026-09-21T09:00:00Z")?.toISOString()).toBe(
+      "2026-09-21T09:00:00.000Z",
+    );
+  });
+
+  it("returns null for a blank cell and for nonsense", () => {
+    expect(attendanceInstant("2026-09-21", undefined)).toBeNull();
+    expect(attendanceInstant("2026-09-21", "  ")).toBeNull();
+    expect(attendanceInstant("2026-09-21", "half past nine")).toBeNull();
+  });
+
+  it("compares a wall clock and a timestamp on the same scale", () => {
+    const row = { employeeEmail: "e@example.com", date: "2026-09-21" };
+    // 09:00Z is 14:30 in Kolkata, so a 10:00 local check-out precedes it.
+    expect(
+      attendanceRowSchema.safeParse({ ...row, checkIn: "2026-09-21T09:00:00Z", checkOut: "10:00" }).success,
+    ).toBe(false);
+    expect(
+      attendanceRowSchema.safeParse({ ...row, checkIn: "2026-09-21T02:00:00Z", checkOut: "10:00" }).success,
+    ).toBe(true);
   });
 });

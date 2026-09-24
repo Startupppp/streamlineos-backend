@@ -28,7 +28,7 @@ import { HrImportCommitService } from "./hr-import-commit.service";
 import type { CommitOutcome } from "./hr-import-commit.service";
 import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
-import { importContext } from "./import-commit-test-harness";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 
 const describeDb = dbSpecSuite();
 
@@ -105,17 +105,32 @@ describeDb("employee import reaches the directory — real database", () => {
     await sql`delete from organizations where id = ${orgId}`;
     await sql`delete from users where email = any(${emails}) or id = ${ownerId}`;
     await sql.end({ timeout: 5 });
-  });
+  }, 30_000);
 
+  /**
+   * The real membership writer, through the real wrapper — the same call shape
+   * `commitJob` uses. Only the cache it drains into is a collector: the drain
+   * runs after the transaction resolves and publishes nothing this suite reads.
+   */
   async function importSheet(rows: ReadonlyArray<Record<string, unknown>>): Promise<CommitOutcome[]> {
-    return db.transaction(async (tx) => {
-      const outcomes: CommitOutcome[] = [];
-      for (const row of rows) {
-        const ref = await service.commitRow(tx, importContext(orgId, ownerId), "employees", row);
-        if (ref) outcomes.push(ref.outcome);
-      }
-      return outcomes;
-    });
+    const noop = async (): Promise<undefined> => undefined;
+    const cache = {
+      invalidateMany: noop,
+      invalidateNamespaceMany: noop,
+      invalidateNamespace: noop,
+      invalidateNamespaceForOrg: noop,
+      del: noop,
+    };
+    return withMembershipMutations(cache as never, (membership) =>
+      db.transaction(async (tx) => {
+        const outcomes: CommitOutcome[] = [];
+        for (const row of rows) {
+          const ref = await service.commitRow(tx, { orgId, actorId: ownerId, membership }, "employees", row);
+          if (ref) outcomes.push(ref.outcome);
+        }
+        return outcomes;
+      }),
+    );
   }
 
   /** Exactly the join the employee directory lists from. */

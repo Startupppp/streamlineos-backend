@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ATTENDANCE_RECORD_STATUSES } from "../../../../db/schema/hr/attendance-status";
 import { documentTypeEnum, genderEnum } from "../../../../db/schema/common/enums";
+import { fromWallClockUtc } from "../../../../common/date/zoned-wall-clock";
 import type { HrImportEntity } from "../dto/import-job.dto";
 import { findInFileDuplicates } from "./import-row-identity";
 
@@ -33,6 +34,44 @@ function minutesOfDay(value: string | undefined): number | null {
   const match = timeOfDayRegex.exec(value.trim());
   if (!match) return null;
   return Number(match[1]) * 60 + Number(match[2]);
+}
+
+/**
+ * The instant an attendance cell names, or null when the cell is blank.
+ *
+ * Two shapes reach this column and both have to work. The import dialog
+ * documents `checkIn` as `09:30` — a wall clock on the row's own date — and the
+ * commit used to hand that straight to `new Date("09:30")`, which is an Invalid
+ * Date; the insert then failed and the row was counted as an error nobody could
+ * explain from the file. The other shape is a full ISO instant, which is what
+ * an export round-trip produces.
+ *
+ * A wall clock is read in the organisation's zone, so `09:30` on a day in India
+ * is 04:00Z and not whatever the server's own offset would have made of it.
+ */
+export function attendanceInstant(
+  date: string,
+  value: string | undefined,
+  timeZone: string = DEFAULT_IMPORT_TIME_ZONE,
+): Date | null {
+  if (!value?.trim()) return null;
+  const trimmed = value.trim();
+
+  const minutes = minutesOfDay(trimmed);
+  if (minutes !== null) {
+    const wall = new Date(`${date}T${trimmed.length === 5 ? `${trimmed}:00` : trimmed}Z`);
+    if (Number.isNaN(wall.getTime())) return null;
+    return fromWallClockUtc(wall, timeZone);
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** True when the cell is a wall clock or a parseable instant. */
+function isAttendanceTime(value: string | undefined): boolean {
+  if (!value?.trim()) return true;
+  return attendanceInstant("2000-01-01", value) !== null;
 }
 
 const isoDateOrBlank = z
@@ -99,12 +138,12 @@ export const attendanceRowSchema = z
     message: "Attendance date cannot be in the future",
     path: ["date"],
   })
-  .refine((data) => !data.checkIn || minutesOfDay(data.checkIn) !== null, {
-    message: "Check-in must be a 24-hour time (HH:MM)",
+  .refine((data) => isAttendanceTime(data.checkIn), {
+    message: "Check-in must be a 24-hour time (HH:MM) or a full timestamp",
     path: ["checkIn"],
   })
-  .refine((data) => !data.checkOut || minutesOfDay(data.checkOut) !== null, {
-    message: "Check-out must be a 24-hour time (HH:MM)",
+  .refine((data) => isAttendanceTime(data.checkOut), {
+    message: "Check-out must be a 24-hour time (HH:MM) or a full timestamp",
     path: ["checkOut"],
   })
   .refine(
@@ -112,10 +151,10 @@ export const attendanceRowSchema = z
       // A row carrying both times must run forwards. QA's `19:00 -> 09:00` row
       // was previewed as valid, and the commit then stored a negative working
       // day that every hours-worked and payable-days read counts.
-      const start = minutesOfDay(data.checkIn);
-      const end = minutesOfDay(data.checkOut);
+      const start = attendanceInstant(data.date, data.checkIn);
+      const end = attendanceInstant(data.date, data.checkOut);
       if (start === null || end === null) return true;
-      return end > start;
+      return end.getTime() > start.getTime();
     },
     { message: "Check-out must be later than check-in", path: ["checkOut"] },
   );

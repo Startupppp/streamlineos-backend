@@ -23,6 +23,7 @@ import {
   type AttendanceRow,
   type AssetRow,
   type DocumentMetadataRow,
+  attendanceInstant,
 } from "./schemas/entity-row-schemas";
 import type { HrImportEntity } from "./dto/import-job.dto";
 import { normalizeCode, normalizeName } from "./schemas/import-row-identity";
@@ -311,8 +312,13 @@ export class HrImportCommitService {
     const userId = person[0]?.userId;
     if (!userId) throw new Error(`No user found for email ${row.employeeEmail}`);
 
-    const checkIn = row.checkIn ? new Date(row.checkIn) : null;
-    const checkOut = row.checkOut ? new Date(row.checkOut) : null;
+    // `new Date("09:30")` is an Invalid Date, and 09:30 is exactly what the
+    // import dialog documents this column as. Every row written in the
+    // documented format therefore failed at insert time with an error the file
+    // gave no clue about. `attendanceInstant` reads a wall clock on the row's
+    // own date in the organisation's zone, and passes a full timestamp through.
+    const checkIn = attendanceInstant(row.date, row.checkIn);
+    const checkOut = attendanceInstant(row.date, row.checkOut);
 
     // The `onConflictDoNothing()` that used to sit on this insert could never
     // fire: `attendance`'s only unique indexes are attendance_pkey (id) and
