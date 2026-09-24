@@ -26,7 +26,7 @@ export const APAC_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
         uppercase: true,
         pattern: "^[A-Z]{5}[0-9]{4}[A-Z]$",
         patternMessage: "Enter a valid PAN (ABCDE1234F)",
-        help: "Permanent Account Number â€” required for payroll and tax.",
+        help: "Permanent Account Number — required for payroll and tax.",
       },
       {
         key: "uan",
