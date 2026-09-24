@@ -358,7 +358,12 @@ export class KbPagesService {
       return updated;
     });
 
-    return withoutUnsharedToken(user, result, this.membershipId(user), canManage);
+    return withoutUnsharedToken(
+      user,
+      result,
+      this.membershipId(user),
+      canManage,
+    );
   }
 
   async search(
@@ -368,14 +373,20 @@ export class KbPagesService {
     projectId?: number,
   ): Promise<{ items: KbPageSearchHit[]; hasMore: boolean; limit: number }> {
     if (projectId !== undefined) {
-      const { hasAccess } = await resolveProjectAccess(this.db, this.access, user, projectId);
+      const { hasAccess } = await resolveProjectAccess(
+        this.db,
+        this.access,
+        user,
+        projectId,
+      );
       if (!hasAccess) throw new NotFoundException("Project not found");
     }
     const tsquery = kbPagePrefixTsQuery(q);
     if (tsquery === null) return { items: [], hasMore: false, limit };
     const orgId = user.orgId;
     const predicate = await this.auth.visiblePagePredicate(user, "view");
-    const projectFilter = projectId !== undefined ? eq(kbPages.projectId, projectId) : undefined;
+    const projectFilter =
+      projectId !== undefined ? eq(kbPages.projectId, projectId) : undefined;
     const rows = await this.db
       .select({
         id: kbPages.id,
@@ -430,19 +441,14 @@ export class KbPagesService {
       throw new NotFoundException("Page not found");
     }
 
-    const publicToken =
-      visibility === "public" && !page.publicToken
-        ? newPublicToken()
-        : undefined;
+    const tokenColumns = publicTokenColumnsFor(visibility, page.publicToken);
 
     return this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbPages)
         .set({
           visibility,
-          ...(publicToken !== undefined
-            ? { publicToken, publicTokenHash: hashPublicToken(publicToken) }
-            : {}),
+          ...tokenColumns,
           aclRevision: sql`acl_revision + 1`,
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
