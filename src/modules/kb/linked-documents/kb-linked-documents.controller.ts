@@ -36,8 +36,9 @@ export class KbLinkedDocumentsController {
     private readonly access: AccessService,
   ) {}
 
-  private async caller(currentUser: CurrentUserContext): Promise<LinkedDocumentCaller> {
-    await this.flags.assertEnabled(currentUser.orgId, "link");
+  // Searching needs the search switch, which itself needs linking; every other read needs only linking.
+  private async caller(currentUser: CurrentUserContext, needs: "link" | "search" = "link"): Promise<LinkedDocumentCaller> {
+    await this.flags.assertEnabled(currentUser.orgId, needs);
     return {
       orgId: currentUser.orgId,
       userId: currentUser.userId,
@@ -50,7 +51,7 @@ export class KbLinkedDocumentsController {
   @RequirePermission("kb:pages:view")
   @Validate({ query: listLinkedDocumentsQuerySchema })
   async list(@Query() query: ListLinkedDocumentsQuery, @CurrentUser() currentUser: CurrentUserContext) {
-    return this.query.list(await this.caller(currentUser), query);
+    return this.query.list(await this.caller(currentUser, query.q === undefined ? "link" : "search"), query);
   }
 
   @ResponseSchema(linkedDocumentDetailSchema)

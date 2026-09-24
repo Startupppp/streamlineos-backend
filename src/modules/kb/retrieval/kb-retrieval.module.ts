@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AiModule } from "../../ai/core/ai.module";
 import { AiJobsModule } from "../../ai/jobs/ai-jobs.module";
 import { KbCoreModule } from "../core/kb-core.module";
+import { KbLinkedDocumentsModule } from "../linked-documents/kb-linked-documents.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
@@ -34,7 +35,7 @@ import { KbResearchBriefController } from "./kb-research-brief.controller";
 import { KbPageIndexingController } from "./kb-page-indexing.controller";
 
 @Module({
-  imports: [AiModule, AiJobsModule, KbCoreModule, OutboxModule],
+  imports: [AiModule, AiJobsModule, KbCoreModule, KbLinkedDocumentsModule, OutboxModule],
   controllers: [
     KbSearchController,
     KbAskController,

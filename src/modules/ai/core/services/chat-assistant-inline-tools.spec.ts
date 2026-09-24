@@ -145,7 +145,7 @@ describe("searchKnowledgeBase — uses moduleRef to reach KbAskService", () => {
     const tool = makeTools().find((t) => t.key === "searchKnowledgeBase")!;
     const result = await tool.run({ query: "What is our leave policy?" }, ctx);
     expect(result).toMatchObject({ kind: "data", data: { answer: "Our policy is X.", hasContext: true } });
-    expect(mockKbAsk.ask).toHaveBeenCalledWith(caller, { question: "What is our leave policy?" });
+    expect(mockKbAsk.ask).toHaveBeenCalledWith(caller, { question: "What is our leave policy?" }, { companyDocuments: true });
   });
 
   it("returns failed when KbAskService is unavailable at runtime", async () => {

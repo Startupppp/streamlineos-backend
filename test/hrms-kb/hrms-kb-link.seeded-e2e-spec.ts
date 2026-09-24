@@ -294,6 +294,61 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
     });
   });
 
+  describe("searching", () => {
+    const ids = (response: { body: { data: Array<{ id: number }> } }) => response.body.data.map((entry) => entry.id);
+
+    it("answers 404 to a search while the search switch is off, and still lists without one", async () => {
+      await seeded.seedDb.execute(sql`update documents set name = 'Remote Working Policy', description = 'Equipment and expenses for remote work', category = 'Policies' where id = ${policyId}`);
+
+      for (const alias of ["admin", "inDept"]) expect((await get("/kb/linked-documents?q=remote", alias)).status).toBe(404);
+      expect((await get("/kb/linked-documents", "inDept")).status).toBe(200);
+      expect((await get("/kb/hr-link/config", "inDept")).body.search).toBe(false);
+    });
+
+    it("lets the admin turn search on, and employees see the switch", async () => {
+      const on = await send("patch", "/kb/settings/hr-link-flags", "admin", { search: true });
+
+      expect(on.status).toBe(200);
+      expect(on.body.effective).toEqual({ link: true, search: true, ai: false });
+      expect((await get("/kb/hr-link/config", "inDept")).body).toEqual({ link: true, search: true, ai: false });
+    });
+
+    it("finds the entry by its words for someone in the audience, and tells nobody else it exists", async () => {
+      expect(ids(await get("/kb/linked-documents?q=remote%20working", "inDept"))).toEqual([linkId]);
+      expect(ids(await get("/kb/linked-documents?q=equipment", "inDept"))).toEqual([linkId]);
+      expect(ids(await get("/kb/linked-documents?q=remote%20working", "admin"))).toContain(linkId);
+
+      for (const alias of ["otherDept", "noEmployment"]) {
+        const found = await get("/kb/linked-documents?q=remote%20working", alias);
+        expect(found.status).toBe(200);
+        expect(found.body.data).toEqual([]);
+        expect(JSON.stringify(found.body)).not.toContain("Remote Working");
+      }
+    });
+
+    it("finds nothing for words that are not there, nothing for text with no word, and refuses a one-character search", async () => {
+      expect((await get("/kb/linked-documents?q=payroll", "inDept")).body.data).toEqual([]);
+      const symbols = await get("/kb/linked-documents?q=%3F%21", "inDept");
+      expect(symbols.status).toBe(200);
+      expect(symbols.body.data).toEqual([]);
+      expect((await get("/kb/linked-documents?q=a", "inDept")).status).toBe(400);
+    });
+
+    it("lets a publisher search entries that are not live under their own status, and an employee cannot", async () => {
+      expect((await get("/kb/linked-documents?q=remote&status=all", "admin")).status).toBe(200);
+      expect((await get("/kb/linked-documents?q=remote&status=all", "inDept")).status).toBe(403);
+    });
+
+    it("lets the admin turn the assistant switch on only after search, and off again", async () => {
+      const on = await send("patch", "/kb/settings/hr-link-flags", "admin", { ai: true });
+      expect(on.status).toBe(200);
+      expect(on.body.effective).toEqual({ link: true, search: true, ai: true });
+
+      const off = await send("patch", "/kb/settings/hr-link-flags", "admin", { ai: false });
+      expect(off.body.effective).toEqual({ link: true, search: true, ai: false });
+    });
+  });
+
   describe("tenants", () => {
     it("shows another tenant nothing, and answers its attempts on this tenant's ids with 404 and changes nothing", async () => {
       await request(server).patch("/kb/settings/hr-link-flags").set({ Authorization: `Bearer ${neighbourAdminToken}` }).set("Idempotency-Key", randomUUID()).send({ link: true });
@@ -302,7 +357,9 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
         return method === "get" ? call : call.set("Idempotency-Key", randomUUID()).send(body);
       };
 
+      await request(server).patch("/kb/settings/hr-link-flags").set({ Authorization: `Bearer ${neighbourAdminToken}` }).set("Idempotency-Key", randomUUID()).send({ search: true });
       expect((await asNeighbour("get", "/kb/linked-documents")).body.data).toEqual([]);
+      expect((await asNeighbour("get", "/kb/linked-documents?q=remote%20working")).body.data).toEqual([]);
       expect((await asNeighbour("get", `/kb/linked-documents/${linkId}`)).status).toBe(404);
       expect((await asNeighbour("post", `/kb/linked-documents/${linkId}/open`)).status).toBe(404);
       expect((await asNeighbour("get", `/hr/documents/${policyId}/classification`)).status).toBe(404);
@@ -325,6 +382,8 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({ classification: "PERSONAL", linksTakenDown: 1, audiences: [] });
       expect((await get("/kb/linked-documents", "inDept")).body.data.map((entry: { id: number }) => entry.id)).not.toContain(linkId);
+      expect((await get("/kb/linked-documents?q=remote%20working", "inDept")).body.data).toEqual([]);
+      expect((await get("/kb/linked-documents?q=remote%20working", "admin")).body.data).toEqual([]);
       expect((await get(`/kb/linked-documents/${linkId}`, "inDept")).status).toBe(404);
       expect((await get(`/kb/linked-documents/${linkId}`, "admin")).body.status).toBe("unpublished");
       expect((await get(`/hr/documents/${policyId}/kb-link`, "admin")).body.link.unpublishReason).toBe("source_no_longer_publishable");
@@ -336,6 +395,8 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
       expect(off.status).toBe(200);
 
       expect((await get("/kb/linked-documents", "inDept")).status).toBe(404);
+      expect((await get("/kb/linked-documents?q=remote", "inDept")).status).toBe(404);
+      expect((await get("/kb/hr-link/config", "inDept")).body).toEqual({ link: false, search: false, ai: false });
       expect((await get(`/hr/documents/${policyId}/classification`, "admin")).status).toBe(404);
       expect(await linkRowCount(policyId)).toBe(1);
     });

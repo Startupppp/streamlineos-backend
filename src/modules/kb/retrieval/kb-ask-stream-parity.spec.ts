@@ -81,6 +81,12 @@ describe("KB streamed result parity", () => {
     expect(f.history.appendToConversation).toHaveBeenNthCalledWith(2, "org-a", "user-a", 7, 42, "assistant", "Verified answer", []);
   });
 
+  it("lets the streamed answer draw on company documents, which the tenant's own switch then decides", async () => {
+    const f = await fixture();
+    await request(f.app).post("/ask").set("Idempotency-Key", "attempt-a").send({ question: "How does this work?" });
+    expect(f.ask.streamAsk).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ question: "How does this work?" }), expect.anything(), { companyDocuments: true });
+  });
+
   it("does not dispatch AI for a conversation the caller cannot access", async () => {
     const f = await fixture();
     f.history.listMessages.mockRejectedValue(new NotFoundException("Conversation not found"));

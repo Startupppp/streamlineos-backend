@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   documentVersions,
   documents,
@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { metadataSearch } from "./kb-linked-document-search";
 import { decodeLinkedDocumentCursor, encodeLinkedDocumentCursor } from "./kb-linked-document-cursor";
 import { loadCallerAudience, publisherCanSeeRecord, visibleTo } from "./kb-linked-document-visibility";
 import type { ListLinkedDocumentsQuery } from "./dto/kb-linked-documents.schemas";
@@ -107,7 +108,7 @@ export class KbLinkedDocumentQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   // Select, filter, order and bound in one statement, so no caller can forget the limit.
-  private selectEntries(where: SQL | undefined, limit: number): Promise<Row[]> {
+  private selectEntries(where: SQL | undefined, limit: number, order: SQL[] = [desc(kbLinkedDocuments.publishedAt), desc(kbLinkedDocuments.id)]): Promise<Row[]> {
     return this.db
       .select(PROJECTION)
       .from(kbLinkedDocuments)
@@ -122,7 +123,7 @@ export class KbLinkedDocumentQueryService {
         ),
       )
       .where(where)
-      .orderBy(desc(kbLinkedDocuments.publishedAt), desc(kbLinkedDocuments.id))
+      .orderBy(...order)
       .limit(limit);
   }
 
@@ -135,7 +136,12 @@ export class KbLinkedDocumentQueryService {
     const status = query.status ?? "active";
     if (status !== "active" && !caller.canPublish) throw new ForbiddenException("Only publishers can list entries that are not live.");
 
+    const search = query.q === undefined ? undefined : metadataSearch(query.q, "all");
+    // Words that hold no letter or digit find nothing; they must not fall through to "everything".
+    if (query.q !== undefined && !search) return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
+
     const conditions: SQL[] = [eq(kbLinkedDocuments.orgId, caller.orgId)];
+    if (search) conditions.push(search.match);
     if (status === "active") conditions.push(await this.visibility(caller));
     else if (status === "all") conditions.push(publisherCanSeeRecord);
     else conditions.push(eq(kbLinkedDocuments.status, status));
@@ -180,6 +186,32 @@ export class KbLinkedDocumentQueryService {
       newerVersionAvailable: row.newerVersionAvailable,
       unpublishReason: row.unpublishReason,
     };
+  }
+
+  /**
+   * The live entries a question is about, best match first, for an assistant to cite. The same audience and live
+   * guard as every other read, applied in SQL; the assistant is handed what the caller could already open and
+   * nothing else. Metadata only: the words are matched against the document's own fields.
+   */
+  async searchForCaller(caller: LinkedDocumentCaller, question: string, limit: number): Promise<LinkedDocumentItem[]> {
+    const search = metadataSearch(question, "any");
+    if (!search) return [];
+    const rows = await this.selectEntries(
+      and(eq(kbLinkedDocuments.orgId, caller.orgId), await this.visibility(caller), search.match),
+      limit,
+      [desc(search.rank), desc(kbLinkedDocuments.id)],
+    );
+    return rows.map(toItem);
+  }
+
+  /** Which of these entries the caller may open right now. Used to re-check a citation before it is shown or replayed. */
+  async visibleIds(caller: LinkedDocumentCaller, linkedDocumentIds: readonly number[]): Promise<Set<number>> {
+    if (linkedDocumentIds.length === 0) return new Set();
+    const rows = await this.selectEntries(
+      and(eq(kbLinkedDocuments.orgId, caller.orgId), inArray(kbLinkedDocuments.id, [...linkedDocumentIds]), await this.visibility(caller)),
+      linkedDocumentIds.length,
+    );
+    return new Set(rows.map((row) => row.id));
   }
 
   /** The file behind an entry, for `open`. Same visibility as `get`, and an entry with no stored file has nothing to open. */

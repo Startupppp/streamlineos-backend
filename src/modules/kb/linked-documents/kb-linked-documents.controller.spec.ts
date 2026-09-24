@@ -60,4 +60,24 @@ describe("KB linked documents controller", () => {
     expect(query.get).toHaveBeenCalledWith(reader, 5);
     expect(files.open).toHaveBeenCalledWith(reader, 5);
   });
+
+  it("needs the search switch, not just the link switch, to search, and browses on the link switch alone", async () => {
+    const { controller, flags, query } = build(true, false);
+
+    await controller.list({ limit: 30 }, makeUser());
+    expect(flags.assertEnabled).toHaveBeenLastCalledWith(ORG_ID, "link");
+
+    await controller.list({ limit: 30, q: "leave" }, makeUser());
+    expect(flags.assertEnabled).toHaveBeenLastCalledWith(ORG_ID, "search");
+    expect(query.list).toHaveBeenLastCalledWith({ orgId: ORG_ID, userId: "user-reader", canPublish: false }, { limit: 30, q: "leave" });
+  });
+
+  it("answers 404 to a search while the search switch is off, before any query runs", async () => {
+    const flags = { assertEnabled: jest.fn().mockImplementation(async (_org: string, flag: string) => { if (flag === "search") throw new NotFoundException(); }) };
+    const query = { list: jest.fn(), get: jest.fn() };
+    const controller = new KbLinkedDocumentsController(flags as never, query as never, {} as never, { holds: jest.fn().mockResolvedValue(false) } as never);
+
+    await expect(controller.list({ limit: 30, q: "leave" }, makeUser())).rejects.toBeInstanceOf(NotFoundException);
+    expect(query.list).not.toHaveBeenCalled();
+  });
 });

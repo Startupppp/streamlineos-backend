@@ -8,6 +8,7 @@ import { KbCandidateService } from "./kb-candidate.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AskCitation } from "./kb-ask.service";
+import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
 
 /**
  * Article visibility has TWO ACL dimensions: the owner DataScope, and the per-article
@@ -193,7 +194,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       gateway as never,
       events as never,
       search as never,
-      new KbCitationVisibilityService(db as never, access as never, search as never, auth as never),
+      new KbCitationVisibilityService(db as never, access as never, search as never, auth as never), NO_LINKED_DOCUMENTS,
     );
     return { ask, access };
   };
@@ -289,7 +290,7 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     const svc = new KbAskService(
       db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
-      new KbCitationVisibilityService(db as never, {} as never, {} as never, authRevoked as never),
+      new KbCitationVisibilityService(db as never, {} as never, {} as never, authRevoked as never), NO_LINKED_DOCUMENTS,
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).rejects.toThrow(NotFoundException);
@@ -304,7 +305,7 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     const svc = new KbAskService(
       db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
-      new KbCitationVisibilityService(db as never, {} as never, {} as never, authGrants as never),
+      new KbCitationVisibilityService(db as never, {} as never, {} as never, authGrants as never), NO_LINKED_DOCUMENTS,
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).resolves.not.toThrow();

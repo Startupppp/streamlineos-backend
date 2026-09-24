@@ -8,7 +8,8 @@ export type KbChatRole = (typeof KB_CHAT_ROLES)[number];
 export type KbChatCitation =
   | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null }
   | { kind: "page"; pageId: number; title: string; spaceId: number | null }
-  | { kind: "source"; sourceId: number; title: string; spaceId: number | null };
+  | { kind: "source"; sourceId: number; title: string; spaceId: number | null }
+  | { kind: "document"; linkedDocumentId: number; title: string; spaceId: null };
 
 export const kbChatConversations = pgTable(
   "kb_chat_conversations",

@@ -133,7 +133,7 @@ export class KbAskController {
         )
       ).id;
 
-    const result = await this.ask.ask(u, body);
+    const result = await this.ask.ask(u, body, { companyDocuments: true });
     try {
       await runInTenantTransaction(
         this.db,
@@ -194,7 +194,7 @@ export class KbAskController {
         }, { orgId: u.orgId });
         return completedKbStream(data);
       }
-      const result = await this.ask.streamAsk(u, body, signal);
+      const result = await this.ask.streamAsk(u, body, signal, { companyDocuments: true });
       const complete = async (answer: string, citations: AskCitation[], aiUsage?: AiUsageMeta) =>
         runInTenantTransaction(this.db, async () => {
           signal.throwIfAborted();
