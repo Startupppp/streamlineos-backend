@@ -104,6 +104,16 @@ export async function fetchPayrollCost(db: Db, orgId: string) {
   };
 }
 
+/**
+ * `hr_mood_checkins.date` is a text column holding YYYY-MM-DD, not a date.
+ * Comparing it to `NOW() - INTERVAL '12 months'` asked Postgres for
+ * `text >= timestamptz`, which has no operator — so every call to the engagement
+ * endpoint raised 42883 and answered 500 before reading a single row, with or
+ * without data in the table. That is the whole of "People analytics error /
+ * Failed to load People analytics": the page was never failing on an empty
+ * tenant, it was failing on the query. The cast below is the same one the SELECT
+ * already relies on for `date_trunc`.
+ */
 export async function fetchEngagementTrends(db: Db, orgId: string) {
   const rows = await db.execute(sql`
     SELECT
@@ -112,7 +122,7 @@ export async function fetchEngagementTrends(db: Db, orgId: string) {
       COUNT(*) as checkins
     FROM hr_mood_checkins
     WHERE org_id = ${orgId}
-      AND date >= NOW() - INTERVAL '12 months'
+      AND date::date >= (NOW() - INTERVAL '12 months')::date
     GROUP BY 1
     ORDER BY 1
     LIMIT ${MAX_ANALYTICS_ROWS}
