@@ -14,6 +14,7 @@ const HRMS_MUTATION_SERVICES = [
   "modules/hr/directory/employee-mutations.service.ts",
   "modules/hr/directory/employee-onboarding.service.ts",
   "modules/hr/lifecycle/termination.service.ts",
+  "modules/hr/performance/document-classification.service.ts",
   "modules/hr/performance/documents.service.ts",
   "modules/hr/time/leaves-approval.service.ts",
   "modules/hr/time/leaves-write.service.ts",

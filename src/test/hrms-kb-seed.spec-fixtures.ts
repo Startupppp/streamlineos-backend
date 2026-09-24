@@ -68,7 +68,9 @@ export class HrmsKbSeed {
         await tx`delete from organizations where id = ${orgId}`;
       });
     }
-    for (const id of this.userIds.splice(0)) await this.sql`delete from users where id = ${id}`;
+    // A user the real AuditService wrote a row for stays: audit_logs is append-only and its user_id foreign key is NO ACTION, so the row outlives its organisation as a platform event and keeps its actor. Ids are random, so the leftover collides with nothing.
+    for (const id of this.userIds.splice(0))
+      await this.sql`delete from users where id = ${id} and not exists (select 1 from audit_logs where user_id = ${id})`;
   }
 }
 
