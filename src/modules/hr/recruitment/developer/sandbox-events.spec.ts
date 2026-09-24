@@ -31,7 +31,7 @@ describe("the sandbox event vocabulary", () => {
     expect(isSandboxEvent("")).toBe(false);
   });
 
-  it("separates the hiring five from the rest", () => {
+  it("separates the hiring events from the rest", () => {
     for (const event of RECRUITMENT_EVENTS) expect(isRecruitmentEvent(event)).toBe(true);
     expect(isRecruitmentEvent("employee.created")).toBe(false);
   });

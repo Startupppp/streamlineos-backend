@@ -8,10 +8,18 @@ import {
 import { and, count, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import {
   candidateApplications,
+  candidateDocuments,
+  candidateDocumentsVault,
+  candidateMessages,
+  candidateOffers,
+  candidateReferenceChecks,
+  candidateReferrals,
   candidateSlaTracking,
   candidates,
+  interviewBookingLinks,
   interviews,
   organizations,
+  vaultAccessLogs,
 } from "../../../db/schema";
 import { randomUUID } from "node:crypto";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
@@ -174,12 +182,44 @@ export class RecruitmentCandidatesService {
       throw new UnprocessableEntityException("A candidate cannot be marked as a duplicate of itself.");
     }
     const [existing, target] = await Promise.all([
-      this.db.query.candidates.findFirst({ where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)), columns: { id: true } }),
-      this.db.query.candidates.findFirst({ where: and(eq(candidates.id, duplicateOfId), eq(candidates.orgId, orgId)), columns: { id: true } }),
+      this.db.query.candidates.findFirst({ where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)), columns: { id: true, duplicateOfId: true } }),
+      this.db.query.candidates.findFirst({ where: and(eq(candidates.id, duplicateOfId), eq(candidates.orgId, orgId)), columns: { id: true, duplicateOfId: true } }),
     ]);
     if (!existing || !target) throw new NotFoundException("Candidate not found.");
+    if (target.duplicateOfId === candidateId) {
+      throw new UnprocessableEntityException("These two candidates already point at each other.");
+    }
 
-    await this.db.update(candidates).set({ duplicateOfId, updatedAt: new Date() }).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+    /**
+     * Unique on these tables is (org, id), not (candidate, job), so moving
+     * `candidateId` cannot collide. Résumés and SLA rows are unique per
+     * candidate and stay where they are.
+     */
+    const moved = [
+      candidateApplications,
+      candidateMessages,
+      candidateDocumentsVault,
+      vaultAccessLogs,
+      candidateReferrals,
+      candidateReferenceChecks,
+      interviews,
+      candidateOffers,
+      interviewBookingLinks,
+      candidateDocuments,
+    ] as const;
+
+    await this.db.transaction(async (tx) => {
+      for (const table of moved) {
+        await tx
+          .update(table)
+          .set({ candidateId: duplicateOfId })
+          .where(and(eq(table.orgId, orgId), eq(table.candidateId, candidateId)));
+      }
+      await tx
+        .update(candidates)
+        .set({ duplicateOfId, updatedAt: new Date() })
+        .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+    });
     await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return { success: true };
   }

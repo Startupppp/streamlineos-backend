@@ -19,6 +19,7 @@ import { WaitlistAdmissionService } from "./waitlist-admission.service";
 import { WaitlistAdmissionController } from "./waitlist-admission.controller";
 import { PlatformOperatorGuard } from "./platform-operator.guard";
 import { AuthModule } from "../auth/auth.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { TurnstileService } from "../../common/security/turnstile.service";
 import { PublicPricingService } from "./pricing.service";
 
@@ -29,6 +30,7 @@ import { PublicPricingService } from "./pricing.service";
     BillingModule,
     /* Both sides added one. Taking either alone drops the other's providers. */
     HrRecruitmentModule,
+    NotificationsModule,
     BuildFormsModule,
   ],
   controllers: [WaitlistAdmissionController, PublicController],

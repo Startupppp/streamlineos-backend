@@ -18,7 +18,7 @@ import {
  *
  * `hr_webhook_subscriptions` and `hr_webhook_deliveries` are written by two
  * services — `HrWebhooksService` for the automation events and
- * `RecruitmentWebhooksService` for the five hiring ones — and only the first
+ * `RecruitmentWebhooksService` for the hiring ones — and only the first
  * one's vocabulary was ever consulted when reading a row back. So a
  * subscription to `candidate.hired` tested as `employee.created`, a recruitment
  * delivery could not be redelivered at all ("unknown automation event"), and

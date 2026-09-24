@@ -4,8 +4,9 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   candidateOffers,
   candidates,
@@ -17,6 +18,9 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { NotificationsService } from "../notifications/notifications.service";
+import { AccessService } from "../access/access.service";
 import { candidateFacingCtcPreview } from "../hr/recruitment/compensation/offer-ctc-fields";
 import { RecruitmentOfferAcceptanceService } from "../hr/recruitment/recruitment-offer-acceptance.service";
 import type { OfferRespondInput } from "./dto/public.schemas";
@@ -26,6 +30,8 @@ export class PublicOffersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly acceptance: RecruitmentOfferAcceptanceService,
+    @Optional() @Inject(NotificationsService) private readonly notifications?: NotificationsService,
+    @Optional() @Inject(AccessService) private readonly access?: AccessService,
   ) {}
 
   async getOffer(token: string) {
@@ -117,13 +123,16 @@ export class PublicOffersService {
         if (input.action === "counter") {
           const claimed = await this.acceptance.claimResponse(tx, orgId, offer.id, "COUNTERED");
           if (!claimed) return null;
+          const proposedSalary = input.counterSalary !== undefined ? String(input.counterSalary) : null;
           await tx.insert(offerNegotiations).values({
             orgId,
             offerId: offer.id,
             direction: "CANDIDATE_COUNTER",
-            proposedSalary: input.counterSalary !== undefined ? String(input.counterSalary) : null,
+            proposedSalary,
             message: input.counterMessage,
           });
+          const notify = () => this.notifyOfferCountered(orgId, offer.id, claimed.candidateId, proposedSalary);
+          if (!registerAfterCommit(notify)) void notify().catch(() => undefined);
           return { status: "COUNTERED" as const, claimed, terms: null };
         }
 
@@ -191,6 +200,39 @@ export class PublicOffersService {
     if (!outcome) throw new ConflictException("This offer can no longer be responded to.");
 
     return { success: true, status: outcome.status };
+  }
+
+  /**
+   * Registered inside the public token's tenant transaction. A hook registered
+   * after that callback returns has no tenant, and the notice query dies 42501.
+   */
+  private async notifyOfferCountered(
+    orgId: string,
+    offerId: number,
+    candidateId: number,
+    proposedSalary: string | null,
+  ): Promise<void> {
+    if (!this.notifications || !this.access) return;
+    const candidate = await this.db.query.candidates.findFirst({
+      where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+      columns: { firstName: true, lastName: true },
+    });
+    const name = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : `Candidate #${candidateId}`;
+    const asked = proposedSalary ? ` They asked for ${proposedSalary}.` : "";
+    const holders = await this.access.membersWithPermission(orgId, "hr:offers:manage");
+    await Promise.all(
+      holders.map((holder) =>
+        this.notifications!.create({
+          orgId,
+          userId: holder.userId,
+          type: "WARNING",
+          title: "Candidate countered an offer",
+          message: `${name} countered offer #${offerId}.${asked}`,
+          link: `/hr/recruitment/offers`,
+          metadata: { offerId, candidateId, proposedSalary },
+        }),
+      ),
+    );
   }
 
   async getBookingLink(token: string) {

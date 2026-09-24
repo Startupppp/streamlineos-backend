@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -6,6 +7,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import {
@@ -15,8 +17,15 @@ import {
   externalReferrers,
   headcountRequests,
   jobPostings,
+  organizations,
   users,
 } from "../../../db/schema";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { nextAggregateVersion } from "../../../common/outbox/aggregate-version";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { NotificationsService } from "../../notifications/notifications.service";
+import { AccessService } from "../../access/access.service";
+import { bonusAmountMinor } from "./ats-remaining";
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -45,6 +54,8 @@ export class RecruitmentSourcingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly vendorSourcing: RecruitmentVendorSourcingService,
     private readonly planLimits: PlanLimitsService,
+    @Optional() @Inject(NotificationsService) private readonly notifications?: NotificationsService,
+    @Optional() @Inject(AccessService) private readonly access?: AccessService,
   ) {}
 
   private async actorMembershipId(orgId: string, userId: string, membershipId?: number | null): Promise<number> {
@@ -120,20 +131,112 @@ export class RecruitmentSourcingService {
   }
 
   async updateReferralStatus(orgId: string, referralId: number, input: UpdateReferralStatusInput) {
+    const existing = await this.db.query.candidateReferrals.findFirst({
+      where: and(eq(candidateReferrals.id, referralId), eq(candidateReferrals.orgId, orgId)),
+      columns: { id: true, bonusPaidAt: true, candidateId: true, referredBy: true },
+    });
+    if (!existing) throw new NotFoundException("Referral not found");
+
     const updates: Partial<typeof candidateReferrals.$inferInsert> = { updatedAt: new Date() };
     if (input.status !== undefined) updates.status = input.status;
     if (input.bonusEligible !== undefined) updates.bonusEligible = input.bonusEligible;
     if (input.bonusAmount !== undefined) updates.bonusAmount = String(input.bonusAmount);
     if (input.notes !== undefined) updates.notes = input.notes;
-    if (input.status === "BONUS_PAID") updates.bonusPaidAt = new Date();
+    const becomingPaid = input.status === "BONUS_PAID" && existing.bonusPaidAt == null;
+    if (input.status === "BONUS_PAID") updates.bonusPaidAt = existing.bonusPaidAt ?? new Date();
 
-    const [updated] = await this.db
-      .update(candidateReferrals)
-      .set(updates)
-      .where(and(eq(candidateReferrals.id, referralId), eq(candidateReferrals.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Referral not found");
-    return updated;
+    const write = async (tx: Db) => {
+      const [updated] = await tx
+        .update(candidateReferrals)
+        .set(updates)
+        .where(and(eq(candidateReferrals.id, referralId), eq(candidateReferrals.orgId, orgId)))
+        .returning();
+      if (!updated) throw new NotFoundException("Referral not found");
+      if (becomingPaid) {
+        await this.emitBonusDue(tx, orgId, updated);
+        const notify = () => this.notifyBonusDue(orgId, updated);
+        if (!registerAfterCommit(notify)) void notify().catch(() => undefined);
+      }
+      return updated;
+    };
+
+    return this.db.transaction(write);
+  }
+
+  /**
+   * The payable. Payroll is not written: this row plus the outbox event is
+   * what a payroll run reads later.
+   */
+  private async emitBonusDue(
+    tx: Db,
+    orgId: string,
+    referral: typeof candidateReferrals.$inferSelect,
+  ): Promise<void> {
+    const [org] = await tx
+      .select({ currency: organizations.currency })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    const aggregate = {
+      organizationId: orgId,
+      aggregateType: "candidate_referral",
+      aggregateId: String(referral.id),
+    };
+    await OutboxWriter.emit(tx, {
+      eventId: randomUUID(),
+      ...aggregate,
+      aggregateVersion: await nextAggregateVersion(tx, aggregate),
+      eventType: "referral.bonus_due",
+      payload: {
+        referralId: referral.id,
+        candidateId: referral.candidateId,
+        referrerUserId: referral.referredBy,
+        amountMinor: bonusAmountMinor(referral.bonusAmount),
+        currency: org?.currency ?? null,
+      },
+      occurredAt: new Date(),
+    });
+  }
+
+  private async notifyBonusDue(
+    orgId: string,
+    referral: typeof candidateReferrals.$inferSelect,
+  ): Promise<void> {
+    if (!this.notifications) return;
+    const candidate = await this.db.query.candidates.findFirst({
+      where: and(eq(candidates.id, referral.candidateId), eq(candidates.orgId, orgId)),
+      columns: { firstName: true, lastName: true },
+    });
+    const name = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : `Candidate #${referral.candidateId}`;
+    const minor = bonusAmountMinor(referral.bonusAmount);
+    const amount = minor == null ? "No amount is set." : `${(minor / 100).toFixed(2)} is due.`;
+    const message = `Referral bonus is due for ${name}. ${amount}`;
+    const targets = new Map<string, string>();
+    targets.set(referral.referredBy, "/me/referrals");
+    if (this.access) {
+      const holders = await this.access.membersWithPermission(orgId, "hr:payroll:view");
+      for (const holder of holders) {
+        if (!targets.has(holder.userId)) targets.set(holder.userId, "/hr/recruitment/referrals");
+      }
+    }
+    await Promise.all(
+      [...targets].map(async ([userId, link]) => {
+        try {
+          await this.notifications!.create({
+            orgId,
+            userId,
+            type: "INFO",
+            title: "Referral bonus due",
+            message,
+            link,
+            metadata: { referralId: referral.id, candidateId: referral.candidateId, amountMinor: minor },
+          });
+        } catch (err) {
+          if (err instanceof Error && err.message === "Organization membership required") return;
+          throw err;
+        }
+      }),
+    );
   }
 
   listVendors(orgId: string) {

@@ -9,6 +9,8 @@ export const pipelineStageSchema = z.object({
   shown: z.number().int(),
   /** `total > shown`. The board says so rather than dropping people silently. */
   truncated: z.boolean(),
+  /** Hiring-flow round names for this column, when every open job agrees. */
+  roundLabel: z.string().nullable(),
   candidates: z.array(z.object({
     id: z.number().int(),
     name: z.string(),
@@ -25,8 +27,19 @@ export const pipelineStageSchema = z.object({
   })),
 });
 
+export const pipelineHiringRoundSchema = z.object({
+  jobPostingId: z.number().int(),
+  jobTitle: z.string(),
+  rounds: z.array(z.object({
+    name: z.string(),
+    orderIndex: z.number().int(),
+    roundType: z.string(),
+  })),
+});
+
 export const pipelineResponseSchema = z.object({
   stages: z.array(pipelineStageSchema),
+  hiringRounds: z.array(pipelineHiringRoundSchema),
 });
 
 export const diversityReportSchema = z.object({
