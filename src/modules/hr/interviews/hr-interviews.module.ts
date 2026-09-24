@@ -20,6 +20,8 @@ import { HrInterviewSchedulingService } from "./hr-interview-scheduling.service"
 import { HrInterviewResultsService } from "./hr-interview-results.service";
 import { HrInterviewBookingService } from "./hr-interview-booking.service";
 import { InterviewAvailabilityService } from "./calendar/interview-availability.service";
+import { InterviewTranscriptService } from "./transcripts/interview-transcript.service";
+import { InterviewTranscriptController } from "./transcripts/interview-transcript.controller";
 import { ProviderCredentialsService } from "../recruitment/integrations/provider-credentials.service";
 
 @Module({
@@ -34,6 +36,7 @@ import { ProviderCredentialsService } from "../recruitment/integrations/provider
     HrRecruitmentReportsController,
     HrInterviewSchedulingController,
     HrInterviewBookingController,
+    InterviewTranscriptController,
   ],
   providers: [
     HrInterviewsService,
@@ -46,6 +49,7 @@ import { ProviderCredentialsService } from "../recruitment/integrations/provider
     HrInterviewResultsService,
     HrInterviewBookingService,
     InterviewAvailabilityService,
+    InterviewTranscriptService,
     /**
      * Provided here rather than imported from HrRecruitmentModule: importing
      * that module for one service would pull its whole controller set into

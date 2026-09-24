@@ -6196,6 +6196,13 @@
       "when": 1803000010339,
       "tag": "1124_talent_pool_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 1013,
+      "version": "7",
+      "when": 1803000010340,
+      "tag": "1125_interview_transcripts",
+      "breakpoints": true
     }
   ]
 }
