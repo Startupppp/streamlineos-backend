@@ -1603,7 +1603,7 @@
       "file": "src/modules/build/comment-drafts/comment-drafts.controller.ts",
       "class": "CommentDraftsController",
       "method": "recordFailure",
-      "line": 89,
+      "line": 90,
       "verb": "POST",
       "path": "/build/comment-drafts/:draftId/failures",
       "routeParams": [
@@ -1640,7 +1640,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:89",
+      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:90",
       "reviewedEvidence": null
     },
     {
@@ -1648,7 +1648,7 @@
       "file": "src/modules/build/comment-drafts/comment-drafts.controller.ts",
       "class": "CommentDraftsController",
       "method": "deleteAll",
-      "line": 107,
+      "line": 108,
       "verb": "DELETE",
       "path": "/build/comment-drafts/mine",
       "routeParams": [],
@@ -1681,7 +1681,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:107",
+      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:108",
       "reviewedEvidence": null
     },
     {
@@ -1689,7 +1689,7 @@
       "file": "src/modules/build/comment-drafts/comment-drafts.controller.ts",
       "class": "CommentDraftsController",
       "method": "deleteByTicket",
-      "line": 115,
+      "line": 116,
       "verb": "DELETE",
       "path": "/build/comment-drafts/tickets/:ticketId",
       "routeParams": [
@@ -1726,7 +1726,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:115",
+      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:116",
       "reviewedEvidence": null
     },
     {
@@ -1734,7 +1734,7 @@
       "file": "src/modules/build/comment-drafts/comment-drafts.controller.ts",
       "class": "CommentDraftsController",
       "method": "deleteOne",
-      "line": 127,
+      "line": 128,
       "verb": "DELETE",
       "path": "/build/comment-drafts/:draftId",
       "routeParams": [
@@ -1771,7 +1771,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:127",
+      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:128",
       "reviewedEvidence": null
     },
     {
