@@ -28,11 +28,6 @@ function render(node: unknown): { text: string; params: unknown[] } {
   return { text: q.sql, params: q.params };
 }
 
-/**
- * Help-centre articles and wiki pages are one table now, so an article is a
- * `kb_pages` row that happens to carry `content_type = 'support_article'`, and its
- * chunks anchor on `page_id` like every other page's do.
- */
 class KbStore {
   readonly pages = new Map<number, PageRow>();
   readonly chunks: ChunkRow[] = [];

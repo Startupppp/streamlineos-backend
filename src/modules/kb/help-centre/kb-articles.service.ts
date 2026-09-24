@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   HttpException,
   HttpStatus,
   Inject,
@@ -406,26 +407,32 @@ export class KbArticlesService {
     await this.access.assertArticleViewable(user, articleId);
     const orgId = user.orgId;
 
-    await this.db.transaction(async (tx) => {
-      await tx.insert(kbPageFeedback).values({
-        orgId,
-        pageId: articleId,
-        helpful: input.helpful,
-        comment: input.comment ?? null,
-        visitorId: user.userId,
-      });
+    try {
+      await this.db.transaction(async (tx) => {
+        await tx.insert(kbPageFeedback).values({
+          orgId,
+          pageId: articleId,
+          helpful: input.helpful,
+          comment: input.comment ?? null,
+          visitorId: user.userId,
+        });
 
-      await tx
-        .update(kbPages)
-        .set(
-          input.helpful
-            ? { helpfulCount: sql`coalesce(${kbPages.helpfulCount}, 0) + 1` }
-            : {
-                notHelpfulCount: sql`coalesce(${kbPages.notHelpfulCount}, 0) + 1`,
-              },
-        )
-        .where(this.articleScope(orgId, articleId));
-    });
+        await tx
+          .update(kbPages)
+          .set(
+            input.helpful
+              ? { helpfulCount: sql`coalesce(${kbPages.helpfulCount}, 0) + 1` }
+              : {
+                  notHelpfulCount: sql`coalesce(${kbPages.notHelpfulCount}, 0) + 1`,
+                },
+          )
+          .where(this.articleScope(orgId, articleId));
+      });
+    } catch (err) {
+      if (this.isUniqueViolation(err))
+        throw new ConflictException("You have already rated this article");
+      throw err;
+    }
 
     return { success: true };
   }

@@ -14,16 +14,6 @@ const SNIPPET_LENGTH = 160;
 
 export const KB_HELP_CENTRE_CONTENT_TYPE = "support_article";
 
-/**
- * The complement of `supportArticlePredicate()` over the one `kb_pages` table.
- *
- * `kb_pages` holds help-centre articles and wiki pages together, and the two carry
- * different ACLs: an article is additionally narrowed by space membership, the owner
- * DataScope and `kb_page_restrictions`, none of which the page predicate consults.
- * Admitting an article through a page-shaped read would therefore drop those three
- * narrowings, and would also return the same row twice in a fused retrieval — once
- * keyed `a:<id>` and once keyed `p:<id>`.
- */
 export function wikiPagePredicate(): SQL {
   return sql`(${isNull(kbPages.deletedAt)} AND ${ne(kbPages.contentType, KB_HELP_CENTRE_CONTENT_TYPE)})`;
 }
@@ -187,12 +177,6 @@ export class KbCandidateService {
     return text.slice(start, start + SNIPPET_LENGTH).trim();
   }
 
-  /**
-   * Both vector passes now read one table, so they differ only in the predicates their
-   * caller supplies. The chunk-to-page join carries `acl_revision` equality with a plain
-   * `=`: a chunk whose indexed ACL trails its page is not disclosed until reindexing
-   * catches it up.
-   */
   private async pageIdsNearest(
     orgId: string,
     vector: string,

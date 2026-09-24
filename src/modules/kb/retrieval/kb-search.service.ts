@@ -417,11 +417,6 @@ export class KbSearchService {
     });
   }
 
-  /**
-   * The help-centre half of the passage predicate. It used to be `inArray(pageId, ids)`
-   * alone, so the method's safety was a precondition on its one caller rather than a
-   * property of the method — the wiki half already carried `visiblePagePredicate`.
-   */
   private async articlePassageScope(
     user: CurrentUserContext,
     articleIds: number[],

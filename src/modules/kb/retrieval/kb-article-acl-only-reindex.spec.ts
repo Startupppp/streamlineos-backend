@@ -91,11 +91,7 @@ function articleRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/**
- * A help-centre article is a `kb_pages` row now, so `indexArticle` is the page
- * indexing path and the ACL it carries onto each chunk is the page ACL tuple.
- */
-describe("KbIndexingService.indexArticle — an ACL move with unchanged text", () => {
+describe("KbIndexingService.indexArticle — a help-centre article is a kb_pages row, so an ACL move with unchanged text takes the page path", () => {
   it("updates the chunk ACL in place and never re-embeds", async () => {
     const { db, update, setSpy, insertValues } = makeDb(STORED);
     (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue(

@@ -9,6 +9,7 @@ import { KbCommentsService } from "./kb-comments.service";
 import { toArticleRow } from "./kb-article-columns";
 import {
   articleLastVerifiedAt,
+  articleNextReviewAt,
   articleVerifiedUntil,
   articleVisibilityToPage,
   pageVisibilityToArticle,
@@ -166,6 +167,22 @@ describe("the article shape a kb_pages row leaves the module in", () => {
     expect(pageVisibilityToArticle("private")).toBe("internal");
     expect(articleVisibilityToPage("public")).toBe("public");
     expect(articleVisibilityToPage("internal")).toBe("org");
+  });
+
+  it("keeps the verified window independent of reviewIntervalDays, or the subtraction stops inverting", () => {
+    const verifiedAt = new Date("2026-03-01T12:00:00.000Z");
+
+    for (const reviewIntervalDays of [null, 7, 30, 120, 365]) {
+      const nextReviewAt = articleNextReviewAt(verifiedAt, reviewIntervalDays);
+      expect(
+        articleLastVerifiedAt({
+          trustState: "verified",
+          verifiedUntil: articleVerifiedUntil(verifiedAt),
+        }),
+      ).toEqual(verifiedAt);
+      if (reviewIntervalDays === null) expect(nextReviewAt).toBeNull();
+      else expect(nextReviewAt).not.toBeNull();
+    }
   });
 
   it("recovers lastVerifiedAt from verifiedUntil exactly, and reports null unless the page is verified", () => {
