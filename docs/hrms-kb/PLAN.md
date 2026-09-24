@@ -1,6 +1,8 @@
 # HRMS → Knowledge Base linking — Plan
 
-Status: **Phase 0 output, for review.** Evidence is in [`PHASE0-FINDINGS.md`](./PHASE0-FINDINGS.md); the read-only census
+Status: **Reconciled with what was built (2026-09-25).** This began as the Phase 0 plan; where the build differed, the section now says
+what shipped and why, and §5.1 lists the PRs as they actually landed. The final report and the QA checklist with real routes are
+in [`REPORT.md`](./REPORT.md). Original Phase 0 evidence is in [`PHASE0-FINDINGS.md`](./PHASE0-FINDINGS.md); the read-only census
 script is [`sql/phase0-duplicate-documents.sql`](./sql/phase0-duplicate-documents.sql).
 Branch `hrms-kb/phase-0`, cut from `origin/main` @ `c3ff68b41` in a dedicated worktree (the HRMS-remediation session is
 working on `main` in the shared trees and is not touched).
@@ -60,7 +62,9 @@ whole list parse.
 **`document_audiences`** `(id, org_id, document_id, kind, ref_id, created_by, created_at)` — `kind ∈ ALL_EMPLOYEES |
 DEPARTMENT | LOCATION`; `ref_id` is an `org_units`/location id (null for `ALL_EMPLOYEES`). No rows = **HR-only**.
 Composite FK `(org_id, document_id)` → `documents`. **Not named `hr_*`**: HR's `hr_*` table count is frozen
-(`check:hr-table-freeze`), and `job_templates` set the precedent of naming a domain table without the prefix.
+(`check:hr-table-freeze`), and `job_templates` set the precedent of naming a domain table without the prefix. **As built:** the gate
+counts by schema directory, not by name, so `document_audiences` and `document_versions` are recorded in its `APPROVED_EXCEPTIONS`
+with reasons (a set of (kind, ref) pairs and a many-row history fit neither "an existing lifecycle column" nor "a custom field").
 
 **`kb_linked_documents`** `(id, org_id, document_id NULL, version_mode, pinned_version NULL, status, space_id NULL,
 published_by_membership_id, published_at, unpublished_by_membership_id, unpublished_at, unpublish_reason,
@@ -81,6 +85,11 @@ reader are unchanged (§3.6).
 
 **`kb_settings`** gains `hrms_kb_link_enabled`, `hrms_kb_search_enabled`, `hrms_kb_ai_enabled` — `boolean NOT NULL
 DEFAULT false`.
+
+**Migrations as built (four, not the two or three first estimated):** `1197` (`documents.classification`, `effective_date`),
+`1198` (`document_audiences`, `document_versions`), `1199` (`kb_linked_documents`, `kb_linked_document_audiences`, the three
+`kb_settings` switches), `1200` (`app.hr_document_is_publishable`, the link guard and the unlink trigger). All hand-authored, journalled
+(idx 1081–1084), each with a rollback; every one of the 15 `NOT VALID` foreign keys is validated inside its own migration.
 
 Every table: `ENABLE ROW LEVEL SECURITY` + explicit `tenant_isolation` policy (BE-72/74), grants to `streamline_app`,
 composite tenant FKs added `NOT VALID` then validated (BE-62), `lock_timeout`, a rollback file, journal entry, Drizzle
@@ -110,10 +119,14 @@ AND metadata is not a recruitment/onboarding artefact   -- no candidateId / onbo
 - **L1 service**: `assertPublishable(document)` throws `DOCUMENT_NOT_PUBLISHABLE` (HTTP 422) *and writes a refusal audit
   row outside the request transaction*.
 - **L2 database**: a `BEFORE INSERT OR UPDATE` trigger on `kb_linked_documents` re-evaluates the definition against
-  `documents` and raises; an `AFTER UPDATE OF classification, user_id, user_membership_id, type, is_active` trigger on
-  `documents` sets any active link for that document to `unpublished`/`source_removed`. This catches writers that never
+  `documents` and raises; an `AFTER UPDATE OF classification, user_id, uploaded_by, type, is_active, metadata` trigger on
+  `documents` (only on the *transition* from publishable to not) sets any active link for that document to `unpublished`/`source_removed`
+  and writes the audit row `kb.hr_link.auto_unpublished`. This catches writers that never
   touch the new code — notably the CSV import, which can update `type` on a match.
-- **L3 read**: every read query joins `documents` and repeats the predicate (§3.5).
+- **L3 read**: every read query joins `documents` and repeats the predicate (§3.5). **As built this also masks what an entry says about
+  its document**: for a withdrawn entry whose document is no longer shareable, name, description, category, tags, type, dates, version and
+  file details are returned as null even to a publisher, and word search requires the document to be shareable now (found by the PR 8
+  matrix: a publisher could otherwise read a now-personal document's name through the withdrawn-entry routes).
 - **L4 reconciliation**: §4.7.
 
 Moving a document *into* `INTERNAL`/`RESTRICTED` needs `hr:documents:publish`; moving it *up* to `CONFIDENTIAL`/`PERSONAL`
@@ -146,7 +159,7 @@ primary first) carries that `department_id`/`location_id`. Mapping: caller `user
 
 | Route | Permission | Behaviour |
 |---|---|---|
-| `GET /kb/linked-documents?q=&cursor=` | `kb:pages:view` (every member) | Audience + live guard in SQL. `q` is full-text over `name`, `description`, `category`, `tags` **computed at read time from the joined document** — there is no denormalised copy to go stale, so v2 metadata is visible immediately. Requires `hrms_kb_search_enabled` for `q`; without it the list is browse-only |
+| `GET /kb/linked-documents?q=&status=&cursor=&limit=` | `kb:pages:view` (every member; `status` other than `active` is for publishers) | Audience + live guard in SQL. `q` is full-text over `name`, `description`, `category`, `tags` **computed at read time from the joined document** — there is no denormalised copy to go stale, so v2 metadata is visible immediately. Requires `hrms_kb_search_enabled` for `q`; without it the list is browse-only |
 | `GET /kb/linked-documents/:id` | `kb:pages:view` | Detail + source badge. **404** for anyone outside the audience (BE-91), also for cross-tenant ids |
 | `POST /kb/linked-documents/:id/open` | `kb:pages:view` | Authorises via the link, then reuses the storage path: `parseStorageKey`, foreign-org refusal, folder allowlist, `getFileUrl(..., 300, …, { preauthorized: true })`, attachment disposition. `Cache-Control: no-store`. Audit `kb.hr_link.document_opened` (outside the transaction). The URL is **never** logged |
 
@@ -168,9 +181,10 @@ available" when an approved version above the pin exists.
 ### 3.7 Deletion (D11)
 
 Soft-deleting a document (`is_active = false`) hides the entry from readers **immediately** via the live guard; the L2
-trigger marks the link `source_removed`. Publishers see "Source removed" for 30 days; a cron endpoint (`forEachOrg`,
-lease, `stopWhen`, per the scheduling convention) then deletes the link and its audience rows and audits
-`kb.hr_link.purged`. Hard deletes by the retention cron take the `ON DELETE SET NULL (document_id)` path to the same state.
+trigger marks the link `source_removed`. Publishers see "Source removed" for 30 days; the purge then deletes the link and its audience
+rows and audits `kb.hr_link.purged`. **As built** it is a step inside the existing scheduled `kb-trash-purge` sweep
+(`CronKbService.purgeExpiredTrash`: `forEachOrg`, lease, retention scheduler), so there is no new job, endpoint or schedule entry; it is
+bounded at 200 per organisation per run and restates status and age on the delete. Hard deletes by the retention cron take the `ON DELETE SET NULL (document_id)` path to the same state.
 
 ### 3.8 Search and AI (D9)
 
@@ -187,14 +201,15 @@ lease, `stopWhen`, per the scheduling convention) then deletes the link and its 
 ### 3.9 Import (D12) and backfill
 
 PR 6 hardens `commitDocument` (Phase 0 SEC-06): unresolved employee is a **row error**, not an org-wide document; email
-match case-insensitive; the lookup considers `is_active` explicitly; SQL and TS normalise names identically (store
-`name_normalized` as a generated column so there is one definition); exact match ⇒ `unchanged`; blank cell does not erase
+match case-insensitive; the lookup considers `is_active` explicitly; SQL and TS normalise names identically (**as built:** one expression,
+`lower(btrim(regexp_replace(v, '[[:space:]\u00a0]+', ' ', 'g')))`, applied to both the stored column and the incoming value; no generated
+column was added, so no migration); exact match ⇒ `unchanged`; blank cell does not erase
 a stored expiry; `created/updated/unchanged` counts reach the API and the wizard; the "committed successfully" toast stops
 appearing for a `failed` job. The unique partial index on `(org_id, user_id, category, name_normalized) WHERE is_active`
 ships only after the census shows zero duplicates — **BLOCKED** until then.
 
 The backfill is `POST /hr/documents/kb-link/backfill {dryRun}`: dry-run is the default, prints counts and changes
-nothing, is resumable (keyset cursor stored on the job row), is behind `hrms_kb_link_enabled`, audits each run, and never
+nothing, is resumable (**as built:** a stateless keyset cursor, the last document id, that the caller sends back; no job table), is behind `hrms_kb_link_enabled`, audits each run, and never
 publishes.
 
 ## 4. Cross-cutting
@@ -225,7 +240,7 @@ spec per new service (a repo gate requires one) plus one cross-tenant HTTP e2e o
 `hrms.kb.ai` ⇒ `…_ai_enabled` (requires search). Read **uncached** (one indexed row) on the new routes, so turning a flag off
 takes effect on the next request. Toggle: `PATCH /kb/settings/hr-link-flags`, `kb:settings:manage` (Org Admin only) and the
 HR module must be enabled; audited `kb.hr_link.setting_updated`. Employees cannot read `/settings/*`, so the frontend gets
-effective flags from `GET /kb/linked-documents/config` and `GET /hr/documents/kb-link/config`. The unused
+effective flags from `GET /kb/hr-link/config` (every member); the admin reads `GET /kb/settings/hr-link-flags` (stored, effective, HR enabled). The unused
 `feature_flags` table is deliberately not used.
 
 ### 4.6 Audit
@@ -233,7 +248,8 @@ Awaited `logCritical` inside the mutation transaction; `logCriticalOutsideTransa
 actions: `hr.document.classified`, `hr.document.audience_changed`, `hr.document.kb_published`,
 `hr.document.kb_link_updated`, `hr.document.kb_unpublished` (with reason), `hr.document.version_uploaded`,
 `hr.document.version_approved`, `kb.hr_link.document_opened`, `kb.hr_link.publish_refused`,
-`kb.hr_link.setting_updated`, `kb.hr_link.backfill_run`, `kb.hr_link.source_removed`, `kb.hr_link.purged`. The new
+`kb.hr_link.setting_updated`, `kb.hr_link.backfill_run`, `kb.hr_link.purged`. **As built**, `kb.hr_link.source_removed` does not exist as a
+separate action: the database trigger writes `kb.hr_link.auto_unpublished` for both "unpublished" and "source removed". The new
 services are added to `HRMS_MUTATION_SERVICES` in `hrms-critical-audit-invariants.spec.ts`. Signed URLs and storage keys
 are never placed in metadata.
 
@@ -249,8 +265,12 @@ computed from §3.2/§3.4, so the test cannot agree with a bug by being copied f
 gates, run in CI and runnable against any environment read-only) asserts: every active link's document is publishable;
 no link exists for a `PERSONAL`/`CONFIDENTIAL`/person-owned document; `kb_linked_document_audiences ⊆ document_audiences`;
 **no `kb_article_chunks`, `kb_page_attachments`, `kb_sources` or `kb_ingestion_checkpoints` row references a key under a
-sensitive folder root or equal to any `documents.file_url`**; no chunk has `source` outside the known set. It also runs
-the census for `is_public` on personal types.
+sensitive folder root or equal to any `documents.file_url`**; no chunk has `source` outside the known set. **As built:** the env var is `HR_KB_DATABASE_URL` (a table owner or BYPASSRLS role, with `row_security = off`
+so a filtered role fails loudly), `--org=<id>` scopes it, and it is read-only in a repeatable-read transaction. CI runs its self-test
+(48 assertions planting every class) and the DB-spec tier runs the real script against a seeded organisation; it is an *operator* gate
+against real tenant data, so `check-gate-wiring` lists it with that reason. The `is_public` census stayed in the Phase 0 census script.
+The matrix is `kb-linked-documents-personal-matrix.db.spec.ts`: 1,280 documents through publish, direct link write, list, word search,
+assistant retrieval, another tenant, and seven ways of degrading a shared document (each again with the unlink trigger off).
 
 ## 5. Proposed PR breakdown (to be reconciled with the brief's §§1–13)
 
@@ -265,6 +285,20 @@ the census for `is_public` on personal types.
 | 6 | BE+FE | Import hardening (SEC-06), counts in API/UI; census-gated unique index (**BLOCKED**) | 0–1 | — | 1 |
 | 7 | BE | Backfill (dry-run first, resumable, never publishes); purge cron for `source_removed` | — | `link` | 4 |
 | 8 | BE+FE | Matrix, reconciliation gate, cross-tenant e2e, QA checklist with real routes, `REPORT.md` | — | — | 1–7 |
+
+### 5.1 As built
+
+| PR | Backend | Frontend | Differs from the proposal |
+|---|---|---|---|
+| 0 | #46 | — | — |
+| 1 | #45 | — | as proposed; no migration |
+| 2 | #48 | #194 | **four** migrations (1197–1200), not two or three; the switches and the permission landed here with the schema |
+| 3 | #49 | #195 | as proposed |
+| 4 | #50 | #196 | as proposed; versions and approval included |
+| 5 | #51 | #197 | assistants opt in per call site *and* per tenant (the support Ask response schema has no `document` kind) |
+| 6 | #52 | #198 | stacked on PR 5, not on PR 1 (to avoid a contract regeneration conflict); no generated column |
+| 7 | #53 | #199 | purge folded into `kb-trash-purge`; stateless backfill cursor instead of a job row |
+| 8 | #54 | #200, #201 | matrix, gate, e2e, `REPORT.md`, **plus two gaps the proof found**: a withdrawn entry leaked its now-personal document's details to publishers (fixed by masking), and unpublish could not take the reason the QA checklist asks for (added, with its screen in FE #201) |
 
 **Coordination.** PR 1 and PR 6 touch files the HRMS-remediation session is also editing
 (`hr/import/*`, `hr/performance/documents*`). I will branch from a fresh `origin/main` for each, keep diffs surgical, and
@@ -281,6 +315,8 @@ tell that session which lines I am changing before I push, rather than discover 
 | D3 on `/hr/documents` (org admin cannot read personal docs) | Org Admin holds every key structurally; `HR_MODULE_MEMBER` holds `documents:view@all` | A product decision to change those grants (a behaviour change beyond this project) |
 | CI run links in the report | Measured 2026-09-25 with `gh run list`/`view` on `Startupppp/streamlineos-backend`: the latest runs on `main` (`ci.yml`, *Database gates*, *Legacy Actor Ratchet*) conclude `failure` with **zero jobs** ("likely a workflow file issue"). No PR can show a green CI run, so the report will cite local gate output instead and say so | Whoever owns the workflows/runner fixes it |
 | Green `check:migration-chain` on `main` | Cold build fails at `1155` and `1174` (other lanes) | Those lanes repair them |
+| A separate audience on an entry, in the UI | The API narrows an entry inside its document's audience; the UI has no control for it | Product decides it is wanted |
+| Browser QA, assistants against a model, real-storage URL expiry, a live run of `check:hr-kb-invariants` | Not exercised in this project; see `REPORT.md` §3 | A person runs the checklist in `REPORT.md` §7 |
 
 ## 7. Provisional defaults applied (§14)
 
@@ -316,4 +352,4 @@ tell that session which lines I am changing before I push, rather than discover 
 
 ## 9. QA re-test checklist
 
-Filled in with real routes in `REPORT.md` after PR 8, using the brief's list verbatim.
+Filled in with real routes, automated evidence and what only a person can check in [`REPORT.md`](./REPORT.md) §7, using the brief's list verbatim.
