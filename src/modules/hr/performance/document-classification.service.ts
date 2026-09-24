@@ -22,7 +22,7 @@ import {
   dedupeAudiences,
   notPublishableError,
   type AudienceKey,
-} from "./document-audience-targets";
+} from "../../kb/linked-documents/document-audience-targets";
 
 export type ClassificationActor = { userId: string; orgId: string; membershipId: number | null };
 

@@ -2,15 +2,14 @@ import { HttpException, HttpStatus } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { orgUnits } from "../../../db/schema";
 import type { TenantTx } from "../../../db/drizzle.types";
-import type { SetDocumentAudiencesInput } from "./dto/document-classification.schemas";
-import type { PublishBlocker } from "./documents-helpers";
+import type { PublishBlocker } from "../../hr/performance/documents-helpers";
 
 export type AudienceKey = { kind: "ALL_EMPLOYEES" | "DEPARTMENT" | "LOCATION"; refId: string | null };
 
 export const audienceKey = (audience: AudienceKey): string => `${audience.kind}:${audience.refId ?? ""}`;
 
 /** The same audience twice is one audience; `ALL_EMPLOYEES` never carries a ref, whatever the caller sent. */
-export function dedupeAudiences(entries: SetDocumentAudiencesInput["audiences"]): AudienceKey[] {
+export function dedupeAudiences(entries: ReadonlyArray<{ kind: AudienceKey["kind"]; refId?: string | null }>): AudienceKey[] {
   const seen = new Map<string, AudienceKey>();
   for (const entry of entries) {
     const audience: AudienceKey = { kind: entry.kind, refId: entry.kind === "ALL_EMPLOYEES" ? null : (entry.refId ?? null) };

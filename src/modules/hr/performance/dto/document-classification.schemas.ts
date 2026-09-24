@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { DOCUMENT_AUDIENCE_KINDS } from "../../../../db/schema/kb/linked-documents";
+import { audienceEntrySchema, MAX_DOCUMENT_AUDIENCES } from "../../../kb/linked-documents/dto/document-audience-entry.schema";
+
+export { MAX_DOCUMENT_AUDIENCES };
 
 export const DOCUMENT_CLASSIFICATIONS = ["PERSONAL", "CONFIDENTIAL", "RESTRICTED", "INTERNAL"] as const;
 
@@ -20,19 +22,6 @@ export const classifyDocumentSchema = z
   })
   .strict();
 export type ClassifyDocumentInput = z.infer<typeof classifyDocumentSchema>;
-
-export const MAX_DOCUMENT_AUDIENCES = 50;
-
-const audienceEntrySchema = z
-  .object({
-    kind: z.enum(DOCUMENT_AUDIENCE_KINDS),
-    refId: z.string().trim().min(1).max(64).nullish(),
-  })
-  .strict()
-  .refine((entry) => (entry.kind === "ALL_EMPLOYEES") === (entry.refId == null), {
-    message: "ALL_EMPLOYEES names no department or location; DEPARTMENT and LOCATION must name one.",
-    path: ["refId"],
-  });
 
 // A replacement set, not a patch: what is sent is what the ceiling becomes, and an empty list means HR only.
 export const setDocumentAudiencesSchema = z
