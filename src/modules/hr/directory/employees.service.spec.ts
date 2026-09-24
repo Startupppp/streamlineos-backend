@@ -212,11 +212,11 @@ describe("EmployeesService.countEmployees — the summary runs under the list's 
   });
 
   it("applies the caller's own scope to the aggregate exactly as the list does", async () => {
-    const db = buildCountDb([{ active: 1, inactive: 0 }]);
+    const db = buildCountDb([{ active: 1, pending: 0, inactive: 0 }]);
     const svc = buildService(db);
     await expect(
       svc.countEmployees(ScopedRead.of(ORG, USER, "own"), {}),
-    ).resolves.toEqual({ active: 1, inactive: 0 });
+    ).resolves.toEqual({ active: 1, pending: 0, inactive: 0 });
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "own",
       ORG,
@@ -231,7 +231,7 @@ describe("EmployeesService.countEmployees — the summary runs under the list's 
     const svc = buildService(db);
     await expect(
       svc.countEmployees(ScopedRead.of(ORG, USER, "none"), {}),
-    ).resolves.toEqual({ active: 0, inactive: 0 });
+    ).resolves.toEqual({ active: 0, pending: 0, inactive: 0 });
     expect(applyScopeSpy).not.toHaveBeenCalled();
     expect(db.select).not.toHaveBeenCalled();
   });
@@ -241,6 +241,6 @@ describe("EmployeesService.countEmployees — the summary runs under the list's 
     const svc = buildService(db);
     await expect(
       svc.countEmployees(ScopedRead.of(ORG, USER, "all"), {}),
-    ).resolves.toEqual({ active: 0, inactive: 0 });
+    ).resolves.toEqual({ active: 0, pending: 0, inactive: 0 });
   });
 });

@@ -46,17 +46,17 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 001a outbox + send status | BE | `src/modules/organization/core/invitation-create.service.ts`, `src/modules/organization/core/lib/invitation-mail-ops.ts`, `src/modules/email/email-outbox.service.ts`, `src/modules/hr/directory/employee-onboarding.service.ts` | Invite/resend writes hashed single-use token + TTL **and** outbox row in one DB transaction; no raw token in logs; resend rate-limited and invalidates the prior token | Foundations, 014 | todo | |
-| 001b Copy invite link | both | BE `employees.controller.ts` _(likely, verify in code)_; FE `frontend/features/hr/employees/**` _(likely, verify in code)_ | ORG_ADMIN/HR can copy an invite link (permission-guarded + audit logged); private-window open starts join; employee detail shows `queued\|sent\|delivered\|bounced\|failed` | 001a | todo | |
-| 001c delivery verification | ops | — | Real inbox receipt within ~1–2 min | provider env | todo | Expected **BLOCKED** if SMTP/provider keys or SPF/DKIM are absent in this environment |
+| 001a outbox + send status | BE | `employee-onboarding.service.ts` (`queueInvite`) | as written | — | **done** | `d16384e78`. Two defects found: issuing an invite left every earlier token live to its own 7-day expiry, so a link forwarded last week survived the resend sent to correct it — minting now retires them; and the token insert and outbox enqueue were separate statements, so a failure between them left a live token for mail never queued — now one transaction |
+| 001b Copy invite link | both | BE `employees.controller.ts` + `employee-onboarding.service.ts`; FE `components/hr/copy-invite-link-button.tsx` | as written | 001a | **done** | `d16384e78` (BE), `095b7fe8f` (FE). `POST /hr/employees/:employeeId/invite-link` — hashed, single-use, 7-day TTL, `hr:onboarding:manage`, 404 cross-tenant, 20/hour, critical audit row naming the actor and the address but never the token. Mounted beside Resend on the employee header and each onboarding row. **Also**: the toast said "Invitation sent", which the server never claimed — `invite.sent` means the outbox accepted it. It now says queued and points at the link. Evidence: 7 BE + 4 FE assertions |
+| 001c delivery verification | ops | — | Real inbox receipt within ~1–2 min | provider env | **BLOCKED** | Whether mail leaves the building depends on SMTP credentials and SPF/DKIM in the deployed environment, which this workflow cannot see or set. **Needs: ops.** The copy-link path above is what makes onboarding survivable until then |
 
 ### HRMS-E2E-002 — Onboarding bulk cannot stage managers · P0 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
 | 002a owner employment | BE | `src/modules/organization/core/bootstrap-cell-organization.ts` | as written | 008 | **done** | `b154ef3ed`. Written through `ensureManyFromUsers`, the same idempotent path the single-hire form and `PersonEmploymentBackfillService` use, so existing orgs converge on the first backfill run. Staged `PRE_JOINING` so a founder who was never hired stays out of headcount. Evidence: `owner-employment-bootstrap.db.spec.ts`, 4 real-DB assertions. The backfill for existing orgs already existed (`PersonEmploymentBackfillService.backfillOrg`) — it just had nothing calling it at create time |
-| 002b same-file manager graph | BE | `src/modules/hr/directory/bulk-onboarding/bulk-onboarding-plan.ts`, `bulk-onboarding-writes.ts`, `employee-bulk-onboarding.service.ts` | Dependency graph from `reportingManagerEmail`, topo-sorted, one transaction; cycle → row error; manager failure → dependent row error citing the manager's row; in-file duplicate email (incl. case variants) and under-16 DOB → row errors; existing member flagged; duplicate `employeeId` handled; re-run creates no duplicates | 002a | todo | |
-| 002c template/docs | both | BE template generator; FE onboarding bulk UI | Template + instructions include `reportingManagerEmail` and `topLevelRoleReason` | 002b | todo | |
+| 002b same-file manager graph | BE | `bulk-onboarding-graph.ts` (new), `bulk-onboarding-plan.ts`, `bulk-onboarding-writes.ts` | as written | 002a | **done** | `c09496440`. A manager may now be another row of the file. Cycles fail **every** row of the loop, not just the one that closed it; a row whose manager row was rejected fails citing that row number, and the sweep repeats because a rejected row may itself be somebody's manager. Reporting lines are written managers-first — the only part of the write that depends on order, since admission and employment are single batch calls. Under-16 DOB was **already** rejected (`MIN_AGE_MS` in `onboardEmployeeFieldsSchema`). Evidence: `bulk-onboarding-graph.spec.ts`, 10 assertions |
+| 002c template/docs | FE | `bulk-onboard-download.ts` | as written | 002b | **done** | `0cb44322a`. The Employees sheet already carried both columns; the Instructions sheet documented every other column and **only** those two were missing — measured, not guessed. Both documented, including that a manager may be a row of the same file. The instruction rows moved into an exported function so a test holds them against the column list: the parity is the property that broke |
 
 ### HRMS-E2E-003 — Employees import commit persists nothing · P0 · both
 
@@ -104,7 +104,7 @@ These were read in code before any change and reshape several tickets:
 |---|---|---|---|---|---|---|
 | 008a left-join / nullable DTO | BE | `employee-mutations.service.ts:71` | as written | — | **already met on main** | Verified in code: `getEmployeeDetail` wraps skills, employment and employment-facts in `this.degraded(...)` (logs and falls back rather than throwing), every employment field is `?? null`, a missing member is 404 not 500, and the read is tenant-scoped through `read.read`. No change needed |
 | 008b owner employment stub | BE | `bootstrap-cell-organization.ts` | as written | 002a | **done** | `b154ef3ed` — see 002a |
-| 008c FE error surface | FE | `frontend/features/hr/employees/**` _(likely, verify in code)_ | Failure shows the envelope message + `requestId` | Foundations | todo | |
+| 008c FE error surface | FE | `lib/get-error-message.ts` | Failure shows the envelope message + correlation id | Foundations | **partly met on main, not extended** | `getErrorMessage` already unwraps `{code,message,details}`, renders Zod issues field by field, and has per-status fallbacks. What it does not do is print `correlationId`. Left alone: it is one shared helper behind every error toast in the product, and changing what it prints is a product-wide copy decision, not an HRMS fix. **Open** |
 
 ### HRMS-E2E-009 — Leave policy create server error · P0 · both
 
@@ -117,17 +117,17 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 010a shared approver resolver | BE | `src/modules/directory/approval-authority.service.ts`, `src/modules/hr/time/leaves-write.service.ts` | Order policy → reporting manager → dept head → HR admin → owner, skipping the requester | 008, 002 | todo | Resolver **already exists** — verify order + owner fallback |
-| 010b owner's own leave | BE | same | **PROVISIONAL (decision #3)**: route to another org/HR admin; never auto-approve | decision #3 | todo | If no other approver exists, owner path → **BLOCKED** |
-| 010c UI checklist / unassigned queue | both | FE leave request form | Empty chain → submit still possible into an unassigned queue **or** a visible setup checklist with a CTA; never a silent disabled button | 010a | todo | |
+| 010a shared approver resolver | BE | `src/modules/directory/approval-authority.service.ts` | as written | 008, 002 | **already met on main** | Verified in code: resolves `reporting_manager → managers_manager → department_head → queue(hr:leaves:approve)`, excludes the subject from the queue, records a skip reason per rung and returns a human `explanation`. `LeavesWriteService.create` already 409s with that explanation rather than failing silently. No change needed |
+| 010b owner's own leave | BE | same | **PROVISIONAL (decision #3)** | decision #3 | **met by 002a, no new code** | The resolver already routes the owner's request to any other holder of `hr:leaves:approve`, and never to the owner themselves. What blocked it was `manager-has-no-employment` — the founder had no employment record, which `b154ef3ed` fixes. For a genuine one-person org there is no second approver and the request 409s with the explanation; auto-approval is not shipped. **That last case stays BLOCKED on decision #3** |
+| 010c UI checklist / unassigned queue | FE | leave request form | as written | 010a | **open** | Not reached. The BE half now answers 409 with a sentence naming the missing rung; the FE still needs to render it as a checklist with a CTA rather than a disabled button |
 
 ### HRMS-E2E-011 — People Analytics hard-errors · P0 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
 | 011a null-safe aggregates | BE | `hr-analytics-plus-trends.ts:107` | Empty tenant → 200, never 500 | — | **done** | `55f274499`. **Not a null-safety bug**: `hr_mood_checkins.date` is a *text* column and the predicate compared it to `NOW() - INTERVAL`, so Postgres raised 42883 (`text >= timestamptz`) before reading a row — every call 500'd, empty tenant or not. Measured one by one against a real DB, five of six trend queries were already fine. Evidence: `hr-analytics-plus-trends.db.spec.ts`, 6 real-DB assertions |
-| 011b empty state + requestId | FE | `frontend/features/hr/analytics/**`, `frontend/features/hr/engagement/**` | Dashboard or soft empty state, with request ID on failure | Foundations | todo | |
-| 011c per-widget isolation | FE | same | One widget's failure does not kill the page | 011b | todo | |
+| 011b empty state + requestId | FE | `features/hr/analytics/command-center-section.tsx` | Dashboard or soft empty state | Foundations | **already met on main** | Each widget already renders `<EmptyChart>` on an empty series rather than failing. With 011a fixed the page has data to render. Request-id display is the same shared-helper question as 008c |
+| 011c per-widget isolation | FE | same | One widget's failure does not kill the page | 011b | **not verified** | Each widget has its own `useQuery` and its own loading/empty branch, so a single failure should not take the page down — but I did not exercise a one-widget failure, so this is unverified rather than met. **Open** |
 
 ### HRMS-E2E-012 — Expenses import/export 402 / missing GET · P0 · both
 
@@ -135,7 +135,7 @@ These were read in code before any change and reshape several tickets:
 |---|---|---|---|---|---|---|
 | 012a entitlement single source | both | `src/common/rbac/module.guard.ts`, `src/common/http/api-exceptions.ts`, FE nav/entitlement hook | FE reads the **same** module entitlement the guard enforces; a denied action shows the `MODULE_NOT_ENABLED` message + module key instead of a bare 402 | decision #1 | todo | **Which plans include Expenses is BLOCKED (decision #1).** Controllers are gated `accounting`; not changed here |
 | 012b export job contract | both | `src/modules/expenses/expenses.controller.ts` (`POST hr/expenses/export/jobs`, `GET …/:jobId`, `…/download`), FE settings export | Settings and the page use the same async job contract; no route that 404s as `Cannot GET /hr/expenses/export` | 013a helper | todo | |
-| 012c import via pipeline | BE | `src/modules/expenses/expenses-import.service.ts` | Unknown category → row error or explicit mapping, never a silent map to `Other`; soft duplicate warning on `(employee, date, amount, category, merchant)`; when entitled, valid rows persist and export returns them | 012a | todo | |
+| 012c import via pipeline | BE | `src/modules/expenses/expenses-import.service.ts` | as written | 012a | **open** | Not reached. Noted from reading the FE: an unknown category is mapped to `Other` by `import-expense-sheet.tsx`, but through a visible mapping control in the preview, so it is not silent. The soft duplicate warning is not built |
 
 ### HRMS-E2E-013 — Settings asset export 0-byte / CORS · P0 · both
 
@@ -149,15 +149,15 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 014a status model | BE | `src/modules/hr/directory/employee-admission-status.ts`, `src/modules/organization/core/membership-admission.service.ts` | Employment status and invite/account status are distinct; a new hire is `pending` until acceptance | decision #4 | todo | PROVISIONAL default: pending → active on acceptance |
-| 014b exclude pending | BE | headcount/analytics/attendance/roster/approver queries | Pending excluded from active headcount, analytics, attendance, rosters, work logs and the leave-approver pool | 014a | todo | |
-| 014c backfill | BE | new idempotent script | Written but **not run** | decision #4 | todo | **BLOCKED** pending decision #4 |
+| 014a status model | BE | `employees.service.ts` (`getEmployeeCounts`) | as written | decision #4 | **done (PROVISIONAL)** | `412ca7a1e`. **Root cause**: the count filtered on `users.isActive`, the ACCOUNT flag, set true the moment an administrator creates the person — so an unopened invitation was headcount. Acceptance is taken to be `users.email_verified`, which the magic link sets and which `resendInvite` already reads. No stored status changes, so no migration either way |
+| 014b exclude pending | both | `employees.service.ts`; FE `employees-directory-stats.tsx` | Pending excluded from active headcount | 014a | **done for headcount; the rest open** | `412ca7a1e` + `406cb1e6d` — Pending is its own directory card, hidden when nobody is waiting. **Not done**: analytics, attendance, rosters, work logs and the approver pool still count a pending person. Each reads a different query and none was touched |
+| 014c backfill | BE | — | — | decision #4 | **BLOCKED — nothing written** | No backfill exists because none is needed for what shipped: pending is computed from `users.email_verified` at read time, not stored. If decision #4 lands on a stored status, the script is written then — writing one now would prejudge the answer |
 
 ### HRMS-E2E-015 — Work logs disabled; roster no assign · P1 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 015a roster assignments | BE | `src/modules/hr/time/**` rosters/shifts _(likely, verify in code)_ | `roster_assignments` (or the existing equivalent) with overlap validation | 014 | todo | |
+| 015a roster assignments | BE | `src/modules/hr/time/**` _(likely, verify in code)_ | as written | 014 | **open** | Not reached |
 | 015b assign UI | both | FE `frontend/features/hr/rosters/**` | Assign/unassign on a draft roster, permission-guarded | 015a | todo | |
 | 015c manual clock / work log | both | `src/modules/hr/time/attendance-clock.service.ts`, FE `frontend/features/hr/work-logs/**` | Manual clock-in/out and work log with `source = manual`, no biometric needed; RBAC + audit; admin can produce ≥1 visible attendance/work-log event for an active employee | 015a | todo | |
 
@@ -165,8 +165,8 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 016a disable until file | FE | `frontend/features/hr/expenses/**` | Import button disabled until a file is selected | — | todo | |
-| 016b schema-generated template | both | `src/modules/expenses/dto/expense-import.schemas.ts` | Template generated from the validator's schema; header aliases accept Title Case, snake_case and camelCase; docs match the template; sample row present if the docs claim one | 012c | todo | |
+| 016a disable until file | FE | `features/hr/expenses/components/import-expense-sheet.tsx` | as written | — | **done** | `1e60375da`. `HrSheet` already had `submitDisabled`; the sheet never passed it, so Import was live and its handler returned early on `!file` — the click did nothing at all, with no message. The button now carries the reason |
+| 016b schema-generated template | FE | `import-expense-sheet.tsx` | as written | — | **done** | `1e60375da`. The template, the parser and the documented columns were three lists. The template wrote Title Case while the docs said snake_case, and it shipped with **no rows** although the copy promised "sample rows to guide you". One declaration now, with a filled sample row, and the docs state the case-insensitive matching the parser already did |
 
 ### HRMS-E2E-017 — Leave export toast instead of empty file · P2 · both
 
@@ -178,19 +178,19 @@ These were read in code before any change and reshape several tickets:
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 018a collect full name + prompt | both | `src/modules/organization/setup/org-setup.service.ts`, FE signup/org-setup | Full name collected at signup/org setup; existing owners prompted when missing; directory, org chart and export show the real name | 008 | todo | |
+| 018a collect full name + prompt | both | `src/modules/auth/auth.service.ts:163`, `auth-passwordless.utils.ts:46` | as written | 008 | **open, cause confirmed** | Traced: a signup with no name falls back to `email.split("@")[0]`, which is how the owner became `ywpkpz+7po5eetnm3vno`. The org-setup wizard collects company name, industry, size and phone — not the person's. The fix is a name field on the Basics step written through to `users`, plus a prompt for owners already carrying a local-part name. Not reached |
 
 ### HRMS-E2E-019 — Fake mobile accepted at org setup · P2 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 019a IN mobile validation | both | `src/modules/organization/setup/dto/org.schemas.ts`, FE org-setup form | Optional, or `+91` + 10 digits starting 6–9 with repeated-digit patterns rejected; never claim a verified OTP that does not exist | — | todo | |
+| 019a IN mobile validation | both | `common/validation/implausible-phone.ts`; FE `lib/implausible-phone.ts` | as written | — | **done** | `47cbad19d` + `ca91dd2bd`. Refuses one digit repeated; the API field stays optional as it already was. **Narrowed deliberately**: a run like `9876543210` is just as obviously a placeholder and was rejected while I wrote it, but the plan can allocate it and turning a real customer away at signup costs more — it is also the fixture the org-setup suite has always used, which is how the false positive announced itself. Duplicated rather than shared (no package between the repos); the two test files mirror each other |
 
 ### HRMS-E2E-020 — Name auto title-cased · P2 · both
 
 | Sub | Repo | Likely files | Acceptance | Depends | Status | Evidence |
 |---|---|---|---|---|---|---|
-| 020a store as entered | both | FE display/formatter _(likely, verify in code)_; BE export path | Names stored and displayed exactly as entered (trim only); no auto title-case in DTO or formatter | — | todo | BE onboarding path confirmed clean; cause is downstream |
+| 020a store as entered | BE | `dto/employee-name-verbatim.spec.ts` | Names stored and displayed exactly as entered | — | **not reproducible — pinned instead** | `c3ff68b41`. Traced end to end: the onboarding schema trims only; `PersonEmploymentSyncService` and the bulk writer pass names through; the org chart returns `name: row.name`; the export serialises it untransformed. The single `toTitleCase` is applied to the membership **role** (ORG_ADMIN → "Org Admin"). No FE name formatter and no CSS `capitalize` on a name either. Shipped a 10-assertion regression net across an initialism, an internal capital, a particle, an apostrophe and a hyphen. **If QA still sees it, the evidence needed is the API response body** — that says whether the name is altered at the server or only on screen |
 
 ### Legacy fold-ins
 
@@ -205,11 +205,24 @@ These were read in code before any change and reshape several tickets:
 | LEGACY-07 duplicate name heading | P2 | FE | employee detail header | Display name shown once | 008 | todo | |
 | LEGACY-08 leave empty / 0 days UX | P2 | FE | `frontend/features/hr/leaves/**` | Empty state + "Policies not configured" | 009 | todo | |
 | LEGACY-09 attendance offline copy | P2 | FE | `frontend/features/hr/attendance/**` | Offline vs not-provisioned distinguished; CTA into 015 | 015 | todo | |
-| LEGACY-10 empty-module checklist | P2 | FE | HRMS shell | Shared *Start here*: People → Leave → Attendance → Documents | — | todo | |
+| LEGACY-10 empty-module checklist | P2 | FE | `frontend/features/hr/setup/hr-start-here.ts` | Shared *Start here*: People → Leave → Shifts → Documents | — | partly done | Checklist already existed. Its shift step linked to `/hr/attendance`, which cannot create a shift, so the step could never be completed from its own button; its spec asserted that destination, so the defect had a test agreeing with it. Fixed + all four hrefs pinned — `0d3f6efb9` (FE) |
 | LEGACY-11 sensitive tab trust | P3 | FE | people sensitive tab | Optional — only if cheap after P0–P1 | — | todo | |
 | LEGACY-12 salary default ₹25,000 | P3 | both | comp | Optional | — | todo | |
 | LEGACY-13 PF/ESI inline help | P3 | FE | comp/compliance | Optional | LEGACY-06 | todo | |
 | LEGACY-14 essentials nav mode | P3 | FE | nav | Optional | — | todo | |
+
+
+### Reported during the run (outside the numbered tickets)
+
+Raised by the product owner while this work was in flight. Each is a defect on a
+screen the tickets already touch, so they are recorded here rather than opened
+as new IDs.
+
+| What was reported | Repo | Cause | Status | Evidence |
+|---|---|---|---|---|
+| "Define a shift" on the HR overview opens Attendance | FE | The step's `id` and `href` both said `attendance` while its title, button and completion signal all concerned shifts. Its own spec asserted `/hr/attendance`. | done | `0d3f6efb9` |
+| Expiring and Calendar tabs under Documents show no proper SVG | FE | Both passed a bare lucide glyph as the `EmptyState` illustration with `w-8` — width only, leaving the icon's `height="24"` attribute in place: a 32×24 line drawing in the 96px illustration box. The Letters tab beside them already used `illustrationPreset`. The document table one tab over had the identical defect. | done | `4a9f45707` |
+| No profile photos beside names in the employee picker | FE | `EmployeeListItem` carries `image` and the contract parses it, so the photo was fetched on every open and dropped at the render. `Combobox` had no slot for anything but a label and a sublabel. It gains an optional per-option `icon`; `EmployeePicker` fills it with the attendance roster's own avatar markup. Fixes every HR surface that picks a person. | done | `ede215e3f` |
 
 ---
 
