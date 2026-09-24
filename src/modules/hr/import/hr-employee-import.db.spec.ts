@@ -73,7 +73,15 @@ describeDb("employee import reaches the directory — real database", () => {
     // single-hire form uses, and a double could not show that.
     const audit = { log: async () => undefined, logMany: async () => undefined };
     const personEmployment = new PersonEmploymentSyncService(db, audit as never);
-    const admission = new MembershipAdmissionService(db, audit as never, { reserve: async () => undefined } as never);
+    // Seat accounting and plan limits are the two things admission reaches for.
+    // A local verification database has no plan attached, so the limit check is
+    // satisfied and the seat events are recorded into a collector this suite can
+    // assert on — the admission code itself is the real thing.
+    const seatEvents: unknown[] = [];
+    const admission = new MembershipAdmissionService(
+      { assertWithinLimit: async () => undefined } as never,
+      { recordSeatEvents: async (...args: unknown[]) => void seatEvents.push(args) } as never,
+    );
     service = new HrImportCommitService(admission, personEmployment);
 
     await sql.begin(async (tx) => {
