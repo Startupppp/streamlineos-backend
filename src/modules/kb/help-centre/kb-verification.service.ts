@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveWindowedTotal, totalOverWindow } from "../../../common/pagination/window-count";
-import { articleLastVerifiedAt, supportArticlePredicate } from "./kb-article-page-scope";
+import { supportArticlePredicate } from "./kb-article-page-scope";
 
 type VerificationQueueItem = {
   id: number;
@@ -70,8 +70,7 @@ export class KbVerificationService {
         slug: sql<string>`coalesce(${kbPages.slug}, '')`,
         ownerMembershipId: kbPages.ownerMembershipId,
         reviewIntervalDays: kbPages.reviewIntervalDays,
-        trustState: kbPages.trustState,
-        verifiedUntil: kbPages.verifiedUntil,
+        verifiedAt: kbPages.verifiedAt,
         updatedAt: kbPages.updatedAt,
       })
       .from(kbPages)
@@ -95,7 +94,7 @@ export class KbVerificationService {
       slug: row.slug,
       ownerMembershipId: row.ownerMembershipId,
       reviewIntervalDays: row.reviewIntervalDays,
-      lastVerifiedAt: articleLastVerifiedAt({ trustState: row.trustState, verifiedUntil: row.verifiedUntil }),
+      lastVerifiedAt: row.verifiedAt,
       updatedAt: row.updatedAt,
     }));
 

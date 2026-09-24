@@ -91,7 +91,7 @@ const access = {
 
 const USER = { userId: "user-1", orgId: "org-1", isOrgOwner: false } as unknown as CurrentUserContext;
 
-function queueRow(trust: { trustState: PageTrustState; verifiedUntil: Date | null }): Record<string, unknown> {
+function queueRow(trust: { verifiedAt: Date | null }): Record<string, unknown> {
   return {
     total: "3",
     id: 7,
@@ -101,8 +101,7 @@ function queueRow(trust: { trustState: PageTrustState; verifiedUntil: Date | nul
     slug: "refund-policy",
     ownerMembershipId: null,
     reviewIntervalDays: 120,
-    trustState: trust.trustState,
-    verifiedUntil: trust.verifiedUntil,
+    verifiedAt: trust.verifiedAt,
     updatedAt: new Date(0),
   };
 }
@@ -199,20 +198,18 @@ describe("verification queue reads the same support-article scope", () => {
     expect(lowered).not.toContain("last_verified_at");
   });
 
-  it("still answers with a lastVerifiedAt field, derived from verified_until", async () => {
-    const verifiedUntil = new Date("2026-06-30T00:00:00.000Z");
-    const harness = makeHarness([queueRow({ trustState: "verified", verifiedUntil })]);
+  it("reports lastVerifiedAt as the stored instant, not a window subtracted from verified_until", async () => {
+    const verifiedAt = new Date("2026-06-30T00:00:00.000Z");
+    const harness = makeHarness([queueRow({ verifiedAt })]);
 
     const result = await new KbVerificationService(harness.db, access).listDue(USER, 1, 20);
 
     expect(result.items[0]).toHaveProperty("lastVerifiedAt");
-    expect(result.items[0]?.lastVerifiedAt).toEqual(
-      articleLastVerifiedAt({ trustState: "verified", verifiedUntil }),
-    );
+    expect(result.items[0]?.lastVerifiedAt).toEqual(verifiedAt);
   });
 
   it("reports lastVerifiedAt as null for a support article that was never verified", async () => {
-    const harness = makeHarness([queueRow({ trustState: "unverified", verifiedUntil: null })]);
+    const harness = makeHarness([queueRow({ verifiedAt: null })]);
 
     const result = await new KbVerificationService(harness.db, access).listDue(USER, 1, 20);
 
@@ -221,7 +218,7 @@ describe("verification queue reads the same support-article scope", () => {
   });
 
   it("never leaks the window total or the page trust columns into a queue item", async () => {
-    const harness = makeHarness([queueRow({ trustState: "verified", verifiedUntil: new Date(0) })]);
+    const harness = makeHarness([queueRow({ verifiedAt: new Date(0) })]);
 
     const result = await new KbVerificationService(harness.db, access).listDue(USER, 1, 20);
 

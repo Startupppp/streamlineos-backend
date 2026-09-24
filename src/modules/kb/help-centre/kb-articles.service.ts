@@ -387,6 +387,7 @@ export class KbArticlesService {
       .update(kbPages)
       .set({
         trustState: "verified",
+        verifiedAt,
         verifiedUntil: articleVerifiedUntil(verifiedAt),
         verifiedById: user.userId,
         verifiedByMembershipId: actingMembershipId(user.principal),

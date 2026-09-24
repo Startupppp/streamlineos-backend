@@ -123,6 +123,22 @@ ALTER TABLE "public"."kb_page_attachments"
   ADD COLUMN IF NOT EXISTS "file_url" text;
 --> statement-breakpoint
 
+-- kb_articles.last_verified_at stored WHEN an article was verified. kb_pages has
+-- verified_until, verified_by_id and trust_state but never recorded the instant,
+-- so the help centre would have to derive lastVerifiedAt by subtracting a fixed
+-- window from verified_until. That subtraction is only exact when the window it
+-- assumes matches the one that wrote the row, and two paths write this column
+-- with different windows: the help-centre verify uses 180 days, the wiki verify
+-- uses computeVerificationInterval (120 days for support_article). An article
+-- verified through the wiki surface would report lastVerifiedAt 60 days early,
+-- and an expired article would report null where kb_articles kept the date.
+-- lastVerifiedAt is a published response field, so this stores the fact instead.
+-- Measured immediately before writing this: kb_pages holds 20 rows, 0 verified
+-- and 0 with verified_until, so there is nothing to backfill.
+ALTER TABLE "public"."kb_pages"
+  ADD COLUMN IF NOT EXISTS "verified_at" timestamptz;
+--> statement-breakpoint
+
 -- kb_articles declared these three NOT NULL; kb_pages declares them nullable
 -- with a default of 0. Moving the help centre onto kb_pages would quietly drop
 -- the guarantee, and `col + 1` over a NULL yields NULL, so a single null counter

@@ -1,7 +1,6 @@
 import type { z } from "zod";
 import { kbPages } from "../../../db/schema";
 import {
-  articleLastVerifiedAt,
   pageContentToArticleContent,
   pageVisibilityToArticle,
 } from "./kb-article-page-scope";
@@ -26,7 +25,7 @@ export const KB_ARTICLE_COLUMNS = {
   createdById: kbPages.createdById,
   ownerMembershipId: kbPages.ownerMembershipId,
   trustState: kbPages.trustState,
-  verifiedUntil: kbPages.verifiedUntil,
+  verifiedAt: kbPages.verifiedAt,
   views: kbPages.views,
   helpfulCount: kbPages.helpfulCount,
   notHelpfulCount: kbPages.notHelpfulCount,
@@ -73,7 +72,7 @@ export function toArticleRow(page: KbArticlePageRow): KbArticleRow {
     seoTitle: page.seoTitle,
     seoDescription: page.seoDescription,
     reviewIntervalDays: page.reviewIntervalDays,
-    lastVerifiedAt: articleLastVerifiedAt(page),
+    lastVerifiedAt: page.verifiedAt,
     publishedAt: page.publishedAt,
     archivedAt: page.archivedAt,
     createdAt: page.createdAt,

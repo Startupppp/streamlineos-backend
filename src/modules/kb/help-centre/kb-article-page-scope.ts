@@ -40,14 +40,6 @@ export function articleNextReviewAt(
   return new Date(verifiedAt.getTime() + reviewIntervalDays * DAY_MS);
 }
 
-export function articleLastVerifiedAt(page: {
-  trustState: PageTrustState;
-  verifiedUntil: Date | null;
-}): Date | null {
-  if (page.trustState !== "verified" || page.verifiedUntil === null) return null;
-  return new Date(page.verifiedUntil.getTime() - VERIFIED_WINDOW_MS);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

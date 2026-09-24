@@ -13,7 +13,7 @@ import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { articleOwnerScope } from "../retrieval/kb-article-owner-scope";
-import { articleLastVerifiedAt, pageContentToArticleContent, pageVisibilityToArticle, supportArticlePredicate } from "./kb-article-page-scope";
+import { pageContentToArticleContent, pageVisibilityToArticle, supportArticlePredicate } from "./kb-article-page-scope";
 import type {
   kbArticleListItemSchema,
   kbArticleVersionSchema,
@@ -89,8 +89,7 @@ export class KbArticleQueryService {
         ownerMembershipId: kbPages.ownerMembershipId,
         helpfulCount: kbPages.helpfulCount,
         notHelpfulCount: kbPages.notHelpfulCount,
-        trustState: kbPages.trustState,
-        verifiedUntil: kbPages.verifiedUntil,
+        verifiedAt: kbPages.verifiedAt,
         updatedAt: kbPages.updatedAt,
       })
       .from(kbPages)
@@ -117,7 +116,7 @@ export class KbArticleQueryService {
           ownerMembershipId: row.ownerMembershipId,
           helpfulCount: row.helpfulCount ?? 0,
           notHelpfulCount: row.notHelpfulCount ?? 0,
-          lastVerifiedAt: articleLastVerifiedAt(row),
+          lastVerifiedAt: row.verifiedAt,
           updatedAt: row.updatedAt,
           tags: row.tags,
         };

@@ -63,6 +63,7 @@ export const kbPages = pgTable(
     ownerMembershipId: integer("owner_membership_id"),
     verifiedById: text("verified_by_id").references(() => users.id, { onDelete: "set null" }),
     verifiedByMembershipId: integer("verified_by_membership_id"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
     verifiedUntil: timestamp("verified_until", { withTimezone: true }),
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),

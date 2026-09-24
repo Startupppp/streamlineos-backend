@@ -8,7 +8,6 @@ import { KbArticlesService } from "./kb-articles.service";
 import { KbCommentsService } from "./kb-comments.service";
 import { toArticleRow } from "./kb-article-columns";
 import {
-  articleLastVerifiedAt,
   articleNextReviewAt,
   articleVerifiedUntil,
   articleVisibilityToPage,
@@ -169,29 +168,21 @@ describe("the article shape a kb_pages row leaves the module in", () => {
     expect(articleVisibilityToPage("internal")).toBe("org");
   });
 
-  it("keeps the verified window independent of reviewIntervalDays, or the subtraction stops inverting", () => {
+  it("holds the verified window fixed while nextReviewAt tracks reviewIntervalDays", () => {
     const verifiedAt = new Date("2026-03-01T12:00:00.000Z");
+    const expectedUntil = articleVerifiedUntil(verifiedAt);
 
     for (const reviewIntervalDays of [null, 7, 30, 120, 365]) {
+      expect(articleVerifiedUntil(verifiedAt)).toEqual(expectedUntil);
+
       const nextReviewAt = articleNextReviewAt(verifiedAt, reviewIntervalDays);
-      expect(
-        articleLastVerifiedAt({
-          trustState: "verified",
-          verifiedUntil: articleVerifiedUntil(verifiedAt),
-        }),
-      ).toEqual(verifiedAt);
-      if (reviewIntervalDays === null) expect(nextReviewAt).toBeNull();
-      else expect(nextReviewAt).not.toBeNull();
+      if (reviewIntervalDays === null) {
+        expect(nextReviewAt).toBeNull();
+        continue;
+      }
+      expect(nextReviewAt).toEqual(
+        new Date(verifiedAt.getTime() + reviewIntervalDays * 24 * 60 * 60 * 1000),
+      );
     }
-  });
-
-  it("recovers lastVerifiedAt from verifiedUntil exactly, and reports null unless the page is verified", () => {
-    const verifiedAt = new Date("2026-03-01T12:00:00.000Z");
-    const verifiedUntil = articleVerifiedUntil(verifiedAt);
-
-    expect(articleLastVerifiedAt({ trustState: "verified", verifiedUntil })).toEqual(verifiedAt);
-    expect(articleLastVerifiedAt({ trustState: "unverified", verifiedUntil })).toBeNull();
-    expect(articleLastVerifiedAt({ trustState: "verification_expired", verifiedUntil })).toBeNull();
-    expect(articleLastVerifiedAt({ trustState: "verified", verifiedUntil: null })).toBeNull();
   });
 });
