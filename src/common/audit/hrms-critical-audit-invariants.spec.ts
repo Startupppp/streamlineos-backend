@@ -18,6 +18,7 @@ const HRMS_MUTATION_SERVICES = [
   "modules/hr/performance/document-versions.service.ts",
   "modules/hr/performance/documents.service.ts",
   "modules/hr/time/leaves-approval.service.ts",
+  "modules/kb/linked-documents/kb-linked-document-backfill.service.ts",
   "modules/kb/linked-documents/kb-linked-document-publish.service.ts",
   "modules/hr/time/leaves-write.service.ts",
   "modules/hr/time/work-logs.service.ts",

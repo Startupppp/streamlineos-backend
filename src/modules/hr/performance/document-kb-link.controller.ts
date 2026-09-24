@@ -12,6 +12,8 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { resolveDocumentsScope } from "./performance-scope";
 import { KbLinkedDocumentPublishService, type PublishActor } from "../../kb/linked-documents/kb-linked-document-publish.service";
+import { KbLinkedDocumentBackfillService } from "../../kb/linked-documents/kb-linked-document-backfill.service";
+import { backfillInputSchema, backfillResultSchema, type BackfillInput } from "../../kb/linked-documents/dto/kb-link-backfill.schemas";
 import {
   kbLinkParamsSchema,
   publishLinkSchema,
@@ -33,11 +35,23 @@ import { kbLinkStateResponseSchema } from "../../kb/linked-documents/dto/kb-link
 export class DocumentKbLinkController {
   constructor(
     private readonly links: KbLinkedDocumentPublishService,
+    private readonly backfill: KbLinkedDocumentBackfillService,
     private readonly access: AccessService,
   ) {}
 
   private actor(currentUser: CurrentUserContext): PublishActor {
     return { userId: currentUser.userId, orgId: currentUser.orgId, membershipId: actingMembershipId(currentUser.principal) };
+  }
+
+  // One page of proposals for the documents that already look like company documents. A dry run unless the caller says otherwise; never publishes.
+  @ResponseSchema(backfillResultSchema)
+  @Post("documents/kb-link/backfill")
+  @HttpCode(200)
+  @Idempotent("hr.document.kb-backfill")
+  @RequirePermission("hr:documents:publish")
+  @Validate({ body: backfillInputSchema })
+  async runBackfill(@Body() body: BackfillInput, @CurrentUser() currentUser: CurrentUserContext) {
+    return this.backfill.run(this.actor(currentUser), body);
   }
 
   @ResponseSchema(kbLinkStateResponseSchema)

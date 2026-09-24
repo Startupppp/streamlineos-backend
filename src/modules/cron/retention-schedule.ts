@@ -117,7 +117,7 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     leaseSeconds: 300,
     intervalMs: DAY_MS,
     maxAgeMs: DAILY_MAX_AGE_MS,
-    label: "KB trash purge (soft-deleted pages past the org's trash_retention_days)",
+    label: "KB trash purge (soft-deleted pages past the org's trash_retention_days; HR-document entries 30 days after their document was removed)",
   },
   {
     jobKey: "build-retention-prune",

@@ -28,6 +28,7 @@ export const kbTrashPurgeResponseSchema = z.union([
     message: z.string(),
     orgsProcessed: z.number().int().nonnegative(),
     purgedCount: z.number().int().nonnegative(),
+    linkedDocumentsPurged: z.number().int().nonnegative(),
   }),
 ]);
 

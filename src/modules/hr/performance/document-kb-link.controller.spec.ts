@@ -25,8 +25,9 @@ function build(view: DataScope) {
     updateLink: jest.fn().mockResolvedValue({ documentId: DOCUMENT_ID }),
     unpublish: jest.fn().mockResolvedValue({ documentId: DOCUMENT_ID }),
   };
+  const backfill = { run: jest.fn().mockResolvedValue({ dryRun: true, applied: 0 }) };
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map<string, DataScope>([["hr:documents:view", view]])) };
-  return { controller: new DocumentKbLinkController(links as never, access as never), links };
+  return { controller: new DocumentKbLinkController(links as never, backfill as never, access as never), links, backfill };
 }
 
 describe("document knowledge-base link controller", () => {
@@ -58,5 +59,13 @@ describe("document knowledge-base link controller", () => {
     expect(links.publish).toHaveBeenCalledWith(actor, DOCUMENT_ID, { audiences: [{ kind: "ALL_EMPLOYEES" }] });
     expect(links.updateLink).toHaveBeenCalledWith(actor, DOCUMENT_ID, { versionMode: "FOLLOW_LATEST" });
     expect(links.unpublish).toHaveBeenCalledWith(actor, DOCUMENT_ID);
+  });
+
+  it("runs a backfill as the caller from the session, with the organisation from the session and nothing the body could name", async () => {
+    const { controller, backfill } = build("none");
+
+    await controller.runBackfill({ dryRun: true, cursor: 0, limit: 100 }, makeUser());
+
+    expect(backfill.run).toHaveBeenCalledWith({ userId: "user-hr", orgId: ORG_ID, membershipId: 41 }, { dryRun: true, cursor: 0, limit: 100 });
   });
 });

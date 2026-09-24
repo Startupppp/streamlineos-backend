@@ -135,6 +135,7 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
         ["get", `/hr/documents/${policyId}/kb-link`],
         ["post", `/hr/documents/${policyId}/kb-link`],
         ["get", `/hr/documents/${policyId}/versions`],
+        ["post", "/hr/documents/kb-link/backfill"],
       ] as const) {
         const response = method === "get" ? await get(path, "admin") : await send(method, path, "admin", method === "patch" ? { classification: "INTERNAL" } : method === "put" ? { audiences: [] } : {});
         expect(`${method} ${path} → ${response.status}`).toBe(`${method} ${path} → 404`);
@@ -390,6 +391,72 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
       expect((await auditFor(home.orgId, "hr.document.classified", policyId)).length).toBeGreaterThanOrEqual(3);
     });
 
+  });
+
+  describe("backfilling existing documents", () => {
+    let publicPolicy = 0;
+    let privatePolicy = 0;
+    let payslip = 0;
+    const classificationOf = async (documentId: number) => (await rows<{ classification: string }>(sql`select classification from documents where id = ${documentId}`))[0]?.classification;
+    const everyoneRows = async (documentId: number) => Number((await rows<{ n: number }>(sql`select count(*)::int as n from document_audiences where document_id = ${documentId} and kind = 'ALL_EMPLOYEES'`))[0]?.n);
+
+    beforeAll(async () => {
+      publicPolicy = await document(home, "POLICY", fileKey());
+      privatePolicy = await document(home, "OTHER", fileKey());
+      payslip = await document(home, "PAYSLIP", fileKey());
+      await seeded.seedDb.execute(sql`update documents set is_public = true where id in (${publicPolicy}, ${payslip})`);
+    });
+
+    it("refuses someone who manages documents but cannot publish, and unknown body keys", async () => {
+      expect((await send("post", "/hr/documents/kb-link/backfill", "manager", {})).status).toBe(403);
+      expect((await send("post", "/hr/documents/kb-link/backfill", "admin", { orgId: neighbour.orgId })).status).toBe(400);
+      expect(await classificationOf(publicPolicy)).toBe("PERSONAL");
+    });
+
+    it("is a dry run by default: says what it would change, and changes nothing", async () => {
+      const response = await send("post", "/hr/documents/kb-link/backfill", "admin", {});
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ dryRun: true, applied: 0, done: true });
+      expect(response.body.eligible).toBeGreaterThanOrEqual(2);
+      expect(response.body.sample.map((entry: { documentId: number }) => entry.documentId)).toEqual(expect.arrayContaining([publicPolicy, privatePolicy]));
+      expect(response.body.sample.map((entry: { documentId: number }) => entry.documentId)).not.toContain(payslip);
+      expect(response.body.skipped.typeNotAllowed).toBeGreaterThanOrEqual(1);
+      expect(await classificationOf(publicPolicy)).toBe("PERSONAL");
+      expect(await everyoneRows(publicPolicy)).toBe(0);
+    });
+
+    it("applies only when told to: Internal for the eligible, all employees only where it was public, a payslip untouched, nothing published", async () => {
+      const response = await send("post", "/hr/documents/kb-link/backfill", "admin", { dryRun: false });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ dryRun: false, done: true });
+      expect(response.body.applied).toBeGreaterThanOrEqual(2);
+      expect(await classificationOf(publicPolicy)).toBe("INTERNAL");
+      expect(await everyoneRows(publicPolicy)).toBe(1);
+      expect(await classificationOf(privatePolicy)).toBe("INTERNAL");
+      expect(await everyoneRows(privatePolicy)).toBe(0);
+      expect(await classificationOf(payslip)).toBe("PERSONAL");
+      expect(await everyoneRows(payslip)).toBe(0);
+      for (const documentId of [publicPolicy, privatePolicy, payslip]) expect(await linkRowCount(documentId)).toBe(0);
+    });
+
+    it("is repeatable: what it changed is no longer eligible", async () => {
+      const again = await send("post", "/hr/documents/kb-link/backfill", "admin", { dryRun: false });
+
+      expect(again.body).toMatchObject({ applied: 0, eligible: 0 });
+    });
+
+    it("never reaches another tenant's documents, and audits each run", async () => {
+      expect(await classificationOf(neighbourPolicyId)).toBe("PERSONAL");
+      const audited = await rows<{ metadata: { dryRun: boolean } }>(sql`select metadata from audit_logs where org_id = ${home.orgId} and action = 'kb.hr_link.backfill_run' order by id`);
+      expect(audited.length).toBeGreaterThanOrEqual(3);
+      expect(audited.some((row) => row.metadata.dryRun === true)).toBe(true);
+      expect(audited.some((row) => row.metadata.dryRun === false)).toBe(true);
+    });
+  });
+
+  describe("switching it off", () => {
     it("stops answering when the admin turns the switch back off, and the data stays where it was", async () => {
       const off = await send("patch", "/kb/settings/hr-link-flags", "admin", { link: false });
       expect(off.status).toBe(200);

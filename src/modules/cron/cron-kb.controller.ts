@@ -138,7 +138,7 @@ export class CronKbController {
       const result = outcome.result;
       return {
         success: true,
-        message: `Purged ${result.purgedCount} KB pages across ${result.orgsProcessed} orgs`,
+        message: `Purged ${result.purgedCount} KB pages and ${result.linkedDocumentsPurged} HR-document entries across ${result.orgsProcessed} orgs`,
         ...result,
       };
     } catch (error) {
