@@ -6520,6 +6520,13 @@
       "breakpoints": true
     },
     {
+      "idx": 1059,
+      "version": "7",
+      "when": 1803000010671,
+      "tag": "1175_ai_jobs_expired_lease_index",
+      "breakpoints": true
+    },
+    {
       "idx": 1060,
       "version": "7",
       "when": 1803000010681,

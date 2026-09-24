@@ -12,8 +12,20 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_kb_pages_org_id') THEN
     RAISE EXCEPTION '1168 precondition: uniq_kb_pages_org_id is absent — the tenant-safe composite foreign key cannot be declared';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_org_members_org_id') THEN
-    RAISE EXCEPTION '1168 precondition: uniq_org_members_org_id is absent — the tenant-safe composite foreign key cannot be declared';
+  -- Resolved by column set, not by constraint name: production carries this as
+  -- uniq_org_members_org_id_key, and a name guess reads as a missing object.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    WHERE c.conrelid = 'public.organization_members'::regclass
+      AND c.contype IN ('u', 'p')
+      AND (
+        SELECT array_agg(a.attname::text ORDER BY a.attname)
+        FROM unnest(c.conkey) AS k(attnum)
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+      ) = ARRAY['id', 'org_id']
+  ) THEN
+    RAISE EXCEPTION '1168 precondition: public.organization_members has no UNIQUE (org_id, id) — the tenant-safe composite foreign key cannot be declared';
   END IF;
 END $$;
 --> statement-breakpoint
