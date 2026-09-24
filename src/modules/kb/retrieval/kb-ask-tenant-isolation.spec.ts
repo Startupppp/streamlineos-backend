@@ -73,3 +73,96 @@ describe("KbAskService — cross-tenant isolation", () => {
     expect(result).toHaveProperty("hasContext", false);
   });
 });
+
+describe("KbAskService — page citation cross-tenant isolation", () => {
+  const ATTACKER = "org-attacker";
+  const OWNER = "org-owner";
+  const PAGE_ID = 200;
+
+  function makeUser(orgId: string) {
+    return { orgId, userId: "user-1", isOrgOwner: false, principal: ACCOUNT_ONLY_PRINCIPAL } as never;
+  }
+
+  const auth = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: ATTACKER, pageId: PAGE_ID, action: "view", via: "space" }),
+  };
+  const access = {} as never;
+  const events = { record: jest.fn().mockResolvedValue(undefined) } as never;
+
+  const pageSearchMock = {
+    retrieveTopArticles: jest.fn().mockResolvedValue([{
+      kind: "page" as const,
+      id: PAGE_ID,
+      title: "Confidential page",
+      spaceId: null,
+      contentText: "sensitive content about the page",
+      updatedAt: new Date("2024-01-01"),
+    }]),
+    retrieveTopSources: jest.fn().mockResolvedValue([]),
+    retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
+    articleOwnerFilterFor: jest.fn().mockResolvedValue(sql`true`),
+  };
+
+  /**
+   * Extends makeDb with a `select` mock so the page-visibility query in
+   * `KbCitationVisibilityService.visiblePages` can be intercepted. The WHERE
+   * clause that `visiblePages` builds includes `eq(kbPages.orgId, user.orgId)`;
+   * capturing it lets us assert that the predicate binds the requesting user's
+   * org and never reaches across to another tenant's rows.
+   */
+  function makeDbForPageTest(returnPageIds: number[]) {
+    const executeArgs: unknown[] = [];
+    const pageWheres: unknown[] = [];
+    const db: Record<string, unknown> = {
+      execute: jest.fn().mockImplementation((sqlObj: unknown) => {
+        executeArgs.push(sqlObj);
+        return Promise.resolve([{ one: 1 }]);
+      }),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((where: unknown) => {
+            pageWheres.push(where);
+            return Promise.resolve(returnPageIds.map((id) => ({ id })));
+          }),
+        }),
+      }),
+    };
+    db.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
+    return { db: db as unknown as Db, executeArgs, pageWheres };
+  }
+
+  it("scopes page-visibility query to the requesting org — a cross-tenant page is never cited", async () => {
+    const { db, pageWheres } = makeDbForPageTest([]);
+    const svc = new KbAskService(
+      db, {} as never, events, pageSearchMock as never, access,
+      new KbCitationVisibilityService(db, access, pageSearchMock as never, auth as never),
+    );
+
+    await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
+
+    expect(pageWheres.length).toBeGreaterThan(0);
+    const allVals = pageWheres.flatMap((w) => sqlValues(w));
+    expect(allVals).toContain(ATTACKER);
+    expect(allVals).not.toContain(OWNER);
+  });
+
+  it("a page citation accessible to the asker IS included in citations (positive pair)", async () => {
+    const gatewayOk = {
+      invokeTextWithUsage: jest.fn().mockResolvedValue({
+        ok: true as const,
+        data: "Here is the answer about the page.",
+        aiUsage: { model: "test", promptTokens: 1, completionTokens: 1, totalTokens: 2, credits: 0, costUsd: 0 },
+      }),
+    };
+    const { db } = makeDbForPageTest([PAGE_ID]);
+    const svc = new KbAskService(
+      db, gatewayOk as never, events, pageSearchMock as never, access,
+      new KbCitationVisibilityService(db, access, pageSearchMock as never, auth as never),
+    );
+
+    const result = await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
+
+    expect(result.citations.some((c) => c.kind === "page" && c.pageId === PAGE_ID)).toBe(true);
+  });
+});

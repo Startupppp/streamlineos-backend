@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Res, UseGuards } from "@nestjs/common";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
@@ -18,6 +19,7 @@ export class ApDocumentPdfController {
   @Get(":apDocumentId/pdf")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:read")
+  @ApiOkResponse({ description: "PDF document bytes", content: { "application/pdf": { schema: { type: "string", format: "binary" } } } })
   async render(
     @Param("apDocumentId") apDocumentId: string,
     @CurrentUser() user: CurrentUserContext,

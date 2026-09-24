@@ -23,8 +23,16 @@ import { KbPageStatusService } from "./kb-page-status.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 import { KbPageDuplicateService } from "./kb-page-duplicate.service";
+import { KbBriefToPageService } from "./kb-brief-to-page.service";
 import {
+  convertBriefToPageSchema,
+  convertBriefToPageResponseSchema,
+  type ConvertBriefToPageInput,
+} from "./dto/kb-brief-to-page.schemas";
+import {
+  bulkPageIdsSchema,
   createPageSchema,
   updatePageSchema,
   movePageSchema,
@@ -32,8 +40,10 @@ import {
   searchPagesSchema,
   listPagesSchema,
   setVisibilitySchema,
+  trashPagesQuerySchema,
   verifyPageSchema,
   listVersionsQuerySchema,
+  type BulkPageIdsInput,
   type CreatePageInput,
   type UpdatePageInput,
   type MovePageInput,
@@ -41,12 +51,14 @@ import {
   type SearchPagesInput,
   type ListPagesInput,
   type SetVisibilityInput,
+  type TrashPagesQuery,
   type VerifyPageInput,
   type ListVersionsQuery,
 } from "./dto/kb-pages.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
 import {
+  kbBulkPageResultSchema,
   kbPageTreeSchema,
   kbPageSchema,
   kbPageListSchema,
@@ -58,11 +70,15 @@ import {
   kbPageBacklinkSchema,
   kbPageVersionListSchema,
   kbPageVersionSchema,
+  kbTrashPageListSchema,
 } from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z
   .object({ pageId: z.coerce.number().int().positive() })
+  .strict();
+const briefIdParams = z
+  .object({ briefId: z.coerce.number().int().positive() })
   .strict();
 const pageIdversionNumberParams = z
   .object({
@@ -80,7 +96,9 @@ export class KbPagesController {
     private readonly versions: KbPageVersionsService,
     private readonly visits: KbPageVisitsService,
     private readonly tree: KbPageTreeService,
+    private readonly trash: KbPageTrashService,
     private readonly pageDuplicate: KbPageDuplicateService,
+    private readonly briefToPage: KbBriefToPageService,
     private readonly access: AccessService,
   ) {}
 
@@ -111,9 +129,37 @@ export class KbPagesController {
 
   @Get("pages/trash")
   @RequirePermission("kb:pages:view")
-  @ResponseSchema(kbPageListSchema)
-  async getTrash(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.tree.getTrash(u);
+  @Validate({ query: trashPagesQuerySchema })
+  @ResponseSchema(kbTrashPageListSchema)
+  async getTrash(
+    @Query() query: TrashPagesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.trash.getTrash(u, query);
+  }
+
+  @Post("pages/trash/restore")
+  @HttpCode(200)
+  @RequirePermission("kb:pages:update")
+  @Validate({ body: bulkPageIdsSchema })
+  @ResponseSchema(kbBulkPageResultSchema)
+  async bulkRestoreFromTrash(
+    @Body() body: BulkPageIdsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.trash.bulkRestore(u, body);
+  }
+
+  @Delete("pages/trash/purge")
+  @HttpCode(200)
+  @RequirePermission("kb:pages:purge")
+  @Validate({ body: bulkPageIdsSchema })
+  @ResponseSchema(kbBulkPageResultSchema)
+  async bulkPurgeFromTrash(
+    @Body() body: BulkPageIdsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.trash.bulkPurge(u, body);
   }
 
   @Get("pages/search")
@@ -124,7 +170,7 @@ export class KbPagesController {
     @Query() query: SearchPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.search(u, query.q, query.limit);
+    return this.pages.search(u, query.q, query.limit, query.projectId);
   }
 
   @Post("pages")
@@ -139,6 +185,20 @@ export class KbPagesController {
     return this.pages.create(u, body);
   }
 
+  @Post("research-briefs/:briefId/convert-to-page")
+  @HttpCode(201)
+  @RequirePermission("kb:pages:create")
+  @Validate({ params: briefIdParams, body: convertBriefToPageSchema })
+  @ResponseSchema(convertBriefToPageResponseSchema)
+  async convertBriefToPage(
+    @Param("briefId", ParseIntPipe) briefId: number,
+    @Body() body: ConvertBriefToPageInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    const canManage = await this.access.holds(u, "kb:pages:manage");
+    return this.briefToPage.convert(u, briefId, body, canManage);
+  }
+
   @Get("pages/:pageId")
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
@@ -147,7 +207,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const canManage = await this.resolveCanManage(u);
+    const canManage = await this.access.holds(u, "kb:pages:manage");
     return this.pages.get(u, pageId, canManage);
   }
 
@@ -160,7 +220,7 @@ export class KbPagesController {
     @Body() body: UpdatePageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const canManage = await this.resolveCanManage(u);
+    const canManage = await this.access.holds(u, "kb:pages:manage");
     return this.pages.update(u, pageId, body, canManage);
   }
 
@@ -219,7 +279,7 @@ export class KbPagesController {
   @RequirePermission("kb:pages:purge")
   @ResponseSchema(kbPageEmptyTrashSchema)
   async emptyTrash(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.tree.emptyTrash(u);
+    return this.trash.emptyTrash(u);
   }
 
   @Delete("pages/:pageId/permanent")
@@ -231,7 +291,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<void> {
-    await this.tree.hardDelete(u, pageId);
+    await this.trash.hardDelete(u, pageId);
   }
 
   @Post("pages/:pageId/favorite")
@@ -317,7 +377,7 @@ export class KbPagesController {
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const canManage = await this.resolveCanManage(u);
+    const canManage = await this.access.holds(u, "kb:pages:manage");
     return this.versions.restoreVersion(u, pageId, versionNumber, canManage);
   }
 
@@ -342,7 +402,7 @@ export class KbPagesController {
     @Body() body: SetVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const canManage = await this.resolveCanManage(u);
+    const canManage = await this.access.holds(u, "kb:pages:manage");
     return this.pages.setVisibility(u, pageId, body.visibility, canManage);
   }
 
@@ -412,7 +472,4 @@ export class KbPagesController {
     return this.status.markStale(u, pageId);
   }
 
-  private async resolveCanManage(u: CurrentUserContext): Promise<boolean> {
-    return this.access.holds(u, "kb:pages:manage");
-  }
 }

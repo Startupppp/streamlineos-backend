@@ -81,10 +81,23 @@ describe("KbMembersService — a membership ACL change always reaches the chunk 
     const updateChain = {
       set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     };
+    const selectChain: Record<string, jest.Mock> = {
+      leftJoin: jest.fn(() => selectChain),
+      where: jest.fn().mockResolvedValue([member]),
+    };
     return {
       query: { kbSpaceMembers: { findFirst: jest.fn().mockResolvedValue(member) } },
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
       update: jest.fn().mockReturnValue(updateChain),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([member]),
+          onConflictDoUpdate: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([member]),
+          }),
+        }),
+      }),
+      select: jest.fn().mockReturnValue({ from: jest.fn(() => selectChain) }),
       execute: jest.fn().mockResolvedValue([]),
     };
   }
@@ -115,6 +128,10 @@ describe("KbMembersService — a membership ACL change always reaches the chunk 
     const space = { id: 5, orgId: "org-2" };
     const newMember = { id: 99, orgId: "org-2", spaceId: 5, spaceRole: "member" };
     const insertChain = { values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([newMember]) }) };
+    const memberSelectChain: Record<string, jest.Mock> = {
+      leftJoin: jest.fn(() => memberSelectChain),
+      where: jest.fn().mockResolvedValue([newMember]),
+    };
     const db = {
       query: {
         kbSpaces: { findFirst: jest.fn().mockResolvedValue(space) },
@@ -122,6 +139,7 @@ describe("KbMembersService — a membership ACL change always reaches the chunk 
       },
       insert: jest.fn().mockReturnValue(insertChain),
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+      select: jest.fn().mockReturnValue({ from: jest.fn(() => memberSelectChain) }),
       execute: jest.fn().mockResolvedValue([]),
     };
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };

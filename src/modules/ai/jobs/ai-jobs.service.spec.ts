@@ -55,8 +55,15 @@ type MockDb = {
   query: { aiJobs: { findFirst: jest.Mock; findMany: jest.Mock } };
   insert: jest.Mock;
   update: jest.Mock;
+  select: jest.Mock;
   execute: jest.Mock;
 };
+
+function buildSelectChain(rows: Record<string, unknown>[] = [{ live: 0 }]) {
+  const where = jest.fn().mockResolvedValue(rows);
+  const from = jest.fn().mockReturnValue({ where });
+  return jest.fn().mockReturnValue({ from });
+}
 
 function buildDb(overrides: Partial<MockDb> = {}): MockDb {
   return {
@@ -68,6 +75,7 @@ function buildDb(overrides: Partial<MockDb> = {}): MockDb {
     },
     insert: jest.fn(),
     update: jest.fn(),
+    select: buildSelectChain(),
     execute: jest.fn().mockResolvedValue([]),
     ...overrides,
   };

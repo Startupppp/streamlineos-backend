@@ -45,9 +45,6 @@ function makeDb(subtreeIds: number[]) {
 }
 
 const makeAudit = () => ({ log: jest.fn() });
-const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) });
-const KB_BUCKET = "kb-files";
-const makeConfig = () => ({ R2_KB_BUCKET_NAME: KB_BUCKET });
 const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "manage", via: "admin" }),
@@ -68,9 +65,8 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
     const svc = new KbPageTreeService(
       db as never,
       makeAudit() as never,
-      makeStorage() as never,
-      makeConfig() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.softDelete(makeUser(), 42);
@@ -99,9 +95,8 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
     const svc = new KbPageTreeService(
       db as never,
       makeAudit() as never,
-      makeStorage() as never,
-      makeConfig() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.softDelete(makeUser(), 42);
@@ -115,9 +110,8 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
     const svc = new KbPageTreeService(
       db as never,
       makeAudit() as never,
-      makeStorage() as never,
-      makeConfig() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await expect(svc.softDelete(makeUser(), 42)).resolves.toEqual({ deletedCount: 0 });

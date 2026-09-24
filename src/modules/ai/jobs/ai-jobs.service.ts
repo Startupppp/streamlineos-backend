@@ -1,10 +1,17 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNotNull, lt, lte, sql } from "drizzle-orm";
+import {
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+} from "@nestjs/common";
+import { and, count, eq, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { aiJobs } from "../../../db/schema";
 import type { AiJob } from "../../../db/schema";
 import { isRecord } from "../../../common/types/is-record";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 export interface EnqueueInput {
   orgId: string;
@@ -24,6 +31,21 @@ export interface ListJobsOptions {
   limit?: number;
 }
 
+export const JOB_LEASE_TIMEOUT_MS = 5 * 60_000;
+
+export const LEASE_EXPIRED_ERROR =
+  "lease expired: worker stopped without reporting";
+
+export const MAX_LIVE_JOBS_PER_ORG = 500;
+
+export const QUEUE_DEPTH_RETRY_AFTER_SECONDS = 30;
+
+export const QUEUE_DEPTH_EXCEEDED_CODE = "AI_JOBS_QUEUE_DEPTH_EXCEEDED";
+
+export const LIVE_JOB_STATUSES: AiJob["status"][] = ["QUEUED", "RUNNING"];
+
+export const REVIVABLE_JOB_STATUSES: AiJob["status"][] = ["DEAD", "FAILED"];
+
 @Injectable()
 export class AiJobsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -36,26 +58,119 @@ export class AiJobsService {
           eq(aiJobs.idempotencyKey, input.idempotencyKey),
         ),
       });
-      if (existing) return { jobId: existing.id };
+      if (existing) {
+        if (REVIVABLE_JOB_STATUSES.includes(existing.status)) {
+          await this.reviveTerminalFailure(input, existing.id);
+        }
+        return { jobId: existing.id };
+      }
     }
 
-    const rows = await this.db
-      .insert(aiJobs)
-      .values({
-        orgId: input.orgId,
-        userId: input.userId ?? null,
-        type: input.type,
-        payload: input.payload,
-        priority: input.priority ?? 0,
-        runAt: input.runAt ?? new Date(),
-        maxAttempts: input.maxAttempts ?? 3,
-        idempotencyKey: input.idempotencyKey ?? null,
-      })
-      .returning({ id: aiJobs.id });
+    await this.assertQueueDepthAvailable(input.orgId);
 
-    const row = rows[0];
-    if (!row) throw new Error("Failed to enqueue AI job");
-    return { jobId: row.id };
+    try {
+      const rows = await this.db
+        .insert(aiJobs)
+        .values({
+          orgId: input.orgId,
+          userId: input.userId ?? null,
+          type: input.type,
+          payload: input.payload,
+          priority: input.priority ?? 0,
+          runAt: input.runAt ?? new Date(),
+          maxAttempts: input.maxAttempts ?? 3,
+          idempotencyKey: input.idempotencyKey ?? null,
+        })
+        .returning({ id: aiJobs.id });
+
+      const row = rows[0];
+      if (!row) throw new Error("Failed to enqueue AI job");
+      return { jobId: row.id };
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          code: "CONFLICT",
+          message: "An AI job with this idempotency key is already enqueued.",
+        });
+      }
+      throw error;
+    }
+  }
+
+  private async reviveTerminalFailure(
+    input: EnqueueInput,
+    jobId: number,
+  ): Promise<void> {
+    await this.db
+      .update(aiJobs)
+      .set({
+        status: "QUEUED",
+        attempts: 0,
+        lastError: null,
+        result: null,
+        lockedBy: null,
+        lockedAt: null,
+        runAt: input.runAt ?? new Date(),
+      })
+      .where(
+        and(
+          eq(aiJobs.id, jobId),
+          eq(aiJobs.orgId, input.orgId),
+          inArray(aiJobs.status, REVIVABLE_JOB_STATUSES),
+        ),
+      );
+  }
+
+  private async assertQueueDepthAvailable(orgId: string): Promise<void> {
+    const rows = await this.db
+      .select({ live: count() })
+      .from(aiJobs)
+      .where(
+        and(eq(aiJobs.orgId, orgId), inArray(aiJobs.status, LIVE_JOB_STATUSES)),
+      );
+
+    const live = rows[0]?.live ?? 0;
+    if (live < MAX_LIVE_JOBS_PER_ORG) return;
+
+    throw new HttpException(
+      {
+        code: QUEUE_DEPTH_EXCEEDED_CODE,
+        message:
+          "Too many AI jobs are already queued for this organization. Try again shortly.",
+        retryAfterSecs: QUEUE_DEPTH_RETRY_AFTER_SECONDS,
+        details: {
+          limit: MAX_LIVE_JOBS_PER_ORG,
+          liveJobs: live,
+          retryAfterSecs: QUEUE_DEPTH_RETRY_AFTER_SECONDS,
+        },
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
+  async reclaimExpiredLeases(now: Date = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - JOB_LEASE_TIMEOUT_MS);
+    const reclaimed = await this.db.execute(sql`
+      UPDATE ai_jobs
+      SET attempts = attempts + 1,
+          status = CASE
+            WHEN attempts + 1 >= max_attempts THEN 'DEAD'::ai_job_status
+            ELSE 'QUEUED'::ai_job_status
+          END,
+          last_error = ${LEASE_EXPIRED_ERROR},
+          locked_by = NULL,
+          locked_at = NULL,
+          updated_at = ${now.toISOString()}::timestamptz
+      WHERE id IN (
+        SELECT j.id FROM ai_jobs j
+        WHERE j.status = 'RUNNING'
+          AND j.locked_at IS NOT NULL
+          AND j.locked_at < ${cutoff.toISOString()}::timestamptz
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id
+    `);
+    return reclaimed.length;
   }
 
   async claimBatch(workerId: string, limit: number): Promise<AiJob[]> {
@@ -83,17 +198,22 @@ export class AiJobsService {
       id: Number(row["id"]),
       orgId: String(row["org_id"]),
       userId: row["user_id"] != null ? String(row["user_id"]) : null,
-      userMembershipId: row["user_membership_id"] != null ? Number(row["user_membership_id"]) : null,
+      userMembershipId:
+        row["user_membership_id"] != null
+          ? Number(row["user_membership_id"])
+          : null,
       type: String(row["type"]),
       payload: isRecord(row["payload"]) ? row["payload"] : {},
       status: "RUNNING",
       priority: Number(row["priority"]),
       attempts: Number(row["attempts"]),
       maxAttempts: Number(row["max_attempts"]),
-      idempotencyKey: row["idempotency_key"] != null ? String(row["idempotency_key"]) : null,
+      idempotencyKey:
+        row["idempotency_key"] != null ? String(row["idempotency_key"]) : null,
       runAt: new Date(String(row["run_at"])),
       lockedBy: row["locked_by"] != null ? String(row["locked_by"]) : null,
-      lockedAt: row["locked_at"] != null ? new Date(String(row["locked_at"])) : null,
+      lockedAt:
+        row["locked_at"] != null ? new Date(String(row["locked_at"])) : null,
       lastError: row["last_error"] != null ? String(row["last_error"]) : null,
       result: isRecord(row["result"]) ? row["result"] : null,
       createdAt: new Date(String(row["created_at"])),
@@ -101,7 +221,11 @@ export class AiJobsService {
     }));
   }
 
-  async complete(orgId: string, jobId: number, result: Record<string, unknown>): Promise<void> {
+  async complete(
+    orgId: string,
+    jobId: number,
+    result: Record<string, unknown>,
+  ): Promise<void> {
     await this.db
       .update(aiJobs)
       .set({ status: "COMPLETED", result, lockedBy: null, lockedAt: null })
@@ -118,7 +242,13 @@ export class AiJobsService {
     if (nextAttempts >= job.maxAttempts) {
       await this.db
         .update(aiJobs)
-        .set({ status: "DEAD", attempts: nextAttempts, lastError: error, lockedBy: null, lockedAt: null })
+        .set({
+          status: "DEAD",
+          attempts: nextAttempts,
+          lastError: error,
+          lockedBy: null,
+          lockedAt: null,
+        })
         .where(and(eq(aiJobs.id, jobId), eq(aiJobs.orgId, orgId)));
       return;
     }
@@ -142,7 +272,13 @@ export class AiJobsService {
     await this.db
       .update(aiJobs)
       .set({ status: "CANCELLED" })
-      .where(and(eq(aiJobs.id, jobId), eq(aiJobs.orgId, orgId), eq(aiJobs.status, "QUEUED")));
+      .where(
+        and(
+          eq(aiJobs.id, jobId),
+          eq(aiJobs.orgId, orgId),
+          eq(aiJobs.status, "QUEUED"),
+        ),
+      );
   }
 
   async getStatus(orgId: string, jobId: number): Promise<AiJob | null> {
@@ -152,7 +288,10 @@ export class AiJobsService {
     return job ?? null;
   }
 
-  async listJobs(orgId: string, opts: ListJobsOptions): Promise<{ items: AiJob[]; nextCursor: number | null }> {
+  async listJobs(
+    orgId: string,
+    opts: ListJobsOptions,
+  ): Promise<{ items: AiJob[]; nextCursor: number | null }> {
     const limit = Math.min(opts.limit ?? 25, 100);
     const conditions = [eq(aiJobs.orgId, orgId)];
 

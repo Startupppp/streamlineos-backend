@@ -17,7 +17,7 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
 
 import { KbSourcesService } from "./wiki/kb-sources.service";
 import { KbMediaService } from "./wiki/kb-media.service";
-import { KbPageTreeService } from "./wiki/kb-page-tree.service";
+import { KbPageTrashService } from "./wiki/kb-page-trash.service";
 import { attemptPageAttachmentPurge } from "./wiki/kb-page-attachment-purge";
 import { KbSourceAdapter } from "./retrieval/kb-content-adapter";
 import { KbAttachmentIndexingService } from "./retrieval/kb-attachment-indexing.service";
@@ -268,7 +268,7 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
     expect(del.key).toBe(put.key);
   });
 
-  it("KbPageTreeService.hardDelete carries R2_KB_BUCKET_NAME the whole way to the DELETE", async () => {
+  it("KbPageTrashService.hardDelete carries R2_KB_BUCKET_NAME the whole way to the DELETE", async () => {
     const sent = captureS3();
     const store = storage();
 
@@ -296,12 +296,13 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
       delete: () => ({ where: async () => [] }),
     };
 
-    const tree = new KbPageTreeService(
+    const tree = new KbPageTrashService(
       treeDb as never,
       audit() as never,
       store,
       config as never,
       auth as never,
+      { restore: jest.fn().mockResolvedValue({ id: 10 }) } as never,
     );
 
     await tree.hardDelete(USER, 10);

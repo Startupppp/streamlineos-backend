@@ -130,7 +130,6 @@ describe("HrWebhookDispatchService", () => {
       await service.sweep();
 
       expect(db.update).toHaveBeenCalledWith(hrWebhookDeliveries);
-      // Verify that status is updated to "dead"
       expect(db.set).toHaveBeenCalledWith(
         expect.objectContaining({
             status: "dead"
@@ -138,4 +137,99 @@ describe("HrWebhookDispatchService", () => {
       );
   });
 
+});
+
+describe("HrWebhookDispatchService — cross-tenant isolation", () => {
+  let service: HrWebhookDispatchService;
+  let db: any;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    db = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn(),
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        HrWebhookDispatchService,
+        { provide: DRIZZLE, useValue: db },
+      ],
+    }).compile();
+
+    service = module.get<HrWebhookDispatchService>(HrWebhookDispatchService);
+  });
+
+  it("dispatches each delivery only to the subscription endpoint it was created for, not to a different org's webhook url (cross-tenant DENY)", async () => {
+    const ORG_A_URL = "https://webhook.org-a.example.com";
+    const ORG_B_URL = "https://webhook.org-b.example.com";
+
+    db.limit.mockResolvedValue([
+      {
+        delivery: { id: 1, orgId: "org-a", subscriptionId: 1, event: "candidate.applied", payload: {}, status: "pending", attempts: 0, lastAttemptAt: null },
+        subscription: { id: 1, orgId: "org-a", url: ORG_A_URL, secret: "secret-a" },
+      },
+    ]);
+
+    const { callProvider } = require("../../../../../common/outbound/call-provider");
+    const { postSafeWebhook } = require("../../../../../common/outbound/safe-webhook-transport");
+
+    callProvider.mockImplementation(async (_desc: unknown, fn: () => Promise<unknown>) => {
+      const res = await fn();
+      return { ok: true, value: res, status: 200, body: "", attempts: 1 };
+    });
+    postSafeWebhook.mockResolvedValue({ statusCode: 200, responseBody: "OK" });
+
+    await service.sweep();
+
+    expect(postSafeWebhook).toHaveBeenCalledWith(
+      ORG_A_URL,
+      expect.any(String),
+      expect.any(Object),
+      expect.any(Number),
+      expect.any(Number),
+    );
+    expect(postSafeWebhook).not.toHaveBeenCalledWith(
+      ORG_B_URL,
+      expect.any(String),
+      expect.any(Object),
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
+
+  it("sends org-A's event payload to org-A's own webhook endpoint (same-tenant positive control)", async () => {
+    const ORG_A_URL = "https://webhook.org-a.example.com";
+
+    db.limit.mockResolvedValue([
+      {
+        delivery: { id: 2, orgId: "org-a", subscriptionId: 1, event: "candidate.hired", payload: { candidateId: 42 }, status: "pending", attempts: 0, lastAttemptAt: null },
+        subscription: { id: 1, orgId: "org-a", url: ORG_A_URL, secret: "secret-a" },
+      },
+    ]);
+
+    const { callProvider } = require("../../../../../common/outbound/call-provider");
+    const { postSafeWebhook } = require("../../../../../common/outbound/safe-webhook-transport");
+
+    callProvider.mockImplementation(async (_desc: unknown, fn: () => Promise<unknown>) => {
+      const res = await fn();
+      return { ok: true, value: res, status: 200, body: "", attempts: 1 };
+    });
+    postSafeWebhook.mockResolvedValue({ statusCode: 200, responseBody: "OK" });
+
+    await service.sweep();
+
+    expect(postSafeWebhook).toHaveBeenCalledWith(
+      ORG_A_URL,
+      expect.stringContaining('"event":"candidate.hired"'),
+      expect.any(Object),
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
 });

@@ -24,7 +24,7 @@ export const kbPageReviews = pgTable(
       .notNull(),
     type: text("type").$type<"approval" | "freshness">().notNull(),
     status: text("status")
-      .$type<"pending" | "approved" | "rejected" | "expired">()
+      .$type<"pending" | "approved" | "rejected">()
       .notNull()
       .default("pending"),
     requestedById: text("requested_by_id").references(() => users.id, { onDelete: "set null" }),

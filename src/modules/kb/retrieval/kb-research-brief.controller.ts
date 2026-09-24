@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -14,7 +14,7 @@ import {
   type KbResearchBriefCreateInput,
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   kbResearchBriefEnqueueSchema,
   kbResearchBriefListSchema as kbResearchBriefListResponseSchema,
@@ -73,5 +73,32 @@ export class KbResearchBriefController {
   ): Promise<{ success: boolean }> {
     await this.briefs.rateBrief(u, briefId, body.rating);
     return { success: true };
+  }
+
+  @Post("research-briefs/:briefId/retry")
+  @BodylessAction()
+  @RequirePermission("kb:pages:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
+  @HttpCode(200)
+  @Validate({ params: briefIdParams })
+  @ResponseSchema(kbResearchBriefEnqueueSchema)
+  async retryBrief(
+    @Param("briefId", ParseIntPipe) briefId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.briefs.retryBrief(u, briefId);
+  }
+
+  @Delete("research-briefs/:briefId")
+  @RequirePermission("kb:pages:view")
+  @HttpCode(204)
+  @Validate({ params: briefIdParams })
+  @NoContentResponse()
+  async cancelBrief(
+    @Param("briefId", ParseIntPipe) briefId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<void> {
+    await this.briefs.cancelBrief(u, briefId);
   }
 }

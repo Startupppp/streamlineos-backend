@@ -73,10 +73,6 @@ function makeDb(subtreeIds: number[], pagesToIndexRows: typeof RESTORED_PAGE[]) 
 }
 
 const makeAudit = () => ({ log: jest.fn() });
-const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) });
-const KB_BUCKET = "kb-files";
-const makeConfig = () => ({ R2_KB_BUCKET_NAME: KB_BUCKET });
-const makePlanLimits = () => ({});
 const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "edit", via: "admin" }),
@@ -91,9 +87,8 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
     const svc = new KbPageTreeService(
       db as never,
       makeAudit() as never,
-      makeStorage() as never,
-      makeConfig() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -113,9 +108,8 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
     const svc = new KbPageTreeService(
       db as never,
       makeAudit() as never,
-      makeStorage() as never,
-      makeConfig() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -133,9 +127,8 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
     const svc = new KbPageTreeService(
       db as never,
       makeAudit() as never,
-      makeStorage() as never,
-      makeConfig() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -154,9 +147,8 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
     const svc = new KbPageTreeService(
       db as never,
       makeAudit() as never,
-      makeStorage() as never,
-      makeConfig() as never,
       makeAuth() as never,
+      {} as never,
     );
 
     await svc.restore(makeUser(), 10);

@@ -3,6 +3,10 @@ import { AiModule } from "../../ai/core/ai.module";
 import { BillingModule } from "../../billing/core/billing.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { KbCoreModule } from "../core/kb-core.module";
+import { KbWikiAnalyticsController } from "../analytics/kb-wiki-analytics.controller";
+import { KbWikiAnalyticsService } from "../analytics/kb-wiki-analytics.service";
+import { KbContentHealthController } from "../content-health/kb-content-health.controller";
+import { KbContentHealthService } from "../content-health/kb-content-health.service";
 import { KbRetrievalModule } from "../retrieval/kb-retrieval.module";
 import { KbSpacesService } from "./kb-spaces.service";
 import { KbMembersService } from "./kb-members.service";
@@ -10,6 +14,7 @@ import { KbPagesService } from "./kb-pages.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
@@ -33,9 +38,18 @@ import { KbPageRecordLinksController } from "./kb-page-record-links.controller";
 import { KbMediaController } from "./kb-media.controller";
 import { KbSourcesController } from "./kb-sources.controller";
 import { KbPageAiController } from "./kb-page-ai.controller";
+import { KbPageGrantsController } from "./kb-page-grants.controller";
+import { KbPageGrantsService } from "./kb-page-grants.service";
+import { KbBriefToPageService } from "./kb-brief-to-page.service";
 
 @Module({
-  imports: [AiModule, BillingModule, NotificationsModule, KbCoreModule, KbRetrievalModule],
+  imports: [
+    AiModule,
+    BillingModule,
+    NotificationsModule,
+    KbCoreModule,
+    KbRetrievalModule,
+  ],
   controllers: [
     KbSpacesController,
     KbMembersController,
@@ -49,26 +63,34 @@ import { KbPageAiController } from "./kb-page-ai.controller";
     KbMediaController,
     KbSourcesController,
     KbPageAiController,
+    KbPageGrantsController,
+    KbWikiAnalyticsController,
+    KbContentHealthController,
   ],
   providers: [
+    KbMediaService,
+    KbPageAiService,
     KbSpacesService,
     KbMembersService,
+    KbSourcesService,
     KbPagesService,
+    KbPageGrantsService,
     KbPageStatusService,
     KbPageVersionsService,
     KbPageVisitsService,
     KbPageTreeService,
+    KbPageTrashService,
     KbPageDuplicateService,
     KbPageCommentsService,
     KbPageTemplatesService,
     KbPageReviewsService,
-    KbPageReviewsQueryService,
-    KbPageRecordLinksService,
-    KbMediaService,
-    KbSourcesService,
     KbImportExportService,
-    KbPageAiService,
+    KbWikiAnalyticsService,
+    KbContentHealthService,
+    KbPageRecordLinksService,
+    KbPageReviewsQueryService,
+    KbBriefToPageService,
   ],
-  exports: [KbPageTreeService],
+  exports: [KbPageTreeService, KbPageTrashService],
 })
 export class KbWikiModule {}

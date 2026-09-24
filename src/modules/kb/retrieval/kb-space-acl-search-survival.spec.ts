@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { type SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbPages, kbSpaces } from "../../../db/schema";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbSpacesService } from "../wiki/kb-spaces.service";
@@ -155,7 +155,9 @@ function makeIndexing(db: unknown): KbIndexingService {
 function makeSpaces(db: unknown, indexing: KbIndexingService) {
   const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
   return {
-    service: new KbSpacesService(db as never, access as never, indexing),
+    service: new KbSpacesService(db as never, access as never, indexing, {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    } as never),
     access,
   };
 }

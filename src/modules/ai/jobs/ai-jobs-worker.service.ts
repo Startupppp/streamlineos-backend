@@ -29,6 +29,10 @@ export class AiJobsWorkerService {
 
   async flush(limit = 25): Promise<FlushResult> {
     const workerId = `worker-${process.pid}-${Date.now()}`;
+    const reclaimed = await this.jobs.reclaimExpiredLeases();
+    if (reclaimed > 0) {
+      this.logger.warn("Reclaimed AI jobs from expired leases", { reclaimed });
+    }
     const batch = await this.jobs.claimBatch(workerId, limit);
     const result: FlushResult = { claimed: batch.length, completed: 0, failed: 0 };
 

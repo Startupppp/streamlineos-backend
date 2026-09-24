@@ -234,9 +234,12 @@ export class KbAttachmentIndexingService {
     try {
       text = await extractAttachmentText(buffer, mimeType);
     } catch (err) {
-      this.logger.error(
-        `Page document extract failed (page ${pageId}, ${fileName}): ${err}`,
-      );
+      this.logger.error("Page document extract failed", {
+        orgId,
+        pageId,
+        mimeType,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return { chunks: 0, warning: `${fileName}: could not read file` };
     }
 

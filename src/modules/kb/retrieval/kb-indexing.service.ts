@@ -1,15 +1,16 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gt, isNull, ne, sql } from "drizzle-orm";
-import {
-  kbArticles,
-  kbPages,
-} from "../../../db/schema";
+import { kbArticles, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import {
+  KbIndexingMetrics,
+  kbIndexingOutcomeForError,
+} from "../core/telemetry/kb-indexing-metrics";
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 import { embedChunksWithResumption } from "./kb-embedding-resumption";
@@ -52,43 +53,48 @@ export class KbIndexingService {
     contentId: number,
     contentHash: string,
     chunks: string[],
+    metrics: KbIndexingMetrics,
     signal?: AbortSignal,
   ): Promise<number[][]> {
     return embedChunksWithResumption(
-      { aiGateway: this.aiGateway, checkpoint: this.checkpoint, logger: this.logger },
+      {
+        aiGateway: this.aiGateway,
+        checkpoint: this.checkpoint,
+        logger: this.logger,
+        metrics,
+      },
       { orgId, contentType, contentId, contentHash, chunks, signal },
     );
   }
 
-  async indexArticle(orgId: string, articleId: number, signal?: AbortSignal): Promise<void> {
+  async indexArticle(
+    orgId: string,
+    articleId: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     return indexArticleContent(
-      { db: this.db, aiGateway: this.aiGateway, checkpoint: this.checkpoint, logger: this.logger },
-      orgId, articleId, signal,
+      {
+        db: this.db,
+        aiGateway: this.aiGateway,
+        checkpoint: this.checkpoint,
+        logger: this.logger,
+      },
+      orgId,
+      articleId,
+      signal,
     );
   }
 
-  /**
-   * The HTTP entry point for a reindex, as distinct from the internal one.
-   *
-   * `indexPage` treats a page it cannot find as "nothing to index": it drops any stale chunks and
-   * returns 0. That is right for the internal callers — a content event may arrive after the page
-   * was deleted — and wrong for a request, because `POST /kb/pages/:pageId/reindex` then answered
-   * 200 `{"reindexed":true}` for another organisation's page id and for an id belonging to no
-   * organisation alike. Measured live by the cross-tenant sweep. Nothing crossed (every statement
-   * inside is org-bound) but the caller is told a page was reindexed that does not exist, and the
-   * 404 the contract requires is absent.
-   *
-   * A page in the trash is "not found" for this route too: `deleted_at` is set, `isPageIndexable`
-   * refuses it, and `KbPageTreeService.softDelete` already deleted its chunks inside the same
-   * transaction as the `deleted_at` write. Resolving a soft-deleted page here answered 200
-   * `{"reindexed":true}` for a page the caller can no longer see or index.
-   */
   async reindexPageOnRequest(orgId: string, pageId: number): Promise<number> {
     const page = await runInTenantTransaction(
       this.db,
       async (tx) =>
         tx.query.kbPages.findFirst({
-          where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+          where: and(
+            eq(kbPages.id, pageId),
+            eq(kbPages.orgId, orgId),
+            isNull(kbPages.deletedAt),
+          ),
           columns: { id: true },
         }),
       { orgId },
@@ -97,31 +103,55 @@ export class KbIndexingService {
     return this.indexPage(orgId, pageId);
   }
 
-  async indexPage(orgId: string, pageId: number, signal?: AbortSignal): Promise<number> {
-    const page = await runInTenantTransaction(this.db, async (tx) =>
-      tx.query.kbPages.findFirst({
-        where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
-        columns: {
-          status: true,
-          visibility: true,
-          deletedAt: true,
-          contentText: true,
-          projectId: true,
-          createdById: true,
-          createdByMembershipId: true,
-          aclRevision: true,
-          contentRevision: true,
-        },
-      }),
-    { orgId });
+  async indexPage(
+    orgId: string,
+    pageId: number,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const metrics = KbIndexingMetrics.begin({ contentType: "page", orgId });
+    try {
+      return await this.indexPageMeasured(orgId, pageId, metrics, signal);
+    } catch (error) {
+      metrics.finish(kbIndexingOutcomeForError(error));
+      throw error;
+    }
+  }
 
-    if (
-      !page ||
-      !isPageIndexable(page) ||
-      !page.contentText?.trim() ||
-      !this.aiGateway.isEmbeddingConfigured()
-    ) {
+  private async indexPageMeasured(
+    orgId: string,
+    pageId: number,
+    metrics: KbIndexingMetrics,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const page = await runInTenantTransaction(
+      this.db,
+      async (tx) =>
+        tx.query.kbPages.findFirst({
+          where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+          columns: {
+            status: true,
+            visibility: true,
+            deletedAt: true,
+            contentText: true,
+            projectId: true,
+            createdById: true,
+            createdByMembershipId: true,
+            aclRevision: true,
+            contentRevision: true,
+          },
+        }),
+      { orgId },
+    );
+
+    if (!page || !isPageIndexable(page) || !page.contentText?.trim()) {
       await this.removePageChunks(orgId, pageId);
+      metrics.finish("skipped_no_content");
+      return 0;
+    }
+
+    if (!this.aiGateway.isEmbeddingConfigured()) {
+      await this.removePageChunks(orgId, pageId);
+      metrics.finish("embedding_unavailable");
       return 0;
     }
 
@@ -144,10 +174,17 @@ export class KbIndexingService {
         stored.pageCreatedByMembershipId !== acl.pageCreatedByMembershipId ||
         stored.aclRevision !== acl.aclRevision;
 
-      if (!aclChanged) return 0;
+      if (!aclChanged) {
+        metrics.finish("reused", { reused: true });
+        return 0;
+      }
 
-      this.logger.log("KB page ACL updated (content unchanged)", { orgId, pageId });
+      this.logger.log("KB page ACL updated (content unchanged)", {
+        orgId,
+        pageId,
+      });
       await updatePageChunkAcl(this.db, orgId, pageId, acl);
+      metrics.finish("acl_only", { reused: true });
       return 0;
     }
 
@@ -155,6 +192,7 @@ export class KbIndexingService {
 
     if (chunks.length === 0) {
       await this.removePageChunks(orgId, pageId);
+      metrics.finish("skipped_no_content");
       return 0;
     }
 
@@ -170,6 +208,7 @@ export class KbIndexingService {
       pageId,
       contentHash,
       chunks,
+      metrics,
       signal,
     );
 
@@ -189,6 +228,7 @@ export class KbIndexingService {
       chunks: chunks.length,
     });
 
+    metrics.finish("indexed", { chunks: chunks.length, reused: false });
     return chunks.length;
   }
 
@@ -209,10 +249,14 @@ export class KbIndexingService {
       this.db
         .update(kbArticles)
         .set({ aclRevision: sql`acl_revision + 1` })
-        .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
+        .where(
+          and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId)),
+        ),
     ]);
 
-    const deferred = registerAfterCommit(() => this.syncAclRevisionForSpace(orgId, spaceId));
+    const deferred = registerAfterCommit(() =>
+      this.syncAclRevisionForSpace(orgId, spaceId),
+    );
     if (!deferred) await this.syncAclRevisionForSpace(orgId, spaceId);
   }
 
@@ -239,21 +283,22 @@ export class KbIndexingService {
     ]);
   }
 
-  /**
-   * `POST /kb/pages/reindex-all` is `@NoTenantTransaction()`, so there is no ambient context to
-   * borrow and this listing must open its own. `this.db.select(...)` on the bare pool has no
-   * tenant GUC, and `kb_pages`' policy resolves the org through `app.current_org_id_or_null()`,
-   * which returns NULL rather than raising — so the unwrapped listing matched nothing and the
-   * route reported `reindexed: 0` for a tenant full of pages. Measured, not assumed:
-   * `kb-page-reindex-placement.db.spec.ts` pins both halves.
-   * `runInTenantTransaction` with an explicit `orgId` reuses an ambient transaction when there
-   * is one (the outbox-driven callers) and opens a short one when there is not, so both entry
-   * paths hold a connection for the listing only, never across the embedding round trips below.
-   */
-  async reindexAllPages(orgId?: string, afterPageId = 0): Promise<ReindexAllPagesResult> {
+  async reindexAllPages(
+    orgId?: string,
+    afterPageId = 0,
+  ): Promise<ReindexAllPagesResult> {
     const where = orgId
-      ? and(eq(kbPages.orgId, orgId), gt(kbPages.id, afterPageId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
-      : and(gt(kbPages.id, afterPageId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt));
+      ? and(
+          eq(kbPages.orgId, orgId),
+          gt(kbPages.id, afterPageId),
+          ne(kbPages.status, "archived"),
+          isNull(kbPages.deletedAt),
+        )
+      : and(
+          gt(kbPages.id, afterPageId),
+          ne(kbPages.status, "archived"),
+          isNull(kbPages.deletedAt),
+        );
 
     const listPages = async (tx: TenantTx) =>
       tx
@@ -271,12 +316,14 @@ export class KbIndexingService {
 
     const batch = pages.slice(0, REINDEX_ALL_BATCH_SIZE);
 
-    for (const page of batch)
-      await this.indexPage(page.orgId, page.id);
+    for (const page of batch) await this.indexPage(page.orgId, page.id);
 
     return {
       reindexed: batch.length,
-      nextPageId: pages.length > REINDEX_ALL_BATCH_SIZE ? (batch.at(-1)?.id ?? null) : null,
+      nextPageId:
+        pages.length > REINDEX_ALL_BATCH_SIZE
+          ? (batch.at(-1)?.id ?? null)
+          : null,
     };
   }
 }

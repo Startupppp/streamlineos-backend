@@ -42,14 +42,18 @@ export function makeAccess(): AccessService {
 
 export function makeMail(): MailService {
   return {
-    listMessages: jest.fn().mockResolvedValue({ messages: [], nextCursor: null, accountErrors: [] }),
+    listMessages: jest
+      .fn()
+      .mockResolvedValue({ messages: [], nextCursor: null, accountErrors: [] }),
     countUnread: jest.fn(),
     areAllAccountsFresh: jest.fn().mockResolvedValue(true),
   } as unknown as MailService;
 }
 
 export function makeBroadcasts(): BroadcastsService {
-  return { listInboxPage: jest.fn().mockResolvedValue([]) } as unknown as BroadcastsService;
+  return {
+    listInboxPage: jest.fn().mockResolvedValue([]),
+  } as unknown as BroadcastsService;
 }
 
 export function makeBuildApprovals(): BuildApprovalsInboxService {
@@ -67,11 +71,18 @@ export function makeUser(): CurrentUserContext {
     isOrgOwner: false,
     sessionId: "s-1",
     tokenScopes: null,
-    principal: { kind: "human-session", membershipId: MEMBERSHIP, isOrgOwner: false },
+    principal: {
+      kind: "human-session",
+      membershipId: MEMBERSHIP,
+      isOrgOwner: false,
+    },
   } as CurrentUserContext;
 }
 
-export function makeInbox(db: Db, registry: ApprovalAdapterRegistry): UnifiedInboxService {
+export function makeInbox(
+  db: Db,
+  registry: ApprovalAdapterRegistry,
+): UnifiedInboxService {
   return new UnifiedInboxService(
     db,
     makeAccess(),
@@ -92,7 +103,12 @@ export async function scrollApprovals(
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page++) {
-    const result = await svc.list(ORG, UID, { limit, kinds, unreadOnly: false, cursor }, makeUser());
+    const result = await svc.list(
+      ORG,
+      UID,
+      { limit, kinds, unreadOnly: false, eventKeys: undefined, cursor },
+      makeUser(),
+    );
     for (const item of result.items) delivered.push(item.dedupKey);
     if (!result.hasMore || result.nextCursor === null) break;
     cursor = result.nextCursor;

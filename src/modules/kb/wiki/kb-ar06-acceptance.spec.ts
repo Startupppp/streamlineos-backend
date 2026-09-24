@@ -134,7 +134,7 @@ describe("AR-06 Criterion 2: page comment access revocation", () => {
   });
 });
 
-describe("AR-06 Criterion 3: listDue pagination and scope", () => {
+describe("AR-06 Criterion 3: overdue review pagination and scope", () => {
   it("reviewerCanSeeAllReviews is true when seam grants kb:reviews:manage", async () => {
     expect(await reviewerCanSeeAllReviews(makeUser("org"), makeAccessAllow())).toBe(true);
   });
@@ -143,7 +143,7 @@ describe("AR-06 Criterion 3: listDue pagination and scope", () => {
     expect(await reviewerCanSeeAllReviews(makeUser("org"), makeAccessDeny())).toBe(false);
   });
 
-  it("listDue accepts cursor and calls DB with cursor predicate (pagination beyond old 100-row cap)", async () => {
+  it("the overdue filter reaches the database through the one cursor list, over-fetching a sentinel row", async () => {
     const ORG = "org-x";
     const dueRow = {
       id: 1,
@@ -191,12 +191,71 @@ describe("AR-06 Criterion 3: listDue pagination and scope", () => {
     };
 
     const svc = new KbPageReviewsQueryService(db, makeAccessAllow(), auth as never);
-    const cursor = { sortValue: new Date("2025-12-31T00:00:00Z"), id: "50" };
 
-    const result = await svc.listDue(makeUser(ORG), cursor);
+    const page = await svc.list(makeUser(ORG), {
+      limit: 50,
+      sortDir: "asc",
+      status: "overdue",
+    });
 
-    expect(Array.isArray(result)).toBe(true);
-    expect(limitMock).toHaveBeenCalledWith(50);
+    expect(Array.isArray(page.data)).toBe(true);
+    expect(page.pagination).toEqual(
+      expect.objectContaining({ limit: 50, hasMore: expect.any(Boolean) }),
+    );
+    expect(limitMock).toHaveBeenCalledWith(51);
     expect(whereMock).toHaveBeenCalled();
+  });
+
+  it("pages overdue reviews past the old 100-row cap through the one list method, because listDue was collapsed into it", async () => {
+    const ORG = "org-owner";
+    const rows = Array.from({ length: 51 }, (_, i) => ({
+      id: i + 1,
+      orgId: ORG,
+      pageId: 10,
+      type: "freshness",
+      status: "pending",
+      requestedById: "user-1",
+      reviewerId: null,
+      requestedByMembershipId: null,
+      reviewerMembershipId: null,
+      dueAt: new Date("2026-01-01"),
+      decidedAt: null,
+      decisionNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      pageTitle: "Test",
+      requestedByName: null,
+      reviewerName: null,
+    }));
+
+    const limitMock = jest.fn().mockResolvedValue(rows);
+    const orderByMock = jest.fn().mockReturnValue({ limit: limitMock });
+    const whereMock = jest.fn().mockReturnValue({ orderBy: orderByMock });
+    const leftJoinMock4 = jest.fn().mockReturnValue({ where: whereMock });
+    const leftJoinMock3 = jest.fn().mockReturnValue({ leftJoin: leftJoinMock4 });
+    const leftJoinMock2 = jest.fn().mockReturnValue({ leftJoin: leftJoinMock3 });
+    const leftJoinMock1 = jest.fn().mockReturnValue({ leftJoin: leftJoinMock2 });
+    const innerJoinMock = jest.fn().mockReturnValue({ leftJoin: leftJoinMock1 });
+
+    const db = {
+      query: {
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 10 }) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ innerJoin: innerJoinMock }),
+      }),
+    } as unknown as Db;
+
+    const auth = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+    };
+
+    const svc = new KbPageReviewsQueryService(db, makeAccessAllow(), auth as never);
+    const page = await svc.list(makeUser(ORG), { limit: 50, sortDir: "asc", status: "overdue" });
+
+    expect(page.data).toHaveLength(50);
+    expect(page.pagination.hasMore).toBe(true);
+    expect(page.pagination.nextCursor).toEqual(expect.any(String));
   });
 });

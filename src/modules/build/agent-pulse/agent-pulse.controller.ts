@@ -7,7 +7,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { AgentPulseService } from "./agent-pulse.service";
-import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   agentPulseBadgeSchema,
   agentPulseQuerySchema,
@@ -46,6 +46,7 @@ export class AgentPulseController {
   @RequirePermission("build:tickets:update")
   @ResponseSchema(applyDraftResponseSchema)
   @Validate({ params: applyDraftParamsSchema })
+  @BodylessAction()
   applyDraft(@Param("draftId", ParseIntPipe) draftId: number, @CurrentUser() u: CurrentUserContext) {
     return this.svc.applyDraft(u.orgId, u.userId, actingMembershipId(u.principal), draftId);
   }

@@ -2,6 +2,7 @@ import { ServiceUnavailableException } from "@nestjs/common";
 import type { Logger } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import type { KbIndexingMetrics } from "../core/telemetry/kb-indexing-metrics";
 import type { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 
 export const KB_INDEXING_FEATURE = "kb.indexing";
@@ -10,6 +11,7 @@ export interface KbEmbeddingDeps {
   aiGateway: AiGatewayService;
   checkpoint: KbIngestionCheckpointService;
   logger: Logger;
+  metrics?: KbIndexingMetrics;
 }
 
 export interface KbEmbeddingRequest {
@@ -29,7 +31,7 @@ export async function embedChunksWithResumption(
   deps: KbEmbeddingDeps,
   request: KbEmbeddingRequest,
 ): Promise<number[][]> {
-  const { aiGateway, checkpoint, logger } = deps;
+  const { aiGateway, checkpoint, logger, metrics } = deps;
   const { orgId, contentType, contentId, contentHash, chunks, signal } = request;
 
   const cached = await checkpoint.loadCheckpoints(
@@ -72,6 +74,8 @@ export async function embedChunksWithResumption(
       throw new InsufficientAiCreditsException({ message: embedResult.message });
     throw new ServiceUnavailableException(embedResult.message);
   }
+
+  metrics?.embedded(pending.length);
 
   if (signal?.aborted) throw new DOMException("KB ingestion cancelled", "AbortError");
 

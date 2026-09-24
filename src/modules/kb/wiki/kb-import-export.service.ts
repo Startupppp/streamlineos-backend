@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, max, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
 import { kbPages, kbImportJobs, kbExportJobs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -169,15 +169,41 @@ export class KbImportExportService {
         sortOrder,
         createdById: user.userId,
         lastEditedById: user.userId,
+        externalId: item.externalId ?? null,
+        externalSource: item.externalSource ?? null,
       };
     });
 
-    if (pageValues.length > 0) {
+    const withRef = pageValues.filter((v) => v.externalId !== null);
+    const withoutRef = pageValues.filter((v) => v.externalId === null);
+
+    if (withRef.length > 0) {
       try {
-        await this.db.insert(kbPages).values(pageValues).onConflictDoNothing();
-        succeeded = pageValues.length;
+        await this.db
+          .insert(kbPages)
+          .values(withRef)
+          .onConflictDoUpdate({
+            target: [kbPages.orgId, kbPages.externalSource, kbPages.externalId],
+            targetWhere: sql`${kbPages.externalId} IS NOT NULL`,
+            set: {
+              title: sql`excluded.title`,
+              contentText: sql`excluded.content_text`,
+              updatedAt: sql`now()`,
+              lastEditedById: sql`excluded.last_edited_by_id`,
+            },
+          });
+        succeeded += withRef.length;
       } catch {
-        failed = pageValues.length;
+        failed += withRef.length;
+      }
+    }
+
+    if (withoutRef.length > 0) {
+      try {
+        await this.db.insert(kbPages).values(withoutRef).onConflictDoNothing();
+        succeeded += withoutRef.length;
+      } catch {
+        failed += withoutRef.length;
       }
     }
 

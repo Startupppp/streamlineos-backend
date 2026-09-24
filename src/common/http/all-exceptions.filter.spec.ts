@@ -355,3 +355,86 @@ describe("AllExceptionsFilter once a streaming response has begun", () => {
     expect(end).not.toHaveBeenCalled();
   });
 });
+
+function hostCapturingHeaders(): {
+  host: ArgumentsHost;
+  json: jest.Mock;
+  status: jest.Mock;
+  setHeader: jest.Mock;
+} {
+  const json = jest.fn();
+  const status = jest.fn((): { json: jest.Mock } => ({ json }));
+  const setHeader = jest.fn();
+  const host: ArgumentsHost = {
+    getArgs: () => [],
+    getArgByIndex: () => undefined,
+    switchToHttp: () => ({
+      getResponse: () => ({ status, setHeader, headersSent: false }),
+      getRequest: () => ({ method: "POST", url: "/x" }),
+      getNext: () => undefined,
+    }),
+    switchToRpc: () => ({} as ReturnType<ArgumentsHost["switchToRpc"]>),
+    switchToWs: () => ({} as ReturnType<ArgumentsHost["switchToWs"]>),
+    getType: () => "http",
+  } as ArgumentsHost;
+  return { host, json, status, setHeader };
+}
+
+describe("AllExceptionsFilter — Retry-After on 429", () => {
+  const filter = new AllExceptionsFilter();
+
+  it("projects retryAfterSecs onto the Retry-After header, because a service throwing 429 has no Response to set it on", () => {
+    const { host, status, setHeader } = hostCapturingHeaders();
+
+    filter.catch(
+      new HttpException({ message: "Queue is full", retryAfterSecs: 30 }, 429),
+      host,
+    );
+
+    expect(status).toHaveBeenCalledWith(429);
+    expect(setHeader).toHaveBeenCalledWith("Retry-After", "30");
+  });
+
+  it("rounds a fractional delay up, because Retry-After is an integer count of seconds and rounding down asks the caller back too early", () => {
+    const { host, setHeader } = hostCapturingHeaders();
+
+    filter.catch(
+      new HttpException({ message: "Slow down", retryAfterSecs: 1.2 }, 429),
+      host,
+    );
+
+    expect(setHeader).toHaveBeenCalledWith("Retry-After", "2");
+  });
+
+  it("sets no header on a 429 that carries no delay, so the caller is never handed a fabricated wait", () => {
+    const { host, status, setHeader } = hostCapturingHeaders();
+
+    filter.catch(new HttpException({ message: "Rate limited" }, 429), host);
+
+    expect(status).toHaveBeenCalledWith(429);
+    expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  it("leaves a non-429 alone even when its body carries retryAfterSecs, because Retry-After on a 409 would tell the caller to blindly retry a conflict", () => {
+    const { host, status, setHeader } = hostCapturingHeaders();
+
+    filter.catch(
+      new HttpException({ message: "Conflict", retryAfterSecs: 30 }, 409),
+      host,
+    );
+
+    expect(status).toHaveBeenCalledWith(409);
+    expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  it("ignores a negative delay rather than emitting it, because a negative Retry-After is not a valid header value", () => {
+    const { host, setHeader } = hostCapturingHeaders();
+
+    filter.catch(
+      new HttpException({ message: "Broken", retryAfterSecs: -5 }, 429),
+      host,
+    );
+
+    expect(setHeader).not.toHaveBeenCalled();
+  });
+});

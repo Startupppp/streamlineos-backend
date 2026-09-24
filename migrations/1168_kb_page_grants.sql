@@ -4,16 +4,28 @@ SET lock_timeout = '5s';
 DO $$
 BEGIN
   IF to_regclass('public.kb_pages') IS NULL THEN
-    RAISE EXCEPTION '1165 precondition: public.kb_pages is absent — this is not a Knowledge database';
+    RAISE EXCEPTION '1168 precondition: public.kb_pages is absent — this is not a Knowledge database';
   END IF;
   IF to_regclass('public.kb_page_grants') IS NOT NULL THEN
-    RAISE EXCEPTION '1165 precondition: public.kb_page_grants already exists — this migration has run';
+    RAISE EXCEPTION '1168 precondition: public.kb_page_grants already exists — this migration has run';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_kb_pages_org_id') THEN
-    RAISE EXCEPTION '1165 precondition: uniq_kb_pages_org_id is absent — the tenant-safe composite foreign key cannot be declared';
+    RAISE EXCEPTION '1168 precondition: uniq_kb_pages_org_id is absent — the tenant-safe composite foreign key cannot be declared';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_org_members_org_id') THEN
-    RAISE EXCEPTION '1165 precondition: uniq_org_members_org_id is absent — the tenant-safe composite foreign key cannot be declared';
+  -- Resolved by column set, not by constraint name: production carries this as
+  -- uniq_org_members_org_id_key, and a name guess reads as a missing object.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    WHERE c.conrelid = 'public.organization_members'::regclass
+      AND c.contype IN ('u', 'p')
+      AND (
+        SELECT array_agg(a.attname::text ORDER BY a.attname)
+        FROM unnest(c.conkey) AS k(attnum)
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+      ) = ARRAY['id', 'org_id']
+  ) THEN
+    RAISE EXCEPTION '1168 precondition: public.organization_members has no UNIQUE (org_id, id) — the tenant-safe composite foreign key cannot be declared';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -87,7 +99,7 @@ ALTER TABLE "public"."kb_page_grants"
 
 ALTER TABLE "public"."kb_page_grants"
   ADD CONSTRAINT "fk_kb_page_grants_org_granted_by_membership"
-  FOREIGN KEY ("org_id", "granted_by_membership_id") REFERENCES "public"."organization_members" ("org_id", "id") ON DELETE SET NULL NOT VALID;
+  FOREIGN KEY ("org_id", "granted_by_membership_id") REFERENCES "public"."organization_members" ("org_id", "id") ON DELETE SET NULL ("granted_by_membership_id") NOT VALID;
 --> statement-breakpoint
 ALTER TABLE "public"."kb_page_grants"
   VALIDATE CONSTRAINT "fk_kb_page_grants_org_granted_by_membership";

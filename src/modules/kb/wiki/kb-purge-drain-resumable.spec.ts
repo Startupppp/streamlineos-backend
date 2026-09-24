@@ -18,7 +18,7 @@ const auth = {
 
 const mockRecordedBatches: number[] = [];
 
-import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 
 const ORG = "org-drain";
 const BATCH = 500;
@@ -47,12 +47,13 @@ function makeDb(batches: number[][]) {
 }
 
 function makeTree(db: unknown) {
-  return new KbPageTreeService(
+  return new KbPageTrashService(
     db as never,
     { log: jest.fn() } as never,
     { deleteFileIfPresent: jest.fn().mockResolvedValue(true) } as never,
     { R2_KB_BUCKET_NAME: "kb-files" } as never,
     auth as never,
+    { restore: jest.fn().mockResolvedValue({ id: 1 }) } as never,
   );
 }
 

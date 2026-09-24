@@ -1,27 +1,50 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { kbPageTemplates, kbPages } from "../../../db/schema";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { CreatePageTemplateInput } from "./dto/kb-page-templates.schemas";
+import type {
+  CreatePageTemplateInput,
+  ListPageTemplatesQuery,
+} from "./dto/kb-page-templates.schemas";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
+import {
+  buildCursorPage,
+  decodeCursor,
+  type CursorPage,
+} from "../../../common/pagination/cursor";
 
 type TemplateRow = typeof kbPageTemplates.$inferSelect;
-
-const TEMPLATE_LIST_CAP = 200;
 
 @Injectable()
 export class KbPageTemplatesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string): Promise<TemplateRow[]> {
-    return this.db
+  async list(
+    orgId: string,
+    query: ListPageTemplatesQuery,
+  ): Promise<CursorPage<TemplateRow>> {
+    const position = decodeCursor(query.cursor);
+    const rows = await this.db
       .select()
       .from(kbPageTemplates)
-      .where(eq(kbPageTemplates.orgId, orgId))
-      .orderBy(kbPageTemplates.name)
-      .limit(TEMPLATE_LIST_CAP);
+      .where(
+        and(
+          eq(kbPageTemplates.orgId, orgId),
+          position
+            ? keysetAfterValue(kbPageTemplates.name, kbPageTemplates.id, position)
+            : undefined,
+        ),
+      )
+      .orderBy(asc(kbPageTemplates.name), asc(kbPageTemplates.id))
+      .limit(query.limit + 1);
+
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.name,
+      id: String(row.id),
+    }));
   }
 
   async create(user: CurrentUserContext, input: CreatePageTemplateInput): Promise<TemplateRow> {

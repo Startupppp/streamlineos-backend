@@ -3,7 +3,6 @@ jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ForbiddenException, HttpException, HttpStatus, NotFoundException } from "@nestjs/common";
 import { ChatHuddlesService } from "./chat-huddles.service";
-import { HUDDLE_PARTICIPANT_CEILING } from "./chat-huddle-capacity";
 import {
   HUDDLE_MEETING_NEEDS_REAUTH,
   HUDDLE_MEETING_NO_CONNECTION,
@@ -169,18 +168,15 @@ describe("ChatHuddlesService", () => {
   });
 
   describe("joinHuddle", () => {
-    it("sizes the participant read to the org's own cap plus a sentinel, not a transport constant", async () => {
+    it("defers paid-plan room capacity to Google Meet", async () => {
       mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
       mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
-      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([{ membershipId: 2 }]);
-      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
 
-      await service.joinHuddle(1, "user2", "org1");
+      await expect(service.joinHuddle(1, "user2", "org1")).resolves.toEqual({ ok: true });
 
-      expect(mockDb.query.chatHuddleParticipants.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 51 }),
-      );
+      expect(mockDb.query.chatHuddleParticipants.findMany).not.toHaveBeenCalled();
+      expect(mockOrgSettings.getSettings).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException if huddle not found or inactive", async () => {
@@ -188,37 +184,13 @@ describe("ChatHuddlesService", () => {
       await expect(service.joinHuddle(1, "user1", "org1")).rejects.toThrow(NotFoundException);
     });
 
-    it("rejects joining once the org's max participant cap is reached", async () => {
-      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
-      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
-      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
-      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([
-        { membershipId: 2 },
-        { membershipId: 3 },
-      ]);
-      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 2 });
-      await expect(service.joinHuddle(1, "user2", "org1")).rejects.toThrow(
-        new ForbiddenException("This call is full (max 2 participants)"),
-      );
-    });
-
-    it("allows a participant already in the call to rejoin even when the cap is reached", async () => {
+    it("allows a Free-plan participant already in the call to rejoin", async () => {
+      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "FREE", plan: "FREE" });
       mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
       mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
       mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([{ membershipId: 1 }]);
-      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 1 });
       const result = await service.joinHuddle(1, "user1", "org1");
-      expect(result).toEqual({ ok: true });
-    });
-
-    it("allows joining when under the cap", async () => {
-      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
-      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
-      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
-      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([{ membershipId: 2 }]);
-      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
-      const result = await service.joinHuddle(1, "user2", "org1");
       expect(result).toEqual({ ok: true });
     });
 
@@ -236,7 +208,7 @@ describe("ChatHuddlesService", () => {
       );
     });
 
-    it("FREE plan: the 1:1 gate holds even when the org sets a cap of 500", async () => {
+    it("FREE plan: sizes the participant check to the entitlement threshold sentinel", async () => {
       mockPlanLimits.resolveTier.mockResolvedValue({ tier: "FREE", plan: "FREE" });
       mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
@@ -245,50 +217,11 @@ describe("ChatHuddlesService", () => {
         { membershipId: 2 },
         { membershipId: 3 },
       ]);
-      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: HUDDLE_PARTICIPANT_CEILING });
       await expect(service.joinHuddle(1, "user3", "org1")).rejects.toThrow(
         new ForbiddenException("Huddles are one-to-one on the Free plan. Upgrade to start group huddles."),
       );
       expect(mockDb.query.chatHuddleParticipants.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 3 }),
-      );
-    });
-
-    it("PAID plan: the org setting is now the operative cap — 12 is reachable and 12 is full", async () => {
-      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "PAID", plan: "STARTER" });
-      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
-      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
-      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
-      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 12 });
-
-      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue(
-        Array.from({ length: 11 }, (_, i) => ({ membershipId: i + 2 })),
-      );
-      await expect(service.joinHuddle(1, "newUser", "org1")).resolves.toEqual({ ok: true });
-
-      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue(
-        Array.from({ length: 12 }, (_, i) => ({ membershipId: i + 2 })),
-      );
-      await expect(service.joinHuddle(1, "newUser", "org1")).rejects.toThrow(
-        new ForbiddenException("This call is full (max 12 participants)"),
-      );
-    });
-
-    it("clamps an out-of-band org setting to the 2..500 band the settings schema validates", async () => {
-      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "PAID", plan: "STARTER" });
-      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
-      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
-      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
-      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 10_000 });
-      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue(
-        Array.from({ length: HUDDLE_PARTICIPANT_CEILING }, (_, i) => ({ membershipId: i + 2 })),
-      );
-
-      await expect(service.joinHuddle(1, "newUser", "org1")).rejects.toThrow(
-        new ForbiddenException(`This call is full (max ${HUDDLE_PARTICIPANT_CEILING} participants)`),
-      );
-      expect(mockDb.query.chatHuddleParticipants.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: HUDDLE_PARTICIPANT_CEILING + 1 }),
       );
     });
   });
@@ -461,7 +394,6 @@ describe("ChatHuddlesService.startHuddle — the Meet link is the transport", ()
       db,
       { publishHuddleEvent: jest.fn(), publishToUser: jest.fn() } as never,
       { log: jest.fn() } as never,
-      { getSettings: jest.fn().mockResolvedValue({ maxHuddleParticipants: 50 }) } as never,
       { resolveTier: jest.fn().mockResolvedValue({ tier: "PAID", plan: "STARTER" }) } as never,
       { emit: jest.fn().mockResolvedValue({}) } as never,
       composio as never,

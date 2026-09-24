@@ -21,6 +21,7 @@ import {
 import { KbPageBackfillService } from "./kb-page-backfill.service";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
+import { KbPageSearchQueryService } from "./kb-page-search-query.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
@@ -34,7 +35,13 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
 
 @Module({
   imports: [AiModule, AiJobsModule, KbCoreModule, OutboxModule],
-  controllers: [KbSearchController, KbAskController, KbConversationsController, KbResearchBriefController, KbPageIndexingController],
+  controllers: [
+    KbSearchController,
+    KbAskController,
+    KbConversationsController,
+    KbResearchBriefController,
+    KbPageIndexingController,
+  ],
   providers: [
     KbIndexingService,
     KbIngestionCheckpointService,
@@ -52,12 +59,22 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbPageBackfillService,
     KbCandidateService,
     KbSearchService,
+    KbPageSearchQueryService,
     KbAskService,
     KbCitationVisibilityService,
     KbChatHistoryService,
     KbResearchBriefService,
     KbResearchBriefHandler,
   ],
-  exports: [KbIndexingService, KbAttachmentIndexingService, KbArticleReindexService, KbPageBackfillService, KbSearchService, KbAskService, KbStuckSourceReaperService],
+  exports: [
+    KbIndexingService,
+    KbAttachmentIndexingService,
+    KbArticleReindexService,
+    KbPageBackfillService,
+    KbSearchService,
+    KbAskService,
+    KbStuckSourceReaperService,
+    KbResearchBriefService,
+  ],
 })
 export class KbRetrievalModule {}

@@ -105,7 +105,7 @@ async function scrollApprovals(seeds: ApprovalSeed[], limit: number, pages: numb
   let cursor: string | undefined;
 
   for (let page = 0; page < pages; page++) {
-    const result = await svc.list(ORG, UID, { limit, kinds, unreadOnly: false, cursor }, makeUser());
+    const result = await svc.list(ORG, UID, { limit, kinds, unreadOnly: false, eventKeys: undefined, cursor }, makeUser());
     for (const item of result.items) delivered.push(item.dedupKey);
     if (!result.hasMore || result.nextCursor === null) break;
     cursor = result.nextCursor;
@@ -142,7 +142,7 @@ describe("unified inbox — build approvals page on the key the merge sorts by",
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 2, kinds: ["build_approval"], unreadOnly: false, cursor: undefined },
+      { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined, cursor: undefined },
       makeUser(),
     );
 

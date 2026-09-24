@@ -33,6 +33,19 @@ export const unifiedInboxQuerySchema = z
     q: z.string().max(200).trim().optional(),
     category: z.string().optional(),
     priority: z.string().optional(),
+    eventKeys: z
+      .string()
+      .max(1_000)
+      .optional()
+      .transform((v) =>
+        v
+          ? v
+              .split(",")
+              .map((key) => key.trim())
+              .filter((key) => key.length > 0 && key.length <= 120)
+          : undefined,
+      ),
+    module: z.string().trim().min(1).max(100).optional(),
     triage: z.enum(["active", "later", "done"]).optional(),
   })
   .strict();

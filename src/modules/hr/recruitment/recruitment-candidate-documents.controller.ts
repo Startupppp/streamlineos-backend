@@ -31,6 +31,7 @@ import { Inject } from "@nestjs/common";
 import { type Db } from "../../../db/drizzle.module";
 import { z } from "zod";
 import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { vaultDocumentSchema } from "./dto/recruitment-candidate-records-response.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = [
@@ -60,9 +61,16 @@ export class RecruitmentCandidateDocumentsController {
    */
   @Post("upload")
   @UseGuards(PermissionGuard)
+  /*
+    `hr:requisitions:manage`, not `hr:employees:manage`. ATS-CORE-010 put every
+    recruitment route and its frontend hook on one key family; the frontend
+    hook for this upload reads the requisitions key, and FE-45 makes a mismatch
+    a permanent false from `useCan`.
+  */
   @RequirePermission("hr:requisitions:manage")
+  @ResponseSchema(vaultDocumentSchema)
+  @MultipartAction({ file: "file", fileRequired: true, fields: { documentType: "string" } })
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
-  @MultipartAction({ file: "file", fields: { documentType: "string" } })
   async upload(
     @CurrentUser() u: CurrentUserContext,
     @Param("candidateId") candidateIdParam: string,

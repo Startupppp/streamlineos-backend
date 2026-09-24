@@ -51,7 +51,7 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   onboardResponseSchema,
   resendInviteResponseSchema,
@@ -102,6 +102,7 @@ export class EmployeesController {
   @Idempotent("hr.employees.resend-invite")
   @HttpCode(200)
   @Validate({ params: employeeIdParamsSchema })
+  @BodylessAction()
   resendInvite(
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,

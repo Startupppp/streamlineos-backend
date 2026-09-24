@@ -49,7 +49,7 @@ const mockDeleteTx = {
   update: () => ({ set: () => ({ where: async () => [] }) }),
 };
 
-import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 import { KbSpacesService } from "./kb-spaces.service";
 
 const actualPurge: typeof import("./kb-page-attachment-purge") = jest.requireActual(
@@ -101,12 +101,13 @@ function makeTreeDb() {
 
 function makeTree() {
   const { db, deleted } = makeTreeDb();
-  const service = new KbPageTreeService(
+  const service = new KbPageTrashService(
     db as never,
     { log: jest.fn() } as never,
     { deleteFileIfPresent: jest.fn().mockResolvedValue(true) } as never,
     { R2_KB_BUCKET_NAME: KB_BUCKET } as never,
     auth as never,
+    { restore: jest.fn().mockResolvedValue({ id: PAGE_ID }) } as never,
   );
   return { service, deleted };
 }
@@ -292,7 +293,12 @@ describe("Store 5 of 5 — cache, invalidated by namespace on a KB delete", () =
       select: jest.fn(() => emptyBatch),
     };
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
-    const service = new KbSpacesService(tx as never, access as never, {} as never);
+    const service = new KbSpacesService(
+      tx as never,
+      access as never,
+      {} as never,
+      {} as never,
+    );
 
     const result = await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: tx as never },

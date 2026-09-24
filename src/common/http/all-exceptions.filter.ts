@@ -1,10 +1,17 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from "@nestjs/common";
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+} from "@nestjs/common";
 import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import { logger } from "../logger/logger.service";
 import { reportError } from "../observability/error-reporter";
 import { sqlstateOf } from "../observability/error-classification";
 import { isTransientDbError } from "../db/transient-error";
+import { isRecord } from "../types/is-record";
 import type { RequestWithCorrelation } from "./correlation-id.middleware";
 
 type ApiErrorEnvelope = {
@@ -38,7 +45,8 @@ function messageFromHttpBody(body: string | Record<string, unknown>): string {
   }
   if (Array.isArray(body.message)) {
     const messages = body.message.filter(
-      (message): message is string => typeof message === "string" && !!message.trim(),
+      (message): message is string =>
+        typeof message === "string" && !!message.trim(),
     );
     if (messages.length > 0) return messages.join("; ");
   }
@@ -77,7 +85,9 @@ const BODY_PARSER_MESSAGE: Partial<Record<number, string>> = {
   [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: "That request encoding isn't supported.",
 };
 
-function bodyParserFailure(exception: unknown): (ApiErrorEnvelope & { status: number }) | null {
+function bodyParserFailure(
+  exception: unknown,
+): (ApiErrorEnvelope & { status: number }) | null {
   if (typeof exception !== "object" || exception === null) return null;
   if (!("type" in exception)) return null;
   const type = Reflect.get(exception, "type");
@@ -87,7 +97,8 @@ function bodyParserFailure(exception: unknown): (ApiErrorEnvelope & { status: nu
   return {
     status,
     code: defaultCode(status),
-    message: BODY_PARSER_MESSAGE[status] ?? "The request could not be completed.",
+    message:
+      BODY_PARSER_MESSAGE[status] ?? "The request could not be completed.",
   };
 }
 
@@ -124,7 +135,11 @@ function describeUnhandled(exception: unknown): Record<string, unknown> {
   };
 }
 
-function writeEnvelope(res: Response, status: number, body: ApiErrorEnvelope): void {
+function writeEnvelope(
+  res: Response,
+  status: number,
+  body: ApiErrorEnvelope,
+): void {
   if (res.headersSent) {
     if (!res.writableEnded) res.end();
     return;
@@ -132,9 +147,18 @@ function writeEnvelope(res: Response, status: number, body: ApiErrorEnvelope): v
   res.status(status).json(body);
 }
 
+function retryAfterSecondsOf(body: unknown): number | undefined {
+  if (!isRecord(body)) return undefined;
+  const candidate = body.retryAfterSecs;
+  if (typeof candidate !== "number") return undefined;
+  if (!Number.isFinite(candidate) || candidate < 0) return undefined;
+  return Math.ceil(candidate);
+}
+
 function correlationIdOf(host: ArgumentsHost): string | undefined {
   try {
-    return host.switchToHttp().getRequest<RequestWithCorrelation>().correlationId;
+    return host.switchToHttp().getRequest<RequestWithCorrelation>()
+      .correlationId;
   } catch {
     return undefined;
   }
@@ -193,19 +217,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const status = exception.getStatus();
       const body = exception.getResponse();
 
-      /**
-       * The classification line. A 4xx is the application working: the caller
-       * asked for a row that is not theirs, or does not exist, or sent a body
-       * that does not validate. Logging those at error level and reporting them
-       * is what turns a routine 404 into a page, and what trains an operator to
-       * ignore the stream.
-       *
-       * A 5xx raised deliberately — `InternalServerErrorException`,
-       * `ServiceUnavailableException`, a `BadGatewayException` from an adapter —
-       * is the opposite: it is an actionable fault that used to leave this
-       * branch with no log line and no error report at all, so a handler that
-       * threw one produced complete silence.
-       */
       if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
         const request = describeRequest(host);
         logger.error("Server-side HttpException", {
@@ -214,6 +225,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
           request,
         });
         if (!isHealthProbe(request)) reportError(exception, request);
+      }
+
+      if (status === HttpStatus.TOO_MANY_REQUESTS && !res.headersSent) {
+        const retryAfter = retryAfterSecondsOf(body);
+        if (retryAfter !== undefined) {
+          res.setHeader("Retry-After", String(retryAfter));
+        }
       }
 
       writeEnvelope(res, status, {
@@ -236,7 +254,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (isTransientDbError(exception)) {
       logger.warn("Transient database connection error — returning 503", {
-        error: exception instanceof Error ? exception.message : String(exception),
+        error:
+          exception instanceof Error ? exception.message : String(exception),
       });
       writeEnvelope(res, HttpStatus.SERVICE_UNAVAILABLE, {
         code: "SERVICE_UNAVAILABLE",
@@ -262,12 +281,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
   }
 }
 
-/**
- * The unauthenticated health surface, which stays unauthenticated.
- *
- * Matched on the path rather than on a decorator because this filter sees the
- * raw request; `/health`, `/health/ready` and `/health/db` are the whole set.
- */
 function isHealthProbe(request: unknown): boolean {
   const url = (request as { url?: unknown } | null)?.url;
   if (typeof url !== "string") return false;

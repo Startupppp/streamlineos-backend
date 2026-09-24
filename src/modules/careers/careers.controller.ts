@@ -11,7 +11,15 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Validate } from "../../common/validation/validate.decorator";
 import { CareersService } from "./careers.service";
 import { uploadResumeSchema, type UploadResumeInput } from "./dto/resumes.schemas";
-import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+/*
+  Only the upload's response schema. `careersJobListSchema` and
+  `careersApplyResponseSchema` describe the two endpoints ATS-CORE-005 removed —
+  the org-less job list that leaked every tenant's openings, and the weaker
+  second apply door. The file itself is restored because main added
+  `uploadResumeResponseSchema` to the one endpoint that survives.
+*/
+import { uploadResumeResponseSchema } from "./dto/careers-response.schemas";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { Request } from "express";
@@ -39,6 +47,8 @@ export class CareersController {
     "CareersService.uploadResume resolves the candidate by id AND the caller's orgId, and rejects when that pair does not exist",
   )
   @UseGuards(JwtAuthGuard)
+  @ResponseSchema(uploadResumeResponseSchema)
+  @MultipartAction({ file: "file", fields: { candidateId: "integer", fileName: "string", fileType: "string" }, requiredFields: ["candidateId", "fileName", "fileType"] })
   @UseInterceptors(FileInterceptor("file"))
   @MultipartAction({ file: "file", fields: { candidateId: "integer" }, requiredFields: ["candidateId"] })
   @Validate({ body: uploadResumeSchema })

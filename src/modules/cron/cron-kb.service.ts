@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { KbPageTreeService } from "../kb/wiki/kb-page-tree.service";
+import { KbPageTrashService } from "../kb/wiki/kb-page-trash.service";
 import { KbSettingsService } from "../kb/core/kb-settings.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -9,7 +9,7 @@ import { forEachOrg } from "../../common/tenant";
 export class CronKbService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly tree: KbPageTreeService,
+    private readonly trash: KbPageTrashService,
     private readonly settings: KbSettingsService,
   ) {}
 
@@ -19,7 +19,7 @@ export class CronKbService {
     const result = await forEachOrg(this.db, "kb-trash-purge", async (_tx, orgId) => {
       const { trashRetentionDays } = await this.settings.getOrgSettings(orgId);
       const olderThan = new Date(Date.now() - trashRetentionDays * 86_400_000);
-      const count = await this.tree.purgeExpired(orgId, olderThan);
+      const count = await this.trash.purgeExpired(orgId, olderThan);
       purgedCount += count;
     });
 
