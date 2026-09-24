@@ -6,7 +6,7 @@ export interface BurnupPoint {
   completed: number;
 }
 
-interface SprintScopeEvent {
+interface CycleScopeEvent {
   ticketId: number;
   eventType: string;
   newPoints: number | null;
@@ -15,12 +15,12 @@ interface SprintScopeEvent {
 
 interface TicketState {
   points: number;
-  inSprint: boolean;
+  inCycle: boolean;
   completed: boolean;
 }
 
 export function computeBurnupFromEvents(
-  events: SprintScopeEvent[],
+  events: CycleScopeEvent[],
   startDate: Date,
   days: number,
 ): BurnupPoint[] {
@@ -36,16 +36,16 @@ export function computeBurnupFromEvents(
       if (!event || event.createdAt > dayEnd) break;
       const ticketState = state.get(event.ticketId) ?? {
         points: 0,
-        inSprint: false,
+        inCycle: false,
         completed: false,
       };
       switch (event.eventType) {
         case "added":
-          ticketState.inSprint = true;
+          ticketState.inCycle = true;
           if (event.newPoints !== null) ticketState.points = event.newPoints;
           break;
         case "removed":
-          ticketState.inSprint = false;
+          ticketState.inCycle = false;
           break;
         case "estimate_changed":
           if (event.newPoints !== null) ticketState.points = event.newPoints;
@@ -64,7 +64,7 @@ export function computeBurnupFromEvents(
     let scope = 0;
     let completed = 0;
     for (const ticketState of state.values()) {
-      if (!ticketState.inSprint) continue;
+      if (!ticketState.inCycle) continue;
       scope += ticketState.points;
       if (ticketState.completed) completed += ticketState.points;
     }

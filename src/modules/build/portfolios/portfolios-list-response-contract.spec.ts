@@ -2,7 +2,7 @@ import { PortfoliosService } from "./portfolios.service";
 import { ProgramsService } from "./programs.service";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { portfolioPageSchema, programListSchema } from "./dto/portfolios-response.schemas";
+import { portfolioPageSchema, programPageSchema } from "./dto/portfolios-response.schemas";
 import { checkResponseAgainstContract } from "../../../common/openapi/response-contract.interceptor";
 
 const STORED_PORTFOLIO = {
@@ -11,7 +11,7 @@ const STORED_PORTFOLIO = {
   name: "Platform",
   description: null,
   ownerId: null,
-  status: "ACTIVE",
+  status: "active",
   health: null,
   strategicGoal: null,
   createdBy: "user-1",
@@ -28,13 +28,20 @@ const STORED_PROGRAM = {
   name: "Onboarding",
   description: null,
   ownerId: null,
-  status: "ACTIVE",
+  status: "active",
   health: null,
   createdBy: "user-1",
   createdAt: new Date("2026-09-19T10:00:00.000Z"),
   updatedAt: new Date("2026-09-19T10:00:00.000Z"),
   deletedAt: null,
   projectCount: 4,
+};
+
+const PROGRAM_LIST_QUERY = {
+  cursor: undefined,
+  limit: 50,
+  status: undefined,
+  portfolioId: undefined,
 };
 
 function dbProjecting(row: Record<string, unknown>): Db {
@@ -62,16 +69,16 @@ describe("the portfolio and program lists return the page their contracts promis
     expect(checkResponseAgainstContract(portfolioPageSchema, page)).toBeNull();
   });
 
-  it("satisfies programListSchema once a single program exists", async () => {
+  it("satisfies programPageSchema once a single program exists, so the program list is a cursor page like the portfolio list", async () => {
     const svc = new ProgramsService(dbProjecting(STORED_PROGRAM), {} as AuditService);
-    const rows = await svc.listPrograms("org-1", { status: undefined, portfolioId: undefined });
-    expect(checkResponseAgainstContract(programListSchema, rows)).toBeNull();
+    const page = await svc.listPrograms("org-1", PROGRAM_LIST_QUERY);
+    expect(checkResponseAgainstContract(programPageSchema, page)).toBeNull();
   });
 
   it("carries the project count each list renders in its own column, rather than dropping it at the contract", async () => {
     const svc = new ProgramsService(dbProjecting(STORED_PROGRAM), {} as AuditService);
-    const rows = await svc.listPrograms("org-1", { status: undefined, portfolioId: undefined });
-    expect(programListSchema.parse(rows)[0]).toHaveProperty("projectCount", 4);
+    const page = await svc.listPrograms("org-1", PROGRAM_LIST_QUERY);
+    expect(programPageSchema.parse(page).data[0]).toHaveProperty("projectCount", 4);
   });
 
   it("bite proof: a row missing a field its contract requires is reported, not waved through", () => {
@@ -80,5 +87,21 @@ describe("the portfolio and program lists return the page their contracts promis
       pagination: { limit: 50, hasMore: false, nextCursor: null },
     };
     expect(checkResponseAgainstContract(portfolioPageSchema, missingName)).not.toBeNull();
+  });
+
+  it("bite proof: a status the portfolio pgEnum never emits is reported, where z.string() waved it through", () => {
+    const wrongStatus = {
+      data: [{ ...STORED_PORTFOLIO, status: "ACTIVE" }],
+      pagination: { limit: 50, hasMore: false, nextCursor: null },
+    };
+    expect(checkResponseAgainstContract(portfolioPageSchema, wrongStatus)).not.toBeNull();
+  });
+
+  it("bite proof: a health value outside the portfolio health pgEnum is reported", () => {
+    const wrongHealth = {
+      data: [{ ...STORED_PORTFOLIO, health: "green" }],
+      pagination: { limit: 50, hasMore: false, nextCursor: null },
+    };
+    expect(checkResponseAgainstContract(portfolioPageSchema, wrongHealth)).not.toBeNull();
   });
 });
