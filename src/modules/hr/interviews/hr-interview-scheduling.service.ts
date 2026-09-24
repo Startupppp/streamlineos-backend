@@ -34,6 +34,7 @@ import type {
   SelfScheduleInput,
 } from "./dto/interview-scheduling.schemas";
 import { interviewTypeEnum } from "../../../db/schema/common/enums";
+import { ChatNotifyService } from "../recruitment/chat-notify/chat-notify.service";
 
 /**
  * Read off the column's own enum rather than restated.
@@ -87,6 +88,7 @@ export class HrInterviewSchedulingService {
     private readonly notifications: NotificationsService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly chatNotify: ChatNotifyService,
   ) {}
 
   async createInterview(orgId: string, input: CreateInterviewInput) {
@@ -437,6 +439,21 @@ export class HrInterviewSchedulingService {
       scheduledAt: interview.scheduledAt.toISOString(),
       durationMinutes: interview.duration ?? 60,
       meetingLink: interview.meetingLink ?? null,
+    });
+
+    /*
+      The chat notice is fire-and-forget by design and cannot throw — the
+      interview is already scheduled, and the interviewer already has the email
+      and the calendar invite this would merely repeat. A workspace being
+      unreachable must not fail the request.
+    */
+    await this.chatNotify.notifyInterview(orgId, {
+      interviewId: interview.id,
+      candidateId: interview.candidateId,
+      jobPostingId: null,
+      scheduledAt: interview.scheduledAt,
+      durationMinutes: interview.duration ?? 60,
+      kind: "assigned",
     });
   }
 

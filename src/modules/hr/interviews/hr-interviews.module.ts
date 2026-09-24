@@ -23,6 +23,7 @@ import { InterviewAvailabilityService } from "./calendar/interview-availability.
 import { InterviewTranscriptService } from "./transcripts/interview-transcript.service";
 import { InterviewTranscriptController } from "./transcripts/interview-transcript.controller";
 import { ProviderCredentialsService } from "../recruitment/integrations/provider-credentials.service";
+import { ChatNotifyService } from "../recruitment/chat-notify/chat-notify.service";
 
 @Module({
   imports: [NotificationsModule, AutomationModule],
@@ -57,6 +58,7 @@ import { ProviderCredentialsService } from "../recruitment/integrations/provider
      * shared `candidate_sources` credential store.
      */
     ProviderCredentialsService,
+    ChatNotifyService,
   ],
   exports: [HrInterviewsService, HrRecruitmentReportsService],
 })
