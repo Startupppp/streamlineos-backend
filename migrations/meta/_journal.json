@@ -6483,6 +6483,41 @@
       "when": 1803000010611,
       "tag": "1170_kb_page_reviews_derive_overdue",
       "breakpoints": true
+    },
+    {
+      "idx": 1054,
+      "version": "7",
+      "when": 1803000010621,
+      "tag": "1171_kb_pages_public_token_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 1055,
+      "version": "7",
+      "when": 1803000010631,
+      "tag": "1172_kb_pages_external_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 1056,
+      "version": "7",
+      "when": 1803000010641,
+      "tag": "1173a_kb_pages_article_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1057,
+      "version": "7",
+      "when": 1803000010651,
+      "tag": "1173_kb_articles_cutover_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 1058,
+      "version": "7",
+      "when": 1803000010661,
+      "tag": "1174_kb_articles_cutover_contract",
+      "breakpoints": true
     }
   ]
 }

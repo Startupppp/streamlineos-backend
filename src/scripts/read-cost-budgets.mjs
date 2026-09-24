@@ -470,6 +470,87 @@ export const BUDGETS = [
     planAssertions: [],
   },
   {
+    id: "kb-wiki-analytics-page-stats",
+    ceiling: 30_000,
+    minRows: 30,
+    rowCountSql: `SELECT count(*)::int FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT p.id, p.title, p.space_id, p.status, p.trust_state, p.updated_at,
+             count(distinct pv.id)::int AS unique_viewers
+      FROM kb_pages p
+      LEFT JOIN kb_page_visits pv ON pv.org_id = p.org_id AND pv.page_id = p.id
+      WHERE p.org_id = $1 AND p.deleted_at IS NULL
+      GROUP BY p.id
+      ORDER BY p.updated_at DESC, p.id DESC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    id: "kb-wiki-analytics-stale-pages",
+    ceiling: 30_000,
+    minRows: 30,
+    rowCountSql: `SELECT count(*)::int FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId, new Date(Date.now() - 90 * 86_400_000)],
+    sql: `
+      SELECT p.id, p.title, p.space_id, p.status, p.owner_membership_id, p.updated_at,
+             count(distinct pv.id)::int AS unique_viewers
+      FROM kb_pages p
+      LEFT JOIN kb_page_visits pv ON pv.org_id = p.org_id AND pv.page_id = p.id
+      WHERE p.org_id = $1 AND p.deleted_at IS NULL AND p.updated_at < $2
+      GROUP BY p.id
+      ORDER BY p.updated_at ASC, p.id ASC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    id: "kb-wiki-analytics-contributors",
+    ceiling: 20_000,
+    minRows: 30,
+    rowCountSql: `SELECT count(*)::int FROM kb_page_versions WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT pv.author_membership_id, count(*)::int AS edit_count
+      FROM kb_page_versions pv
+      INNER JOIN kb_pages p ON p.id = pv.page_id AND p.org_id = pv.org_id AND p.deleted_at IS NULL
+      WHERE pv.org_id = $1
+      GROUP BY pv.author_membership_id
+      ORDER BY count(*) DESC
+      LIMIT 50`,
+    planAssertions: [],
+  },
+  {
+    id: "kb-content-health-signals",
+    ceiling: 15_000,
+    minRows: 30,
+    rowCountSql: `SELECT count(*)::int FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT id, title, space_id, status, owner_membership_id, updated_at, next_review_at
+      FROM kb_pages
+      WHERE org_id = $1 AND deleted_at IS NULL AND owner_membership_id IS NULL
+      ORDER BY id ASC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    id: "kb-content-health-counts",
+    ceiling: 10_000,
+    minRows: 30,
+    rowCountSql: `SELECT count(*)::int FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT count(*)::int
+      FROM kb_pages
+      WHERE org_id = $1 AND deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM kb_page_links
+          WHERE org_id = $1 AND source_page_id = kb_pages.id
+            AND target_type = 'page' AND target_page_id IS NULL
+        )`,
+    planAssertions: [],
+  },
+  {
     id: "org-members-list",
     ceiling: 5_000,
     minRows: 10,

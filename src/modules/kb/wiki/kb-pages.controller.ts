@@ -25,6 +25,12 @@ import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { KbPageTrashService } from "./kb-page-trash.service";
 import { KbPageDuplicateService } from "./kb-page-duplicate.service";
+import { KbBriefToPageService } from "./kb-brief-to-page.service";
+import {
+  convertBriefToPageSchema,
+  convertBriefToPageResponseSchema,
+  type ConvertBriefToPageInput,
+} from "./dto/kb-brief-to-page.schemas";
 import {
   bulkPageIdsSchema,
   createPageSchema,
@@ -71,6 +77,9 @@ import { z } from "zod";
 const pageIdParams = z
   .object({ pageId: z.coerce.number().int().positive() })
   .strict();
+const briefIdParams = z
+  .object({ briefId: z.coerce.number().int().positive() })
+  .strict();
 const pageIdversionNumberParams = z
   .object({
     pageId: z.coerce.number().int().positive(),
@@ -89,6 +98,7 @@ export class KbPagesController {
     private readonly tree: KbPageTreeService,
     private readonly trash: KbPageTrashService,
     private readonly pageDuplicate: KbPageDuplicateService,
+    private readonly briefToPage: KbBriefToPageService,
     private readonly access: AccessService,
   ) {}
 
@@ -160,7 +170,7 @@ export class KbPagesController {
     @Query() query: SearchPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.search(u, query.q, query.limit);
+    return this.pages.search(u, query.q, query.limit, query.projectId);
   }
 
   @Post("pages")
@@ -175,6 +185,20 @@ export class KbPagesController {
     return this.pages.create(u, body);
   }
 
+  @Post("research-briefs/:briefId/convert-to-page")
+  @HttpCode(201)
+  @RequirePermission("kb:pages:create")
+  @Validate({ params: briefIdParams, body: convertBriefToPageSchema })
+  @ResponseSchema(convertBriefToPageResponseSchema)
+  async convertBriefToPage(
+    @Param("briefId", ParseIntPipe) briefId: number,
+    @Body() body: ConvertBriefToPageInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    const canManage = await this.access.holds(u, "kb:pages:manage");
+    return this.briefToPage.convert(u, briefId, body, canManage);
+  }
+
   @Get("pages/:pageId")
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
@@ -183,7 +207,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const canManage = await this.resolveCanManage(u);
+    const canManage = await this.access.holds(u, "kb:pages:manage");
     return this.pages.get(u, pageId, canManage);
   }
 
@@ -196,7 +220,7 @@ export class KbPagesController {
     @Body() body: UpdatePageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const canManage = await this.resolveCanManage(u);
+    const canManage = await this.access.holds(u, "kb:pages:manage");
     return this.pages.update(u, pageId, body, canManage);
   }
 
@@ -353,7 +377,7 @@ export class KbPagesController {
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const canManage = await this.resolveCanManage(u);
+    const canManage = await this.access.holds(u, "kb:pages:manage");
     return this.versions.restoreVersion(u, pageId, versionNumber, canManage);
   }
 
@@ -378,7 +402,7 @@ export class KbPagesController {
     @Body() body: SetVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const canManage = await this.resolveCanManage(u);
+    const canManage = await this.access.holds(u, "kb:pages:manage");
     return this.pages.setVisibility(u, pageId, body.visibility, canManage);
   }
 
@@ -448,7 +472,4 @@ export class KbPagesController {
     return this.status.markStale(u, pageId);
   }
 
-  private async resolveCanManage(u: CurrentUserContext): Promise<boolean> {
-    return this.access.holds(u, "kb:pages:manage");
-  }
 }

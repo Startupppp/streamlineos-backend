@@ -4,7 +4,18 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  sql,
+} from "drizzle-orm";
 import {
   kbSpaces,
   kbSpaceMembers,
@@ -36,7 +47,10 @@ import {
   decodeCursor,
   type CursorPage,
 } from "../../../common/pagination/cursor";
-import { keysetBefore } from "../../../common/pagination/keyset";
+import {
+  keysetBeforeMicros,
+  microsecondCursorValue,
+} from "../../../common/pagination/keyset";
 
 const SPACE_CONTENT_BATCH_SIZE = 500;
 
@@ -78,12 +92,18 @@ export class KbSpacesService {
     query: ListSpacesQuery,
   ): Promise<CursorPage<SpaceListItem>> {
     if (scope.denied) {
-      return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
+      return {
+        data: [],
+        pagination: { limit: query.limit, hasMore: false, nextCursor: null },
+      };
     }
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
-      return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
+      return {
+        data: [],
+        pagination: { limit: query.limit, hasMore: false, nextCursor: null },
+      };
     }
 
     const membershipId = actingMembershipId(user.principal) ?? 0;
@@ -92,25 +112,29 @@ export class KbSpacesService {
     const domain = [
       inArray(kbSpaces.id, ids),
       isNull(kbSpaces.deletedAt),
-      query.audience !== undefined ? eq(kbSpaces.audience, query.audience) : undefined,
+      query.audience !== undefined
+        ? eq(kbSpaces.audience, query.audience)
+        : undefined,
       query.archived === true
         ? isNotNull(kbSpaces.archivedAt)
         : query.archived === false
           ? isNull(kbSpaces.archivedAt)
           : undefined,
-      query.q
-        ? sql`${kbSpaces.name} ILIKE ${"%" + query.q + "%"}`
-        : undefined,
+      query.q ? sql`${kbSpaces.name} ILIKE ${"%" + query.q + "%"}` : undefined,
       position
-        ? keysetBefore(kbSpaces.updatedAt, kbSpaces.id, {
-            sortValue: position.sortValue,
-            id: position.id,
+        ? keysetBeforeMicros(kbSpaces.updatedAt, kbSpaces.id, {
+            sortValue: String(position.sortValue),
+            id: Number(position.id),
           })
         : undefined,
     ].filter((c): c is NonNullable<typeof c> => c !== undefined);
 
     const where = scope.compose(
-      { tenant: kbSpaces.orgId, scope: kbSpaceOwnerScope(membershipId), and: domain },
+      {
+        tenant: kbSpaces.orgId,
+        scope: kbSpaceOwnerScope(membershipId),
+        and: domain,
+      },
       ({ sql: composed }) => composed,
       () => sql`false`,
     );
@@ -127,6 +151,7 @@ export class KbSpacesService {
         createdAt: kbSpaces.createdAt,
         updatedAt: kbSpaces.updatedAt,
         archivedAt: kbSpaces.archivedAt,
+        updatedAtMicros: microsecondCursorValue(kbSpaces.updatedAt),
       })
       .from(kbSpaces)
       .where(where)
@@ -135,7 +160,10 @@ export class KbSpacesService {
 
     const spaceIds = spaces.map((s) => s.id);
     if (spaceIds.length === 0) {
-      return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
+      return {
+        data: [],
+        pagination: { limit: query.limit, hasMore: false, nextCursor: null },
+      };
     }
 
     const visiblePagePredicate = await this.authz.visiblePagePredicate(user);
@@ -148,7 +176,10 @@ export class KbSpacesService {
         })
         .from(kbArticles)
         .where(
-          and(eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, spaceIds)),
+          and(
+            eq(kbArticles.orgId, user.orgId),
+            inArray(kbArticles.spaceId, spaceIds),
+          ),
         )
         .groupBy(kbArticles.spaceId),
       this.db
@@ -173,24 +204,42 @@ export class KbSpacesService {
         })
         .from(kbSpaceMembers)
         .where(
-          and(eq(kbSpaceMembers.orgId, user.orgId), inArray(kbSpaceMembers.spaceId, spaceIds)),
+          and(
+            eq(kbSpaceMembers.orgId, user.orgId),
+            inArray(kbSpaceMembers.spaceId, spaceIds),
+          ),
         )
         .groupBy(kbSpaceMembers.spaceId),
     ]);
 
-    const articleCountMap = new Map(articleCounts.map((c) => [c.spaceId, c.count]));
+    const articleCountMap = new Map(
+      articleCounts.map((c) => [c.spaceId, c.count]),
+    );
     const pageCountMap = new Map(pageCounts.map((c) => [c.spaceId, c.count]));
-    const memberCountMap = new Map(memberCounts.map((c) => [c.spaceId, c.count]));
+    const memberCountMap = new Map(
+      memberCounts.map((c) => [c.spaceId, c.count]),
+    );
+
+    const cursorValues = new Map(spaces.map((s) => [s.id, s.updatedAtMicros]));
 
     const items = spaces.map((s) => ({
-      ...s,
+      id: s.id,
+      name: s.name,
+      slug: s.slug,
+      description: s.description,
+      audience: s.audience,
+      icon: s.icon,
+      isPublicHelpCenter: s.isPublicHelpCenter,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      archivedAt: s.archivedAt,
       articleCount: articleCountMap.get(s.id) ?? 0,
       pageCount: pageCountMap.get(s.id) ?? 0,
       memberCount: memberCountMap.get(s.id) ?? 0,
     }));
 
     return buildCursorPage(items, query.limit, (row) => ({
-      sortValue: row.updatedAt.toISOString(),
+      sortValue: cursorValues.get(row.id) ?? row.updatedAt.toISOString(),
       id: String(row.id),
     }));
   }
@@ -353,7 +402,11 @@ export class KbSpacesService {
         .select({ count: sql<number>`count(*)::int` })
         .from(kbPages)
         .where(
-          and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId), isNull(kbPages.deletedAt)),
+          and(
+            eq(kbPages.orgId, orgId),
+            eq(kbPages.spaceId, spaceId),
+            isNull(kbPages.deletedAt),
+          ),
         ),
       this.db
         .select({ count: sql<number>`count(*)::int` })

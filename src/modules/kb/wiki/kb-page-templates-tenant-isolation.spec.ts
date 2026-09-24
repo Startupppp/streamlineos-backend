@@ -1,5 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
+import type { ListPageTemplatesQuery } from "./dto/kb-page-templates.schemas";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -39,12 +40,13 @@ function makeDb(rows: unknown[] = []): { db: Db; allWhereArgs: unknown[] } {
 describe("KbPageTemplatesService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
   const OWNER_ORG = "org-owner";
+  const LIST_QUERY = { limit: 50 } as ListPageTemplatesQuery;
 
   it("scopes template list to the requesting org (tenant isolation)", async () => {
     const { db, allWhereArgs } = makeDb([]);
     const svc = new KbPageTemplatesService(db);
 
-    await svc.list(ATTACKER_ORG);
+    await svc.list(ATTACKER_ORG, LIST_QUERY);
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -55,8 +57,8 @@ describe("KbPageTemplatesService — cross-tenant isolation", () => {
     const { db } = makeDb([{ id: 1, orgId: OWNER_ORG, name: "Blank" }]);
     const svc = new KbPageTemplatesService(db);
 
-    const result = await svc.list(OWNER_ORG);
+    const result = await svc.list(OWNER_ORG, LIST_QUERY);
 
-    expect(result).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
   });
 });

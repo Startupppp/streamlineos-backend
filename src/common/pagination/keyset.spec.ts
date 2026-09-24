@@ -11,9 +11,12 @@ import {
   keysetBefore,
   keysetBeforeId,
   keysetBeforeTuple,
+  keysetAfterMicros,
+  keysetBeforeMicros,
   keysetBeforeUuid,
   keysetBeforeValue,
   keysetInteger,
+  microsecondCursorValue,
   keysetTextValue,
   keysetTimestamp,
 } from "./keyset";
@@ -271,5 +274,46 @@ describe("no cursor rebuilds a Date inside a sql template", () => {
     const offenders = sources(root).filter((path) => unbound.test(readFileSync(path, "utf8")));
 
     expect(offenders.map((path) => path.slice(root.length + 1))).toEqual([]);
+  });
+});
+
+describe("microsecond keyset helpers", () => {
+  const micros = { sortValue: "2026-03-01T10:00:00.500400", id: 7 };
+
+  it("compares descending with < so a newest-first walk moves backwards", () => {
+    const query = dialect.sqlToQuery(
+      keysetBeforeMicros(attendance.createdAt, attendance.id, micros),
+    );
+    expect(query.sql).toContain("<");
+    expect(query.sql).not.toContain(">");
+  });
+
+  it("compares ascending with > so an oldest-first walk moves forwards", () => {
+    const query = dialect.sqlToQuery(
+      keysetAfterMicros(attendance.createdAt, attendance.id, micros),
+    );
+    expect(query.sql).toContain(">");
+    expect(query.sql).not.toContain("<");
+  });
+
+  it("binds the boundary at full microsecond precision rather than rebuilding a millisecond Date", () => {
+    const query = dialect.sqlToQuery(
+      keysetAfterMicros(attendance.createdAt, attendance.id, micros),
+    );
+    expect(query.params).toContain("2026-03-01T10:00:00.500400");
+    expect(query.params).not.toContain("2026-03-01T10:00:00.500Z");
+    expect(query.params.some((p) => p instanceof Date)).toBe(false);
+  });
+
+  it("casts the bound to timestamp in SQL, because the value travels as text", () => {
+    const query = dialect.sqlToQuery(
+      keysetAfterMicros(attendance.createdAt, attendance.id, micros),
+    );
+    expect(query.sql).toContain("::timestamp");
+  });
+
+  it("projects the cursor column at microsecond precision, which is the half that happens in the SELECT", () => {
+    const query = dialect.sqlToQuery(microsecondCursorValue(attendance.createdAt));
+    expect(query.sql).toContain("HH24:MI:SS.US");
   });
 });

@@ -1,5 +1,8 @@
+import { sql } from "drizzle-orm";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ScopedRead } from "../../access/scoped-read";
+import type { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import type { ListSpacesQuery } from "../core/dto/kb.schemas";
 import type { Db } from "../../../db/drizzle.module";
 import { KbSpacesService } from "./kb-spaces.service";
 import type { KbAccessService } from "../core/kb-access.service";
@@ -61,10 +64,12 @@ function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; al
   } as unknown as KbAccessService;
   const indexing = new KbIndexingService(db, undefined as never, undefined as never);
   const authz = {
-    visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
-  } as never;
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  } as unknown as KnowledgeAuthorizationService;
   return { svc: new KbSpacesService(db, access, indexing, authz), allWhereArgs };
 }
+
+const LIST_QUERY = { limit: 20 } as ListSpacesQuery;
 
 describe("KbSpacesService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
@@ -73,7 +78,7 @@ describe("KbSpacesService — cross-tenant isolation", () => {
   it("scopes space list to the requesting org (tenant isolation)", async () => {
     const { svc, allWhereArgs } = makeService(ATTACKER_ORG, []);
 
-    await svc.list(makeUser(ATTACKER_ORG), ScopedRead.of(ATTACKER_ORG, "u-1", "all"), { limit: 20 } as never);
+    await svc.list(makeUser(ATTACKER_ORG), ScopedRead.of(ATTACKER_ORG, "u-1", "all"), LIST_QUERY);
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -84,7 +89,7 @@ describe("KbSpacesService — cross-tenant isolation", () => {
     const space = { id: 1, orgId: OWNER_ORG, name: "General", slug: "general", articleCount: 0 };
     const { svc } = makeService(OWNER_ORG, [space]);
 
-    const result = await svc.list(makeUser(OWNER_ORG), ScopedRead.of(OWNER_ORG, "u-1", "all"), { limit: 20 } as never);
+    const result = await svc.list(makeUser(OWNER_ORG), ScopedRead.of(OWNER_ORG, "u-1", "all"), LIST_QUERY);
 
     expect(result).toBeDefined();
   });

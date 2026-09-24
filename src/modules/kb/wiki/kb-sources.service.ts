@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -37,6 +37,10 @@ import {
   decodeCursor,
   type CursorPage,
 } from "../../../common/pagination/cursor";
+import {
+  keysetBeforeMicros,
+  microsecondCursorValue,
+} from "../../../common/pagination/keyset";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 
@@ -107,17 +111,17 @@ export class KbSourcesService {
   ): Promise<CursorPage<KbSourceListItem>> {
     const position = decodeCursor(query.cursor);
     const after = position
-      ? or(
-          lt(kbSources.createdAt, new Date(position.sortValue)),
-          and(
-            eq(kbSources.createdAt, new Date(position.sortValue)),
-            lt(kbSources.id, Number(position.id)),
-          ),
-        )
+      ? keysetBeforeMicros(kbSources.createdAt, kbSources.id, {
+          sortValue: String(position.sortValue),
+          id: Number(position.id),
+        })
       : undefined;
 
     const rows = await this.db
-      .select(SOURCE_LIST_COLUMNS)
+      .select({
+        ...SOURCE_LIST_COLUMNS,
+        createdAtMicros: microsecondCursorValue(kbSources.createdAt),
+      })
       .from(kbSources)
       .where(
         and(eq(kbSources.orgId, orgId), isNull(kbSources.deletedAt), after),
@@ -125,8 +129,24 @@ export class KbSourcesService {
       .orderBy(desc(kbSources.createdAt), desc(kbSources.id))
       .limit(query.limit + 1);
 
-    return buildCursorPage(rows, query.limit, (row) => ({
-      sortValue: row.createdAt.toISOString(),
+    const cursorValues = new Map(rows.map((r) => [r.id, r.createdAtMicros]));
+
+    const items: KbSourceListItem[] = rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      title: r.title,
+      mimeType: r.mimeType,
+      fileSize: r.fileSize,
+      fileUrl: r.fileUrl,
+      status: r.status,
+      chunkCount: r.chunkCount,
+      errorMessage: r.errorMessage,
+      spaceId: r.spaceId,
+      createdAt: r.createdAt,
+    }));
+
+    return buildCursorPage(items, query.limit, (row) => ({
+      sortValue: cursorValues.get(row.id) ?? row.createdAt.toISOString(),
       id: String(row.id),
     }));
   }
@@ -256,24 +276,18 @@ export class KbSourcesService {
       mimetype === DOCX_MIME ||
       mimetype.startsWith("text/");
 
-    if (!isAllowedType) {
+    if (!isAllowedType)
       throw new BadRequestException(
         "Unsupported file type. Upload PDF, DOCX, TXT, MD or CSV.",
       );
-    }
 
-    if (buffer.length > 25 * 1024 * 1024) {
+    if (buffer.length > 25 * 1024 * 1024)
       throw new BadRequestException("File exceeds the 25 MB limit");
-    }
 
-    if (
-      !mimetype.startsWith("text/") &&
-      !validateMagicBytes(buffer, mimetype)
-    ) {
+    if (!mimetype.startsWith("text/") && !validateMagicBytes(buffer, mimetype))
       throw new BadRequestException(
         "File content does not match declared type",
       );
-    }
 
     const kbBucket = this.config.R2_KB_BUCKET_NAME;
     const result = await this.storage.uploadFile(

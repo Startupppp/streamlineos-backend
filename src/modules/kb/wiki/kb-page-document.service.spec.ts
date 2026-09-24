@@ -127,6 +127,7 @@ function makeService(db: Db, authDecision: "allowed" | "forbidden" | "notFound" 
     { create: jest.fn() } as never,
     { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
     makeAuth(authDecision) as never,
+    {} as never,
   );
 }
 

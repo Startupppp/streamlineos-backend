@@ -19,6 +19,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 import {
@@ -27,6 +28,7 @@ import {
 } from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { collectSubtreeIds } from "./kb-page-subtree.util";
+import { resolveProjectAccess } from "../../build/core/project-access";
 
 type PageRow = KbPageRow;
 
@@ -57,6 +59,7 @@ export class KbPageTreeService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly auth: KnowledgeAuthorizationService,
+    private readonly access: AccessService,
   ) {}
 
   async getTree(
@@ -79,6 +82,10 @@ export class KbPageTreeService {
       hasChildren: boolean;
     }[]
   > {
+    if (projectId !== undefined) {
+      const { hasAccess } = await resolveProjectAccess(this.db, this.access, user, projectId);
+      if (!hasAccess) throw new NotFoundException("Project not found");
+    }
     const orgId = user.orgId;
     const predicate = await this.auth.visiblePagePredicate(user, "view");
     const filters: SQL[] = [

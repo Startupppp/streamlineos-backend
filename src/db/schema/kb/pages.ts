@@ -9,6 +9,7 @@
   index,
   uniqueIndex,
   unique,
+  check,
   customType,
   foreignKey,
 } from "drizzle-orm/pg-core";
@@ -16,7 +17,7 @@ import { relations, sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "../build";
 import { kbSpaces } from "./spaces";
-import { kbArticles } from "../support/kb";
+import { kbArticles, kbCategories } from "../support/kb";
 
 export type KbPageContent =
   | Record<string, unknown>
@@ -54,6 +55,7 @@ export const kbPages = pgTable(
     contentRevision: integer("content_revision").notNull().default(1),
     visibility: text("visibility").notNull().default("org").$type<"private" | "org" | "public">(),
     publicToken: text("public_token"),
+    publicTokenHash: text("public_token_hash"),
     status: text("status").notNull().default("draft").$type<"draft" | "in_review" | "published" | "archived">(),
     contentType: text("content_type").notNull().default("note").$type<"note" | "sop" | "policy" | "support_article" | "troubleshooting" | "decision_record" | "meeting_notes" | "runbook" | "project_brief" | "playbook">(),
     trustState: text("trust_state").notNull().default("unverified").$type<"unverified" | "verified" | "verification_expired">(),
@@ -66,6 +68,19 @@ export const kbPages = pgTable(
     publicSlug: text("public_slug"),
     sourceArticleId: integer("source_article_id"),
     projectId: integer("project_id"),
+    externalId: text("external_id"),
+    externalSource: text("external_source"),
+    slug: text("slug"),
+    excerpt: text("excerpt"),
+    categoryId: integer("category_id"),
+    views: integer("views").default(0),
+    helpfulCount: integer("helpful_count").default(0),
+    notHelpfulCount: integer("not_helpful_count").default(0),
+    seoTitle: text("seo_title"),
+    seoDescription: text("seo_description"),
+    reviewIntervalDays: integer("review_interval_days"),
+    publishedAt: timestamp("published_at"),
+    archivedAt: timestamp("archived_at"),
   },
   (table) => [
     index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder).where(sql`deleted_at IS NULL`),
@@ -74,10 +89,14 @@ export const kbPages = pgTable(
     index("idx_kb_pages_org_updated").on(table.orgId, table.updatedAt).where(sql`deleted_at IS NULL`),
     index("idx_kb_pages_parent").on(table.parentPageId),
     uniqueIndex("uniq_kb_pages_public_token").on(table.publicToken),
+    uniqueIndex("uniq_kb_pages_public_token_hash").on(table.publicTokenHash).where(sql`${table.publicTokenHash} IS NOT NULL`),
     index("idx_kb_pages_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     index("idx_kb_pages_org_next_review").on(table.orgId, table.nextReviewAt).where(sql`deleted_at IS NULL AND next_review_at IS NOT NULL`),
     uniqueIndex("uniq_kb_pages_org_public_slug").on(table.orgId, table.publicSlug).where(sql`${table.publicSlug} IS NOT NULL`),
     uniqueIndex("uniq_kb_pages_org_source_article").on(table.orgId, table.sourceArticleId).where(sql`${table.sourceArticleId} IS NOT NULL`),
+    uniqueIndex("uniq_kb_pages_external_ref").on(table.orgId, table.externalSource, table.externalId).where(sql`${table.externalId} IS NOT NULL`),
+    check("chk_kb_pages_external_ref_paired", sql`(${table.externalId} IS NULL) = (${table.externalSource} IS NULL)`),
+    uniqueIndex("uniq_kb_pages_org_slug_ref").on(table.orgId, table.slug).where(sql`${table.slug} IS NOT NULL`),
     index("idx_kb_pages_fts").using("gin", table.fts),
     unique("uniq_kb_pages_org_id").on(table.orgId, table.id),
     // The live constraints below carry Postgres 15's column-list form,
@@ -96,6 +115,7 @@ export const kbPages = pgTable(
     foreignKey({ columns: [table.orgId, table.deletedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_deleted_membership" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.ownerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_owner_membership" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.verifiedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_verified_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.categoryId], foreignColumns: [kbCategories.orgId, kbCategories.id], name: "fk_kb_pages_org_category" }).onDelete("set null"),
   ],
 );
 
