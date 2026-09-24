@@ -419,7 +419,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       const result = await svc.list(
         ORG,
         UID,
-        { limit: 10, kinds: undefined, unreadOnly: false, cursor },
+        { limit: 10, kinds: undefined, unreadOnly: false, eventKeys: undefined, cursor },
         user,
       );
       pages += 1;
@@ -454,7 +454,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
     const first = await svc.list(
       ORG,
       UID,
-      { limit: 1, kinds: ["notification", "mail"], unreadOnly: false },
+      { limit: 1, kinds: ["notification", "mail"], unreadOnly: false, eventKeys: undefined },
       user,
     );
 
@@ -468,7 +468,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
     const second = await svc.list(
       ORG,
       UID,
-      { limit: 1, kinds: ["notification", "mail"], unreadOnly: false, cursor: first.nextCursor ?? undefined },
+      { limit: 1, kinds: ["notification", "mail"], unreadOnly: false, eventKeys: undefined, cursor: first.nextCursor ?? undefined },
       user,
     );
 
@@ -504,7 +504,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       svcWithMail.list(
         ORG,
         UID,
-        { limit: 2, kinds: ["notification", "mail"], unreadOnly: false, cursor },
+        { limit: 2, kinds: ["notification", "mail"], unreadOnly: false, eventKeys: undefined, cursor },
         mailOnlyUser,
       ),
     );
@@ -521,7 +521,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       const result = await svcWithMail.list(
         ORG,
         UID,
-        { limit: 2, kinds: ["notification", "mail"], unreadOnly: false, cursor },
+        { limit: 2, kinds: ["notification", "mail"], unreadOnly: false, eventKeys: undefined, cursor },
         mailOnlyUser,
       );
       for (const item of result.items) delivered.push(item.dedupKey);

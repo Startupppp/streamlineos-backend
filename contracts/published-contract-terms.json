@@ -31,6 +31,14 @@
     "provider-signature-only": "Signature verified, and nothing behind it fences a replay — the event id is either not recorded, or the attempt to record it does not work. Like `at-least-once-unfenced`, a finding rather than a mode to copy: it is how a route reads when its dedupe was written but never fired."
   },
   "operations": {
+    "POST /careers/resumes/upload": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into candidate_documents_vault. The storage key is deterministic (candidateId/fileName) so the object overwrites, but the vault row does not — a retry after a timeout leaves a second document row pointing at the same object. No server-side replay fence."
+      },
+      "evidence": "src/modules/careers/careers.service.ts"
+    },
     "GET /public/sign/forms/{slug}": {
       "sunsetAt": "2026-09-10",
       "sunsetEvidence": "RETIRED WITH NO REPLACEMENT alongside its submit half — see POST /public/sign/forms/{slug}/submit for the dependency proof. This half was the anonymous reader of a published sign_public_forms row; migration 0660b dropped the table, so there is nothing left for it to read."

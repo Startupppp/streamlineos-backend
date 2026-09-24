@@ -113,7 +113,7 @@ describe("attention adapters carry their own destination", () => {
     );
 
     const svc = makeService(registry, makeAccessHolding(ALL_APPROVAL_KEYS));
-    const page = await svc.list(ORG, UID, { limit: 25, kinds: ["build_approval"], unreadOnly: false }, makeUser());
+    const page = await svc.list(ORG, UID, { limit: 25, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUser());
 
     const byKind = new Map(
       page.items
@@ -136,7 +136,7 @@ describe("attention adapters carry their own destination", () => {
     );
 
     const svc = makeService(registry, makeAccessHolding(ALL_APPROVAL_KEYS));
-    const page = await svc.list(ORG, UID, { limit: 25, kinds: ["build_approval"], unreadOnly: false }, makeUser());
+    const page = await svc.list(ORG, UID, { limit: 25, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUser());
 
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.deepLink).toBeNull();
@@ -175,6 +175,7 @@ describe("attention adapters carry their own destination", () => {
         limit: 25,
         kinds: ["build_approval"],
         unreadOnly: false,
+        eventKeys: undefined,
         module: "hr",
       },
       makeUser(),

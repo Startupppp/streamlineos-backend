@@ -71,7 +71,7 @@ function makeRegistry() {
   return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import('../attention/approval-adapter.registry').ApprovalAdapterRegistry;
 }
 
-  const query: UnifiedInboxQuery = { kinds: ["notification"], limit: 25, unreadOnly: false };
+  const query: UnifiedInboxQuery = { kinds: ["notification"], limit: 25, unreadOnly: false, eventKeys: undefined };
 
   function caller() {
     return {
