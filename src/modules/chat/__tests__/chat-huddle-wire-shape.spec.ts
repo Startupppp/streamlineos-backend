@@ -121,7 +121,6 @@ function build(db: Db) {
     db,
     { publishHuddleEvent: jest.fn(), publishToUser: jest.fn() } as never,
     { log: jest.fn() } as never,
-    { getSettings: jest.fn().mockResolvedValue({ maxHuddleParticipants: 50 }) } as never,
     { resolveTier: jest.fn().mockResolvedValue({ tier: "PAID", plan: "STARTER" }) } as never,
     { emit: jest.fn().mockResolvedValue({}) } as never,
     { isConfigured: () => true, executeTool: jest.fn() } as never,

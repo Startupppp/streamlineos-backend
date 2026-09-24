@@ -147,6 +147,7 @@ export const kbPageSchema = z.object({
 export const kbPageWithAncestorsSchema = kbPageSchema.extend({
   ancestors: z.array(z.object({ id: z.number().int(), title: z.string() })),
   isFavorite: z.boolean(),
+  canEdit: z.boolean(),
 });
 
 export const kbPageListItemSchema = kbPageSchema.omit({ content: true, contentText: true });

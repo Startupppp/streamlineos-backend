@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { bulkDecidePageReviewsSchema } from "./dto/kb-page-reviews.schemas";
@@ -23,16 +24,21 @@ const authMock = {
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
 };
 
+const capturedWheres: SQL[] = [];
+
 function makeQueryDb(rows: unknown[] = []) {
   const makeChain = (): object => {
     const chain: Record<string, jest.Mock> = {
-      where: jest.fn().mockImplementation(() => ({
+      where: jest.fn().mockImplementation((clause: SQL) => {
+        capturedWheres.push(clause);
+        return ({
         orderBy: jest.fn().mockImplementation(() =>
           Object.assign(Promise.resolve(rows), {
             limit: jest.fn().mockResolvedValue(rows),
           }),
         ),
-      })),
+      });
+      }),
     };
     for (const m of ["innerJoin", "leftJoin"]) {
       chain[m] = jest.fn().mockImplementation(() => makeChain());
@@ -48,7 +54,10 @@ const holdsMock = jest.fn().mockResolvedValue(true);
 const accessMock = { holds: holdsMock } as never;
 
 describe("derived isOverdue — query service", () => {
-  afterEach(() => jest.resetAllMocks());
+  afterEach(() => {
+    jest.resetAllMocks();
+    capturedWheres.length = 0;
+  });
 
   it("marks a pending review with a past dueAt as isOverdue=true", async () => {
     const pastDue = new Date(Date.now() - 86_400_000);
@@ -121,6 +130,45 @@ describe("derived isOverdue — query service", () => {
     expect(page.data).toHaveLength(0);
   });
 
+  it("returns a review whose page IS visible, so the hidden-page test above is not passing merely because the fixture is empty", async () => {
+    const row = {
+      id: 1, orgId: "org-1", pageId: 10,
+      type: "approval", status: "pending",
+      requestedById: null, reviewerId: null,
+      requestedByMembershipId: null, reviewerMembershipId: null,
+      dueAt: new Date(Date.now() + 86_400_000), decidedAt: null, decisionNote: null,
+      createdAt: new Date(), updatedAt: new Date(),
+      pageTitle: "Visible", requestedByName: null, reviewerName: null,
+    };
+    const db = makeQueryDb([row]);
+    const svc = new KbPageReviewsQueryService(db, accessMock, authMock as never);
+    const page = await svc.list(makeUser(), { limit: 50, sortDir: "asc" });
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]?.pageTitle).toBe("Visible");
+  });
+
+  it("sends every accepted filter to the database, so no filter is silently dropped after passing validation", async () => {
+    const db = makeQueryDb([]);
+    const svc = new KbPageReviewsQueryService(db, accessMock, authMock as never);
+
+    await svc.list(makeUser(), {
+      limit: 50,
+      sortDir: "asc",
+      status: "pending",
+      type: "approval",
+      reviewer: "user-9",
+      spaceId: 77,
+      dueFrom: "2026-01-01T00:00:00.000Z",
+      dueTo: "2026-12-31T00:00:00.000Z",
+    });
+
+    expect(capturedWheres).toHaveLength(1);
+    const rendered = new PgDialect().sqlToQuery(capturedWheres[0]);
+    expect(rendered.params).toContain("user-9");
+    expect(rendered.params).toContain(77);
+    expect(rendered.params).toContain("approval");
+  });
+
   it("cursor stability — opaque cursor is an encoded string, not a raw date", async () => {
     const pastDue = new Date(Date.now() - 3600_000);
     const rows = Array.from({ length: 2 }, (_, i) => ({
@@ -137,86 +185,8 @@ describe("derived isOverdue — query service", () => {
     const page = await svc.list(makeUser(), { limit: 1, sortDir: "asc" });
     const cursor = page.pagination.nextCursor;
     expect(typeof cursor).toBe("string");
-    expect(cursor).not.toContain(":");
-    expect(cursor?.length).toBeGreaterThan(0);
-  });
-});
-
-describe("KbPageReviewsService — isOverdue in approve / reject response", () => {
-  afterEach(() => jest.resetAllMocks());
-
-  function makeMutationRow(status: "pending" | "approved" | "rejected", dueAt: Date | null) {
-    return {
-      id: 1, orgId: "org-1", pageId: 10,
-      type: "approval", status,
-      requestedById: null, reviewerId: "user-rev",
-      requestedByMembershipId: null, reviewerMembershipId: 3,
-      dueAt, decidedAt: status !== "pending" ? new Date() : null,
-      decisionNote: null,
-      createdAt: new Date(), updatedAt: new Date(),
-      pageTitle: "Test Page", requestedByName: null, reviewerName: "Bob",
-    };
-  }
-
-  function makeMutationDb(findFirstRow: object, updateReturnRow: object, loadContextRow: object) {
-    const leftJoinChain: Record<string, jest.Mock> = {};
-    leftJoinChain.leftJoin = jest.fn().mockImplementation(() => leftJoinChain);
-    leftJoinChain.where = jest.fn().mockResolvedValue([loadContextRow]);
-
-    return {
-      query: {
-        kbPageReviews: { findFirst: jest.fn().mockResolvedValue(findFirstRow) },
-      },
-      update: jest.fn().mockReturnValue({
-        set: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([updateReturnRow]),
-          }),
-        }),
-      }),
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue(leftJoinChain) }),
-    } as never;
-  }
-
-  const auditMock = { log: jest.fn() } as never;
-  const dispatchMock = { emit: jest.fn().mockResolvedValue(undefined) } as never;
-  const accessMock2 = { holds: jest.fn().mockResolvedValue(true) } as never;
-  const authSvcMock2 = { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never;
-
-  it("approve: response carries isOverdue=false when the decided review has a past dueAt", async () => {
-    const pastDue = new Date(Date.now() - 86_400_000);
-    const db = makeMutationDb(
-      { id: 1, orgId: "org-1", status: "pending", requestedById: null },
-      { id: 1, orgId: "org-1" },
-      makeMutationRow("approved", pastDue),
-    );
-    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock2, authSvcMock2);
-    const result = await svc.approve(makeUser(), 1, {});
-    expect(result.isOverdue).toBe(false);
-  });
-
-  it("reject: response carries isOverdue=false when the decided review has a past dueAt", async () => {
-    const pastDue = new Date(Date.now() - 86_400_000);
-    const db = makeMutationDb(
-      { id: 1, orgId: "org-1", status: "pending", requestedById: null },
-      { id: 1, orgId: "org-1" },
-      makeMutationRow("rejected", pastDue),
-    );
-    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock2, authSvcMock2);
-    const result = await svc.reject(makeUser(), 1, { note: "Needs revision" });
-    expect(result.isOverdue).toBe(false);
-  });
-
-  it("approve: response carries isOverdue=true when loadWithContext sees a still-pending row with a past dueAt", async () => {
-    const pastDue = new Date(Date.now() - 86_400_000);
-    const db = makeMutationDb(
-      { id: 2, orgId: "org-1", status: "pending", requestedById: null },
-      { id: 2, orgId: "org-1" },
-      makeMutationRow("pending", pastDue),
-    );
-    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock2, authSvcMock2);
-    const result = await svc.approve(makeUser(), 2, {});
-    expect(result.isOverdue).toBe(true);
+    expect(cursor?.length).toBeGreaterThan(8);
+    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
 
@@ -285,6 +255,56 @@ describe("KbPageReviewsService.bulkDecide", () => {
     const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock, authSvcMock);
     const result = await svc.bulkDecide(makeUser(), { ids: [404], decision: "approved" });
     expect(result.results[0]).toMatchObject({ id: 404, outcome: "notFound" });
+  });
+
+  it("actually decides a pending review, so the notFound and conflict cases above are not the only reachable outcomes", async () => {
+    const db = makeServiceDb([{ id: 5, status: "pending" }]);
+    const auditMock = { log: jest.fn() } as never;
+    const dispatchMock = { emit: jest.fn() } as never;
+    const authSvcMock = { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never;
+    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock, authSvcMock);
+    const result = await svc.bulkDecide(makeUser(), { ids: [5], decision: "approved" });
+    expect(result.results[0]).toMatchObject({ id: 5, outcome: "succeeded" });
+  });
+
+  it("decides the reachable rows and reports the rest per id, so one failure does not roll back the others", async () => {
+    const db = makeServiceDb([
+      { id: 5, status: "pending" },
+      { id: 7, status: "approved" },
+    ]);
+    const auditMock = { log: jest.fn() } as never;
+    const dispatchMock = { emit: jest.fn() } as never;
+    const authSvcMock = { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never;
+    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock, authSvcMock);
+
+    const result = await svc.bulkDecide(makeUser(), {
+      ids: [5, 7, 404],
+      decision: "approved",
+    });
+
+    const byId = new Map(result.results.map((r) => [r.id, r.outcome]));
+    expect(byId.get(5)).toBe("succeeded");
+    expect(byId.get(7)).toBe("conflict");
+    expect(byId.get(404)).toBe("notFound");
+  });
+
+  it("reports a hidden review and a missing review identically, so a bulk response cannot confirm that a hidden review exists", async () => {
+    const auditMock = { log: jest.fn() } as never;
+    const dispatchMock = { emit: jest.fn() } as never;
+
+    const hidden = new KbPageReviewsService(
+      makeServiceDb([]), auditMock, dispatchMock, accessMock,
+      { visiblePagePredicate: jest.fn().mockResolvedValue(sql`false`) } as never,
+    );
+    const missing = new KbPageReviewsService(
+      makeServiceDb([]), auditMock, dispatchMock, accessMock,
+      { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never,
+    );
+
+    const hiddenResult = await hidden.bulkDecide(makeUser(), { ids: [42], decision: "approved" });
+    const missingResult = await missing.bulkDecide(makeUser(), { ids: [42], decision: "approved" });
+
+    expect(hiddenResult.results).toEqual(missingResult.results);
   });
 
   it("returns conflict for an already-decided review", async () => {

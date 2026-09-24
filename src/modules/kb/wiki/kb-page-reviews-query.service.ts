@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gte, isNull, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   kbPageReviews,
@@ -110,6 +110,10 @@ export class KbPageReviewsQueryService {
       conditions.push(eq(kbPageReviews.reviewerId, query.reviewer));
     }
 
+    if (query.spaceId !== undefined) {
+      conditions.push(eq(kbPages.spaceId, query.spaceId));
+    }
+
     if (query.dueFrom !== undefined) {
       conditions.push(gte(kbPageReviews.dueAt, new Date(query.dueFrom)));
     }
@@ -136,7 +140,7 @@ export class KbPageReviewsQueryService {
         conditions.push(
           and(
             isNull(kbPageReviews.dueAt),
-            lt(kbPageReviews.id, Number(position.id)),
+            gt(kbPageReviews.id, Number(position.id)),
           ),
         );
       } else {

@@ -23,6 +23,7 @@ import { KbPageStatusService } from "./kb-page-status.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import {
   bulkPageIdsSchema,
@@ -86,6 +87,7 @@ export class KbPagesController {
     private readonly versions: KbPageVersionsService,
     private readonly visits: KbPageVisitsService,
     private readonly tree: KbPageTreeService,
+    private readonly trash: KbPageTrashService,
     private readonly pageDuplicate: KbPageDuplicateService,
     private readonly access: AccessService,
   ) {}
@@ -123,7 +125,7 @@ export class KbPagesController {
     @Query() query: TrashPagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.tree.getTrash(u, query);
+    return this.trash.getTrash(u, query);
   }
 
   @Post("pages/trash/restore")
@@ -135,7 +137,7 @@ export class KbPagesController {
     @Body() body: BulkPageIdsInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.tree.bulkRestore(u, body);
+    return this.trash.bulkRestore(u, body);
   }
 
   @Delete("pages/trash/purge")
@@ -147,7 +149,7 @@ export class KbPagesController {
     @Body() body: BulkPageIdsInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.tree.bulkPurge(u, body);
+    return this.trash.bulkPurge(u, body);
   }
 
   @Get("pages/search")
@@ -253,7 +255,7 @@ export class KbPagesController {
   @RequirePermission("kb:pages:purge")
   @ResponseSchema(kbPageEmptyTrashSchema)
   async emptyTrash(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.tree.emptyTrash(u);
+    return this.trash.emptyTrash(u);
   }
 
   @Delete("pages/:pageId/permanent")
@@ -265,7 +267,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<void> {
-    await this.tree.hardDelete(u, pageId);
+    await this.trash.hardDelete(u, pageId);
   }
 
   @Post("pages/:pageId/favorite")

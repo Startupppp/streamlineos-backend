@@ -10,6 +10,7 @@ import { KbPagesService } from "./kb-pages.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageTrashService } from "./kb-page-trash.service";
 import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
@@ -67,6 +68,7 @@ import { KbPageGrantsService } from "./kb-page-grants.service";
     KbPageVersionsService,
     KbPageVisitsService,
     KbPageTreeService,
+    KbPageTrashService,
     KbPageDuplicateService,
     KbPageCommentsService,
     KbPageTemplatesService,
@@ -79,6 +81,6 @@ import { KbPageGrantsService } from "./kb-page-grants.service";
     KbPageAiService,
     KbPageGrantsService,
   ],
-  exports: [KbPageTreeService],
+  exports: [KbPageTreeService, KbPageTrashService],
 })
 export class KbWikiModule {}

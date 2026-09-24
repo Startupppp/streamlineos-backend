@@ -14,7 +14,6 @@ import {
   kbPageTemplates,
   kbSpaces,
   organizationMembers,
-  users,
 } from "../../../db/schema";
 import type { KbPageContent } from "../../../db/schema/kb/pages";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -29,11 +28,11 @@ import { KB_PAGE_SEARCH_MAX_LIMIT } from "./dto/kb-pages.schemas";
 import type { CreatePageInput, UpdatePageInput } from "./dto/kb-pages.schemas";
 import { shouldResetTrust } from "./kb-page-governance.util";
 import {
-  NO_KB_PAGE_CONFLICT_DETAILS,
+  buildPageAncestors,
+  describeLatestPageEdit,
   resyncPageLinks,
   snapshotIfNeeded,
   staleRevisionConflict,
-  type KbPageConflictDetails,
   type KbTransaction,
 } from "./kb-page-edit.util";
 import { actingMembershipId } from "../../../common/auth/principal";
@@ -156,6 +155,7 @@ export class KbPagesService {
     PageRow & {
       ancestors: Pick<PageRow, "id" | "title">[];
       isFavorite: boolean;
+      canEdit: boolean;
     }
   > {
     const orgId = user.orgId;
@@ -171,22 +171,25 @@ export class KbPagesService {
     });
     if (!page) throw new NotFoundException("Page not found");
 
-    const ancestors = await this.buildAncestors(orgId, page.parentPageId);
-
-    const fav = await this.db.query.kbPageFavorites.findFirst({
-      where: and(
-        eq(kbPageFavorites.pageId, pageId),
-        eq(kbPageFavorites.userId, user.userId),
-        eq(kbPageFavorites.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
+    const [ancestors, editDecision, fav] = await Promise.all([
+      buildPageAncestors(this.db, orgId, page.parentPageId),
+      this.auth.resolvePageAccess(user, pageId, "edit"),
+      this.db.query.kbPageFavorites.findFirst({
+        where: and(
+          eq(kbPageFavorites.pageId, pageId),
+          eq(kbPageFavorites.userId, user.userId),
+          eq(kbPageFavorites.orgId, orgId),
+        ),
+        columns: { id: true },
+      }),
+    ]);
 
     return {
       ...page,
       publicToken: this.withoutUnsharedToken(user, page, canManage).publicToken,
       ancestors,
       isFavorite: !!fav,
+      canEdit: editDecision.outcome === "allowed",
     };
   }
 
@@ -307,7 +310,7 @@ export class KbPagesService {
         if (revisionGuard === undefined)
           throw new NotFoundException("Page not found");
         throw staleRevisionConflict(
-          await this.describeLatestEdit(tx, orgId, pageId),
+          await describeLatestPageEdit(tx, orgId, pageId),
         );
       }
 
@@ -487,53 +490,6 @@ export class KbPagesService {
     );
     if (!page) throw new NotFoundException("Page not found");
     return page;
-  }
-
-  private async describeLatestEdit(
-    tx: KbTransaction,
-    orgId: string,
-    pageId: number,
-  ): Promise<KbPageConflictDetails> {
-    const [latest] = await tx
-      .select({
-        contentRevision: kbPages.contentRevision,
-        updatedAt: kbPages.updatedAt,
-        editorName: users.name,
-      })
-      .from(kbPages)
-      .leftJoin(users, eq(kbPages.lastEditedById, users.id))
-      .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-      .limit(1);
-    if (!latest) return NO_KB_PAGE_CONFLICT_DETAILS;
-    return {
-      currentContentRevision: latest.contentRevision,
-      lastEditedByName: latest.editorName,
-      lastEditedAt: latest.updatedAt.toISOString(),
-    };
-  }
-
-  private async buildAncestors(
-    orgId: string,
-    parentId: number | null,
-  ): Promise<Pick<PageRow, "id" | "title">[]> {
-    if (parentId === null) return [];
-    const rows = await this.db.execute(sql`
-      WITH RECURSIVE ancestors AS (
-        SELECT id, title, parent_page_id, 1 AS depth
-        FROM kb_pages
-        WHERE id = ${parentId} AND org_id = ${orgId}
-        UNION ALL
-        SELECT p.id, p.title, p.parent_page_id, a.depth + 1
-        FROM kb_pages p
-        INNER JOIN ancestors a ON p.id = a.parent_page_id AND a.depth < 100
-        WHERE p.org_id = ${orgId}
-      )
-      SELECT id, title FROM ancestors ORDER BY depth DESC
-    `);
-    return rows.map((row) => ({
-      id: Number(row.id),
-      title: String(row.title ?? ""),
-    }));
   }
 
   private async fireMentionNotifications(

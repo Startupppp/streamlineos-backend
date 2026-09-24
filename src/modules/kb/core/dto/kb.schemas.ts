@@ -194,3 +194,19 @@ export const kbPageCollectionQuerySchema = z
 export type KbPageCollectionQueryInput = z.infer<
   typeof kbPageCollectionQuerySchema
 >;
+
+export const listSpacesQuerySchema = z
+  .object({
+    q: z.string().trim().min(1).max(200).optional(),
+    audience: z.enum(KB_AUDIENCES).optional(),
+    archived: z
+      .enum(["0", "1", "true", "false"])
+      .transform(function toBoolean(v) {
+        return v === "1" || v === "true";
+      })
+      .optional(),
+    cursor: z.string().min(1).max(512).optional(),
+    limit: pageSizeField(20),
+  })
+  .strict();
+export type ListSpacesQuery = z.infer<typeof listSpacesQuerySchema>;

@@ -4,12 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import {
   kbSpaces,
   kbSpaceMembers,
   kbArticles,
   kbPages,
+  kbPageLinks,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -17,6 +18,7 @@ import type { TenantTx } from "../../../db/drizzle.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { ScopedRead } from "../../access/scoped-read";
 import { kbSpaceOwnerScope } from "../core/kb-scope";
@@ -26,8 +28,15 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
   CreateSpaceInput,
+  ListSpacesQuery,
   UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
+import {
+  buildCursorPage,
+  decodeCursor,
+  type CursorPage,
+} from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 
 const SPACE_CONTENT_BATCH_SIZE = 500;
 
@@ -44,7 +53,15 @@ type SpaceListItem = Pick<
   | "isPublicHelpCenter"
   | "createdAt"
   | "updatedAt"
-> & { articleCount: number };
+  | "archivedAt"
+> & { articleCount: number; pageCount: number; memberCount: number };
+
+export interface SpaceArchiveImpact {
+  pageCount: number;
+  publicLinkCount: number;
+  recordLinkCount: number;
+  askIndexed: boolean;
+}
 
 @Injectable()
 export class KbSpacesService {
@@ -52,16 +69,46 @@ export class KbSpacesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
     private readonly indexing: KbIndexingService,
+    private readonly authz: KnowledgeAuthorizationService,
   ) {}
 
-  async list(user: CurrentUserContext, scope: ScopedRead): Promise<SpaceListItem[]> {
-    if (scope.denied) return [];
+  async list(
+    user: CurrentUserContext,
+    scope: ScopedRead,
+    query: ListSpacesQuery,
+  ): Promise<CursorPage<SpaceListItem>> {
+    if (scope.denied) {
+      return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
+    }
 
     const ids = await this.access.getAccessibleSpaceIds(user);
-    if (ids.length === 0) return [];
+    if (ids.length === 0) {
+      return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
+    }
 
-    const domain = [inArray(kbSpaces.id, ids), isNull(kbSpaces.deletedAt)];
     const membershipId = actingMembershipId(user.principal) ?? 0;
+    const position = decodeCursor(query.cursor);
+
+    const domain = [
+      inArray(kbSpaces.id, ids),
+      isNull(kbSpaces.deletedAt),
+      query.audience !== undefined ? eq(kbSpaces.audience, query.audience) : undefined,
+      query.archived === true
+        ? isNotNull(kbSpaces.archivedAt)
+        : query.archived === false
+          ? isNull(kbSpaces.archivedAt)
+          : undefined,
+      query.q
+        ? sql`${kbSpaces.name} ILIKE ${"%" + query.q + "%"}`
+        : undefined,
+      position
+        ? keysetBefore(kbSpaces.updatedAt, kbSpaces.id, {
+            sortValue: position.sortValue,
+            id: position.id,
+          })
+        : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+
     const where = scope.compose(
       { tenant: kbSpaces.orgId, scope: kbSpaceOwnerScope(membershipId), and: domain },
       ({ sql: composed }) => composed,
@@ -79,22 +126,73 @@ export class KbSpacesService {
         isPublicHelpCenter: kbSpaces.isPublicHelpCenter,
         createdAt: kbSpaces.createdAt,
         updatedAt: kbSpaces.updatedAt,
+        archivedAt: kbSpaces.archivedAt,
       })
       .from(kbSpaces)
       .where(where)
-      .orderBy(desc(kbSpaces.updatedAt));
-    const counts = await this.db
-      .select({
-        spaceId: kbArticles.spaceId,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(kbArticles)
-      .where(
-        and(eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, ids)),
-      )
-      .groupBy(kbArticles.spaceId);
-    const countMap = new Map(counts.map((c) => [c.spaceId, c.count]));
-    return spaces.map((s) => ({ ...s, articleCount: countMap.get(s.id) ?? 0 }));
+      .orderBy(desc(kbSpaces.updatedAt), desc(kbSpaces.id))
+      .limit(query.limit + 1);
+
+    const spaceIds = spaces.map((s) => s.id);
+    if (spaceIds.length === 0) {
+      return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
+    }
+
+    const visiblePagePredicate = await this.authz.visiblePagePredicate(user);
+
+    const [articleCounts, pageCounts, memberCounts] = await Promise.all([
+      this.db
+        .select({
+          spaceId: kbArticles.spaceId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(kbArticles)
+        .where(
+          and(eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, spaceIds)),
+        )
+        .groupBy(kbArticles.spaceId),
+      this.db
+        .select({
+          spaceId: kbPages.spaceId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, user.orgId),
+            inArray(kbPages.spaceId, spaceIds),
+            isNull(kbPages.deletedAt),
+            visiblePagePredicate,
+          ),
+        )
+        .groupBy(kbPages.spaceId),
+      this.db
+        .select({
+          spaceId: kbSpaceMembers.spaceId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(kbSpaceMembers)
+        .where(
+          and(eq(kbSpaceMembers.orgId, user.orgId), inArray(kbSpaceMembers.spaceId, spaceIds)),
+        )
+        .groupBy(kbSpaceMembers.spaceId),
+    ]);
+
+    const articleCountMap = new Map(articleCounts.map((c) => [c.spaceId, c.count]));
+    const pageCountMap = new Map(pageCounts.map((c) => [c.spaceId, c.count]));
+    const memberCountMap = new Map(memberCounts.map((c) => [c.spaceId, c.count]));
+
+    const items = spaces.map((s) => ({
+      ...s,
+      articleCount: articleCountMap.get(s.id) ?? 0,
+      pageCount: pageCountMap.get(s.id) ?? 0,
+      memberCount: memberCountMap.get(s.id) ?? 0,
+    }));
+
+    return buildCursorPage(items, query.limit, (row) => ({
+      sortValue: row.updatedAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async create(
@@ -192,6 +290,113 @@ export class KbSpacesService {
     return updated;
   }
 
+  async archive(orgId: string, spaceId: number): Promise<{ success: boolean }> {
+    const space = await this.db.query.kbSpaces.findFirst({
+      where: and(
+        eq(kbSpaces.id, spaceId),
+        eq(kbSpaces.orgId, orgId),
+        isNull(kbSpaces.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!space) throw new NotFoundException("Space not found");
+
+    await this.db
+      .update(kbSpaces)
+      .set({ archivedAt: new Date() })
+      .where(
+        and(
+          eq(kbSpaces.id, spaceId),
+          eq(kbSpaces.orgId, orgId),
+          isNull(kbSpaces.archivedAt),
+        ),
+      );
+
+    return { success: true };
+  }
+
+  async restore(orgId: string, spaceId: number): Promise<{ success: boolean }> {
+    const space = await this.db.query.kbSpaces.findFirst({
+      where: and(
+        eq(kbSpaces.id, spaceId),
+        eq(kbSpaces.orgId, orgId),
+        isNull(kbSpaces.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!space) throw new NotFoundException("Space not found");
+
+    await this.db
+      .update(kbSpaces)
+      .set({ archivedAt: null })
+      .where(and(eq(kbSpaces.id, spaceId), eq(kbSpaces.orgId, orgId)));
+
+    return { success: true };
+  }
+
+  async archiveImpact(
+    orgId: string,
+    spaceId: number,
+  ): Promise<SpaceArchiveImpact> {
+    const space = await this.db.query.kbSpaces.findFirst({
+      where: and(
+        eq(kbSpaces.id, spaceId),
+        eq(kbSpaces.orgId, orgId),
+        isNull(kbSpaces.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!space) throw new NotFoundException("Space not found");
+
+    const [pageResult, publicResult, recordResult] = await Promise.all([
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(kbPages)
+        .where(
+          and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId), isNull(kbPages.deletedAt)),
+        ),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            eq(kbPages.spaceId, spaceId),
+            isNull(kbPages.deletedAt),
+            isNotNull(kbPages.publicToken),
+          ),
+        ),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(kbPageLinks)
+        .innerJoin(
+          kbPages,
+          and(
+            eq(kbPageLinks.orgId, orgId),
+            eq(kbPageLinks.sourcePageId, kbPages.id),
+          ),
+        )
+        .where(
+          and(
+            eq(kbPages.spaceId, spaceId),
+            isNull(kbPages.deletedAt),
+            isNotNull(kbPageLinks.targetId),
+          ),
+        ),
+    ]);
+
+    const pageCount = pageResult[0]?.count ?? 0;
+    const publicLinkCount = publicResult[0]?.count ?? 0;
+    const recordLinkCount = recordResult[0]?.count ?? 0;
+
+    return {
+      pageCount,
+      publicLinkCount,
+      recordLinkCount,
+      askIndexed: pageCount > 0,
+    };
+  }
+
   async remove(orgId: string, spaceId: number): Promise<{ success: boolean }> {
     await runInTenantTransaction(
       this.db,
@@ -244,11 +449,6 @@ export class KbSpacesService {
     return { success: true };
   }
 
-  /**
-   * Keyset-batched inside the space's own transaction: the events must commit
-   * with the soft delete, so they cannot move to a transaction of their own, but
-   * a space holding tens of thousands of pages must not be read into one array.
-   */
   private async emitContentDeletes(
     tx: TenantTx,
     orgId: string,
