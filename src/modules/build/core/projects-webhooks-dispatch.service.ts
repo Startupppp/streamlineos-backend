@@ -67,7 +67,7 @@ interface DeliveryOutcome {
   nextAttemptAt: Date | null;
 }
 
-export class ProjectWebhookResponseError extends Error {
+class ProjectWebhookResponseError extends Error {
   constructor(
     readonly statusCode: number,
     readonly responseBody: string,
@@ -77,7 +77,7 @@ export class ProjectWebhookResponseError extends Error {
   }
 }
 
-export function classifyProjectWebhookError(error: unknown): "terminal" | "retryable" {
+function classifyProjectWebhookError(error: unknown): "terminal" | "retryable" {
   if (!(error instanceof ProjectWebhookResponseError)) return "retryable";
   if ([408, 425, 429].includes(error.statusCode)) return "retryable";
   return error.statusCode >= 400 && error.statusCode < 500 ? "terminal" : "retryable";

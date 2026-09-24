@@ -4,12 +4,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "./project-access";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 
-jest.mock("./project-access", () => ({
-  assertProjectAccess: jest.fn(),
-  assertProjectInOrg: jest.fn(),
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
 }));
 
 const ORG_ID = "org-1";
@@ -29,19 +28,20 @@ const user: CurrentUserContext = {
 };
 
 describe("ProjectsCustomFieldsService ticket value authorization", () => {
-  const ticketFindFirst = jest.fn();
   const select = jest.fn();
   const onConflictDoUpdate = jest.fn();
   const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
   const insert = jest.fn().mockReturnValue({ values });
-  const db = { query: { tickets: { findFirst: ticketFindFirst } }, select, insert };
-  const access = { resolveUserPermissions: jest.fn() };
+  const db = { select, insert };
+  const access = {
+    scopeFor: jest.fn(),
+    resolveUserPermissions: jest.fn(),
+  };
   let service: ProjectsCustomFieldsService;
 
   beforeEach(async () => {
     jest.resetAllMocks();
-    jest.mocked(assertProjectAccess).mockResolvedValue(undefined);
-    ticketFindFirst.mockResolvedValue({ id: TICKET_ID });
+    jest.mocked(assertTicketReadAccess).mockResolvedValue();
     onConflictDoUpdate.mockResolvedValue(undefined);
     values.mockReturnValue({ onConflictDoUpdate });
     insert.mockReturnValue({ values });
@@ -56,35 +56,49 @@ describe("ProjectsCustomFieldsService ticket value authorization", () => {
     service = testingModule.get(ProjectsCustomFieldsService);
   });
 
-  it("denies value reads before loading the ticket when project access fails", async () => {
-    jest.mocked(assertProjectAccess).mockRejectedValue(new ForbiddenException());
+  it("denies value reads before querying values when ticket access fails", async () => {
+    jest.mocked(assertTicketReadAccess).mockRejectedValue(new ForbiddenException());
+
+    const where = jest.fn().mockResolvedValue([]);
+    const innerJoin = jest.fn().mockReturnValue({ where });
+    const from = jest.fn().mockReturnValue({ innerJoin });
+    select.mockReturnValue({ from });
 
     await expect(service.getTicketValues(user, PROJECT_ID, TICKET_ID)).rejects.toThrow(
       ForbiddenException,
     );
-    expect(ticketFindFirst).not.toHaveBeenCalled();
     expect(select).not.toHaveBeenCalled();
   });
 
-  it("returns values after project access succeeds", async () => {
+  it("returns values after ticket access succeeds", async () => {
     const where = jest.fn().mockResolvedValue([]);
     const innerJoin = jest.fn().mockReturnValue({ where });
     const from = jest.fn().mockReturnValue({ innerJoin });
     select.mockReturnValue({ from });
 
     await expect(service.getTicketValues(user, PROJECT_ID, TICKET_ID)).resolves.toEqual([]);
-    expect(assertProjectAccess).toHaveBeenCalledWith(db, access, user, PROJECT_ID);
+    expect(assertTicketReadAccess).toHaveBeenCalledWith(
+      db,
+      access,
+      user,
+      PROJECT_ID,
+      TICKET_ID,
+    );
   });
 
-  it("denies value writes before loading the ticket when project access fails", async () => {
-    jest.mocked(assertProjectAccess).mockRejectedValue(new ForbiddenException());
+  it("denies value writes before querying fields when ticket access fails", async () => {
+    jest.mocked(assertTicketReadAccess).mockRejectedValue(new ForbiddenException());
+
+    const where = jest.fn().mockResolvedValue([{ id: FIELD_ID }]);
+    const from = jest.fn().mockReturnValue({ where });
+    select.mockReturnValue({ from });
 
     await expect(
       service.upsertTicketValues(user, PROJECT_ID, TICKET_ID, {
         values: [{ fieldId: FIELD_ID, value: "x" }],
       }),
     ).rejects.toThrow(ForbiddenException);
-    expect(ticketFindFirst).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
 

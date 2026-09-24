@@ -1,7 +1,14 @@
 import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsActivityService } from "./projects-activity.service";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
 
 /**
  * Two lookups that carried no organisation predicate, and one that was unbounded.
@@ -44,7 +51,23 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 
 const OWNER_ORG = "org-owner";
 
+function makeActor(orgId = OWNER_ORG): CurrentUserContext {
+  return {
+    userId: "member-1",
+    orgId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "session-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
+  };
+}
+
 describe("the delete guard's blocker lookup", () => {
+  beforeEach(() => {
+    jest.mocked(assertTicketReadAccess).mockResolvedValue();
+  });
+
   function serviceWithBlockers(blockers: { workItemId: number }[]) {
     const findMany = jest.fn().mockResolvedValue(blockers);
     const db = {
@@ -68,6 +91,7 @@ describe("the delete guard's blocker lookup", () => {
       {} as never,
       {} as never,
       {} as never,
+      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
     );
 
     return { service, findMany };
@@ -76,7 +100,7 @@ describe("the delete guard's blocker lookup", () => {
   it("binds the caller's organisation into the blocker query", async () => {
     const { service, findMany } = serviceWithBlockers([{ workItemId: 9 }]);
 
-    await expect(service.deleteTicket(OWNER_ORG, "member-1", 3, 7, false)).rejects.toThrow(
+    await expect(service.deleteTicket(makeActor(), 3, 7, false)).rejects.toThrow(
       ConflictException,
     );
 
@@ -91,7 +115,7 @@ describe("the delete guard's blocker lookup", () => {
   it("caps how many blockers it reads", async () => {
     const { service, findMany } = serviceWithBlockers([{ workItemId: 9 }]);
 
-    await expect(service.deleteTicket(OWNER_ORG, "member-1", 3, 7, false)).rejects.toThrow(
+    await expect(service.deleteTicket(makeActor(), 3, 7, false)).rejects.toThrow(
       ConflictException,
     );
 
@@ -108,7 +132,7 @@ describe("the delete guard's blocker lookup", () => {
     const atCap = Array.from({ length: 50 }, (_, i) => ({ workItemId: i }));
     const { service } = serviceWithBlockers(atCap);
 
-    await expect(service.deleteTicket(OWNER_ORG, "member-1", 3, 7, false)).rejects.toThrow(/50\+/);
+    await expect(service.deleteTicket(makeActor(), 3, 7, false)).rejects.toThrow(/50\+/);
   });
 
   it("allows the delete when nothing blocks it (control)", async () => {
@@ -134,9 +158,10 @@ describe("the delete guard's blocker lookup", () => {
       { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn(), delByPrefix: jest.fn() } as never,
       {} as never,
       {} as never,
+      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
     );
 
-    await service.deleteTicket(OWNER_ORG, "member-1", 3, 7, false).catch(() => undefined);
+    await service.deleteTicket(makeActor(), 3, 7, false).catch(() => undefined);
 
     expect(transaction).toHaveBeenCalled();
   });

@@ -227,7 +227,6 @@ const FINDING_VERDICTS = new Map([
 
   // ---- dependencies --------------------------------------------------------
   ["dep:@jitl/quickjs-wasmfile-release-sync", { verdict: "KEEP", reason: "not a direct dependency by design. `script.executor.ts` resolves it with `require.resolve(spec, { paths: [dirname(require.resolve(\"quickjs-emscripten\"))] })`, i.e. from the declared dependency's own directory, to get a CJS build of the WASM module that Jest can load. Verified resolvable; knip reports it because it does not model the `paths` option" }],
-  ["dep:openssl", { verdict: "KEEP", reason: "a SYSTEM binary, not an npm package, so there is no dependency to declare. `test/notifications/web-push-from-worker.seeded-e2e-spec.ts:115` shells out to it with `execFileSync(\"openssl\", …)` to mint a real VAPID key pair rather than fixture one — the point of that spec being that the worker signs a push the browser would accept. knip's `binaries` check reports every binary it cannot trace to a package; adding `openssl` to `ignoreDependencies` would hide it from the check that catches an undeclared REAL package by the same name" }],
 ]);
 
 // ---------------------------------------------------------------------------

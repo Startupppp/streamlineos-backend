@@ -51,7 +51,7 @@ async function capture(
   rows: unknown[] = [],
   limit = 20,
   overrides: Partial<ListProgramsQuery> = {},
-): Promise<Captured> {
+) {
   const captured: Captured = {
     where: undefined,
     orderBy: [],
@@ -59,7 +59,7 @@ async function capture(
     limit: undefined,
   };
   const svc = new ProgramsService(buildDb(captured, rows), {} as AuditService);
-  await svc.listPrograms("org-1", {
+  const page = await svc.listPrograms("org-1", {
     cursor,
     limit,
     status: undefined,
@@ -68,7 +68,7 @@ async function capture(
     order: "desc",
     ...overrides,
   });
-  return captured;
+  return { ...captured, page };
 }
 
 describe("ProgramsService.listPrograms — the page is keyset-bounded, not a silent hundred-row truncation", () => {
@@ -106,10 +106,16 @@ describe("ProgramsService.listPrograms — the page is keyset-bounded, not a sil
   });
 
   it("reports hasMore and a nextCursor once more rows exist than the page holds", async () => {
-    const rows = Array.from({ length: 3 }, (_unused, index) => ({
-      id: index + 1,
-      createdAt: new Date(2026, 0, 10 - index),
-    }));
+    const rows = Array.from({ length: 3 }, (_unused, index) => {
+      const day = String(10 - index).padStart(2, "0");
+      return {
+        id: index + 1,
+        createdAt: new Date(`2026-01-${day}T00:00:00.000Z`),
+        updatedAt: new Date(`2026-01-${day}T00:00:00.000Z`),
+        createdAtCursor: `2026-01-${day}T00:00:00.000000`,
+        updatedAtCursor: `2026-01-${day}T00:00:00.000000`,
+      };
+    });
     const captured: Captured = {
       where: undefined,
       orderBy: [],
@@ -132,6 +138,47 @@ describe("ProgramsService.listPrograms — the page is keyset-bounded, not a sil
       "createdAt",
       "desc",
     ]);
+  });
+
+  it("preserves the database microseconds in a timestamp cursor without exposing its projection", async () => {
+    const createdAtCursor = "2026-01-10T12:34:56.123456";
+    const rows = [
+      {
+        id: 7,
+        createdAt: new Date("2026-01-10T12:34:56.123Z"),
+        updatedAt: new Date("2026-01-10T12:34:56.654Z"),
+        createdAtCursor,
+        updatedAtCursor: "2026-01-10T12:34:56.654321",
+      },
+      {
+        id: 6,
+        createdAt: new Date("2026-01-10T12:34:56.123Z"),
+        updatedAt: new Date("2026-01-10T12:34:56.654Z"),
+        createdAtCursor: "2026-01-10T12:34:56.123455",
+        updatedAtCursor: "2026-01-10T12:34:56.654320",
+      },
+    ];
+    const { page, projection } = await capture(undefined, rows, 1);
+    const updatedPage = (
+      await capture(undefined, rows, 1, { sort: "updatedAt" })
+    ).page;
+
+    expect(decodeTupleCursor(page.pagination.nextCursor, 4)).toEqual([
+      "createdAt",
+      "desc",
+      createdAtCursor,
+      "7",
+    ]);
+    expect(decodeTupleCursor(updatedPage.pagination.nextCursor, 4)).toEqual([
+      "updatedAt",
+      "desc",
+      "2026-01-10T12:34:56.654321",
+      "7",
+    ]);
+    expect(render(projection["createdAtCursor"])).toContain("to_char");
+    expect(render(projection["updatedAtCursor"])).toContain("to_char");
+    expect(page.data[0]).not.toHaveProperty("createdAtCursor");
+    expect(page.data[0]).not.toHaveProperty("updatedAtCursor");
   });
 
   it("uses a strict greater-than keyset for ascending name order", async () => {
@@ -161,6 +208,35 @@ describe("ProgramsService.listPrograms — the page is keyset-bounded, not a sil
     });
     expect(orderBy.map(render)[0]).toContain('"updated_at"');
     expect(render(where)).toMatch(/</);
+  });
+
+  it("binds timestamp cursors at database precision for both directions", async () => {
+    const sortValue = "2026-01-10T12:34:56.123456";
+    const descending = await capture(
+      encodeTupleCursor(["createdAt", "desc", sortValue, "7"]),
+    );
+    const ascending = await capture(
+      encodeTupleCursor(["updatedAt", "asc", sortValue, "7"]),
+      [],
+      20,
+      { sort: "updatedAt", order: "asc" },
+    );
+
+    expect(render(descending.where)).toContain("::timestamp");
+    expect(render(descending.where)).toMatch(/</);
+    expect(render(ascending.where)).toContain("::timestamp");
+    expect(render(ascending.where)).toMatch(/>/);
+  });
+
+  it("accepts a previously issued millisecond ISO timestamp cursor", async () => {
+    const cursor = encodeTupleCursor([
+      "createdAt",
+      "desc",
+      "2026-01-10T12:34:56.123Z",
+      "7",
+    ]);
+    const { where } = await capture(cursor);
+    expect(render(where)).toContain("::timestamp");
   });
 
   it("ignores a cursor minted for a different sort contract", async () => {

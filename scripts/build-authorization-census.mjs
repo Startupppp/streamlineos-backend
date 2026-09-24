@@ -127,13 +127,13 @@ const REVIEWED_INLINE = [
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
-        line: 139,
+        line: 143,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\),/,
         note: "bound to the URL project",
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
-        line: 83,
+        line: 87,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\)/,
         note: "listFields DOES bind projectId — the control proving the column is usable here",
       },
@@ -156,7 +156,7 @@ const REVIEWED_INLINE = [
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
-        line: 162,
+        line: 166,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\),/,
         note: "bound to the URL project",
       },
@@ -230,12 +230,13 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "GET /build/:projectId/tickets/:ticketId/subtasks. No @Param(\"projectId\"); the ticket is resolved by assertTicketInOrg, which binds (id, orgId) and has no projectId parameter at all. Eight OTHER handlers in this same controller do declare and forward @Param(\"projectId\") — the omission is asymmetry inside one file.",
-    blastRadius: "Intra-tenant: any org ticket is readable through any project's URL.",
+      "GET /build/:projectId/tickets/:ticketId/subtasks. Closed: the handler forwards the authenticated actor with projectId and ticketId, and getSubtasks calls assertTicketReadAccess before reading children. That helper binds tenant+project+ticket, verifies project membership, and applies the ticket DataScope predicate.",
+    blastRadius: "None: a mismatched ticket 404s, while an inaccessible project or ticket scope is rejected before any subtask row is read.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 68, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 233, anchor: /await assertTicketInProject\(this\.db, orgId, projectId, ticketId\);/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/project-access.ts", line: 42, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 236, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the subtask query" },
+      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 37, anchor: /eq\(tickets\.projectId, projectId\),/, note: "the lookup binds tenant, project, and ticket" },
+      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -243,56 +244,60 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "GET /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); the ticket is resolved by the private requireTicket(orgId, ticketId), which binds (id, orgId) only.",
-    blastRadius: "Intra-tenant cross-project read of a ticket's watchers.",
+      "GET /build/:projectId/tickets/:ticketId/watchers. Closed: the handler forwards the actor and both route ids, and getWatchers calls assertTicketReadAccess before reading watcher rows. The helper enforces tenant, project membership, route binding, and ticket DataScope.",
+    blastRadius: "None: authorization completes before watcher storage is queried.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 120, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 265, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 255, anchor: /eq\(tickets\.projectId, projectId\),/, note: "requireTicket's own WHERE binds id+projectId+orgId" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 255, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before the watcher query" },
+      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#addWatcher",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "POST /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
-    blastRadius: "Intra-tenant cross-project write.",
+    summary: "POST /build/:projectId/tickets/:ticketId/watchers. Closed: addWatcher receives the actor and both route ids and calls assertTicketReadAccess before resolving the requested organization member or inserting a watcher.",
+    blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 133, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 304, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 294, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes member resolution and insertion" },
+      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#removeWatcher",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "DELETE /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
-    blastRadius: "Intra-tenant cross-project write.",
+    summary: "DELETE /build/:projectId/tickets/:ticketId/watchers. Closed: removeWatcher carries the authenticated actor and calls assertTicketReadAccess before resolving membership and deleting the actor's watcher row.",
+    blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the delete.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 147, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 352, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 342, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the watcher delete" },
+      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#addLabel",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "POST /build/:projectId/tickets/:ticketId/labels. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
-    blastRadius: "Intra-tenant cross-project write.",
+    summary: "POST /build/:projectId/tickets/:ticketId/labels. Closed: addLabel receives the actor and both route ids and calls assertTicketReadAccess before inserting a tenant-scoped label mapping.",
+    blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 160, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 383, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 372, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the label mapping insert" },
+      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#addAttachment",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "POST /build/:projectId/tickets/:ticketId/attachments. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
-    blastRadius: "Intra-tenant cross-project write.",
+    summary: "POST /build/:projectId/tickets/:ticketId/attachments. Closed: addAttachment receives the actor and both route ids and calls assertTicketReadAccess before inserting the tenant-scoped attachment row.",
+    blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 188, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 438, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 428, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the attachment insert" },
+      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -300,10 +305,12 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "POST /build/:projectId/tickets/:ticketId/comments. No @Param(\"projectId\"); the subresources facade drops it before delegating, and the comments service resolves the ticket by (id, orgId).",
-    blastRadius: "Intra-tenant: a comment can be posted to a ticket in another project through this project's URL.",
+      "POST /build/:projectId/tickets/:ticketId/comments. Closed: the handler forwards the actor and route ids, and resolveTicketForComment calls assertTicketReadAccess before resolving the ticket and creating the comment.",
+    blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the comment write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 131, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 54, anchor: /return this\.subresources\.addComment\(u, projectId, ticketId, body\);/, note: "the actor and both route ids reach the service" },
+      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 42, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before ticket and comment storage" },
+      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 46, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "the ticket lookup also binds the URL project" },
     ],
   },
 
@@ -312,19 +319,21 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId. TWO parents go unbound: neither :projectId nor :ticketId is declared with @Param, and the UPDATE resolves the checklist by (id, orgId).",
-    blastRadius: "Intra-tenant cross-ticket AND cross-project write.",
+      "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId. Closed: the handler forwards the actor and every route id; the facade applies assertTicketReadAccess, then requireChecklistInTicket binds checklistId to the authorized ticket before the update.",
+    blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before mutation.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 142, anchor: /await this\.requireTicketInProject\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 502, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 161, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-checklists.controller.ts#deleteChecklist",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId. Same shape: neither parent is bound; DELETE resolves by (id, orgId).",
-    blastRadius: "Intra-tenant cross-ticket AND cross-project delete.",
+    summary: "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId. Closed: the actor-aware facade applies assertTicketReadAccess, then requireChecklistInTicket binds checklistId to the authorized ticket before deletion.",
+    blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before deletion.",
     evidence: [
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 518, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
       { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 185, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
     ],
   },
@@ -332,10 +341,11 @@ const REVIEWED_INLINE = [
     key: "modules/build/core/projects-ticket-checklists.controller.ts#createChecklistItem",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items. The parent checklist is resolved by (id, orgId); the URL's ticketId and projectId are never checked.",
-    blastRadius: "Intra-tenant: an item can be appended to a checklist on another project's ticket.",
+    summary: "POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items. Closed: the actor-aware facade applies assertTicketReadAccess, then requireChecklistInTicket binds checklistId to the authorized ticket before creating the item.",
+    blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before insertion.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 161, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 539, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
     ],
   },
   {
@@ -343,23 +353,25 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. THREE parents unbound. Only :itemId is declared. The pre-read selects the item by id ALONE — the tenant is then checked in JavaScript against the joined checklist's orgId, not in SQL — and the UPDATE binds (orgId, id). The URL's checklistId is never compared to the item's own checklistId.",
+      "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. Closed: the actor-aware facade enforces project membership and ticket DataScope, requireChecklistInTicket binds the checklist to that ticket, and the item lookup and update both bind itemId to checklistId+orgId.",
     blastRadius:
-      "Intra-tenant. orgId is enforced (in JS on the pre-read, in SQL on the write), so no cross-tenant write; an item under any checklist in the org is editable through any checklist/ticket/project path.",
+      "None: every route parent and the item itself are bound before the mutation.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 563, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 243, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 248, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-checklists.controller.ts#deleteChecklistItem",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. Identical to updateChecklistItem.",
-    blastRadius: "Intra-tenant cross-checklist delete.",
+    summary: "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. Closed: the actor-aware facade enforces project membership and ticket DataScope, requireChecklistInTicket binds the checklist to that ticket, and the item lookup and delete bind itemId to checklistId+orgId.",
+    blastRadius: "None: every route parent and the item itself are bound before deletion.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 581, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 277, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 282, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
     ],
   },
 
@@ -368,10 +380,12 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "GET /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"); the detail reader binds (orgId, deletedAt) plus an id selector. The scope resolver narrows all-vs-own by permission and carries no project predicate.",
-    blastRadius: "Intra-tenant: any org ticket is readable through any project's URL.",
+      "GET /build/:projectId/tickets/:ticketId. Closed: the selector binds ticketId+projectId, readTicket binds orgId and deletedAt, resolves the ticket DataScope, and separately verifies project membership before returning the record.",
+    blastRadius: "None: tenant, route binding, project membership, and ticket DataScope are enforced.",
     evidence: [
       { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 52, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 61, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "the ticket DataScope is resolved" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 100, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is checked before the record is returned" },
     ],
   },
   {
@@ -379,23 +393,26 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"). The service DOES re-derive the ticket's real project from the row and re-authorises against THAT, so a caller cannot mutate a project they have no rights to — but the URL segment is still never compared, so the route resolves a foreign-project ticket instead of 404ing.",
+      "PATCH /build/:projectId/tickets/:ticketId. Closed: the pre-read binds ticketId+projectId+orgId, project access is checked, and authorizeMutation applies the canonical record-level mutation policy before the transaction updates the ticket.",
     blastRadius:
-      "Intra-tenant, and narrower than the rest of this family: the row-derived access check means the caller must already hold rights on the ticket's true project. What breaks is the routing/404 contract, and any future project-scoped gate that trusts the URL.",
+      "None: tenant, route binding, project membership, and ticket record scope are enforced before mutation.",
     evidence: [
       { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 197, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 197, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 272, anchor: /await this\.query\.authorizeMutation\(tx, u, ticketProjectId, \[ticketId\]\);/, note: "canonical record-level mutation authorization runs inside the transaction" },
     ],
   },
   {
     key: "modules/build/core/projects-tickets.controller.ts#deleteTicket",
     verdict: "CLOSED",
-    finding: "parent-binding-missing",
+    finding: "ticket-data-scope-missing",
     summary:
-      "DELETE /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"); the ticket is resolved by (id, orgId) and the access check that follows uses the row's own projectId.",
-    blastRadius: "Intra-tenant; same row-derived mitigation as updateTicket.",
+      "DELETE /build/:projectId/tickets/:ticketId. Closed: the controller forwards CurrentUserContext, and deleteTicket calls assertTicketReadAccess before its tenant/project-bound pre-read or any delete work. The helper verifies project membership and ticket DataScope.",
+    blastRadius: "None: an inaccessible or mismatched ticket is rejected before blocker inspection or deletion.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets.service.ts", line: 120, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 250, anchor: /return this\.tickets\.deleteTicket\(u, projectId, ticketId, force === "true"\);/, note: "the complete authenticated actor reaches the service" },
+      { file: "src/modules/build/core/projects-tickets.service.ts", line: 115, anchor: /async deleteTicket\(/, note: "the terminal service accepts CurrentUserContext" },
+      { file: "src/modules/build/core/projects-tickets.service.ts", line: 122, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before the pre-read and delete path" },
+      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
 
@@ -591,11 +608,13 @@ const REVIEWED_INLINE = [
     verdict: "VERIFIED",
     finding: "public-token-addressed",
     summary:
-      "POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and IP rate-limited. The form is resolved by (publicToken, isPublic=true, not deleted) inside withPublicToken, and must be active; orgId and projectId for the submission are taken from the resolved form row, never from the caller. NOTE: unlike the whiteboard token this one is compared in plaintext rather than by hash — a storage-exposure hardening opportunity, not an access-control defect.",
+      "POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and IP rate-limited. One withPublicToken transaction resolves the active public form and performs capacity reservation, ticket allocation/inserts, and the submission insert under the same token-scoped RLS context. orgId and projectId come only from the resolved form row. The plaintext token comparison remains a storage hardening opportunity, not an access-control defect.",
     blastRadius: "A submission against the one form the token names.",
     evidence: [
       { file: "src/modules/build/forms/submissions.service.ts", line: 50, anchor: /eq\(projectForms\.publicToken, publicToken\),/, note: "resolved by token inside withPublicToken; orgId derived from the row" },
       { file: "src/modules/build/forms/submissions.service.ts", line: 51, anchor: /eq\(projectForms\.isPublic, true\),/, note: "non-public forms are not reachable through this route" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 207, anchor: /const \{ form, result \} = await withPublicToken\(this\.db, publicToken, async \(tx\) => \{/, note: "lookup and every write share one token-scoped transaction" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 209, anchor: /const result = await this\.runSubmission\(form, input, null, tx\);/, note: "the existing token transaction is passed into the write path" },
     ],
   },
 ];

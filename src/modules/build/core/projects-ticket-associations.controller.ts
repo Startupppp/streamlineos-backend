@@ -69,7 +69,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getSubtasks(u.orgId, projectId, ticketId);
+    return this.subresources.getSubtasks(u, projectId, ticketId);
   }
 
   @Get(":projectId/tickets/:ticketId/relations")
@@ -121,7 +121,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getWatchers(u.orgId, projectId, ticketId);
+    return this.subresources.getWatchers(u, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/watchers")
@@ -162,7 +162,7 @@ export class ProjectsTicketAssociationsController {
     @Body() body: AddLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addLabel(u.orgId, u.userId, projectId, ticketId, body);
+    return this.subresources.addLabel(u, projectId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/labels/:labelId")
@@ -176,7 +176,7 @@ export class ProjectsTicketAssociationsController {
     @Param("labelId", ParseIntPipe) labelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeLabel(u.orgId, u.userId, projectId, ticketId, labelId);
+    return this.subresources.removeLabel(u, projectId, ticketId, labelId);
   }
 
   @Post(":projectId/tickets/:ticketId/attachments")
@@ -202,7 +202,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getGitLinks(u.orgId, projectId, ticketId);
+    return this.subresources.getGitLinks(u, projectId, ticketId);
   }
 
   @Get(":projectId/tickets/:ticketId/related-links")

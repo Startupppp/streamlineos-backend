@@ -128,6 +128,62 @@ describe("SubmissionsService tenant and project isolation", () => {
 });
 
 describe("SubmissionsService public form isolation", () => {
+  it("keeps public lookup and submission writes in one token-scoped transaction", async () => {
+    const form = {
+      id: 5,
+      orgId: "org-owner",
+      projectId: 2,
+      formNumber: 3,
+      name: "Feedback",
+      isActive: true,
+      isPublic: true,
+      publicToken: "tok-owner",
+      deletedAt: null,
+      actions: [],
+    };
+    const createdSubmission = {
+      id: 20,
+      orgId: "org-owner",
+      formId: 5,
+      projectId: 2,
+      values: {},
+      status: "submitted",
+      submittedByName: null,
+      submittedById: null,
+      convertedTicketId: null,
+      createdAt: new Date(),
+    };
+    const events: string[] = [];
+    const findFirst = jest.fn().mockImplementation(async () => {
+      events.push("lookup");
+      return form;
+    });
+    const values = jest.fn().mockImplementation(() => {
+      events.push("write");
+      return { returning: jest.fn().mockResolvedValue([createdSubmission]) };
+    });
+    const tx = {
+      execute: jest.fn().mockImplementation(async () => {
+        events.push("token");
+      }),
+      query: { projectForms: { findFirst } },
+      insert: jest.fn().mockReturnValue({ values }),
+    };
+    const transaction = jest.fn().mockImplementation(async (work: (tx: object) => Promise<unknown>) => {
+      events.push("begin");
+      return work(tx);
+    });
+    const { module, service } = await makeService({ transaction }, {});
+
+    await expect(service.submitPublicForm("tok-owner", { values: {} })).resolves.toMatchObject({
+      id: 20,
+      status: "submitted",
+    });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(events).toEqual(["begin", "token", "lookup", "write"]);
+    await module.close();
+  });
+
   it("returns 404 for an unknown public token", async () => {
     const transaction = jest.fn();
     const db = {

@@ -4,6 +4,11 @@ import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
 
 const CALLER_ORG = "org-a";
 const CALLER_ID = "user-caller";
@@ -70,6 +75,13 @@ function makeSvc(db: Db) {
 function boundParams(lookups: SQL[]): unknown[] {
   return lookups.flatMap((predicate) => dialect.sqlToQuery(predicate).params);
 }
+
+beforeEach(() => {
+  jest.mocked(assertTicketReadAccess).mockImplementation(async (db) => {
+    const ticket = await db.query.tickets.findFirst();
+    if (!ticket) throw new NotFoundException("Ticket not found");
+  });
+});
 
 describe("ProjectsTicketSubresourcesService — addWatcher", () => {
   it("watches the caller when the body omits userId, so self-watch needs no id from the client", async () => {

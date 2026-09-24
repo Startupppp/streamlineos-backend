@@ -1,5 +1,12 @@
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
 
 /**
  * The build ticket watcher payload, asserted on what the read path RETURNS.
@@ -14,6 +21,20 @@ const ORG = "org-1";
 const TICKET = 7;
 const ME = "user-me";
 const OTHER = "user-other";
+
+const actor: CurrentUserContext = {
+  userId: ME,
+  orgId: ORG,
+  role: "OWNER",
+  isOrgOwner: true,
+  sessionId: "session-1",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
+};
+
+beforeEach(() => {
+  jest.mocked(assertTicketReadAccess).mockResolvedValue();
+});
 
 /** A watcher row exactly as `with: { user: { with: { user } } }` hands it back. */
 function nestedWatcherRow(userId: string | null, id: number) {
@@ -55,13 +76,16 @@ function build(db: Db) {
     {} as never,
     {} as never,
     {} as never,
-    { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+    {
+      scopeFor: jest.fn().mockResolvedValue("all"),
+      resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+    },
   );
 }
 
 describe("build ticket watchers — the person, not the membership row", () => {
   it("GET /build/:p/tickets/:t/watchers puts userId and the user on the watcher", async () => {
-    const watchers = await build(makeDb([nestedWatcherRow(ME, 1)])).getWatchers(ORG, 1, TICKET);
+    const watchers = await build(makeDb([nestedWatcherRow(ME, 1)])).getWatchers(actor, 1, TICKET);
 
     expect(watchers).toHaveLength(1);
     expect(watchers[0]?.userId).toBe(ME);
@@ -71,7 +95,7 @@ describe("build ticket watchers — the person, not the membership row", () => {
   });
 
   it("a watcher whose organization row is gone flattens to nulls, never to a missing key", async () => {
-    const watchers = await build(makeDb([nestedWatcherRow(null, 3)])).getWatchers(ORG, 1, TICKET);
+    const watchers = await build(makeDb([nestedWatcherRow(null, 3)])).getWatchers(actor, 1, TICKET);
 
     expect(watchers[0]?.userId).toBeNull();
     expect(watchers[0]?.user).toBeNull();
@@ -113,7 +137,7 @@ describe("build ticket watchers — the consumer predicates against the real pay
   });
 
   it("the served payload answers isWatching and names each avatar", async () => {
-    const watchers = await build(makeDb([nestedWatcherRow(ME, 1), nestedWatcherRow(OTHER, 2)])).getWatchers(ORG, 1, TICKET);
+    const watchers = await build(makeDb([nestedWatcherRow(ME, 1), nestedWatcherRow(OTHER, 2)])).getWatchers(actor, 1, TICKET);
 
     expect(isWatching(watchers, ME)).toBe(true);
     expect(isWatching(watchers, "user-nobody")).toBe(false);

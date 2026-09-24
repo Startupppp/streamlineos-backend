@@ -1,13 +1,17 @@
 import { Injectable, Inject, NotFoundException, ConflictException } from "@nestjs/common";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
-import { ticketCustomFieldValues, tickets } from "../../../db/schema";
+import { ticketCustomFieldValues } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/custom-fields.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess, assertProjectInOrg } from "./project-access";
+import { assertProjectInOrg } from "./project-access";
+import {
+  assertTicketReadAccess,
+  type TicketReadAccess,
+} from "./build-ticket-read-access";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const BUILD_ENTITY_TYPE = "build_ticket" as const;
@@ -29,7 +33,7 @@ export class ProjectsCustomFieldsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(AccessService)
-    private readonly access: Pick<AccessService, "resolveUserPermissions">,
+    private readonly access: TicketReadAccess,
   ) {}
 
   private async assertFieldDefinitionsInProject(
@@ -168,18 +172,8 @@ export class ProjectsCustomFieldsService {
   }
 
   async getTicketValues(u: CurrentUserContext, projectId: number, ticketId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const { orgId } = u;
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
 
     const rows = await this.db
       .select({
@@ -240,18 +234,8 @@ export class ProjectsCustomFieldsService {
     ticketId: number,
     data: UpsertCustomFieldValuesInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
     const { orgId } = u;
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
 
     if (data.values.length === 0) return { success: true };
 

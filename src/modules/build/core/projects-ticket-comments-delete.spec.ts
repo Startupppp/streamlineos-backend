@@ -1,5 +1,10 @@
 import { ForbiddenException } from "@nestjs/common";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
 
 function buildService(comment: { id: number; userId: string } | undefined) {
   const transaction = jest.fn();
@@ -40,6 +45,10 @@ const actor = {
   tokenScopes: null,
   principal: { kind: "human-session", membershipId: 1, isOrgOwner: true },
 };
+
+beforeEach(() => {
+  jest.mocked(assertTicketReadAccess).mockResolvedValue();
+});
 
 describe("ProjectsTicketCommentsService.deleteComment", () => {
   it("refuses a manager who did not write the comment", async () => {

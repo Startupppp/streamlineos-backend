@@ -22,10 +22,12 @@ import {
   decodeTupleCursor,
 } from "../../../common/pagination/cursor";
 import {
-  keysetAfterId,
+  keysetAfterMicros,
   keysetAfterValue,
+  keysetBeforeMicros,
   keysetBeforeId,
   keysetBeforeValue,
+  microsecondCursorValue,
 } from "../../../common/pagination/keyset";
 import type {
   CreateProgramInput,
@@ -42,6 +44,23 @@ type ProgramListSort = ListProgramsQuery["sort"];
 type ProgramListOrder = ListProgramsQuery["order"];
 
 const PROGRAM_SEARCH_ID_CAP = 5_000;
+const PROGRAM_MICROSECOND_CURSOR =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$/;
+const PROGRAM_LEGACY_CURSOR =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function validProgramTimestamp(value: string): boolean {
+  if (PROGRAM_MICROSECOND_CURSOR.test(value)) {
+    const parsed = new Date(`${value}Z`);
+    return (
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString() === `${value.slice(0, 23)}Z`
+    );
+  }
+  if (!PROGRAM_LEGACY_CURSOR.test(value)) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+}
 
 function decodeProgramCursor(
   cursor: string | undefined,
@@ -52,7 +71,16 @@ function decodeProgramCursor(
   if (!parts) return null;
   const [cursorSort, cursorOrder, sortValue, id] = parts;
   if (cursorSort !== sort || cursorOrder !== order || !sortValue || !id) return null;
-  return { sortValue, id };
+  const numericId = Number(id);
+  if (
+    !Number.isSafeInteger(numericId) ||
+    numericId <= 0 ||
+    numericId > 2_147_483_647
+  )
+    throw new BadRequestException("Invalid pagination cursor");
+  if (sort !== "name" && !validProgramTimestamp(sortValue))
+    throw new BadRequestException("Invalid pagination cursor");
+  return { sortValue, id: numericId };
 }
 
 @Injectable()
@@ -152,8 +180,8 @@ export class ProgramsService {
           ? keysetAfterValue(program.name, program.id, position)
           : keysetBeforeValue(program.name, program.id, position)
         : order === "asc"
-          ? keysetAfterId(sortColumn, program.id, position)
-          : keysetBeforeId(sortColumn, program.id, position)
+          ? keysetAfterMicros(sortColumn, program.id, position)
+          : keysetBeforeMicros(sortColumn, program.id, position)
       : undefined;
     const conds = [
       eq(program.orgId, orgId),
@@ -198,6 +226,8 @@ export class ProgramsService {
         createdBy: program.createdBy,
         createdAt: program.createdAt,
         updatedAt: program.updatedAt,
+        createdAtCursor: microsecondCursorValue(program.createdAt),
+        updatedAtCursor: microsecondCursorValue(program.updatedAt),
         projectCount: sql<number>`(
           SELECT CAST(COUNT(*) AS INT)
           FROM ${programProjects} link
@@ -213,16 +243,20 @@ export class ProgramsService {
       .orderBy(...orderBy)
       .limit(limit + 1);
 
-    return buildTupleCursorPage(rows, limit, (row) => [
+    const page = buildTupleCursorPage(rows, limit, (row) => [
       sort,
       order,
       sort === "name"
         ? row.name
         : sort === "updatedAt"
-          ? row.updatedAt.toISOString()
-          : row.createdAt.toISOString(),
+          ? row.updatedAtCursor
+          : row.createdAtCursor,
       String(row.id),
     ]);
+    return {
+      data: page.data.map(({ createdAtCursor, updatedAtCursor, ...row }) => row),
+      pagination: page.pagination,
+    };
   }
 
   private async pageProgramProjects(

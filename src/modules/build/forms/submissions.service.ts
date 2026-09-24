@@ -8,6 +8,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
+import type { TenantTx } from "../../../common/tenant/with-tenant";
 import type { CreateSubmissionInput, ListSubmissionsQuery, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
@@ -43,16 +44,14 @@ export class SubmissionsService {
     return row;
   }
 
-  private async loadPublicForm(publicToken: string): Promise<FormRow> {
-    const row = await withPublicToken(this.db, publicToken, (tx) =>
-      tx.query.projectForms.findFirst({
-        where: and(
-          eq(projectForms.publicToken, publicToken),
-          eq(projectForms.isPublic, true),
-          isNull(projectForms.deletedAt),
-        ),
-      }),
-    );
+  private async loadPublicForm(tx: TenantTx, publicToken: string): Promise<FormRow> {
+    const row = await tx.query.projectForms.findFirst({
+      where: and(
+        eq(projectForms.publicToken, publicToken),
+        eq(projectForms.isPublic, true),
+        isNull(projectForms.deletedAt),
+      ),
+    });
     if (!row) throw new NotFoundException("Form not found");
     if (!row.isActive) throw new BadRequestException("Form is not active");
     return row;
@@ -74,6 +73,7 @@ export class SubmissionsService {
     form: FormRow,
     input: CreateSubmissionInput,
     userId: string | null,
+    activeTx?: TenantTx,
   ): Promise<SubmissionRunResult> {
     const { orgId, id: formId, projectId } = form;
 
@@ -92,7 +92,7 @@ export class SubmissionsService {
       .map(([k, v]) => `${k}: ${String(v)}`)
       .join("\n");
 
-    const [submission] = await this.db.transaction(async (tx) => {
+    const execute = async (tx: TenantTx) => {
       if (ticketActions.length > 0) {
         await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: ticketActions.length }]);
         const startNumber = await allocateTicketNumbers(tx, orgId, projectId, ticketActions.length);
@@ -139,7 +139,11 @@ export class SubmissionsService {
         submittedById: userId,
         convertedTicketId: firstTicketId,
       }).returning();
-    });
+    };
+
+    const [submission] = activeTx
+      ? await execute(activeTx)
+      : await this.db.transaction(execute);
 
     if (!submission) throw new NotFoundException("Failed to create submission");
     return { submission, createdTicketIds, executedActionTypes, skippedActionTypes };
@@ -200,10 +204,12 @@ export class SubmissionsService {
   }
 
   async submitPublicForm(publicToken: string, input: CreateSubmissionInput) {
-    const form = await this.loadPublicForm(publicToken);
-
-    const { submission, executedActionTypes, skippedActionTypes } =
-      await this.runSubmission(form, input, null);
+    const { form, result } = await withPublicToken(this.db, publicToken, async (tx) => {
+      const form = await this.loadPublicForm(tx, publicToken);
+      const result = await this.runSubmission(form, input, null, tx);
+      return { form, result };
+    });
+    const { submission, executedActionTypes, skippedActionTypes } = result;
 
     this.audit.log({
       action: "form.public_submitted",
