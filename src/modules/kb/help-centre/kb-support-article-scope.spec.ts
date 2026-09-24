@@ -6,7 +6,6 @@ import type { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAnalyticsService } from "./kb-analytics.service";
 import { KbVerificationService } from "./kb-verification.service";
-import { articleLastVerifiedAt, type PageTrustState } from "./kb-article-page-scope";
 
 const dialect = new PgDialect();
 

@@ -50,8 +50,7 @@ function articleRow(id: number, updatedAt: Date) {
     ownerMembershipId: 1,
     helpfulCount: 0,
     notHelpfulCount: 0,
-    trustState: "unverified" as const,
-    verifiedUntil: null,
+    verifiedAt: null,
     updatedAt,
   };
 }
