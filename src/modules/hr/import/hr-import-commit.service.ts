@@ -22,29 +22,19 @@ import {
   type LeaveBalanceRow,
   type AttendanceRow,
   type AssetRow,
-  type DocumentMetadataRow,
   attendanceInstant,
 } from "./schemas/entity-row-schemas";
 import type { HrImportEntity } from "./dto/import-job.dto";
 import { normalizeCode, normalizeName } from "./schemas/import-row-identity";
+import { commitDocumentRow } from "./hr-import-document-commit";
+import type { CommitOutcome, CommitRef } from "./hr-import-commit.types";
 import { MembershipAdmissionService, admissionRefusalMessage, canonicalAdmissionEmail } from "../../organization/core/membership-admission.service";
 import type { AdmissionOutcome } from "../../organization/core/membership-admission.service";
 import type { MembershipMutations } from "../../../common/org/membership-mutations";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 
-/**
- * What a committed row did. A rollback may only undo `created` rows: an import
- * that updated a record the operator already had must not delete it when the job
- * is rolled back, and an `unchanged` row touched nothing to undo.
- */
-export type CommitOutcome = "created" | "updated" | "unchanged";
-
-export interface CommitRef {
-  table: string;
-  id: number;
-  outcome: CommitOutcome;
-}
+export type { CommitOutcome, CommitRef } from "./hr-import-commit.types";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -79,7 +69,7 @@ export class HrImportCommitService {
     if (entity === "leave_balances") return this.commitLeaveBalance(tx, orgId, leaveBalanceRowSchema.parse(payload));
     if (entity === "attendance") return this.commitAttendance(tx, orgId, attendanceRowSchema.parse(payload));
     if (entity === "assets") return this.commitAsset(tx, orgId, assetRowSchema.parse(payload));
-    if (entity === "document_metadata") return this.commitDocument(tx, orgId, documentMetadataRowSchema.parse(payload));
+    if (entity === "document_metadata") return commitDocumentRow(tx, orgId, documentMetadataRowSchema.parse(payload));
     return null;
   }
 
@@ -93,7 +83,7 @@ export class HrImportCommitService {
    * five rows really were written, to three tables nothing lists from.
    *
    * It also stranded every other import. `commitLeaveBalance`,
-   * `commitAttendance`, `commitDocument` and `commitAsset` all resolve
+   * `commitAttendance`, `commitDocumentRow` and `commitAsset` all resolve
    * `hr_people.user_id`, which this path left NULL — so a leave balance or an
    * attendance row for an imported employee failed with "No user found for
    * email" no matter how correct the file was.
@@ -449,73 +439,6 @@ export class HrImportCommitService {
 
     if (!asset) throw new Error("Failed to insert asset");
     return { table: "assets", id: asset.id, outcome: "created" };
-  }
-
-  private async commitDocument(tx: Tx, orgId: string, row: DocumentMetadataRow): Promise<CommitRef> {
-    const person = await tx
-      .select({ userId: hrPeople.userId })
-      .from(hrPeople)
-      .innerJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
-        ),
-      )
-      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
-      .limit(1);
-
-    const userId = person[0]?.userId ?? null;
-
-    const fields = {
-      // The CSV's `type` column used to be parsed, validated and then thrown
-      // away: every imported document was stored as OTHER. `document_type` is an
-      // enum, so the row schema now rejects a value outside it rather than
-      // quietly flattening OFFER_LETTER and ID_PROOF into one bucket.
-      type: row.type,
-      category: row.category ?? null,
-      fileUrl: row.fileUrl,
-      expiryDate: row.expiryDate || null,
-      isActive: true,
-    };
-
-    // PROVISIONAL identity — open product decision #2. A document is the same
-    // document when it is the same person's, in the same category, under the same
-    // name. Without this the importer inserted unconditionally and re-running a
-    // sheet doubled the file: QA's three rows became six.
-    //
-    // `is not distinct from` is what makes the org-wide document (userId null)
-    // match itself; plain equality never matches NULL, so those rows would double
-    // on every re-import. No unique index backs this yet — see decision #2.
-    const [existing] = await tx
-      .select({ id: documents.id })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.orgId, orgId),
-          sql`${documents.userId} is not distinct from ${userId}`,
-          sql`lower(trim(coalesce(${documents.category}, ''))) = ${normalizeName(row.category)}`,
-          sql`lower(trim(${documents.name})) = ${normalizeName(row.name)}`,
-        ),
-      )
-      .orderBy(asc(documents.id))
-      .limit(1);
-
-    if (existing) {
-      await tx
-        .update(documents)
-        .set({ ...fields, name: row.name })
-        .where(and(eq(documents.id, existing.id), eq(documents.orgId, orgId)));
-      return { table: "documents", id: existing.id, outcome: "updated" };
-    }
-
-    const [doc] = await tx
-      .insert(documents)
-      .values({ orgId, userId, name: row.name, ...fields })
-      .returning({ id: documents.id });
-
-    if (!doc) throw new Error("Failed to insert document metadata");
-    return { table: "documents", id: doc.id, outcome: "created" };
   }
 
   async rollbackRef(tx: Tx, ref: CommitRef): Promise<void> {
