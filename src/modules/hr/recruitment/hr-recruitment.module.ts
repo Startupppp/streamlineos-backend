@@ -47,6 +47,9 @@ import { BoardApplyIngressService } from "./boards/board-apply-ingress.service";
 import { BoardApplyIngressController } from "./boards/board-apply-ingress.controller";
 import { RecruitmentIntegrationsService } from "./integrations/recruitment-integrations.service";
 import { RecruitmentIntegrationsController } from "./integrations/recruitment-integrations.controller";
+import { SourcedProfileService } from "./sourcing-extension/sourced-profile.service";
+import { SourcingExtensionController } from "./sourcing-extension/sourcing-extension.controller";
+import { UserApiTokensModule } from "../../api-tokens/user/user-api-tokens.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { RecruitmentOfferAcceptanceService } from "./recruitment-offer-acceptance.service";
 import { RecruitmentOnboardingStartService } from "./recruitment-onboarding-start.service";
@@ -63,6 +66,8 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     OutboxModule,
     MembershipAdmissionModule,
     OnboardingModule,
+    /** The sourcing extension mints its token through the account token service rather than a second one. */
+    UserApiTokensModule,
   ],
   controllers: [
     RecruitmentCandidateDocumentsController,
@@ -81,6 +86,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     RecruitmentTalentPoolsController,
     BoardApplyIngressController,
     RecruitmentIntegrationsController,
+    SourcingExtensionController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -112,6 +118,7 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     JobBoardOutboxConsumer,
     BoardApplyIngressService,
     RecruitmentIntegrationsService,
+    SourcedProfileService,
   ],
   exports: [
     RecruitmentOffersService,
