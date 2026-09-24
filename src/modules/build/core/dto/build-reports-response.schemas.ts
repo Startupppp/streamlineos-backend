@@ -77,6 +77,8 @@ export const resourceAllocationItemSchema = z.object({
   ),
 });
 
+export const resourceAllocationPageSchema = cursorPageSchema(resourceAllocationItemSchema);
+
 export const burnupDataSchema = z.array(z.object({
   date: z.string(),
   scope: z.number(),

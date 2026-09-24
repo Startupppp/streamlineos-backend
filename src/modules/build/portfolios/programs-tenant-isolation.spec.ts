@@ -9,12 +9,15 @@ describe("ProgramsService — cross-tenant isolation", () => {
 
   function makeDb(programLoadRows: unknown[], linkedProjectRows: unknown[] = []) {
     const limit1 = jest.fn().mockResolvedValueOnce(programLoadRows).mockResolvedValue(linkedProjectRows);
-    const where = jest.fn().mockReturnValue({ limit: limit1 });
+    const orderBy = jest.fn().mockReturnValue({ limit: limit1 });
+    const where = jest.fn().mockReturnValue({ limit: limit1, orderBy });
     const innerJoin = jest.fn().mockReturnValue({ where });
     const from = jest.fn().mockReturnValue({ where, innerJoin });
     const select = jest.fn().mockReturnValue({ from });
     return { db: { select } as unknown as Db };
   }
+
+  const DETAIL_QUERY = { projectsCursor: undefined, projectsLimit: 20 };
 
   function makeFullDb(selectRows: unknown[][], insertResult: unknown[] = [{ id: 1, orgId: OWNER_ORG, name: "P" }]) {
     let selectCall = 0;
@@ -45,14 +48,14 @@ describe("ProgramsService — cross-tenant isolation", () => {
   it("throws NotFoundException for getProgram on a different org (cross-tenant isolation)", async () => {
     const { db } = makeDb([]);
     const svc = new ProgramsService(db, audit);
-    await expect(svc.getProgram(ATTACKER_ORG, 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.getProgram(ATTACKER_ORG, 99, DETAIL_QUERY)).rejects.toThrow(NotFoundException);
   });
 
   it("returns program for the owning org (same-tenant control)", async () => {
     const program = { id: 10, orgId: OWNER_ORG, name: "P1" };
     const { db } = makeDb([program], []);
     const svc = new ProgramsService(db, audit);
-    const result = await svc.getProgram(OWNER_ORG, 10);
+    const result = await svc.getProgram(OWNER_ORG, 10, DETAIL_QUERY);
     expect(result).toMatchObject({ id: 10 });
   });
 

@@ -13,6 +13,12 @@ function renderSql(value: unknown): string {
 const ORG_ID = "org-1";
 const OTHER_ORG = "org-9";
 const USER_ID = "user-1";
+const DETAIL_QUERY = {
+  projectsCursor: undefined,
+  projectsLimit: 20,
+  programsCursor: undefined,
+  programsLimit: 20,
+};
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
@@ -110,16 +116,14 @@ describe("PortfoliosService", () => {
     });
   });
 
-  describe("getPortfolio — flat response shape", () => {
-    it("returns a flat object with projects and programs arrays spread alongside portfolio fields", async () => {
+  describe("getPortfolio — related links are cursor pages, not bare arrays", () => {
+    it("returns projects and programs as cursor pages spread alongside portfolio fields", async () => {
       const portfolio = makePortfolio({ id: 2, name: "Flat Test" });
-      const linkedProjects = [{ id: 3, name: "P1", key: "P1", status: "ACTIVE" }];
-      const programs = [{ id: 7, name: "Prog1", status: "active" }];
+      const addedAt = new Date("2026-01-02T03:04:05.000Z");
+      const linkedProjects = [{ id: 3, name: "P1", key: "P1", status: "ACTIVE", addedAt }];
+      const programs = [{ id: 7, name: "Prog1", status: "active", createdAt: addedAt }];
 
       const { selectChain: portChain } = makeSelectChain([portfolio]);
-
-      const projectsLimitChain = jest.fn().mockResolvedValue(linkedProjects);
-      const programsLimitChain = jest.fn().mockResolvedValue(programs);
 
       let selectCount = 0;
       (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
@@ -129,7 +133,11 @@ describe("PortfoliosService", () => {
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: projectsLimitChain }),
+                where: jest.fn().mockReturnValue({
+                  orderBy: jest.fn().mockReturnValue({
+                    limit: jest.fn().mockResolvedValue(linkedProjects),
+                  }),
+                }),
               }),
             }),
           };
@@ -137,7 +145,11 @@ describe("PortfoliosService", () => {
         if (selectCount === 3) {
           return {
             from: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: programsLimitChain }),
+              where: jest.fn().mockReturnValue({
+                orderBy: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockResolvedValue(programs),
+                }),
+              }),
             }),
           };
         }
@@ -152,16 +164,71 @@ describe("PortfoliosService", () => {
         };
       });
 
-      const result = await svc.getPortfolio(ORG_ID, 2);
+      const result = await svc.getPortfolio(ORG_ID, 2, DETAIL_QUERY);
 
-      expect(result).toMatchObject({
-        id: 2,
-        name: "Flat Test",
-        projects: linkedProjects,
-        programs,
+      expect(result).toMatchObject({ id: 2, name: "Flat Test" });
+      expect(result.projects.data).toEqual([
+        { id: 3, name: "P1", key: "P1", status: "ACTIVE", openCount: 2, doneCount: 1 },
+      ]);
+      expect(result.programs.data).toEqual([{ id: 7, name: "Prog1", status: "active" }]);
+      expect(result.projects.pagination.hasMore).toBe(false);
+      expect(result.programs.pagination.hasMore).toBe(false);
+    });
+
+    it("reports hasMore and a nextCursor when the linked-projects page is full, so the caller can read past the first page", async () => {
+      const portfolio = makePortfolio({ id: 2 });
+      const { selectChain: portChain } = makeSelectChain([portfolio]);
+      const overflow = Array.from({ length: 3 }, (_unused, index) => ({
+        id: index + 1,
+        name: `P${index + 1}`,
+        key: `P${index + 1}`,
+        status: "ACTIVE",
+        addedAt: new Date(2026, 0, 10 - index),
+      }));
+
+      let selectCount = 0;
+      (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
+        selectCount++;
+        if (selectCount === 1) return portChain;
+        if (selectCount === 2) {
+          return {
+            from: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({
+                  orderBy: jest.fn().mockReturnValue({
+                    limit: jest.fn().mockResolvedValue(overflow),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (selectCount === 3) {
+          return {
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+              }),
+            }),
+          };
+        }
+        const countsChain: Record<string, unknown> = {
+          innerJoin: jest.fn(() => countsChain),
+          where: jest.fn(() => countsChain),
+          groupBy: jest.fn().mockResolvedValue([]),
+          then: (resolve: (value: unknown) => unknown) => Promise.resolve([]).then(resolve),
+        };
+        return { from: jest.fn(() => countsChain) };
       });
-      expect(Array.isArray(result.projects)).toBe(true);
-      expect(Array.isArray(result.programs)).toBe(true);
+
+      const result = await svc.getPortfolio(ORG_ID, 2, {
+        ...DETAIL_QUERY,
+        projectsLimit: 2,
+      });
+
+      expect(result.projects.data).toHaveLength(2);
+      expect(result.projects.pagination.hasMore).toBe(true);
+      expect(result.projects.pagination.nextCursor).toEqual(expect.any(String));
     });
   });
 
@@ -170,14 +237,18 @@ describe("PortfoliosService", () => {
       const { selectChain } = makeSelectChain([]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
-      await expect(svc.getPortfolio(OTHER_ORG, 1)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.getPortfolio(OTHER_ORG, 1, DETAIL_QUERY)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it("throws 404 when portfolio is soft-deleted (deletedAt set)", async () => {
       const { selectChain } = makeSelectChain([]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
-      await expect(svc.getPortfolio(ORG_ID, 999)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.getPortfolio(ORG_ID, 999, DETAIL_QUERY)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -194,10 +265,12 @@ describe("PortfoliosService", () => {
           return { from: jest.fn().mockReturnValue(fromChain) };
         }
         if (callNumber === 2) {
-          const limitFn = jest.fn().mockResolvedValue([]);
+          const orderByFn = jest
+            .fn()
+            .mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
           const capturedWhere = jest.fn((cond: unknown) => {
             capturedProjectsWhere = cond;
-            return { limit: limitFn };
+            return { orderBy: orderByFn };
           });
           return {
             from: jest.fn().mockReturnValue({
@@ -207,12 +280,14 @@ describe("PortfoliosService", () => {
         }
         return {
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+            where: jest.fn().mockReturnValue({
+              orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+            }),
           }),
         };
       });
 
-      await svc.getPortfolio(ORG_ID, 10);
+      await svc.getPortfolio(ORG_ID, 10, DETAIL_QUERY);
 
       expect(capturedProjectsWhere).toBeDefined();
       const rendered = renderSql(capturedProjectsWhere);

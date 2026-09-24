@@ -23,8 +23,10 @@ import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { resolveProjectCounts } from "./portfolio-project-counts";
 import type {
   CreatePortfolioInput,
+  LinkedProjectsQuery,
   LinkProjectInput,
   ListPortfoliosQuery,
+  PortfolioDetailQuery,
   UpdatePortfolioInput,
 } from "./dto/portfolios.schemas";
 
@@ -100,6 +102,7 @@ export class PortfoliosService {
           SELECT CAST(COUNT(*) AS INT)
           FROM ${portfolioProjects} link
           INNER JOIN ${projects} linked_project ON linked_project.id = link.project_id
+            AND linked_project.org_id = link.org_id
             AND linked_project.deleted_at IS NULL
           WHERE link.portfolio_id = portfolio.id
             AND link.org_id = portfolio.org_id
@@ -116,59 +119,113 @@ export class PortfoliosService {
     }));
   }
 
-  async getPortfolio(orgId: string, portfolioId: number) {
-    const portfolio = await this.loadPortfolio(orgId, portfolioId);
+  private async pagePortfolioProjects(
+    orgId: string,
+    portfolioId: number,
+    query: LinkedProjectsQuery,
+  ) {
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const rows = await this.db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        key: projects.key,
+        status: projects.status,
+        addedAt: portfolioProjects.createdAt,
+      })
+      .from(portfolioProjects)
+      .innerJoin(
+        projects,
+        and(
+          eq(projects.id, portfolioProjects.projectId),
+          eq(projects.orgId, portfolioProjects.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(portfolioProjects.portfolioId, portfolioId),
+          eq(portfolioProjects.orgId, orgId),
+          isNull(projects.deletedAt),
+          pos ? keysetBeforeId(portfolioProjects.createdAt, projects.id, pos) : undefined,
+        ),
+      )
+      .orderBy(desc(portfolioProjects.createdAt), desc(projects.id))
+      .limit(limit + 1);
 
-    const [linkedProjects, programs] = await Promise.all([
-      this.db
-        .select({
-          id: projects.id,
-          name: projects.name,
-          key: projects.key,
-          status: projects.status,
-        })
-        .from(portfolioProjects)
-        .innerJoin(projects, eq(projects.id, portfolioProjects.projectId))
-        .where(
-          and(
-            eq(portfolioProjects.portfolioId, portfolioId),
-            eq(portfolioProjects.orgId, orgId),
-            isNull(projects.deletedAt),
-          ),
-        )
-        .limit(100),
-      this.db
-        .select({
-          id: projectPrograms.id,
-          name: projectPrograms.name,
-          status: projectPrograms.status,
-        })
-        .from(projectPrograms)
-        .where(
-          and(
-            eq(projectPrograms.portfolioId, portfolioId),
-            eq(projectPrograms.orgId, orgId),
-            isNull(projectPrograms.deletedAt),
-          ),
-        )
-        .limit(100),
-    ]);
+    const page = buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.addedAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
 
-    if (linkedProjects.length === 0)
-      return { ...portfolio, projects: [], programs };
+    if (page.data.length === 0) return { data: [], pagination: page.pagination };
 
-    const projectIds = linkedProjects.map((p) => p.id);
-    const countsMap = await resolveProjectCounts(this.db, orgId, projectIds);
+    const countsMap = await resolveProjectCounts(
+      this.db,
+      orgId,
+      page.data.map((p) => p.id),
+    );
 
     return {
-      ...portfolio,
-      projects: linkedProjects.map((p) => ({
+      data: page.data.map(({ addedAt: _addedAt, ...p }) => ({
         ...p,
         openCount: countsMap.get(p.id)?.openCount ?? 0,
         doneCount: countsMap.get(p.id)?.doneCount ?? 0,
       })),
-      programs,
+      pagination: page.pagination,
     };
+  }
+
+  private async pagePortfolioPrograms(
+    orgId: string,
+    portfolioId: number,
+    query: LinkedProjectsQuery,
+  ) {
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const rows = await this.db
+      .select({
+        id: projectPrograms.id,
+        name: projectPrograms.name,
+        status: projectPrograms.status,
+        createdAt: projectPrograms.createdAt,
+      })
+      .from(projectPrograms)
+      .where(
+        and(
+          eq(projectPrograms.portfolioId, portfolioId),
+          eq(projectPrograms.orgId, orgId),
+          isNull(projectPrograms.deletedAt),
+          pos ? keysetBeforeId(projectPrograms.createdAt, projectPrograms.id, pos) : undefined,
+        ),
+      )
+      .orderBy(desc(projectPrograms.createdAt), desc(projectPrograms.id))
+      .limit(limit + 1);
+
+    const page = buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
+
+    return {
+      data: page.data.map(({ createdAt: _createdAt, ...p }) => p),
+      pagination: page.pagination,
+    };
+  }
+
+  async getPortfolio(orgId: string, portfolioId: number, query: PortfolioDetailQuery) {
+    const portfolio = await this.loadPortfolio(orgId, portfolioId);
+    const [projects, programs] = await Promise.all([
+      this.pagePortfolioProjects(orgId, portfolioId, {
+        cursor: query.projectsCursor,
+        limit: query.projectsLimit,
+      }),
+      this.pagePortfolioPrograms(orgId, portfolioId, {
+        cursor: query.programsCursor,
+        limit: query.programsLimit,
+      }),
+    ]);
+    return { ...portfolio, projects, programs };
   }
 
   async createPortfolio(
