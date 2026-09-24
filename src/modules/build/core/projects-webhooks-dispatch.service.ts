@@ -36,6 +36,8 @@ const INTERACTIVE_TEST_BUDGET: DeliveryBudget = { maxAttempts: 1, timeoutMs: 5_0
 const WEBHOOK_BASE_DELAY_MS = 1_000;
 const WEBHOOK_MAX_DELAY_MS = 30_000;
 const WEBHOOK_OUTBOX_EVENT = "build.project-webhook.delivery.requested";
+export const MISSING_SIGNING_SECRET_ERROR =
+  "Endpoint has no signing secret; delivery refused because an empty key makes the signature forgeable. Re-create the webhook to mint a secret.";
 
 export interface WebhookPayload extends Record<string, unknown> {
   id: number;
@@ -243,7 +245,12 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
     if (!outcome.success && outcome.lastError && outcome.responseCode !== null) {
       const error = new ProjectWebhookResponseError(outcome.responseCode, outcome.responseBody ?? "");
       if (throwRetryable && classifyProjectWebhookError(error) === "retryable") throw error;
-    } else if (throwRetryable && !outcome.success && !outcome.lastError?.startsWith("Blocked webhook target")) {
+    } else if (
+      throwRetryable &&
+      !outcome.success &&
+      !outcome.lastError?.startsWith("Blocked webhook target") &&
+      outcome.lastError !== MISSING_SIGNING_SECRET_ERROR
+    ) {
       throw new Error(outcome.lastError ?? "Project webhook delivery failed");
     }
     return outcome;
@@ -256,8 +263,18 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
     deliveryId: number,
     budget: DeliveryBudget,
   ): Promise<DeliveryOutcome> {
+    if (!endpoint.secret)
+      return {
+        responseCode: null,
+        responseBody: null,
+        success: false,
+        lastError: MISSING_SIGNING_SECRET_ERROR,
+        attempts: 0,
+        nextAttemptAt: null,
+      };
+
     const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
-    const signature = createHmac("sha256", endpoint.secret || "").update(body).digest("hex");
+    const signature = createHmac("sha256", endpoint.secret).update(body).digest("hex");
 
     const descriptor: ProviderDescriptor = {
       provider: `build-webhook:${endpoint.id}`,
