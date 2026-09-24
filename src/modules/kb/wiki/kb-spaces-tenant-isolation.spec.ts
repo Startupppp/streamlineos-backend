@@ -60,7 +60,10 @@ function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; al
     getAccessibleSpaceIds: jest.fn().mockResolvedValue([1, 2, 3]),
   } as unknown as KbAccessService;
   const indexing = new KbIndexingService(db, undefined as never, undefined as never);
-  return { svc: new KbSpacesService(db, access, indexing), allWhereArgs };
+  const authz = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
+  } as never;
+  return { svc: new KbSpacesService(db, access, indexing, authz), allWhereArgs };
 }
 
 describe("KbSpacesService — cross-tenant isolation", () => {
@@ -70,7 +73,7 @@ describe("KbSpacesService — cross-tenant isolation", () => {
   it("scopes space list to the requesting org (tenant isolation)", async () => {
     const { svc, allWhereArgs } = makeService(ATTACKER_ORG, []);
 
-    await svc.list(makeUser(ATTACKER_ORG), ScopedRead.of(ATTACKER_ORG, "u-1", "all"));
+    await svc.list(makeUser(ATTACKER_ORG), ScopedRead.of(ATTACKER_ORG, "u-1", "all"), { limit: 20 } as never);
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -81,7 +84,7 @@ describe("KbSpacesService — cross-tenant isolation", () => {
     const space = { id: 1, orgId: OWNER_ORG, name: "General", slug: "general", articleCount: 0 };
     const { svc } = makeService(OWNER_ORG, [space]);
 
-    const result = await svc.list(makeUser(OWNER_ORG), ScopedRead.of(OWNER_ORG, "u-1", "all"));
+    const result = await svc.list(makeUser(OWNER_ORG), ScopedRead.of(OWNER_ORG, "u-1", "all"), { limit: 20 } as never);
 
     expect(result).toBeDefined();
   });

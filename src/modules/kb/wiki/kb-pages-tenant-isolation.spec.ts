@@ -31,6 +31,7 @@ describe("KbPagesService — cross-tenant isolation", () => {
   const auth = {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
     assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: PAGE_ID, action: "edit", via: "admin" }),
+    resolvePageAccess: jest.fn().mockResolvedValue({ outcome: "allowed" }),
   };
 
   function makeDb(pageRow: unknown) {
