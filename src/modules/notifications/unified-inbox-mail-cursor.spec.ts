@@ -171,7 +171,7 @@ async function scroll(pages: number, mailboxSize: number) {
     const page = await svc.list(
       ORG,
       UID,
-      { limit: LIMIT, kinds: undefined, unreadOnly: false, cursor },
+      { limit: LIMIT, kinds: undefined, unreadOnly: false, eventKeys: undefined, cursor },
       user,
     );
     for (const item of page.items) if (item.kind === "mail") delivered.push(item.id);
@@ -198,7 +198,7 @@ describe("unified inbox — mail trimmed by the merge is not lost", () => {
     const user = makeUser();
 
     const first = await svc.list(
-      ORG, UID, { limit: LIMIT, kinds: undefined, unreadOnly: false }, user,
+      ORG, UID, { limit: LIMIT, kinds: undefined, unreadOnly: false, eventKeys: undefined }, user,
     );
     const firstMail = first.items.filter((i) => i.kind === "mail").map((i) => i.id);
     expect(firstMail).toEqual(["m0", "m1"]);
@@ -206,7 +206,7 @@ describe("unified inbox — mail trimmed by the merge is not lost", () => {
     const second = await svc.list(
       ORG,
       UID,
-      { limit: LIMIT, kinds: undefined, unreadOnly: false, cursor: first.nextCursor ?? undefined },
+      { limit: LIMIT, kinds: undefined, unreadOnly: false, eventKeys: undefined, cursor: first.nextCursor ?? undefined },
       user,
     );
     const secondMail = second.items.filter((i) => i.kind === "mail").map((i) => i.id);
@@ -225,7 +225,7 @@ describe("unified inbox — mail trimmed by the merge is not lost", () => {
     let cursor: string | undefined;
     for (let i = 0; i < 6; i++) {
       const page = await svc.list(
-        ORG, UID, { limit: LIMIT, kinds: undefined, unreadOnly: false, cursor }, user,
+        ORG, UID, { limit: LIMIT, kinds: undefined, unreadOnly: false, eventKeys: undefined, cursor }, user,
       );
       if (!page.hasMore || page.nextCursor === null) break;
       cursor = page.nextCursor;

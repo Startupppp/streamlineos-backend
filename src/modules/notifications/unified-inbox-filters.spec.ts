@@ -121,7 +121,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["mail"], unreadOnly: false, triage: "later" },
+      { limit: 10, kinds: ["mail"], unreadOnly: false, eventKeys: undefined, triage: "later" },
       user,
     );
 
@@ -143,7 +143,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["mail"], unreadOnly: false, triage: "done" },
+      { limit: 10, kinds: ["mail"], unreadOnly: false, eventKeys: undefined, triage: "done" },
       user,
     );
 
@@ -167,7 +167,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["broadcast"], unreadOnly: false, triage: "later" },
+      { limit: 10, kinds: ["broadcast"], unreadOnly: false, eventKeys: undefined, triage: "later" },
       user,
     );
 
@@ -188,7 +188,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["build_approval"], unreadOnly: false, triage: "done" },
+      { limit: 10, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined, triage: "done" },
       user,
     );
 
@@ -211,7 +211,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["broadcast", "build_approval"], unreadOnly: false, triage: "active" },
+      { limit: 10, kinds: ["broadcast", "build_approval"], unreadOnly: false, eventKeys: undefined, triage: "active" },
       user,
     );
 
@@ -239,7 +239,7 @@ describe("unified inbox — q filter on broadcasts", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["broadcast"], unreadOnly: false, q: "hello" },
+      { limit: 10, kinds: ["broadcast"], unreadOnly: false, eventKeys: undefined, q: "hello" },
       user,
     );
 
@@ -262,7 +262,7 @@ describe("unified inbox — q filter on broadcasts", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["broadcast"], unreadOnly: false, q: "needle" },
+      { limit: 10, kinds: ["broadcast"], unreadOnly: false, eventKeys: undefined, q: "needle" },
       user,
     );
 
@@ -284,7 +284,7 @@ describe("unified inbox — q filter on broadcasts", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["broadcast"], unreadOnly: false, q: "screaming case" },
+      { limit: 10, kinds: ["broadcast"], unreadOnly: false, eventKeys: undefined, q: "screaming case" },
       user,
     );
 
@@ -307,7 +307,7 @@ describe("unified inbox — q filter on broadcasts", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["broadcast"], unreadOnly: false, q: "nomatch" },
+      { limit: 10, kinds: ["broadcast"], unreadOnly: false, eventKeys: undefined, q: "nomatch" },
       user,
     );
 
@@ -330,7 +330,7 @@ describe("unified inbox — approval adapter seam", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["build_approval"], unreadOnly: false },
+      { limit: 10, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined },
       user,
     );
 
@@ -350,7 +350,7 @@ describe("unified inbox — approval adapter seam", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["build_approval"], unreadOnly: false },
+      { limit: 10, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined },
       user,
     );
 
@@ -380,7 +380,7 @@ describe("unified inbox — approval adapter seam", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["build_approval"], unreadOnly: false },
+      { limit: 10, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined },
       user,
     );
 

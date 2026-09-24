@@ -103,11 +103,11 @@ describe("unified inbox — leave approvals keyset across pages", () => {
     const { db, registry } = makeServices(leaveOnly(TIED_SEEDS));
     const svc = makeInbox(db, registry);
 
-    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false }, makeUserCtx());
+    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUserCtx());
     const second = await svc.list(
       ORG,
       "u",
-      { limit: 2, kinds: ["build_approval"], unreadOnly: false, cursor: first.nextCursor ?? undefined },
+      { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined, cursor: first.nextCursor ?? undefined },
       makeUserCtx(),
     );
 
@@ -119,7 +119,7 @@ describe("unified inbox — leave approvals keyset across pages", () => {
     const { db, registry } = makeServices(leaveOnly(TIED_SEEDS));
     const svc = makeInbox(db, registry);
 
-    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false }, makeUserCtx());
+    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUserCtx());
     const state = decodeInboxCursor(first.nextCursor);
 
     expect(state.ap["hr:leave"]).toEqual(LAST_DELIVERED_ON_PAGE_ONE);
@@ -160,7 +160,7 @@ describe("unified inbox — wfh approvals keyset across pages", () => {
     const { db, registry } = makeServices(wfhOnly(TIED_SEEDS));
     const svc = makeInbox(db, registry);
 
-    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false }, makeUserCtx());
+    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUserCtx());
     const state = decodeInboxCursor(first.nextCursor);
 
     expect(state.ap["hr:wfh"]).toEqual(LAST_DELIVERED_ON_PAGE_ONE);
@@ -197,7 +197,7 @@ describe("unified inbox — two approval adapters sharing one id space", () => {
     const { db, registry } = makeServices(tables);
     const svc = makeInbox(db, registry);
 
-    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false }, makeUserCtx());
+    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUserCtx());
     const state = decodeInboxCursor(first.nextCursor);
 
     expect(state.ap["hr:leave"]).toEqual(LAST_DELIVERED_ON_PAGE_ONE);
@@ -208,11 +208,11 @@ describe("unified inbox — two approval adapters sharing one id space", () => {
     const { db, registry } = makeServices(leaveOnly(TIED_SEEDS));
     const svc = makeInbox(db, registry);
 
-    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false }, makeUserCtx());
+    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUserCtx());
     const second = await svc.list(
       ORG,
       "u",
-      { limit: 2, kinds: ["build_approval"], unreadOnly: false, cursor: first.nextCursor ?? undefined },
+      { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined, cursor: first.nextCursor ?? undefined },
       makeUserCtx(),
     );
     const source = second.sources.find((s) => s.kind === "build_approval");
@@ -233,11 +233,11 @@ describe("unified inbox — two approval adapters sharing one id space", () => {
     });
     const svc = makeInbox(db, registry);
 
-    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false }, makeUserCtx());
+    const first = await svc.list(ORG, "u", { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUserCtx());
     const second = await svc.list(
       ORG,
       "u",
-      { limit: 2, kinds: ["build_approval"], unreadOnly: false, cursor: first.nextCursor ?? undefined },
+      { limit: 2, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined, cursor: first.nextCursor ?? undefined },
       makeUserCtx(),
     );
 
