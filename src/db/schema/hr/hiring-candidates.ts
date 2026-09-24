@@ -33,6 +33,17 @@ export const candidates = pgTable("candidates", {
   bgvNotes: text("bgv_notes"),
   bgvInitiatedAt: timestamp("bgv_initiated_at"),
   bgvCompletedAt: timestamp("bgv_completed_at"),
+  /**
+   * Who asserted the verdict in `bgv_status`.
+   *
+   * A CLEARED typed in by a recruiter and a CLEARED returned by a verification
+   * agency are different claims with different evidence behind them. Without
+   * this column they were the same row, and an offer policy that requires an
+   * agency check could be satisfied by somebody ticking a box.
+   */
+  bgvSource: text("bgv_source").$type<"MANUAL" | "AGENCY">(),
+  /** The agency's own case identifier, so a verdict traces back to its report. */
+  bgvReference: text("bgv_reference"),
   sourceUrl: text("source_url"),
   location: text("location"),
   gender: text("gender").$type<"MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY" | null>(),

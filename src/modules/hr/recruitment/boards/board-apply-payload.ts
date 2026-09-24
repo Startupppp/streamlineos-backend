@@ -110,27 +110,11 @@ export function normaliseBoardApply(raw: unknown): BoardApplyPayload {
 }
 
 /**
- * Whether this body was signed by someone holding the organisation's inbound
- * secret for this board.
+ * Re-exported from `integrations/vendor-signature` under the name the board
+ * ingress and its spec already use.
  *
- * HMAC-SHA256 over the raw bytes — not over the parsed object, which would let
- * a re-serialisation change what was signed — compared in constant time. The
- * comparison is length-checked first because `timingSafeEqual` throws on a
- * length mismatch, and a throw here would be a 500 where a 401 belongs.
+ * The check was never board-specific — background checks, assessment scores and
+ * voice-screen results verify the same way — so it moved to where every vendor
+ * callback can reach it rather than being copied three more times.
  */
-export function verifyBoardSignature(
-  rawBody: Buffer | string,
-  secret: string,
-  providedSignature: string | undefined,
-): boolean {
-  if (!providedSignature) return false;
-  const provided = providedSignature.replace(/^sha256=/i, "").trim();
-  if (!/^[0-9a-f]+$/i.test(provided)) return false;
-  const expected = createHmac("sha256", secret)
-    .update(typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody)
-    .digest("hex");
-  const a = Buffer.from(expected, "hex");
-  const b = Buffer.from(provided, "hex");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
+export { verifyVendorSignature as verifyBoardSignature } from "../integrations/vendor-signature";

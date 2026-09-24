@@ -16,6 +16,8 @@ import {
 import { completeHire, type AcceptedOffer, type HireCompletion } from "./recruitment-hire-completion";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { BgvService } from "./bgv/bgv.service";
+import type { BgvCheckType } from "./bgv/bgv-provider";
 import type { OnboardingStartOutcome } from "./recruitment-onboarding-start.service";
 import { orgOwnerUserId } from "../../../common/org/org-owner-actor";
 
@@ -38,6 +40,17 @@ import { orgOwnerUserId } from "../../../common/org/org-owner-actor";
 /** The only statuses a candidate may still answer from. */
 export const RESPONDABLE_STATUSES = ["SENT", "VIEWED"] as const;
 
+/**
+ * What an accepted offer buys by default.
+ *
+ * Identity, education and employment: the three an Indian employer is normally
+ * asked to evidence, and the three an AuthBridge-class agency prices as a
+ * standard package. Criminal and address checks cost more and are not assumed
+ * on somebody's behalf — an organisation that wants them runs the check from
+ * the candidate's panel and picks them.
+ */
+const DEFAULT_OFFER_CHECKS: readonly BgvCheckType[] = ["IDENTITY", "EDUCATION", "EMPLOYMENT"];
+
 @Injectable()
 export class RecruitmentOfferAcceptanceService {
   private readonly logger = new Logger(RecruitmentOfferAcceptanceService.name);
@@ -48,6 +61,7 @@ export class RecruitmentOfferAcceptanceService {
     private readonly audit: AuditService,
     private readonly handoff: RecruitmentHandoffService,
     private readonly onboarding: RecruitmentOnboardingStartService,
+    private readonly bgv: BgvService,
   ) {}
 
   /**
@@ -137,8 +151,49 @@ export class RecruitmentOfferAcceptanceService {
         const start = () => this.startOnboarding(orgId, candidateId, offerId);
         if (!registerAfterCommit(start))
           await runInNewTenantTransaction(this.db, orgId, start);
+
+        /*
+          Background verification, on the same after-commit footing and with its
+          own boundary.
+
+          "Configurable" here is the agency connection itself: an organisation
+          that has connected and switched on a verification agency gets a case
+          opened on acceptance, and one that has not gets nothing — not a
+          candidate parked at INITIATED with no case anywhere. `initiate`
+          refuses when no adapter resolves, and that refusal is swallowed here
+          on purpose: a hire has already committed, and an unconfigured
+          integration must not read as a failed hire.
+        */
+        const verify = () => this.startBackgroundCheck(orgId, candidateId);
+        if (!registerAfterCommit(verify))
+          await runInNewTenantTransaction(this.db, orgId, verify);
       }
     });
+  }
+
+  /**
+   * Opens a verification case, when there is an agency to open it with.
+   *
+   * Every failure path ends in a log rather than a throw. The hire is committed
+   * by the time this runs, and the three things that can go wrong here — no
+   * agency connected, an agency that refused, a check already running — are all
+   * states a recruiter can see and act on from the candidate's BGV panel.
+   */
+  private async startBackgroundCheck(orgId: string, candidateId: number): Promise<void> {
+    try {
+      await this.bgv.initiate(
+        orgId,
+        { systemActor: "offer-accept-bgv" },
+        candidateId,
+        DEFAULT_OFFER_CHECKS,
+      );
+    } catch (error: unknown) {
+      this.logger.log(
+        `[offer-accept] no background check opened for candidate ${candidateId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**

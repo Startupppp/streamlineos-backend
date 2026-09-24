@@ -128,14 +128,15 @@ describe("RecruitmentOffersService offer-accepted handoff", () => {
 
     /**
      * Run INSIDE a context, as `drainAfterCommitHooks` does. The hook registers
-     * a second one of its own for onboarding, which must not run on the
-     * transaction the handoff is writing: the person it creates is invisible to
-     * any other transaction until this one commits.
+     * two of its own — onboarding and the background check — and neither may
+     * run on the transaction the handoff is writing: the person onboarding
+     * needs is invisible to any other transaction until this one commits, and a
+     * verification agency refusing must not roll a committed hire back.
      */
     const nested: AfterCommitHook[] = [];
     await tenant.run({ orgId: ORG_ID, afterCommit: nested } as never, () => hooks[0]!());
 
     expect(handoff).toHaveBeenCalledWith(ORG_ID, CANDIDATE_ID, OFFER_ID);
-    expect(nested).toHaveLength(1);
+    expect(nested).toHaveLength(2);
   });
 });

@@ -49,6 +49,10 @@ import { RecruitmentIntegrationsService } from "./integrations/recruitment-integ
 import { RecruitmentIntegrationsController } from "./integrations/recruitment-integrations.controller";
 import { SourcedProfileService } from "./sourcing-extension/sourced-profile.service";
 import { NurtureMetricsService } from "./nurture/nurture-metrics.service";
+import { BgvService } from "./bgv/bgv.service";
+import { BgvController } from "./bgv/bgv.controller";
+import { BgvCallbackService } from "./bgv/bgv-callback.service";
+import { BgvCallbackController } from "./bgv/bgv-callback.controller";
 import { SourcingExtensionController } from "./sourcing-extension/sourcing-extension.controller";
 import { UserApiTokensModule } from "../../api-tokens/user/user-api-tokens.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
@@ -88,6 +92,8 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     BoardApplyIngressController,
     RecruitmentIntegrationsController,
     SourcingExtensionController,
+    BgvController,
+    BgvCallbackController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -121,6 +127,8 @@ import { OnboardingModule } from "../onboarding/core/onboarding.module";
     RecruitmentIntegrationsService,
     SourcedProfileService,
     NurtureMetricsService,
+    BgvService,
+    BgvCallbackService,
   ],
   exports: [
     RecruitmentOffersService,

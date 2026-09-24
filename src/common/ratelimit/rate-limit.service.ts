@@ -163,6 +163,12 @@ const TIERS: Record<string, Tier> = {
   // is a flood ceiling rather than the authorisation — generous enough for a
   // real board, small enough that an unsigned flood cannot become a workload.
   "public:board-apply": { limit: 300, windowSecs: 3600 },
+  /**
+   * An agency pushes a handful of verdicts per case, not a stream. 120 an hour
+   * is generous for a real integration and small enough that a leaked callback
+   * URL cannot be used to hammer the signature check.
+   */
+  "public:bgv-callback": { limit: 120, windowSecs: 3600 },
   // POST /csat/:surveyId/responses is @Public and unauthenticated, and it is the
   // SECOND CSAT submit surface in the repository. The first, support-csat, is
   // "support:csat-submit" at 5/hour; this one carried nothing, so a survey id is
