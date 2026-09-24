@@ -13,6 +13,7 @@ import {
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 export { KB_PURGE_STORES };
+export type { KbPurgeStore };
 
 export async function openMultiStoreLedger(
   db: Db,

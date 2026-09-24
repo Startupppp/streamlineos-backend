@@ -184,7 +184,8 @@ export class KbContentHealthService {
             WHERE other.org_id = ${kbPages.orgId}
               AND other.id <> ${kbPages.id}
               AND other.deleted_at IS NULL
-              AND trim(other.content_text) = trim(${kbPages.contentText})
+              AND other.content_text IS NOT NULL
+              AND md5(other.content_text) = md5(${kbPages.contentText})
           )
         )`;
     }

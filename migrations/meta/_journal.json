@@ -6658,6 +6658,20 @@
       "when": 1803000010709,
       "tag": "1194_ai_jobs_correlation_id",
       "breakpoints": true
+    },
+    {
+      "idx": 1079,
+      "version": "7",
+      "when": 1803000010710,
+      "tag": "1195_kb_pages_content_digest_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1080,
+      "version": "7",
+      "when": 1803000010711,
+      "tag": "1196_kb_pages_content_digest_leakproof",
+      "breakpoints": true
     }
   ]
 }
