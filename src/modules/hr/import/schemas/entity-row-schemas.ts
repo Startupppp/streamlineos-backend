@@ -1,8 +1,38 @@
 import { z } from "zod";
 import { ATTENDANCE_RECORD_STATUSES } from "../../../../db/schema/hr/attendance-status";
 import type { HrImportEntity } from "../dto/import-job.dto";
+import { findInFileDuplicates } from "./import-row-identity";
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Imports are dated in the organisation's calendar, not the server's. Comparing
+ * `new Date(row.date)` against `new Date()` read the host clock, so the same file
+ * was accepted or rejected depending on where the process happened to run.
+ * Formatting "now" in the target zone and comparing the two YYYY-MM-DD strings
+ * gives the same answer on every host.
+ */
+const DEFAULT_IMPORT_TIME_ZONE = "Asia/Kolkata";
+
+export function todayInTimeZone(timeZone: string = DEFAULT_IMPORT_TIME_ZONE, now: Date = new Date()): string {
+  // en-CA renders ISO order (2026-09-24), which is what the CSV carries.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+const timeOfDayRegex = /^([01]\d|2[0-3]):([0-5]\d)(:([0-5]\d))?$/;
+
+/** Minutes past midnight, or null when the cell is blank or not a wall-clock time. */
+function minutesOfDay(value: string | undefined): number | null {
+  if (!value) return null;
+  const match = timeOfDayRegex.exec(value.trim());
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
 
 const isoDateOrBlank = z
   .string()
@@ -56,12 +86,29 @@ export const attendanceRowSchema = z
     checkOut: z.string().optional(),
     status: z.enum(ATTENDANCE_RECORD_STATUSES).optional(),
   })
+  .refine((data) => data.date <= todayInTimeZone(), {
+    message: "Attendance date cannot be in the future",
+    path: ["date"],
+  })
+  .refine((data) => !data.checkIn || minutesOfDay(data.checkIn) !== null, {
+    message: "Check-in must be a 24-hour time (HH:MM)",
+    path: ["checkIn"],
+  })
+  .refine((data) => !data.checkOut || minutesOfDay(data.checkOut) !== null, {
+    message: "Check-out must be a 24-hour time (HH:MM)",
+    path: ["checkOut"],
+  })
   .refine(
     (data) => {
-      const d = new Date(data.date);
-      return d <= new Date();
+      // A row carrying both times must run forwards. QA's `19:00 -> 09:00` row
+      // was previewed as valid, and the commit then stored a negative working
+      // day that every hours-worked and payable-days read counts.
+      const start = minutesOfDay(data.checkIn);
+      const end = minutesOfDay(data.checkOut);
+      if (start === null || end === null) return true;
+      return end > start;
     },
-    { message: "Attendance date cannot be in the future" },
+    { message: "Check-out must be later than check-in", path: ["checkOut"] },
   );
 
 export const assetRowSchema = z.object({
@@ -122,9 +169,8 @@ export function validateRows(
   topErrors: Array<{ row: number; message: string }>;
 } {
   const schema = ENTITY_SCHEMAS[entity];
-  const validRows: RowValidationResult[] = [];
+  const schemaValid: RowValidationResult[] = [];
   const errorRows: RowValidationResult[] = [];
-  const topErrors: Array<{ row: number; message: string }> = [];
 
   for (let i = 0; i < rows.length; i++) {
     const rowNumber = i + 1;
@@ -132,15 +178,31 @@ export function validateRows(
     const result = schema.safeParse(raw);
 
     if (result.success) {
-      validRows.push({ rowNumber, payload: raw, status: "valid", error: null });
+      schemaValid.push({ rowNumber, payload: raw, status: "valid", error: null });
     } else {
       const message = result.error.issues.map((issue) => issue.message).join("; ");
       errorRows.push({ rowNumber, payload: raw, status: "error", error: message });
-      if (topErrors.length < 100) {
-        topErrors.push({ row: rowNumber, message });
-      }
     }
   }
+
+  // A row can only collide with one that is itself well-formed, so this pass runs
+  // over the schema-valid rows. The *later* row fails, which keeps a re-uploaded
+  // file's first occurrence importable.
+  const duplicates = findInFileDuplicates(entity, schemaValid);
+  const validRows: RowValidationResult[] = [];
+  for (const row of schemaValid) {
+    const duplicate = duplicates.get(row.rowNumber);
+    if (duplicate === undefined) {
+      validRows.push(row);
+      continue;
+    }
+    errorRows.push({ ...row, status: "error", error: duplicate });
+  }
+
+  errorRows.sort((a, b) => a.rowNumber - b.rowNumber);
+  const topErrors = errorRows
+    .slice(0, 100)
+    .map((row) => ({ row: row.rowNumber, message: row.error ?? "Invalid row" }));
 
   return { validRows, errorRows, topErrors };
 }
