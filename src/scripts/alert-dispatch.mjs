@@ -34,6 +34,7 @@ const REGISTRY = {
     severity: "high",
   },
   "job-queue-age": { owner: "platform-reliability", runbookAnchor: "#job-queue-age", severity: "high" },
+  "kb-indexing": { owner: "knowledge-team", runbookAnchor: "#kb-indexing", severity: "high" },
   "pool-saturation": { owner: "platform-reliability", runbookAnchor: "#database-cell-failure", severity: "high" },
   "tenant-cost": { owner: "platform-reliability", runbookAnchor: "#tenant-cost", severity: "high" },
   "cell-recovery": { owner: "platform-reliability", runbookAnchor: "#cell-recovery", severity: "critical" },

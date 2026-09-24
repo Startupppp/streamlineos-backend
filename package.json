@@ -97,6 +97,8 @@
     "alert:queue-age:self-test": "node src/scripts/alert-queue-age.mjs --self-test",
     "alert:job-queue-age": "node --env-file-if-exists=.env src/scripts/alert-job-queue-age.mjs",
     "alert:job-queue-age:self-test": "node src/scripts/alert-job-queue-age.mjs --self-test",
+    "alert:kb-indexing": "node src/scripts/alert-kb-indexing.mjs",
+    "alert:kb-indexing:self-test": "node src/scripts/alert-kb-indexing.mjs --self-test",
     "alert:pool-saturation": "node src/scripts/alert-pool-saturation.mjs",
     "alert:pool-saturation:self-test": "node src/scripts/alert-pool-saturation.mjs --self-test",
     "alert:tenant-cost": "node --env-file-if-exists=.env src/scripts/alert-tenant-cost.mjs",

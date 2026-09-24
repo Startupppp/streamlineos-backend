@@ -89,7 +89,38 @@ describe("KbPagesService.setVisibility — public share tokens", () => {
 
     await makeService(db).setVisibility(makeUser(), 1, "private", false);
 
-    expect(setValues[0]).not.toHaveProperty("publicToken");
+    expect(setValues[0]).toHaveProperty("publicToken", null);
     expect(setValues[0]).toHaveProperty("visibility", "private");
+  });
+
+  it("clears both token columns when a shared page leaves public, so the link stops resolving instead of lying dormant", async () => {
+    const { db, setValues } = makeDb("already-shared-token");
+
+    await makeService(db).setVisibility(makeUser(), 1, "private", false);
+
+    expect(setValues[0]).toHaveProperty("publicToken", null);
+    expect(setValues[0]).toHaveProperty("publicTokenHash", null);
+  });
+
+  it("clears the token for org visibility too, because org-wide is not public and must not keep an anonymous credential alive", async () => {
+    const { db, setValues } = makeDb("already-shared-token");
+
+    await makeService(db).setVisibility(makeUser(), 1, "org", false);
+
+    expect(setValues[0]).toHaveProperty("publicToken", null);
+    expect(setValues[0]).toHaveProperty("publicTokenHash", null);
+  });
+
+  it("mints a different token when a revoked page is shared again, so the old URL is not resurrected", async () => {
+    const revoked = makeDb("already-shared-token");
+    await makeService(revoked.db).setVisibility(makeUser(), 1, "private", false);
+    expect(revoked.setValues[0]).toHaveProperty("publicToken", null);
+
+    const reshared = makeDb(null);
+    await makeService(reshared.db).setVisibility(makeUser(), 1, "public", false);
+
+    const minted = reshared.setValues[0] as { publicToken?: string };
+    expect(typeof minted.publicToken).toBe("string");
+    expect(minted.publicToken).not.toBe("already-shared-token");
   });
 });

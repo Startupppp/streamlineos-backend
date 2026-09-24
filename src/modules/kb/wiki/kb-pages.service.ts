@@ -40,8 +40,11 @@ import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-a
 import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 import { fireKbMentionNotifications } from "./kb-page-mention-notifications";
-import { hashPublicToken, newPublicToken } from "./kb-public-token";
-import { withoutUnsharedToken } from "./kb-page-share-visibility";
+import { hashPublicToken } from "./kb-public-token";
+import {
+  publicTokenColumnsFor,
+  withoutUnsharedToken,
+} from "./kb-page-share-visibility";
 import { resolveProjectAccess } from "../../build/core/project-access";
 
 type PageRow = KbPageRow;

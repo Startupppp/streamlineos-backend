@@ -1,6 +1,22 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbArticleChunks, kbPages, kbSources } from "../../../db/schema";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import {
+  kbArticles,
+  kbArticleChunks,
+  kbPages,
+  kbSources,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
@@ -11,12 +27,16 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
 import type { ScopedRead } from "../../access/scoped-read";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KbCandidateService } from "./kb-candidate.service";
 import { AccessService } from "../../access/access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
-import { articleOwnerScope, articleOwnerScopeFilter } from "./kb-article-owner-scope";
+import {
+  articleOwnerScope,
+  articleOwnerScopeFilter,
+} from "./kb-article-owner-scope";
 import {
   kbDocumentKey,
   KB_ASK_CONTEXT_BUDGET,
@@ -30,8 +50,23 @@ export const KB_DOCUMENT_PASSAGE_ROWS =
   KB_ASK_MAX_CONTEXT_DOCUMENTS * KB_ASK_CONTEXT_BUDGET.maxPassagesPerDocument;
 
 export type RetrievedSource =
-  | { kind: "article"; id: number; title: string; slug: string; spaceId: number | null; contentText: string; updatedAt: Date }
-  | { kind: "page"; id: number; title: string; spaceId: number | null; contentText: string; updatedAt: Date };
+  | {
+      kind: "article";
+      id: number;
+      title: string;
+      slug: string;
+      spaceId: number | null;
+      contentText: string;
+      updatedAt: Date;
+    }
+  | {
+      kind: "page";
+      id: number;
+      title: string;
+      spaceId: number | null;
+      contentText: string;
+      updatedAt: Date;
+    };
 
 export interface RetrievedSourceDocument {
   sourceId: number;
@@ -39,7 +74,10 @@ export interface RetrievedSourceDocument {
   spaceId: number | null;
   updatedAt: Date;
   passages: KbContextPassage[];
+  degraded?: true;
 }
+
+export type DegradableContextPassage = KbContextPassage & { degraded?: true };
 
 @Injectable()
 export class KbSearchService {
@@ -55,47 +93,51 @@ export class KbSearchService {
     private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
-  /**
-   * Retrieval resolves the asker's own `kb:articles:view` DataScope rather than
-   * accepting one, so no RAG caller — `POST /kb/ask`, the research brief graph or
-   * any future one — can reach the vector index without the predicate the direct
-   * read endpoint applies.
-   */
   async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL> {
     const read = await resolveKbArticlesViewScope(this.scopes, user);
     return articleOwnerScopeFilter(read, user);
   }
 
-  /**
-   * The second of the two article ACL dimensions, as a façade in the same shape as
-   * `articleOwnerFilterFor` above and for the same reason.
-   *
-   * Article visibility is owner scope AND per-article `kb_article_restrictions`.
-   * Retrieval applies both on the way in (`search`, `retrieveTopArticles`,
-   * `KbCandidateService.article{Keyword,Vector}Candidates`), but the post-answer
-   * citation re-verification in `KbAskService.resolveVisibleArticles` only ever
-   * re-applied the owner half — so a restriction added between retrieval and the
-   * model's reply was invisible to the check whose entire job is to catch exactly
-   * that window. Both halves resolve through one call now, so the two paths cannot
-   * drift apart again by one caller forgetting a condition.
-   *
-   * Returns `null` for a `kb:spaces:manage` holder, matching `search`'s
-   * `if (!isAdmin)`: an admin is not subject to per-article restrictions, and
-   * pushing the predicate anyway would strip their own citations.
-   */
-  async articleRestrictionFilterFor(user: CurrentUserContext): Promise<SQL | null> {
+  async articleRestrictionFilterFor(
+    user: CurrentUserContext,
+  ): Promise<SQL | null> {
     if (await this.access.isAdmin(user)) return null;
     const principal = await this.access.getPrincipalIds(user);
     return this.candidates.articleRestrictionFilter(user.orgId, principal);
   }
 
-  private async embedSearchQuery(text: string, orgId: string) {
-    return this.aiGateway.embedQueryWithCredit({
-      text,
-      orgId,
-      feature: KB_SEARCH_FEATURE,
-      charge: true,
-    });
+  private async embedOrDegrade(
+    text: string,
+    orgId: string,
+  ): Promise<string | null> {
+    try {
+      const embedResult = await this.aiGateway.embedQueryWithCredit({
+        text,
+        orgId,
+        feature: KB_SEARCH_FEATURE,
+        charge: true,
+      });
+      if (embedResult.ok) return embedResult.vectorLiteral;
+      this.logger.warn(
+        "KB semantic search embedding unavailable — keyword only",
+        {
+          orgId,
+          kind: embedResult.kind,
+        },
+      );
+      return null;
+    } catch (err: unknown) {
+      logSideEffectFailure("kb semantic search embedding", { orgId })(err);
+      return null;
+    }
+  }
+
+  private chunkKeywordRank(text: string): SQL<number> {
+    return sql<number>`ts_rank(to_tsvector('english', ${kbArticleChunks.content}), websearch_to_tsquery('english', ${text}))`;
+  }
+
+  private chunkKeywordMatch(text: string): SQL {
+    return sql`to_tsvector('english', ${kbArticleChunks.content}) @@ websearch_to_tsquery('english', ${text})`;
   }
 
   async search(
@@ -120,56 +162,60 @@ export class KbSearchService {
     totalPages: number;
   }> {
     if (scope.denied)
-      return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
+      return {
+        items: [],
+        total: 0,
+        page: input.page,
+        pageSize: input.pageSize,
+        totalPages: 0,
+      };
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
-      return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
+      return {
+        items: [],
+        total: 0,
+        page: input.page,
+        pageSize: input.pageSize,
+        totalPages: 0,
+      };
     }
 
     const isAdmin = await this.access.isAdmin(user);
     const principal = await this.access.getPrincipalIds(user);
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
-    const keywordCond = await this.candidates.resolveArticleKeywordCondition(input.q, tsquery, 500);
+    const keywordCond = await this.candidates.resolveArticleKeywordCondition(
+      input.q,
+      tsquery,
+      500,
+    );
     const domain: SQL[] = [
       inArray(kbArticles.spaceId, ids),
       ne(kbArticles.status, "archived"),
       keywordCond,
     ];
-    if (!isAdmin) domain.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
+    if (!isAdmin)
+      domain.push(
+        this.candidates.articleRestrictionFilter(user.orgId, principal),
+      );
     if (input.spaceId) domain.push(eq(kbArticles.spaceId, input.spaceId));
     // The same narrowing `GET /kb/articles` applies, in the predicate rather than
     // downstream: these rows carry article text and are what retrieval hands on.
-    const membershipId = user.principal === undefined ? null : actingMembershipId(user.principal);
+    const membershipId =
+      user.principal === undefined ? null : actingMembershipId(user.principal);
     const where = scope.compose(
-      { tenant: kbArticles.orgId, scope: articleOwnerScope(membershipId), and: domain },
+      {
+        tenant: kbArticles.orgId,
+        scope: articleOwnerScope(membershipId),
+        and: domain,
+      },
       ({ sql: composed }) => composed,
       () => sql`false`,
     );
 
     const offset = (input.page - 1) * input.pageSize;
 
-    /**
-     * Two statements, not one `count(*) OVER ()`, and the reason is measured rather than
-     * argued. Backend CLAUDE.md §7 prefers the window function so page and count are one
-     * pass, and also says to measure both in buffers before choosing. On a 60,000-match
-     * tenant in the scratch database, page 1:
-     *
-     *   window fn : Limit → Sort → WindowAgg (actual rows=60,000, Storage: Disk 9,415 kB)
-     *               2,374 shared hits + 3,084 temp blocks, 35.7 ms, NO parallelism
-     *   two passes: page 2,419 shared + count 2,371 shared, 0 temp, 9.8 + 9.7 ms, both
-     *               Parallel Seq Scan
-     *
-     * `count(*) OVER ()` buffers its entire input into a tuplestore before it can emit the
-     * first row, so a broad term on a large tenant spills ~9 MB to temp files on EVERY
-     * request including page 1 — and the window function also disqualifies the parallel plan.
-     * A plain aggregate streams. The trade is 2× shared buffer hits (RAM, already warm) for
-     * zero temp I/O, which is the resource that saturates under concurrency.
-     *
-     * `total` stays exact, so the response contract is unchanged — this is a plan change, not
-     * a semantics change.
-     */
     const rows = await this.db
       .select({
         id: kbArticles.id,
@@ -184,7 +230,10 @@ export class KbSearchService {
       })
       .from(kbArticles)
       .where(where)
-      .orderBy(desc(this.candidates.keywordRank(tsquery)), desc(kbArticles.updatedAt))
+      .orderBy(
+        desc(this.candidates.keywordRank(tsquery)),
+        desc(kbArticles.updatedAt),
+      )
       .limit(input.pageSize)
       .offset(offset);
 
@@ -201,11 +250,15 @@ export class KbSearchService {
       snippet: this.candidates.buildSnippet(contentText, input.q),
     }));
 
-    await this.events.recordDetached(user.orgId, total > 0 ? "search" : "search_no_results", {
-      actorMembershipId: actingMembershipId(user.principal) ?? null,
-      query: input.q,
-      metadata: { resultsCount: total },
-    });
+    await this.events.recordDetached(
+      user.orgId,
+      total > 0 ? "search" : "search_no_results",
+      {
+        actorMembershipId: actingMembershipId(user.principal) ?? null,
+        query: input.q,
+        metadata: { resultsCount: total },
+      },
+    );
 
     return {
       items,
@@ -234,53 +287,73 @@ export class KbSearchService {
     const hasSpaces = ids.length > 0;
 
     let vectorLiteral: string | null = null;
-    if (this.aiGateway.isEmbeddingConfigured() && (await this.candidates.hasEmbeddedChunks(user.orgId))) {
-      try {
-        const embedResult = await this.embedSearchQuery(q, user.orgId);
-        vectorLiteral = embedResult.ok ? embedResult.vectorLiteral : null;
-        if (!embedResult.ok)
-          this.logger.warn("KB semantic search embedding unavailable — keyword only", {
-            orgId: user.orgId,
-            kind: embedResult.kind,
-          });
-      } catch (err: unknown) {
-        vectorLiteral = null;
-        logSideEffectFailure("kb semantic search embedding", { orgId: user.orgId })(err);
-      }
+    if (
+      this.aiGateway.isEmbeddingConfigured() &&
+      (await this.candidates.hasEmbeddedChunks(user.orgId))
+    ) {
+      vectorLiteral = await this.embedOrDegrade(q, user.orgId);
     }
 
     const projectIds = await this.access.getAccessibleProjectIds(user);
     const pageVisibility = await this.auth.visiblePagePredicate(user, "view");
 
-    const [articleKeyword, articleVector, pageKeyword, pageVector] = await Promise.all([
-      hasSpaces
-        ? this.candidates.articleKeywordCandidates(user.orgId, ids, q, pool, principal, ownerFilter, spaceId)
-        : Promise.resolve<number[]>([]),
-      hasSpaces && vectorLiteral
-        ? this.candidates.articleVectorCandidates(user.orgId, ids, vectorLiteral, pool, principal, ownerFilter, spaceId)
-        : Promise.resolve<number[]>([]),
-      this.candidates.pageKeywordCandidates(user.orgId, q, pool, pageVisibility),
-      vectorLiteral
-        ? this.candidates.pageVectorCandidates(
-            user.orgId,
-            vectorLiteral,
-            pool,
-            chunkVisibleTo(user, projectIds),
-          )
-        : Promise.resolve<number[]>([]),
-    ]);
+    const [articleKeyword, articleVector, pageKeyword, pageVector] =
+      await Promise.all([
+        hasSpaces
+          ? this.candidates.articleKeywordCandidates(
+              user.orgId,
+              ids,
+              q,
+              pool,
+              principal,
+              ownerFilter,
+              spaceId,
+            )
+          : Promise.resolve<number[]>([]),
+        hasSpaces && vectorLiteral
+          ? this.candidates.articleVectorCandidates(
+              user.orgId,
+              ids,
+              vectorLiteral,
+              pool,
+              principal,
+              ownerFilter,
+              spaceId,
+            )
+          : Promise.resolve<number[]>([]),
+        this.candidates.pageKeywordCandidates(
+          user.orgId,
+          q,
+          pool,
+          pageVisibility,
+        ),
+        vectorLiteral
+          ? this.candidates.pageVectorCandidates(
+              user.orgId,
+              vectorLiteral,
+              pool,
+              chunkVisibleTo(user, projectIds),
+            )
+          : Promise.resolve<number[]>([]),
+      ]);
 
     const lists: string[][] = [];
-    if (articleKeyword.length > 0) lists.push(articleKeyword.map((id) => `a:${id}`));
-    if (articleVector.length > 0) lists.push(articleVector.map((id) => `a:${id}`));
+    if (articleKeyword.length > 0)
+      lists.push(articleKeyword.map((id) => `a:${id}`));
+    if (articleVector.length > 0)
+      lists.push(articleVector.map((id) => `a:${id}`));
     if (pageKeyword.length > 0) lists.push(pageKeyword.map((id) => `p:${id}`));
     if (pageVector.length > 0) lists.push(pageVector.map((id) => `p:${id}`));
 
     const fused = this.candidates.fuseKeys(lists).slice(0, limit);
     if (fused.length === 0) return [];
 
-    const articleIds = fused.filter((k) => k.startsWith("a:")).map((k) => parseInt(k.slice(2), 10));
-    const pageIds = fused.filter((k) => k.startsWith("p:")).map((k) => parseInt(k.slice(2), 10));
+    const articleIds = fused
+      .filter((k) => k.startsWith("a:"))
+      .map((k) => parseInt(k.slice(2), 10));
+    const pageIds = fused
+      .filter((k) => k.startsWith("p:"))
+      .map((k) => parseInt(k.slice(2), 10));
 
     const results: RetrievedSource[] = [];
 
@@ -292,7 +365,10 @@ export class KbSearchService {
       ];
       if (spaceId) articleConditions.push(eq(kbArticles.spaceId, spaceId));
       if (ownerFilter) articleConditions.push(ownerFilter);
-      if (!isAdmin) articleConditions.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
+      if (!isAdmin)
+        articleConditions.push(
+          this.candidates.articleRestrictionFilter(user.orgId, principal),
+        );
       const articleRows = await this.db
         .select({
           id: kbArticles.id,
@@ -305,7 +381,11 @@ export class KbSearchService {
         .from(kbArticles)
         .where(and(...articleConditions));
       for (const row of articleRows) {
-        results.push({ kind: "article", ...row, contentText: row.contentText ?? "" });
+        results.push({
+          kind: "article",
+          ...row,
+          contentText: row.contentText ?? "",
+        });
       }
     }
 
@@ -329,7 +409,11 @@ export class KbSearchService {
           ),
         );
       for (const row of pageRows) {
-        results.push({ kind: "page", ...row, contentText: row.contentText ?? "" });
+        results.push({
+          kind: "page",
+          ...row,
+          contentText: row.contentText ?? "",
+        });
       }
     }
 
@@ -369,22 +453,31 @@ export class KbSearchService {
     query: string,
     articleIds: number[],
     pageIds: number[] = [],
-  ): Promise<KbContextPassage[]> {
-    if (!this.aiGateway.isEmbeddingConfigured() || (articleIds.length === 0 && pageIds.length === 0)) {
-      return [];
-    }
+  ): Promise<DegradableContextPassage[]> {
+    if (articleIds.length === 0 && pageIds.length === 0) return [];
     try {
-      const embedResult = await this.embedSearchQuery(query, user.orgId);
-      if (!embedResult.ok) return [];
-      const vector = embedResult.vectorLiteral;
-      const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+      const vector = this.aiGateway.isEmbeddingConfigured()
+        ? await this.embedOrDegrade(query, user.orgId)
+        : null;
+      const ordering: SQL[] =
+        vector === null
+          ? [
+              desc(this.chunkKeywordRank(query)),
+              asc(kbArticleChunks.chunkIndex),
+            ]
+          : [sql`${kbArticleChunks.embedding} <=> ${vector}::vector`];
       const scope: SQL[] = [];
       if (articleIds.length > 0) {
-        const articleScope = and(...(await this.attachmentArticleScope(user, articleIds)));
+        const articleScope = and(
+          ...(await this.attachmentArticleScope(user, articleIds)),
+        );
         if (articleScope) scope.push(articleScope);
       }
       if (pageIds.length > 0) {
-        const pagePredicate = await this.auth.visiblePagePredicate(user, "view");
+        const pagePredicate = await this.auth.visiblePagePredicate(
+          user,
+          "view",
+        );
         const pageScope = and(
           inArray(kbArticleChunks.pageId, pageIds),
           pagePredicate,
@@ -403,7 +496,10 @@ export class KbSearchService {
         .from(kbArticleChunks)
         .leftJoin(
           kbPages,
-          and(eq(kbPages.id, kbArticleChunks.pageId), eq(kbPages.orgId, kbArticleChunks.orgId)),
+          and(
+            eq(kbPages.id, kbArticleChunks.pageId),
+            eq(kbPages.orgId, kbArticleChunks.orgId),
+          ),
         )
         .leftJoin(
           kbArticles,
@@ -413,23 +509,30 @@ export class KbSearchService {
           ),
         )
         .where(and(eq(kbArticleChunks.orgId, user.orgId), or(...scope)))
-        .orderBy(distance)
-        .limit(KB_DOCUMENT_PASSAGE_ROWS);
-      return rows.flatMap((row) => {
+        .orderBy(...ordering)
+        .limit(Math.min(KB_DOCUMENT_PASSAGE_ROWS, PAGE_SIZE_CAP));
+      const degraded = vector === null ? { degraded: true as const } : {};
+      return rows.flatMap<DegradableContextPassage>((row) => {
         if (row.articleId !== null)
-          return [{
-            documentKey: kbDocumentKey("article", row.articleId),
-            documentTitle: row.articleTitle ?? "",
-            passageIndex: row.chunkIndex,
-            text: row.content,
-          }];
+          return [
+            {
+              documentKey: kbDocumentKey("article", row.articleId),
+              documentTitle: row.articleTitle ?? "",
+              passageIndex: row.chunkIndex,
+              text: row.content,
+              ...degraded,
+            },
+          ];
         if (row.pageId !== null)
-          return [{
-            documentKey: kbDocumentKey("page", row.pageId),
-            documentTitle: row.pageTitle ?? "",
-            passageIndex: row.chunkIndex,
-            text: row.content,
-          }];
+          return [
+            {
+              documentKey: kbDocumentKey("page", row.pageId),
+              documentTitle: row.pageTitle ?? "",
+              passageIndex: row.chunkIndex,
+              text: row.content,
+              ...degraded,
+            },
+          ];
         return [];
       });
     } catch (err) {
@@ -446,23 +549,45 @@ export class KbSearchService {
     query: string,
     limit: number,
   ): Promise<RetrievedSourceDocument[]> {
-    if (!this.aiGateway.isEmbeddingConfigured() || !query.trim()) return [];
+    const q = query.trim();
+    if (!q) return [];
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
     try {
       const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
-      const embedResult = await this.embedSearchQuery(query, user.orgId);
-      if (!embedResult.ok) return [];
-      const vector = embedResult.vectorLiteral;
+      const vector = this.aiGateway.isEmbeddingConfigured()
+        ? await this.embedOrDegrade(q, user.orgId)
+        : null;
 
-      const cap = limit * 4;
-      const chunkIds = await this.candidates.vectorChunkIds(user.orgId, vector, cap);
-      if (chunkIds.length === 0) return [];
+      const cap = Math.min(limit * 4, PAGE_SIZE_CAP);
+      const chunkIds =
+        vector === null
+          ? []
+          : await this.candidates.vectorChunkIds(user.orgId, vector, cap);
+      if (vector !== null && chunkIds.length === 0) return [];
 
-      const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+      const spaceFilter =
+        accessibleSpaceIds.length > 0
+          ? or(
+              isNull(kbSources.spaceId),
+              inArray(kbSources.spaceId, accessibleSpaceIds),
+            )
+          : isNull(kbSources.spaceId);
 
-      const spaceFilter = accessibleSpaceIds.length > 0
-        ? or(isNull(kbSources.spaceId), inArray(kbSources.spaceId, accessibleSpaceIds))
-        : isNull(kbSources.spaceId);
+      const conditions: SQL[] = [
+        eq(kbArticleChunks.orgId, user.orgId),
+        eq(kbArticleChunks.source, "source"),
+        isNull(kbSources.deletedAt),
+        eq(kbSources.status, "ready"),
+        eq(kbSources.orgId, user.orgId),
+      ];
+      if (spaceFilter) conditions.push(spaceFilter);
+      if (vector === null) conditions.push(this.chunkKeywordMatch(q));
+      else conditions.push(inArray(kbArticleChunks.id, chunkIds));
+
+      const ordering =
+        vector === null
+          ? desc(this.chunkKeywordRank(q))
+          : sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
 
       const rows = await this.db
         .select({
@@ -475,20 +600,11 @@ export class KbSearchService {
         })
         .from(kbArticleChunks)
         .innerJoin(kbSources, eq(kbSources.id, kbArticleChunks.sourceId))
-        .where(
-          and(
-            inArray(kbArticleChunks.id, chunkIds),
-            eq(kbArticleChunks.orgId, user.orgId),
-            eq(kbArticleChunks.source, "source"),
-            isNull(kbSources.deletedAt),
-            eq(kbSources.status, "ready"),
-            eq(kbSources.orgId, user.orgId),
-            spaceFilter,
-          ),
-        )
-        .orderBy(distance)
+        .where(and(...conditions))
+        .orderBy(ordering)
         .limit(cap);
 
+      const degraded = vector === null ? { degraded: true as const } : {};
       const byId = new Map<number, RetrievedSourceDocument>();
       for (const row of rows) {
         const existing = byId.get(row.sourceId);
@@ -499,6 +615,7 @@ export class KbSearchService {
           spaceId: row.spaceId,
           updatedAt: row.updatedAt,
           passages: [],
+          ...degraded,
         };
         document.passages.push({
           documentKey: kbDocumentKey("source", row.sourceId),

@@ -31,6 +31,15 @@ export type SloIndicator =
       readonly kind: "dead-letter";
       readonly maxDeadRowsInWindow: number;
       readonly windowHours: number;
+    }
+  | {
+      readonly kind: "outcome-rate";
+      readonly spanName: string;
+      readonly outcomeAttribute: string;
+      readonly faultOutcomes: readonly string[];
+      readonly maxFaultRatio: number;
+      readonly minFaults: number;
+      readonly windowHours: number;
     };
 
 export interface ServiceLevelObjective {

@@ -6518,6 +6518,13 @@
       "when": 1803000010661,
       "tag": "1174_kb_articles_cutover_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 1060,
+      "version": "7",
+      "when": 1803000010681,
+      "tag": "1176_kb_pages_revoke_dormant_share_tokens",
+      "breakpoints": true
     }
   ]
 }

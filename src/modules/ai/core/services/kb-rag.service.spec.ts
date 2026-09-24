@@ -170,15 +170,20 @@ describe("KbRagService", () => {
       expect(mockGateway.invokeText).not.toHaveBeenCalled();
     });
 
-    it("throws ServiceUnavailableException when embedding returns provider_unavailable", async () => {
+    it("answers from lexical ranking when embedding returns provider_unavailable, because an embedding outage must degrade retrieval rather than 503 the whole question", async () => {
       mockDb.limit.mockResolvedValueOnce([{ id: 99 }]).mockResolvedValue([chunkRow]);
       mockGateway.embedQueryWithCredit.mockResolvedValueOnce(
         makeEmbedFail("provider_unavailable"),
       );
+      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Here is how."));
 
-      await expect(
-        service.answerQuestion({ orgId: ORG_ID, question: QUESTION }),
-      ).rejects.toThrow(ServiceUnavailableException);
+      const result = await service.answerQuestion({
+        orgId: ORG_ID,
+        question: QUESTION,
+      });
+
+      expect(result.hasContext).toBe(true);
+      expect(mockGateway.invokeText).toHaveBeenCalled();
     });
 
     it("maps invokeText quota_exceeded to InsufficientAiCreditsException", async () => {

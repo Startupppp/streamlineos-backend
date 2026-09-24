@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
-import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import {
   kbArticleAttachments,
   kbArticleChunks,
@@ -10,7 +10,8 @@ import {
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayService, type EmbedQueryResult } from "../gateway/ai-gateway.service";
+import { PAGE_SIZE_CAP } from "../../../../common/pagination/list-query.schema";
 import { AiRequestCancelledException } from "./ai-service-exceptions";
 import {
   runInTenantTransaction,
@@ -46,6 +47,13 @@ export interface KbContext {
   sources: KbAnswerSource[];
   system: string;
   userContext: string;
+  degraded?: true;
+}
+
+interface KbChunkRanking {
+  similarity: SQL<number>;
+  order: SQL;
+  match?: SQL;
 }
 
 function buildKbPrompts(results: KbSearchResult[]): { system: string; user: string } {
@@ -63,6 +71,21 @@ function buildKbPrompts(results: KbSearchResult[]): { system: string; user: stri
       "If the context does not contain the answer, clearly say you don't have that information in the knowledge base. " +
       "Never invent facts that are not in the context.",
     user: context,
+  };
+}
+
+function vectorRanking(vector: string): KbChunkRanking {
+  const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+  return { similarity: sql<number>`(1 - (${distance}))::float8`, order: distance };
+}
+
+function lexicalRanking(question: string): KbChunkRanking {
+  const tsquery = sql`websearch_to_tsquery('english', ${question})`;
+  const rank = sql`ts_rank(${kbArticles.fts}, ${tsquery})`;
+  return {
+    similarity: sql<number>`(${rank})::float8`,
+    order: desc(rank),
+    match: sql`${kbArticles.fts} @@ ${tsquery}`,
   };
 }
 
@@ -122,13 +145,18 @@ export class KbRagRetrievalService {
     signal?: AbortSignal,
   ): Promise<KbContext | null> {
     const vector = await this.embedQuestion(question, orgId, signal);
-    if (vector === null) return null;
     signal?.throwIfAborted();
-    const chunks = await this.fetchChunks(orgId, vector, articleId);
+    const ranking = vector === null ? lexicalRanking(question) : vectorRanking(vector);
+    const chunks = await this.fetchChunks(orgId, ranking, articleId);
     if (chunks.length === 0) return null;
-    const sources = this.dedupeSources(chunks);
+    const sources = this.dedupeSources(chunks, vector !== null);
     const { system, user: userContext } = buildKbPrompts(chunks);
-    return { sources, system, userContext };
+    return {
+      sources,
+      system,
+      userContext,
+      ...(vector === null ? { degraded: true as const } : {}),
+    };
   }
 
   private async embedQuestion(
@@ -136,13 +164,22 @@ export class KbRagRetrievalService {
     orgId: string,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    const embedResult = await this.aiGateway.embedQueryWithCredit({
-      text,
-      orgId,
-      feature: "kb.public-embedding",
-      charge: true,
-      ...(signal !== undefined ? { signal } : {}),
-    });
+    let embedResult: EmbedQueryResult;
+    try {
+      embedResult = await this.aiGateway.embedQueryWithCredit({
+        text,
+        orgId,
+        feature: "kb.public-embedding",
+        charge: true,
+        ...(signal !== undefined ? { signal } : {}),
+      });
+    } catch (err: unknown) {
+      this.logger.warn("KB public embedding threw — lexical retrieval only", {
+        orgId,
+        error: err instanceof Error ? err.name : typeof err,
+      });
+      return null;
+    }
     if (!embedResult.ok) {
       if (embedResult.kind === "quota_exceeded")
         throw new InsufficientAiCreditsException({ message: embedResult.message });
@@ -150,20 +187,23 @@ export class KbRagRetrievalService {
         throw new ServiceUnavailableException(embedResult.message);
       if (embedResult.kind === "cancelled")
         throw new AiRequestCancelledException(embedResult.message);
-      throw new ServiceUnavailableException("AI provider is temporarily unavailable");
+      this.logger.warn("KB public embedding unavailable — lexical retrieval only", {
+        orgId,
+        kind: embedResult.kind,
+      });
+      return null;
     }
     return embedResult.vectorLiteral;
   }
 
   private async fetchChunks(
     orgId: string,
-    vector: string,
+    ranking: KbChunkRanking,
     articleId?: number,
   ): Promise<KbSearchResult[]> {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
         const conditions: SQL[] = [
           eq(kbArticleChunks.orgId, orgId),
           eq(kbArticles.status, "published"),
@@ -172,6 +212,7 @@ export class KbRagRetrievalService {
           isNull(kbSpaces.deletedAt),
         ];
         if (articleId !== undefined) conditions.push(eq(kbArticleChunks.articleId, articleId));
+        if (ranking.match !== undefined) conditions.push(ranking.match);
 
         const pool = await tx
           .select({
@@ -183,15 +224,15 @@ export class KbRagRetrievalService {
             title: kbArticles.title,
             slug: kbArticles.slug,
             attachmentName: kbArticleAttachments.fileName,
-            similarity: sql<number>`(1 - (${distance}))::float8`,
+            similarity: ranking.similarity,
           })
           .from(kbArticleChunks)
           .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
           .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
           .leftJoin(kbArticleAttachments, eq(kbArticleAttachments.id, kbArticleChunks.attachmentId))
           .where(and(...conditions))
-          .orderBy(distance)
-          .limit(SEARCH_POOL_K);
+          .orderBy(ranking.order)
+          .limit(Math.min(SEARCH_POOL_K, PAGE_SIZE_CAP));
 
         return pool.slice(0, DEFAULT_TOP_K);
       },
@@ -199,11 +240,14 @@ export class KbRagRetrievalService {
     );
   }
 
-  private dedupeSources(results: KbSearchResult[]): KbAnswerSource[] {
+  private dedupeSources(
+    results: KbSearchResult[],
+    applySimilarityFloor: boolean,
+  ): KbAnswerSource[] {
     const seen = new Set<string>();
     const sources: KbAnswerSource[] = [];
     for (const r of results) {
-      if (r.similarity < MIN_DISPLAY_SIMILARITY) continue;
+      if (applySimilarityFloor && r.similarity < MIN_DISPLAY_SIMILARITY) continue;
       const key = `${r.articleId}:${r.attachmentId ?? "body"}`;
       if (seen.has(key)) continue;
       seen.add(key);
