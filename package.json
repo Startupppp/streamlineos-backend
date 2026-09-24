@@ -344,6 +344,8 @@
     "replay:chain-cold": "node --max-old-space-size=8192 src/scripts/replay-chain-cold.mjs",
     "check:migration-rollback": "node src/scripts/check-migration-rollback.mjs",
     "check:migration-rollback:self-test": "node src/scripts/check-migration-rollback.mjs --self-test",
+    "drill:rollback": "node --env-file-if-exists=.env src/scripts/drill-rollback.mjs",
+    "drill:rollback:self-test": "node src/scripts/drill-rollback.mjs --self-test",
     "check:retention-coverage": "node --env-file-if-exists=.env src/scripts/check-retention-coverage.mjs",
     "check:retention-coverage:self-test": "node src/scripts/check-retention-coverage.mjs --self-test",
     "report:table-growth": "node --env-file-if-exists=.env src/scripts/report-table-growth.mjs",
