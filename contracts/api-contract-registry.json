@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-24T15:55:08.156Z",
+  "generatedAt": "2026-09-24T19:39:12.521Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -17255,6 +17255,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /hr/employees/{employeeId}/invite-link": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeesController_createInviteLink",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /hr/employees/{employeeId}/manager-scorecard": {
       "classification": "internal",
       "classificationOverride": null,
@@ -22744,6 +22755,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "DELETE /hr/recruitment/candidates/{candidateId}/personal-data": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RecruitmentCandidatesController_erasePersonalData",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /hr/recruitment/candidates/{candidateId}/reference-checks": {
       "classification": "internal",
       "classificationOverride": null,
@@ -23728,6 +23750,72 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "HrInterviewSchedulingController_suggestSlots",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/job-templates": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "JobTemplatesController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/job-templates": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "JobTemplatesController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/job-templates/{jobTemplateId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "JobTemplatesController_getOne",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /hr/recruitment/job-templates/{jobTemplateId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "JobTemplatesController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /hr/recruitment/job-templates/{jobTemplateId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "JobTemplatesController_remove",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/job-templates/{jobTemplateId}/apply": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "JobTemplatesController_apply",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31099,6 +31187,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /kb/hr-link/config": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbHrLinkFlagsController_config",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /kb/import-jobs": {
       "classification": "internal",
       "classificationOverride": null,
@@ -31951,6 +32050,28 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbSettingsController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/settings/hr-link-flags": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbHrLinkFlagsController_getAdmin",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /kb/settings/hr-link-flags": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbHrLinkFlagsController_update",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -38112,10 +38233,10 @@
         }
       ],
       "idempotency": {
-        "mode": "at-least-once-unfenced",
-        "key": null,
-        "replay": "Bare insert into change_requests; auth is the portal session token only. A retry creates a duplicate change request. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
-        "source": "published-contract-terms"
+        "mode": "idempotency-key",
+        "key": "Idempotency-Key",
+        "replay": "Guarded by @Idempotent(portal.client.change-request.create). A repeat carrying the same Idempotency-Key replays the stored response instead of re-executing the command.",
+        "source": "x-idempotent"
       },
       "contractEvidence": "src/modules/portal/client/portal-client.service.ts"
     },
@@ -46274,6 +46395,13 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "candidate.moved": {
+      "classification": "internal",
+      "owner": null,
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "chat.message.fanout": {
       "classification": "internal",
       "owner": null,
@@ -46475,6 +46603,13 @@
       "consumers": [
         "outbox-relay"
       ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "referral.bonus_due": {
+      "classification": "internal",
+      "owner": null,
+      "consumers": [],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
