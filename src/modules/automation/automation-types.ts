@@ -4,7 +4,7 @@ import type { ActionResult } from "./automation-action-executor.service";
 export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number];
 
 export function isValidTrigger(value: string): value is AutomationTrigger {
-  return (AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+  return AUTOMATION_TRIGGERS.some((t) => t === value);
 }
 
 export interface RuleDefinition {

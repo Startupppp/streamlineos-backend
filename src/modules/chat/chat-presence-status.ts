@@ -20,7 +20,7 @@ export type AutoPresenceStatus = (typeof AUTO_PRESENCE_STATUSES)[number];
 export const ACTIVE_PRESENCE_STATUS: AutoPresenceStatus = "ONLINE";
 
 export function isAutoPresenceStatus(value: string): value is AutoPresenceStatus {
-  return (AUTO_PRESENCE_STATUSES as readonly string[]).includes(value);
+  return AUTO_PRESENCE_STATUSES.some((s) => s === value);
 }
 
 export const PRESENCE_CLEAR_AFTER_OPTIONS = ["1h", "today", "week", "never"] as const;

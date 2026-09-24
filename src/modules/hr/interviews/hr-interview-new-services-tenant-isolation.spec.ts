@@ -56,6 +56,8 @@ function makeDb(rows: unknown[]) {
   return { db, where, findMany, findFirst, deleteFn };
 }
 
+const stub = <T,>() => ({}) as T;
+
 function isolationArg(where: jest.Mock, findMany: jest.Mock, findFirst?: jest.Mock): unknown {
   if (where.mock.calls.length > 0) return where.mock.calls[0]?.[0];
   if (findFirst && findFirst.mock.calls.length > 0) return (findFirst.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
@@ -69,7 +71,7 @@ describe("HrInterviewBookingService — cross-tenant isolation", () => {
   it("returns NotFoundException when booking token is not found (cross-tenant isolation — no token, no org access)", async () => {
     const { db } = makeDb([]);
     const mockEmail = { sendEmail: jest.fn() };
-    const svc = new HrInterviewBookingService(db, mockEmail as never);
+    const svc = new HrInterviewBookingService(db, mockEmail as never, stub<ConstructorParameters<typeof HrInterviewBookingService>[2]>());
     await expect(svc.book("nonexistent-token", { slotStart: new Date().toISOString() } as never)).rejects.toThrow(NotFoundException);
   });
 
@@ -77,7 +79,7 @@ describe("HrInterviewBookingService — cross-tenant isolation", () => {
     const linkRow = { id: 1, orgId: OWNER, token: "valid-token", status: "pending", expiresAt: new Date(Date.now() + 60_000), candidateId: 1, jobPostingId: 1, createdBy: "u1", interviewers: [{ userId: "interviewer-1" }], availableSlots: [], durationMinutes: 60, interviewType: "VIDEO", notes: null };
     const { db, findFirst } = makeDb([linkRow]);
     const mockEmail = { sendEmail: jest.fn() };
-    const svc = new HrInterviewBookingService(db, mockEmail as never);
+    const svc = new HrInterviewBookingService(db, mockEmail as never, stub<ConstructorParameters<typeof HrInterviewBookingService>[2]>());
     await expect(svc.book("valid-token", { slotStart: new Date(Date.now() + 3600_000).toISOString() } as never)).rejects.toThrow(BadRequestException);
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
@@ -174,7 +176,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const mockNotifications = { create: jest.fn().mockResolvedValue(undefined) };
     const mockEmail = { sendEmail: jest.fn() };
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
-    const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
+    const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never, stub<ConstructorParameters<typeof HrInterviewSchedulingService>[5]>());
     const input = { candidateId: 1, jobPostingId: 1, scheduledAt: new Date(Date.now() + 86400_000).toISOString(), durationMinutes: 60, format: "VIDEO" as const, interviewers: ["i1"], createMeet: false, notifyChannels: { email: false, whatsapp: false } };
     await expect(svc.scheduleInterview(ATTACKER, "actor-1", input)).rejects.toThrow(NotFoundException);
     const args = findFirst.mock.calls.flatMap((call) =>
@@ -189,7 +191,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const mockNotifications = { create: jest.fn().mockResolvedValue(undefined) };
     const mockEmail = { sendEmail: jest.fn() };
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
-    const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
+    const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never, stub<ConstructorParameters<typeof HrInterviewSchedulingService>[5]>());
     const input = { candidateId: 1, jobPostingId: 1, scheduledAt: new Date(Date.now() + 86400_000).toISOString(), durationMinutes: 60, format: "VIDEO" as const, interviewers: ["i1"], createMeet: false, notifyChannels: { email: false, whatsapp: false } };
     await svc.scheduleInterview(OWNER, "actor-1", input);
     const args = findFirst.mock.calls.flatMap((call) =>
@@ -204,7 +206,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const mockNotifications = { create: jest.fn().mockResolvedValue(undefined) };
     const mockEmail = { sendEmail: jest.fn() };
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
-    const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
+    const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never, stub<ConstructorParameters<typeof HrInterviewSchedulingService>[5]>());
 
     await expect(svc.deleteInterview(ATTACKER, 999)).rejects.toThrow(NotFoundException);
 

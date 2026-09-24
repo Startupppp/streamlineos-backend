@@ -171,7 +171,7 @@ if (missing.length > 0) {
 export const INV_ANOMALY_DETECTORS = DETECTORS;
 
 export function isAnomalyType(value: string): value is InvAnomalyType {
-  return (INV_ANOMALY_TYPES as readonly string[]).includes(value);
+  return INV_ANOMALY_TYPES.some((t) => t === value);
 }
 
 /**

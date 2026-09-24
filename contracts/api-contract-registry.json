@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-24T10:47:18.931Z",
+  "generatedAt": "2026-09-24T15:55:08.156Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -2581,7 +2581,9 @@
       "operationId": "AuthController_getJwks",
       "owner": null,
       "version": "1",
-      "consumers": ["external verifiers of our issued JWTs"],
+      "consumers": [
+        "external verifiers of our issued JWTs"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3195,7 +3197,9 @@
       "operationId": "BlogAdminController_listCategories",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3206,7 +3210,9 @@
       "operationId": "BlogAdminController_createCategory",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3217,7 +3223,9 @@
       "operationId": "BlogAdminController_updateCategory",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3228,7 +3236,9 @@
       "operationId": "BlogAdminController_deleteCategory",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3239,7 +3249,9 @@
       "operationId": "BlogAdminController_listPosts",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3250,7 +3262,9 @@
       "operationId": "BlogAdminController_createPost",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3261,7 +3275,9 @@
       "operationId": "BlogAdminController_getPost",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3272,7 +3288,9 @@
       "operationId": "BlogAdminController_updatePost",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3283,7 +3301,9 @@
       "operationId": "BlogAdminController_deletePost",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3294,7 +3314,9 @@
       "operationId": "BlogController_getPostBySlug",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3320,7 +3342,9 @@
       "operationId": "BlogController_getAdjacentPosts",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3346,7 +3370,9 @@
       "operationId": "BlogController_listCategories",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3366,7 +3392,9 @@
       "operationId": "BlogController_feed",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -7238,46 +7266,6 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /careers": {
-      "classification": "published",
-      "classificationOverride": null,
-      "xExposure": "public",
-      "operationId": "CareersController_list",
-      "owner": null,
-      "version": "1",
-      "consumers": ["the public careers page"],
-      "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [],
-      "idempotency": {
-        "mode": "safe",
-        "key": null,
-        "replay": "Safe method — repeating the request produces no additional side effect.",
-        "source": "http-method"
-      },
-      "contractEvidence": null
-    },
-    "POST /careers/apply": {
-      "classification": "published",
-      "classificationOverride": null,
-      "xExposure": "public",
-      "operationId": "CareersController_apply",
-      "owner": null,
-      "version": "1",
-      "consumers": ["external applicants"],
-      "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [],
-      "idempotency": {
-        "mode": "advisory-dedup-unfenced",
-        "key": null,
-        "replay": "A SELECT on (candidate_id, job_posting_id) returns {alreadyApplied:true} instead of inserting, but no unique index backs it — concurrent retries can both insert.",
-        "source": "published-contract-terms"
-      },
-      "contractEvidence": "src/modules/careers/careers.service.ts"
-    },
     "POST /careers/resumes/upload": {
       "classification": "published",
       "classificationOverride": null,
@@ -7285,7 +7273,9 @@
       "operationId": "CareersController_uploadResume",
       "owner": null,
       "version": "1",
-      "consumers": ["external applicants"],
+      "consumers": [
+        "external applicants"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -7293,10 +7283,10 @@
       "idempotency": {
         "mode": "at-least-once-unfenced",
         "key": null,
-        "replay": "Bare insert into candidate_documents_vault. The storage key is deterministic (candidateId/fileName) so the object overwrites, but the vault row does not — a retry after a timeout leaves a second document row pointing at the same object. No server-side replay fence.",
+        "replay": "Uploads a file to object storage then inserts a row into candidate_documents_vault. The storage key is deterministic (candidateId/filename) so the file write converges, but the DB insert has no unique constraint or conflict target — a retry creates a second vault record. No server-side replay fence: a client that retries after a timeout must expect a duplicate document row. NOTE: route carries @UseGuards(JwtAuthGuard) and is scoped to the caller's orgId; x-exposure is undeclared (should be permissioned — this is an HR portal route, not an external applicant route).",
         "source": "published-contract-terms"
       },
-      "contractEvidence": "src/modules/careers/careers.service.ts"
+      "contractEvidence": "src/modules/careers/careers.service.ts (uploadResume)"
     },
     "POST /chat": {
       "classification": "internal",
@@ -9813,7 +9803,9 @@
       "operationId": "CrmConsentController_listForContact",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -9824,7 +9816,9 @@
       "operationId": "CrmConsentController_record",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -9835,7 +9829,9 @@
       "operationId": "CrmConsentController_listEvents",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -9846,7 +9842,9 @@
       "operationId": "CrmConsentController_countMissing",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -9857,7 +9855,9 @@
       "operationId": "CrmPublicConsentController_unsubscribe",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -9877,7 +9877,9 @@
       "operationId": "CrmPublicConsentController_unsubscribeByLink",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -9903,7 +9905,9 @@
       "operationId": "CrmPublicConsentController_unsubscribeOneClick",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -10600,7 +10604,9 @@
       "operationId": "CrmMailboxController_push",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound mail provider push notifications"],
+      "consumers": [
+        "inbound mail provider push notifications"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -13407,6 +13413,72 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /cron/recruitment-scheduled-reports": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_getRecruitmentScheduledReports",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/recruitment-scheduled-reports": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_postRecruitmentScheduledReports",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /cron/recruitment-sequence-steps": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_getRecruitmentSequenceSteps",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/recruitment-sequence-steps": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_postRecruitmentSequenceSteps",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /cron/recruitment-sla-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_getRecruitmentSlaSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/recruitment-sla-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_postRecruitmentSlaSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /cron/retention-delete-sweep": {
       "classification": "internal",
       "classificationOverride": null,
@@ -13766,7 +13838,9 @@
       "operationId": "CsatController_get",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -13777,7 +13851,9 @@
       "operationId": "CsatController_update",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -13788,7 +13864,9 @@
       "operationId": "CsatController_remove",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -13799,7 +13877,9 @@
       "operationId": "CsatController_listResponses",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -13810,7 +13890,9 @@
       "operationId": "CsatController_submitResponse",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -22189,6 +22271,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /hr/recruitment/analytics/funnel.csv": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RecruitingAnalyticsController_funnelCsv",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /hr/recruitment/automations": {
       "classification": "internal",
       "classificationOverride": null,
@@ -22354,11 +22447,66 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /hr/recruitment/candidates/{candidateId}/assessments": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "AssessmentController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/candidates/{candidateId}/assessments": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "AssessmentController_invite",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/candidates/{candidateId}/bgv": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BgvController_read",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "PATCH /hr/recruitment/candidates/{candidateId}/bgv-status": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "RecruitmentCandidatesController_updateBgvStatus",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/candidates/{candidateId}/bgv/initiate": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BgvController_initiate",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/candidates/{candidateId}/bgv/record": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BgvController_record",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -22447,6 +22595,28 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "RecruitmentCandidateDocumentsController_upload",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/candidates/{candidateId}/identity": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IdentityController_read",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/candidates/{candidateId}/identity/verify": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IdentityController_verify",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -22783,6 +22953,61 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /hr/recruitment/candidates/{candidateId}/voice-screens": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "VoiceScreenController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/candidates/{candidateId}/voice-screens": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "VoiceScreenController_request",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/candidates/{candidateId}/whatsapp": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "WhatsappController_state",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PUT /hr/recruitment/candidates/{candidateId}/whatsapp/consent": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "WhatsappController_recordConsent",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/candidates/{candidateId}/whatsapp/send": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "WhatsappController_send",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /hr/recruitment/candidates/bulk-import": {
       "classification": "internal",
       "classificationOverride": null,
@@ -22832,6 +23057,61 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "RecruitmentCandidatesController_importCandidates",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/developer/deliveries": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "AtsSandboxController_recentDeliveries",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/developer/directory-sync": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "AtsSandboxController_directorySync",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/developer/events": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "AtsSandboxController_catalogue",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/developer/subscriptions/{subscriptionId}/deliveries/{deliveryId}/signature": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "AtsSandboxController_signature",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/developer/subscriptions/{subscriptionId}/replay": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "AtsSandboxController_replay",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -22909,6 +23189,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "RecruitmentAutomationController_enrollSequence",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/email-sequences/{sequenceId}/metrics": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RecruitmentAutomationController_sequenceMetrics",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -23124,6 +23415,50 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /hr/recruitment/integrations": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RecruitmentIntegrationsController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PUT /hr/recruitment/integrations/{platform}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RecruitmentIntegrationsController_connect",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /hr/recruitment/integrations/{platform}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RecruitmentIntegrationsController_disconnect",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/integrations/{platform}/inbound-secret": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RecruitmentIntegrationsController_rotateInboundSecret",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /hr/recruitment/internal-jobs": {
       "classification": "internal",
       "classificationOverride": null,
@@ -23140,6 +23475,39 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "RecruitmentJobsController_internalApply",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/internal-mobility/approvals": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "in-service",
+      "operationId": "InternalMobilityController_approvals",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/internal-mobility/approvals/{applicationId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "in-service",
+      "operationId": "InternalMobilityController_decide",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/internal-mobility/my-applications": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "in-service",
+      "operationId": "InternalMobilityController_myApplications",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -23256,6 +23624,39 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /hr/recruitment/interviews/{interviewId}/transcript": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "InterviewTranscriptController_read",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/interviews/{interviewId}/transcript": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "InterviewTranscriptController_store",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /hr/recruitment/interviews/{interviewId}/transcript": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "InterviewTranscriptController_erase",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /hr/recruitment/interviews/schedule": {
       "classification": "internal",
       "classificationOverride": null,
@@ -23316,6 +23717,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "HrInterviewsController_stats",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/interviews/suggest-slots": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "HrInterviewSchedulingController_suggestSlots",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -23932,6 +24344,39 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "HrScorecardsController_deleteTemplate",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/sourcing/extension-token": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "SourcingExtensionController_issueExtensionToken",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/recruitment/sourcing/profiles": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "SourcingExtensionController_saveProfile",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/recruitment/sourcing/profiles/lookup": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "SourcingExtensionController_lookupProfile",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -25595,7 +26040,9 @@
       "operationId": "IntegrationsGitController_webhook",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound GitHub/GitLab webhooks"],
+      "consumers": [
+        "inbound GitHub/GitLab webhooks"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -30157,28 +30604,6 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /kb/article-migration/preview": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticleMigrationController_preview",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/article-migration/run": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticleMigrationController_run",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "GET /kb/articles": {
       "classification": "internal",
       "classificationOverride": null,
@@ -32144,7 +32569,9 @@
       "operationId": "LeadsIngestController_ingest",
       "owner": null,
       "version": "1",
-      "consumers": ["external lead sources holding an API key (ApiKeyGuard)"],
+      "consumers": [
+        "external lead sources holding an API key (ApiKeyGuard)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -34662,7 +35089,9 @@
       "operationId": "OrganizationController_acceptInvitation",
       "owner": null,
       "version": "1",
-      "consumers": ["invitees following an emailed invitation link"],
+      "consumers": [
+        "invitees following an emailed invitation link"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -34682,7 +35111,9 @@
       "operationId": "OrganizationController_declineInvitation",
       "owner": null,
       "version": "1",
-      "consumers": ["invitees following an emailed invitation link"],
+      "consumers": [
+        "invitees following an emailed invitation link"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -34702,7 +35133,9 @@
       "operationId": "OrganizationController_validateInvitationToken",
       "owner": null,
       "version": "1",
-      "consumers": ["invitees following an emailed invitation link"],
+      "consumers": [
+        "invitees following an emailed invitation link"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -37357,7 +37790,9 @@
       "operationId": "PlatformController_submitContact",
       "owner": null,
       "version": "1",
-      "consumers": ["the public contact form"],
+      "consumers": [
+        "the public contact form"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -37619,7 +38054,9 @@
       "operationId": "PortalAuthController_acceptInvitation",
       "owner": null,
       "version": "1",
-      "consumers": ["external project clients redeeming a portal invitation"],
+      "consumers": [
+        "external project clients redeeming a portal invitation"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -37835,6 +38272,80 @@
         "replay": "Safe method — repeating the request produces no additional side effect.",
         "source": "http-method"
       },
+      "contractEvidence": null
+    },
+    "POST /public/assessment-score/{orgSlug}": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "AssessmentScoreController_receive",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "unauthenticated external users via share links, embedded widgets and emailed forms"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgSlug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": null,
+      "contractEvidence": null
+    },
+    "POST /public/bgv-callback/{orgSlug}": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BgvCallbackController_receive",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "unauthenticated external users via share links, embedded widgets and emailed forms"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgSlug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": null,
+      "contractEvidence": null
+    },
+    "POST /public/board-apply/{orgSlug}/{platform}": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BoardApplyIngressController_receive",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "unauthenticated external users via share links, embedded widgets and emailed forms"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgSlug",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "platform",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": null,
       "contractEvidence": null
     },
     "POST /public/build-forms/{publicToken}/submissions": {
@@ -39438,6 +39949,29 @@
       },
       "contractEvidence": null
     },
+    "POST /public/voice-screen-result/{orgSlug}": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "VoiceScreenResultController_receive",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "unauthenticated external users via share links, embedded widgets and emailed forms"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgSlug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": null,
+      "contractEvidence": null
+    },
     "POST /public/waitlist": {
       "classification": "published",
       "classificationOverride": null,
@@ -39459,6 +39993,29 @@
         "source": "published-contract-terms"
       },
       "contractEvidence": "src/modules/public/waitlist.service.ts"
+    },
+    "POST /public/whatsapp-inbound/{orgSlug}": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "WhatsappInboundController_receive",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "unauthenticated external users via share links, embedded widgets and emailed forms"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgSlug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": null,
+      "contractEvidence": null
     },
     "GET /public/whiteboard-links/{token}": {
       "classification": "published",
@@ -42032,7 +42589,9 @@
       "operationId": "SupportCsatController_getCsatRequest",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT links delivered by email"],
+      "consumers": [
+        "external CSAT links delivered by email"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -42058,7 +42617,9 @@
       "operationId": "SupportCsatController_submitCsat",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT links delivered by email"],
+      "consumers": [
+        "external CSAT links delivered by email"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -42128,7 +42689,9 @@
       "operationId": "SupportChannelsController_inboundEmail",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound email/SMS/WhatsApp provider push"],
+      "consumers": [
+        "inbound email/SMS/WhatsApp provider push"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -42154,7 +42717,9 @@
       "operationId": "SupportChannelsController_inboundSms",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound email/SMS/WhatsApp provider push"],
+      "consumers": [
+        "inbound email/SMS/WhatsApp provider push"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -42180,7 +42745,9 @@
       "operationId": "SupportChannelsController_inboundWhatsApp",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound email/SMS/WhatsApp provider push"],
+      "consumers": [
+        "inbound email/SMS/WhatsApp provider push"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -44890,7 +45457,9 @@
       "operationId": "WebhooksController_get",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -44901,7 +45470,9 @@
       "operationId": "WebhooksController_update",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -44912,7 +45483,9 @@
       "operationId": "WebhooksController_remove",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -44923,7 +45496,9 @@
       "operationId": "WebhooksController_listLogs",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -44934,7 +45509,9 @@
       "operationId": "WebhooksController_retryLog",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -44945,7 +45522,9 @@
       "operationId": "WebhooksController_rotateSecret",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -44956,7 +45535,9 @@
       "operationId": "CalendarProviderWebhookController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -44976,7 +45557,9 @@
       "operationId": "EmailWebhookController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -45002,7 +45585,9 @@
       "operationId": "CarrierWebhooksPublicController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -45033,7 +45618,9 @@
       "operationId": "PaymentWebhooksPublicController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -45069,7 +45656,9 @@
       "operationId": "RazorpayWebhookController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -45095,7 +45684,9 @@
       "operationId": "StripeWebhookController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -45466,6 +46057,72 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /careers": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CareersController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public careers page"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
+    "POST /careers/apply": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CareersController_apply",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "external applicants"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": null,
+        "replay": "A SELECT on (candidate_id, job_posting_id) returns {alreadyApplied:true} instead of inserting, but no unique index backs it — concurrent retries can both insert.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/careers/careers.service.ts"
+    },
+    "GET /kb/article-migration/preview": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticleMigrationController_preview",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/article-migration/run": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticleMigrationController_run",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/workspaces": {
       "classification": "internal",
       "classificationOverride": null,
@@ -45570,7 +46227,9 @@
     "accounting.journal.posted": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -45584,21 +46243,27 @@
     "build.project-webhook.delivery.requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "build.release.published": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "build.ticket.status_changed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -45612,70 +46277,90 @@
     "chat.message.fanout": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "crm.report.schedule_due": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "deal.closed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "expense.export.requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "gdpr.export.requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "hr.helpdesk.ticket_assigned": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "hr.helpdesk.ticket_created": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "hr.helpdesk.ticket_status_changed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "inventory.adjustment.approval_requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "inventory.lot.expiring": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -45689,7 +46374,9 @@
     "inventory.recall.opened": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -45728,66 +46415,102 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "job.board.publish_requested": {
+      "classification": "internal",
+      "owner": null,
+      "consumers": [
+        "outbox-relay"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "job.board.unpublish_requested": {
+      "classification": "internal",
+      "owner": null,
+      "consumers": [
+        "outbox-relay"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "kb.content.index": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "organization.setup.completed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "payroll.run.payout-posting-intent": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "payroll.run.posting-intent": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "realtime.token-revocation": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "sign.bulk_send.queued": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "sign.envelope.completed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "support.ticket.resolved": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "survey.response.submitted": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     }
@@ -45817,7 +46540,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/deals/lib/deal-update-effects.ts"],
+      "emittedFrom": [
+        "src/modules/deals/lib/deal-update-effects.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -45831,7 +46556,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/deals/lib/deal-update-effects.ts"],
+      "emittedFrom": [
+        "src/modules/deals/lib/deal-update-effects.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -45862,7 +46589,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/leads/leads.service.ts"],
+      "emittedFrom": [
+        "src/modules/leads/leads.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -45876,7 +46605,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/leads/leads.service.ts"],
+      "emittedFrom": [
+        "src/modules/leads/leads.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -45890,7 +46621,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/hr/time/leave-decision-effects.service.ts"],
+      "emittedFrom": [
+        "src/modules/hr/time/leave-decision-effects.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -45904,7 +46637,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/build/core/projects-members.service.ts"],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -45918,7 +46653,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/build/core/projects-members.service.ts"],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -45932,7 +46669,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/build/core/projects-members.service.ts"],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -46104,7 +46843,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/build/core/projects-tickets.service.ts"],
+      "emittedFrom": [
+        "src/modules/build/core/projects-tickets.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,

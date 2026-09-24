@@ -128,15 +128,15 @@ export function parseDiarisedTranscript(transcript: string): DiarisedTranscript 
     const match = LABELLED_LINE.exec(line);
     if (match) {
       labelled += 1;
-      const label = match[1]!.trim();
+      const label = match[1].trim();
       const key = speakerKey(label);
       if (!firstSpelling.has(key)) firstSpelling.set(key, label);
-      turns.push({ speaker: firstSpelling.get(key)!, text: match[2] ?? "" });
+      turns.push({ speaker: firstSpelling.get(key) ?? label, text: match[2] ?? "" });
     } else if (turns.length > 0) {
       // A continuation of the turn above. Credited to the speaker who is
       // already talking rather than dropped — dropping it would understate
       // whoever writes in paragraphs, which is the person who talked most.
-      const last = turns[turns.length - 1]!;
+      const last = turns[turns.length - 1];
       turns[turns.length - 1] = { speaker: last.speaker, text: `${last.text}\n${line}` };
     }
 

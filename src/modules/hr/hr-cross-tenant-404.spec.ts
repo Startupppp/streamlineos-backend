@@ -178,6 +178,7 @@ describe("hr — a write against an id the caller's org does not own answers 404
         stub<ConstructorParameters<typeof HrInterviewSchedulingService>[2]>(),
         stub<ConstructorParameters<typeof HrInterviewSchedulingService>[3]>(),
         stub<ConstructorParameters<typeof HrInterviewSchedulingService>[4]>(),
+        stub<ConstructorParameters<typeof HrInterviewSchedulingService>[5]>(),
       );
 
     it("refuses an interview the org does not own, and scopes the write to the caller's org", async () => {

@@ -40,7 +40,7 @@ export const ATTRIBUTION_MODELS = [
 export type AttributionModel = (typeof ATTRIBUTION_MODELS)[number];
 
 export function isAttributionModel(value: string): value is AttributionModel {
-  return (ATTRIBUTION_MODELS as readonly string[]).includes(value);
+  return ATTRIBUTION_MODELS.some((m) => m === value);
 }
 
 /** What each model claims, in the words a report should show beside it. */

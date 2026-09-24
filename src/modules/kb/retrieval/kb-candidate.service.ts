@@ -5,18 +5,12 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
-import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
+import { supportArticlePredicate, wikiPagePredicate } from "../help-centre/kb-article-page-scope";
 import { queryVectorChunkIds } from "./kb-vector-candidate-query";
 import { buildArticleRestrictionPredicate } from "./kb-article-restriction-predicate";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
-
-export const KB_HELP_CENTRE_CONTENT_TYPE = "support_article";
-
-export function wikiPagePredicate(): SQL {
-  return sql`(${isNull(kbPages.deletedAt)} AND ${ne(kbPages.contentType, KB_HELP_CENTRE_CONTENT_TYPE)})`;
-}
 
 @Injectable()
 export class KbCandidateService {

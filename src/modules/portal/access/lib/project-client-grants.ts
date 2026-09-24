@@ -88,7 +88,7 @@ function buildPermissionConditions(permission: string | undefined) {
   return permission
     .split(",")
     .filter((k): k is GrantCapabilityKey =>
-      (GRANT_CAPABILITY_KEYS as readonly string[]).includes(k),
+      GRANT_CAPABILITY_KEYS.some((key) => key === k),
     )
     .map((key) => eq(CAPABILITY_COLUMN_MAP[key], true));
 }

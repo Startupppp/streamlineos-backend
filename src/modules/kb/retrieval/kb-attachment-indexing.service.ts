@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   kbArticleChunks,
   kbPageAttachments,
@@ -27,22 +27,6 @@ import {
   updateDerivedChunkAcl,
 } from "./kb-derived-chunk-state";
 
-/**
- * The three derived chunk families: attachment text, wiki-source text, page-document text.
- *
- * Each one had neither of the two things `KbIndexingService` gives a body. (1) No
- * skip-if-unchanged: every call re-embedded byte-identical input and re-charged for it at
- * full price, so `POST /kb/articles/reindex-all` run twice while debugging a retrieval
- * complaint billed the tenant twice for every attachment it owns. (2) No `acl_revision` on
- * the insert, so the rows took the column default of 1 while `articleVectorCandidates` joins
- * `kb_article_chunks.acl_revision = kb_pages.acl_revision` with `=`. An attachment indexed
- * after its article's revision had moved past 1 — any space membership change calls
- * `bumpSpaceAclRevision` — was written at 1, matched nothing, and stayed out of vector
- * retrieval until an unrelated space-wide bump happened to resync it.
- *
- * Both are fixed the same way the body families do it: hash the extracted text, compare it to
- * what is stored, and carry the parent's current revision on every row written.
- */
 @Injectable()
 export class KbAttachmentIndexingService {
   private readonly logger = new Logger(KbAttachmentIndexingService.name);
@@ -143,6 +127,7 @@ export class KbAttachmentIndexingService {
         fileName: kbPageAttachments.fileName,
         deletedAt: kbPageAttachments.deletedAt,
         pageAclRevision: kbPages.aclRevision,
+        pageDeletedAt: kbPages.deletedAt,
       })
       .from(kbPageAttachments)
       .leftJoin(
@@ -163,6 +148,7 @@ export class KbAttachmentIndexingService {
     if (
       !attachment ||
       attachment.deletedAt !== null ||
+      attachment.pageDeletedAt !== null ||
       !this.aiGateway.isEmbeddingConfigured()
     ) {
       await this.removeAttachmentChunks(orgId, attachmentId);
@@ -271,7 +257,11 @@ export class KbAttachmentIndexingService {
       return { chunks: 0, warning: null };
 
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+      where: and(
+        eq(kbPages.id, pageId),
+        eq(kbPages.orgId, orgId),
+        isNull(kbPages.deletedAt),
+      ),
       columns: {
         visibility: true,
         projectId: true,

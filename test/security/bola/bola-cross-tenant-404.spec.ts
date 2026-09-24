@@ -10,6 +10,8 @@ import type { Db } from "src/db/drizzle.module";
  * assert the type of the thrown exception, not merely that one was thrown.
  */
 
+const stub = <T,>() => ({}) as T;
+
 const ORG_ATTACKER = "org-b-attacker";
 const ORG_VICTIM = "org-a-victim";
 const VICTIM_JOB_ID = 4242;
@@ -78,7 +80,7 @@ function makeProbe(jobRow: { id: number } | undefined): Probe {
   } as unknown as PlanLimitsService;
 
   return {
-    service: new RecruitmentJobsService(db, cache, planLimits),
+    service: new RecruitmentJobsService(db, cache, planLimits, stub<ConstructorParameters<typeof RecruitmentJobsService>[3]>(), stub<ConstructorParameters<typeof RecruitmentJobsService>[4]>()),
     lookupWhere,
     deleteWhere,
   };

@@ -69,18 +69,18 @@ export function inverseNormalCdf(p: number): number {
 
   if (p < pLow) {
     const q = Math.sqrt(-2 * Math.log(p));
-    return (((((c[0]! * q + c[1]!) * q + c[2]!) * q + c[3]!) * q + c[4]!) * q + c[5]!) /
-      ((((d[0]! * q + d[1]!) * q + d[2]!) * q + d[3]!) * q + 1);
+    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+      ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
   }
   if (p > pHigh) {
     const q = Math.sqrt(-2 * Math.log(1 - p));
-    return -(((((c[0]! * q + c[1]!) * q + c[2]!) * q + c[3]!) * q + c[4]!) * q + c[5]!) /
-      ((((d[0]! * q + d[1]!) * q + d[2]!) * q + d[3]!) * q + 1);
+    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+      ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
   }
   const q = p - 0.5;
   const r = q * q;
-  return (((((a[0]! * r + a[1]!) * r + a[2]!) * r + a[3]!) * r + a[4]!) * r + a[5]!) * q /
-    (((((b[0]! * r + b[1]!) * r + b[2]!) * r + b[3]!) * r + b[4]!) * r + 1);
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+    (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
 }
 
 function round(value: number): number {

@@ -4,7 +4,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { and, eq, sql, type SQL } from "drizzle-orm";
-import { kbArticles } from "../../../src/db/schema";
+import { kbPages } from "../../../src/db/schema";
 import { KbSearchService } from "../../../src/modules/kb/retrieval/kb-search.service";
 import { KbCandidateService } from "../../../src/modules/kb/retrieval/kb-candidate.service";
 import { KbAskService } from "../../../src/modules/kb/retrieval/kb-ask.service";
@@ -65,8 +65,8 @@ const VICTIM_ARTICLE = {
 const FIXTURES = {
   articles: [OWNED_ARTICLE, VICTIM_ARTICLE],
   chunks: [
-    { id: 10, articleId: OWNED_ARTICLE.id, content: MINE },
-    { id: 20, articleId: VICTIM_ARTICLE.id, content: VICTIM_SECRET },
+    { id: 10, pageId: OWNED_ARTICLE.id, content: MINE },
+    { id: 20, pageId: VICTIM_ARTICLE.id, content: VICTIM_SECRET },
   ],
   annChunkIds: [20, 10],
   keywordArticleIds: [OWNED_ARTICLE.id, VICTIM_ARTICLE.id],
@@ -140,7 +140,11 @@ function buildSearch(scope: DataScope) {
 }
 
 const articleQueries = (recorded: RecordedQuery[]): RecordedQuery[] =>
-  recorded.filter((q) => q.table === "kb_articles" || q.joins.includes("kb_articles"));
+  recorded.filter(
+    (q) =>
+      (q.table === "kb_pages" || (q.table === "kb_article_chunks" && q.joins.includes("kb_pages"))) &&
+      (ownerBoundIn(q) !== undefined || refusesEverything(q)),
+  );
 
 describe("BOLA sweep — RAG retrieval binds the direct read's object-level scope", () => {
   it("an asker scoped to 'own' receives no chunk from an article they do not own", async () => {
@@ -177,7 +181,7 @@ describe("BOLA sweep — RAG retrieval binds the direct read's object-level scop
     await search.retrieveTopArticles(asker(), "compensation", 6);
 
     const vector = recorded.find(
-      (q) => q.table === "kb_article_chunks" && q.joins.includes("kb_articles"),
+      (q) => q.table === "kb_article_chunks" && q.joins.includes("kb_pages"),
     );
     expect(vector).toBeDefined();
     expect(ownerBoundIn(vector as RecordedQuery)).toBe(ASKER_MEMBERSHIP);
@@ -219,10 +223,10 @@ describe("BOLA sweep — the RAG predicate is the direct read's predicate", () =
   it("the predicate is the column the direct read narrows on", () => {
     const filter = articleOwnerScopeFilter(scopedRead(ORG, "own"), asker());
     const compiled = dialect.sqlToQuery(filter as SQL);
-    expect(compiled.sql).toContain('"kb_articles"."owner_membership_id"');
+    expect(compiled.sql).toContain('"kb_pages"."owner_membership_id"');
     // The filter is a scoped read, so it binds the tenant alongside the owner.
     expect(compiled.params).toEqual([ORG, ASKER_MEMBERSHIP]);
-    expect(compiled.sql).toContain('"kb_articles"."org_id"');
+    expect(compiled.sql).toContain('"kb_pages"."org_id"');
   });
 
   it("both `GET /kb/search` and retrieval spend the filter, not a post-filter", () => {
@@ -232,7 +236,7 @@ describe("BOLA sweep — the RAG predicate is the direct read's predicate", () =
     );
     expect(source).toContain("articleOwnerScopeFilter(read, user)");
     expect(source).toContain("const ownerFilter = await this.articleOwnerFilterFor(user)");
-    expect(source).toContain("principal, ownerFilter, spaceId)");
+    expect(source).toMatch(/principal,\s*ownerFilter,\s*spaceId/);
     expect(source).toContain("articleConditions.push(ownerFilter)");
   });
 
@@ -284,9 +288,9 @@ describe("BOLA sweep — the RAG fix keeps the measured retrieval shape", () => 
     expect(executed.some((s) => s.includes("hnsw.iterative_scan"))).toBe(true);
   });
 
-  it("the owner predicate adds no join — it lands on the already-joined kb_articles", () => {
+  it("the owner predicate adds no join — it lands on the already-joined kb_pages, and the article/page cutover left exactly one innerJoin where there were two", () => {
     const joins = candidates.match(/innerJoin\(/g) ?? [];
-    expect(joins.length).toBe(2);
+    expect(joins.length).toBe(1);
     expect(candidates).toContain("if (ownerScopeFilter) conditions.push(ownerScopeFilter)");
   });
 });
@@ -340,7 +344,7 @@ describe("BOLA sweep — POST /kb/ask context window", () => {
     await ask.ask(asker(), { question: "what is the comp plan?" });
 
     const citationQuery = recorded
-      .filter((q) => q.table === "kb_articles")
+      .filter((q) => q.table === "kb_pages")
       .at(-1) as RecordedQuery;
     expect(ownerBoundIn(citationQuery)).toBe(ASKER_MEMBERSHIP);
   });
@@ -362,10 +366,10 @@ describe("BOLA sweep — POST /kb/ask context window", () => {
 describe("BOLA sweep — the scoped predicate is the reason, proven by construction", () => {
   it("an unscoped article read would return the victim's row from the same fixtures", () => {
     const dialect = new PgDialect();
-    const unscoped = and(eq(kbArticles.orgId, ORG));
+    const unscoped = and(eq(kbPages.orgId, ORG));
     const compiled = dialect.sqlToQuery(unscoped as SQL);
     const query: RecordedQuery = {
-      table: "kb_articles",
+      table: "kb_pages",
       joins: [],
       sql: compiled.sql,
       params: compiled.params,

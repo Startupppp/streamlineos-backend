@@ -22,7 +22,7 @@ export interface CadenceSpec {
 }
 
 export function isReportCadence(value: string): value is ReportCadence {
-  return (REPORT_CADENCES as readonly string[]).includes(value);
+  return REPORT_CADENCES.some((c) => c === value);
 }
 
 /**

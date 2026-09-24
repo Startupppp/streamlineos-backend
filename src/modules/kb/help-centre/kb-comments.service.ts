@@ -32,7 +32,6 @@ export class KbCommentsService {
     const conditions = [
       eq(kbPageComments.orgId, user.orgId),
       eq(kbPageComments.pageId, articleId),
-      supportArticlePredicate(),
     ];
     if (cursor) conditions.push(keysetAfterId(kbPageComments.createdAt, kbPageComments.id, cursor));
     const rows = await this.db
@@ -54,7 +53,7 @@ export class KbCommentsService {
         and(eq(kbPages.orgId, kbPageComments.orgId), eq(kbPages.id, kbPageComments.pageId)),
       )
       .leftJoin(users, eq(users.id, kbPageComments.authorId))
-      .where(and(...conditions))
+      .where(and(supportArticlePredicate(), ...conditions))
       .orderBy(asc(kbPageComments.createdAt), asc(kbPageComments.id))
       .limit(PAGE_SIZE);
     return rows;

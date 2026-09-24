@@ -123,19 +123,23 @@ describe("KbSearchService — ACL enforced as SQL predicate before model context
   });
 
   it("articleKeywordCandidates binds orgId as an equality predicate", () => {
-    expect(kbCandidateSrc).toMatch(/eq\s*\(\s*kbArticles\.orgId\s*,\s*orgId\s*\)/);
+    expect(kbCandidateSrc).toMatch(/eq\s*\(\s*kbPages\.orgId\s*,\s*orgId\s*\)/);
   });
 
   it("articleVectorCandidates applies articleRestrictionFilter with orgId before returning candidates", () => {
     expect(kbCandidateSrc).toMatch(/articleRestrictionFilter\s*\(\s*orgId\s*,\s*principal\s*\)/);
   });
 
-  it("final article fetch in retrieveTopArticles binds orgId as equality predicate", () => {
-    expect(kbSearchSrc).toMatch(/eq\s*\(\s*kbArticles\.orgId\s*,\s*user\.orgId\s*\)/);
+  it("both final fetches in retrieveTopArticles bind orgId, now that articles and pages share kb_pages", () => {
+    const bindings = kbSearchSrc.match(/eq\s*\(\s*kbPages\.orgId\s*,\s*user\.orgId\s*\)/g) ?? [];
+
+    expect(bindings.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("final page fetch in retrieveTopArticles binds orgId as equality predicate", () => {
-    expect(kbSearchSrc).toMatch(/eq\s*\(\s*kbPages\.orgId\s*,\s*user\.orgId\s*\)/);
+  it("separates the two final fetches by content type, so one org-bound query cannot serve both surfaces", () => {
+    expect(kbSearchSrc).toMatch(/supportArticlePredicate\s*\(\s*\)/);
+    expect(kbSearchSrc).toMatch(/wikiPagePredicate\s*\(\s*\)/);
+    expect(kbSearchSrc).not.toMatch(/kbArticles\./);
   });
 });
 

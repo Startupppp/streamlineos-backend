@@ -118,9 +118,6 @@ describe("KbIngestionDeleteConsumer", () => {
     });
 
     it("anchors article and page deletes on the same column, so neither content type can be missed", async () => {
-      getRunMock().mockImplementation(
-        async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<void>) => fn(tx),
-      );
       const { consumer } = buildConsumer();
 
       const rendered: string[] = [];

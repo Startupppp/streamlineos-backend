@@ -344,6 +344,7 @@ describe("KB article attachments — the read stays on the bucket /storage/uploa
       fileName: "handbook.txt",
       deletedAt: null,
       pageAclRevision: 4,
+      pageDeletedAt: null,
     };
     const db = {
       select: () => ({

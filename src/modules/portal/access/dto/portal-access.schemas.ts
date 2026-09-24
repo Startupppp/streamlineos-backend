@@ -40,7 +40,7 @@ export const listGrantsQuerySchema = z.object({
     .superRefine((v, ctx) => {
       if (!v) return;
       for (const key of v.split(",")) {
-        if (!(GRANT_CAPABILITY_KEYS as readonly string[]).includes(key)) {
+        if (!GRANT_CAPABILITY_KEYS.some((k) => k === key)) {
           ctx.addIssue({ code: "custom", message: `Unknown permission key: ${key}` });
         }
       }

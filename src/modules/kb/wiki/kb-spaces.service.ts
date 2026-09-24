@@ -17,7 +17,11 @@ import {
   sql,
 } from "drizzle-orm";
 import { kbSpaces, kbSpaceMembers, kbPages, kbPageLinks } from "../../../db/schema";
-import { SUPPORT_ARTICLE_CONTENT_TYPE, supportArticlePredicate } from "../help-centre/kb-article-page-scope";
+import {
+  supportArticlePredicate,
+  wikiContentTypeOnly,
+  wikiPagePredicate,
+} from "../help-centre/kb-article-page-scope";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
@@ -48,8 +52,6 @@ import {
 } from "../../../common/pagination/keyset";
 
 const SPACE_CONTENT_BATCH_SIZE = 500;
-
-const isWikiPage = () => ne(kbPages.contentType, SUPPORT_ARTICLE_CONTENT_TYPE);
 
 type SpaceRow = typeof kbSpaces.$inferSelect;
 
@@ -190,8 +192,7 @@ export class KbSpacesService {
           and(
             eq(kbPages.orgId, user.orgId),
             inArray(kbPages.spaceId, spaceIds),
-            isNull(kbPages.deletedAt),
-            isWikiPage(),
+            wikiPagePredicate(),
             visiblePagePredicate,
           ),
         )
@@ -489,7 +490,7 @@ export class KbSpacesService {
               and(
                 eq(kbPages.orgId, orgId),
                 eq(kbPages.spaceId, spaceId),
-                isWikiPage(),
+                wikiContentTypeOnly(),
                 gt(kbPages.id, afterId),
               ),
             )

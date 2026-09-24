@@ -56,7 +56,7 @@ const MONTH_ABBREVIATIONS: Readonly<Record<string, number>> = Object.freeze({
 const TRAILING_TIME = /[\sT]\d{1,2}:\d{2}(:\d{2})?(\.\d+)?\s*([AP]\.?M\.?)?(\s*[A-Z]{2,4})?$/i;
 
 export function isSupportedDateFormat(value: string): value is StatementDateFormat {
-  return (SUPPORTED_DATE_FORMATS as readonly string[]).includes(value);
+  return SUPPORTED_DATE_FORMATS.some((f) => f === value);
 }
 
 /**

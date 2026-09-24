@@ -179,6 +179,8 @@ export async function updatePreferences(
       .set(updateData)
       .where(eq(userPreferences.userId, userId));
   } else {
+    const notificationPreferences: Record<string, boolean> = data.notificationPreferences ?? {};
+    const dashboardPreferences: Record<string, unknown> = data.dashboardPreferences ?? {};
     await deps.db.insert(userPreferences).values({
       userId,
       theme: data.theme ?? "system",
@@ -186,10 +188,8 @@ export async function updatePreferences(
       timezone: data.timezone ?? "Asia/Kolkata",
       dateFormat: data.dateFormat ?? "DD/MM/YYYY",
       timeFormat: data.timeFormat ?? "12h",
-      notificationPreferences:
-        data.notificationPreferences ?? ({} as Record<string, boolean>),
-      dashboardPreferences:
-        data.dashboardPreferences ?? ({} as Record<string, unknown>),
+      notificationPreferences,
+      dashboardPreferences,
     });
   }
 

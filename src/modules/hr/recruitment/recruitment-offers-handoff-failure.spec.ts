@@ -11,6 +11,8 @@ import type { AfterCommitHook } from "../../../common/tenant/tenant-context";
  * candidate marked ACCEPTED with no employee record and nothing in any log. Ticket 35 box 5.
  */
 
+const stub = <T,>() => ({}) as T;
+
 const ORG_ID = "org-offers";
 const CANDIDATE_ID = 7;
 const OFFER_ID = 11;
@@ -84,9 +86,10 @@ function build(handleOfferAccepted: jest.Mock) {
     audit as never,
     { handleOfferAccepted } as never,
     { startForCandidate: jest.fn().mockResolvedValue({ started: true, replay: true }) } as never,
+    stub<ConstructorParameters<typeof RecruitmentOfferAcceptanceService>[5]>(),
   );
 
-  const service = new RecruitmentOffersService(db as never, audit as never, acceptance);
+  const service = new RecruitmentOffersService(db as never, audit as never, acceptance, stub<ConstructorParameters<typeof RecruitmentOffersService>[3]>());
   return { service };
 }
 

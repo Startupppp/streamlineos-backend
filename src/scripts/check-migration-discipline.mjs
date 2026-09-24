@@ -291,6 +291,12 @@ const BASELINE_FK_NOT_VALID = new Set([
   "0519_inventory_resumable_import.sql", // inv: streamline_inv, inv_cold_head
   "0529_ledger_corrections_and_immutability.sql", // inv: streamline_inv, inv_cold_head
   "0558_crm_nurture_sequences.sql", // crm: Neon (hash), streamline_crm_merge, streamline_crm_e2e
+  // Unblinded 2026-09-24: checkFkNotValid now strips SQL comments before matching, which is
+  // what stripSqlComments exists for. Both files below were passing only because a comment
+  // elsewhere in them contained the words "NOT VALID" — their ADD CONSTRAINT statements were
+  // never staged. Neither body can be fixed in place: both are applied.
+  "0539_inventory_audit_export.sql", // its own header states the validating scan is over zero rows
+  "1174_kb_articles_cutover_contract.sql", // applied out-of-band; forward path is a proven no-op, and NOT VALID -> VALIDATE buys nothing inside the single DO block that makes it idempotent
 ]);
 
 const BASELINE_SET_NOT_NULL = new Set([
@@ -316,6 +322,10 @@ const BASELINE_SET_NOT_NULL = new Set([
   "0658_calendar_membership_actors.sql",
   // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
   "0520b_rbac_membership_keys.sql", // inv: streamline_inv, inv_cold_head
+  // Its own header records the measurement the staged form exists to avoid: kb_pages held
+  // 20 rows with no nulls in views/helpful_count/not_helpful_count, so SET NOT NULL takes
+  // the lock for microseconds and needs no backfill. Applied out-of-band; forward is a no-op.
+  "1174_kb_articles_cutover_contract.sql",
 ]);
 
 const BASELINE_VALIDATE_BEFORE_BACKFILL = new Set([
@@ -499,7 +509,7 @@ function checkLockTimeout(_filename, content) {
 }
 
 function checkFkNotValid(_filename, content) {
-  const stmts = content.split(/--> statement-breakpoint/);
+  const stmts = stripSqlComments(content).split(/--> statement-breakpoint/);
   for (const stmt of stmts) {
     const s = stmt.trim();
     if (/ADD\s+CONSTRAINT\s+\S+\s+FOREIGN\s+KEY/i.test(s) && !/NOT\s+VALID/i.test(s)) {
@@ -1050,7 +1060,7 @@ if (SELF_TEST) {
     console.log(`  Also enforced: journal monotonicity, duplicate idx, duplicate numeric`);
     console.log(`  prefixes, and journal entries with no file on disk.`);
     console.log(`  Not covered: applied-watermark skipping (needs the DB),`);
-    console.log(`  keywords in SQL comments that trick text patterns (except check 4).`);
+    console.log(`  keywords in SQL comments that trick text patterns (except checks 2 and 4).`);
     console.log(`  Companion: check:migration-chain`);
     process.exit(0);
   }

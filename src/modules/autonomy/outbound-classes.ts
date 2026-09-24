@@ -64,5 +64,5 @@ export const OUTBOUND_CLASS_LABELS: Readonly<Record<OutboundClass, string>> = {
 };
 
 export function isOutboundClass(value: string): value is OutboundClass {
-  return (OUTBOUND_CLASSES as readonly string[]).includes(value);
+  return OUTBOUND_CLASSES.some((c) => c === value);
 }

@@ -55,7 +55,7 @@ export const ruleSetSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (value.tiers[0]!.from !== 0)
+    if (value.tiers[0].from !== 0)
       ctx.addIssue({
         code: "custom",
         path: ["tiers", 0, "from"],
@@ -66,7 +66,7 @@ export const ruleSetSchema = z
       });
 
     for (let i = 1; i < value.tiers.length; i += 1) {
-      if (value.tiers[i]!.from <= value.tiers[i - 1]!.from)
+      if (value.tiers[i].from <= value.tiers[i - 1].from)
         ctx.addIssue({
           code: "custom",
           path: ["tiers", i, "from"],

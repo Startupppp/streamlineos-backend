@@ -1,4 +1,4 @@
-import { eq, isNull, sql, type SQL } from "drizzle-orm";
+import { eq, isNull, ne, sql, type SQL } from "drizzle-orm";
 import { kbPages, type KbPageContent } from "../../../db/schema";
 import { paragraphize } from "./lib/kb-page-content";
 
@@ -18,6 +18,14 @@ export type PageTrustState = "unverified" | "verified" | "verification_expired";
 
 export function supportArticlePredicate(): SQL {
   return sql`(${eq(kbPages.contentType, SUPPORT_ARTICLE_CONTENT_TYPE)} and ${isNull(kbPages.deletedAt)})`;
+}
+
+export function wikiPagePredicate(): SQL {
+  return sql`(${isNull(kbPages.deletedAt)} and ${ne(kbPages.contentType, SUPPORT_ARTICLE_CONTENT_TYPE)})`;
+}
+
+export function wikiContentTypeOnly(): SQL {
+  return ne(kbPages.contentType, SUPPORT_ARTICLE_CONTENT_TYPE);
 }
 
 export function articleVisibilityToPage(visibility: ArticleVisibility): PageVisibility {

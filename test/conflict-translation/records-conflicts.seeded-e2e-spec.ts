@@ -3,8 +3,8 @@ import request from "supertest";
 import { eq, sql } from "drizzle-orm";
 import {
   customFieldDefinitions,
-  kbArticles,
   kbCategories,
+  kbPages,
   kbSpaces,
   orgModules,
 } from "src/db/schema";
@@ -118,7 +118,7 @@ describe(`${SEEDED_HARNESS} a duplicate business record is a 409, not a 500`, ()
       .delete(customFieldDefinitions)
       .where(eq(customFieldDefinitions.orgId, orgId));
     await seeded.seedDb.delete(kbCategories).where(eq(kbCategories.orgId, orgId));
-    await seeded.seedDb.delete(kbArticles).where(eq(kbArticles.orgId, orgId));
+    await seeded.seedDb.delete(kbPages).where(eq(kbPages.orgId, orgId));
     await seeded.seedDb.delete(kbSpaces).where(eq(kbSpaces.orgId, orgId));
     await fixture.teardown();
     await seeded.close();

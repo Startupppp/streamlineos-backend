@@ -19,6 +19,8 @@ import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.service";
 import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
 
+const stub = <T,>() => ({}) as T;
+
 const cleanQuarantine = {
   getStatusForKey: async () => "clean" as const,
 } as unknown as import("../../storage/file-quarantine.service").FileQuarantineService;
@@ -361,7 +363,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   describe("RecruitmentOffersService", () => {
     it("scopes offers to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
-      const svc = new RecruitmentOffersService(db, {} as never, {} as never);
+      const svc = new RecruitmentOffersService(db, {} as never, {} as never, stub<ConstructorParameters<typeof RecruitmentOffersService>[3]>());
       const result = await svc.listAllOffers(ATTACKER, { pageSize: 10 });
       expect(result.items).toHaveLength(0);
       expect(where).toHaveBeenCalled();
@@ -370,7 +372,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
 
     it("returns offers for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
-      const svc = new RecruitmentOffersService(db, {} as never, {} as never);
+      const svc = new RecruitmentOffersService(db, {} as never, {} as never, stub<ConstructorParameters<typeof RecruitmentOffersService>[3]>());
       const result = await svc.listAllOffers(OWNER, { pageSize: 10 });
       expect(result.items).toHaveLength(1);
     });
@@ -381,7 +383,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
         { id: 1, orgId: OWNER, createdAt: new Date("2026-08-20T08:00:00.000Z") },
       ];
       const { db } = makeDb(rows);
-      const svc = new RecruitmentOffersService(db, {} as never, {} as never);
+      const svc = new RecruitmentOffersService(db, {} as never, {} as never, stub<ConstructorParameters<typeof RecruitmentOffersService>[3]>());
       const result = await svc.listAllOffers(OWNER, { pageSize: 1 });
 
       expect(result.items).toEqual([rows[0]]);

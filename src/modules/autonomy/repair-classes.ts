@@ -89,7 +89,7 @@ export const CONSERVATIVE_REPAIR_CLASSES: readonly RepairClass[] = REPAIR_CLASSE
 );
 
 export function isRepairClass(value: string): value is RepairClass {
-  return (REPAIR_CLASSES as readonly string[]).includes(value);
+  return REPAIR_CLASSES.some((c) => c === value);
 }
 
 /** Which classes could close a finding of this kind. Empty for most of them. */
@@ -406,7 +406,7 @@ function repairPhoneNonAscii(current: string): RepairProposal {
 
   let next = "";
   for (const character of trimmed) {
-    if (character.codePointAt(0)! < 0x80) {
+    if ((character.codePointAt(0) ?? 0) < 0x80) {
       next += character;
       continue;
     }

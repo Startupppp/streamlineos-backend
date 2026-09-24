@@ -107,7 +107,7 @@ export async function cancelOneHold(
     .where(
       and(
         eq(autonomousDecisions.organizationId, organizationId),
-        eq(autonomousDecisions.autonomousDecisionId, cancelled[0]!.decisionId),
+        eq(autonomousDecisions.autonomousDecisionId, cancelled[0].decisionId),
       ),
     );
 
@@ -115,7 +115,7 @@ export async function cancelOneHold(
     deps,
     organizationId,
     userId,
-    cancelled[0]!.outboundMessageId,
+    cancelled[0].outboundMessageId,
     reason,
   );
 

@@ -66,6 +66,7 @@ const WIKI_PAGE_ROW = {
   createdById: "user-9",
   ownerMembershipId: 4,
   trustState: "unverified" as const,
+  verifiedAt: null,
   verifiedUntil: null,
   views: null,
   helpfulCount: null,

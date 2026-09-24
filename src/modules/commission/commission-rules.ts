@@ -262,7 +262,7 @@ export function evaluateCommission(
 function bandIndexFor(boundaries: number[], position: number): number {
   let index = 0;
   for (let i = 0; i < boundaries.length; i += 1) {
-    if (position >= boundaries[i]!) index = i;
+    if (position >= boundaries[i]) index = i;
     else break;
   }
   return index;
@@ -278,10 +278,10 @@ function bandIndexFor(boundaries: number[], position: number): number {
  */
 export function assertRuleSet(rules: CommissionRuleSet): void {
   if (rules.tiers.length === 0) throw new Error("commission: rule set has no tiers");
-  if (rules.tiers[0]!.from !== 0)
+  if (rules.tiers[0].from !== 0)
     throw new Error("commission: first tier must start at 0");
   for (let i = 1; i < rules.tiers.length; i += 1) {
-    if (rules.tiers[i]!.from <= rules.tiers[i - 1]!.from)
+    if (rules.tiers[i].from <= rules.tiers[i - 1].from)
       throw new Error("commission: tiers must be strictly ascending");
   }
   if (rules.quotaMinor !== null && rules.quotaMinor <= 0)

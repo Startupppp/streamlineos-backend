@@ -176,7 +176,7 @@ function apportionMagnitude(total: bigint, weights: bigint[]): bigint[] {
   // `leftover` is strictly less than `weights.length`, so one pass always
   // exhausts it; a loop that wrapped would mean the floors above were wrong.
   for (let i = 0; i < order.length && leftover > 0n; i += 1) {
-    shares[order[i]!.index] = shares[order[i]!.index]! + 1n;
+    shares[order[i].index] = shares[order[i].index] + 1n;
     leftover -= 1n;
   }
 
@@ -202,7 +202,7 @@ export function decomposeEvaluation(evaluation: CommissionEvaluation): AccrualPa
     fromMinor: slice.fromMinor,
     toMinor: slice.toMinor,
     basisMinor: slice.basisMinor,
-    amountMinor: shares[index]!,
+    amountMinor: shares[index],
   }));
 }
 

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
-import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   kbArticleChunks,
   kbEvents,
@@ -234,7 +234,15 @@ export class KbRagRetrievalService {
           .innerJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
           .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
           .leftJoin(kbPageAttachments, eq(kbPageAttachments.id, kbArticleChunks.attachmentId))
-          .where(and(...conditions))
+          .where(
+            and(
+              ...conditions,
+              or(
+                isNull(kbArticleChunks.attachmentId),
+                isNull(kbPageAttachments.deletedAt),
+              ),
+            ),
+          )
           .orderBy(ranking.order)
           .limit(Math.min(SEARCH_POOL_K, PAGE_SIZE_CAP));
 

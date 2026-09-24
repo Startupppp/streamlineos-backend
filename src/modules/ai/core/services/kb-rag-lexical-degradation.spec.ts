@@ -158,6 +158,19 @@ describe("public KB retrieveContext degrades to lexical rather than taking the f
     expect(text).toContain('"kb_pages"."deleted_at" is null');
   });
 
+  it("excludes a chunk whose attachment is soft-deleted while keeping body chunks, because kb_page_attachments carries a deleted_at the old kb_article_attachments never had", async () => {
+    const { service, wheres } = makeHarness({ mode: "failure", kind: "provider_unavailable" });
+
+    await service.retrieveContext(ORG, QUESTION);
+
+    const { text } = render(wheres[0] as SQL);
+    expect(text).toContain('"kb_page_attachments"."deleted_at" is null');
+    expect(text).toContain('"kb_article_chunks"."attachment_id" is null');
+    expect(text).toMatch(
+      /"kb_article_chunks"\."attachment_id" is null or "kb_page_attachments"\."deleted_at" is null/,
+    );
+  });
+
   it("anchors chunks on page_id, because article_id no longer resolves to a table", async () => {
     const { service, joins } = makeHarness({ mode: "failure", kind: "provider_unavailable" });
 

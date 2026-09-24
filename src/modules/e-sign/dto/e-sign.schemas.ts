@@ -62,7 +62,7 @@ export const SELF_SERVE_AUTH_METHODS = ["email_link", "access_code", "otp_email"
 export type SelfServeAuthMethod = (typeof SELF_SERVE_AUTH_METHODS)[number];
 
 export function isSelfServeAuthMethod(method: string): method is SelfServeAuthMethod {
-  return (SELF_SERVE_AUTH_METHODS as readonly string[]).includes(method);
+  return SELF_SERVE_AUTH_METHODS.some((m) => m === method);
 }
 
 export const signRoutingModeSchema = z.enum(["parallel", "sequential", "mixed"]);

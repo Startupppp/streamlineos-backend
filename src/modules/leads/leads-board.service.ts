@@ -18,9 +18,10 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 export type BoardOpts = { read: ScopedRead; limitPerStatus?: number };
 export type StatsFilters = { read: ScopedRead; dateFrom?: string; dateTo?: string };
 
+const EMPTY_BY_STATUS: Record<string, number> = {};
 const EMPTY_LEAD_STATS = {
   total: 0,
-  byStatus: {} as Record<string, number>,
+  byStatus: EMPTY_BY_STATUS,
   conversionRate: 0,
   totalPotentialValue: 0,
   unassigned: 0,

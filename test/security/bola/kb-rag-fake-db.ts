@@ -1,14 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { kbArticleChunks, kbArticles, kbPages } from "../../../src/db/schema";
-
-/**
- * A predicate-honouring stand-in for the KB tables. Each query's real WHERE is
- * compiled with drizzle's own dialect and then answered from fixtures the way
- * Postgres would for the dimension under test — the article owner — so "the asker
- * never sees the chunk" is a behavioural result of the SQL rather than a
- * restatement of the source text.
- */
+import { kbArticleChunks, kbPages } from "../../../src/db/schema";
 
 export interface ArticleFixture {
   id: number;
@@ -22,11 +14,11 @@ export interface ArticleFixture {
 
 export interface ChunkFixture {
   id: number;
-  articleId: number;
+  pageId: number;
   content: string;
 }
 
-export type FakeTable = "kb_articles" | "kb_article_chunks" | "kb_pages" | "other";
+export type FakeTable = "kb_article_chunks" | "kb_pages" | "other";
 
 export interface RecordedQuery {
   table: FakeTable;
@@ -36,7 +28,7 @@ export interface RecordedQuery {
 }
 
 const dialect = new PgDialect();
-const OWNER_COLUMN = '"kb_articles"."owner_membership_id" = $';
+const OWNER_COLUMN = '"kb_pages"."owner_membership_id" = $';
 
 function compile(where: SQL | undefined): { sql: string; params: unknown[] } {
   if (where === undefined) return { sql: "", params: [] };
@@ -48,7 +40,10 @@ function compile(where: SQL | undefined): { sql: string; params: unknown[] } {
 export function ownerBoundIn(recorded: RecordedQuery): number | undefined {
   const at = recorded.sql.indexOf(OWNER_COLUMN);
   if (at === -1) return undefined;
-  const index = Number.parseInt(recorded.sql.slice(at + OWNER_COLUMN.length), 10);
+  const index = Number.parseInt(
+    recorded.sql.slice(at + OWNER_COLUMN.length),
+    10,
+  );
   const value = recorded.params[index - 1];
   return typeof value === "number" ? value : undefined;
 }
@@ -57,13 +52,18 @@ export function refusesEverything(recorded: RecordedQuery): boolean {
   return /\bfalse\b/.test(recorded.sql);
 }
 
-function idsBoundIn(recorded: RecordedQuery, qualified: string): number[] | undefined {
+function idsBoundIn(
+  recorded: RecordedQuery,
+  qualified: string,
+): number[] | undefined {
   const marker = `${qualified} in (`;
   const at = recorded.sql.indexOf(marker);
   if (at === -1) return undefined;
   const close = recorded.sql.indexOf(")", at);
   const ids: number[] = [];
-  for (const token of recorded.sql.slice(at + marker.length, close).split(",")) {
+  for (const token of recorded.sql
+    .slice(at + marker.length, close)
+    .split(",")) {
     const index = Number.parseInt(token.trim().replace("$", ""), 10);
     const value = recorded.params[index - 1];
     if (typeof value === "number") ids.push(value);
@@ -87,7 +87,7 @@ export function makeFakeKbDb(fixtures: FakeDbFixtures) {
   const articlesMatching = (query: RecordedQuery): ArticleFixture[] => {
     if (refusesEverything(query)) return [];
     const owner = ownerBoundIn(query);
-    const allowed = idsBoundIn(query, '"kb_articles"."id"');
+    const allowed = idsBoundIn(query, '"kb_pages"."id"');
     return fixtures.articles.filter(
       (a) =>
         (owner === undefined || a.ownerMembershipId === owner) &&
@@ -95,8 +95,12 @@ export function makeFakeKbDb(fixtures: FakeDbFixtures) {
     );
   };
 
+  const isWikiQuery = (query: RecordedQuery): boolean =>
+    query.sql.includes('"kb_pages"."content_type" <>');
+
   const resolve = (query: RecordedQuery): Record<string, unknown>[] => {
-    if (query.table === "kb_articles") {
+    if (query.table === "kb_pages") {
+      if (isWikiQuery(query)) return [];
       return articlesMatching(query).map((a) => ({
         id: a.id,
         title: a.title,
@@ -112,27 +116,32 @@ export function makeFakeKbDb(fixtures: FakeDbFixtures) {
       }));
     }
     if (query.table !== "kb_article_chunks") return [];
-    if (query.joins.includes("kb_articles")) {
+    if (query.joins.includes("kb_pages")) {
+      if (isWikiQuery(query)) return [];
       const visible = new Set(articlesMatching(query).map((a) => a.id));
       const offered =
         idsBoundIn(query, '"kb_article_chunks"."id"') ?? fixtures.annChunkIds;
       return fixtures.chunks
-        .filter((c) => offered.includes(c.id) && visible.has(c.articleId))
-        .map((c) => ({ articleId: c.articleId, content: c.content }));
+        .filter((c) => offered.includes(c.id) && visible.has(c.pageId))
+        .map((c) => ({ pageId: c.pageId, content: c.content }));
     }
     if (query.joins.length > 0) return [];
     return [{ id: fixtures.chunks[0]?.id ?? 1 }];
   };
 
   const tableOf = (value: unknown): FakeTable => {
-    if (value === kbArticles) return "kb_articles";
     if (value === kbArticleChunks) return "kb_article_chunks";
     if (value === kbPages) return "kb_pages";
     return "other";
   };
 
   const chain = () => {
-    const state: RecordedQuery = { table: "other", joins: [], sql: "", params: [] };
+    const state: RecordedQuery = {
+      table: "other",
+      joins: [],
+      sql: "",
+      params: [],
+    };
     let rows: Record<string, unknown>[] = [];
     const builder: Record<string, unknown> = {
       from(table: unknown) {
@@ -164,17 +173,6 @@ export function makeFakeKbDb(fixtures: FakeDbFixtures) {
     return builder;
   };
 
-  /**
-   * The KB retrieval path now opens its own short tenant transaction and commits
-   * it before the provider call, so this double has to answer `transaction` or
-   * the sweep dies in `withTenant` on `regional.transaction is not a function`
-   * and stops testing scope at all — a security spec that cannot run is worse
-   * than one that fails, because it goes quiet.
-   *
-   * Same shape as every other double in this directory: run the callback against
-   * the same object, so a read inside the transaction is recorded exactly like a
-   * read outside it and the scope assertions keep seeing every query.
-   */
   const db: {
     select: () => unknown;
     selectDistinct: () => unknown;
@@ -188,12 +186,14 @@ export function makeFakeKbDb(fixtures: FakeDbFixtures) {
       const text = JSON.stringify(statement);
       executed.push(text);
       if (text.includes("hnsw.iterative_scan")) return Promise.resolve([]);
-      if (text.includes("search_kb_article_ids"))
-        return Promise.resolve(fixtures.keywordArticleIds.map((id) => ({ id })));
-      if (text.includes("search_kb_page_ids")) return Promise.resolve([]);
+      if (text.includes("search_kb_page_ids"))
+        return Promise.resolve(
+          fixtures.keywordArticleIds.map((id) => ({ id })),
+        );
       if (text.includes("ORDER BY embedding"))
         return Promise.resolve(fixtures.annChunkIds.map((id) => ({ id })));
-      if (text.includes("kb_article_chunks")) return Promise.resolve([{ one: 1 }]);
+      if (text.includes("kb_article_chunks"))
+        return Promise.resolve([{ one: 1 }]);
       return Promise.resolve([]);
     },
   };

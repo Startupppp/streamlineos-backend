@@ -126,7 +126,6 @@ const ACCEPTED = [
   { site: "modules/ai/core/services/survey-ai.service.ts::surveyForms", reason: "reported by ticket 06, outside its territory" },
   { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbSources", reason: "erasure deliberately sweeps deleted rows (report 06)" },
   { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbPages", reason: "erasure deliberately sweeps deleted rows (report 06)" },
-  { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbArticles", reason: "erasure deliberately sweeps deleted rows" },
 ];
 
 function snakeToCamel(name) {

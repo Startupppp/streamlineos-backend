@@ -93,10 +93,10 @@ const PRICE_HISTORY: readonly DatedPrices[] = [
 function pricesAsOf(asOf: Date): DatedPrices {
   const day = asOf.toISOString().slice(0, 10);
   for (let i = PRICE_HISTORY.length - 1; i >= 0; i -= 1) {
-    const entry = PRICE_HISTORY[i]!;
+    const entry = PRICE_HISTORY[i];
     if (entry.effectiveFrom <= day) return entry;
   }
-  return PRICE_HISTORY[0]!;
+  return PRICE_HISTORY[0];
 }
 
 /** The date whose prices a given quote reproduces. Stored on a subscription. */
@@ -167,7 +167,7 @@ export function currencyForCountry(
 export function isSupportedCurrency(value: string | null | undefined): value is SupportedCurrency {
   return (
     typeof value === "string" &&
-    (SUPPORTED_CURRENCIES as readonly string[]).includes(value.trim().toUpperCase())
+    SUPPORTED_CURRENCIES.some((c) => c === value.trim().toUpperCase())
   );
 }
 
@@ -178,7 +178,7 @@ export function resolveCurrency(requested: string | null | undefined): {
 } {
   const code = (requested ?? "").trim().toUpperCase();
   if (isSupportedCurrency(code))
-    return { currency: code as SupportedCurrency, isRequestedCurrency: true };
+    return { currency: code, isRequestedCurrency: true };
   return { currency: FALLBACK_CURRENCY, isRequestedCurrency: false };
 }
 
