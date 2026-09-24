@@ -376,6 +376,71 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
     });
   });
 
+  describe("the document changes under the entry", () => {
+    async function shared(): Promise<{ documentId: number; linkId: number }> {
+      const documentId = await document(home, "POLICY", fileKey());
+      expect((await send("patch", `/hr/documents/${documentId}/classification`, "admin", { classification: "INTERNAL" })).status).toBe(200);
+      expect((await send("put", `/hr/documents/${documentId}/audiences`, "admin", { audiences: [{ kind: "ALL_EMPLOYEES" }] })).status).toBe(200);
+      const published = await send("post", `/hr/documents/${documentId}/kb-link`, "admin", {});
+      expect(published.status).toBe(201);
+      return { documentId, linkId: published.body.link.id };
+    }
+    const newVersion = async (documentId: number, version: number) => {
+      const uploaded = await send("post", `/hr/documents/${documentId}/versions`, "admin", { fileUrl: fileKey(), fileName: `v${version}.pdf`, effectiveDate: "2026-10-01" });
+      expect(uploaded.status).toBe(201);
+      const approved = await send("post", `/hr/documents/${documentId}/versions/${version}/approve`, "admin");
+      expect(approved.status).toBe(200);
+    };
+
+    it("shows readers a followed entry's new version the moment it is approved, and not before", async () => {
+      const { documentId, linkId } = await shared();
+      expect((await get(`/kb/linked-documents/${linkId}`, "inDept")).body).toMatchObject({ version: 1 });
+
+      const uploaded = await send("post", `/hr/documents/${documentId}/versions`, "admin", { fileUrl: fileKey(), fileName: "v2.pdf", effectiveDate: "2026-10-01" });
+      expect(uploaded.status).toBe(201);
+      expect((await get(`/kb/linked-documents/${linkId}`, "inDept")).body).toMatchObject({ version: 1 });
+
+      expect((await send("post", `/hr/documents/${documentId}/versions/2/approve`, "admin")).status).toBe(200);
+      expect((await get(`/kb/linked-documents/${linkId}`, "inDept")).body).toMatchObject({ version: 2, fileName: "v2.pdf", effectiveDate: "2026-10-01" });
+    });
+
+    it("lets someone who can manage documents upload a version but not approve it", async () => {
+      const { documentId } = await shared();
+      const uploaded = await send("post", `/hr/documents/${documentId}/versions`, "manager", { fileUrl: fileKey(), fileName: "v2.pdf" });
+      expect(uploaded.status).toBe(201);
+
+      expect((await send("post", `/hr/documents/${documentId}/versions/2/approve`, "manager")).status).toBe(403);
+    });
+
+    it("keeps a pinned entry on its version, and tells the publisher and nobody else that a newer one is waiting", async () => {
+      const { documentId, linkId } = await shared();
+      await newVersion(documentId, 2);
+      const pinned = await send("patch", `/hr/documents/${documentId}/kb-link`, "admin", { versionMode: "PINNED", pinnedVersion: 2 });
+      expect(pinned.status).toBe(200);
+
+      await newVersion(documentId, 3);
+
+      expect((await get(`/kb/linked-documents/${linkId}`, "inDept")).body).toMatchObject({ version: 2, newerVersionAvailable: null });
+      expect((await get(`/kb/linked-documents/${linkId}`, "admin")).body).toMatchObject({ version: 2, newerVersionAvailable: true });
+      expect((await get(`/hr/documents/${documentId}/kb-link`, "admin")).body.link).toMatchObject({ versionMode: "PINNED", pinnedVersion: 2, newerVersionAvailable: true });
+    });
+
+    it("takes a deleted document away from readers with a 404 and shows the publisher Source removed", async () => {
+      const { documentId, linkId } = await shared();
+      expect((await get(`/kb/linked-documents/${linkId}`, "inDept")).status).toBe(200);
+
+      const deleted = await send("delete", `/hr/documents/${documentId}`, "admin");
+
+      expect(deleted.status).toBeLessThan(300);
+      expect((await get(`/kb/linked-documents/${linkId}`, "inDept")).status).toBe(404);
+      expect((await get("/kb/linked-documents", "inDept")).body.data.map((entry: { id: number }) => entry.id)).not.toContain(linkId);
+      expect((await get(`/kb/linked-documents/${linkId}`, "admin")).body).toMatchObject({ status: "source_removed", name: null, hasFile: false });
+      expect((await get(`/hr/documents/${documentId}/kb-link`, "admin")).body.link.status).toBe("source_removed");
+      const audit = await rows<{ metadata: Record<string, unknown> }>(sql`select metadata from audit_logs where org_id = ${home.orgId} and action = 'kb.hr_link.auto_unpublished' and target_id = ${String(documentId)}`);
+      expect(audit).toHaveLength(1);
+    });
+  });
+
   describe("withdrawing with a reason", () => {
     it("records the reason a publisher gives, shows it to publishers only, and still withdraws with no body at all", async () => {
       const withReason = await document(home, "POLICY", fileKey());
