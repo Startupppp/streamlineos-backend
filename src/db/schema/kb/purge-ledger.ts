@@ -9,6 +9,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { organizations } from "../common/auth";
 
 export const KB_PURGE_STORES = [
   "visits",
@@ -26,7 +27,7 @@ export const kbPagePurgeLedger = pgTable(
   "kb_page_purge_ledger",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: text("org_id").notNull(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     pageId: integer("page_id").notNull(),
     store: text("store").notNull().$type<KbPurgeStore>(),
     status: text("status").notNull().default("pending").$type<KbPurgeStatus>(),

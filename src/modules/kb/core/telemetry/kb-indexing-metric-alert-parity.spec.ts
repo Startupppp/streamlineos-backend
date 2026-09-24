@@ -294,6 +294,14 @@ describe("the KB indexing SLO names the numbers its alert actually fires on", ()
   });
 });
 
+const attachmentServiceSource = read(
+  SRC,
+  "modules",
+  "kb",
+  "retrieval",
+  "kb-attachment-indexing.service.ts",
+);
+
 const DIRECTLY_FINISHED_OUTCOMES = [
   "reused",
   "acl_only",
@@ -337,5 +345,50 @@ describe("the emitter is wired at the indexing service's real decision points", 
   it("counts embedded chunks where the resumption helper already knows the number", () => {
     const resumption = read(SRC, "modules", "kb", "retrieval", "kb-embedding-resumption.ts");
     expect(resumption).toContain("metrics?.embedded(pending.length);");
+  });
+});
+
+describe("the KB indexing emitter is also wired in the attachment indexing service", () => {
+  function outcomesPassedToFinish(source: string): string[] {
+    return [...source.matchAll(/metrics\.finish\(([^;]*?)\)\s*;/gs)].flatMap((call) =>
+      [...(call[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((quoted) => quoted[1] ?? ""),
+    );
+  }
+
+  const finished = outcomesPassedToFinish(attachmentServiceSource);
+
+  it("(anti-vacuous) the attachment service has at least as many finish calls as directly-finished outcomes", () => {
+    expect(finished.length).toBeGreaterThanOrEqual(DIRECTLY_FINISHED_OUTCOMES.length);
+    expect(outcomesPassedToFinish("return 0;")).toEqual([]);
+  });
+
+  it("finishes no outcome the frozen indexing enum cannot produce", () => {
+    const declared: readonly string[] = KB_INDEXING_OUTCOMES;
+    expect(finished.filter((outcome) => !declared.includes(outcome))).toEqual([]);
+  });
+
+  it.each(["indexed", "reused", "acl_only", "skipped_no_content", "embedding_unavailable"])(
+    "%s is finished on a branch the attachment service already had",
+    (outcome) => {
+      expect(finished).toContain(outcome);
+    },
+  );
+
+  it("the attachment service imports KbIndexingMetrics", () => {
+    expect(attachmentServiceSource).toContain("KbIndexingMetrics");
+  });
+
+  it("opens exactly one span per indexAttachment call (outer begin, not inside the measured helper)", () => {
+    const beginCount = (attachmentServiceSource.match(/KbIndexingMetrics\.begin\(/g) ?? []).length;
+    expect(beginCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("threads metrics into the embed helper so partial progress is counted", () => {
+    expect(attachmentServiceSource).toContain("metrics,");
+    expect(attachmentServiceSource).toContain("embedChunksWithResumption");
+  });
+
+  it("classifies a thrown credit or provider failure rather than reporting a bare error", () => {
+    expect(attachmentServiceSource).toContain("kbIndexingOutcomeForError(error)");
   });
 });

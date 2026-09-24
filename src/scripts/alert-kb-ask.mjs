@@ -141,7 +141,7 @@ if (args.includes("--self-test")) {
     });
 
   const healthyLines = [
-    ...Array.from({ length: 18 }, () =>
+    ...Array.from({ length: 43 }, () =>
       operation("answered", 800, { [CITATIONS_ATTRIBUTE_KEY]: 3, [CANDIDATES_ATTRIBUTE_KEY]: 5 }),
     ),
     ...Array.from({ length: 5 }, () => operation("no_context", 200)),
@@ -167,11 +167,11 @@ if (args.includes("--self-test")) {
   const empty = summarise([], cutoff);
 
   const checks = {
-    staleAndForeignSpansExcluded: healthy.operationLines === 26,
+    staleAndForeignSpansExcluded: healthy.operationLines === 50,
     healthyWindowDoesNotFire: healthy.breached === false,
-    outcomesBucketed: healthy.outcomes.answered === 18 && healthy.outcomes.no_context === 5,
+    outcomesBucketed: healthy.outcomes.answered === 43 && healthy.outcomes.no_context === 5,
     noContextCounted: healthy.noContextCount === 5,
-    citationsCounted: healthy.totalCitations === 54,
+    citationsCounted: healthy.totalCitations === 129,
     latencyPercentileComputed: typeof healthy.p95Ms === "number",
     outageFires: outage.breached === true,
     outageCountsEveryFaultOutcome: outage.faults === 7,

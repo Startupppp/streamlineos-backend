@@ -44,6 +44,15 @@ CREATE INDEX IF NOT EXISTS "idx_kb_purge_ledger_pending_global"
   WHERE "status" = 'pending';
 --> statement-breakpoint
 
+ALTER TABLE "public"."kb_page_purge_ledger"
+  ADD CONSTRAINT "kb_page_purge_ledger_org_id_organizations_id_fk"
+  FOREIGN KEY ("org_id") REFERENCES "public"."organizations" ("id") ON DELETE CASCADE NOT VALID;
+--> statement-breakpoint
+
+ALTER TABLE "public"."kb_page_purge_ledger"
+  VALIDATE CONSTRAINT "kb_page_purge_ledger_org_id_organizations_id_fk";
+--> statement-breakpoint
+
 ALTER TABLE "public"."kb_page_purge_ledger" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 

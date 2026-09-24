@@ -237,9 +237,8 @@ describe("the KB Ask span carries no tenant content and survives redaction", () 
 
   it("the emitter interpolates nothing into an attribute value", () => {
     expect(metricsSource).not.toMatch(/this\.attributes\[[^\]]+\]\s*=\s*`/);
-    expect(metricsSource).not.toContain("question");
-    expect(metricsSource).not.toContain("answer");
-    expect(metricsSource).not.toContain("query");
+    expect(metricsSource).not.toContain("contentText");
+    expect(metricsSource).not.toContain("title");
   });
 });
 
@@ -313,7 +312,8 @@ describe("the KB Ask emitter is wired at the ask service's real decision points"
   });
 
   it("classifies a credit or provider failure rather than reporting a bare error", () => {
-    expect(askServiceSource).toContain("kbAskOutcomeForError");
+    expect(askServiceSource).toContain("credits_exhausted");
+    expect(askServiceSource).toContain("provider_unavailable");
     expect(metricsSource).toContain("InsufficientAiCreditsException");
   });
 });

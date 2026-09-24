@@ -63,6 +63,6 @@ describe("KbImportExportService — cross-tenant isolation", () => {
 
     const result = await svc.listExportJobs(OWNER);
 
-    expect(Array.isArray(result.items)).toBe(true);
+    expect(Array.isArray(result.data)).toBe(true);
   });
 });
