@@ -28,6 +28,7 @@ export const aiJobs = pgTable("ai_jobs", {
 }, (table) => [
   uniqueIndex("uq_ai_jobs_org_idem_key").on(table.orgId, table.idempotencyKey).where(sql`${table.idempotencyKey} IS NOT NULL`),
   index("idx_ai_jobs_status_run_at_priority").on(table.status, table.runAt, table.priority),
+  index("idx_ai_jobs_expired_lease").on(table.lockedAt).where(sql`status = 'RUNNING'`),
   index("idx_ai_jobs_org_created_at").on(table.orgId, table.createdAt),
   index("idx_ai_jobs_org_type_status").on(table.orgId, table.type, table.status),
   unique("uniq_ai_jobs_org_id").on(table.orgId, table.id),

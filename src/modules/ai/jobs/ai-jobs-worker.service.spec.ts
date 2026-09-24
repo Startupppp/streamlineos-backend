@@ -47,6 +47,7 @@ describe("AiJobsWorkerService — DEAD-status update predicate", () => {
 
     const jobs = {
       claimBatch: jest.fn().mockResolvedValue([makeJob()]),
+      reclaimExpiredLeases: jest.fn().mockResolvedValue(0),
       complete: jest.fn(),
       fail: jest.fn(),
     };

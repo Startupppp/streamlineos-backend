@@ -24,6 +24,10 @@ export interface ListJobsOptions {
   limit?: number;
 }
 
+export const JOB_LEASE_TIMEOUT_MS = 5 * 60_000;
+
+export const LEASE_EXPIRED_ERROR = "lease expired: worker stopped without reporting";
+
 @Injectable()
 export class AiJobsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -56,6 +60,31 @@ export class AiJobsService {
     const row = rows[0];
     if (!row) throw new Error("Failed to enqueue AI job");
     return { jobId: row.id };
+  }
+
+  async reclaimExpiredLeases(now: Date = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - JOB_LEASE_TIMEOUT_MS);
+    const reclaimed = await this.db.execute(sql`
+      UPDATE ai_jobs
+      SET attempts = attempts + 1,
+          status = CASE
+            WHEN attempts + 1 >= max_attempts THEN 'DEAD'::ai_job_status
+            ELSE 'QUEUED'::ai_job_status
+          END,
+          last_error = ${LEASE_EXPIRED_ERROR},
+          locked_by = NULL,
+          locked_at = NULL,
+          updated_at = ${now.toISOString()}::timestamptz
+      WHERE id IN (
+        SELECT j.id FROM ai_jobs j
+        WHERE j.status = 'RUNNING'
+          AND j.locked_at IS NOT NULL
+          AND j.locked_at < ${cutoff.toISOString()}::timestamptz
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id
+    `);
+    return reclaimed.length;
   }
 
   async claimBatch(workerId: string, limit: number): Promise<AiJob[]> {

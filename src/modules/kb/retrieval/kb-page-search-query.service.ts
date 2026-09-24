@@ -56,7 +56,7 @@ export class KbPageSearchQueryService {
     const items = hasMore ? rows.slice(0, input.limit) : rows;
 
     const facets = input.facets
-      ? await this.loadFacets(and(...baseConditions))
+      ? await this.loadFacets(user.orgId, and(...baseConditions))
       : null;
 
     return { items, hasMore, limit: input.limit, facets };
@@ -95,6 +95,7 @@ export class KbPageSearchQueryService {
   }
 
   private async loadFacets(
+    orgId: string,
     filter: SQL<unknown> | undefined,
   ): Promise<KbPageFullSearchResponse["facets"]> {
     try {
@@ -116,7 +117,7 @@ export class KbPageSearchQueryService {
       };
     } catch (err) {
       this.logger.warn("KB page full-search facet load failed", {
-        orgId: undefined,
+        orgId,
         error: err instanceof Error ? err.message : String(err),
       });
       return null;
