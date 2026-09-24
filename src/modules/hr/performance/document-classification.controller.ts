@@ -81,7 +81,7 @@ export class DocumentClassificationController {
 
   @ResponseSchema(setDocumentAudiencesResponseSchema)
   @Put("documents/:documentId/audiences")
-  @RequirePermission(PUBLISH_PERMISSION)
+  @RequirePermission("hr:documents:publish")
   @Validate({ params: documentClassificationParams, body: setDocumentAudiencesSchema })
   async setAudiences(
     @Param("documentId", ParseIntPipe) documentId: number,
