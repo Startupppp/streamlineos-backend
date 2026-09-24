@@ -5,6 +5,7 @@ import { cursorPageSchema } from "../../../../common/openapi/response-envelopes"
 
 export const changeRequestListPageSchema = cursorPageSchema(
   z.object({
+    affectedItemCount: z.number().int().nonnegative(),
     id: z.number().int(),
     orgId: z.string(),
     projectId: z.number().int(),
@@ -53,4 +54,8 @@ export const changeRequestRowSchema = z.object({
   createdAt: wireDate(),
   updatedAt: wireDate(),
   deletedAt: nullableWireDate(),
+});
+
+export const changeRequestDetailSchema = changeRequestRowSchema.extend({
+  affectedItemCount: z.number().int().nonnegative(),
 });

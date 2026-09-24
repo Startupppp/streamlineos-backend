@@ -1,16 +1,29 @@
 import { z } from "zod";
 import { incidentSeverityEnum, incidentStatusEnum, incidentFollowUpStatusEnum } from "../../../../db/schema";
+import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+
+export const incidentSeveritySchema = z.enum(incidentSeverityEnum.enumValues);
+export const incidentStatusSchema = z.enum(incidentStatusEnum.enumValues);
+export const incidentFollowUpStatusSchema = z.enum(incidentFollowUpStatusEnum.enumValues);
 
 export const listIncidentsQuerySchema = z.object({
-  status: z.enum(incidentStatusEnum.enumValues).optional(),
-  severity: z.enum(incidentSeverityEnum.enumValues).optional(),
+  status: incidentStatusSchema.optional(),
+  severity: incidentSeveritySchema.optional(),
+}).strict();
+
+export const incidentChildrenQuerySchema = z.object({
+  limit: pageSizeField(100),
+  updatesCursor: idCursorSchema,
+  decisionsCursor: idCursorSchema,
+  followUpActionsCursor: idCursorSchema,
 }).strict();
 
 export const createIncidentSchema = z.object({
   title: z.string().min(1).max(500),
   description: z.string().optional(),
-  severity: z.enum(incidentSeverityEnum.enumValues).optional(),
-  status: z.enum(incidentStatusEnum.enumValues).optional(),
+  severity: incidentSeveritySchema.optional(),
+  status: incidentStatusSchema.optional(),
   impact: z.string().optional(),
   ownerId: z.string().min(1).optional(),
   rootCause: z.string().optional(),
@@ -19,16 +32,14 @@ export const createIncidentSchema = z.object({
   responseDueAt: z.coerce.date().optional(),
   resolutionDueAt: z.coerce.date().optional(),
   linkedTicketId: z.number().int().positive().optional(),
-  // Postmortem field: the release this incident affected. See db/schema/build/incidents.ts
-  // for why `releaseId` (not a "service" reference) is the canonical link this schema offers.
   releaseId: z.number().int().positive().optional(),
 }).strict();
 
 export const updateIncidentSchema = z.object({
   title: z.string().min(1).max(500).optional(),
   description: z.string().nullish(),
-  severity: z.enum(incidentSeverityEnum.enumValues).optional(),
-  status: z.enum(incidentStatusEnum.enumValues).optional(),
+  severity: incidentSeveritySchema.optional(),
+  status: incidentStatusSchema.optional(),
   impact: z.string().nullish(),
   ownerId: z.string().min(1).nullish(),
   rootCause: z.string().nullish(),
@@ -38,23 +49,22 @@ export const updateIncidentSchema = z.object({
   resolutionDueAt: z.coerce.date().nullish(),
   linkedTicketId: z.number().int().positive().nullish(),
   releaseId: z.number().int().positive().nullish(),
-  followUpWaiverReason: z.string().min(1).max(1000).optional(),
+  followUpWaiverReason: z.string().trim().min(1).max(1000).optional(),
 }).strict();
 
 export const UNRESOLVED_FOLLOW_UP_STATUSES = ["open", "in_progress"] as const;
 
 export const addIncidentUpdateSchema = z.object({
   message: z.string().min(1),
-  newStatus: z.enum(incidentStatusEnum.enumValues).optional(),
+  newStatus: incidentStatusSchema.optional(),
+  followUpWaiverReason: z.string().trim().min(1).max(1000).optional(),
 }).strict();
 
-// Postmortem field: decisions — an append-only log (see incident_decisions).
 export const addIncidentDecisionSchema = z.object({
   decision: z.string().min(1).max(4000),
   rationale: z.string().max(4000).optional(),
 }).strict();
 
-// Postmortem field: follow-up actions — each with its own owner/status/due-date lifecycle.
 export const createFollowUpActionSchema = z.object({
   title: z.string().min(1).max(500),
   description: z.string().max(4000).optional(),
@@ -66,11 +76,12 @@ export const updateFollowUpActionSchema = z.object({
   title: z.string().min(1).max(500).optional(),
   description: z.string().max(4000).nullish(),
   ownerId: z.string().min(1).nullish(),
-  status: z.enum(incidentFollowUpStatusEnum.enumValues).optional(),
+  status: incidentFollowUpStatusSchema.optional(),
   dueAt: z.coerce.date().nullish(),
 }).strict();
 
 export type ListIncidentsQuery = z.infer<typeof listIncidentsQuerySchema>;
+export type IncidentChildrenQuery = z.infer<typeof incidentChildrenQuerySchema>;
 export type CreateIncidentInput = z.infer<typeof createIncidentSchema>;
 export type UpdateIncidentInput = z.infer<typeof updateIncidentSchema>;
 export type AddIncidentUpdateInput = z.infer<typeof addIncidentUpdateSchema>;

@@ -30,24 +30,25 @@ export class PortalClientService {
     private readonly audit: AuditService,
   ) {}
 
+  private activeGrantWhere(orgId: string, membershipId: string, projectId: number) {
+    return and(
+      eq(projectClientGrants.organizationId, orgId),
+      eq(projectClientGrants.portalMembershipId, membershipId),
+      eq(projectClientGrants.projectId, projectId),
+      eq(projectClientGrants.status, "ACTIVE"),
+      or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, new Date())),
+    );
+  }
+
   private async loadActiveGrant(
     orgId: string,
     membershipId: string,
     projectId: number,
   ): Promise<GrantRow> {
-    const now = new Date();
     const [grant] = await this.db
       .select()
       .from(projectClientGrants)
-      .where(
-        and(
-          eq(projectClientGrants.organizationId, orgId),
-          eq(projectClientGrants.portalMembershipId, membershipId),
-          eq(projectClientGrants.projectId, projectId),
-          eq(projectClientGrants.status, "ACTIVE"),
-          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
-        ),
-      )
+      .where(this.activeGrantWhere(orgId, membershipId, projectId))
       .limit(1);
     if (!grant) throw new NotFoundException("Project not found");
     return grant;
@@ -243,15 +244,19 @@ export class PortalClientService {
     projectId: number,
     input: SubmitChangeRequestInput,
   ) {
-    const grant = await this.loadActiveGrant(orgId, membershipId, projectId);
-
-    if (!grant.canSubmitChangeRequests) {
-      throw new ForbiddenException("Change request submission not permitted for this project");
-    }
-
     const submitterUserId = await this.resolveSubmitterUserId(orgId, portalUserMembershipId);
 
     return this.db.transaction(async (tx) => {
+      const [grant] = await tx
+        .select()
+        .from(projectClientGrants)
+        .where(this.activeGrantWhere(orgId, membershipId, projectId))
+        .limit(1)
+        .for("update");
+      if (!grant) throw new NotFoundException("Project not found");
+      if (!grant.canSubmitChangeRequests)
+        throw new ForbiddenException("Change request submission not permitted for this project");
+
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
 
       const [maxRow] = await tx
@@ -286,7 +291,7 @@ export class PortalClientService {
           createdAt: changeRequests.createdAt,
         });
 
-      this.audit.log({
+      await this.audit.logCritical({
         action: "portal.change_request_submitted",
         ...(submitterUserId ? { userId: submitterUserId } : { systemActor: "portal-change-request" }),
         orgId,

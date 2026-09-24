@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
-import { changeRequests } from "../../../db/schema";
+import { changeRequestAffectedItems, changeRequests } from "../../../db/schema";
 import {
   buildCursorPage,
   decodeIntegerCursor,
@@ -62,6 +62,13 @@ const crColumns = {
   deletedAt: changeRequests.deletedAt,
 };
 
+const affectedItemCount = sql<number>`CAST(
+  (SELECT COUNT(*)
+   FROM ${changeRequestAffectedItems}
+   WHERE ${changeRequestAffectedItems.orgId} = ${changeRequests.orgId}
+     AND ${changeRequestAffectedItems.changeRequestId} = ${changeRequests.id})
+  AS INT)`;
+
 @Injectable()
 export class ChangeRequestsService {
   constructor(
@@ -99,6 +106,7 @@ export class ChangeRequestsService {
         createdAt: microsecondCursorValue(changeRequests.createdAt),
         updatedAt: changeRequests.updatedAt,
         deletedAt: changeRequests.deletedAt,
+        affectedItemCount,
       })
       .from(changeRequests)
       .where(
@@ -123,6 +131,15 @@ export class ChangeRequestsService {
           query.q !== undefined
             ? ilike(changeRequests.title, `%${query.q}%`)
             : undefined,
+          query.affectedTicketId !== undefined
+            ? sql`EXISTS (
+                SELECT 1
+                FROM ${changeRequestAffectedItems}
+                WHERE ${changeRequestAffectedItems.orgId} = ${orgId}
+                  AND ${changeRequestAffectedItems.changeRequestId} = ${changeRequests.id}
+                  AND ${changeRequestAffectedItems.ticketId} = ${query.affectedTicketId}
+              )`
+            : undefined,
           position
             ? keysetBeforeId(changeRequests.createdAt, changeRequests.id, position)
             : undefined,
@@ -139,7 +156,7 @@ export class ChangeRequestsService {
   async getChangeRequest(u: CurrentUserContext, projectId: number, crId: number) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const [cr] = await this.db
-      .select(crColumns)
+      .select({ ...crColumns, affectedItemCount })
       .from(changeRequests)
       .where(
         and(

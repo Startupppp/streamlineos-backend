@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  incidentFollowUpStatusSchema,
+  incidentSeveritySchema,
+  incidentStatusSchema,
+} from "./incidents.schemas";
 
 export const incidentRowSchema = z.object({
   id: z.number().int(),
@@ -8,8 +13,8 @@ export const incidentRowSchema = z.object({
   incidentNumber: z.number().int(),
   title: z.string(),
   description: z.string().nullable(),
-  severity: z.string(),
-  status: z.string(),
+  severity: incidentSeveritySchema,
+  status: incidentStatusSchema,
   impact: z.string().nullable(),
   ownerId: z.string().nullable(),
   rootCause: z.string().nullable(),
@@ -32,7 +37,7 @@ export const incidentUpdateRowSchema = z.object({
   orgId: z.string(),
   incidentId: z.number().int(),
   message: z.string(),
-  newStatus: z.string().nullable(),
+  newStatus: incidentStatusSchema.nullable(),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
 });
@@ -54,7 +59,7 @@ export const incidentFollowUpActionRowSchema = z.object({
   title: z.string(),
   description: z.string().nullable(),
   ownerId: z.string().nullable(),
-  status: z.string(),
+  status: incidentFollowUpStatusSchema,
   dueAt: nullableWireDate(),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
@@ -68,4 +73,9 @@ export const incidentDetailSchema = incidentRowSchema.extend({
   })),
   decisions: z.array(incidentDecisionRowSchema),
   followUpActions: z.array(incidentFollowUpActionRowSchema),
+  childrenPagination: z.object({
+    updates: z.object({ limit: z.number().int(), hasMore: z.boolean(), nextCursor: z.number().int().nullable() }),
+    decisions: z.object({ limit: z.number().int(), hasMore: z.boolean(), nextCursor: z.number().int().nullable() }),
+    followUpActions: z.object({ limit: z.number().int(), hasMore: z.boolean(), nextCursor: z.number().int().nullable() }),
+  }),
 });

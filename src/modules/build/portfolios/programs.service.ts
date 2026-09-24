@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   programProjects,
@@ -15,8 +15,18 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  buildCursorPage,
+  buildTupleCursorPage,
+  decodeCursor,
+  decodeTupleCursor,
+} from "../../../common/pagination/cursor";
+import {
+  keysetAfterId,
+  keysetAfterValue,
+  keysetBeforeId,
+  keysetBeforeValue,
+} from "../../../common/pagination/keyset";
 import type {
   CreateProgramInput,
   LinkedProjectsQuery,
@@ -28,6 +38,22 @@ import type {
 
 type ProgramRow = typeof projectPrograms.$inferSelect;
 type ProgramPatch = Partial<typeof projectPrograms.$inferInsert>;
+type ProgramListSort = ListProgramsQuery["sort"];
+type ProgramListOrder = ListProgramsQuery["order"];
+
+const PROGRAM_SEARCH_ID_CAP = 5_000;
+
+function decodeProgramCursor(
+  cursor: string | undefined,
+  sort: ProgramListSort,
+  order: ProgramListOrder,
+) {
+  const parts = decodeTupleCursor(cursor, 4);
+  if (!parts) return null;
+  const [cursorSort, cursorOrder, sortValue, id] = parts;
+  if (cursorSort !== sort || cursorOrder !== order || !sortValue || !id) return null;
+  return { sortValue, id };
+}
 
 @Injectable()
 export class ProgramsService {
@@ -88,17 +114,76 @@ export class ProgramsService {
     if (!row) throw new BadRequestException("Project not found in org");
   }
 
+  private async searchProgramIds(term: string): Promise<number[] | null> {
+    if (term.length < 3) return null;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_project_program_ids(${term}, ${PROGRAM_SEARCH_ID_CAP + 1}) AS id`,
+    );
+    if (rows.length > PROGRAM_SEARCH_ID_CAP) return null;
+    return rows.map((row) => Number(row["id"]));
+  }
+
   async listPrograms(orgId: string, query: ListProgramsQuery) {
     const program = alias(projectPrograms, "program");
-    const { cursor, limit } = query;
-    const pos = decodeCursor(cursor);
+    const {
+      cursor,
+      limit = 20,
+      sort = "createdAt",
+      order = "desc",
+    } = query;
+    const position = decodeProgramCursor(cursor, sort, order);
+    let searchCondition: SQL | undefined;
+    if (query.q) {
+      const searchIds = await this.searchProgramIds(query.q);
+      searchCondition = searchIds === null
+        ? or(ilike(program.name, `%${query.q}%`), ilike(program.description, `%${query.q}%`))
+        : searchIds.length > 0
+          ? inArray(program.id, searchIds)
+          : sql<boolean>`false`;
+    }
+    const sortColumn = sort === "name"
+      ? program.name
+      : sort === "updatedAt"
+        ? program.updatedAt
+        : program.createdAt;
+    const cursorCondition = position
+      ? sort === "name"
+        ? order === "asc"
+          ? keysetAfterValue(program.name, program.id, position)
+          : keysetBeforeValue(program.name, program.id, position)
+        : order === "asc"
+          ? keysetAfterId(sortColumn, program.id, position)
+          : keysetBeforeId(sortColumn, program.id, position)
+      : undefined;
     const conds = [
       eq(program.orgId, orgId),
       isNull(program.deletedAt),
+      searchCondition,
+      query.ownerId ? eq(program.ownerId, query.ownerId) : undefined,
+      query.health ? eq(program.health, query.health) : undefined,
       query.status ? eq(program.status, query.status) : undefined,
-      query.portfolioId ? eq(program.portfolioId, query.portfolioId) : undefined,
+      query.portfolioId !== undefined
+        ? eq(program.portfolioId, query.portfolioId)
+        : undefined,
+      query.projectId !== undefined
+        ? sql<boolean>`EXISTS (
+            SELECT 1
+            FROM ${programProjects} filtered_link
+            INNER JOIN ${projects} filtered_project
+              ON filtered_project.id = filtered_link.project_id
+             AND filtered_project.org_id = filtered_link.org_id
+             AND filtered_project.deleted_at IS NULL
+            WHERE filtered_link.program_id = ${program.id}
+              AND filtered_link.org_id = ${program.orgId}
+              AND filtered_link.org_id = ${orgId}
+              AND filtered_link.project_id = ${query.projectId}
+          )`
+        : undefined,
+      cursorCondition,
     ];
-    if (pos) conds.push(keysetBeforeId(program.createdAt, program.id, pos));
+    const orderBy = order === "asc"
+      ? [asc(sortColumn), asc(program.id)]
+      : [desc(sortColumn), desc(program.id)];
 
     const rows = await this.db
       .select({
@@ -125,13 +210,19 @@ export class ProgramsService {
       })
       .from(program)
       .where(and(...conds))
-      .orderBy(desc(program.createdAt), desc(program.id))
+      .orderBy(...orderBy)
       .limit(limit + 1);
 
-    return buildCursorPage(rows, limit, (r) => ({
-      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
-      id: String(r.id),
-    }));
+    return buildTupleCursorPage(rows, limit, (row) => [
+      sort,
+      order,
+      sort === "name"
+        ? row.name
+        : sort === "updatedAt"
+          ? row.updatedAt.toISOString()
+          : row.createdAt.toISOString(),
+      String(row.id),
+    ]);
   }
 
   private async pageProgramProjects(

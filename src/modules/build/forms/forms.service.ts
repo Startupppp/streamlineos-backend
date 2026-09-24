@@ -70,6 +70,7 @@ export class FormsService {
   }
 
   async getForm(u: CurrentUserContext, projectId: number, formId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.loadForm(u.orgId, projectId, formId);
   }
 
@@ -111,6 +112,7 @@ export class FormsService {
   }
 
   async updateForm(u: CurrentUserContext, projectId: number, formId: number, input: UpdateFormInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const existing = await this.loadForm(u.orgId, projectId, formId);
     if (
       input.version !== undefined &&
@@ -149,6 +151,7 @@ export class FormsService {
   }
 
   async deleteForm(u: CurrentUserContext, projectId: number, formId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadForm(u.orgId, projectId, formId);
     await this.db
       .update(projectForms)

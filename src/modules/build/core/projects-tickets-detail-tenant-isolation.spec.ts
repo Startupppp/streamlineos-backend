@@ -8,6 +8,9 @@ function makeQueryDb(row: unknown | null) {
       tickets: {
         findFirst: jest.fn().mockResolvedValue(row),
       },
+      projects: {
+        findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }),
+      },
     },
   } as unknown as Db;
 }

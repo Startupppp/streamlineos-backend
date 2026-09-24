@@ -127,13 +127,13 @@ const REVIEWED_INLINE = [
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
-        line: 114,
+        line: 139,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\),/,
         note: "bound to the URL project",
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
-        line: 54,
+        line: 83,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\)/,
         note: "listFields DOES bind projectId — the control proving the column is usable here",
       },
@@ -156,7 +156,7 @@ const REVIEWED_INLINE = [
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
-        line: 137,
+        line: 162,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\),/,
         note: "bound to the URL project",
       },
@@ -234,7 +234,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant: any org ticket is readable through any project's URL.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 68, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 253, anchor: /await assertTicketInProject\(this\.db, orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 233, anchor: /await assertTicketInProject\(this\.db, orgId, projectId, ticketId\);/, note: "bound to the URL project" },
       { file: "src/modules/build/core/project-access.ts", line: 42, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
@@ -247,8 +247,8 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project read of a ticket's watchers.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 120, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 285, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 275, anchor: /eq\(tickets\.projectId, projectId\),/, note: "requireTicket's own WHERE binds id+projectId+orgId" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 265, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 255, anchor: /eq\(tickets\.projectId, projectId\),/, note: "requireTicket's own WHERE binds id+projectId+orgId" },
     ],
   },
   {
@@ -259,7 +259,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 133, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 324, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 304, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -270,7 +270,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 147, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 372, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 352, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -281,7 +281,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 160, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 403, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 383, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -292,7 +292,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 188, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 458, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 438, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -303,7 +303,7 @@ const REVIEWED_INLINE = [
       "POST /build/:projectId/tickets/:ticketId/comments. No @Param(\"projectId\"); the subresources facade drops it before delegating, and the comments service resolves the ticket by (id, orgId).",
     blastRadius: "Intra-tenant: a comment can be posted to a ticket in another project through this project's URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 129, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 131, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
     ],
   },
 
@@ -371,7 +371,7 @@ const REVIEWED_INLINE = [
       "GET /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"); the detail reader binds (orgId, deletedAt) plus an id selector. The scope resolver narrows all-vs-own by permission and carries no project predicate.",
     blastRadius: "Intra-tenant: any org ticket is readable through any project's URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 49, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 52, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -594,8 +594,8 @@ const REVIEWED_INLINE = [
       "POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and IP rate-limited. The form is resolved by (publicToken, isPublic=true, not deleted) inside withPublicToken, and must be active; orgId and projectId for the submission are taken from the resolved form row, never from the caller. NOTE: unlike the whiteboard token this one is compared in plaintext rather than by hash — a storage-exposure hardening opportunity, not an access-control defect.",
     blastRadius: "A submission against the one form the token names.",
     evidence: [
-      { file: "src/modules/build/forms/submissions.service.ts", line: 46, anchor: /eq\(projectForms\.publicToken, publicToken\),/, note: "resolved by token inside withPublicToken; orgId derived from the row" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 47, anchor: /eq\(projectForms\.isPublic, true\),/, note: "non-public forms are not reachable through this route" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 50, anchor: /eq\(projectForms\.publicToken, publicToken\),/, note: "resolved by token inside withPublicToken; orgId derived from the row" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 51, anchor: /eq\(projectForms\.isPublic, true\),/, note: "non-public forms are not reachable through this route" },
     ],
   },
 ];

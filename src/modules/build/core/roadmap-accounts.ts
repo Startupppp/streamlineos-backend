@@ -121,17 +121,6 @@ function topTierRankExpression() {
   return sql`MAX(CASE ${sql.join(branches, sql` `)} ELSE NULL END)`;
 }
 
-/**
- * What the linked accounts are worth, counted once per account rather than once
- * per feedback post. Two posts from the same company are two votes but one
- * balance, so `jsonb_object_agg` keys the values by company id before they are
- * summed — the key collapses the duplicates, and every row for one company
- * carries the same `lifetime_value`, so which duplicate survives does not matter.
- *
- * A company with no `lifetime_value` is filtered out rather than read as zero:
- * `revenueKnownAccountCount` is what says how much of the total is actually
- * known, and a total of NULL is "nobody told us", not "worth nothing".
- */
 function linkedRevenueExpression() {
   const knownValues = sql`jsonb_object_agg(
       ${feedbackPosts.crmOrganizationId}::text,

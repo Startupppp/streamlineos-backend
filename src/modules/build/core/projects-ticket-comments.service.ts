@@ -21,6 +21,8 @@ import {
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import type { CommentInput } from "./dto/projects.schemas";
 import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 @Injectable()
 export class ProjectsTicketCommentsService {
@@ -276,18 +278,10 @@ export class ProjectsTicketCommentsService {
     return { deleted: true };
   }
 
-  async addReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null, ticketId: number, projectId: number) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-
+  async addReaction(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, emoji: string) {
+    const { orgId, userId } = u;
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    const membershipId = actingMembershipId(u.principal);
     const comment = await this.db.query.ticketComments.findFirst({
       where: and(
         eq(ticketComments.id, commentId),
@@ -307,18 +301,10 @@ export class ProjectsTicketCommentsService {
     return { commentId, userId, emoji };
   }
 
-  async removeReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null, ticketId: number, projectId: number) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-
+  async removeReaction(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, emoji: string) {
+    const { orgId } = u;
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    const membershipId = actingMembershipId(u.principal);
     const comment = await this.db.query.ticketComments.findFirst({
       where: and(
         eq(ticketComments.id, commentId),

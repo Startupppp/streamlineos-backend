@@ -3757,7 +3757,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "resourceAllocation",
-      "line": 55,
+      "line": 60,
       "verb": "GET",
       "path": "/build/resource-allocation",
       "routeParams": [],
@@ -3768,27 +3768,27 @@
         "PermissionGuard"
       ],
       "guardChainOk": true,
-      "validate": "absent",
+      "validate": "present",
       "declaredParams": null,
       "missingParams": null,
       "extraParams": null,
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.analytics.resourceAllocation(u.orgId)",
+        "call": "this.analytics.resourceAllocation(u.orgId, query)",
         "type": "ProjectsAnalyticsService",
         "file": "src/modules/build/core/projects-analytics.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-analytics.service.ts:264",
+      "orgEvidence": "src/modules/build/core/projects-analytics.service.ts:269",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:55",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:60",
       "reviewedEvidence": null
     },
     {
@@ -3796,7 +3796,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "getAnalytics",
-      "line": 63,
+      "line": 72,
       "verb": "GET",
       "path": "/build/:projectId/analytics",
       "routeParams": [
@@ -3824,14 +3824,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-analytics.service.ts:17",
+      "orgEvidence": "src/modules/build/core/projects-analytics.service.ts:22",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:63",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:72",
       "reviewedEvidence": null
     },
     {
@@ -3839,7 +3839,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "burnup",
-      "line": 75,
+      "line": 84,
       "verb": "GET",
       "path": "/build/:projectId/reports/burnup",
       "routeParams": [
@@ -3874,7 +3874,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:75",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:84",
       "reviewedEvidence": null
     },
     {
@@ -3882,7 +3882,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "cfd",
-      "line": 87,
+      "line": 96,
       "verb": "GET",
       "path": "/build/:projectId/reports/cfd",
       "routeParams": [
@@ -3917,7 +3917,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:87",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:96",
       "reviewedEvidence": null
     },
     {
@@ -3925,7 +3925,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "criticalPath",
-      "line": 99,
+      "line": 108,
       "verb": "GET",
       "path": "/build/:projectId/reports/critical-path",
       "routeParams": [
@@ -3960,7 +3960,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:99",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:108",
       "reviewedEvidence": null
     },
     {
@@ -3968,7 +3968,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "velocity",
-      "line": 110,
+      "line": 119,
       "verb": "GET",
       "path": "/build/:projectId/reports/velocity",
       "routeParams": [
@@ -4003,7 +4003,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:110",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:119",
       "reviewedEvidence": null
     },
     {
@@ -4011,7 +4011,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "getCycleTime",
-      "line": 134,
+      "line": 143,
       "verb": "GET",
       "path": "/build/:projectId/reports/cycle-time",
       "routeParams": [
@@ -4046,7 +4046,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:134",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:143",
       "reviewedEvidence": null
     },
     {
@@ -4054,7 +4054,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "getLeadTime",
-      "line": 145,
+      "line": 154,
       "verb": "GET",
       "path": "/build/:projectId/reports/lead-time",
       "routeParams": [
@@ -4089,7 +4089,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:145",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:154",
       "reviewedEvidence": null
     },
     {
@@ -4097,7 +4097,7 @@
       "file": "src/modules/build/core/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "snapshot",
-      "line": 156,
+      "line": 165,
       "verb": "POST",
       "path": "/build/:projectId/reports/snapshot",
       "routeParams": [
@@ -4134,7 +4134,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-reports.controller.ts:156",
+      "evidence": "src/modules/build/core/projects-reports.controller.ts:165",
       "reviewedEvidence": null
     },
     {
@@ -4166,7 +4166,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:113",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:133",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4209,7 +4209,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:172",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:192",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4248,7 +4248,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:128",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:148",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4293,7 +4293,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:161",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:181",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4338,7 +4338,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:190",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:210",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4379,7 +4379,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:200",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:220",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4418,7 +4418,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:204",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:224",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4463,7 +4463,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:212",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:232",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4508,7 +4508,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:216",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:236",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4553,7 +4553,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:220",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:240",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4594,7 +4594,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:224",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:244",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4633,7 +4633,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:228",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:248",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4678,7 +4678,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:236",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:256",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4723,7 +4723,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:240",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:260",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -7581,9 +7581,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-webhooks-dispatch.service.ts:311",
+      "orgEvidence": "src/modules/build/core/projects-webhooks-dispatch.service.ts:328",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-webhooks-dispatch.service.ts:311",
+      "parentEvidence": "src/modules/build/core/projects-webhooks-dispatch.service.ts:328",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -7604,7 +7604,7 @@
         },
         {
           "file": "src/modules/build/core/projects-webhooks-dispatch.service.ts",
-          "line": 311,
+          "line": 328,
           "note": "signature"
         }
       ]
@@ -12154,7 +12154,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "listIncidents",
-      "line": 72,
+      "line": 74,
       "verb": "GET",
       "path": "/build/:projectId/incidents",
       "routeParams": [
@@ -12180,7 +12180,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:63",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:91",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12189,7 +12189,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:72",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:74",
       "reviewedEvidence": null
     },
     {
@@ -12197,7 +12197,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "getIncident",
-      "line": 84,
+      "line": 86,
       "verb": "GET",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12221,34 +12221,34 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.svc.getIncident(u, projectId, incidentId)",
+        "call": "this.svc.getIncident(u, projectId, incidentId, query)",
         "type": "IncidentsService",
         "file": "src/modules/build/incidents/incidents.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:81",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:109",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:81",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:109",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
-      "verdictReason": "GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the joined incidentUpdates query (itself filtered by the now-confirmed incidentId+orgId) runs.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:84",
+      "verdictReason": "GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the bounded child-resource queries run.",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:86",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 93,
-          "note": "route handler passes raw path params straight to the service"
+          "line": 96,
+          "note": "route handler passes both path params and the validated child query to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 83,
-          "note": "getIncident binds via loadIncident before reading updates"
+          "line": 116,
+          "note": "getIncident binds via loadIncident before reading child resources"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 47,
+          "line": 50,
           "note": "loadIncident's WHERE binds incidentId to projectId and orgId together"
         }
       ]
@@ -12258,7 +12258,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "createIncident",
-      "line": 96,
+      "line": 99,
       "verb": "POST",
       "path": "/build/:projectId/incidents",
       "routeParams": [
@@ -12284,7 +12284,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:122",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:120",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12294,7 +12294,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:96",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:99",
       "reviewedEvidence": null
     },
     {
@@ -12302,7 +12302,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "updateIncident",
-      "line": 109,
+      "line": 112,
       "verb": "PATCH",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12332,30 +12332,35 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:163",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:161",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:163",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:161",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "PATCH /build/:projectId/incidents/:incidentId. updateIncident binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId) and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction. NOTE: unlike the sibling getIncident/addUpdate handlers in this same file, updateIncident does not additionally call assertProjectAccess — it relies solely on org-wide build:incidents:manage plus the id/org/project row binding. That is a project-membership-scoping asymmetry (any org member holding build:incidents:manage can edit incidents in a project they are not otherwise a member of), not a parent-binding defect: the object itself is still fully and correctly scoped to the named project, and a cross-tenant/cross-project incidentId still 404s.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:109",
+      "verdictReason": "PATCH /build/:projectId/incidents/:incidentId. updateIncident calls assertProjectAccess(projectId), then binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId), and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction.",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:112",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 119,
+          "line": 122,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 169,
-          "note": "binds incidentId to projectId via loadIncident before patching; no assertProjectAccess call precedes it"
+          "line": 167,
+          "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 198,
+          "line": 168,
+          "note": "binds incidentId to projectId via loadIncident before patching"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 208,
           "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -12365,7 +12370,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "deleteIncident",
-      "line": 122,
+      "line": 125,
       "verb": "DELETE",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12395,30 +12400,35 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:257",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:283",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:257",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:283",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "DELETE /build/:projectId/incidents/:incidentId (soft delete). Same shape as updateIncident: loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId. Also skips assertProjectAccess like updateIncident (see that entry's note) — a project-membership-scoping asymmetry, not a parent-binding defect.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:122",
+      "verdictReason": "DELETE /build/:projectId/incidents/:incidentId (soft delete). deleteIncident calls assertProjectAccess(projectId), then loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:125",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 132,
+          "line": 135,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 258,
-          "note": "binds incidentId to projectId via loadIncident; no assertProjectAccess call precedes it"
+          "line": 284,
+          "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 266,
+          "line": 285,
+          "note": "binds incidentId to projectId via loadIncident before deleting"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 293,
           "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -12428,7 +12438,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "addUpdate",
-      "line": 135,
+      "line": 138,
       "verb": "POST",
       "path": "/build/:projectId/incidents/:incidentId/updates",
       "routeParams": [
@@ -12458,30 +12468,30 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:279",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:306",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:279",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:306",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:135",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:138",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 146,
+          "line": 149,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 286,
+          "line": 313,
           "note": "binds incidentId to projectId via loadIncident before writing"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 312,
+          "line": 344,
           "note": "in-transaction status UPDATE independently re-binds id+orgId+projectId"
         }
       ]
@@ -12491,7 +12501,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "addDecision",
-      "line": 149,
+      "line": 152,
       "verb": "POST",
       "path": "/build/:projectId/incidents/:incidentId/decisions",
       "routeParams": [
@@ -12521,25 +12531,25 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:352",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:393",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:352",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:393",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/incidents/:incidentId/decisions. addDecision calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) — the same helper proven elsewhere in this file to bind id+orgId+projectId together, 404 on mismatch — before inserting the decision row, which is itself scoped to the now-confirmed incidentId+orgId.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:149",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:152",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 358,
+          "line": 399,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 359,
+          "line": 400,
           "note": "binds incidentId to projectId via loadIncident before writing"
         }
       ]
@@ -12549,7 +12559,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "addFollowUpAction",
-      "line": 163,
+      "line": 166,
       "verb": "POST",
       "path": "/build/:projectId/incidents/:incidentId/follow-ups",
       "routeParams": [
@@ -12579,25 +12589,25 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:388",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:424",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:388",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:424",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/incidents/:incidentId/follow-ups. Same binding shape as addDecision: assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) before inserting the follow-up-action row.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:163",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:166",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 394,
+          "line": 430,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 395,
+          "line": 431,
           "note": "binds incidentId to projectId via loadIncident before writing"
         }
       ]
@@ -12607,7 +12617,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "updateFollowUpAction",
-      "line": 177,
+      "line": 180,
       "verb": "PATCH",
       "path": "/build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId",
       "routeParams": [
@@ -12639,30 +12649,30 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:421",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:457",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:421",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:457",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId. assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) bind the parent incident to this project; the UPDATE's own WHERE independently re-binds id=followUpActionId AND orgId AND incidentId, so a foreign followUpActionId (even one belonging to a different incident in the same org) 404s rather than matching.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:177",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:180",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 428,
+          "line": 464,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 429,
+          "line": 465,
           "note": "binds incidentId to projectId via loadIncident before updating"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 445,
+          "line": 481,
           "note": "UPDATE WHERE independently re-binds id+orgId+incidentId"
         }
       ]
@@ -13675,7 +13685,7 @@
       "file": "src/modules/build/portfolios/portfolios.controller.ts",
       "class": "PortfoliosController",
       "method": "listPortfolios",
-      "line": 50,
+      "line": 52,
       "verb": "GET",
       "path": "/build/portfolios",
       "routeParams": [],
@@ -13699,14 +13709,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:75",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:77",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:50",
+      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:52",
       "reviewedEvidence": null
     },
     {
@@ -13714,7 +13724,7 @@
       "file": "src/modules/build/portfolios/portfolios.controller.ts",
       "class": "PortfoliosController",
       "method": "getPortfolio",
-      "line": 61,
+      "line": 63,
       "verb": "GET",
       "path": "/build/portfolios/:portfolioId",
       "routeParams": [
@@ -13736,20 +13746,20 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.svc.getPortfolio(u.orgId, portfolioId)",
+        "call": "this.svc.getPortfolio(u.orgId, portfolioId, query)",
         "type": "PortfoliosService",
         "file": "src/modules/build/portfolios/portfolios.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:119",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:216",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:61",
+      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:63",
       "reviewedEvidence": null
     },
     {
@@ -13757,7 +13767,7 @@
       "file": "src/modules/build/portfolios/portfolios.controller.ts",
       "class": "PortfoliosController",
       "method": "createPortfolio",
-      "line": 72,
+      "line": 75,
       "verb": "POST",
       "path": "/build/portfolios",
       "routeParams": [],
@@ -13781,7 +13791,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:174",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:231",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -13791,17 +13801,17 @@
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "POST /build/portfolios. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into project_portfolios with orgId as a column of .values() at portfolios.service.ts:182 and records createdBy from the verified context. PASSED-UNBOUND is the documented create-endpoint reading: the binding is an INSERT column and the static pass only recognises predicates. The sibling updatePortfolio binds eq(projectPortfolios.orgId, orgId) in its WHERE, confirming the column is the tenant key.",
-      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:72",
+      "verdictReason": "POST /build/portfolios. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into project_portfolios with orgId as a column of .values() and records createdBy from the verified context. PASSED-UNBOUND is the documented create-endpoint reading: the binding is an INSERT column and the static pass only recognises predicates. The sibling updatePortfolio binds eq(projectPortfolios.orgId, orgId) in its WHERE, confirming the column is the tenant key.",
+      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:75",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
-          "line": 180,
+          "line": 237,
           "note": "an INSERT — no WHERE clause exists to carry a predicate"
         },
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
-          "line": 182,
+          "line": 239,
           "note": "org bound as an ES6 shorthand column in .values()"
         }
       ]
@@ -13811,7 +13821,7 @@
       "file": "src/modules/build/portfolios/portfolios.controller.ts",
       "class": "PortfoliosController",
       "method": "updatePortfolio",
-      "line": 84,
+      "line": 87,
       "verb": "PATCH",
       "path": "/build/portfolios/:portfolioId",
       "routeParams": [
@@ -13839,7 +13849,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:204",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:261",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13848,7 +13858,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:84",
+      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:87",
       "reviewedEvidence": null
     },
     {
@@ -13856,7 +13866,7 @@
       "file": "src/modules/build/portfolios/portfolios.controller.ts",
       "class": "PortfoliosController",
       "method": "deletePortfolio",
-      "line": 96,
+      "line": 99,
       "verb": "DELETE",
       "path": "/build/portfolios/:portfolioId",
       "routeParams": [
@@ -13884,7 +13894,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:242",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:299",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13893,7 +13903,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:96",
+      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:99",
       "reviewedEvidence": null
     },
     {
@@ -13901,7 +13911,7 @@
       "file": "src/modules/build/portfolios/portfolios.controller.ts",
       "class": "PortfoliosController",
       "method": "linkProject",
-      "line": 108,
+      "line": 111,
       "verb": "POST",
       "path": "/build/portfolios/:portfolioId/projects",
       "routeParams": [
@@ -13929,7 +13939,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:263",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:320",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13938,7 +13948,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:108",
+      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:111",
       "reviewedEvidence": null
     },
     {
@@ -13946,7 +13956,7 @@
       "file": "src/modules/build/portfolios/portfolios.controller.ts",
       "class": "PortfoliosController",
       "method": "unlinkProject",
-      "line": 121,
+      "line": 124,
       "verb": "DELETE",
       "path": "/build/portfolios/:portfolioId/projects/:projectId",
       "routeParams": [
@@ -13976,30 +13986,30 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:286",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:343",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/portfolios/portfolios.service.ts:286",
+      "parentEvidence": "src/modules/build/portfolios/portfolios.service.ts:343",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls loadPortfolio(orgId, portfolioId) first, whose WHERE binds id=portfolioId AND orgId (404 on a foreign portfolioId), then deletes the link row scoped by portfolioId+projectId+orgId. Because portfolioId is already proven to belong to this org, and orgId is repeated on the delete, a projectId belonging to another org's portfolio simply matches zero rows — it can never unlink a link row outside the caller's own org, and cannot affect the project row itself (only the join-table association).",
-      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:121",
+      "evidence": "src/modules/build/portfolios/portfolios.controller.ts:124",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/portfolios/portfolios.controller.ts",
-          "line": 131,
+          "line": 134,
           "note": "route handler passes both raw path params straight to the service"
         },
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
-          "line": 292,
+          "line": 349,
           "note": "binds portfolioId to orgId via loadPortfolio before the delete"
         },
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
-          "line": 299,
+          "line": 356,
           "note": "DELETE WHERE clause scopes to portfolioId + projectId + orgId together"
         }
       ]
@@ -14009,7 +14019,7 @@
       "file": "src/modules/build/portfolios/programs.controller.ts",
       "class": "ProgramsController",
       "method": "listPrograms",
-      "line": 50,
+      "line": 52,
       "verb": "GET",
       "path": "/build/programs",
       "routeParams": [],
@@ -14033,14 +14043,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:87",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:126",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/programs.controller.ts:50",
+      "evidence": "src/modules/build/portfolios/programs.controller.ts:52",
       "reviewedEvidence": null
     },
     {
@@ -14048,7 +14058,7 @@
       "file": "src/modules/build/portfolios/programs.controller.ts",
       "class": "ProgramsController",
       "method": "getProgram",
-      "line": 61,
+      "line": 63,
       "verb": "GET",
       "path": "/build/programs/:programId",
       "routeParams": [
@@ -14070,20 +14080,20 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.svc.getProgram(u.orgId, programId)",
+        "call": "this.svc.getProgram(u.orgId, programId, query)",
         "type": "ProgramsService",
         "file": "src/modules/build/portfolios/programs.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:125",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:268",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/programs.controller.ts:61",
+      "evidence": "src/modules/build/portfolios/programs.controller.ts:63",
       "reviewedEvidence": null
     },
     {
@@ -14091,7 +14101,7 @@
       "file": "src/modules/build/portfolios/programs.controller.ts",
       "class": "ProgramsController",
       "method": "createProgram",
-      "line": 72,
+      "line": 75,
       "verb": "POST",
       "path": "/build/programs",
       "routeParams": [],
@@ -14115,7 +14125,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:148",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:277",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14124,7 +14134,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/programs.controller.ts:72",
+      "evidence": "src/modules/build/portfolios/programs.controller.ts:75",
       "reviewedEvidence": null
     },
     {
@@ -14132,7 +14142,7 @@
       "file": "src/modules/build/portfolios/programs.controller.ts",
       "class": "ProgramsController",
       "method": "updateProgram",
-      "line": 84,
+      "line": 87,
       "verb": "PATCH",
       "path": "/build/programs/:programId",
       "routeParams": [
@@ -14160,7 +14170,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:180",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:309",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14169,7 +14179,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/programs.controller.ts:84",
+      "evidence": "src/modules/build/portfolios/programs.controller.ts:87",
       "reviewedEvidence": null
     },
     {
@@ -14177,7 +14187,7 @@
       "file": "src/modules/build/portfolios/programs.controller.ts",
       "class": "ProgramsController",
       "method": "deleteProgram",
-      "line": 96,
+      "line": 99,
       "verb": "DELETE",
       "path": "/build/programs/:programId",
       "routeParams": [
@@ -14205,7 +14215,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:220",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:349",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14214,7 +14224,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/programs.controller.ts:96",
+      "evidence": "src/modules/build/portfolios/programs.controller.ts:99",
       "reviewedEvidence": null
     },
     {
@@ -14222,7 +14232,7 @@
       "file": "src/modules/build/portfolios/programs.controller.ts",
       "class": "ProgramsController",
       "method": "linkProject",
-      "line": 108,
+      "line": 111,
       "verb": "POST",
       "path": "/build/programs/:programId/projects",
       "routeParams": [
@@ -14250,7 +14260,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:241",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:370",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14259,7 +14269,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/portfolios/programs.controller.ts:108",
+      "evidence": "src/modules/build/portfolios/programs.controller.ts:111",
       "reviewedEvidence": null
     },
     {
@@ -14267,7 +14277,7 @@
       "file": "src/modules/build/portfolios/programs.controller.ts",
       "class": "ProgramsController",
       "method": "unlinkProject",
-      "line": 121,
+      "line": 124,
       "verb": "DELETE",
       "path": "/build/programs/:programId/projects/:projectId",
       "routeParams": [
@@ -14297,30 +14307,30 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:264",
+      "orgEvidence": "src/modules/build/portfolios/programs.service.ts:393",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/portfolios/programs.service.ts:264",
+      "parentEvidence": "src/modules/build/portfolios/programs.service.ts:393",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/programs/:programId/projects/:projectId. Structurally identical to portfolios#unlinkProject: loadProgram(orgId, programId) binds programId to orgId (404 on a foreign programId), then the DELETE's WHERE scopes to programId+projectId+orgId. A projectId belonging to another org's program matches zero rows.",
-      "evidence": "src/modules/build/portfolios/programs.controller.ts:121",
+      "evidence": "src/modules/build/portfolios/programs.controller.ts:124",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/portfolios/programs.controller.ts",
-          "line": 131,
+          "line": 134,
           "note": "route handler passes both raw path params straight to the service"
         },
         {
           "file": "src/modules/build/portfolios/programs.service.ts",
-          "line": 270,
+          "line": 399,
           "note": "binds programId to orgId via loadProgram before the delete"
         },
         {
           "file": "src/modules/build/portfolios/programs.service.ts",
-          "line": 277,
+          "line": 406,
           "note": "DELETE WHERE clause scopes to programId + projectId + orgId together"
         }
       ]

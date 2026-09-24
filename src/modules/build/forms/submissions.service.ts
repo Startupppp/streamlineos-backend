@@ -4,6 +4,9 @@ import { formSubmissions, projectForms, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
+import { assertProjectAccess } from "../core/project-access";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import type { CreateSubmissionInput, ListSubmissionsQuery, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
@@ -23,6 +26,7 @@ type SubmissionRunResult = {
 export class SubmissionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
     private readonly audit: AuditService,
   ) {}
 
@@ -141,7 +145,9 @@ export class SubmissionsService {
     return { submission, createdTicketIds, executedActionTypes, skippedActionTypes };
   }
 
-  async listSubmissions(orgId: string, projectId: number, formId: number, query: ListSubmissionsQuery) {
+  async listSubmissions(u: CurrentUserContext, projectId: number, formId: number, query: ListSubmissionsQuery) {
+    const { orgId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadForm(orgId, projectId, formId);
     const cursorDate = query.cursor ? new Date(query.cursor) : undefined;
     return this.db
@@ -169,12 +175,13 @@ export class SubmissionsService {
   }
 
   async createSubmission(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     formId: number,
     input: CreateSubmissionInput,
   ) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const form = await this.loadForm(orgId, projectId, formId);
     if (!form.isActive) throw new BadRequestException("Form is not active");
 
@@ -218,13 +225,14 @@ export class SubmissionsService {
   }
 
   async updateSubmission(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     formId: number,
     submissionId: number,
     input: UpdateSubmissionInput,
   ) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadForm(orgId, projectId, formId);
     await this.loadSubmission(orgId, formId, submissionId);
     const [updated] = await this.db

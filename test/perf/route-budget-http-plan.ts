@@ -304,6 +304,7 @@ export const CRON_JOBS = [
   "helpdesk-retention-sweep",
   "retention-delete-sweep",
   "ai-usage-retention-sweep",
+  "build-daily-snapshots",
   "build-retention-prune",
   "kb-chat-history-purge",
   "kb-chunk-retention-sweep",

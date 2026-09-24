@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { PAGE_SIZE_CAP } from "../../../../common/pagination/list-query.schema";
 
 export const listAffectedTicketsQuerySchema = z
   .object({
     cursor: z.string().optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(PAGE_SIZE_CAP).optional(),
   })
   .strict();
 

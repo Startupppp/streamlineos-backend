@@ -118,43 +118,23 @@ export class ProjectsTicketSubresourcesService {
   }
 
   addReaction(
-    commentId: number,
-    userId: string,
-    orgId: string,
-    emoji: string,
-    membershipId: number | null,
-    ticketId: number,
+    u: CurrentUserContext,
     projectId: number,
+    ticketId: number,
+    commentId: number,
+    emoji: string,
   ) {
-    return this.comments.addReaction(
-      commentId,
-      userId,
-      orgId,
-      emoji,
-      membershipId,
-      ticketId,
-      projectId,
-    );
+    return this.comments.addReaction(u, projectId, ticketId, commentId, emoji);
   }
 
   removeReaction(
-    commentId: number,
-    userId: string,
-    orgId: string,
-    emoji: string,
-    membershipId: number | null,
-    ticketId: number,
+    u: CurrentUserContext,
     projectId: number,
+    ticketId: number,
+    commentId: number,
+    emoji: string,
   ) {
-    return this.comments.removeReaction(
-      commentId,
-      userId,
-      orgId,
-      emoji,
-      membershipId,
-      ticketId,
-      projectId,
-    );
+    return this.comments.removeReaction(u, projectId, ticketId, commentId, emoji);
   }
 
   getCommentReactions(commentId: number, orgId: string) {

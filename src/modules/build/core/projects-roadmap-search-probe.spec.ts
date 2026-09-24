@@ -6,18 +6,6 @@ import type { Db } from "../../../db/drizzle.module";
 import type { ProjectsChangelogService } from "./projects-changelog.service";
 import type { ProjectsFeedbackService } from "./projects-feedback.service";
 
-/**
- * The alignment this pins: the probe the migration defines and the fallback the
- * service compiles must select the same rows for the same term, or the cap+1
- * switch between them changes the answer instead of only the plan.
- *
- * Both sides are read from their real source -- the probe's predicate is parsed
- * out of the migration that creates the function, the fallback's out of the
- * condition the service actually builds -- so a change to either side alone
- * breaks the pair. EXPLAIN is not available here: there is no non-production
- * database to plan against, so index alignment is asserted by query shape.
- */
-
 const dialect = new PgDialect();
 const MIGRATION = join(
   __dirname,
@@ -26,7 +14,6 @@ const MIGRATION = join(
   "..",
   "..",
   "migrations",
-  "pending",
   "1177_roadmap_search_id_probe.sql",
 );
 

@@ -1,5 +1,6 @@
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import * as buildSchema from "./index";
+import { crmOrgPartyMap } from "../party/legacy-party-map";
 
 const BUILD_SCHEMAS = new Set(["build", "build_events"]);
 const TENANT_COLUMN = "org_id";
@@ -7,6 +8,10 @@ const TENANT_COLUMN = "org_id";
 interface TenantParentReference {
   readonly child: string;
   readonly parent: string;
+  readonly name: string;
+  readonly onDelete: string | undefined;
+  readonly childTenantColumn: string;
+  readonly parentTenantColumn: string;
   readonly localColumns: readonly string[];
   readonly parentColumns: readonly string[];
 }
@@ -20,6 +25,17 @@ function isTenantScoped(table: PgTable): boolean {
   return getTableConfig(table).columns.some(
     (column) => column.name === TENANT_COLUMN,
   );
+}
+
+function parentTenantColumn(table: PgTable): string | undefined {
+  const config = getTableConfig(table);
+  if (config.columns.some((column) => column.name === TENANT_COLUMN)) {
+    return TENANT_COLUMN;
+  }
+  if (table === crmOrgPartyMap) {
+    return crmOrgPartyMap.organizationId.name;
+  }
+  return undefined;
 }
 
 function buildTables(): PgTable[] {
@@ -40,10 +56,15 @@ function tenantParentReferences(): TenantParentReference[] {
       const reference = foreignKey.reference();
       const parent = reference.foreignTable;
       if (!(parent instanceof PgTable)) continue;
-      if (!isTenantScoped(parent)) continue;
+      const parentTenant = parentTenantColumn(parent);
+      if (!parentTenant) continue;
       found.push({
         child: qualifiedName(table),
         parent: qualifiedName(parent),
+        name: foreignKey.getName(),
+        onDelete: foreignKey.onDelete,
+        childTenantColumn: TENANT_COLUMN,
+        parentTenantColumn: parentTenant,
         localColumns: reference.columns.map((column) => column.name),
         parentColumns: reference.foreignColumns.map((column) => column.name),
       });
@@ -53,19 +74,18 @@ function tenantParentReferences(): TenantParentReference[] {
 }
 
 function pairsTenantColumn(reference: TenantParentReference): boolean {
-  const position = reference.parentColumns.indexOf(TENANT_COLUMN);
+  const position = reference.parentColumns.indexOf(
+    reference.parentTenantColumn,
+  );
   return (
-    position !== -1 && reference.localColumns[position] === TENANT_COLUMN
+    position !== -1 &&
+    reference.localColumns[position] === reference.childTenantColumn
   );
 }
 
 function describeReference(reference: TenantParentReference): string {
   return `${reference.child}(${reference.localColumns.join(", ")}) -> ${reference.parent}(${reference.parentColumns.join(", ")})`;
 }
-
-const UNPAIRED_TENANT_REFERENCES = [
-  "build.tickets(customer_id) -> clients(id)",
-];
 
 describe("build schema tenant foreign keys", () => {
   it("walks every build and build_events table so the later assertions cannot pass vacuously", () => {
@@ -80,27 +100,24 @@ describe("build schema tenant foreign keys", () => {
     const references = tenantParentReferences();
     expect(references.length).toBeGreaterThan(100);
     expect(references.filter(pairsTenantColumn).length).toBeGreaterThan(100);
+    expect(references).toContainEqual({
+      child: "build.tickets",
+      parent: "crm_org_party_map",
+      name: "fk_tickets_customer_id_org",
+      onDelete: "set null",
+      childTenantColumn: "org_id",
+      parentTenantColumn: "organization_id",
+      localColumns: ["org_id", "customer_id"],
+      parentColumns: ["organization_id", "crm_organization_id"],
+    });
   });
 
-  it("pairs org_id with the parent key on every build child reference to a tenant-scoped parent, except the references recorded below", () => {
+  it("pairs org_id with the parent tenant key on every build child reference to a tenant-scoped parent", () => {
     const unpaired = tenantParentReferences()
       .filter((reference) => !pairsTenantColumn(reference))
       .map(describeReference)
       .sort();
 
-    expect(unpaired).toEqual(UNPAIRED_TENANT_REFERENCES);
-  });
-
-  it("holds tickets.customer_id as the only unpaired reference, which lets a ticket point at another organisation's client row until a migration rebuilds the constraint as composite", () => {
-    expect(UNPAIRED_TENANT_REFERENCES).toHaveLength(1);
-
-    const unpaired = tenantParentReferences().filter(
-      (reference) => !pairsTenantColumn(reference),
-    );
-
-    expect(unpaired).toHaveLength(1);
-    expect(unpaired[0]?.child).toBe("build.tickets");
-    expect(unpaired[0]?.parent).toBe("clients");
-    expect(unpaired[0]?.localColumns).toEqual(["customer_id"]);
+    expect(unpaired).toEqual([]);
   });
 });

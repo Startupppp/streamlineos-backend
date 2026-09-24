@@ -3,6 +3,7 @@ import { ProgramsService } from "./programs.service";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { portfolioPageSchema, programPageSchema } from "./dto/portfolios-response.schemas";
+import { listProgramsQuerySchema } from "./dto/portfolios.schemas";
 import { checkResponseAgainstContract } from "../../../common/openapi/response-contract.interceptor";
 
 const STORED_PORTFOLIO = {
@@ -37,12 +38,7 @@ const STORED_PROGRAM = {
   projectCount: 4,
 };
 
-const PROGRAM_LIST_QUERY = {
-  cursor: undefined,
-  limit: 50,
-  status: undefined,
-  portfolioId: undefined,
-};
+const PROGRAM_LIST_QUERY = listProgramsQuerySchema.parse({ limit: 50 });
 
 function dbProjecting(row: Record<string, unknown>): Db {
   const builder: Record<string, unknown> = {};

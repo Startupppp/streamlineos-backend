@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { changeRequestStatusEnum } from "../../../../db/schema";
+import { PAGE_SIZE_CAP } from "../../../../common/pagination/list-query.schema";
 
 export const createChangeRequestSchema = z.object({
   title: z.string().min(1).max(500),
@@ -39,8 +40,9 @@ export const listCrQuerySchema = z
       .pipe(z.boolean())
       .optional(),
     q: z.string().max(200).optional(),
+    affectedTicketId: z.coerce.number().int().positive().optional(),
     cursor: z.string().optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(PAGE_SIZE_CAP).optional(),
   })
   .strict();
 

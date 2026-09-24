@@ -63,7 +63,12 @@ export class ProjectsRoadmapService {
 
   searchFallbackCondition(term: string): SQL {
     const like = `%${term}%`;
-    return or(ilike(roadmapItems.title, like), ilike(roadmapItems.description, like))!;
+    const condition = or(
+      ilike(roadmapItems.title, like),
+      ilike(roadmapItems.description, like),
+    );
+    if (!condition) return sql`false`;
+    return condition;
   }
 
   async searchCondition(term: string): Promise<SQL> {

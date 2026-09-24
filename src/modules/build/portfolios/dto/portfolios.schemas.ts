@@ -33,8 +33,14 @@ export const linkProjectSchema = z.object({
 export const listProgramsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
+  q: z.string().trim().min(1).max(120).optional(),
+  ownerId: z.string().trim().min(1).max(255).optional(),
+  health: z.enum(portfolioHealthEnum.enumValues).optional(),
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
   portfolioId: z.coerce.number().int().positive().optional(),
+  projectId: z.coerce.number().int().positive().optional(),
+  sort: z.enum(["createdAt", "updatedAt", "name"]).default("createdAt"),
+  order: z.enum(["asc", "desc"]).default("desc"),
 }).strict();
 
 export const portfolioDetailQuerySchema = z.object({

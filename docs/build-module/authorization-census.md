@@ -989,7 +989,7 @@ POST /build/:projectId/webhooks/:webhookId/test. The controller itself calls `aw
 
 - `src/modules/build/core/projects-webhooks.controller.ts:90` — handler binds both projectId and webhookId
 - `src/modules/build/core/projects-webhooks.controller.ts:95` — controller-level ownership check runs before dispatch.sendTest
-- `src/modules/build/core/projects-webhooks-dispatch.service.ts:311` — signature
+- `src/modules/build/core/projects-webhooks-dispatch.service.ts:328` — signature
 
 ### VERIFIED — `POST /build/labels`
 
@@ -1323,71 +1323,73 @@ DELETE /build/:projectId/risks/:riskId (soft delete). Same binding as updateRisk
 
 ### VERIFIED — `GET /build/:projectId/incidents/:incidentId`
 
-`IncidentsController.getIncident` — `src/modules/build/incidents/incidents.controller.ts:84`
+`IncidentsController.getIncident` — `src/modules/build/incidents/incidents.controller.ts:86`
 
-GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the joined incidentUpdates query (itself filtered by the now-confirmed incidentId+orgId) runs.
+GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the bounded child-resource queries run.
 
-- `src/modules/build/incidents/incidents.controller.ts:93` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:83` — getIncident binds via loadIncident before reading updates
-- `src/modules/build/incidents/incidents.service.ts:47` — loadIncident's WHERE binds incidentId to projectId and orgId together
+- `src/modules/build/incidents/incidents.controller.ts:96` — route handler passes both path params and the validated child query to the service
+- `src/modules/build/incidents/incidents.service.ts:116` — getIncident binds via loadIncident before reading child resources
+- `src/modules/build/incidents/incidents.service.ts:50` — loadIncident's WHERE binds incidentId to projectId and orgId together
 
 ### VERIFIED — `PATCH /build/:projectId/incidents/:incidentId`
 
-`IncidentsController.updateIncident` — `src/modules/build/incidents/incidents.controller.ts:109`
+`IncidentsController.updateIncident` — `src/modules/build/incidents/incidents.controller.ts:112`
 
-PATCH /build/:projectId/incidents/:incidentId. updateIncident binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId) and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction. NOTE: unlike the sibling getIncident/addUpdate handlers in this same file, updateIncident does not additionally call assertProjectAccess — it relies solely on org-wide build:incidents:manage plus the id/org/project row binding. That is a project-membership-scoping asymmetry (any org member holding build:incidents:manage can edit incidents in a project they are not otherwise a member of), not a parent-binding defect: the object itself is still fully and correctly scoped to the named project, and a cross-tenant/cross-project incidentId still 404s.
+PATCH /build/:projectId/incidents/:incidentId. updateIncident calls assertProjectAccess(projectId), then binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId), and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction.
 
-- `src/modules/build/incidents/incidents.controller.ts:119` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:169` — binds incidentId to projectId via loadIncident before patching; no assertProjectAccess call precedes it
-- `src/modules/build/incidents/incidents.service.ts:198` — UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.controller.ts:122` — route handler passes raw path params straight to the service
+- `src/modules/build/incidents/incidents.service.ts:167` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:168` — binds incidentId to projectId via loadIncident before patching
+- `src/modules/build/incidents/incidents.service.ts:208` — UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `DELETE /build/:projectId/incidents/:incidentId`
 
-`IncidentsController.deleteIncident` — `src/modules/build/incidents/incidents.controller.ts:122`
+`IncidentsController.deleteIncident` — `src/modules/build/incidents/incidents.controller.ts:125`
 
-DELETE /build/:projectId/incidents/:incidentId (soft delete). Same shape as updateIncident: loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId. Also skips assertProjectAccess like updateIncident (see that entry's note) — a project-membership-scoping asymmetry, not a parent-binding defect.
+DELETE /build/:projectId/incidents/:incidentId (soft delete). deleteIncident calls assertProjectAccess(projectId), then loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.
 
-- `src/modules/build/incidents/incidents.controller.ts:132` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:258` — binds incidentId to projectId via loadIncident; no assertProjectAccess call precedes it
-- `src/modules/build/incidents/incidents.service.ts:266` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.controller.ts:135` — route handler passes raw path params straight to the service
+- `src/modules/build/incidents/incidents.service.ts:284` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:285` — binds incidentId to projectId via loadIncident before deleting
+- `src/modules/build/incidents/incidents.service.ts:293` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/updates`
 
-`IncidentsController.addUpdate` — `src/modules/build/incidents/incidents.controller.ts:135`
+`IncidentsController.addUpdate` — `src/modules/build/incidents/incidents.controller.ts:138`
 
 POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.
 
-- `src/modules/build/incidents/incidents.controller.ts:146` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:286` — binds incidentId to projectId via loadIncident before writing
-- `src/modules/build/incidents/incidents.service.ts:312` — in-transaction status UPDATE independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.controller.ts:149` — route handler passes raw path params straight to the service
+- `src/modules/build/incidents/incidents.service.ts:313` — binds incidentId to projectId via loadIncident before writing
+- `src/modules/build/incidents/incidents.service.ts:344` — in-transaction status UPDATE independently re-binds id+orgId+projectId
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/decisions`
 
-`IncidentsController.addDecision` — `src/modules/build/incidents/incidents.controller.ts:149`
+`IncidentsController.addDecision` — `src/modules/build/incidents/incidents.controller.ts:152`
 
 POST /build/:projectId/incidents/:incidentId/decisions. addDecision calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) — the same helper proven elsewhere in this file to bind id+orgId+projectId together, 404 on mismatch — before inserting the decision row, which is itself scoped to the now-confirmed incidentId+orgId.
 
-- `src/modules/build/incidents/incidents.service.ts:358` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:359` — binds incidentId to projectId via loadIncident before writing
+- `src/modules/build/incidents/incidents.service.ts:399` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:400` — binds incidentId to projectId via loadIncident before writing
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/follow-ups`
 
-`IncidentsController.addFollowUpAction` — `src/modules/build/incidents/incidents.controller.ts:163`
+`IncidentsController.addFollowUpAction` — `src/modules/build/incidents/incidents.controller.ts:166`
 
 POST /build/:projectId/incidents/:incidentId/follow-ups. Same binding shape as addDecision: assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) before inserting the follow-up-action row.
 
-- `src/modules/build/incidents/incidents.service.ts:394` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:395` — binds incidentId to projectId via loadIncident before writing
+- `src/modules/build/incidents/incidents.service.ts:430` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:431` — binds incidentId to projectId via loadIncident before writing
 
 ### VERIFIED — `PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId`
 
-`IncidentsController.updateFollowUpAction` — `src/modules/build/incidents/incidents.controller.ts:177`
+`IncidentsController.updateFollowUpAction` — `src/modules/build/incidents/incidents.controller.ts:180`
 
 PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId. assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) bind the parent incident to this project; the UPDATE's own WHERE independently re-binds id=followUpActionId AND orgId AND incidentId, so a foreign followUpActionId (even one belonging to a different incident in the same org) 404s rather than matching.
 
-- `src/modules/build/incidents/incidents.service.ts:428` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:429` — binds incidentId to projectId via loadIncident before updating
-- `src/modules/build/incidents/incidents.service.ts:445` — UPDATE WHERE independently re-binds id+orgId+incidentId
+- `src/modules/build/incidents/incidents.service.ts:464` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:465` — binds incidentId to projectId via loadIncident before updating
+- `src/modules/build/incidents/incidents.service.ts:481` — UPDATE WHERE independently re-binds id+orgId+incidentId
 
 ### VERIFIED — `POST /build/managed-products`
 
@@ -1502,32 +1504,32 @@ PUT /build/:projectId/meetings/:meetingId/standup. upsertStandup binds via loadM
 
 ### VERIFIED — `POST /build/portfolios`
 
-`PortfoliosController.createPortfolio` — `src/modules/build/portfolios/portfolios.controller.ts:72`
+`PortfoliosController.createPortfolio` — `src/modules/build/portfolios/portfolios.controller.ts:75`
 
-POST /build/portfolios. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into project_portfolios with orgId as a column of .values() at portfolios.service.ts:182 and records createdBy from the verified context. PASSED-UNBOUND is the documented create-endpoint reading: the binding is an INSERT column and the static pass only recognises predicates. The sibling updatePortfolio binds eq(projectPortfolios.orgId, orgId) in its WHERE, confirming the column is the tenant key.
+POST /build/portfolios. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into project_portfolios with orgId as a column of .values() and records createdBy from the verified context. PASSED-UNBOUND is the documented create-endpoint reading: the binding is an INSERT column and the static pass only recognises predicates. The sibling updatePortfolio binds eq(projectPortfolios.orgId, orgId) in its WHERE, confirming the column is the tenant key.
 
-- `src/modules/build/portfolios/portfolios.service.ts:180` — an INSERT — no WHERE clause exists to carry a predicate
-- `src/modules/build/portfolios/portfolios.service.ts:182` — org bound as an ES6 shorthand column in .values()
+- `src/modules/build/portfolios/portfolios.service.ts:237` — an INSERT — no WHERE clause exists to carry a predicate
+- `src/modules/build/portfolios/portfolios.service.ts:239` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `DELETE /build/portfolios/:portfolioId/projects/:projectId`
 
-`PortfoliosController.unlinkProject` — `src/modules/build/portfolios/portfolios.controller.ts:121`
+`PortfoliosController.unlinkProject` — `src/modules/build/portfolios/portfolios.controller.ts:124`
 
 DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls loadPortfolio(orgId, portfolioId) first, whose WHERE binds id=portfolioId AND orgId (404 on a foreign portfolioId), then deletes the link row scoped by portfolioId+projectId+orgId. Because portfolioId is already proven to belong to this org, and orgId is repeated on the delete, a projectId belonging to another org's portfolio simply matches zero rows — it can never unlink a link row outside the caller's own org, and cannot affect the project row itself (only the join-table association).
 
-- `src/modules/build/portfolios/portfolios.controller.ts:131` — route handler passes both raw path params straight to the service
-- `src/modules/build/portfolios/portfolios.service.ts:292` — binds portfolioId to orgId via loadPortfolio before the delete
-- `src/modules/build/portfolios/portfolios.service.ts:299` — DELETE WHERE clause scopes to portfolioId + projectId + orgId together
+- `src/modules/build/portfolios/portfolios.controller.ts:134` — route handler passes both raw path params straight to the service
+- `src/modules/build/portfolios/portfolios.service.ts:349` — binds portfolioId to orgId via loadPortfolio before the delete
+- `src/modules/build/portfolios/portfolios.service.ts:356` — DELETE WHERE clause scopes to portfolioId + projectId + orgId together
 
 ### VERIFIED — `DELETE /build/programs/:programId/projects/:projectId`
 
-`ProgramsController.unlinkProject` — `src/modules/build/portfolios/programs.controller.ts:121`
+`ProgramsController.unlinkProject` — `src/modules/build/portfolios/programs.controller.ts:124`
 
 DELETE /build/programs/:programId/projects/:projectId. Structurally identical to portfolios#unlinkProject: loadProgram(orgId, programId) binds programId to orgId (404 on a foreign programId), then the DELETE's WHERE scopes to programId+projectId+orgId. A projectId belonging to another org's program matches zero rows.
 
-- `src/modules/build/portfolios/programs.controller.ts:131` — route handler passes both raw path params straight to the service
-- `src/modules/build/portfolios/programs.service.ts:270` — binds programId to orgId via loadProgram before the delete
-- `src/modules/build/portfolios/programs.service.ts:277` — DELETE WHERE clause scopes to programId + projectId + orgId together
+- `src/modules/build/portfolios/programs.controller.ts:134` — route handler passes both raw path params straight to the service
+- `src/modules/build/portfolios/programs.service.ts:399` — binds programId to orgId via loadProgram before the delete
+- `src/modules/build/portfolios/programs.service.ts:406` — DELETE WHERE clause scopes to programId + projectId + orgId together
 
 ### VERIFIED — `GET /build/:projectId/bugs/:bugId`
 
@@ -1872,15 +1874,15 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | GET | `/build/customers` | `src/modules/build/core/projects-customers.controller.ts:23` | `list` | @RequirePermission("build:customers:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/:projectId/releases` | `src/modules/build/core/projects-releases.controller.ts:37` | `listReleases` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/releases` | `src/modules/build/core/projects-releases.controller.ts:48` | `createRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | GET | `/build/resource-allocation` | `src/modules/build/core/projects-reports.controller.ts:55` | `resourceAllocation` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | GET | `/build/:projectId/analytics` | `src/modules/build/core/projects-reports.controller.ts:63` | `getAnalytics` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/burnup` | `src/modules/build/core/projects-reports.controller.ts:75` | `burnup` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/cfd` | `src/modules/build/core/projects-reports.controller.ts:87` | `cfd` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/critical-path` | `src/modules/build/core/projects-reports.controller.ts:99` | `criticalPath` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/velocity` | `src/modules/build/core/projects-reports.controller.ts:110` | `velocity` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/cycle-time` | `src/modules/build/core/projects-reports.controller.ts:134` | `getCycleTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/lead-time` | `src/modules/build/core/projects-reports.controller.ts:145` | `getLeadTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/reports/snapshot` | `src/modules/build/core/projects-reports.controller.ts:156` | `snapshot` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/resource-allocation` | `src/modules/build/core/projects-reports.controller.ts:60` | `resourceAllocation` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/:projectId/analytics` | `src/modules/build/core/projects-reports.controller.ts:72` | `getAnalytics` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/burnup` | `src/modules/build/core/projects-reports.controller.ts:84` | `burnup` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/cfd` | `src/modules/build/core/projects-reports.controller.ts:96` | `cfd` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/critical-path` | `src/modules/build/core/projects-reports.controller.ts:108` | `criticalPath` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/velocity` | `src/modules/build/core/projects-reports.controller.ts:119` | `velocity` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/cycle-time` | `src/modules/build/core/projects-reports.controller.ts:143` | `getCycleTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/lead-time` | `src/modules/build/core/projects-reports.controller.ts:154` | `getLeadTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/reports/snapshot` | `src/modules/build/core/projects-reports.controller.ts:165` | `snapshot` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/roadmap` | `src/modules/build/core/projects-roadmap.controller.ts:65` | `listRoadmap` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/roadmap/:itemId/signals` | `src/modules/build/core/projects-roadmap.controller.ts:76` | `getRoadmapSignals` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | n/a |
 | VERIFIED | POST | `/build/roadmap` | `src/modules/build/core/projects-roadmap.controller.ts:87` | `createRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
@@ -2005,15 +2007,15 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/:projectId/import-export/tickets/preview` | `src/modules/build/import-export/ticket-import-export.controller.ts:47` | `previewImport` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | POST | `/build/:projectId/import-export/tickets` | `src/modules/build/import-export/ticket-import-export.controller.ts:60` | `commitImport` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/import-export/tickets/export` | `src/modules/build/import-export/ticket-import-export.controller.ts:74` | `exportTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:72` | `listIncidents` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:84` | `getIncident` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | n/a |
-| VERIFIED | POST | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:96` | `createIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:109` | `updateIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:122` | `deleteIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/updates` | `src/modules/build/incidents/incidents.controller.ts:135` | `addUpdate` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/decisions` | `src/modules/build/incidents/incidents.controller.ts:149` | `addDecision` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/follow-ups` | `src/modules/build/incidents/incidents.controller.ts:163` | `addFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId` | `src/modules/build/incidents/incidents.controller.ts:177` | `updateFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId, followUpActionId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:74` | `listIncidents` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:86` | `getIncident` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | n/a |
+| VERIFIED | POST | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:99` | `createIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:112` | `updateIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:125` | `deleteIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/updates` | `src/modules/build/incidents/incidents.controller.ts:138` | `addUpdate` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/decisions` | `src/modules/build/incidents/incidents.controller.ts:152` | `addDecision` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/follow-ups` | `src/modules/build/incidents/incidents.controller.ts:166` | `addFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId` | `src/modules/build/incidents/incidents.controller.ts:180` | `updateFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId, followUpActionId] | NO (mutating) |
 | VERIFIED | GET | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:43` | `listManagedProducts` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:54` | `getManagedProduct` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | n/a |
 | VERIFIED | POST | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:65` | `createManagedProduct` | @RequirePermission("build:managed-products:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
@@ -2032,20 +2034,20 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/:projectId/meetings/:meetingId/attendees` | `src/modules/build/meetings/meetings.controller.ts:118` | `addAttendee` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/:projectId/meetings/:meetingId/attendees/:attendeeUserId` | `src/modules/build/meetings/meetings.controller.ts:132` | `removeAttendee` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId, attendeeUserId] | NO (mutating) |
 | VERIFIED | PUT | `/build/:projectId/meetings/:meetingId/standup` | `src/modules/build/meetings/meetings.controller.ts:146` | `upsertStandup` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId] | NO (mutating) |
-| VERIFIED | GET | `/build/portfolios` | `src/modules/build/portfolios/portfolios.controller.ts:50` | `listPortfolios` | @RequirePermission("build:portfolios:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:61` | `getPortfolio` | @RequirePermission("build:portfolios:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | n/a |
-| VERIFIED | POST | `/build/portfolios` | `src/modules/build/portfolios/portfolios.controller.ts:72` | `createPortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:84` | `updatePortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:96` | `deletePortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | NO (mutating) |
-| VERIFIED | POST | `/build/portfolios/:portfolioId/projects` | `src/modules/build/portfolios/portfolios.controller.ts:108` | `linkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/portfolios/:portfolioId/projects/:projectId` | `src/modules/build/portfolios/portfolios.controller.ts:121` | `unlinkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [portfolioId, projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/programs` | `src/modules/build/portfolios/programs.controller.ts:50` | `listPrograms` | @RequirePermission("build:programs:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:61` | `getProgram` | @RequirePermission("build:programs:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [programId] | n/a |
-| VERIFIED | POST | `/build/programs` | `src/modules/build/portfolios/programs.controller.ts:72` | `createProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:84` | `updateProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [programId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:96` | `deleteProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [programId] | NO (mutating) |
-| VERIFIED | POST | `/build/programs/:programId/projects` | `src/modules/build/portfolios/programs.controller.ts:108` | `linkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [programId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/programs/:programId/projects/:projectId` | `src/modules/build/portfolios/programs.controller.ts:121` | `unlinkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [programId, projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/portfolios` | `src/modules/build/portfolios/portfolios.controller.ts:52` | `listPortfolios` | @RequirePermission("build:portfolios:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:63` | `getPortfolio` | @RequirePermission("build:portfolios:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | n/a |
+| VERIFIED | POST | `/build/portfolios` | `src/modules/build/portfolios/portfolios.controller.ts:75` | `createPortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:87` | `updatePortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:99` | `deletePortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | NO (mutating) |
+| VERIFIED | POST | `/build/portfolios/:portfolioId/projects` | `src/modules/build/portfolios/portfolios.controller.ts:111` | `linkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [portfolioId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/portfolios/:portfolioId/projects/:projectId` | `src/modules/build/portfolios/portfolios.controller.ts:124` | `unlinkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [portfolioId, projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/programs` | `src/modules/build/portfolios/programs.controller.ts:52` | `listPrograms` | @RequirePermission("build:programs:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:63` | `getProgram` | @RequirePermission("build:programs:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [programId] | n/a |
+| VERIFIED | POST | `/build/programs` | `src/modules/build/portfolios/programs.controller.ts:75` | `createProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:87` | `updateProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [programId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:99` | `deleteProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [programId] | NO (mutating) |
+| VERIFIED | POST | `/build/programs/:programId/projects` | `src/modules/build/portfolios/programs.controller.ts:111` | `linkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [programId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/programs/:programId/projects/:projectId` | `src/modules/build/portfolios/programs.controller.ts:124` | `unlinkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [programId, projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/bugs` | `src/modules/build/qa/bugs.controller.ts:47` | `listBugs` | @RequirePermission("build:bugs:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/:projectId/bugs/:bugId` | `src/modules/build/qa/bugs.controller.ts:59` | `getBug` | @RequirePermission("build:bugs:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, bugId] | n/a |
 | VERIFIED | POST | `/build/:projectId/bugs` | `src/modules/build/qa/bugs.controller.ts:71` | `createBug` | @RequirePermission("build:bugs:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |

@@ -240,7 +240,7 @@ function makeFieldsService(store: Store) {
     }),
   } as unknown as Db;
 
-  return new ProjectsCustomFieldsService(db);
+  return new ProjectsCustomFieldsService(db, makeAccess());
 }
 
 function makeWebhooksService(store: Store, afterOwnershipCheck?: () => void) {

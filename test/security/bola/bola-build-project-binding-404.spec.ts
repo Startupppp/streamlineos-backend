@@ -134,7 +134,9 @@ describe("BOLA probe — the five writes that never resolved the project they wr
     {
       route: "POST /build/:projectId/custom-fields",
       run: (db) =>
-        new ProjectsCustomFieldsService(db).createField(CALLER_ORG, FOREIGN_PROJECT_ID, {
+        new ProjectsCustomFieldsService(db, {
+          resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+        }).createField(CALLER_ORG, FOREIGN_PROJECT_ID, {
           name: "n",
           type: "text",
         } as unknown as Parameters<ProjectsCustomFieldsService["createField"]>[2]),

@@ -163,7 +163,7 @@ export async function resolveProjectAccess(
 
 export async function assertProjectAccess(
   db: Db,
-  access: AccessService,
+  access: Pick<AccessService, "resolveUserPermissions">,
   u: CurrentUserContext,
   projectId: number,
 ): Promise<void> {

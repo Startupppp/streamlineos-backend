@@ -2,7 +2,11 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { ProgramsService } from "./programs.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { Db } from "../../../db/drizzle.module";
-import { encodeCursor } from "../../../common/pagination/cursor";
+import {
+  decodeTupleCursor,
+  encodeTupleCursor,
+} from "../../../common/pagination/cursor";
+import type { ListProgramsQuery } from "./dto/portfolios.schemas";
 
 const dialect = new PgDialect();
 
@@ -46,6 +50,7 @@ async function capture(
   cursor: string | undefined,
   rows: unknown[] = [],
   limit = 20,
+  overrides: Partial<ListProgramsQuery> = {},
 ): Promise<Captured> {
   const captured: Captured = {
     where: undefined,
@@ -59,6 +64,9 @@ async function capture(
     limit,
     status: undefined,
     portfolioId: undefined,
+    sort: "createdAt",
+    order: "desc",
+    ...overrides,
   });
   return captured;
 }
@@ -80,7 +88,12 @@ describe("ProgramsService.listPrograms — the page is keyset-bounded, not a sil
   });
 
   it("applies a strict less-than cursor predicate matching the descending sort", async () => {
-    const cursor = encodeCursor({ sortValue: new Date().toISOString(), id: "7" });
+    const cursor = encodeTupleCursor([
+      "createdAt",
+      "desc",
+      new Date().toISOString(),
+      "7",
+    ]);
     const { where } = await capture(cursor);
     const sql = render(where);
     expect(sql).toMatch(/</);
@@ -109,16 +122,51 @@ describe("ProgramsService.listPrograms — the page is keyset-bounded, not a sil
       limit: 2,
       status: undefined,
       portfolioId: undefined,
+      sort: "createdAt",
+      order: "desc",
     });
     expect(page.data).toHaveLength(2);
     expect(page.pagination.hasMore).toBe(true);
     expect(page.pagination.nextCursor).toEqual(expect.any(String));
+    expect(decodeTupleCursor(page.pagination.nextCursor, 4)?.slice(0, 2)).toEqual([
+      "createdAt",
+      "desc",
+    ]);
   });
 
-  it("bite proof: an ascending sort would serve oldest-first instead of newest-first", () => {
-    const wrongSort = '"project_programs"."created_at" asc';
-    expect(wrongSort).toContain("asc");
-    expect(wrongSort).not.toContain("desc");
+  it("uses a strict greater-than keyset for ascending name order", async () => {
+    const cursor = encodeTupleCursor(["name", "asc", "Launch", "7"]);
+    const { orderBy, where } = await capture(cursor, [], 20, {
+      sort: "name",
+      order: "asc",
+    });
+    const rendered = orderBy.map(render);
+    expect(rendered[0]).toContain('"name"');
+    expect(rendered[0]).toContain("asc");
+    expect(rendered[1]).toContain('"id"');
+    expect(rendered[1]).toContain("asc");
+    expect(render(where)).toMatch(/>/);
+  });
+
+  it("uses updatedAt with a strict less-than keyset for descending order", async () => {
+    const cursor = encodeTupleCursor([
+      "updatedAt",
+      "desc",
+      new Date().toISOString(),
+      "7",
+    ]);
+    const { orderBy, where } = await capture(cursor, [], 20, {
+      sort: "updatedAt",
+      order: "desc",
+    });
+    expect(orderBy.map(render)[0]).toContain('"updated_at"');
+    expect(render(where)).toMatch(/</);
+  });
+
+  it("ignores a cursor minted for a different sort contract", async () => {
+    const cursor = encodeTupleCursor(["name", "asc", "Launch", "7"]);
+    const { where } = await capture(cursor);
+    expect(render(where)).not.toMatch(/"created_at"\s*[<>]/);
   });
 });
 

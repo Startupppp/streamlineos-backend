@@ -4,27 +4,6 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { cycles } from "../../../db/schema";
 import { cycleScopeEvents } from "../../../db/schema/build/cycle-events";
 
-/**
- * Why cycle deletion is still a hard delete.
- *
- * The question this answers is whether the model supports turning
- * `CyclesService.deleteCycle` into a soft delete. Three of the four
- * preconditions hold; the fourth does not, and it is the one that would leak.
- *
- * Holds:  the column exists, no unique index can collide on a tombstone, and
- *         every read inside this module already filters it.
- * Fails:  readers OUTSIDE this lane read `build.cycles` with no tombstone
- *         filter, so flipping the delete would make deleted cycles reappear on
- *         their surfaces. Those files are not this lane's to change.
- *
- * The cost of NOT converting is real and recorded below: the FK from
- * `cycle_scope_events` is ON DELETE SET NULL, so a hard delete orphans the
- * burnup history rather than removing it.
- *
- * When the out-of-lane readers gain the filter, the reader test here fails --
- * deliberately. That failure is the signal that soft delete became safe.
- */
-
 const SRC = join(__dirname, "..", "..", "..");
 
 const TOMBSTONE_BLIND_READERS = [

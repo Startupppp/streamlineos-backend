@@ -23,6 +23,7 @@ import {
   addIncidentUpdateSchema,
   createFollowUpActionSchema,
   createIncidentSchema,
+  incidentChildrenQuerySchema,
   listIncidentsQuerySchema,
   updateFollowUpActionSchema,
   updateIncidentSchema,
@@ -30,6 +31,7 @@ import {
   type AddIncidentUpdateInput,
   type CreateFollowUpActionInput,
   type CreateIncidentInput,
+  type IncidentChildrenQuery,
   type ListIncidentsQuery,
   type UpdateFollowUpActionInput,
   type UpdateIncidentInput,
@@ -84,13 +86,14 @@ export class IncidentsController {
   @Get(":incidentId")
   @RequirePermission("build:incidents:view")
   @ResponseSchema(incidentDetailSchema)
-  @Validate({ params: incidentIdParams })
+  @Validate({ params: incidentIdParams, query: incidentChildrenQuerySchema })
   getIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("incidentId", ParseIntPipe) incidentId: number,
+    @Query() query: IncidentChildrenQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getIncident(u, projectId, incidentId);
+    return this.svc.getIncident(u, projectId, incidentId, query);
   }
 
   @Post()

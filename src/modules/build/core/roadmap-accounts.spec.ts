@@ -1,9 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import * as schema from "../../../db/schema";
+import { SQL } from "drizzle-orm";
 import { feedbackPosts } from "../../../db/schema";
-import type { SelectedFields } from "drizzle-orm/pg-core";
+import { PgDialect, QueryBuilder, type SelectedFields } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import {
@@ -16,9 +14,8 @@ import {
 } from "./roadmap-accounts";
 import { computeRoadmapPrioritization } from "./roadmap-prioritization";
 
-const realDb = drizzle(postgres("postgres://unused:unused@127.0.0.1:1/unused", { max: 1 }), {
-  schema,
-});
+const dialect = new PgDialect();
+const queryBuilder = new QueryBuilder();
 
 const ORG = "org-accounts";
 const OTHER_ORG = "org-intruder";
@@ -196,7 +193,7 @@ describe("the grouped query asks Postgres for the highest tier, not the first on
     const { db, projections } = groupedSelect([]);
     await loadRoadmapAccountTiers(db, ORG, [1, 2]);
 
-    const rendered = realDb.select(projections[0]).from(feedbackPosts).toSQL();
+    const rendered = queryBuilder.select(projections[0]).from(feedbackPosts).toSQL();
     expect(rendered.sql).toMatch(/MAX\(CASE/);
     expect(rendered.params).toEqual(
       expect.arrayContaining(["enterprise", ROADMAP_TIER_RANKS.enterprise, "free", ROADMAP_TIER_RANKS.free]),
@@ -266,7 +263,9 @@ describe("linked account revenue is reported as unknown rather than zero", () =>
   function renderedProjection(projections: SelectedFields[], key: string): string {
     const projection = projections[0];
     expect(projection).toBeDefined();
-    return realDb.dialect.sqlToQuery(projection?.[key] as never).sql;
+    const expression = projection?.[key];
+    if (!(expression instanceof SQL)) throw new Error("Expected a SQL projection");
+    return dialect.sqlToQuery(expression).sql;
   }
 
   it("reads revenue from the account's lifetime value, the one revenue column the CRM contract supplies", () => {

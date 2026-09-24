@@ -266,21 +266,6 @@ export class ProjectsAnalyticsService {
     };
   }
 
-  /**
-   * The org-wide open work, one page of assignees at a time.
-   *
-   * The read this replaced had no bound anywhere: every ACTIVE project in the
-   * org, interpolated as an IN list into the statement, then every open ticket
-   * in all of them, then a `users` lookup over every assignee the union found,
-   * then the whole result. Cost was O(organisation) on a route any member with
-   * org-wide ticket access can call.
-   *
-   * Paging assignees rather than rows is what keeps a member's project
-   * breakdown whole: the totals are aggregated in SQL so `ORDER BY` can see
-   * them, and the breakdown query is then restricted to the ids the page
-   * actually returned. The active-project filter moved into the statement as a
-   * join, which is what removed the unbounded id list with it.
-   */
   async resourceAllocation(orgId: string, query: ResourceAllocationQuery) {
     const { limit } = query;
     const decoded = decodeCursor(query.cursor);

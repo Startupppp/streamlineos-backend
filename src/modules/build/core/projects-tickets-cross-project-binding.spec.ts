@@ -1,6 +1,10 @@
 import { NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import { Column, SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
@@ -104,50 +108,68 @@ function makeU(orgId = ORG): CurrentUserContext {
 }
 
 describe("getTicket — the ticket detail read binds to the URL project", () => {
-  function makeDetail(rows: Row[]) {
+  async function makeDetail(rows: Row[]) {
     const findFirst = jest.fn(async (args: { where?: unknown }) =>
       rows.find((row) => matches(args.where, row)),
     );
-    const db = { query: { tickets: { findFirst } } } as unknown as Db;
-    const svc = new ProjectsTicketsDetailService(
-      db,
-      { scopeFor: jest.fn().mockResolvedValue("all") } as never,
-      { log: jest.fn() } as never,
-    );
-    return { svc, findFirst };
+    const module = await Test.createTestingModule({ providers: [
+      ProjectsTicketsDetailService,
+      {
+        provide: DRIZZLE,
+        useValue: {
+          query: {
+            tickets: { findFirst },
+            projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: MEMBERSHIP_ID }) },
+          },
+        },
+      },
+      {
+        provide: AccessService,
+        useValue: {
+          scopeFor: jest.fn().mockResolvedValue("all"),
+          resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+        },
+      },
+      { provide: AuditService, useValue: { log: jest.fn() } },
+    ] }).compile();
+    return { svc: module.get(ProjectsTicketsDetailService), findFirst, module };
   }
 
   it("answers 404 for a same-org ticket that belongs to another project", async () => {
-    const { svc } = makeDetail(makeTickets());
+    const { svc, module } = await makeDetail(makeTickets());
 
     await expect(svc.getTicket(makeU(), PROJECT_A, TICKET_B)).rejects.toBeInstanceOf(
       ProjectsTicketNotFoundException,
     );
+    await module.close();
   });
 
   it("reads the ticket that belongs to the URL project (control)", async () => {
-    const { svc } = makeDetail(makeTickets());
+    const { svc, module } = await makeDetail(makeTickets());
 
     await expect(svc.getTicket(makeU(), PROJECT_A, TICKET_A)).resolves.toMatchObject({
       id: TICKET_A,
       projectId: PROJECT_A,
     });
+    await module.close();
   });
 
   it("answers 404 rather than 403 for a foreign-project id, so the response cannot confirm the row exists", async () => {
-    const { svc } = makeDetail(makeTickets());
+    const { svc, module } = await makeDetail(makeTickets());
 
     await expect(svc.getTicket(makeU(), PROJECT_A, TICKET_B)).rejects.toMatchObject({
       status: 404,
     });
+    await module.close();
   });
 
   it("still refuses another organisation's ticket (control for the tenant predicate)", async () => {
-    const { svc } = makeDetail(makeTickets());
+    const { svc, module } = await makeDetail(makeTickets());
 
     await expect(svc.getTicket(makeU(OTHER_ORG), PROJECT_A, TICKET_A)).rejects.toBeInstanceOf(
       ProjectsTicketNotFoundException,
     );
+    await module.close();
   });
 });
 
