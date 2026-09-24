@@ -814,16 +814,6 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "L117 reads businessParties bounded by inArray(partyIds); L128 reads deals bounded by inArray(dealIds); all reads are inArray-bounded by prior query results 2026-09-01"
     },
-    "/ai/core/comms-copilot-tools.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "AI context assembly reads bounded by explicit row caps in prompts; hard cap on rows/text length for LLM context window; no unbounded list scan 2026-09-01"
-    },
-    "/ai/core/ops-copilot-tools.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "AI context assembly reads bounded by explicit row caps in prompts; hard cap on rows/text length for LLM context window; no unbounded list scan 2026-09-01"
-    },
     "/ai/core/services/crm-content.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -887,11 +877,6 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "reads organization memberships for a specific user; bounded by user org membership count (typically 1-5 orgs); required for auth token construction 2026-09-01"
-    },
-    "/automation/automation-webhook.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "0 violations detected in current scan; webhook service reads are bounded by inArray or single-record lookups 2026-09-01"
     },
     "/automation/automation-action-executor.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2702,15 +2687,30 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "invoice reads bounded by invoiceId+orgId (single-record lookups) 2026-09-01"
     },
-    "/kb/article-conversion/kb-article-migration.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Contains 7 aggregate references (count/groupBy); migration service reads batched metadata, not unbounded rows",
-      "justification": "all flagged selects project only count/groupBy aggregates; no row-returning unbounded scan 2026-09-01"
-    },
     "/kb/core/kb-access.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Reads space IDs user has access to (space membership, grant rows); bounded by org's space count (typically <50)",
       "justification": "role slug lookup bounded by user's role count; space ID lookup bounded by org's space count (<50); both cached 60s; not list endpoints 2026-09-01"
+    },
+    "/kb/core/authorization/knowledge-space-scope.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "The same two reads kb-access.service.ts was already adjudicated for, extracted into the canonical scope helper",
+      "justification": "resolveRoleSlugs is bounded by the roles one membership holds; computeAccessibleSpaceIds must return every accessible space because it computes an authorization scope, so a LIMIT would silently narrow access rather than bound cost — it is filtered to one org and to non-deleted spaces, whose cardinality is the org's space count 2026-09-24"
+    },
+    "/kb/core/collection/knowledge-collection.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "loadSharedBy hydrates grant rows for one already-paginated page of results",
+      "justification": "the inArray is over kept.map(row => row.id), and kept is the keyset page sliced to query.limit, which list-query.schema.ts caps at PAGE_SIZE_CAP; it cannot be called with an unbounded id list 2026-09-24"
+    },
+    "/kb/wiki/kb-page-reviews.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "One bulk read bounded by its validated input array, one detail read by primary key",
+      "justification": "bulkDecide reads inArray(kbPageReviews.id, input.ids) where bulkDecidePageReviewsSchema caps ids at 100 under .strict(); the second read is eq(kbPageReviews.id, reviewId) and destructures a single row 2026-09-24"
+    },
+    "/kb/wiki/kb-page-trash.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "bulkRestore and bulkPurge both read inArray over their validated input array",
+      "justification": "both reads are inArray(kbPages.id, input.pageIds) where bulkPageIdsSchema caps pageIds at PAGE_SIZE_CAP under .strict(), so the row count is bounded at the boundary rather than by a LIMIT 2026-09-24"
     },
     "/kb/core/kb-settings.service.ts": {
       "verdict": "FALSE-POSITIVE",
