@@ -116,6 +116,11 @@ const TIERS: Record<string, Tier> = {
   "hr:employee-backfill": { limit: 3, windowSecs: 3600 },
   "hr:employee-bulk-onboard": { limit: 10, windowSecs: 3600 },
   "hr:employee-export": { limit: 5, windowSecs: 3600 },
+  // Minting a join link hands out a working credential, so the limit is what an
+  // administrator onboarding a batch by hand plausibly needs and no more —
+  // enough for a morning's work, low enough that a stolen session cannot walk
+  // the directory harvesting links.
+  "hr:employee-invite-link": { limit: 20, windowSecs: 3600 },
   "hr:effective-changes-apply": { limit: 10, windowSecs: 3600 },
   "hr:onboarding-reminders": { limit: 3, windowSecs: 3600 },
   "ai:invoke": { limit: 30, windowSecs: 60 },

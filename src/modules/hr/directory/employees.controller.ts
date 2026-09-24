@@ -54,6 +54,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   onboardResponseSchema,
+  inviteLinkSchema,
   resendInviteResponseSchema,
   bulkOnboardResultSchema,
   employeeListPageSchema,
@@ -108,6 +109,20 @@ export class EmployeesController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.onboarding.resendInvite(currentUser, employeeId);
+  }
+
+  @Post(":employeeId/invite-link")
+  @ResponseSchema(inviteLinkSchema)
+  @RequirePermission("hr:onboarding:manage")
+  @UseRateLimit("hr:employee-invite-link")
+  @HttpCode(200)
+  @Validate({ params: employeeIdParamsSchema })
+  @BodylessAction()
+  createInviteLink(
+    @Param("employeeId") employeeId: string,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.onboarding.createInviteLink(currentUser, employeeId);
   }
 
   @Post("onboard/bulk")

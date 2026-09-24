@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
@@ -352,6 +352,89 @@ export class EmployeeOnboardingService {
     return { success: true, invite };
   }
 
+  /**
+   * HRMS-E2E-001b. A single-use join link an administrator can hand over
+   * directly.
+   *
+   * The invite has exactly one delivery route today: an email. When the provider
+   * is unconfigured, the domain unverified, or the message silently dropped —
+   * all three happened in the environment QA tested — there is no second way in,
+   * and onboarding stops for the whole organisation with nothing on screen
+   * saying why. This gives an administrator the link the email would have
+   * carried, so a new hire can be let in by any channel the two of them already
+   * trust.
+   *
+   * It is the same kind of token the email carries, not a weaker one: hashed at
+   * rest, single-use, seven-day TTL, and minting it retires every earlier link
+   * for that person. Handing it out is a privileged act, so it needs the
+   * onboarding permission and is recorded in the critical audit log with the
+   * actor — the log says who took a link and when, which is what makes this
+   * answerable later.
+   *
+   * The raw token exists only in the response. It is never logged, and the
+   * caller is expected to hand it over rather than store it.
+   */
+  async createInviteLink(
+    actor: CurrentUserContext,
+    employeeUserId: string,
+  ): Promise<{ inviteUrl: string; expiresAt: string; email: string }> {
+    const [target] = await this.db
+      .select({
+        email: users.email,
+        isActive: users.isActive,
+        membershipStatus: organizationMembers.status,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(
+        and(
+          eq(organizationMembers.orgId, actor.orgId),
+          eq(organizationMembers.userId, employeeUserId),
+        ),
+      )
+      .limit(1);
+
+    if (!target || target.membershipStatus !== "ACTIVE")
+      throw new NotFoundException(EMPLOYEE_NOT_FOUND_MESSAGE);
+    if (!target.isActive) throw new BadRequestException(SUSPENDED_ACCOUNT_MESSAGE);
+
+    const rawToken = randomBytes(32).toString("hex");
+    const expiresAt = addDays(new Date(), INVITE_TOKEN_DAYS);
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .update(magicLinkTokens)
+          .set({ usedAt: new Date() })
+          .where(and(eq(magicLinkTokens.userId, employeeUserId), isNull(magicLinkTokens.usedAt)));
+        await tx.insert(magicLinkTokens).values({
+          id: randomUUID(),
+          userId: employeeUserId,
+          tokenHash: hashToken(rawToken),
+          expiresAt,
+        });
+      },
+      { orgId: actor.orgId },
+    );
+
+    await this.audit.logCritical({
+      action: "hr.employee_invite_link_taken",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: employeeUserId,
+      targetType: "employee",
+      // The address, never the token: this row is the answer to "who took a link
+      // for whom", and a raw token in an audit row is a credential at rest.
+      metadata: { email: target.email, expiresAt: expiresAt.toISOString() },
+    });
+
+    return {
+      inviteUrl: `${appUrl()}/magic-link?token=${rawToken}`,
+      expiresAt: expiresAt.toISOString(),
+      email: target.email,
+    };
+  }
+
   private async organizationName(orgId: string): Promise<string> {
     const [org] = await this.db
       .select({ name: organizations.name })
@@ -370,14 +453,30 @@ export class EmployeeOnboardingService {
     name: string;
     kind: InviteKind;
   }): Promise<InviteDelivery> {
+    // Issuing a new invite retires the ones before it. Each resend used to mint
+    // another token and leave every earlier one live until its seven-day expiry,
+    // so a link forwarded on Monday still worked after Friday's resend was sent
+    // to correct it — and an invite recalled by resending was not recalled at
+    // all. Retiring and issuing in one transaction means a failure here cannot
+    // leave the person with no working link.
     const rawToken = randomBytes(32).toString("hex");
     const tokenId = randomUUID();
-    await this.db.insert(magicLinkTokens).values({
-      id: tokenId,
-      userId: input.userId,
-      tokenHash: hashToken(rawToken),
-      expiresAt: addDays(new Date(), INVITE_TOKEN_DAYS),
-    });
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .update(magicLinkTokens)
+          .set({ usedAt: new Date() })
+          .where(and(eq(magicLinkTokens.userId, input.userId), isNull(magicLinkTokens.usedAt)));
+        await tx.insert(magicLinkTokens).values({
+          id: tokenId,
+          userId: input.userId,
+          tokenHash: hashToken(rawToken),
+          expiresAt: addDays(new Date(), INVITE_TOKEN_DAYS),
+        });
+      },
+      { orgId: input.orgId },
+    );
     const signInUrl = `${appUrl()}/magic-link?token=${rawToken}`;
 
     const outcome =
