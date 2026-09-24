@@ -10,24 +10,26 @@ export const waitlistJoinSchema = z.object({
   alreadyJoined: z.boolean(),
 });
 
+/**
+ * The candidate-facing view of an application.
+ *
+ * Six coarse statuses, a first name, the job, and the two links a candidate can
+ * act on. No email, no notes, no scores — the token that reaches this endpoint
+ * travels in a URL, and a URL ends up in mail archives, browser history and
+ * referrer headers.
+ */
 export const applicationStatusSchema = z.object({
-  status: z.string(),
+  status: z.enum(["received", "in_review", "interview", "offer", "hired", "rejected"]),
+  statusText: z.string(),
   appliedAt: nullableWireDate(),
   updatedAt: wireDate(),
-  job: z
-    .object({
-      title: z.string().nullable(),
-      location: z.string().nullable(),
-      type: z.string().nullable(),
-    })
-    .nullable(),
-  candidate: z
-    .object({
-      firstName: z.string(),
-      lastName: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable(),
+  jobTitle: z.string(),
+  jobLocation: z.string().nullable(),
+  jobType: z.string().nullable(),
+  organisationName: z.string(),
+  candidateFirstName: z.string(),
+  bookingUrl: z.string().nullable(),
+  offerUrl: z.string().nullable(),
 });
 
 const orgInfoSchema = z.object({

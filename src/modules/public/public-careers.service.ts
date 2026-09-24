@@ -4,10 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull } from "drizzle-orm";
 import {
   candidateApplications,
+  candidateOffers,
   candidateResumes,
+  interviewBookingLinks,
   jobPostings,
   organizations,
 } from "../../db/schema";
@@ -23,6 +25,11 @@ import { FileQuarantineService } from "../storage/file-quarantine.service";
 import { AvScanner } from "../../common/security/av-scan";
 import { logger } from "../../common/logger/logger.service";
 import { extractDocumentText, isExtractableMime } from "../../common/documents/extract-document-text.util";
+import {
+  assertNoLeak,
+  PORTAL_STATUS_COPY,
+  toPortalStatus,
+} from "./portal/candidate-portal-view";
 import {
   RESUME_REJECTION_MESSAGE,
   prepareResume,
@@ -44,11 +51,24 @@ export class PublicCareersService {
     private readonly scanner: AvScanner,
   ) {}
 
+  /**
+   * What a candidate is told about their own application.
+   *
+   * Coarse by design. Internally the application moves through seven states;
+   * this returns six, and SHORTLISTED in particular collapses into `in_review`
+   * because it is the most tempting one to expose and the most damaging — its
+   * absence would then be information too.
+   *
+   * The response is checked against an allow-list before it leaves. That guard
+   * exists for a specific failure: a `with: { candidate: true }` added later to
+   * fix a missing name pulls in notes, ratings, AI scores and BGV notes, on an
+   * endpoint that is public and unauthenticated.
+   */
   async getApplicationStatus(token: string) {
     const application = await withPublicToken(this.db, token, (tx) =>
       tx.query.candidateApplications.findFirst({
         where: eq(candidateApplications.trackingToken, token),
-        columns: { orgId: true, status: true, appliedAt: true, updatedAt: true },
+        columns: { orgId: true },
       }),
     );
 
@@ -59,21 +79,72 @@ export class PublicCareersService {
       async (tx) => {
         const full = await tx.query.candidateApplications.findFirst({
           where: eq(candidateApplications.trackingToken, token),
-          columns: { status: true, appliedAt: true, updatedAt: true },
+          columns: { status: true, appliedAt: true, updatedAt: true, candidateId: true },
           with: {
-            candidate: { columns: { firstName: true, lastName: true, email: true } },
+            /*
+              Explicit column lists on both relations, not `true`. The candidate
+              row carries notes, rating, aiScore, bgvNotes and an email address;
+              the only field this page needs from it is a first name to greet
+              somebody by.
+            */
+            candidate: { columns: { firstName: true } },
             jobPosting: { columns: { title: true, location: true, type: true } },
           },
         });
         if (!full) throw new NotFoundException("Application not found");
 
-        return {
-          status: full.status,
+        const org = await tx.query.organizations.findFirst({
+          where: eq(organizations.id, application.orgId),
+          columns: { name: true },
+        });
+
+        const now = new Date();
+        const booking = await tx.query.interviewBookingLinks.findFirst({
+          where: and(
+            eq(interviewBookingLinks.orgId, application.orgId),
+            eq(interviewBookingLinks.candidateId, full.candidateId),
+            eq(interviewBookingLinks.status, "pending"),
+            gt(interviewBookingLinks.expiresAt, now),
+          ),
+          columns: { token: true },
+          orderBy: (t, { desc: d }) => [d(t.createdAt)],
+        });
+
+        const offer = await tx.query.candidateOffers.findFirst({
+          where: and(
+            eq(candidateOffers.orgId, application.orgId),
+            eq(candidateOffers.candidateId, full.candidateId),
+            eq(candidateOffers.offerStatus, "SENT"),
+            isNotNull(candidateOffers.acceptanceToken),
+            gt(candidateOffers.acceptanceTokenExpiresAt, now),
+          ),
+          columns: { acceptanceToken: true },
+          orderBy: (t, { desc: d }) => [d(t.id)],
+        });
+
+        const status = toPortalStatus(full.status);
+        const response = {
+          status,
+          statusText: PORTAL_STATUS_COPY[status],
           appliedAt: full.appliedAt,
           updatedAt: full.updatedAt,
-          job: full.jobPosting,
-          candidate: full.candidate,
+          jobTitle: full.jobPosting?.title ?? "",
+          jobLocation: full.jobPosting?.location ?? null,
+          jobType: full.jobPosting?.type ?? null,
+          organisationName: org?.name ?? "",
+          candidateFirstName: full.candidate?.firstName ?? "",
+          /*
+            Paths, not absolute URLs. The candidate is already on the careers
+            host when they read this, and building an absolute link here would
+            bake a deployment's hostname into a response the frontend can route
+            better itself.
+          */
+          bookingUrl: booking ? `/interview-booking/${booking.token}` : null,
+          offerUrl: offer?.acceptanceToken ? `/offer/${offer.acceptanceToken}` : null,
         };
+
+        assertNoLeak(response);
+        return response;
       },
       { orgId: application.orgId },
     );
