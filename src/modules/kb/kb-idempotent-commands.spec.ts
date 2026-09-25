@@ -112,19 +112,164 @@ describe("KB command fencing", () => {
         KbPagesController.prototype.convertBriefToPage,
         "kb.research-brief.convert-to-page",
       ],
+      [
+        "POST /kb/pages/:pageId/duplicate",
+        KbPagesController.prototype.duplicate,
+        "kb.pages.duplicate",
+      ],
+      [
+        "POST /kb/pages/:pageId/versions/:versionNumber/restore",
+        KbPagesController.prototype.restoreVersion,
+        "kb.page-version.restore",
+      ],
     ];
 
     it.each(RETRIABLE_CREATES)("%s is fenced as the correct command name", (_route, handler, expected) => {
       expect(commandOf(handler)).toBe(expected);
     });
 
-    it("POST /kb/pages and POST /kb/research-briefs/:briefId/convert-to-page are both fenced — no unfenced retriable create", () => {
+    it("all four retriable creates are fenced — no unfenced retriable create", () => {
       for (const [route, handler] of RETRIABLE_CREATES) {
         expect(commandOf(handler)).toEqual(
           expect.any(String),
           `${route} is unfenced`,
         );
       }
+    });
+  });
+
+  describe("POST /kb/pages/:pageId/duplicate — fence is load-bearing, not decorative", () => {
+    const PAGE_ID = 42;
+    const ORG_ID = "org-dup-fence-test";
+
+    function makeUser() {
+      return {
+        orgId: ORG_ID,
+        userId: "u1",
+        isOrgOwner: false,
+        principal: { kind: "human-session", membershipId: 1 },
+      } as never;
+    }
+
+    function makeDb(transactionFn: jest.Mock) {
+      return {
+        query: {
+          kbPages: {
+            findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID, orgId: ORG_ID }),
+          },
+        },
+        transaction: transactionFn,
+      };
+    }
+
+    it("the service invokes db.transaction on every call — same-key replay by the interceptor prevents the second transaction from running", async () => {
+      let callCount = 0;
+      const transactionFn = jest.fn().mockImplementation(async () => {
+        callCount++;
+        throw new Error("tx-stub");
+      });
+      const db = makeDb(transactionFn);
+      const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+      const auth = { assertPageAccess: jest.fn().mockResolvedValue(undefined), visiblePagePredicate: jest.fn() };
+      const svc = new KbPageDuplicateService(db as never, planLimits as never, auth as never);
+
+      await svc.duplicate(makeUser(), PAGE_ID).catch(() => {});
+      expect(callCount).toBe(1);
+    });
+
+    it("two unfenced calls to duplicate each open a transaction — two retries without the fence create two distinct page trees", async () => {
+      let transactionCallCount = 0;
+      const transactionFn = jest.fn().mockImplementation(async () => {
+        transactionCallCount++;
+        throw new Error("tx-stub");
+      });
+      const db = makeDb(transactionFn);
+      const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+      const auth = { assertPageAccess: jest.fn().mockResolvedValue(undefined), visiblePagePredicate: jest.fn() };
+      const svc = new KbPageDuplicateService(db as never, planLimits as never, auth as never);
+
+      await svc.duplicate(makeUser(), PAGE_ID).catch(() => {});
+      await svc.duplicate(makeUser(), PAGE_ID).catch(() => {});
+
+      expect(transactionCallCount).toBe(2);
+    });
+  });
+
+  describe("POST /kb/pages/:pageId/versions/:versionNumber/restore — fence is load-bearing, not decorative", () => {
+    const PAGE_ID = 7;
+    const VERSION_NUMBER = 3;
+    const ORG_ID = "org-ver-fence-test";
+
+    function makeUser() {
+      return {
+        orgId: ORG_ID,
+        userId: "u1",
+        isOrgOwner: false,
+        principal: { kind: "human-session", membershipId: 2 },
+      } as never;
+    }
+
+    function makeCurrentPage() {
+      return {
+        id: PAGE_ID,
+        orgId: ORG_ID,
+        isLocked: false,
+        title: "Test page",
+        content: null,
+        contentText: null,
+        fts: null,
+      };
+    }
+
+    function makeVersion() {
+      return {
+        pageId: PAGE_ID,
+        orgId: ORG_ID,
+        versionNumber: VERSION_NUMBER,
+        title: "Old title",
+        content: null,
+        contentText: null,
+      };
+    }
+
+    function makeDb(transactionFn: jest.Mock) {
+      return {
+        query: {
+          kbPages: { findFirst: jest.fn().mockResolvedValue(makeCurrentPage()) },
+          kbPageVersions: { findFirst: jest.fn().mockResolvedValue(makeVersion()) },
+        },
+        transaction: transactionFn,
+      };
+    }
+
+    it("the service invokes db.transaction on every call — same-key replay by the interceptor prevents the second transaction from running", async () => {
+      let callCount = 0;
+      const transactionFn = jest.fn().mockImplementation(async () => {
+        callCount++;
+        throw new Error("tx-stub");
+      });
+      const db = makeDb(transactionFn);
+      const auth = { assertPageAccess: jest.fn().mockResolvedValue(undefined), visiblePagePredicate: jest.fn() };
+      const svc = new KbPageVersionsService(db as never, auth as never);
+
+      await svc.restoreVersion(makeUser(), PAGE_ID, VERSION_NUMBER, false).catch(() => {});
+      expect(callCount).toBe(1);
+    });
+
+    it("two unfenced calls to restoreVersion each open a transaction — a retry without the fence creates a second snapshot row and a second audit entry", async () => {
+      let transactionCallCount = 0;
+      const transactionFn = jest.fn().mockImplementation(async () => {
+        transactionCallCount++;
+        throw new Error("tx-stub");
+      });
+      const db = makeDb(transactionFn);
+      const auth = { assertPageAccess: jest.fn().mockResolvedValue(undefined), visiblePagePredicate: jest.fn() };
+      const svc = new KbPageVersionsService(db as never, auth as never);
+
+      await svc.restoreVersion(makeUser(), PAGE_ID, VERSION_NUMBER, false).catch(() => {});
+      await svc.restoreVersion(makeUser(), PAGE_ID, VERSION_NUMBER, false).catch(() => {});
+
+      expect(transactionCallCount).toBe(2);
     });
   });
 });

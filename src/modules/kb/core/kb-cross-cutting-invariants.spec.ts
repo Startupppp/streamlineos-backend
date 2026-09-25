@@ -422,9 +422,28 @@ describe("Box 7 — content writes carry expectedContentRevision; bulk commands 
     );
   });
 
-  it("plain page create does NOT carry an idempotency command — this is a known gap against the spec requirement for retriable creates; fix is @Idempotent on KbPagesController.create", () => {
-    const command = idempotencyCommandOf(KbPagesController.prototype.create);
-    expect(command).toBeUndefined();
+  it("plain page create carries an idempotency command name — a retried create is a duplicate page, not a no-op", () => {
+    expect(idempotencyCommandOf(KbPagesController.prototype.create)).toEqual(
+      expect.any(String),
+    );
+  });
+
+  it("page duplicate carries an idempotency command name — duplicate copies a whole subtree unconditionally", () => {
+    expect(
+      idempotencyCommandOf(KbPagesController.prototype.duplicate),
+    ).toEqual(expect.any(String));
+  });
+
+  it("version restore carries an idempotency command name — restore writes two snapshots and an audit row per call", () => {
+    expect(
+      idempotencyCommandOf(KbPagesController.prototype.restoreVersion),
+    ).toEqual(expect.any(String));
+  });
+
+  it("single-page trash restore carries no idempotency command, so the assertions above are not asserting a decorator on every handler", () => {
+    expect(
+      idempotencyCommandOf(KbPagesController.prototype.restore),
+    ).toBeUndefined();
   });
 });
 
