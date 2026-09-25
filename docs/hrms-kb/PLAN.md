@@ -86,10 +86,10 @@ reader are unchanged (§3.6).
 **`kb_settings`** gains `hrms_kb_link_enabled`, `hrms_kb_search_enabled`, `hrms_kb_ai_enabled` — `boolean NOT NULL
 DEFAULT false`.
 
-**Migrations as built (four, not the two or three first estimated):** `1197` (`documents.classification`, `effective_date`),
-`1198` (`document_audiences`, `document_versions`), `1199` (`kb_linked_documents`, `kb_linked_document_audiences`, the three
-`kb_settings` switches), `1200` (`app.hr_document_is_publishable`, the link guard and the unlink trigger). All hand-authored, journalled
-(idx 1081–1084), each with a rollback; every one of the 15 `NOT VALID` foreign keys is validated inside its own migration.
+**Migrations as built (four, not the two or three first estimated):** `1198` (`documents.classification`, `effective_date`),
+`1199` (`document_audiences`, `document_versions`), `1200` (`kb_linked_documents`, `kb_linked_document_audiences`, the three
+`kb_settings` switches), `1201` (`app.hr_document_is_publishable`, the link guard and the unlink trigger). All hand-authored, journalled
+(idx 1082–1085; renumbered from 1197–1200 on merge, because `main` took 1197 for `1197_build_cycle_permissions` while the chain was open), each with a rollback; every one of the 15 `NOT VALID` foreign keys is validated inside its own migration.
 
 Every table: `ENABLE ROW LEVEL SECURITY` + explicit `tenant_isolation` policy (BE-72/74), grants to `streamline_app`,
 composite tenant FKs added `NOT VALID` then validated (BE-62), `lock_timeout`, a rollback file, journal entry, Drizzle
@@ -292,7 +292,7 @@ assistant retrieval, another tenant, and seven ways of degrading a shared docume
 |---|---|---|---|
 | 0 | #46 | — | — |
 | 1 | #45 | — | as proposed; no migration |
-| 2 | #48 | #194 | **four** migrations (1197–1200), not two or three; the switches and the permission landed here with the schema |
+| 2 | #48 | #194 | **four** migrations (1198–1201), not two or three; the switches and the permission landed here with the schema |
 | 3 | #49 | #195 | as proposed |
 | 4 | #50 | #196 | as proposed; versions and approval included |
 | 5 | #51 | #197 | assistants opt in per call site *and* per tenant (the support Ask response schema has no `document` kind) |
