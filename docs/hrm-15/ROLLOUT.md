@@ -20,7 +20,7 @@ Existing lines are **not** reassigned. Migration 1217 marks every existing line 
 `hr_reporting_lines_superseded` (never deletes). Employees without a manager stay in the Manager
 Coverage "without manager" queue for HR remediation (bulk wizard). No automatic historical assignment.
 
-## 2. Pre-deploy audit (run on each production database BEFORE applying 1214–1219)
+## 2. Pre-deploy audit (run on each production database BEFORE applying 1214–1220)
 
 ```sql
 -- a) overlapping primary lines under inclusive semantics — 1218 RAISES if any remain after normalisation
@@ -72,7 +72,10 @@ and its owner, secondary cap (0–3), remediation list, fallback order, outgoing
 
 ## 4. Deploy order
 
-1. Backend migrations 1214–1219 (journal idx 1096–1101). `1213` / idx `1095` is intentionally
+1. Backend migrations 1214–1220 (journal idx 1096–1102). 1220 adds `app.org_business_date(org)`,
+   which every current-line reader now uses instead of the session's `CURRENT_DATE` (UTC for the
+   app role) — before it, a line written on the org's "today" was invisible to approval routing,
+   /me/team and the org chart until UTC midnight. `1213` / idx `1095` is intentionally
    skipped — it belongs to uncommitted work in another checkout (`1213_hr_employments_designation_provisional`);
    whichever lands second must keep idx/when strictly increasing in array order.
 2. Backend deploy (catalog sync adds `hr:reporting-lines:manage|review|override`; the role
@@ -80,7 +83,8 @@ and its owner, secondary cap (0–3), remediation list, fallback order, outgoing
 3. Frontend deploy (vendored `contracts/openapi.json` and `contracts/permission-catalog.json`
    regenerated from this backend).
 
-Rollback: frontend first, then backend, then the `.down.sql` files 1219 → 1214. 1218's rollback
+Rollback: frontend first, then backend, then the `.down.sql` files 1220 → 1214 (1220's rollback
+requires the application build from before the org-business-date readers). 1218's rollback
 refuses if the application has already archived `REPLACED` rows (restoring would recreate overlaps).
 
 ## 5. Monitoring — metrics, dashboards and alert thresholds
