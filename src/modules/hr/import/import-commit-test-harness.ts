@@ -1,3 +1,4 @@
+import type { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 import type { MembershipMutations } from "../../../common/org/membership-mutations";
 import type { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
 import type { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
@@ -40,11 +41,18 @@ export function stubPersonEmployment(): PersonEmploymentSyncService {
   } as unknown as PersonEmploymentSyncService;
 }
 
+export function stubRelationships(): ReportingRelationshipService {
+  return {
+    setRelationships: () => unreachable("ReportingRelationshipService.setRelationships"),
+  } as unknown as ReportingRelationshipService;
+}
+
 /** A commit context for a suite that drives one entity directly. */
 export function importContext(orgId: string, actorId = "test-actor"): ImportCommitContext {
   return {
     orgId,
     actorId,
+    actor: { orgId, system: "import-commit-test" },
     membership: {
       allocateMembershipId: () => unreachable("MembershipMutations.allocateMembershipId"),
     } as unknown as MembershipMutations,

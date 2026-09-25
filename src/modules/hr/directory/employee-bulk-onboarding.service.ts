@@ -48,7 +48,11 @@ import { ReportingLineService } from "../../directory/reporting-line.service";
 import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 import { ReportingManagerFallbackResolver } from "../../directory/reporting-manager-fallback.resolver";
 import { readReportingManagerPolicy } from "../../directory/reporting-line-queries";
-import { REPORTING_LINE_ERROR_CODES, REPORTING_LINE_WARNINGS } from "../../directory/reporting-line.types";
+import {
+  REPORTING_LINE_ERROR_CODES,
+  REPORTING_LINE_WARNINGS,
+  type ManagerAssignmentCheck,
+} from "../../directory/reporting-line.types";
 import { orgBusinessDate } from "../time/attendance-business-date";
 import { normaliseManagerColumns, type ManagerColumnsResult } from "./reporting-manager-columns";
 import { peopleByEmails } from "./reporting-manager-people";
@@ -280,6 +284,9 @@ export class EmployeeBulkOnboardingService {
     plan: BulkOnboardPlan,
   ): Promise<void> {
     const orgId = actor.orgId;
+    if (plan.accepted.length === 0) return;
+    // The whole file is the roster (a manager row may itself have failed, which the orphan sweep
+    // then reports), so every row is passed even though only accepted rows are read back.
     const resolved = await this.fallback.resolveMany(
       orgId,
       actor,
@@ -292,11 +299,10 @@ export class EmployeeBulkOnboardingService {
     );
     const roster = new Set(plan.accepted.map((employee) => employee.email));
     const secondaryEmails = plan.accepted.flatMap((employee) => secondaryEmailsOf(normalised[employee.row - 1]));
-    const [people, policy] = await Promise.all([
-      peopleByEmails(this.db, orgId, secondaryEmails),
-      readReportingManagerPolicy(this.db, orgId),
-    ]);
-    const checks = await this.reportingLines.checkManagers(orgId, [...people.values()].map((person) => person.userId));
+    const people = await peopleByEmails(this.db, orgId, secondaryEmails);
+    const policy = secondaryEmails.length > 0 ? await readReportingManagerPolicy(this.db, orgId) : null;
+    const checks =
+      people.size > 0 ? await this.reportingLines.checkManagers(orgId, [...people.values()].map((person) => person.userId)) : new Map<string, ManagerAssignmentCheck>();
 
     const kept: PlannedEmployee[] = [];
     for (const employee of plan.accepted) {
@@ -335,10 +341,11 @@ export class EmployeeBulkOnboardingService {
         if (problem) break;
         secondaries.push({ email, userId: person?.userId ?? null, name: person?.name ?? null });
       }
-      if (!problem && secondaries.length > policy.maxSecondaryManagersPerEmployee)
+      const cap = policy?.maxSecondaryManagersPerEmployee ?? 0;
+      if (!problem && secondaries.length > cap)
         problem = {
           code: REPORTING_LINE_ERROR_CODES.SECONDARY_CAP_EXCEEDED,
-          error: `This organization allows at most ${policy.maxSecondaryManagersPerEmployee} secondary reporting manager(s) per employee.`,
+          error: `This organization allows at most ${cap} secondary reporting manager(s) per employee.`,
         };
       if (!problem && employee.source.topLevelRole && secondaries.length > 0)
         problem = { code: REPORTING_LINE_ERROR_CODES.TOP_LEVEL_WITH_MANAGER, error: "A top-level role cannot have secondary managers." };

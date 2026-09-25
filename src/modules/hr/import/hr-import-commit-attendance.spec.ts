@@ -16,7 +16,7 @@
 import type { Db } from "../../../db/drizzle.module";
 import { attendance, hrPeople } from "../../../db/schema";
 import { HrImportCommitService } from "./hr-import-commit.service";
-import { importContext, stubAdmission, stubPersonEmployment } from "./import-commit-test-harness";
+import { importContext, stubAdmission, stubPersonEmployment, stubRelationships } from "./import-commit-test-harness";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -53,7 +53,7 @@ function fakeTx(rows: Map<unknown, unknown[]>) {
   return { tx: tx as unknown as Tx, inserted };
 }
 
-const service = () => new HrImportCommitService(stubAdmission(), stubPersonEmployment());
+const service = () => new HrImportCommitService(stubAdmission(), stubPersonEmployment(), stubRelationships());
 const row = { employeeEmail: "pending@example.test", date: "2026-01-05", checkIn: "09:30" };
 
 describe("HR attendance import commit", () => {

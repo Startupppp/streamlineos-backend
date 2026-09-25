@@ -24,6 +24,9 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
 import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import * as schema from "../../../db/schema";
+import { ReportingLineService } from "../../directory/reporting-line.service";
+import { ReportingManagerPolicyService } from "../../directory/reporting-manager-policy.service";
+import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 import { HrImportCommitService } from "./hr-import-commit.service";
 import type { CommitOutcome } from "./hr-import-commit.service";
 import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
@@ -82,7 +85,17 @@ describeDb("employee import reaches the directory — real database", () => {
       { assertWithinLimit: async () => undefined } as never,
       { recordSeatEvents: async (...args: unknown[]) => void seatEvents.push(args) } as never,
     );
-    service = new HrImportCommitService(admission, personEmployment);
+    const access = {
+      holds: async () => true,
+      resolveUserPermissions: async () => new Map(),
+    };
+    const reportingLines = new ReportingLineService(db);
+    const policies = new ReportingManagerPolicyService(db, access as never, reportingLines, { logCritical: async () => undefined } as never);
+    service = new HrImportCommitService(
+      admission,
+      personEmployment,
+      new ReportingRelationshipService(db, reportingLines, policies, { logCritical: async () => undefined } as never),
+    );
 
     await sql.begin(async (tx) => {
       await tx`insert into users (id, email, name) values (${ownerId}, ${`${ownerId}@example.com`}, ${"QA Owner"})`;
@@ -125,7 +138,12 @@ describeDb("employee import reaches the directory — real database", () => {
       db.transaction(async (tx) => {
         const outcomes: CommitOutcome[] = [];
         for (const row of rows) {
-          const ref = await service.commitRow(tx, { orgId, actorId: ownerId, membership }, "employees", row);
+          const ref = await service.commitRow(
+            tx,
+            { orgId, actorId: ownerId, membership, actor: { orgId, userId: ownerId, isOrgOwner: true } },
+            "employees",
+            row,
+          );
           if (ref) outcomes.push(ref.outcome);
         }
         return outcomes;
@@ -262,11 +280,15 @@ describeDb("employee import reaches the directory — real database", () => {
 
   /**
    * V-010, second half. `managerEmail` had the same fate as `departmentName`.
-   * The id comes from the preflight (which is what turns an unknown manager
-   * into a row error at PREVIEW); the assertion here is that the commit turns
-   * it into an effective-dated reporting line rather than dropping it.
+   * HRM-15: the column is now `primaryManagerEmail` and the line is written by
+   * the canonical relationship service, which only accepts a manager who has
+   * accepted their invitation — so the manager is marked accepted first.
    */
   it("opens a reporting line for the manager the sheet names", async () => {
+    await sql`
+      update users set email_verified = now()
+      where id in (select user_id from organization_members where org_id = ${orgId})
+    `;
     const [manager] = await sql`
       select e.id
       from hr_employments e
@@ -281,8 +303,7 @@ describeDb("employee import reaches the directory — real database", () => {
     await importSheet([
       {
         ...SHEET[0],
-        managerEmail: SHEET[1].email,
-        resolvedManagerEmploymentId: managerEmploymentId,
+        primaryManagerEmail: SHEET[1].email,
       },
     ]);
 
@@ -307,8 +328,7 @@ describeDb("employee import reaches the directory — real database", () => {
     await importSheet([
       {
         ...SHEET[0],
-        managerEmail: SHEET[1].email,
-        resolvedManagerEmploymentId: managerEmploymentId,
+        primaryManagerEmail: SHEET[1].email,
       },
     ]);
     const [again] = await sql`
@@ -333,10 +353,10 @@ describeDb("employee import reaches the directory — real database", () => {
       importSheet([
         {
           ...SHEET[1],
-          managerEmail: SHEET[0].email,
-          resolvedManagerEmploymentId: Number(self?.id),
+          primaryManagerEmail: SHEET[0].email,
         },
       ]),
-    ).rejects.toThrow(/circular reporting chain/i);
+    ).rejects.toThrow(/PRIMARY_CYCLE/);
+    expect(self?.id).toBeDefined();
   });
 });

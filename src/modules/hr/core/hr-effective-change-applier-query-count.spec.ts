@@ -62,7 +62,7 @@ function harness(due: ReturnType<typeof changeRows>, extraSelects: unknown[] = [
   });
   const db = counting.db as Db;
   return {
-    service: new HrEffectiveChangeApplierService(db, new HrAuditService(db)),
+    service: new HrEffectiveChangeApplierService(db, new HrAuditService(db), { setRelationships: jest.fn() } as never),
     statements: counting.statements,
     countOf: counting.countOf,
     reads: () => counting.countOf("select") + counting.countOf("execute"),

@@ -18,7 +18,7 @@ import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import * as schema from "../../../db/schema";
 import { HrImportCommitService } from "./hr-import-commit.service";
 import { nameKey } from "./hr-import-document-commit";
-import { importContext, stubAdmission, stubPersonEmployment } from "./import-commit-test-harness";
+import { importContext, stubAdmission, stubPersonEmployment, stubRelationships } from "./import-commit-test-harness";
 import type { CommitRef } from "./hr-import-commit.types";
 
 const describeDb = dbSpecSuite();
@@ -29,7 +29,7 @@ describeDb("HR document import — real database", () => {
     : "";
   let sql: ReturnType<typeof dbSpecClient>;
   let db: ReturnType<typeof drizzle<typeof schema>>;
-  const service = new HrImportCommitService(stubAdmission(), stubPersonEmployment());
+  const service = new HrImportCommitService(stubAdmission(), stubPersonEmployment(), stubRelationships());
   const orgA = `doc-import-a-${randomUUID()}`;
   const orgB = `doc-import-b-${randomUUID()}`;
   const owners: string[] = [];

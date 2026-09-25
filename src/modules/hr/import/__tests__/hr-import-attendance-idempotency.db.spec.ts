@@ -24,7 +24,7 @@ import { sql } from "drizzle-orm";
 import * as schema from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.types";
 import { HrImportCommitService } from "../hr-import-commit.service";
-import { importContext, stubAdmission, stubPersonEmployment } from "../import-commit-test-harness";
+import { importContext, stubAdmission, stubPersonEmployment, stubRelationships } from "../import-commit-test-harness";
 import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../../test/helpers/probe-org";
 
 const WORK_EMAIL = "attendance-idem-probe@synthetic.invalid";
@@ -53,7 +53,7 @@ describe("attendance import idempotency — real database", () => {
   beforeAll(async () => {
     client = connect();
     db = drizzle(client, { schema });
-    service = new HrImportCommitService(stubAdmission(), stubPersonEmployment());
+    service = new HrImportCommitService(stubAdmission(), stubPersonEmployment(), stubRelationships());
     // Built rather than looked up: the org this suite used to name is created by no seeder in
     // the repository, so the lookup below it threw on every machine but one.
     probe = await createProbeOrg(client, "hr-import-attendance-idem");

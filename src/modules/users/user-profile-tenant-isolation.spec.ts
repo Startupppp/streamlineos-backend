@@ -40,7 +40,7 @@ describe("UserProfileService — cross-tenant isolation", () => {
       sessions as SessionsService,
       employment as EmploymentFactsService,
       activity as UserActivityService,
-      {} as ReportingLineService,
+      {} as ReportingRelationshipService,
     );
   }
 
@@ -74,7 +74,7 @@ describe("UserProfileService — cross-tenant isolation", () => {
         {} as SessionsService,
         {} as EmploymentFactsService,
         {} as UserActivityService,
-        {} as ReportingLineService,
+        {} as ReportingRelationshipService,
       );
 
       const result = await svc.updatePreferences(OWNER_ORG, USER_ID, {});

@@ -7,13 +7,13 @@ import { users, hrEmployments } from "../../db/schema";
 import { syncStructuralRoleAssignments } from "../../common/rbac/sync-structural-role";
 import { UserOpsService } from "./user-ops.service";
 
-const assignMany = jest.fn().mockResolvedValue(new Map());
+const setRelationships = jest.fn().mockResolvedValue({ changed: true, warnings: [] });
 
 function buildService(
   scopedMembers: Array<{ userId: string }> = [{ userId: "user-a" }],
   membershipRows: Array<{ id: number }> = [],
 ) {
-  assignMany.mockClear();
+  setRelationships.mockClear();
   const updatedTables: unknown[] = [];
   const setCalls: unknown[] = [];
 
@@ -61,8 +61,12 @@ function buildService(
     select: txSelect,
   };
 
+  const organizationTimezone = {
+    from: () => ({ where: () => ({ limit: () => Promise.resolve([{ timezone: "UTC" }]) }) }),
+  };
   const db = {
     transaction: jest.fn((callback: (handle: typeof tx) => unknown) => callback(tx)),
+    select: jest.fn(() => organizationTimezone),
   };
 
   const service = new UserOpsService(
@@ -80,10 +84,7 @@ function buildService(
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) } as never,
     {} as never,
     { getFacts: jest.fn(), getFactsBatch: jest.fn() } as never,
-    {
-      checkManager: jest.fn().mockResolvedValue({ ok: true, managerEmploymentId: 1 }),
-      assignMany,
-    } as never,
+    { setRelationships } as never,
   );
 
   return { db, tx, service, updatedTables, setCalls };
@@ -130,14 +131,10 @@ describe("bulkUpdateUsers — cross-org isolation", () => {
     }, actor);
 
     expect(result.updated).toBe(1);
-    expect(assignMany).toHaveBeenCalledTimes(1);
-    expect(assignMany).toHaveBeenCalledWith(
-      "org-a",
-      ["user-a"],
-      "manager-1",
-      expect.any(String),
-      "actor-1",
+    expect(setRelationships).toHaveBeenCalledTimes(1);
+    expect(setRelationships).toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ orgId: "org-a", subjectUserId: "user-a", primaryManagerUserId: "manager-1" }),
     );
   });
 });
@@ -167,7 +164,7 @@ describe("bulkUpdateUsers — canonical destination writes", () => {
     expect(setCalls).toContainEqual(expect.objectContaining({ locationId: "branch-1" }));
   });
 
-  it("syncs every reportee's manager in one batched call, not one call per user", async () => {
+  it("writes every in-org reportee's manager through the canonical relationship service, one audited change each", async () => {
     const { service } = buildService([{ userId: "user-a" }, { userId: "user-b" }]);
 
     await service.bulkUpdateUsers("org-a", {
@@ -175,14 +172,10 @@ describe("bulkUpdateUsers — canonical destination writes", () => {
       managerUserId: "manager-1",
     }, actor);
 
-    expect(assignMany).toHaveBeenCalledTimes(1);
-    expect(assignMany).toHaveBeenCalledWith(
-      "org-a",
-      ["user-a", "user-b"],
-      "manager-1",
-      expect.any(String),
-      "actor-1",
+    expect(setRelationships.mock.calls.map(([, command]) => command.subjectUserId)).toEqual(["user-a", "user-b"]);
+    expect(setRelationships).toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ primaryManagerUserId: "manager-1", source: "BULK_REASSIGNMENT", actor: { orgId: "org-a", userId: "actor-1", isOrgOwner: false } }),
     );
   });
 

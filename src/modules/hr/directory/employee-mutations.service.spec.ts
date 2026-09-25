@@ -51,6 +51,8 @@ function buildService(scope: DataScope, targetMember: object | null = { userId: 
     update: jest.fn().mockReturnValue({ set: updateSet }),
   };
   const db = {
+    // The org's business date for the change's effective day (orgBusinessDate).
+    select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ timezone: "UTC" }]) }) }) })),
     query: {
       organizationMembers: {
         findFirst: jest.fn().mockResolvedValue(targetMember),
@@ -87,7 +89,7 @@ function buildService(scope: DataScope, targetMember: object | null = { userId: 
       managerUserId: null,
     }),
   };
-  const reportingLines = { assign: jest.fn().mockResolvedValue({ status: "written", employmentId: 1, managerEmploymentId: 2 }) };
+  const reportingLines = { setRelationships: jest.fn().mockResolvedValue({ changed: true, warnings: [] }) };
   const service = new EmployeeMutationsService(
     db as never,
     { invalidate: jest.fn(), invalidateNamespace: jest.fn() } as never,
@@ -141,7 +143,7 @@ describe("EmployeeMutationsService.updateEmployee authorization", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it("delegates a manager change to the reporting-line authority on the write transaction", async () => {
+  it("delegates a manager change to the canonical relationship service on the write transaction (legacy reportingTo, source MANUAL)", async () => {
     const { db, reportingLines, service, tx } = buildService("all");
 
     await expect(
@@ -150,21 +152,23 @@ describe("EmployeeMutationsService.updateEmployee authorization", () => {
       }),
     ).resolves.toEqual({ success: true });
 
-    expect(reportingLines.assign).toHaveBeenCalledTimes(1);
-    expect(reportingLines.assign).toHaveBeenCalledWith(
-      "org-1",
-      "target-1",
-      "manager-1",
-      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      "actor-1",
+    expect(reportingLines.setRelationships).toHaveBeenCalledTimes(1);
+    expect(reportingLines.setRelationships).toHaveBeenCalledWith(
       tx,
+      expect.objectContaining({
+        orgId: "org-1",
+        subjectUserId: "target-1",
+        primaryManagerUserId: "manager-1",
+        effectiveFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        source: "MANUAL",
+      }),
     );
     expect(db.execute).not.toHaveBeenCalled();
   });
 
   it("surfaces a refused manager instead of reporting success", async () => {
     const { reportingLines, service } = buildService("all");
-    reportingLines.assign.mockRejectedValueOnce(new BadRequestException("This reporting structure would create a circular management chain."));
+    reportingLines.setRelationships.mockRejectedValueOnce(new BadRequestException("This reporting structure would create a circular management chain."));
 
     await expect(
       service.updateEmployee(ctx(), "target-1", { reportingTo: "manager-1" }),
@@ -256,7 +260,7 @@ describe("EmployeeMutationsService base response boundary", () => {
       { emit: jest.fn() } as never,
       {} as never,
       { getFacts: jest.fn().mockResolvedValue({ managerUserId: null, joiningDate: null, employeeNumber: null, designation: null, departmentId: null, locationId: null, employmentId: null, userId: "target-1" }) } as never,
-      { assign: jest.fn() } as never,
+      { setRelationships: jest.fn() } as never,
     );
 
     const response = await service.getEmployeeDetail(

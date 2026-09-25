@@ -53,6 +53,26 @@ function userId(index: number): string {
   return `user-${String(index + 1)}`;
 }
 
+/** Every blank-manager row falls back to the configured default, as D2 does with a policy set. */
+function fallbackDouble() {
+  return {
+    resolveMany: jest.fn((_orgId: string, _actor: unknown, rows: ReadonlyArray<{ key: number }>) =>
+      Promise.resolve(
+        rows.map((row) => ({
+          key: row.key,
+          ok: true,
+          managerUserId: "default-manager",
+          managerEmploymentId: 900,
+          name: "Default Manager",
+          email: "default@example.com",
+          resolution: "FALLBACK_CONFIGURED",
+          dependsOnRow: null,
+        })),
+      ),
+    ),
+  };
+}
+
 function collaborators() {
   const cache = {
     invalidate: jest.fn(),
@@ -97,6 +117,8 @@ function harness(count: number): Harness {
       [],
       existingUsers,
       [],
+      // The organisation's business date, read once for rows with no joining date (HRM-15).
+      [],
       [],
       [{ id: 7, slug: "MEMBER" }],
       [],
@@ -135,7 +157,9 @@ function harness(count: number): Harness {
     deps.automation as never,
     deps.webhooks as never,
     new PersonEmploymentSyncService(db, new HrAuditService(db)),
-    { checkManager: jest.fn(), assign: jest.fn() } as never,
+    { checkManagers: jest.fn().mockResolvedValue(new Map()) } as never,
+    fallbackDouble() as never,
+    { setRelationships: jest.fn().mockResolvedValue({ changed: true, warnings: [] }) } as never,
   );
 
   return {
@@ -174,7 +198,9 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
     const fiftyRows = fifty.statements();
 
     expect(fiftyRows).toBe(oneRow);
-    expect([oneRow, fiftyRows]).toEqual([25, 25]);
+    // 25 + the one organisation business-date read HRM-15 added for effective dates. The
+    // relationship writes themselves go through ReportingRelationshipService (a double here).
+    expect([oneRow, fiftyRows]).toEqual([26, 26]);
     expect(fifty.countOf("select")).toBe(one.countOf("select"));
     expect(fifty.countOf("insert")).toBe(one.countOf("insert"));
     expect(fifty.countOf("update")).toBe(one.countOf("update"));
@@ -201,7 +227,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       { ...rows[0], email: "ADA.LOVELACE1@example.com" },
     ];
     const counting = makeCountingDb({
-      select: [[], [], [], [], [{ id: 7, slug: "MEMBER" }], [], [], [], [], [{ id: 42 }]],
+      select: [[], [], [], [], [], [{ id: 7, slug: "MEMBER" }], [], [], [], [], [{ id: 42 }]],
       insert: [
         [{ id: DEPARTMENT_ID, name: "Engineering", code: "ENGINEERING" }],
         [{ id: 1, userId: "created-1" }],
@@ -229,7 +255,9 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       deps.automation as never,
       deps.webhooks as never,
       new PersonEmploymentSyncService(db, new HrAuditService(db)),
-      { checkManager: jest.fn(), assign: jest.fn() } as never,
+      { checkManagers: jest.fn().mockResolvedValue(new Map()) } as never,
+      fallbackDouble() as never,
+      { setRelationships: jest.fn().mockResolvedValue({ changed: true, warnings: [] }) } as never,
     );
 
     const result = await runWithTenantContext(
@@ -269,8 +297,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       new Map(),
       new Map(),
       new Set<string>(),
-      new Map(),
-    );
+          );
 
     expect(plan.accepted).toHaveLength(1);
     expect(plan.rejected).toEqual([
@@ -307,8 +334,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       new Map(),
       new Map(),
       new Set<string>(),
-      new Map(),
-    );
+          );
 
     expect(plan.rejected).toEqual([]);
     expect(plan.accepted.map((row) => [row.email, row.employeeNumber])).toEqual([
