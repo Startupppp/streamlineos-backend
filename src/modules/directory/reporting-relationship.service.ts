@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { logger } from "../../common/logger/logger.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DbOrTx } from "../../common/rbac/access-invalidate";
@@ -87,7 +88,11 @@ export class ReportingRelationshipService {
     await lockReportingLines(tx, cmd.orgId);
     const [evaluated] = await this.evaluate(tx, cmd.orgId, [cmd]);
     const { validation, subject } = evaluated;
-    if (!validation.ok || !subject || validation.employmentId === null) throw ReportingLineException.of(validation.issues[0]);
+    if (!validation.ok || !subject || validation.employmentId === null) {
+      const issue = validation.issues[0];
+      logger.warn("[hrm-15] reporting line change refused", { event: "hr.reporting_line.refused", orgId: cmd.orgId, code: issue?.code, source: cmd.source });
+      throw ReportingLineException.of(issue);
+    }
 
     const orgId = cmd.orgId;
     const employmentId = validation.employmentId;

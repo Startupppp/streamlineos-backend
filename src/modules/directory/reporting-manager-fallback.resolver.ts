@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { logger } from "../../common/logger/logger.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DbOrTx } from "../../common/rbac/access-invalidate";
@@ -140,6 +141,7 @@ export class ReportingManagerFallbackResolver {
         if (!member || isSelf(row, member) || checks.get(member.userId)?.ok !== true) continue;
         return chosen(row, member, resolution);
       }
+      logger.warn("[hrm-15] no eligible default reporting manager", { event: "hr.reporting_manager.no_default", orgId });
       return {
         key: row.key,
         ok: false,
