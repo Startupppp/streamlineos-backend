@@ -1079,8 +1079,8 @@
     },
     "/build/core/projects-analytics.service.ts": {
       "verdict": "FALSE-POSITIVE",
-      "note": "All reads are count/sum/groupBy aggregates for sprint velocity, status distribution, cycle time; no unbounded row scan",
-      "justification": "L179 reads projects by inArray(memberProjectIds) bounded by user project memberships; all other selects are aggregate-only (count/avg/sum) 2026-09-01"
+      "note": "Analytics aggregates and resource-allocation page reads are bounded by SQL aggregation, cursor limits, or the page ID list",
+      "justification": "getOrgProjectHealthSummary is one tenant-scoped SQL aggregate; resourceAllocation limits the assignee page to limit+1, scopes breakdown rows to that page, and caps the users lookup at pageUserIds.length. Remaining detector matches are aggregate/raw SQL shapes that do not materialize an unbounded application row set 2026-09-25"
     },
     "/build/core/projects-budget.service.ts": {
       "verdict": "FALSE-POSITIVE",

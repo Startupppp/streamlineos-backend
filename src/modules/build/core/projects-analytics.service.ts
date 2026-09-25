@@ -377,6 +377,7 @@ export class ProjectsAnalyticsService {
       this.db.query.users.findMany({
         where: inArray(users.id, pageUserIds),
         columns: { id: true, name: true, email: true, image: true },
+        limit: pageUserIds.length,
       }),
     ]);
 
