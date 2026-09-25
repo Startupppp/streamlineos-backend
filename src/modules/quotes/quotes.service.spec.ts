@@ -138,7 +138,7 @@ describe("QuotesService.convertToInvoice", () => {
       { description: "Widget", quantity: "2.00", unitPrice: "500.00", taxRate: "0.00", amount: "1000.00", displayOrder: 0 },
     ];
     mockDb.query.quotes.findFirst.mockResolvedValue(
-      makeQuote({ status: "ACCEPTED", lineItems }),
+      makeQuote({ status: "ACCEPTED", clientId: 12, dealId: 73, lineItems }),
     );
 
     const invoice = { id: "inv-new", invoiceNumber: "INV-20260712-001" };
@@ -172,6 +172,9 @@ describe("QuotesService.convertToInvoice", () => {
     const result = await svc.convertToInvoice(ORG, USER, QUOTE_ID);
 
     expect(mockDb.transaction).toHaveBeenCalled();
+    expect(invoiceInsertChain.values).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: 12, dealId: 73 }),
+    );
     expect(result).toEqual({ invoice, quoteId: QUOTE_ID });
   });
 });

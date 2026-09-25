@@ -162,7 +162,8 @@ export class QuotesLifecycleService {
         .insert(invoices)
         .values({
           orgId,
-          clientId: null,
+          clientId: existing.clientId,
+          dealId: existing.dealId,
           invoiceNumber,
           status: "DRAFT",
           subtotal: subtotal.toFixed(4),
