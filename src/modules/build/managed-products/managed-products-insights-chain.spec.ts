@@ -68,12 +68,27 @@ function makeInsightsDb(loadRow: object | null): { db: Db; capture: Capture } {
     };
   }
 
+  function emptyAggregateChain() {
+    return {
+      from: () => ({
+        innerJoin: () => ({
+          innerJoin: () => ({
+            where: () => ({ groupBy: () => Promise.resolve([]) }),
+          }),
+          where: () => ({ groupBy: () => Promise.resolve([]) }),
+        }),
+        where: () => ({ groupBy: () => Promise.resolve([]) }),
+      }),
+    };
+  }
+
   const db = {
     select: jest.fn(() => {
       selectCallCount += 1;
       if (selectCallCount === 1) return loadChain;
       if (selectCallCount === 2) return projectsChain();
-      return submissionsChain();
+      if (selectCallCount === 3) return submissionsChain();
+      return emptyAggregateChain();
     }),
   } as unknown as Db;
 

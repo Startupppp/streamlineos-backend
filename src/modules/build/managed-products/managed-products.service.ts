@@ -1,6 +1,13 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull } from "drizzle-orm";
-import { feedbucketSubmissions, feedbucketWidgets, managedProducts, projects } from "../../../db/schema";
+import { and, count, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import {
+  feedbucketSubmissions,
+  feedbucketWidgets,
+  feedbackPosts,
+  managedProducts,
+  projects,
+  roadmapItems,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -149,7 +156,7 @@ export class ManagedProductsService {
   async getProductInsights(orgId: string, managedProductId: number) {
     await this.loadProduct(orgId, managedProductId);
 
-    const [projectRows, submissionRows] = await Promise.all([
+    const [projectRows, submissionRows, roadmapRows, feedbackRows] = await Promise.all([
       this.db
         .select({ status: projects.status, tally: count() })
         .from(projects)
@@ -181,6 +188,50 @@ export class ManagedProductsService {
           ),
         )
         .groupBy(feedbucketSubmissions.status),
+
+      this.db
+        .select({ status: roadmapItems.status, tally: count() })
+        .from(roadmapItems)
+        .innerJoin(
+          projects,
+          and(
+            eq(projects.orgId, roadmapItems.orgId),
+            eq(projects.id, roadmapItems.projectId),
+            eq(projects.managedProductId, managedProductId),
+            isNull(projects.deletedAt),
+          ),
+        )
+        .where(and(eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
+        .groupBy(roadmapItems.status),
+
+      this.db
+        .select({ status: feedbackPosts.status, tally: count(), votes: sql<number>`COALESCE(SUM(${feedbackPosts.votes}), 0)::int`.mapWith(Number) })
+        .from(feedbackPosts)
+        .innerJoin(
+          roadmapItems,
+          and(
+            eq(roadmapItems.orgId, feedbackPosts.orgId),
+            eq(roadmapItems.id, feedbackPosts.linkedRoadmapItemId),
+            isNull(roadmapItems.deletedAt),
+          ),
+        )
+        .innerJoin(
+          projects,
+          and(
+            eq(projects.orgId, roadmapItems.orgId),
+            eq(projects.id, roadmapItems.projectId),
+            eq(projects.managedProductId, managedProductId),
+            isNull(projects.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(feedbackPosts.orgId, orgId),
+            isNull(feedbackPosts.deletedAt),
+            isNull(feedbackPosts.duplicateOfId),
+          ),
+        )
+        .groupBy(feedbackPosts.status),
     ]);
 
     const projectsByStatus = { active: 0, completed: 0, archived: 0 };
@@ -198,10 +249,28 @@ export class ManagedProductsService {
       if (key in submissionsByStatus) submissionsByStatus[key] = n;
     }
 
+    const roadmapItemsByStatus = { planned: 0, in_progress: 0, completed: 0, cancelled: 0 };
+    for (const row of roadmapRows) {
+      const key = row.status as keyof typeof roadmapItemsByStatus;
+      if (key in roadmapItemsByStatus) roadmapItemsByStatus[key] = Number(row.tally);
+    }
+
+    const feedbackByStatus = { open: 0, planned: 0, in_progress: 0, completed: 0, declined: 0 };
+    let linkedFeedbackVoteCount = 0;
+    for (const row of feedbackRows) {
+      const key = row.status as keyof typeof feedbackByStatus;
+      if (key in feedbackByStatus) feedbackByStatus[key] = Number(row.tally);
+      linkedFeedbackVoteCount += Number(row.votes ?? 0);
+    }
+
     return {
       linkedProjectCount: projectsByStatus.active + projectsByStatus.completed + projectsByStatus.archived,
       projectsByStatus,
       submissionsByStatus,
+      roadmapItemCount: Object.values(roadmapItemsByStatus).reduce((total, value) => total + value, 0),
+      roadmapItemsByStatus,
+      feedbackByStatus,
+      linkedFeedbackVoteCount,
     };
   }
 

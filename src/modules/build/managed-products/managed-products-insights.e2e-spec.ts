@@ -42,6 +42,10 @@ describe("ManagedProducts insights auth/RBAC (e2e)", () => {
       linkedProjectCount: 0,
       projectsByStatus: { active: 0, completed: 0, archived: 0 },
       submissionsByStatus: { open: 0, in_progress: 0, resolved: 0, archived: 0 },
+      roadmapItemCount: 0,
+      roadmapItemsByStatus: { planned: 0, in_progress: 0, completed: 0, cancelled: 0 },
+      feedbackByStatus: { open: 0, planned: 0, in_progress: 0, completed: 0, declined: 0 },
+      linkedFeedbackVoteCount: 0,
     });
     const token = await signToken({
       permissions: ["build:managed-products:view"],
@@ -55,6 +59,10 @@ describe("ManagedProducts insights auth/RBAC (e2e)", () => {
       linkedProjectCount: 0,
       projectsByStatus: { active: 0, completed: 0, archived: 0 },
       submissionsByStatus: { open: 0, in_progress: 0, resolved: 0, archived: 0 },
+      roadmapItemCount: 0,
+      roadmapItemsByStatus: { planned: 0, in_progress: 0, completed: 0, cancelled: 0 },
+      feedbackByStatus: { open: 0, planned: 0, in_progress: 0, completed: 0, declined: 0 },
+      linkedFeedbackVoteCount: 0,
     });
   });
 

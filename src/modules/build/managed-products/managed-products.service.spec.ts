@@ -248,7 +248,10 @@ describe("ManagedProductsService", () => {
       const groupByChain = Promise.resolve(rows);
       const whereChain = { groupBy: jest.fn().mockReturnValue(groupByChain) };
       if (joined) {
-        const innerJoinChain = { where: jest.fn().mockReturnValue(whereChain) };
+        const innerJoinChain = {
+          innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(whereChain) }),
+          where: jest.fn().mockReturnValue(whereChain),
+        };
         const fromChain = { innerJoin: jest.fn().mockReturnValue(innerJoinChain) };
         return { from: jest.fn().mockReturnValue(fromChain) };
       }
@@ -278,13 +281,17 @@ describe("ManagedProductsService", () => {
       (mockDb as { select: jest.Mock }).select
         .mockReturnValueOnce(loadChain)
         .mockReturnValueOnce(projectsChain)
-        .mockReturnValueOnce(submissionsChain);
+        .mockReturnValueOnce(submissionsChain)
+        .mockReturnValueOnce(makeGroupedSelectChain([], true))
+        .mockReturnValueOnce(makeGroupedSelectChain([], true));
 
       const result = await svc.getProductInsights(ORG_ID, 1);
 
       expect(result.linkedProjectCount).toBe(4);
       expect(result.projectsByStatus).toEqual({ active: 3, completed: 1, archived: 0 });
       expect(result.submissionsByStatus).toMatchObject({ open: 5, resolved: 2, in_progress: 0 });
+      expect(result.roadmapItemCount).toBe(0);
+      expect(result.linkedFeedbackVoteCount).toBe(0);
     });
 
     it("returns all zeros when no projects or submissions are linked to the product", async () => {
@@ -296,13 +303,17 @@ describe("ManagedProductsService", () => {
       (mockDb as { select: jest.Mock }).select
         .mockReturnValueOnce(loadChain)
         .mockReturnValueOnce(projectsChain)
-        .mockReturnValueOnce(submissionsChain);
+        .mockReturnValueOnce(submissionsChain)
+        .mockReturnValueOnce(makeGroupedSelectChain([], true))
+        .mockReturnValueOnce(makeGroupedSelectChain([], true));
 
       const result = await svc.getProductInsights(ORG_ID, 1);
 
       expect(result.linkedProjectCount).toBe(0);
       expect(result.projectsByStatus).toEqual({ active: 0, completed: 0, archived: 0 });
       expect(result.submissionsByStatus).toEqual({ open: 0, in_progress: 0, resolved: 0, archived: 0 });
+      expect(result.roadmapItemCount).toBe(0);
+      expect(result.linkedFeedbackVoteCount).toBe(0);
     });
   });
 

@@ -39,4 +39,19 @@ export const managedProductInsightsSchema = z.object({
     resolved: z.number().int(),
     archived: z.number().int(),
   }),
+  roadmapItemCount: z.number().int(),
+  roadmapItemsByStatus: z.object({
+    planned: z.number().int(),
+    in_progress: z.number().int(),
+    completed: z.number().int(),
+    cancelled: z.number().int(),
+  }),
+  feedbackByStatus: z.object({
+    open: z.number().int(),
+    planned: z.number().int(),
+    in_progress: z.number().int(),
+    completed: z.number().int(),
+    declined: z.number().int(),
+  }),
+  linkedFeedbackVoteCount: z.number().int(),
 });
