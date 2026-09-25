@@ -38,8 +38,9 @@ function build(ai: boolean) {
   const flags = { getEffective: jest.fn().mockResolvedValue({ link: true, search: true, ai }) };
   const access = { holds: jest.fn().mockResolvedValue(false) };
   const query = { searchForCaller: jest.fn().mockResolvedValue([item()]), visibleIds: jest.fn().mockResolvedValue(new Set([31])) };
-  const source = new KbLinkedDocumentAskSource(flags as never, access as never, query as never);
-  return { source, flags, access, query };
+  const audit = { logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined), logCritical: jest.fn() };
+  const source = new KbLinkedDocumentAskSource(flags as never, access as never, query as never, audit as never);
+  return { source, flags, access, query, audit };
 }
 
 describe("KbLinkedDocumentAskSource", () => {
@@ -125,5 +126,39 @@ describe("KbLinkedDocumentAskSource", () => {
     const passage = source.passageOf(item({ description: null, category: null, effectiveDate: null, version: null }));
 
     expect(passage.text.trim().length).toBeGreaterThan(0);
+  });
+
+  /**
+   * V-148. Retrieval was audited nowhere: an HR document could be named in an assistant's answer with no record
+   * that it had been. This is the last point before it is, so it is where the record is written.
+   */
+  it("records every HR document an answer may cite, outside the request transaction, with no name or text", async () => {
+    const { source, audit } = build(true);
+
+    await expect(source.stillCitable(user, [31])).resolves.toEqual(new Set([31]));
+
+    expect(audit.logCritical).not.toHaveBeenCalled();
+    expect(audit.logCriticalOutsideTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "kb.ai.answer_cited",
+        userId: "user-1",
+        orgId: "org-1",
+        targetType: "kb_linked_document",
+        metadata: { linkedDocumentIds: [31], count: 1 },
+      }),
+    );
+    expect(JSON.stringify(audit.logCriticalOutsideTransaction.mock.calls)).not.toContain("Code of Conduct");
+  });
+
+  it("writes no citation row when nothing survived the re-check, or when the switch is off", async () => {
+    const nothingSurvives = build(true);
+    nothingSurvives.query.visibleIds.mockResolvedValue(new Set());
+    const switchedOff = build(false);
+
+    await nothingSurvives.source.stillCitable(user, [31]);
+    await switchedOff.source.stillCitable(user, [31]);
+
+    expect(nothingSurvives.audit.logCriticalOutsideTransaction).not.toHaveBeenCalled();
+    expect(switchedOff.audit.logCriticalOutsideTransaction).not.toHaveBeenCalled();
   });
 });

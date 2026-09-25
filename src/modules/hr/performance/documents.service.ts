@@ -170,7 +170,7 @@ export class DocumentsService {
     read: ScopedRead,
     documentId: number,
     membershipId?: number | null,
-  ): Promise<{ documentId: number; fileUrl: string; fileName: string }> {
+  ): Promise<{ documentId: number; fileUrl: string; fileName: string; ownerUserId: string | null; classification: string }> {
     this.assertMembershipForScope(read, membershipId);
     const [document] = await read.read(
       {
@@ -183,6 +183,10 @@ export class DocumentsService {
           documentId: documents.id,
           fileUrl: documents.fileUrl,
           fileName: sql<string>`coalesce(${documents.fileName}, ${documents.name})`,
+          // Read so the audit row can say whether this was someone reading THEIR OWN document or reading an
+          // employee's. Both are allowed; only one of them is worth looking at later (V-148).
+          ownerUserId: documents.userId,
+          classification: documents.classification,
         })
         .from(documents)
         .where(where)
