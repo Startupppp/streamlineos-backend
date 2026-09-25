@@ -174,6 +174,24 @@ export const HR_FOUNDATION_PERMISSIONS: Permission[] = [
     scopable: true,
   },
   {
+    name: "hr:reporting-lines:manage",
+    resource: "hr:reporting-lines",
+    action: "manage",
+    description: "Set and schedule reporting managers, run bulk reporting changes, and confirm fallback managers",
+  },
+  {
+    name: "hr:reporting-lines:review",
+    resource: "hr:reporting-lines",
+    action: "review",
+    description: "Review employee requests to correct their reporting manager",
+  },
+  {
+    name: "hr:reporting-lines:override",
+    resource: "hr:reporting-lines",
+    action: "override",
+    description: "Configure the reporting manager policy, exceed the repeated-change threshold, and make emergency reporting changes",
+  },
+  {
     name: "hr:custom-fields:manage",
     resource: "hr:custom-fields",
     action: "manage",
