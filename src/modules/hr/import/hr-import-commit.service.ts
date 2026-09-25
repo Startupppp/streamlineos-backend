@@ -12,7 +12,9 @@ import {
   documents,
   orgUnits,
   hrReportingLines,
+  users,
 } from "../../../db/schema";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 import { hrImportRows } from "../../../db/schema/hr/import-jobs";
 import {
   employeeRowSchema,
@@ -72,7 +74,7 @@ export class HrImportCommitService {
     const orgId = ctx.orgId;
     if (entity === "employees") return this.commitEmployee(tx, ctx, employeeRowSchema.parse(payload));
     if (entity === "leave_balances") return this.commitLeaveBalance(tx, orgId, leaveBalanceRowSchema.parse(payload));
-    if (entity === "attendance") return this.commitAttendance(tx, orgId, attendanceRowSchema.parse(payload));
+    if (entity === "attendance") return this.commitAttendance(tx, ctx, attendanceRowSchema.parse(payload));
     if (entity === "assets") return this.commitAsset(tx, orgId, assetRowSchema.parse(payload));
     if (entity === "document_metadata") return commitDocumentRow(tx, orgId, documentMetadataRowSchema.parse(payload));
     // This used to `return null`, which the caller read as "nothing to do": the
@@ -434,30 +436,49 @@ export class HrImportCommitService {
     };
   }
 
-  private async commitAttendance(tx: Tx, orgId: string, row: AttendanceRow): Promise<CommitRef> {
-    const person = await tx
-      .select({ userId: hrPeople.userId })
-      .from(hrPeople)
-      .innerJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
-        ),
-      )
-      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
-      .limit(1);
+  private async commitAttendance(tx: Tx, ctx: ImportCommitContext, row: AttendanceRow): Promise<CommitRef> {
+    const orgId = ctx.orgId;
+    // The preflight resolved this against the org, `deleted_at IS NULL` AND
+    // acceptance, so a preview that said "valid" and a commit that writes agree.
+    // The query below is the fallback for a job previewed before the preflight
+    // existed, and carries the same acceptance predicate for the same reason.
+    let userId = row.resolvedUserId;
+    if (!userId) {
+      const person = await tx
+        .select({ userId: hrPeople.userId, accepted: sql<boolean>`(${acceptedEmployee()})` })
+        .from(hrPeople)
+        .innerJoin(
+          organizationPeople,
+          and(
+            eq(organizationPeople.organizationId, hrPeople.orgId),
+            eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          ),
+        )
+        .innerJoin(users, eq(users.id, hrPeople.userId))
+        .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
+        .limit(1);
 
-    const userId = person[0]?.userId;
-    if (!userId) throw new Error(`No user found for email ${row.employeeEmail}`);
+      const found = person[0];
+      if (!found?.userId) throw new Error(`No user found for email ${row.employeeEmail}`);
+      // V-012a. The lookup used to stop at "exists in this org", so a pending
+      // hire who has never opened their invitation could be given attendance —
+      // which then counts towards attendance rate and payable days. Distinct
+      // message: "not found" and "not accepted yet" need different operator
+      // actions.
+      if (found.accepted !== true)
+        throw new Error(
+          `${row.employeeEmail} has not accepted their invitation yet, so attendance cannot be imported for them`,
+        );
+      userId = found.userId;
+    }
 
     // `new Date("09:30")` is an Invalid Date, and 09:30 is exactly what the
     // import dialog documents this column as. Every row written in the
     // documented format therefore failed at insert time with an error the file
     // gave no clue about. `attendanceInstant` reads a wall clock on the row's
     // own date in the organisation's zone, and passes a full timestamp through.
-    const checkIn = attendanceInstant(row.date, row.checkIn);
-    const checkOut = attendanceInstant(row.date, row.checkOut);
+    const checkIn = attendanceInstant(row.date, row.checkIn, ctx.timeZone);
+    const checkOut = attendanceInstant(row.date, row.checkOut, ctx.timeZone);
 
     // The `onConflictDoNothing()` that used to sit on this insert could never
     // fire: `attendance`'s only unique indexes are attendance_pkey (id) and
