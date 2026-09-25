@@ -14,9 +14,16 @@ const aiUsageMetaSchema = z.object({
   costUsd: z.number(),
 });
 
+const kbPageAiCitationSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  icon: z.string().nullable(),
+});
+
 export const kbPageAiBufferedSchema = z.object({
   text: z.string(),
   aiUsage: aiUsageMetaSchema.optional(),
+  citations: z.array(kbPageAiCitationSchema).optional(),
 });
 
 export const kbPageCommentSchema = z.object({

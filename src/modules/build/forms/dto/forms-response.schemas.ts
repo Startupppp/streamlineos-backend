@@ -21,6 +21,17 @@ export const formRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
+const formPaginationSchema = z.object({
+  limit: z.number().int().positive(),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
+});
+
+export const formPageSchema = z.object({
+  data: z.array(formRowSchema),
+  pagination: formPaginationSchema,
+});
+
 export const submissionRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

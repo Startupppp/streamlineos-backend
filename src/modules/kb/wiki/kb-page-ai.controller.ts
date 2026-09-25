@@ -24,7 +24,14 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { ApiOkResponse } from "@nestjs/swagger";
 import { kbPageAiBufferedSchema } from "./dto/kb-wiki-response.schemas";
-import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../../ai/core/streaming";
+import {
+  AiRequestAbortInterceptor,
+  createStreamAbortSignal,
+  pipeAiUiMessageStream,
+  rethrowStreamRouteError,
+} from "../../ai/core/streaming";
+
+const KB_PAGE_AI_STREAM_DEADLINE_MS = 60_000;
 import { KbPageAiService } from "./kb-page-ai.service";
 import { kbAiAskBodySchema, type KbDocAiAction } from "../retrieval/dto/kb-ai.schemas";
 
@@ -48,7 +55,7 @@ export class KbPageAiController {
    * does its tenant-scoped read in its own `runInTenantTransaction` that commits
    * before the provider call, so nothing here reaches the pool without a GUC.
    */
-  private streamAction(
+  private async streamAction(
     req: Request,
     res: Response,
     u: CurrentUserContext,
@@ -56,16 +63,18 @@ export class KbPageAiController {
     action: KbDocAiAction,
     question?: string,
   ): Promise<void> {
-    return respondWithAiTextStream(
-      req,
-      res,
-      {
+    const abort = createStreamAbortSignal(req, res, KB_PAGE_AI_STREAM_DEADLINE_MS);
+    try {
+      const pipe = await this.svc.stream(u, pageId, action, question, abort.signal);
+      await pipeAiUiMessageStream(res, pipe, {
         feature: `kb.page-${action}`,
         orgId: u.orgId,
-        route: `POST /kb/pages/:pageId/ai/${action}/stream`,
-      },
-      (signal) => this.svc.stream(u, pageId, action, question, signal),
-    );
+      });
+    } catch (error) {
+      rethrowStreamRouteError(error, { route: `POST /kb/pages/:pageId/ai/${action}/stream` });
+    } finally {
+      abort.dispose();
+    }
   }
 
   /**
