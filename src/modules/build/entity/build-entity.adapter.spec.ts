@@ -129,7 +129,7 @@ describe("BuildEntityAdapter", () => {
     const cases: ReadonlyArray<[string, string]> = [
       ["ticket", "build:tickets:view"],
       ["project", "build:view"],
-      ["cycle", "build:sprints:view"],
+      ["cycle", "build:cycles:view"],
       ["release", "build:view"],
       ["incident", "build:incidents:view"],
     ];

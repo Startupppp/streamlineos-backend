@@ -65,7 +65,7 @@ export class SprintsController {
   constructor(private readonly sprints: SprintsService) {}
 
   @Get()
-  @RequirePermission("build:sprints:view")
+  @RequirePermission("build:cycles:view")
   @ResponseSchema(z.array(sprintListItemSchema))
   @Validate({ params: projectIdParams })
   listSprints(
@@ -77,7 +77,7 @@ export class SprintsController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("build:sprints:manage")
+  @RequirePermission("build:cycles:manage")
   @Idempotent("build.sprint.create")
   @ResponseSchema(sprintRowSchema)
   @Validate({ params: projectIdParams, body: createSprintSchema })
@@ -90,7 +90,7 @@ export class SprintsController {
   }
 
   @Get(":sprintId")
-  @RequirePermission("build:sprints:view")
+  @RequirePermission("build:cycles:view")
   @ResponseSchema(sprintDetailSchema)
   @Validate({ params: projectAndSprintIdParams })
   getSprint(
@@ -102,7 +102,7 @@ export class SprintsController {
   }
 
   @Patch(":sprintId")
-  @RequirePermission("build:sprints:manage")
+  @RequirePermission("build:cycles:manage")
   @ResponseSchema(successSchema)
   @Validate({ params: projectAndSprintIdParams, body: updateSprintSchema })
   updateSprint(
@@ -115,7 +115,7 @@ export class SprintsController {
   }
 
   @Delete(":sprintId")
-  @RequirePermission("build:sprints:manage")
+  @RequirePermission("build:cycles:manage")
   @HttpCode(204)
   @NoContentResponse()
   @Validate({ params: projectAndSprintIdParams })
@@ -135,7 +135,7 @@ export class CyclesController {
   constructor(private readonly cycles: CyclesService) {}
 
   @Get()
-  @RequirePermission("build:sprints:view")
+  @RequirePermission("build:cycles:view")
   @ResponseSchema(z.array(cycleListItemSchema))
   @Validate({ params: projectIdParams, query: cycleListQuerySchema })
   listCycles(
@@ -148,7 +148,7 @@ export class CyclesController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("build:workspace:manage")
+  @RequirePermission("build:cycles:manage")
   @Idempotent("build.cycle.create")
   @ResponseSchema(cycleRowSchema)
   @Validate({ params: projectIdParams, body: createCycleSchema })
@@ -161,7 +161,7 @@ export class CyclesController {
   }
 
   @Patch(":cycleId")
-  @RequirePermission("build:workspace:manage")
+  @RequirePermission("build:cycles:manage")
   @ResponseSchema(cycleRowSchema)
   @Validate({ params: projectAndCycleIdParams, body: updateCycleSchema })
   updateCycle(
@@ -174,7 +174,7 @@ export class CyclesController {
   }
 
   @Delete(":cycleId")
-  @RequirePermission("build:workspace:manage")
+  @RequirePermission("build:cycles:manage")
   @HttpCode(204)
   @NoContentResponse()
   @Validate({ params: projectAndCycleIdParams })

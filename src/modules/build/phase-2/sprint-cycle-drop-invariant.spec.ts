@@ -78,8 +78,8 @@ describe("phase-05 drop invariant: the scanner is non-vacuous", () => {
     expect(touchesSprintsTable('import { SprintsService } from "./sprints.service";')).toBe(false);
   });
 
-  it("does not fire on the build:sprints:view permission key, which outlives the table by design", () => {
-    expect(touchesSprintsTable('cycle: "build:sprints:view",')).toBe(false);
+  it("does not fire on the build:cycles:view permission key, which outlives the table by design", () => {
+    expect(touchesSprintsTable('cycle: "build:cycles:view",')).toBe(false);
   });
 
   it("the table-declaration matcher matches the declaration as written, across both line endings", () => {

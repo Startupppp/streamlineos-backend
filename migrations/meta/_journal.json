@@ -6672,6 +6672,13 @@
       "when": 1803000010711,
       "tag": "1196_kb_pages_content_digest_leakproof",
       "breakpoints": true
+    },
+    {
+      "idx": 1081,
+      "version": "7",
+      "when": 1803000010712,
+      "tag": "1197_build_cycle_permissions",
+      "breakpoints": true
     }
   ]
 }

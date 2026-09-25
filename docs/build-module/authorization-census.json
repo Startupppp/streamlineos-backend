@@ -8103,7 +8103,7 @@
       "routeParams": [
         "projectId"
       ],
-      "classification": "@RequirePermission(\"build:sprints:view\")",
+      "classification": "@RequirePermission(\"build:cycles:view\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",
@@ -8159,7 +8159,7 @@
       "routeParams": [
         "projectId"
       ],
-      "classification": "@RequirePermission(\"build:sprints:manage\")",
+      "classification": "@RequirePermission(\"build:cycles:manage\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",
@@ -8211,7 +8211,7 @@
         "projectId",
         "sprintId"
       ],
-      "classification": "@RequirePermission(\"build:sprints:view\")",
+      "classification": "@RequirePermission(\"build:cycles:view\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",
@@ -8270,7 +8270,7 @@
         "projectId",
         "sprintId"
       ],
-      "classification": "@RequirePermission(\"build:sprints:manage\")",
+      "classification": "@RequirePermission(\"build:cycles:manage\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",
@@ -8331,7 +8331,7 @@
         "projectId",
         "sprintId"
       ],
-      "classification": "@RequirePermission(\"build:sprints:manage\")",
+      "classification": "@RequirePermission(\"build:cycles:manage\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",
@@ -8391,7 +8391,7 @@
       "routeParams": [
         "projectId"
       ],
-      "classification": "@RequirePermission(\"build:sprints:view\")",
+      "classification": "@RequirePermission(\"build:cycles:view\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",
@@ -8434,7 +8434,7 @@
       "routeParams": [
         "projectId"
       ],
-      "classification": "@RequirePermission(\"build:workspace:manage\")",
+      "classification": "@RequirePermission(\"build:cycles:manage\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",
@@ -8478,7 +8478,7 @@
         "projectId",
         "cycleId"
       ],
-      "classification": "@RequirePermission(\"build:workspace:manage\")",
+      "classification": "@RequirePermission(\"build:cycles:manage\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",
@@ -8541,7 +8541,7 @@
         "projectId",
         "cycleId"
       ],
-      "classification": "@RequirePermission(\"build:workspace:manage\")",
+      "classification": "@RequirePermission(\"build:cycles:manage\")",
       "moduleGuard": "@RequireModule(\"build\")",
       "guards": [
         "JwtAuthGuard",

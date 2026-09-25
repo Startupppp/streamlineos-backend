@@ -35,7 +35,7 @@ const READ_KEY: Record<string, string> = {
   ticket: "build:tickets:view",
   task: "build:tickets:view",
   project: "build:view",
-  cycle: "build:sprints:view",
+  cycle: "build:cycles:view",
   release: "build:view",
   incident: "build:incidents:view",
 };

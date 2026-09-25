@@ -95,16 +95,16 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "Assign tickets",
   },
   {
-    name: "build:sprints:view",
-    resource: "build:sprints",
+    name: "build:cycles:view",
+    resource: "build:cycles",
     action: "view",
-    description: "View sprints",
+    description: "View cycles",
   },
   {
-    name: "build:sprints:manage",
-    resource: "build:sprints",
+    name: "build:cycles:manage",
+    resource: "build:cycles",
     action: "manage",
-    description: "Manage sprints",
+    description: "Manage cycles",
   },
   {
     name: "build:timesheets:view",
