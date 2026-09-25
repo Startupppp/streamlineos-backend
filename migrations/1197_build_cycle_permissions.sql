@@ -90,21 +90,27 @@ BEGIN
   END
   WHERE permission_key IN ('build:sprints:view', 'build:sprints:manage');
 
-  UPDATE role_permissions
-  SET permission_id = CASE permission_id
-    WHEN old_view_id THEN (SELECT id FROM permissions WHERE name = 'build:cycles:view')
-    WHEN old_manage_id THEN (SELECT id FROM permissions WHERE name = 'build:cycles:manage')
-    ELSE permission_id
-  END
-  WHERE permission_id IN (old_view_id, old_manage_id);
+  IF to_regclass('role_permissions') IS NOT NULL THEN
+    EXECUTE 'UPDATE role_permissions
+      SET permission_id = CASE permission_id
+        WHEN $1 THEN (SELECT id FROM permissions WHERE name = ''build:cycles:view'')
+        WHEN $2 THEN (SELECT id FROM permissions WHERE name = ''build:cycles:manage'')
+        ELSE permission_id
+      END
+      WHERE permission_id IN ($1, $2)'
+      USING old_view_id, old_manage_id;
+  END IF;
 
-  UPDATE user_permissions
-  SET permission_id = CASE permission_id
-    WHEN old_view_id THEN (SELECT id FROM permissions WHERE name = 'build:cycles:view')
-    WHEN old_manage_id THEN (SELECT id FROM permissions WHERE name = 'build:cycles:manage')
-    ELSE permission_id
-  END
-  WHERE permission_id IN (old_view_id, old_manage_id);
+  IF to_regclass('user_permissions') IS NOT NULL THEN
+    EXECUTE 'UPDATE user_permissions
+      SET permission_id = CASE permission_id
+        WHEN $1 THEN (SELECT id FROM permissions WHERE name = ''build:cycles:view'')
+        WHEN $2 THEN (SELECT id FROM permissions WHERE name = ''build:cycles:manage'')
+        ELSE permission_id
+      END
+      WHERE permission_id IN ($1, $2)'
+      USING old_view_id, old_manage_id;
+  END IF;
 
   DELETE FROM permissions WHERE id IN (old_view_id, old_manage_id);
 END $$;

@@ -53,21 +53,27 @@ BEGIN
   END
   WHERE permission_key IN ('build:cycles:view', 'build:cycles:manage');
 
-  UPDATE role_permissions
-  SET permission_id = CASE permission_id
-    WHEN current_view_id THEN old_view_id
-    WHEN current_manage_id THEN old_manage_id
-    ELSE permission_id
-  END
-  WHERE permission_id IN (current_view_id, current_manage_id);
+  IF to_regclass('role_permissions') IS NOT NULL THEN
+    EXECUTE 'UPDATE role_permissions
+      SET permission_id = CASE permission_id
+        WHEN $1 THEN $3
+        WHEN $2 THEN $4
+        ELSE permission_id
+      END
+      WHERE permission_id IN ($1, $2)'
+      USING current_view_id, current_manage_id, old_view_id, old_manage_id;
+  END IF;
 
-  UPDATE user_permissions
-  SET permission_id = CASE permission_id
-    WHEN current_view_id THEN old_view_id
-    WHEN current_manage_id THEN old_manage_id
-    ELSE permission_id
-  END
-  WHERE permission_id IN (current_view_id, current_manage_id);
+  IF to_regclass('user_permissions') IS NOT NULL THEN
+    EXECUTE 'UPDATE user_permissions
+      SET permission_id = CASE permission_id
+        WHEN $1 THEN $3
+        WHEN $2 THEN $4
+        ELSE permission_id
+      END
+      WHERE permission_id IN ($1, $2)'
+      USING current_view_id, current_manage_id, old_view_id, old_manage_id;
+  END IF;
 
   DELETE FROM permissions WHERE id IN (current_view_id, current_manage_id);
 END $$;
