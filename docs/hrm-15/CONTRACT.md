@@ -241,3 +241,23 @@ Query keys (in `lib/query-keys/human-resources.ts`): `reportingLine(userId)` (ex
 `reportingLineBulkJobs()`, `reportingLineBulkJob(id)`, `managerCandidates(q, exclude)`.
 Every mutation invalidates: `reportingLine(userId)`, employee detail, `managerCoverage()`,
 `myTeam()`, org chart, and the request/job keys it touches (`invalidateHrWorkforceQueries`).
+
+## 6. Addendum 1 — decisions on Agent C's questions (binding)
+
+- Q1 picker: Agent C now also owns `frontend/components/members/**` and may add a
+  server-search prop (`onSearchChange`) to `MemberPicker`, splitting the file if needed.
+  No second picker.
+- Q2 legacy `PATCH /hr/employees/:employeeUserId {reportingTo}`: kept for one release,
+  routed through `ReportingRelationshipService` with `source=MANUAL` (Agent B). Frontend
+  stops calling it for managers.
+- Q3 coverage `circular` becomes `[{ userIds: string[], members: [{ userId, name }] }]`
+  (names resolved server-side; Agent A's read model).
+- Q4 bulk-onboarding preview `primaryManager.userId` is `null` for an IN_FILE manager.
+- Q5 `permittedActions.*` reflect effective authority (org owner/admin standing included).
+- Q6 coverage `pendingReview` rows: frontend links only with `hr:reporting-lines:review`.
+- Q7 confirmation phrase = `CONFIRM <readyCount + warningCount>`, required when that count ≥ 10.
+- Q8 `GET /me/reporting-line` for a member with no employment: 200 with
+  `{ hasEmployment:false, primary:null, secondary:[], topLevel:null }`; `hasEmployment` is
+  always present.
+- Q9 frontend omits `effectiveFrom` by default; server uses the organisation-local date.
+- Q10 `topLevelReason`: trimmed, 1..500 chars, non-blank.
