@@ -15,6 +15,7 @@ import { ChatSearchService } from "../chat-search.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
+import type { ChatChannelListService } from "../chat-channel-list.service";
 import { logger } from "../../../common/logger/logger.service";
 
 // Spy on logger to verify error logging
@@ -42,7 +43,7 @@ describe("ChatSearchService error handling (CHAT-001)", () => {
   it("short-circuits to empty results when actor has no membershipId", async () => {
     const actorWithoutMembership: EntityActor = {
       ...actor,
-      membershipId: null,
+      membershipId: undefined,
     };
 
     const mockDb = {
@@ -53,7 +54,7 @@ describe("ChatSearchService error handling (CHAT-001)", () => {
       },
     } as unknown as Db;
 
-    const service = new ChatSearchService(mockDb, passThroughEntities);
+    const service = new ChatSearchService(mockDb, passThroughEntities, {} as ChatChannelListService);
 
     const result = await service.searchMessages(actorWithoutMembership, "testing");
 
@@ -71,7 +72,7 @@ describe("ChatSearchService error handling (CHAT-001)", () => {
       },
     } as unknown as Db;
 
-    const service = new ChatSearchService(mockDb, passThroughEntities);
+    const service = new ChatSearchService(mockDb, passThroughEntities, {} as ChatChannelListService);
 
     const result = await service.searchMessages(actor, "   "); // whitespace only
 
@@ -101,7 +102,7 @@ describe("ChatSearchService error handling (CHAT-001)", () => {
       execute: jest.fn().mockResolvedValue([{ id: 1 }]),
     } as unknown as Db;
 
-    const service = new ChatSearchService(mockDb, passThroughEntities);
+    const service = new ChatSearchService(mockDb, passThroughEntities, {} as ChatChannelListService);
 
     const result = await service.searchMessages(actor, "test", 20);
 

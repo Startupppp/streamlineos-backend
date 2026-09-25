@@ -132,15 +132,17 @@ describe("Nullable field handling (CHAT-002, CHAT-004)", () => {
 
     it("returns displayName when present", () => {
       const identity: PersonIdentity = {
-        personId: "p1",
+        organizationPersonId: "op1",
         userId: "u1",
+        workerId: null,
+        workerNumber: null,
         displayName: "Alice Smith",
         firstName: "Alice",
         lastName: "Smith",
-        email: "alice@example.com",
+        workEmail: "alice@example.com",
         avatarUrl: null,
-        workerId: null,
-        organizationPeopleId: "op1",
+        isMember: true,
+        isPayeeWorker: false,
       };
 
       const name = constructSenderName(identity);
@@ -149,15 +151,17 @@ describe("Nullable field handling (CHAT-002, CHAT-004)", () => {
 
     it("falls back to joined name parts when displayName is null", () => {
       const identity: PersonIdentity = {
-        personId: "p1",
+        organizationPersonId: "op1",
         userId: "u1",
+        workerId: null,
+        workerNumber: null,
         displayName: null,
         firstName: "Alice",
         lastName: "Smith",
-        email: "alice@example.com",
+        workEmail: "alice@example.com",
         avatarUrl: null,
-        workerId: null,
-        organizationPeopleId: "op1",
+        isMember: true,
+        isPayeeWorker: false,
       };
 
       const name = constructSenderName(identity);
@@ -166,15 +170,17 @@ describe("Nullable field handling (CHAT-002, CHAT-004)", () => {
 
     it("returns null when displayName is null and no name parts, not empty string", () => {
       const identity: PersonIdentity = {
-        personId: "p1",
+        organizationPersonId: "op1",
         userId: "u1",
+        workerId: null,
+        workerNumber: null,
         displayName: null,
         firstName: null,
         lastName: null,
-        email: "user@example.com",
+        workEmail: "user@example.com",
         avatarUrl: null,
-        workerId: null,
-        organizationPeopleId: "op1",
+        isMember: true,
+        isPayeeWorker: false,
       };
 
       const name = constructSenderName(identity);
