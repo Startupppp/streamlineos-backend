@@ -261,3 +261,30 @@ Every mutation invalidates: `reportingLine(userId)`, employee detail, `managerCo
   always present.
 - Q9 frontend omits `effectiveFrom` by default; server uses the organisation-local date.
 - Q10 `topLevelReason`: trimmed, 1..500 chars, non-blank.
+
+## 7. Addendum 2 — decisions on Agent B's questions (binding)
+
+- Notifications: use `NotificationDispatchService.emit` (records in-tx, dedupes). Agent B owns
+  the four new entries in `notification-events-hr.catalog.ts`.
+- All writers (employee-mutations `reportingTo`, users.service, user-ops, user-profile, single +
+  bulk onboarding, staged import, effective-change applier) migrate to
+  `ReportingRelationshipService.setRelationships` (Agent B). Agent A keeps `assign/assignMany`
+  compiling; main agent deletes them in Block 3 once no caller remains.
+- `setRelationships` accepts subject by `employmentId`, optional `effectiveTo`, and a system actor
+  (applier/cron) with source `EFFECTIVE_CHANGE` (Agent A, requested).
+- Codes `MANAGER_COLUMN_CONFLICT`, `MANAGER_ROW_FAILED` join `REPORTING_LINE_ERROR_CODES` (Agent A).
+- `hr:reporting-lines:review` is not scopable; the HR queue and detail are additionally filtered by
+  the caller's existing employees scope (`resolveEmployeesScope`), so branch HR sees only in-scope employees.
+- Agent B owns the new rate-limit tiers in `rate-limit.service.ts`. The inert `resend-invite` /
+  `invite-link` limits are out of scope (reported, not fixed).
+- Staged-import rollback: fix the RESTRICT 23503 for employees created by the job (Agent B).
+  Relationship changes on UPDATED rows are NOT reverted by rollback — documented in the rollout note.
+- `/me/*` routes carry `@RequireModule("hr")`.
+- Staged-import commit gets `@Idempotent("hr.import.jobs.commit")`; frontend must send the key (Agent C).
+- Contract corrections: §4.19 list = `{ items: BulkJobSummary[], nextCursor }`; §4.20 commit per-result
+  `status` = `CREATED | FAILED | SKIPPED`; §4.21 onboard response keeps its `success` field, so it is
+  passed through without the `data` wrapper (BE-19) — frontend reads it top-level; §4.3 `topLevel.reason`
+  is null unless the caller has `hr:reporting-lines:manage` or `:review`; §4.11 `reason` 20..1000.
+- Static routes (`coverage`, `manager-candidates`, `bulk-jobs`) are declared/registered before `:employeeUserId`.
+- Bulk-onboarding history: no `hr_import_jobs` reuse (would persist sensitive fields); enriched
+  `hr.employees_bulk_onboarded` audit event is the job record.
