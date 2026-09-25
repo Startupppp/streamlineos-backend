@@ -1,6 +1,18 @@
 import { Test } from "@nestjs/testing";
 import { SignEnvelopesService } from "../sign-envelopes.service";
 import { SignEnvelopeQueriesService } from "../sign-envelope-queries.service";
+import { SignAuditService } from "../sign-audit.service";
+import { SignRecipientsService } from "../sign-recipients.service";
+import { SignIntegrationsService } from "../sign-integrations.service";
+import { SignNotificationsService } from "../sign-notifications.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SignEnvelopeValidationService } from "../sign-envelope-validation.service";
+import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
+import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
+import { SignSettingsService } from "../sign-settings.service";
+import { SignTemplatesService } from "../sign-templates.service";
+import { SignWatermarkService } from "../sign-watermark.service";
+import { SignEnvelopeLifecycleService } from "../sign-envelope-lifecycle.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { ScopedRead } from "../../access/scoped-read";
@@ -85,7 +97,7 @@ describe("SignOS envelope create/list API contract", () => {
           where: jest.fn(() => ({
             orderBy: jest.fn(() => ({
               limit: jest.fn(() => ({
-                offset: jest.fn(() => Promise.resolve([insertedEnvelope])),
+                offset: jest.fn(() => Promise.resolve([{ ...insertedEnvelope, windowTotal: 1 }])),
               })),
             })),
           })),
@@ -98,18 +110,18 @@ describe("SignOS envelope create/list API contract", () => {
         SignEnvelopesService,
         SignEnvelopeQueriesService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: "SignAuditService", useValue: { record: jest.fn() } },
-        { provide: "SignRecipientsService", useValue: {} },
-        { provide: "SignIntegrationsService", useValue: {} },
-        { provide: "SignNotificationsService", useValue: {} },
-        { provide: "PlanLimitsService", useValue: { assertWithinLimit: jest.fn() } },
-        { provide: "SignEnvelopeValidationService", useValue: {} },
-        { provide: "SignEnvelopeSweepsService", useValue: {} },
-        { provide: "SignEnvelopeDispatchService", useValue: {} },
-        { provide: "SignSettingsService", useValue: { getOrCreate: jest.fn(async () => ({ defaultReminderFirstAfterDays: 3, defaultReminderRepeatDays: 3, defaultReminderMaxCount: 5 })) } },
-        { provide: "SignTemplatesService", useValue: {} },
-        { provide: "SignWatermarkService", useValue: {} },
-        { provide: "SignEnvelopeLifecycleService", useValue: {} },
+        { provide: SignAuditService, useValue: { record: jest.fn() } },
+        { provide: SignRecipientsService, useValue: {} },
+        { provide: SignIntegrationsService, useValue: {} },
+        { provide: SignNotificationsService, useValue: {} },
+        { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
+        { provide: SignEnvelopeValidationService, useValue: {} },
+        { provide: SignEnvelopeSweepsService, useValue: {} },
+        { provide: SignEnvelopeDispatchService, useValue: {} },
+        { provide: SignSettingsService, useValue: { getOrCreate: jest.fn(async () => ({ defaultReminderFirstAfterDays: 3, defaultReminderRepeatDays: 3, defaultReminderMaxCount: 5 })) } },
+        { provide: SignTemplatesService, useValue: {} },
+        { provide: SignWatermarkService, useValue: {} },
+        { provide: SignEnvelopeLifecycleService, useValue: {} },
       ],
     }).compile();
 
