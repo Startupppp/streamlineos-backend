@@ -242,6 +242,17 @@ export const updateEmployeeSchema = z
     name: z.string().trim().min(1).max(100).optional(),
     firstName: z.string().trim().min(1).max(100).optional(),
     lastName: z.string().trim().min(1).max(100).optional(),
+    /**
+     * V-020. There was no way to change an employee's address at all: this
+     * schema is `.strict()` and had no `email` key, so an administrator who
+     * typed one wrong had to delete the person and start again — and could not
+     * even do that once anything referenced them.
+     *
+     * `users.email` is GLOBALLY unique, not per-tenant, so the service checks
+     * for any account holding the address (not just a member of this org) and
+     * still catches 23505 behind it.
+     */
+    email: canonicalEmailSchema.optional(),
     designation: z.string().max(200).optional(),
     departmentId: z.string().optional(),
     phone: z.string().optional(),
