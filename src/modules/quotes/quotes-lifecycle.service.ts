@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
-import { invoiceItems, invoices, quotes } from "../../db/schema";
+import { invoiceItems, invoices, projects, quotes } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -138,6 +138,16 @@ export class QuotesLifecycleService {
     }
 
     await this.planLimits.assertWithinLimit(orgId, "acctInvoices");
+    const project = existing.dealId === null
+      ? null
+      : await this.db.query.projects.findFirst({
+        where: and(
+          eq(projects.orgId, orgId),
+          eq(projects.dealId, existing.dealId),
+          isNull(projects.deletedAt),
+        ),
+        columns: { id: true },
+      });
 
     const result = await this.db.transaction(async (tx) => {
       const today = new Date();
@@ -163,6 +173,7 @@ export class QuotesLifecycleService {
         .values({
           orgId,
           clientId: existing.clientId,
+          projectId: project?.id ?? null,
           dealId: existing.dealId,
           invoiceNumber,
           status: "DRAFT",

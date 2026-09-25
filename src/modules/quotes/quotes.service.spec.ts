@@ -41,6 +41,7 @@ const mockDb = {
   query: {
     quotes: { findFirst: jest.fn() },
     invoices: { findFirst: jest.fn() },
+    projects: { findFirst: jest.fn() },
     crmQuoteSettings: { findFirst: jest.fn() },
   },
 };
@@ -83,6 +84,7 @@ beforeEach(() => {
   mockCache.invalidateNamespace.mockResolvedValue(undefined);
   mockAudit.log.mockReturnValue(undefined);
   mockPlanLimits.assertWithinLimit.mockResolvedValue(undefined);
+  mockDb.query.projects.findFirst.mockResolvedValue(null);
 });
 
 describe("QuotesService.convertToInvoice", () => {
@@ -140,6 +142,7 @@ describe("QuotesService.convertToInvoice", () => {
     mockDb.query.quotes.findFirst.mockResolvedValue(
       makeQuote({ status: "ACCEPTED", clientId: 12, dealId: 73, lineItems }),
     );
+    mockDb.query.projects.findFirst.mockResolvedValue({ id: 88 });
 
     const invoice = { id: "inv-new", invoiceNumber: "INV-20260712-001" };
 
@@ -173,7 +176,7 @@ describe("QuotesService.convertToInvoice", () => {
 
     expect(mockDb.transaction).toHaveBeenCalled();
     expect(invoiceInsertChain.values).toHaveBeenCalledWith(
-      expect.objectContaining({ clientId: 12, dealId: 73 }),
+      expect.objectContaining({ clientId: 12, dealId: 73, projectId: 88 }),
     );
     expect(result).toEqual({ invoice, quoteId: QUOTE_ID });
   });
