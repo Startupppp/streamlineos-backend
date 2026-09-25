@@ -37,7 +37,11 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { approvalInboxItemSchema, approvalRowSchema } from "./dto/approvals-response.schemas";
+import {
+  approvalInboxPageSchema,
+  approvalRowSchema,
+  approvalPageSchema,
+} from "./dto/approvals-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectAndApprovalIdParams = z.object({ projectId: z.coerce.number().int().positive(), approvalId: z.coerce.number().int().positive() }).strict();
@@ -63,11 +67,11 @@ export class ApprovalsInboxController {
 
   @Get("inbox")
   @RequirePermission("build:approvals:view")
-  @ResponseSchema(z.array(approvalInboxItemSchema))
+  @ResponseSchema(approvalInboxPageSchema)
   @Validate({ query: inboxQuerySchema })
   getInbox(@CurrentUser() u: CurrentUserContext, @Query() query: InboxQuery) {
     const mid = actingMembershipId(u.principal);
-    if (mid === null) return Promise.resolve([]);
+    if (mid === null) return Promise.resolve({ data: [], pagination: { limit: 100, hasMore: false, nextCursor: null } });
     return this.reads.getInbox(u.orgId, mid, query);
   }
 }
@@ -83,7 +87,7 @@ export class BuildApprovalsController {
 
   @Get()
   @RequirePermission("build:approvals:view")
-  @ResponseSchema(z.array(approvalRowSchema))
+  @ResponseSchema(approvalPageSchema)
   @Validate({ params: projectIdParams, query: listApprovalsQuerySchema })
   listApprovals(
     @Param("projectId", ParseIntPipe) projectId: number,

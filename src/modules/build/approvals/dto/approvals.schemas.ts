@@ -14,13 +14,11 @@ export const createApprovalSchema = z.object({
 export const listApprovalsQuerySchema = z.object({
   status: z.enum(approvalStatusEnum.enumValues).optional(),
   entityType: z.enum(approvalEntityTypeEnum.enumValues).optional(),
-  cursorId: z.coerce.number().int().positive().optional(),
-  cursorDueAt: z.coerce.date().optional(),
+  cursor: z.string().min(1).optional(),
 }).strict();
 
 export const inboxQuerySchema = z.object({
-  cursorId: z.coerce.number().int().positive().optional(),
-  cursorDueAt: z.coerce.date().optional(),
+  cursor: z.string().min(1).optional(),
 }).strict();
 
 export const decideApprovalSchema = z.object({

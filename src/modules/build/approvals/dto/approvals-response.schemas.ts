@@ -38,3 +38,18 @@ export const approvalRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
+const approvalPaginationSchema = z.object({
+  limit: z.number().int().positive(),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
+});
+
+export const approvalInboxPageSchema = z.object({
+  data: z.array(approvalInboxItemSchema),
+  pagination: approvalPaginationSchema,
+});
+
+export const approvalPageSchema = z.object({
+  data: z.array(approvalRowSchema),
+  pagination: approvalPaginationSchema,
+});
