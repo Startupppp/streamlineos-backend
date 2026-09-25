@@ -40,6 +40,12 @@ export type SetupInvitee = z.infer<typeof setupInviteeSchema>;
 
 export const setupSchema = z.object({
   companyName: z.string().max(200).optional(),
+  // HRMS-E2E-025. The owner appeared everywhere as the local part of their
+  // sign-up address, because nothing ever asked for their name: sign-up takes an
+  // address, and this wizard took the company's name, industry, size and phone
+  // but never the person's. Optional, because the schema is already live and
+  // making it required would 400 every client that has not shipped the field.
+  fullName: z.string().trim().min(1).max(120).optional(),
   industry: z.string().min(1, "Industry is required").max(100),
   companySize: z.string().min(1, "Company size is required").max(50),
   country: z.string().max(100).optional(),
