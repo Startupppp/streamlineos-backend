@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { logger } from "../../common/logger/logger.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -7,7 +7,7 @@ import type { DbOrTx } from "../../common/rbac/access-invalidate";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { OrgHierarchyCacheService } from "../../common/cache/org-hierarchy-cache.service";
-import { hrReportingLines, hrTopLevelRoles, type ReportingLineSource } from "../../db/schema";
+import { hrReportingLines, type ReportingLineSource } from "../../db/schema";
 import {
   lockReportingLines,
   writePrimaryLines,
@@ -32,10 +32,11 @@ import {
 import { evaluateRelationshipCommand } from "./reporting-relationship-rules";
 import { invalidateReportingReads } from "./reporting-line-cache";
 import { ReportingLineException, rethrowReportingLineWriteError } from "./reporting-line-errors";
+import { endTopLevelRoles, openTopLevelRole } from "./reporting-relationship-top-level";
+import { actorKey, actorUserIdOf, recordRelationshipChange } from "./reporting-relationship-audit";
 import {
   REPORTING_LINE_ERROR_CODES as CODES,
   REPORTING_LINE_EVENTS,
-  TOP_LEVEL_ROLE_HISTORY_CAP,
   type ReportingActor,
   type RelationshipSnapshot,
   type RelationshipValidation,
@@ -48,14 +49,6 @@ interface Evaluated {
   subject: SubjectEmployment | undefined;
   before: RelationshipSnapshot;
   secondary: Array<{ managerEmploymentId: number; label: string | null }>;
-}
-
-function actorKey(actor: ReportingActor): string {
-  return "system" in actor ? `system:${actor.system}` : `user:${actor.userId}`;
-}
-
-function actorUserIdOf(actor: ReportingActor): string | null {
-  return "system" in actor ? null : actor.userId;
 }
 
 function snapshotOf(rows: readonly RelationshipRow[], topLevel: TopLevelRoleRow | undefined): RelationshipSnapshot {
@@ -124,8 +117,8 @@ export class ReportingRelationshipService {
         { from: cmd.effectiveFrom, to: cmd.effectiveTo ?? null },
         provenance,
       );
-      if (cmd.primaryManagerUserId === null) await this.openTopLevelRole(tx, orgId, employmentId, cmd.topLevelReason?.trim() ?? "", cmd.effectiveFrom, actorUserId);
-      else await this.endTopLevelRoles(tx, orgId, employmentId, cmd.effectiveFrom, actorUserId);
+      if (cmd.primaryManagerUserId === null) await openTopLevelRole(tx, orgId, employmentId, cmd.topLevelReason?.trim() ?? "", cmd.effectiveFrom, actorUserId);
+      else await endTopLevelRoles(tx, orgId, employmentId, cmd.effectiveFrom, actorUserId);
       if (cmd.secondary !== undefined || cmd.primaryManagerUserId === null)
         await writeSecondaryLines(tx, orgId, employmentId, evaluated.secondary, cmd.effectiveFrom, {
           ...provenance,
@@ -151,7 +144,7 @@ export class ReportingRelationshipService {
       warnings: validation.warnings,
     };
     if (changed) {
-      await this.record(cmd, result, validation);
+      await recordRelationshipChange(this.audit, cmd, result, validation);
       // Every writer routes through here, so no caller can forget the hierarchy and list reads.
       await invalidateReportingReads(this.hierarchyCache, this.cache, orgId);
     }
@@ -269,81 +262,5 @@ export class ReportingRelationshipService {
       });
       return { validation, subject, before: snapshotOf(rows, role), secondary };
     });
-  }
-
-  private async openTopLevelRole(tx: DbOrTx, orgId: string, employmentId: number, reason: string, from: string, actorUserId: string | null): Promise<void> {
-    const roles = await this.rolesFrom(tx, orgId, employmentId, from);
-    if (roles.some((role) => role.effectiveFrom <= from)) return;
-    await this.endTopLevelRoles(tx, orgId, employmentId, from, actorUserId);
-    await tx.insert(hrTopLevelRoles).values({ orgId, employmentId, reason, effectiveFrom: from, createdBy: actorUserId });
-  }
-
-  /**
-   * Ends every top-level exception still in force on or after `from`. One that began earlier closes
-   * the day before; one that had not begun yet is closed on its own first day and marked ended, so
-   * no row ever ends before it starts.
-   */
-  private async endTopLevelRoles(tx: DbOrTx, orgId: string, employmentId: number, from: string, actorUserId: string | null): Promise<void> {
-    const roles = await this.rolesFrom(tx, orgId, employmentId, from);
-    if (roles.length === 0) return;
-    await tx
-      .update(hrTopLevelRoles)
-      .set({
-        effectiveTo: sql`greatest(${hrTopLevelRoles.effectiveFrom}, ${from}::date - 1)`,
-        endedAt: new Date(),
-        endedBy: actorUserId,
-      })
-      .where(and(eq(hrTopLevelRoles.orgId, orgId), inArray(hrTopLevelRoles.id, roles.map((role) => role.id))));
-  }
-
-  private rolesFrom(tx: DbOrTx, orgId: string, employmentId: number, from: string) {
-    return tx
-      .select({ id: hrTopLevelRoles.id, effectiveFrom: hrTopLevelRoles.effectiveFrom })
-      .from(hrTopLevelRoles)
-      .where(
-        and(
-          eq(hrTopLevelRoles.orgId, orgId),
-          eq(hrTopLevelRoles.employmentId, employmentId),
-          sql`${hrTopLevelRoles.effectiveTo} >= ${from}::date`,
-        ),
-      )
-      .limit(TOP_LEVEL_ROLE_HISTORY_CAP);
-  }
-
-  private async record(cmd: SetRelationshipsCommand, result: SetRelationshipsResult, validation: RelationshipValidation): Promise<void> {
-    const actorUserId = actorUserIdOf(cmd.actor);
-    const who = actorUserId ? { userId: actorUserId } : { userId: null, systemActor: actorKey(cmd.actor) };
-    const metadata = {
-      employmentId: result.employmentId,
-      effectiveFrom: cmd.effectiveFrom,
-      effectiveTo: cmd.effectiveTo ?? null,
-      source: cmd.emergency ? "EMERGENCY_OVERRIDE" : cmd.source,
-      reason: cmd.reason?.trim() || null,
-      topLevelReason: cmd.primaryManagerUserId === null ? cmd.topLevelReason?.trim() ?? null : null,
-      bulkJobId: cmd.bulkJobId ?? null,
-      requestId: cmd.requestId ?? null,
-      emergency: Boolean(cmd.emergency),
-      primaryChanged: result.primaryChanged,
-      primaryChangesLast24h: validation.primaryChangesLast24h,
-      warnings: result.warnings,
-    };
-    const target = { orgId: cmd.orgId, targetType: "employee", targetId: result.subjectUserId ?? String(result.employmentId) };
-    await this.audit.logCritical({
-      action: REPORTING_LINE_EVENTS.CHANGED,
-      ...who,
-      ...target,
-      metadata,
-      before: { ...result.before },
-      after: { ...result.after },
-    });
-    if (cmd.emergency)
-      await this.audit.logCritical({
-        action: REPORTING_LINE_EVENTS.EMERGENCY_OVERRIDE,
-        ...who,
-        ...target,
-        metadata: { ...metadata, severity: "high" },
-        before: { ...result.before },
-        after: { ...result.after },
-      });
   }
 }
