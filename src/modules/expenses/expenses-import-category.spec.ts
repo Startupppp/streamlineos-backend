@@ -56,6 +56,28 @@ describe("expense import — a category is never silently rewritten (HRMS-E2E-00
     expect(result.skipped).toBe(1);
   });
 
+  it("maps Meals onto Food through the alias map instead of erroring", async () => {
+    const { categories, result } = await importCsv("Meals,10,Team lunch,Cafe,2026-01-05");
+    expect(categories).toEqual(["Food"]);
+    expect(result.skipped).toBe(0);
+    expect(result.skippedReasons).toEqual([]);
+  });
+
+  it("maps an alias regardless of case and surrounding space", async () => {
+    const { categories } = await importCsv("  DINING ,10,Team dinner,Cafe,2026-01-05");
+    expect(categories).toEqual(["Food"]);
+  });
+
+  it("still makes a genuinely unknown category a row error, alias map or not", async () => {
+    const { categories, result } = await importCsv("Cryptocurrency,10,Coins,Exchange,2026-01-05");
+    expect(categories).toEqual([]);
+    expect(result.skipped).toBe(1);
+    expect(result.skippedReasons[0]).toMatchObject({ row: 2 });
+    expect(result.skippedReasons[0]?.reason).toMatch(
+      /Unknown category "Cryptocurrency"\. Use one of: /,
+    );
+  });
+
   it("files a blank category as Other, the documented default", async () => {
     const { categories } = await importCsv(",10,Taxi,Cab Co,2026-01-05");
     expect(categories).toEqual(["Other"]);

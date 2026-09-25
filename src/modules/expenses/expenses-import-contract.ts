@@ -36,9 +36,32 @@ const CATEGORY_BY_LOWER = new Map<string, string>(
   EXPENSE_IMPORT_CATEGORIES.map((c) => [c.toLowerCase(), c as string]),
 );
 
+/**
+ * Everyday words for categories that already exist. A file saying "Meals" names the
+ * Food category as plainly as a file saying "Food" does, so erroring on it was a
+ * vocabulary gap, not a real unknown. Every alias maps ONTO an existing category —
+ * none invents one, and an alias is never added for a category we do not have.
+ */
+const CATEGORY_ALIASES: Record<string, ExpenseImportCategory> = {
+  meals: "Food",
+  meal: "Food",
+  lunch: "Food",
+  dinner: "Food",
+  dining: "Food",
+  refreshments: "Food",
+  stationery: "Office Supplies",
+  "office supply": "Office Supplies",
+  equipment: "Hardware",
+  advertising: "Marketing",
+  ads: "Marketing",
+  utility: "Utilities",
+  misc: "Miscellaneous",
+};
+
 /** The allowed category a written value names, or null when it names none. */
 export function canonicalCategory(written: string): string | null {
-  return CATEGORY_BY_LOWER.get(written.trim().toLowerCase()) ?? null;
+  const key = written.trim().toLowerCase();
+  return CATEGORY_BY_LOWER.get(key) ?? CATEGORY_ALIASES[key] ?? null;
 }
 
 export interface ExpenseImportField {
