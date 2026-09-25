@@ -43,7 +43,8 @@ import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-o
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { ReportingLineService } from "../directory/reporting-line.service";
+import { ReportingRelationshipService } from "../directory/reporting-relationship.service";
+import { orgBusinessDate } from "../hr/time/attendance-business-date";
 
 @Injectable()
 export class UserOpsService {
@@ -58,7 +59,7 @@ export class UserOpsService {
     private readonly access: AccessService,
     private readonly email: EmailService,
     private readonly employment: EmploymentFactsService,
-    private readonly reportingLines: ReportingLineService,
+    private readonly relationships: ReportingRelationshipService,
   ) {
     this.reporter = new UserOperationsReporter(db, cache, employment);
   }
@@ -154,11 +155,6 @@ export class UserOpsService {
     if (role) await this.assertMayGrantRole(orgId, actor, role);
 
     const scopedIds = await withMembershipMutations(this.cache, (membership) => this.db.transaction(async (tx) => {
-      if (managerUserId) {
-        const manager = await this.reportingLines.checkManager(orgId, managerUserId, tx);
-        if (!manager.ok) throw new BadRequestException(manager.message);
-      }
-
       const memberRows = await tx
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
@@ -212,9 +208,19 @@ export class UserOpsService {
         );
       }
 
+      // HRM-15: one canonical write per employee, so each gets its own validation, D4 count and
+      // audit row; the first refusal aborts the whole bulk update rather than half-applying it.
       if (managerUserId !== undefined) {
-        const today = new Date().toISOString().slice(0, 10);
-        await this.reportingLines.assignMany(orgId, tenantUserIds, managerUserId, today, actorUserId, tx);
+        const effectiveFrom = await orgBusinessDate(this.db, orgId);
+        for (const subjectUserId of tenantUserIds)
+          await this.relationships.setRelationships(tx, {
+            orgId,
+            actor: { orgId, userId: actorUserId, isOrgOwner: actor.isOrgOwner },
+            subjectUserId,
+            primaryManagerUserId: managerUserId,
+            effectiveFrom,
+            source: "BULK_REASSIGNMENT",
+          });
       }
 
       const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
