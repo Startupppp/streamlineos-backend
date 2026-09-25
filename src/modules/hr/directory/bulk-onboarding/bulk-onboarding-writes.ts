@@ -236,6 +236,7 @@ export async function writeBulkOnboarding(
       secondary: secondary.length > 0 ? secondary : undefined,
       effectiveFrom,
       source: fallback ? "ONBOARDING_FALLBACK" : "BULK_ONBOARDING",
+      secondarySource: "BULK_ONBOARDING",
     });
     employee.primaryManager = { ...employee.primaryManager, userId: managerUserId };
   }

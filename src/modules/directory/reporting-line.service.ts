@@ -276,6 +276,9 @@ export class ReportingLineService {
         secondary.push({
           ...common,
           relationshipType: "SECONDARY",
+          // A fallback describes how a primary was chosen; a secondary is always named explicitly.
+          isFallback: false,
+          fallbackConfirmedAt: null,
           label: row.label,
           manager: {
             userId: row.managerUserId,

@@ -300,6 +300,7 @@ export class HrImportCommitService {
         secondary,
         effectiveFrom,
         source: fallback ? "ONBOARDING_FALLBACK" : "STAGED_IMPORT",
+        secondarySource: "STAGED_IMPORT",
       });
     } catch (error) {
       if (error instanceof ReportingLineException) throw new Error(`${row.email}: ${error.code}: ${error.message}`, { cause: error });

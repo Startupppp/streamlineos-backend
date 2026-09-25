@@ -7,7 +7,7 @@ import type { DbOrTx } from "../../common/rbac/access-invalidate";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { OrgHierarchyCacheService } from "../../common/cache/org-hierarchy-cache.service";
-import { hrReportingLines, hrTopLevelRoles } from "../../db/schema";
+import { hrReportingLines, hrTopLevelRoles, type ReportingLineSource } from "../../db/schema";
 import {
   lockReportingLines,
   writePrimaryLines,
@@ -68,6 +68,11 @@ function snapshotOf(rows: readonly RelationshipRow[], topLevel: TopLevelRoleRow 
   };
 }
 
+function secondarySourceOf(cmd: SetRelationshipsCommand): ReportingLineSource {
+  if (cmd.secondarySource) return cmd.secondarySource;
+  return cmd.source === "ONBOARDING_FALLBACK" ? "ONBOARDING_SELECTED" : cmd.source;
+}
+
 function sameSnapshot(a: RelationshipSnapshot, b: RelationshipSnapshot): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -121,7 +126,10 @@ export class ReportingRelationshipService {
       if (cmd.primaryManagerUserId === null) await this.openTopLevelRole(tx, orgId, employmentId, cmd.topLevelReason?.trim() ?? "", cmd.effectiveFrom, actorUserId);
       else await this.endTopLevelRoles(tx, orgId, employmentId, cmd.effectiveFrom, actorUserId);
       if (cmd.secondary !== undefined || cmd.primaryManagerUserId === null)
-        await writeSecondaryLines(tx, orgId, employmentId, evaluated.secondary, cmd.effectiveFrom, provenance);
+        await writeSecondaryLines(tx, orgId, employmentId, evaluated.secondary, cmd.effectiveFrom, {
+          ...provenance,
+          source: cmd.emergency ? "EMERGENCY_OVERRIDE" : secondarySourceOf(cmd),
+        });
     } catch (error) {
       rethrowReportingLineWriteError(error);
     }

@@ -168,6 +168,36 @@ describe("ReportingRelationshipService against a real schema", () => {
     expect(lines).toEqual([{ relationship_label: "Functional", effective_from: today }]);
   });
 
+  it("stamps ONBOARDING_FALLBACK on the fallback primary only; a chosen secondary is recorded as selected and never reads as a fallback", async () => {
+    await probe.policy({ max: 1 });
+    const hire = await probe.person("fallback-source");
+    const fallbackBoss = await probe.person("fallback-source-boss");
+    const chosen = await probe.person("fallback-source-chosen");
+    await set({ subjectUserId: hire.userId, primaryManagerUserId: fallbackBoss.userId, secondary: [{ managerUserId: chosen.userId }], source: "ONBOARDING_FALLBACK" });
+
+    const sources = await sql<{ line_type: string; source: string }[]>`
+      SELECT line_type, source FROM hr_reporting_lines WHERE org_id = ${probe.orgId} AND employment_id = ${hire.employmentId} ORDER BY line_type::text`;
+    expect(sources).toEqual([
+      { line_type: "matrix", source: "ONBOARDING_SELECTED" },
+      { line_type: "primary", source: "ONBOARDING_FALLBACK" },
+    ]);
+    const line = await new ReportingLineService(db).getLine(ScopedRead.of(probe.orgId, probe.owner.userId, "all"), hire.userId);
+    expect(line?.current?.isFallback).toBe(true);
+    expect(line?.secondary.map((entry) => entry.isFallback)).toEqual([false]);
+
+    const bulkHire = await probe.person("bulk-source");
+    await set({
+      subjectUserId: bulkHire.userId,
+      primaryManagerUserId: fallbackBoss.userId,
+      secondary: [{ managerUserId: chosen.userId }],
+      source: "ONBOARDING_FALLBACK",
+      secondarySource: "BULK_ONBOARDING",
+    });
+    const [bulkSecondary] = await sql<{ source: string }[]>`
+      SELECT source FROM hr_reporting_lines WHERE org_id = ${probe.orgId} AND employment_id = ${bulkHire.employmentId} AND line_type <> 'primary'`;
+    expect(bulkSecondary?.source).toBe("BULK_ONBOARDING");
+  });
+
   it("enforces the policy's secondary cap", async () => {
     await probe.policy({ max: 1 });
     const employee = await probe.person("cap");

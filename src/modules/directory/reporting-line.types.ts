@@ -222,6 +222,12 @@ export type SetRelationshipsCommand = RelationshipSubject & {
   /** Inclusive last day of a bounded primary line; omitted means open-ended. */
   effectiveTo?: string | null;
   source: ReportingLineSource;
+  /**
+   * Provenance of the secondary lines. ONBOARDING_FALLBACK describes how the PRIMARY was chosen, so
+   * it is never stamped on a secondary: omitted, secondaries take `source`, except that a fallback
+   * source becomes ONBOARDING_SELECTED (a secondary is always named explicitly).
+   */
+  secondarySource?: ReportingLineSource;
   reason?: string | null;
   emergency?: boolean;
   bulkJobId?: string | null;

@@ -602,6 +602,22 @@ describe("[seeded-e2e] HRM-15 reporting managers — policy, lines, requests, bu
       expect(line?.source).toBe("ONBOARDING_FALLBACK");
     });
 
+    it("records a chosen secondary as selected while the policy-resolved primary is the fallback", async () => {
+      const onboarded = await send("post", "/hr/employees/onboard", "orgAdmin", hire({ secondaryManagers: [{ managerUserId: id("bossB") }] }));
+      expect(onboarded.status).toBe(201);
+      const lines = await rows<{ line_type: string; source: string }>(sql`
+        select l.line_type::text, l.source from hr_reporting_lines l
+        join hr_employments e on e.org_id = l.org_id and e.id = l.employment_id
+        join hr_people p on p.org_id = e.org_id and p.id = e.person_id
+        where l.org_id = ${home.orgId} and p.user_id = ${onboarded.body.userId} order by l.line_type::text`);
+      expect(lines).toEqual([
+        { line_type: "matrix", source: "ONBOARDING_SELECTED" },
+        { line_type: "primary", source: "ONBOARDING_FALLBACK" },
+      ]);
+      const line = await get(`/hr/reporting-lines/${onboarded.body.userId}`, "hrAdmin");
+      expect(line.body.secondary.map((entry: { isFallback: boolean }) => entry.isFallback)).toEqual([false]);
+    });
+
     it("refuses a named manager who is not eligible and creates nobody", async () => {
       const email = `refused-${randomUUID().slice(0, 8)}@example.invalid`;
       const refused = await send("post", "/hr/employees/onboard", "orgAdmin", hire({ email, reportingManagerUserId: randomUUID() }));
