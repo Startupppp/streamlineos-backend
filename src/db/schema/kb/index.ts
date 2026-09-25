@@ -17,3 +17,4 @@ export * from "./attachments";
 export * from "./page-feedback";
 export * from "./purge-ledger";
 export * from "./linked-documents";
+export * from "./indexed-bytes-quota";

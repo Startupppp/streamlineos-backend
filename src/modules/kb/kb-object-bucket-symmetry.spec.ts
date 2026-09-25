@@ -130,6 +130,10 @@ afterEach(() => {
   clearRegionRegistry();
 });
 
+function quota() {
+  return { reserve: async () => undefined, release: async () => undefined };
+}
+
 describe("KB sources — the delete addresses the bucket the upload used", () => {
   function sourcesDb(removed: Record<string, unknown>[]) {
     // `createNote`/`createFile` write the row and its `kb.content.index` outbox event in one
@@ -159,6 +163,7 @@ describe("KB sources — the delete addresses the bucket the upload used", () =>
       config as never,
       {} as never,
       auth as never,
+      quota() as never,
     );
 
     await svc.createFile(USER, textFile as never);
@@ -184,6 +189,7 @@ describe("KB sources — the delete addresses the bucket the upload used", () =>
       config as never,
       {} as never,
       auth as never,
+      quota() as never,
     );
 
     await svc.createFile(USER, textFile as never);

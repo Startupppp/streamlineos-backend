@@ -157,6 +157,19 @@ export class ProjectsInvalidTicketStatusException extends HttpException {
   }
 }
 
+export class KbIndexedBytesQuotaExceededException extends HttpException {
+  constructor(limitBytes: number) {
+    super(
+      {
+        code: "KB_INDEXED_BYTES_QUOTA_EXCEEDED",
+        message: `KB source indexing quota exceeded. Limit is ${limitBytes} bytes.`,
+        details: { limitBytes },
+      },
+      HttpStatus.PAYMENT_REQUIRED,
+    );
+  }
+}
+
 export class SupportTicketStaleException extends HttpException {
   constructor() {
     super(

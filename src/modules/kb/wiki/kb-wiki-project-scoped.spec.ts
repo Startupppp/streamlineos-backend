@@ -39,6 +39,7 @@ function makeTreeDb(rows: unknown[]) {
       orderBy: jest.fn().mockReturnValue({
         limit: jest.fn().mockResolvedValue(rows),
       }),
+      then: (resolve: (value: unknown[]) => unknown) => resolve([]),
     }),
   };
   return {
@@ -103,7 +104,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
   });
 });
 
-describe("KbPageTreeService.getTree — project-scoped membership enforcement", () => {
+describe("KbPageTreeService.getTreeLevel — project-scoped membership enforcement", () => {
   const audit = { log: jest.fn() } as never;
 
   beforeEach(() => {
@@ -116,7 +117,7 @@ describe("KbPageTreeService.getTree — project-scoped membership enforcement", 
     const db = makeTreeDb([]);
     const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS);
 
-    await expect(svc.getTree(makeUser(), 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.getTreeLevel(makeUser(), { projectId: 99, limit: 50 })).rejects.toThrow(NotFoundException);
   });
 
   it("returns tree rows when caller is a project member (member allowed)", async () => {
@@ -139,17 +140,17 @@ describe("KbPageTreeService.getTree — project-scoped membership enforcement", 
     ]);
     const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS);
 
-    const result = await svc.getTree(makeUser(), 99);
+    const result = await svc.getTreeLevel(makeUser(), { projectId: 99, limit: 50 });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ id: 1, projectId: 99 });
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ id: 1, projectId: 99 });
   });
 
   it("skips project access check when projectId is omitted (global tree)", async () => {
     const db = makeTreeDb([]);
     const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS);
 
-    await svc.getTree(makeUser());
+    await svc.getTreeLevel(makeUser(), { limit: 50 });
 
     expect(mockResolveProjectAccess).not.toHaveBeenCalled();
   });
@@ -165,10 +166,10 @@ describe("KbPageTreeService.getTree — project-scoped membership enforcement", 
     const db = makeTreeDb([]);
     const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS);
 
-    await expect(svc.getTree(makeUser(ATTACKER_ORG), 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.getTreeLevel(makeUser(ATTACKER_ORG), { projectId: 99, limit: 50 })).rejects.toThrow(NotFoundException);
 
     mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER" });
-    const ownerResult = await svc.getTree(makeUser(OWNER_ORG), 99);
-    expect(ownerResult).toHaveLength(0);
+    const ownerResult = await svc.getTreeLevel(makeUser(OWNER_ORG), { projectId: 99, limit: 50 });
+    expect(ownerResult.data).toHaveLength(0);
   });
 });
