@@ -33,7 +33,8 @@ export const updateReportingManagerPolicySchema = z
     fallbackOrder: fallbackOrderSchema.optional(),
     requireReasonAfterChanges: z.number().int().min(1).max(10).optional(),
     allowTopLevelWithoutManager: z.boolean().optional(),
-    expectedVersion: z.number().int().min(1),
+    /** 0 for an organisation that has never saved its policy (the defaults' version). */
+    expectedVersion: z.number().int().min(0),
   })
   .strict();
 

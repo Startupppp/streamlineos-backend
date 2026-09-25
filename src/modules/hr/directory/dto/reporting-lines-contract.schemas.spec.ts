@@ -68,6 +68,11 @@ describe("HRM-15 §4 request schemas", () => {
     );
   });
 
+  it("accepts expectedVersion 0, the version an unconfigured organisation reports, so the first save succeeds", () => {
+    expect(updateReportingManagerPolicySchema.safeParse({ maxSecondaryManagersPerEmployee: 1, expectedVersion: 0 }).success).toBe(true);
+    expect(updateReportingManagerPolicySchema.safeParse({ expectedVersion: -1 }).success).toBe(false);
+  });
+
   it("clamps manager candidates to twenty rather than rejecting a larger limit", () => {
     expect(managerCandidatesQuerySchema.parse({ limit: "80" }).limit).toBe(20);
     expect(managerCandidatesQuerySchema.parse({}).limit).toBe(20);

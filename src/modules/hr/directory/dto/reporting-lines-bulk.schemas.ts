@@ -97,6 +97,8 @@ const bulkJobSummaryFields = {
   committedCount: z.number().int(),
   requiresConfirmation: z.boolean(),
   confirmationPhrase: z.string().nullable(),
+  /** Rows the commit will refuse without an individual reason (D4), so the wizard can ask up front. */
+  rowReasonRequiredCount: z.number().int(),
   createdAt: z.string(),
   committedAt: z.string().nullable(),
 };

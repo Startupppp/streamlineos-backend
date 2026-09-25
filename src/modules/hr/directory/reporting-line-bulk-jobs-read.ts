@@ -27,6 +27,12 @@ export const jobFields = {
   createdAt: hrReportingLineBulkJobs.createdAt,
   committedAt: hrReportingLineBulkJobs.committedAt,
   cursorAt: sql<string>`to_char(${hrReportingLineBulkJobs.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US')`,
+  rowReasonRequiredCount: sql<number>`(
+    SELECT count(*)::int FROM hr_reporting_line_bulk_job_rows r
+    WHERE r.org_id = ${hrReportingLineBulkJobs.orgId} AND r.job_id = ${hrReportingLineBulkJobs.id}
+      AND r.status IN ('READY', 'WARNING') AND r.row_reason IS NULL
+      AND ',' || coalesce(r.codes, '') || ',' LIKE ${`%,${CODES.CHANGE_REASON_REQUIRED},%`}
+  )`,
 };
 
 export const rowFields = {
@@ -111,6 +117,7 @@ export function summaryOf(job: JobRow) {
     committedCount: job.committedCount,
     requiresConfirmation,
     confirmationPhrase: requiresConfirmation ? `CONFIRM ${affected}` : null,
+    rowReasonRequiredCount: job.status === "PREVIEWED" ? Number(job.rowReasonRequiredCount) : 0,
     createdAt: job.createdAt.toISOString(),
     committedAt: job.committedAt?.toISOString() ?? null,
   };
