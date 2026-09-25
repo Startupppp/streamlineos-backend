@@ -76,7 +76,7 @@ export class ReportingRelationshipService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly reportingLines: ReportingLineService,
     private readonly policies: ReportingManagerPolicyService,
-    private readonly audit: AuditService,
+    @Inject(AuditService) private readonly audit: Pick<AuditService, "logCritical">,
   ) {}
 
   /**

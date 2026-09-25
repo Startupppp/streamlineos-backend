@@ -29,9 +29,9 @@ import {
 export class ReportingManagerPolicyService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly access: AccessService,
+    @Inject(AccessService) private readonly access: Pick<AccessService, "holds" | "resolveUserPermissions">,
     private readonly reportingLines: ReportingLineService,
-    private readonly audit: AuditService,
+    @Inject(AuditService) private readonly audit: Pick<AuditService, "logCritical">,
   ) {}
 
   /** The org's policy with defaults filled in, and the default manager as a person with live eligibility. */
