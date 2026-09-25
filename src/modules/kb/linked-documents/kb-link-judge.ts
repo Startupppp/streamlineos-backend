@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { documentAudiences, documents } from "../../../db/schema";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { publishBlockers, type PublishBlocker } from "../../hr/performance/documents-helpers";
+import { withMetadataPiiBlocker } from "../../hr/performance/document-pii-scan";
 import { assertAudienceTargetsExist, audienceKey, dedupeAudiences, notPublishableError, type AudienceKey } from "./document-audience-targets";
 import { MAX_DOCUMENT_AUDIENCES } from "./dto/document-audience-entry.schema";
 
@@ -18,6 +19,12 @@ export const JUDGED_DOCUMENT_COLUMNS = {
   classification: documents.classification,
   isActive: documents.isActive,
   metadata: documents.metadata,
+  // The four fields knowledge-base search indexes and shows. They are read here so an identifier typed into them
+  // is refused before the entry exists, not discovered in search afterwards (V-156).
+  name: documents.name,
+  description: documents.description,
+  category: documents.category,
+  tags: documents.tags,
 } as const;
 
 export interface Verdict {
@@ -54,7 +61,7 @@ export async function judgeAudience(
     .where(and(eq(documentAudiences.orgId, orgId), eq(documentAudiences.documentId, documentId)))
     .limit(MAX_DOCUMENT_AUDIENCES);
   const audiences = requested === undefined ? ceiling : dedupeAudiences(requested);
-  const blockers = publishBlockers(doc);
+  const blockers = withMetadataPiiBlocker(publishBlockers(doc), doc);
   if (blockers.length > 0) return { audiences, blockers, refusal: notPublishableError(blockers) };
 
   await assertAudienceTargetsExist(reader, orgId, audiences);
