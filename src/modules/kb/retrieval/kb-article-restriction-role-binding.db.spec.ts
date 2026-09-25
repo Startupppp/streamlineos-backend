@@ -1,30 +1,3 @@
-/**
- * `buildArticleRestrictionBranch`'s role branch has to bind an ARRAY, and only Postgres can say
- * whether it does.
- *
- * The predicate read `sql\`${kpr.role} = ANY(${principal.roleSlugs})\``. A bare JS array
- * interpolated into a drizzle `sql` template does not become one array parameter — it
- * expands to a parenthesised parameter LIST, so the statement Postgres received was
- * `= ANY(($1, $2))` (`op ANY/ALL (array) requires array on right side`) or, with a single
- * role, `= ANY(($1))` (`malformed array literal: "…"`). Every non-admin caller holding at
- * least one role assignment — which is nearly every real user — therefore threw:
- * `KbSearchService.search` and `articleKeywordCandidates` propagated it as a 500 out of
- * `GET /kb/search` and `POST /kb/ask`, and `articleVectorCandidates` swallowed it in its
- * own catch and answered with an empty candidate list, so semantic retrieval over
- * restricted articles quietly returned nothing at all.
- *
- * Nothing static catches this. The TypeScript is well-typed, the SQL builder is happy, and
- * a unit test with a mocked `db` never sends the statement anywhere. So this executes it,
- * at both arities, and also pins the SEMANTICS the predicate is supposed to have — an
- * unrestricted article is visible to everyone, a role-restricted one only to a holder of
- * that role — because a filter that binds correctly and matches nothing would pass an
- * "it did not throw" test.
- *
- *   APP_DATABASE_URL="postgresql://streamline_app@localhost:5432/scratch_head_1010" \
- *   DATABASE_URL="postgresql://neondb_owner@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable \
- *   pnpm test:db-specs --testPathPattern="kb-article-restriction-role-binding.db"
- */
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -96,7 +69,6 @@ describe("KB article restriction filter binds role slugs as an array", () => {
     if (appClient) await appClient.end({ timeout: 5 });
   }, 60_000);
 
-  /** The predicate as retrieval actually issues it: under the tenant GUC, as the app role. */
   async function visibleArticleIds(roleSlugs: string[]): Promise<number[]> {
     return base.transaction(async (tx) => {
       await tx.execute(sql`SELECT set_config('app.organization_id', ${ORG}, true)`);

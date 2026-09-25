@@ -50,7 +50,6 @@ export class KbCandidateService {
     return row !== undefined;
   }
 
-  // Chosen before the query runs: an HNSW pass returns exactly `cap` rows even when it loses recall.
   async vectorChunkIds(
     orgId: string,
     vector: string,

@@ -38,20 +38,6 @@ export class KbArticleAdapter implements KbContentAdapter {
   }
 }
 
-/**
- * `kbSources.fileKey` names an object `KbSourcesService.create` uploaded with the
- * R2_KB_BUCKET_NAME override, so the read back has to carry the same override.
- * Without it the GET addresses the default bucket and 404s wherever the two
- * buckets differ, and the source silently indexes to nothing.
- *
- * This adapter owns the source's terminal status, and that is a change: it used to return
- * early unless the row already said `ready`, which made it a re-index path only. A source is
- * created `processing`, so the durable `kb.content.index` event now emitted alongside the
- * insert would have been a no-op under the old guard — the event would drain, do nothing, and
- * leave the row `processing` forever, which is the exact defect it was added to close. It
- * therefore accepts any live row and writes the outcome, so a lost after-commit hook is healed
- * by the relay instead of stranding the upload.
- */
 @Injectable()
 export class KbSourceAdapter implements KbContentAdapter {
   readonly contentType = "source";
@@ -75,9 +61,6 @@ export class KbSourceAdapter implements KbContentAdapter {
         deletedAt: true,
       },
     });
-    // A deleted source has had its chunks removed by `KbSourcesService.remove`; re-indexing it
-    // would put them back. Everything else is fair game, whatever status it currently carries.
-    // Truthiness, not `!== null`: a timestamp is truthy and an absent column must read as live.
     if (!source || source.deletedAt) return;
 
     const text = await this.resolveText(orgId, source);
@@ -86,13 +69,10 @@ export class KbSourceAdapter implements KbContentAdapter {
       return;
     }
 
-    // A throw here is what the outbox needs: the event is retried, and it dead-letters only
-    // after `shouldDeadLetter`. Swallowing it would report success for an unindexed source.
     const chunks = await this.attachmentIndexing.indexSource(orgId, sourceId, text);
     await this.settle(orgId, sourceId, chunks, "No indexable text");
   }
 
-  /** `null` means "this source can never be indexed", as distinct from "it has no text". */
   private async resolveText(
     orgId: string,
     source: { kind: string; noteText: string | null; fileKey: string | null; mimeType: string | null },

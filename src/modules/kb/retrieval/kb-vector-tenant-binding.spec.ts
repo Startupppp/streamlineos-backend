@@ -26,11 +26,6 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   };
 }
 
-/**
- * The kb-acl-isolation.spec pattern: render the captured PRODUCTION condition, find
- * the `$n` slot the tenant equality actually uses, and return what was bound to it —
- * a test that only greps the SQL text passes on a predicate bound to another org.
- */
 function boundOrgIds(cond: SQL, table: string): unknown[] {
   const { sql: text, params } = dialect.sqlToQuery(cond);
   const pattern = new RegExp(`"${table}"\\."org_id"\\s*=\\s*\\$(\\d+)`, "g");

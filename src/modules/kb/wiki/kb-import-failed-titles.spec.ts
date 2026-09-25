@@ -1,116 +1,131 @@
-import { KbImportExportService } from "./kb-import-export.service";
-import { kbImportJobs, kbPages } from "../../../db/schema";
+import { KbImportProcessConsumer } from "./kb-import-process.consumer";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
-import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { ImportPagesInput } from "./dto/kb-import-export.schemas";
+import type { OutboxConsumerRegistry, OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn().mockImplementation(
+    (db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+  ),
+}));
 
 jest.mock("../../../common/outbox/outbox-writer", () => ({
   OutboxWriter: { emit: jest.fn().mockResolvedValue(undefined) },
 }));
 
-function makeUser(): CurrentUserContext {
-  return {
-    userId: "user-1",
-    orgId: "org-A",
-    role: "member",
-    isOrgOwner: false,
-    enabledModules: ["kb"],
-  } as unknown as CurrentUserContext;
+const sharedAudit = { log: jest.fn() } as unknown as AuditService;
+const sharedRegistry = { register: jest.fn() } as unknown as OutboxConsumerRegistry;
+
+function rint(): jest.Mock {
+  const { runInNewTenantTransaction } = jest.requireMock(
+    "../../../common/tenant/run-in-tenant-transaction",
+  ) as { runInNewTenantTransaction: jest.Mock };
+  return runInNewTenantTransaction;
 }
 
-const audit = { log: jest.fn() } as unknown as AuditService;
-const planLimits = {
-  assertWithinLimit: jest.fn().mockResolvedValue(undefined),
-} as unknown as PlanLimitsService;
-
-function makeSelectChain(rows: unknown[]) {
-  return Object.assign(Promise.resolve(rows), {
-    from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    groupBy: jest.fn().mockReturnThis(),
+function makeSelectChain(rows: unknown[] = []) {
+  const chain = Object.assign(Promise.resolve(rows), {
+    from: jest.fn(),
+    where: jest.fn(),
+    groupBy: jest.fn(),
+    limit: jest.fn(),
   });
+  chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.groupBy.mockReturnValue(chain);
+  chain.limit.mockReturnValue(chain);
+  return chain;
 }
 
-describe("KbImportExportService.importPages — failedTitles in result", () => {
-  afterEach(() => jest.clearAllMocks());
+function makeEvent(
+  items: Array<{ title: string; contentText?: string }>,
+  duplicatePolicy = "skip",
+): OutboxEventRow {
+  return {
+    eventId: "evt-1",
+    organizationId: "org-A",
+    aggregateType: "kb_import_job",
+    aggregateId: "1",
+    aggregateVersion: 1,
+    eventType: "kb.import.process",
+    payload: {
+      jobId: 1,
+      userId: "user-1",
+      orgId: "org-A",
+      input: {
+        sourceType: "markdown",
+        items,
+        visibility: "org",
+        duplicatePolicy,
+      },
+    },
+  } as unknown as OutboxEventRow;
+}
 
+afterEach(() => jest.clearAllMocks());
+
+describe("KbImportProcessConsumer — failedTitles and errorReport", () => {
   it("returns failedTitles for pages that failed to insert", async () => {
-    let selectCallCount = 0;
-    const jobsInsertChain = { returning: jest.fn().mockResolvedValue([{ id: 1 }]) };
-
-    const db = {
+    const updateCalls: Array<Record<string, unknown>> = [];
+    let selectCount = 0;
+    const tx = {
       select: jest.fn().mockImplementation(() => {
-        selectCallCount += 1;
-        return makeSelectChain([]);
+        selectCount++;
+        return makeSelectChain(selectCount === 1 ? [{ status: "pending" }] : []);
       }),
-      insert: jest.fn().mockImplementation((table: unknown) => {
-        if (table === kbImportJobs) return { values: jest.fn().mockReturnValue(jobsInsertChain) };
-        if (table === kbPages) {
-          return {
-            values: jest.fn().mockReturnValue({
-              onConflictDoNothing: jest.fn().mockReturnValue({
-                returning: jest.fn().mockRejectedValue(new Error("constraint violation")),
-              }),
-            }),
-          };
-        }
-        return { values: jest.fn().mockResolvedValue(undefined) };
+      update: jest.fn().mockImplementation(() => ({
+        set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+          updateCalls.push(vals);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoNothing: jest.fn().mockReturnValue({
+            returning: jest.fn().mockRejectedValue(new Error("constraint violation")),
+          }),
+        }),
       }),
-      transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(db)),
-    } as unknown as Db;
+    };
+    rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const service = new KbImportExportService(db, audit, planLimits, {} as never);
-    const input: ImportPagesInput = {
-      sourceType: "markdown",
-      items: [{ title: "Will Fail", contentText: "body" }],
-      visibility: "org",
-      duplicatePolicy: "skip",
-    } as ImportPagesInput;
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    await consumer.handle(makeEvent([{ title: "Will Fail", contentText: "body" }]));
 
-    const result = await service.importPages(makeUser(), input);
-
-    expect(result.failed).toBe(1);
-    expect(result.failedTitles).toEqual(["Will Fail"]);
+    const last = updateCalls[updateCalls.length - 1];
+    expect(last?.["failedItems"]).toBe(1);
+    expect(last?.["errorReport"]).toEqual({ failedTitles: ["Will Fail"] });
   });
 
   it("returns an empty failedTitles array when every item succeeds", async () => {
-    let selectCallCount = 0;
-    const jobsInsertChain = { returning: jest.fn().mockResolvedValue([{ id: 1 }]) };
-
-    const db = {
+    const updateCalls: Array<Record<string, unknown>> = [];
+    let selectCount = 0;
+    const tx = {
       select: jest.fn().mockImplementation(() => {
-        selectCallCount += 1;
-        return makeSelectChain([]);
+        selectCount++;
+        return makeSelectChain(selectCount === 1 ? [{ status: "pending" }] : []);
       }),
-      insert: jest.fn().mockImplementation((table: unknown) => {
-        if (table === kbImportJobs) return { values: jest.fn().mockReturnValue(jobsInsertChain) };
-        if (table === kbPages) {
-          return {
-            values: jest.fn().mockReturnValue({
-              onConflictDoNothing: jest.fn().mockReturnValue({
-                returning: jest.fn().mockResolvedValue([{ id: 5, contentRevision: 1, aclRevision: 1 }]),
-              }),
-            }),
-          };
-        }
-        return { values: jest.fn().mockResolvedValue(undefined) };
+      update: jest.fn().mockImplementation(() => ({
+        set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+          updateCalls.push(vals);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoNothing: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ id: 5, contentRevision: 1, aclRevision: 1 }]),
+          }),
+        }),
       }),
-      transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(db)),
-    } as unknown as Db;
+    };
+    rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const service = new KbImportExportService(db, audit, planLimits, {} as never);
-    const input: ImportPagesInput = {
-      sourceType: "markdown",
-      items: [{ title: "Will Succeed", contentText: "body" }],
-      visibility: "org",
-      duplicatePolicy: "skip",
-    } as ImportPagesInput;
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    await consumer.handle(makeEvent([{ title: "Will Succeed", contentText: "body" }]));
 
-    const result = await service.importPages(makeUser(), input);
-
-    expect(result.succeeded).toBe(1);
-    expect(result.failedTitles).toEqual([]);
+    const last = updateCalls[updateCalls.length - 1];
+    expect(last?.["succeededItems"]).toBe(1);
+    expect(last?.["errorReport"]).toBeNull();
   });
 });

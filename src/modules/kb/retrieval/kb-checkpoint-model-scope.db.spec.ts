@@ -1,26 +1,3 @@
-/**
- * A resumption checkpoint belongs to the model that produced its vector.
- *
- * `kb_ingestion_checkpoints` has no `embedding_model` column — verified against the live
- * catalog, its columns are (id, org_id, content_type, content_id, content_hash, chunk_index,
- * content, embedding, created_at) — and its natural key is
- * `(org_id, content_type, content_id, chunk_index)`. `loadCheckpoints` matched on
- * `(org_id, content_type, content_id, content_hash)` alone, so an ingestion interrupted
- * before a model upgrade left checkpoints in the OLD vector space; the retry after the
- * upgrade hit on `content_hash` — the text had not changed — reused those vectors, and
- * `replacePageBodyChunks` stamped them with the *current* `EMBEDDING_MODEL`. Cosine distance
- * across two embedding spaces is noise, and because `uniq_kb_chunks_page_revision` includes
- * `embedding_model` the database considers the result well-formed.
- *
- * The fix folds the model into the hash the store writes, so no schema change is needed:
- * a checkpoint written by one model cannot be found by another. This spec proves that
- * against a real Postgres, because the claim is about what a real row lookup returns.
- *
- *   APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
- *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable \
- *   pnpm test:db-specs --testPathPattern="kb-checkpoint-model-scope.db"
- */
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -37,7 +14,6 @@ const CONTENT_ID = 987_654;
 const CONTENT_HASH = "a".repeat(64);
 const DIM = 1536;
 
-/** A vector that is unmistakably from one space or the other. */
 function vector(seed: number): number[] {
   return Array.from({ length: DIM }, (_, i) => Math.sin((i + 1) * seed) );
 }
@@ -59,8 +35,6 @@ describe("KB ingestion checkpoints are scoped to the embedding model", () => {
     base = drizzle(appClient, { schema });
     appDb = createTenantAwareDb(Object.assign(base, { __client: appClient }));
 
-    // organizations ⇄ organization_members is circular and DEFERRABLE, so both go in
-    // inside one transaction with the owner pointer corrected before commit.
     await owner.begin(async (tx) => {
       await tx`SET CONSTRAINTS ALL DEFERRED`;
       await tx`INSERT INTO users (id, email, name) VALUES (${PROBE_USER}, ${`${PROBE_USER}@kb-ckpt.invalid`}, 'KB checkpoint probe')`;
@@ -82,11 +56,6 @@ describe("KB ingestion checkpoints are scoped to the embedding model", () => {
     if (appClient) await appClient.end({ timeout: 5 });
   }, 60_000);
 
-  /**
-   * `KbIngestionCheckpointService` reads `EMBEDDING_MODEL` at module scope, so a second
-   * model means a second module registry. `isolateModules` gives one, and the doMock names
-   * the model the isolated copy will fold into its stored hash.
-   */
   async function serviceForModel(model: string): Promise<KbIngestionCheckpointService> {
     let built: KbIngestionCheckpointService | undefined;
     await jest.isolateModulesAsync(async () => {
@@ -100,7 +69,6 @@ describe("KB ingestion checkpoints are scoped to the embedding model", () => {
     return built;
   }
 
-  /** Runs `fn` with the tenant GUC set, the way a request or a sweep does. */
   async function inTenant<T>(fn: () => Promise<T>): Promise<T> {
     return base.transaction(async (tx) => {
       await tx.execute(sql`SELECT set_config('app.organization_id', ${ORG}, true)`);
@@ -126,8 +94,6 @@ describe("KB ingestion checkpoints are scoped to the embedding model", () => {
     const sameModel = await inTenant(() => small.loadCheckpoints(ORG, "page", CONTENT_ID, CONTENT_HASH));
     expect(sameModel.size).toBe(2);
 
-    // The text did not change, so the caller passes the same content hash. Under the old
-    // predicate this returned both old-space vectors; it must now return nothing.
     const afterUpgrade = await inTenant(() => large.loadCheckpoints(ORG, "page", CONTENT_ID, CONTENT_HASH));
     expect(afterUpgrade.size).toBe(0);
   }, 120_000);
@@ -152,20 +118,12 @@ describe("KB ingestion checkpoints are scoped to the embedding model", () => {
       WHERE org_id = ${ORG} AND content_type = 'page' AND content_id = ${CONTENT_ID}`;
     expect(row?.n).toBe(1);
 
-    // The new model finds its own vector; the old model no longer finds anything.
     const newSpace = await inTenant(() => large.loadCheckpoints(ORG, "page", CONTENT_ID, CONTENT_HASH));
     expect(newSpace.size).toBe(1);
     const oldSpace = await inTenant(() => small.loadCheckpoints(ORG, "page", CONTENT_ID, CONTENT_HASH));
     expect(oldSpace.size).toBe(0);
   }, 120_000);
 
-  /**
-   * The witness for the defect itself, at the exact predicate HEAD used. HEAD stored the
-   * caller's `sha256(text)` verbatim and looked it up with
-   * `(org_id, content_type, content_id, content_hash)`, so this query IS the old
-   * `loadCheckpoints`. Run against a row the OLD model wrote, it still matches — which is
-   * the reuse of an old-vector-space embedding under a new model's name.
-   */
   it("the pre-fix predicate would still have matched after a model change", async () => {
     await owner`
       INSERT INTO kb_ingestion_checkpoints (org_id, content_type, content_id, content_hash, chunk_index, content, embedding)
@@ -177,8 +135,6 @@ describe("KB ingestion checkpoints are scoped to the embedding model", () => {
         AND content_id = ${CONTENT_ID} AND content_hash = ${CONTENT_HASH}`;
     expect(legacyHit[0]?.n).toBe(1);
 
-    // The same row, asked for by the shipped service under either model: no hit, because
-    // the model is folded into the hash it looks up.
     const small = await serviceForModel("text-embedding-3-small");
     const large = await serviceForModel("text-embedding-3-large");
     expect((await inTenant(() => small.loadCheckpoints(ORG, "page", CONTENT_ID, CONTENT_HASH))).size).toBe(0);

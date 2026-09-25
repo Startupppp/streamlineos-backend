@@ -8,7 +8,6 @@ import {
   KB_EXACT_SCAN_MAX_CHUNKS,
 } from "./kb-retrieval-strategy";
 
-/** Choose a bounded exact/ANN query before execution rather than infer recall from row count. */
 export async function queryVectorChunkIds(
   db: Db,
   cache: CacheService | null,
@@ -54,7 +53,6 @@ async function exactChunkIds(db: Db, orgId: string, vector: string, cap: number)
   return rows.map((row) => Number(row["id"]));
 }
 
-// Bounded at threshold + 1: the decision needs the side, never the true total.
 async function indexedChunkCount(db: Db, cache: CacheService | null, orgId: string): Promise<number> {
   const bound = KB_EXACT_SCAN_MAX_CHUNKS + 1;
   const load = async (): Promise<number> => {

@@ -4,7 +4,6 @@ export interface KbContextPassage {
   documentKey: string;
   documentTitle: string;
   passageIndex: number | null;
-  /** How the label describes a passage that has no index. Defaults to "opening extract". */
   position?: string;
   text: string;
 }

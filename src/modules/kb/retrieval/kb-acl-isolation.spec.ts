@@ -30,11 +30,6 @@ const makeEmbeddings = () => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
-/**
- * Drizzle SQL objects are circular (PgTable -> PgColumn -> table), so
- * JSON.stringify throws on them. Walk instead, guarding on identity, and gather
- * every string so a bound tenant id can be asserted.
- */
 function collectStrings(root: unknown): string[] {
   const seen = new WeakSet<object>();
   const found: string[] = [];
@@ -70,9 +65,6 @@ describe("KB cross-tenant isolation", () => {
         return chain;
       }),
       orderBy: jest.fn().mockReturnThis(),
-      // Non-empty so hasEmbeddedChunks() reports the org has indexed content and
-      // the method builds its predicate. With [] it short-circuits before the
-      // WHERE this test exists to inspect, and the assertion proves nothing.
       limit: jest.fn().mockResolvedValue([{ id: 1 }]),
     };
     const db = {
@@ -86,8 +78,6 @@ describe("KB cross-tenant isolation", () => {
       getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-1", roleSlugs: [] }),
     };
 
-    // retrieveTopSources returns immediately when embeddings are unconfigured, so
-    // the shared makeEmbeddings() (isConfigured: false) made this unreachable.
     const embeddings = {
       isEmbeddingConfigured: jest.fn().mockReturnValue(true),
       embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),

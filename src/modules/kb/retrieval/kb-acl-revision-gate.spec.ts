@@ -12,11 +12,6 @@ const dialect = new PgDialect();
 const STRICT_FENCE =
   /"kb_article_chunks"\."acl_revision" = "(kb_articles|kb_pages)"\."acl_revision"/;
 
-/**
- * Every way SQL can be talked out of denying a stale chunk: a null-tolerant
- * comparison, an explicit null escape arm, a default, or an inequality that lets a
- * trailing revision through.
- */
 const NULL_ESCAPES: ReadonlyArray<readonly [string, RegExp]> = [
   ["IS NOT DISTINCT FROM", /IS NOT DISTINCT FROM/i],
   ["IS NULL", /\bis null\b/i],
@@ -40,13 +35,6 @@ function renderSql(cond: SQL): string {
   return dialect.sqlToQuery(cond).sql;
 }
 
-/**
- * Throws its own named errors rather than leaning on jest matchers, so the BITE
- * test below can assert WHICH half refused. Under `expect(...).toMatch`, both
- * halves raise the same JestAssertionError, and a bare `.toThrow()` there stays
- * green even if the fence pattern stopped matching and the escape loop never ran
- * — the exact failure this helper exists to catch.
- */
 function expectStrictFence(rendered: string): void {
   if (!STRICT_FENCE.test(rendered))
     throw new Error(`acl_revision fence missing — no plain equality in: ${rendered}`);

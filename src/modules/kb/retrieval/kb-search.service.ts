@@ -224,8 +224,6 @@ export class KbSearchService {
     const articleRestriction = await this.auth.articleRestrictionPredicate(user);
     if (articleRestriction) domain.push(articleRestriction);
     if (input.spaceId) domain.push(eq(kbPages.spaceId, input.spaceId));
-    // The same narrowing `GET /kb/articles` applies, in the predicate rather than
-    // downstream: these rows carry article text and are what retrieval hands on.
     const membershipId =
       user.principal === undefined ? null : actingMembershipId(user.principal);
     const where = scope.compose(
@@ -261,8 +259,6 @@ export class KbSearchService {
       .limit(input.pageSize)
       .offset(offset);
 
-    // Sequential, not `Promise.all`: both statements run on the request's single tenant
-    // connection, so concurrency here would only queue them behind each other anyway.
     const [countRow] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(kbPages)

@@ -47,11 +47,6 @@ const briefService = {
   rateBrief: jest.fn(),
 };
 
-/**
- * Every provider round trip in this module goes through the gateway, so a stub that
- * records and refuses is what makes "no test reached a real model" an assertion rather
- * than a hope. The counter is read in the last case of the suite.
- */
 const gatewayCalls: string[] = [];
 function refuse(method: string): () => never {
   return () => {
@@ -105,11 +100,6 @@ describe("KB citation access over HTTP (e2e)", () => {
     return signToken({ permissions: ["kb:pages:view"], enabledModules: ["kb"] });
   }
 
-  /**
-   * A conversation id is supplied on every ask below. Without one the handler opens a
-   * tenant transaction to create the conversation before it reaches the service under
-   * test, which is a database round trip this suite has no fixture for.
-   */
   function ask(token: string, body: Record<string, unknown>): request.Test {
     return request(app.getHttpServer())
       .post("/kb/ask")

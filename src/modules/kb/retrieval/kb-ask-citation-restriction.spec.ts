@@ -11,21 +11,6 @@ import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-p
 import type { AskCitation } from "./kb-ask.service";
 import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
 
-/**
- * Article visibility has TWO ACL dimensions: the owner DataScope, and the per-article
- * `kb_page_restrictions` rows. Retrieval applies both on the way in. The post-answer
- * citation re-verification — whose whole reason to exist is the window between retrieval
- * and the model's reply — re-applied only the owner half, so an article restricted during
- * that window was still handed back as a citation with its title, slug and space.
- *
- * The fake below is predicate-honouring in the same sense as `test/security/bola/kb-rag-fake-db.ts`:
- * the WHERE the service actually built is compiled with drizzle's own dialect and then
- * answered the way Postgres would for the dimension under test. The restriction SQL it is
- * answering is the production SQL — `buildArticleRestrictionBranch` is the real predicate
- * builder here, not a stub — and the membership the fake enforces is read back out of the
- * compiled predicate, so "the restricted article is not cited" is a result of the SQL
- * rather than a restatement of the source text.
- */
 
 const dialect = new PgDialect();
 
@@ -35,7 +20,6 @@ const RESTRICTED_ARTICLE = { id: 11, title: "Board compensation memo", slug: "bo
 const ASKER_MEMBERSHIP = 7;
 const PRIVILEGED_MEMBERSHIP = 999;
 
-/** `kb_page_restrictions` rows: article 11 is viewable only by membership 999. */
 const RESTRICTIONS = [
   { articleId: RESTRICTED_ARTICLE.id, membershipId: PRIVILEGED_MEMBERSHIP, level: "view" },
 ];
@@ -53,7 +37,6 @@ function compile(where: SQL | undefined): CompiledWhere {
   return { sql: query.sql, params: query.params };
 }
 
-/** Article ids the predicate confines the read to. */
 function articleIdsBoundIn(compiled: CompiledWhere): number[] | undefined {
   const marker = '"kb_pages"."id" in (';
   const at = compiled.sql.indexOf(marker);
@@ -68,10 +51,6 @@ function articleIdsBoundIn(compiled: CompiledWhere): number[] | undefined {
   return ids;
 }
 
-/**
- * The membership id the restriction sub-predicate binds, or `undefined` when the
- * predicate carries no restriction clause at all — which is the unfixed behaviour.
- */
 function restrictionMembershipIn(compiled: CompiledWhere): number | undefined {
   const at = compiled.sql.indexOf(MEMBERSHIP_COLUMN);
   if (at === -1) return undefined;

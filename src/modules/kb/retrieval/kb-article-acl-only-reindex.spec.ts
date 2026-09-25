@@ -30,10 +30,6 @@ interface StoredChunk {
   aclRevision: number;
 }
 
-/**
- * `db.transaction` must invoke its callback — a bare jest.fn() would silently
- * void every assertion about the write inside it.
- */
 function makeDb(stored: StoredChunk | null) {
   const setSpy = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
   const update = jest.fn().mockReturnValue({ set: setSpy });

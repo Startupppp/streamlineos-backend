@@ -1,34 +1,3 @@
-/**
- * `POST /kb/pages/reindex-all` must not hold the request transaction across 100 embeddings —
- * and taking the transaction away must not simply move the failure.
- *
- * WHAT WAS WRONG. Neither reindex handler carried `@NoTenantTransaction()`, so both ran inside
- * the transaction `TenantContextInterceptor` opens, against the 60s
- * `idle_in_transaction_session_timeout` `withTenant` sets. `reindexAllPages` loops
- * `for (const page of batch) await this.indexPage(...)` with `REINDEX_ALL_BATCH_SIZE = 100`, and
- * every `indexPage` awaits an embedding round trip. Ten to sixty seconds into a real tenant's
- * reindex the timeout kills the transaction with the pooled connection still checked out
- * mid-embed, and every embedding already issued has already been billed.
- *
- * WHY THE OBVIOUS FIX IS HALF A FIX, AND NOT IN THE WAY IT LOOKS. Without an ambient context
- * `createTenantAwareDb` falls through to the pool, which carries no tenant GUC. `kb_pages` has
- * `relrowsecurity = true`, and its policy — read from `pg_policy`, not assumed — is
- * `(org_id = app.current_org_id_or_null()) OR (public_token = app.current_public_token_or_null())`.
- * The `_or_null` variant RETURNS NULL where `app.current_org_id()` raises `42501`, so the bare
- * listing at the top of `reindexAllPages` would not have failed loudly: it would have matched
- * nothing and answered `{"reindexed":0,"nextPageId":null}` for a tenant with a thousand pages.
- * An admin would press Reindex All, see success, and reindex nothing. (`kb_article_chunks` is
- * the other way round — its policy uses the raising variant — so the same mistake on a
- * different table fails loudly. That difference is exactly why this is measured, not reasoned.)
- * The listing is now wrapped in `runInTenantTransaction(..., { orgId })`, which is what makes
- * the decorator safe.
- *
- * Run with:
- *   APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
- *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable \
- *   pnpm test:db-specs --testPathPattern="kb-page-reindex-placement.db"
- */
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, isNull, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";

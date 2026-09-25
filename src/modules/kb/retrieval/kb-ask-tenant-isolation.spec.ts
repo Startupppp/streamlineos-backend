@@ -34,16 +34,6 @@ describe("KbAskService — cross-tenant isolation", () => {
   function makeDb(hasContent: boolean) {
     const executeArgs: unknown[] = [];
     const insertedRows: Record<string, unknown>[] = [];
-    /**
-     * `transaction` invokes its callback with the double itself. KB Ask now
-     * carries `@NoTenantTransaction()`, so `runInTenantTransaction` really does
-     * open a `withTenant` transaction rather than reusing an ambient one, and a
-     * bare `jest.fn()` here would silently void every assertion inside it
-     * (backend/CLAUDE.md 8). withTenant issues its own `SELECT set_config(...)`
-     * through this same `execute`, which lands in `executeArgs` carrying the
-     * requesting org — so the isolation assertions below still hold: the
-     * attacker's org appears and the owner's never does.
-     */
     const db: Record<string, unknown> = {
       execute: jest.fn().mockImplementation((sqlObj: unknown) => {
         executeArgs.push(sqlObj);
@@ -112,13 +102,6 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
     articleOwnerFilterFor: jest.fn().mockResolvedValue(sql`true`),
   };
 
-  /**
-   * Extends makeDb with a `select` mock so the page-visibility query in
-   * `KbCitationVisibilityService.visiblePages` can be intercepted. The WHERE
-   * clause that `visiblePages` builds includes `eq(kbPages.orgId, user.orgId)`;
-   * capturing it lets us assert that the predicate binds the requesting user's
-   * org and never reaches across to another tenant's rows.
-   */
   function makeDbForPageTest(returnPageIds: number[]) {
     const executeArgs: unknown[] = [];
     const pageWheres: unknown[] = [];

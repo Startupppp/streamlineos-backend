@@ -167,7 +167,6 @@ export class KbAttachmentIndexingService {
       return { chunks: 0, warning: null };
     }
 
-    // `getFileStream` below applies no sensitive-folder check of its own, so a row whose key points into HR, payroll or onboarding storage would be read, extracted and embedded as KB text. Refuse to touch it. Chunks that already exist are deliberately left alone here: removing them is a data change for the operator to approve after reading the report, not a side effect of a reindex.
     if (isSensitiveStorageKey(attachment.fileKey, orgId)) {
       metrics.finish("skipped_no_content");
       return {

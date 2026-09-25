@@ -23,10 +23,6 @@ export interface KbEmbeddingRequest {
   signal?: AbortSignal;
 }
 
-/**
- * Embeds only the chunks no checkpoint already covers, charges credits for those,
- * and checkpoints the new vectors so a later attempt resumes instead of re-paying.
- */
 export async function embedChunksWithResumption(
   deps: KbEmbeddingDeps,
   request: KbEmbeddingRequest,

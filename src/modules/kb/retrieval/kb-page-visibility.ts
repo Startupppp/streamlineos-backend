@@ -12,13 +12,6 @@ export interface VisibilityColumns {
   createdByMembershipId?: AnyColumn;
 }
 
-/**
- * The tenant equality is emitted on BOTH branches, not only the owner's. It used to
- * be the owner's whole predicate and absent from everyone else's, so `chunkVisibleTo`
- * — the only candidate-side tenant carrier `pageVectorCandidates` had — bound no
- * `org_id` for an ordinary reader, and a covering index on an RLS table is unusable
- * without one (backend CLAUDE.md §7).
- */
 export function visibleTo(
   columns: VisibilityColumns,
   user: CurrentUserContext,

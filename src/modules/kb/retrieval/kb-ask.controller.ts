@@ -83,20 +83,6 @@ export class KbAskController {
     @Inject(COMMAND_FENCE_STORE) private readonly fences: CommandFenceStore,
   ) {}
 
-  /**
-   * `@NoTenantTransaction()` because `KbAskService.ask` awaits a provider round
-   * trip and the request transaction would otherwise pin a pooled connection
-   * idle-in-transaction for the whole of it, against the 60s
-   * `idle_in_transaction_session_timeout` `withTenant` sets. The service does
-   * its retrieval in a short transaction that commits before the call and its
-   * citation re-verification in another afterwards; the three writes this
-   * handler owns each get their own, so nothing reaches the pool without a GUC.
-   *
-   * Creating the conversation is deliberately no longer atomic with the answer.
-   * It cannot be — the provider call sits between them — and an empty
-   * conversation left behind by a failed answer is a better outcome than a
-   * connection held open across the provider.
-   */
   @Post("ask")
   @HttpCode(200)
   @Idempotent("kb.ask")
@@ -108,17 +94,6 @@ export class KbAskController {
   @ResponseSchema(kbAskAnswerSchema)
   async askQuestion(@Body() body: AskInput, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
     const membershipId = actingMembershipId(u.principal) ?? 0;
-    /**
-     * One `const` settled in a single expression, rather than a reassigned
-     * `let` copied into a differently-named alias so the narrowing survives the
-     * closure below. A caller-supplied conversation id is a cross-tenant object
-     * reference: the only thing that binds it to this caller is
-     * KbChatHistoryService.appendToConversation, which resolves the row against
-     * kbChatConversations.orgId, and the table's composite tenant foreign key
-     * on org_id, conversation_id, which refuses anything else outright.
-     * Handing that call an alias hid the binding from every reader that follows
-     * the field from the request body to its resolution.
-     */
     const conversationId =
       body.conversationId ??
       (

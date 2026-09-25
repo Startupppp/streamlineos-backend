@@ -1,13 +1,6 @@
 import { searchSchema } from "./dto/kb-ai.schemas";
 import { pageNumberField } from "../../../common/pagination/list-query.schema";
 
-/**
- * `GET /kb/search` needs only `kb:articles:view`, and its offset is `(page - 1) * pageSize`.
- * The platform `pageNumberField` has no ceiling, so an unbounded `page=` walked the sort as
- * deep as the caller asked — measured on a 60,000-match tenant, `OFFSET 0` cost 35.5 ms and
- * `OFFSET 59,980` cost 55.5 ms plus an external merge. The KB schema clamps instead, the way
- * `pageSizeField` already clamps an over-large size.
- */
 describe("KB search paging is bounded", () => {
   const MAX_PAGE = 200;
   const MAX_PAGE_SIZE = 50;
@@ -40,8 +33,6 @@ describe("KB search paging is bounded", () => {
   });
 
   it("does not change the platform field other modules share", () => {
-    // The ceiling is KB's, not the platform's — pinned so a future edit to the shared field
-    // is a deliberate decision rather than a side effect of this one.
     expect(pageNumberField.parse("100000000")).toBe(100_000_000);
   });
 });

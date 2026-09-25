@@ -310,3 +310,154 @@ describe("KbImportProcessConsumer — withoutRef TOCTOU invariant", () => {
     expect(lastCall?.["succeededItems"]).toBe(0);
   });
 });
+
+function emitFn(): jest.Mock {
+  const { OutboxWriter } = jest.requireMock("../../../common/outbox/outbox-writer") as {
+    OutboxWriter: { emit: jest.Mock };
+  };
+  return OutboxWriter.emit;
+}
+
+function makeRefEvent(duplicatePolicy = "skip"): OutboxEventRow {
+  return {
+    eventId: "evt-ref-1",
+    organizationId: "org-A",
+    aggregateType: "kb_import_job",
+    aggregateId: "2",
+    aggregateVersion: 1,
+    eventType: "kb.import.process",
+    payload: {
+      jobId: 2,
+      userId: "user-1",
+      orgId: "org-A",
+      input: {
+        sourceType: "markdown",
+        items: [{ title: "Doc", externalId: "doc-1", externalSource: "confluence" }],
+        visibility: "org",
+        duplicatePolicy,
+      },
+    },
+  } as unknown as OutboxEventRow;
+}
+
+describe("KbImportProcessConsumer — duplicate policy (withRef)", () => {
+  it("counts an existing external-ref match as a duplicate and skips it when duplicatePolicy is skip", async () => {
+    const updateCalls: Array<Record<string, unknown>> = [];
+    let selectCount = 0;
+    const tx = {
+      select: jest.fn().mockImplementation(() => {
+        selectCount++;
+        if (selectCount === 1) return makeSelectChain([{ status: "pending" }]);
+        if (selectCount === 2) return makeSelectChain([]);
+        return makeSelectChain([{ externalSource: "confluence", externalId: "doc-1" }]);
+      }),
+      update: jest.fn().mockImplementation(() => ({
+        set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+          updateCalls.push(vals);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+      insert: jest.fn(),
+    };
+    rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
+
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    await consumer.handle(makeRefEvent("skip"));
+
+    const last = updateCalls[updateCalls.length - 1];
+    expect(last?.["duplicateItems"]).toBe(1);
+    expect(last?.["succeededItems"]).toBe(0);
+  });
+
+  it("upserts an existing external-ref match and counts it as succeeded when duplicatePolicy is update", async () => {
+    const updateCalls: Array<Record<string, unknown>> = [];
+    let selectCount = 0;
+    const tx = {
+      select: jest.fn().mockImplementation(() => {
+        selectCount++;
+        return makeSelectChain(selectCount === 1 ? [{ status: "pending" }] : []);
+      }),
+      update: jest.fn().mockImplementation(() => ({
+        set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+          updateCalls.push(vals);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoUpdate: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ id: 5, contentRevision: 1, aclRevision: 1 }]),
+          }),
+        }),
+      }),
+    };
+    rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
+
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    await consumer.handle(makeRefEvent("update"));
+
+    const last = updateCalls[updateCalls.length - 1];
+    expect(last?.["duplicateItems"]).toBe(0);
+    expect(last?.["succeededItems"]).toBe(1);
+  });
+});
+
+describe("KbImportProcessConsumer — kb.content.index emission", () => {
+  it("emits a kb.content.index outbox event for every page actually created", async () => {
+    let selectCount = 0;
+    const tx = {
+      select: jest.fn().mockImplementation(() => {
+        selectCount++;
+        return makeSelectChain(selectCount === 1 ? [{ status: "pending" }] : []);
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoNothing: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ id: 7, contentRevision: 1, aclRevision: 1 }]),
+          }),
+        }),
+      }),
+    };
+    rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
+
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    await consumer.handle(makeEvent([{ title: "New Page", contentText: "body" }]));
+
+    expect(emitFn()).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: "kb.content.index",
+        payload: expect.objectContaining({ contentType: "page", contentId: 7 }),
+      }),
+    );
+  });
+
+  it("emits no kb.content.index event when nothing was inserted", async () => {
+    let selectCount = 0;
+    const tx = {
+      select: jest.fn().mockImplementation(() => {
+        selectCount++;
+        return makeSelectChain(selectCount === 1 ? [{ status: "pending" }] : []);
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoNothing: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+    };
+    rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
+
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    await consumer.handle(makeEvent([{ title: "New Page", contentText: "body" }]));
+
+    expect(emitFn()).not.toHaveBeenCalled();
+  });
+});

@@ -276,8 +276,6 @@ export class KbIndexingService {
         .orderBy(asc(kbPages.id))
         .limit(REINDEX_ALL_BATCH_SIZE + 1);
 
-    // No `orgId` means the platform-wide sweep, which has no single tenant to open for and
-    // runs under a caller that already established one.
     const pages = orgId
       ? await runInTenantTransaction(this.db, listPages, { orgId })
       : await runInTenantTransaction(this.db, listPages);

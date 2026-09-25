@@ -20,11 +20,6 @@ const user: CurrentUserContext = {
   sessionId: "session-a", tokenScopes: null, principal: humanSessionPrincipal(7, false),
 };
 
-/**
- * The streamed route's hand-off of the company-documents option is asserted in kb-ask-stream-parity.spec.ts. The plain
- * route is the other way in to the same assistant, and nothing pinned it: dropping the option there would silently
- * make the two routes answer from different sources.
- */
 describe("POST /kb/ask hands the assistant the company-documents source, like the streamed route", () => {
   it("passes { companyDocuments: true } to the service, and still saves the answer with its citations", async () => {
     const answer = { answer: "Ten days.", citations: [{ kind: "document", id: 9, title: "Leave Policy" }] };

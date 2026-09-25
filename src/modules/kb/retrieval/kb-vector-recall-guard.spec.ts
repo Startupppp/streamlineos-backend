@@ -1,16 +1,3 @@
-/**
- * The regression guard for the recall defect measured 2026-09-09 on a 49,000-chunk,
- * 4-tenant corpus: `vectorChunkIds` used to return the ANN pool whenever it was full
- * (`annIds.length >= cap`). Every HNSW-planned cell in that measurement returned exactly
- * `cap` rows AND lost 3-56% of the true top-k, so the count could never fire the fallback
- * and recall was lost silently at full cardinality.
- *
- * These tests pin the replacement: the strategy is decided from the tenant's indexed
- * chunk count and the cap BEFORE any vector query runs, and a full ANN pool decides
- * nothing. Queries are asserted on rendered SQL (`PgDialect`), never on the shape of a
- * drizzle condition object; a mock still cannot measure recall — `kb-vector-recall.db.spec.ts`
- * does that against a real HNSW index — but it can pin which query is issued and why.
- */
 import { Test } from "@nestjs/testing";
 import { sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";

@@ -8,13 +8,6 @@ import { stubService } from "../../../test/service-stub.spec-fixtures";
 const ORG = "11111111-1111-4111-8111-111111111111";
 const ATTACHMENT_ID = 9;
 
-/**
- * `StorageService.getFileStream` applies no sensitive-folder check (only `getFileUrl` does), and the
- * indexer read an attachment row's `file_key` with it. The support-article attachment route used to
- * accept any key inside the caller's own organisation, so a key under `hr-documents/` was read,
- * text-extracted and embedded as KB text. The route now refuses such keys; this is the second lock,
- * for rows that predate the fix or arrive by another route.
- */
 function harness(fileKey: string) {
   const row = {
     pageId: 5,

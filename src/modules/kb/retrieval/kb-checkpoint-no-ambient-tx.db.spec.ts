@@ -1,26 +1,3 @@
-/**
- * `loadCheckpoints` is entered with NO ambient tenant context, and has to survive it.
- *
- * Both reindex routes carry `@NoTenantTransaction()` so an embedding round trip cannot pin
- * a pooled connection against `withTenant`'s 60s `idle_in_transaction_session_timeout`.
- * That decorator means the `DRIZZLE` proxy has no ambient transaction to borrow and falls
- * through to the pool, which carries no tenant GUC — and `kb_ingestion_checkpoints` is
- * RLS-enabled under `org_id = current_org_id()`, the variant that RAISES 42501 rather than
- * returning NULL. `saveCheckpoints` already opened its own transaction; the read did not,
- * so `POST /kb/pages/:pageId/reindex` and `POST /kb/pages/reindex-all` both died on the
- * FIRST statement `indexPage` issues after resolving the page. No reindex was requestable.
- *
- * This is the same class of defect `kb-page-reindex-placement.db.spec.ts` pins for the
- * reindex-all LISTING, on the other statement the decorator exposed. Both halves are
- * measured rather than reasoned, because which policy variant a table carries — raising or
- * `_or_null` — decides whether the mistake fails loudly or silently, and that differs per
- * table.
- *
- *   APP_DATABASE_URL="postgresql://streamline_app@localhost:5432/scratch_head_1010" \
- *   DATABASE_URL="postgresql://neondb_owner@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable \
- *   pnpm test:db-specs --testPathPattern="kb-checkpoint-no-ambient-tx.db"
- */
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -82,8 +59,6 @@ describe("KB ingestion checkpoints are readable with no ambient tenant context",
   it(
     "reads back a saved checkpoint from outside any tenant transaction, the state a @NoTenantTransaction route is in",
     async () => {
-      // The precondition, asserted rather than assumed: if something upstream leaves an
-      // ambient context behind, the proxy borrows it and this test proves nothing.
       expect(getTenantContext()).toBeUndefined();
 
       await checkpoints.saveCheckpoints(ORG, "page", CONTENT_ID, CONTENT_HASH, [

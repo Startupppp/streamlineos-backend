@@ -177,12 +177,6 @@ export class KbResearchBriefService {
     return row;
   }
 
-  /**
-   * A brief is written once and re-opened for months, so its stored citations are a snapshot of
-   * who could read what at generation time. Dropping the newly-invisible ones from the list would
-   * still serve a report whose prose was written FROM those documents, so the whole brief is
-   * refused instead — the same rule `KbAskService.assertReplayCitations` applies to a saved answer.
-   */
   private async assertCitationsStillVisible(
     user: CurrentUserContext,
     citations: BriefDetail["citations"],

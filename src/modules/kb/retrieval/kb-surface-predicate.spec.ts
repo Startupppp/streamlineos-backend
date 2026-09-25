@@ -54,11 +54,6 @@ function makeDb() {
       kbPages: { findFirst: jest.fn().mockResolvedValue(page) },
       kbPageComments: { findMany: jest.fn().mockResolvedValue([]) },
     },
-    // `KbPageAiService.summarize` reads through `loadPage`, whose short tenant
-    // transaction commits before the provider call. `withTenant` opens it and
-    // probes the placement fence, so the double needs both seams — otherwise the
-    // surface below throws before `pageVisibleTo` is ever reached and the
-    // `.catch()` in the test swallows it.
     execute: jest.fn().mockResolvedValue([{ placement_fence_held: 1 }]),
     transaction: <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(chain),
   });

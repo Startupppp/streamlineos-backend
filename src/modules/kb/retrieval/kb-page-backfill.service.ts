@@ -137,15 +137,11 @@ export class KbPageBackfillService {
           this.findEligibleUnindexedPages(orgId, cursor, requested),
         ),
       );
-      // Keep the bound true even if a test double or a future adapter returns
-      // more rows than requested.
       const pages = discovered.slice(0, requested);
 
       if (pages.length === 0) break;
 
       for (const page of pages) {
-        // Delay between attempts, including after a failed attempt, so a
-        // transient embedding failure cannot turn the next page into a burst.
         if (attempted > 0 && delayMs > 0) await pause(delayMs);
         attempted += 1;
         scanned += 1;
@@ -155,11 +151,6 @@ export class KbPageBackfillService {
               this.indexing.indexPage(orgId, page.id),
             ),
           );
-          // Every discovered page has non-empty content and no page-body
-          // chunk. A zero result therefore means the page was not indexed
-          // (for example, embeddings became unavailable or the page changed
-          // lifecycle state after discovery). Do not advance the resumable
-          // cursor past it or report a false success.
           if (written === 0) {
             failed += 1;
             failedPageIds.push(page.id);
@@ -174,9 +165,6 @@ export class KbPageBackfillService {
         } catch (err) {
           failed += 1;
           failedPageIds.push(page.id);
-          // `cursor` is the last successful page, not the failed page. The
-          // discovery query is strict-greater-than, so retaining this cursor
-          // makes the failed page the first candidate on the next run.
           resumeCursor ??= cursor;
           this.logger.error(
             `[kb-page-backfill] page ${String(page.id)} org ${orgId}: ${err instanceof Error ? err.message : String(err)}`,
@@ -186,8 +174,6 @@ export class KbPageBackfillService {
         if (scanned >= maxPages) break;
       }
 
-      // Finish the current batch so independent pages still make progress, but
-      // return the cursor before the first failure for a resumable retry.
       if (resumeCursor !== null || pages.length < requested) break;
     }
 

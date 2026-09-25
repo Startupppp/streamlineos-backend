@@ -26,15 +26,6 @@ describe("KbIndexingService.reindexAllPages", () => {
     const service = new KbIndexingService(db as never, {} as never, {} as never);
     service.indexPage = indexPage;
 
-    /**
-     * The page listing now opens a tenant transaction, because `POST /kb/pages/reindex-all`
-     * is `@NoTenantTransaction()` and a bare pool read carries no GUC — `kb_pages`' policy
-     * resolves the org through `app.current_org_id_or_null()`, so it would have matched
-     * nothing and reported `reindexed: 0`. Here the ambient context stands in for the
-     * outbox-driven caller, which is the branch `runInTenantTransaction` reuses; the
-     * no-ambient branch is proved against a real Postgres in
-     * `kb-page-reindex-placement.db.spec.ts`.
-     */
     const inTenant = <T>(fn: () => Promise<T>): Promise<T> =>
       runWithTenantContext({ orgId: "org-1", audience: "INTERNAL", tx: db as never }, fn);
 

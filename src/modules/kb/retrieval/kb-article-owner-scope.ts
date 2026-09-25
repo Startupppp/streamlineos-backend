@@ -8,12 +8,6 @@ export function articleOwnerScope(membershipId: number | null): OwnershipScope {
   return { own: membershipId === null ? sql`false` : eq(kbPages.ownerMembershipId, membershipId) };
 }
 
-/**
- * The one owner predicate `GET /kb/search` and every RAG retrieval share.
- * Returning it rather than applying it keeps the filter a plain predicate on
- * `kb_pages (org_id, owner_membership_id)` that the caller pushes into the
- * candidate query, so a chunk is refused before it can reach a context window.
- */
 export function articleOwnerScopeFilter(read: ScopedRead, user: CurrentUserContext): SQL {
   const membershipId = user.principal === undefined ? null : actingMembershipId(user.principal);
   return read.compose(

@@ -12,7 +12,6 @@ export interface KbDerivedChunkState {
   chunkCount: number;
 }
 
-/** Chunks holding one article attachment's extracted text. */
 export function attachmentChunks(
   orgId: string,
   attachmentId: number,
@@ -24,7 +23,6 @@ export function attachmentChunks(
   );
 }
 
-/** Chunks holding one `kb_sources` row's note or file text. */
 export function sourceChunks(orgId: string, sourceId: number): ChunkFamily {
   return and(
     eq(kbArticleChunks.orgId, orgId),
@@ -33,7 +31,6 @@ export function sourceChunks(orgId: string, sourceId: number): ChunkFamily {
   );
 }
 
-/** Chunks holding the document attached to one wiki page. */
 export function pageDocumentChunks(orgId: string, pageId: number): ChunkFamily {
   return and(
     eq(kbArticleChunks.orgId, orgId),
@@ -71,7 +68,6 @@ export async function updateDerivedChunkAcl(
   await db.update(kbArticleChunks).set({ aclRevision, aclSyncedAt: new Date() }).where(where);
 }
 
-/** The columns every derived chunk row shares, so the three writers cannot drift apart. */
 function derivedChunkRow(
   chunk: string,
   embedding: number[],

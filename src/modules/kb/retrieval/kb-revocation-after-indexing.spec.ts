@@ -52,9 +52,6 @@ function makeCapturingDb() {
   };
   const db = {
     select: jest.fn(() => chain()),
-    // Non-empty so the vector pass reaches its own query: `pageVectorCandidates` and
-    // `articleVectorCandidates` both return early on an empty candidate pool, and with []
-    // only the keyword predicate would ever be captured.
     execute: jest.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]),
   };
   return { db, wheres };

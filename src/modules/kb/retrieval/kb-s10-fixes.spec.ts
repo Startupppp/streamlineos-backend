@@ -209,8 +209,6 @@ describe("Fix 3 — embedInBatches: batched calls, order preserved across bounda
       delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       insert: jest.fn().mockReturnValue({ values: insertValues }),
     };
-    // `indexSource` now asks whether the stored chunks were made from this same text before
-    // it pays for an embed; an empty family means "nothing stored", so it goes on to embed.
     const emptyChunkState = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue([{ contentHash: null, aclRevision: null, chunkCount: 0 }]),
@@ -280,7 +278,6 @@ describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL 
     };
     const db = {
       transaction: jest.fn().mockImplementation(async (fn: (client: typeof tx) => unknown) => fn(tx)),
-      // No stored page-document family, so the skip-if-unchanged probe falls through to embed.
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockResolvedValue([{ contentHash: null, aclRevision: null, chunkCount: 0 }]),

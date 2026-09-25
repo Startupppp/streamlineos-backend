@@ -16,7 +16,6 @@ import {
 const suffix = randomUUID().slice(0, 8);
 const ORG = `kbacl-${suffix}`;
 const PROBE_USER = `kbacl-user-${suffix}`;
-/** The page's revision. Anything above the chunk column default of 1 exposes the defect. */
 const ARTICLE_ACL_REVISION = 5;
 const DIM = 1536;
 const CONTENT_HASH = "b".repeat(64);
@@ -69,7 +68,6 @@ describe("KB attachment chunks carry the parent page's ACL revision", () => {
       INSERT INTO kb_spaces (org_id, name, slug) VALUES (${ORG}, 'ACL probe space', ${`acl-${suffix}`}) RETURNING id`;
     spaceId = space?.id ?? 0;
 
-    // The article sits above revision 1 — the state a space membership change leaves behind.
     const [article] = await owner<{ id: number }[]>`
       INSERT INTO kb_pages (org_id, space_id, title, slug, content_text, status, content_type, acl_revision)
       VALUES (${ORG}, ${spaceId}, 'Employee handbook', ${`handbook-${suffix}`}, 'body', 'published', 'support_article', ${ARTICLE_ACL_REVISION})
@@ -99,7 +97,6 @@ describe("KB attachment chunks carry the parent page's ACL revision", () => {
     await owner`DELETE FROM kb_article_chunks WHERE org_id = ${ORG}`;
   });
 
-  /** One tenant transaction with the GUC set, the way the ingestion consumer runs. */
   async function inTenant<T>(fn: () => Promise<T>): Promise<T> {
     return base.transaction(async (tx) => {
       await tx.execute(
@@ -109,7 +106,6 @@ describe("KB attachment chunks carry the parent page's ACL revision", () => {
     });
   }
 
-  /** The insert `indexAttachment` used to issue: every column except `acl_revision`. */
   async function insertLegacyAttachmentChunk(): Promise<void> {
     await owner`
       INSERT INTO kb_article_chunks (org_id, page_id, attachment_id, source, chunk_index, content, embedding, embedding_model)

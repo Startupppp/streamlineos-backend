@@ -73,12 +73,6 @@ async function makeVisibility(rows: { id: number }[]) {
 
 const ids = (count: number) => Array.from({ length: count }, (_, index) => index + 1);
 
-/**
- * The three selects here carry no LIMIT, which is why `check:unbounded-reads` matches them.
- * They are safe because each is `inArray(id, ids)` over a list the caller already holds, and
- * because every producer of that list caps it. These assertions pin both halves: one
- * statement per kind whatever the id count, and the retrieval caps the ask path passes.
- */
 describe("KB citation visibility reads are bounded by their caller", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -144,11 +138,6 @@ describe("KB citation visibility reads are bounded by their caller", () => {
   });
 });
 
-/**
- * The reader's bound is the writer's cap, so the cap is what a regression would move.
- * `MAX_CONTEXT_ARTICLES` and the sources limit are module-private constants; asserting the
- * arguments the ask path passes pins their values without reaching inside the module.
- */
 describe("the ask path caps what it can ever hand the visibility reader", () => {
   it("retrieves at most 6 articles and 4 sources per question", async () => {
     const search = {
