@@ -41,9 +41,16 @@ const document = (over: Partial<LinkedDocumentItem> = {}): LinkedDocumentItem =>
 });
 
 function build(opts: { ai: boolean; hasChunks?: boolean; hits?: LinkedDocumentItem[]; visible?: number[] }) {
+  const insertedRows: Record<string, unknown>[] = [];
   const db = {
     execute: jest.fn().mockResolvedValue(opts.hasChunks === false ? [] : [{ one: 1 }]),
     transaction: jest.fn(),
+    insert: jest.fn().mockImplementation(() => ({
+      values: jest.fn().mockImplementation((row: Record<string, unknown>) => {
+        insertedRows.push(row);
+        return Promise.resolve([]);
+      }),
+    })),
   };
   db.transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
   const gateway = {
@@ -69,7 +76,7 @@ function build(opts: { ai: boolean; hasChunks?: boolean; hits?: LinkedDocumentIt
   };
   const source = new KbLinkedDocumentAskSource(flags as never, access as never, query as never);
   const service = new KbAskService(db as never, gateway as never, events as never, search as never, citationVisibility as never, source);
-  return { service, gateway, events, search, flags, query, db };
+  return { service, gateway, events, search, flags, query, db, insertedRows };
 }
 
 const prompt = (gateway: { invokeTextWithUsage: jest.Mock }): string => String(gateway.invokeTextWithUsage.mock.calls[0]?.[0]?.prompt?.user ?? "");
@@ -151,12 +158,13 @@ describe("KbAskService — company documents from HR", () => {
     });
 
     it("records the document among the sources of the answer", async () => {
-      const { service, events } = build({ ai: true });
+      const { service, events, insertedRows } = build({ ai: true });
 
       await service.ask(user, input, ON);
 
       const recorded = events.record.mock.calls.find(([, name]) => name === "ai_answer");
       expect(recorded?.[2]).toMatchObject({ metadata: { sourceIds: ["article:1", "document:31"] } });
+      expect(insertedRows.some((r) => r["resultState"] === "answered")).toBe(true);
     });
   });
 

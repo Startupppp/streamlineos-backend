@@ -33,6 +33,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   function makeDb(hasContent: boolean) {
     const executeArgs: unknown[] = [];
+    const insertedRows: Record<string, unknown>[] = [];
     /**
      * `transaction` invokes its callback with the double itself. KB Ask now
      * carries `@NoTenantTransaction()`, so `runInTenantTransaction` really does
@@ -48,9 +49,15 @@ describe("KbAskService — cross-tenant isolation", () => {
         executeArgs.push(sqlObj);
         return Promise.resolve(hasContent ? [{ one: 1 }] : []);
       }),
+      insert: jest.fn().mockImplementation(() => ({
+        values: jest.fn().mockImplementation((row: Record<string, unknown>) => {
+          insertedRows.push(row);
+          return Promise.resolve([]);
+        }),
+      })),
     };
     db.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
-    return { db: db as unknown as Db, executeArgs };
+    return { db: db as unknown as Db, executeArgs, insertedRows };
   }
 
   it("scopes indexed-content check to the requesting org (cross-tenant isolation)", async () => {
@@ -115,6 +122,7 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
   function makeDbForPageTest(returnPageIds: number[]) {
     const executeArgs: unknown[] = [];
     const pageWheres: unknown[] = [];
+    const insertedRows: Record<string, unknown>[] = [];
     const db: Record<string, unknown> = {
       execute: jest.fn().mockImplementation((sqlObj: unknown) => {
         executeArgs.push(sqlObj);
@@ -128,9 +136,15 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
           }),
         }),
       }),
+      insert: jest.fn().mockImplementation(() => ({
+        values: jest.fn().mockImplementation((row: Record<string, unknown>) => {
+          insertedRows.push(row);
+          return Promise.resolve([]);
+        }),
+      })),
     };
     db.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
-    return { db: db as unknown as Db, executeArgs, pageWheres };
+    return { db: db as unknown as Db, executeArgs, pageWheres, insertedRows };
   }
 
   it("scopes page-visibility query to the requesting org — a cross-tenant page is never cited", async () => {
@@ -156,7 +170,7 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
         aiUsage: { model: "test", promptTokens: 1, completionTokens: 1, totalTokens: 2, credits: 0, costUsd: 0 },
       }),
     };
-    const { db } = makeDbForPageTest([PAGE_ID]);
+    const { db, insertedRows } = makeDbForPageTest([PAGE_ID]);
     const svc = new KbAskService(
       db, gatewayOk as never, events, pageSearchMock as never,
       new KbCitationVisibilityService(db, access, pageSearchMock as never, auth as never), NO_LINKED_DOCUMENTS,
@@ -165,5 +179,6 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
     const result = await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
 
     expect(result.citations.some((c) => c.kind === "page" && c.pageId === PAGE_ID)).toBe(true);
+    expect(insertedRows.some((r) => r["resultState"] === "answered")).toBe(true);
   });
 });

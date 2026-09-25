@@ -98,11 +98,21 @@ describe("KbAskService — citation re-verification re-applies the article-restr
     execute: jest.Mock;
     select: jest.Mock;
     transaction: jest.Mock;
+    insert: jest.Mock;
+    insertedRows: Record<string, unknown>[];
   };
 
   const makeDb = (): DbMock => {
+    const insertedRows: Record<string, unknown>[] = [];
     const db: DbMock = {
       execute: jest.fn().mockResolvedValue([{ one: 1 }]),
+      insertedRows,
+      insert: jest.fn().mockImplementation(() => ({
+        values: jest.fn().mockImplementation((row: Record<string, unknown>) => {
+          insertedRows.push(row);
+          return Promise.resolve([]);
+        }),
+      })),
       select: jest.fn(() => ({
         from: jest.fn((table: unknown) => ({
           where: jest.fn((where: SQL) => {
@@ -196,7 +206,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       search as never,
       new KbCitationVisibilityService(db as never, access as never, search as never, auth as never), NO_LINKED_DOCUMENTS,
     );
-    return { ask, access };
+    return { ask, access, db };
   };
 
   beforeEach(() => {
@@ -204,13 +214,14 @@ describe("KbAskService — citation re-verification re-applies the article-restr
   });
 
   it("does not cite an article the asker's membership is restricted out of", async () => {
-    const { ask } = buildService(false);
+    const { ask, db } = buildService(false);
 
     const result = await ask.ask(makeUser(), { question: "what is the comp plan?" } as never);
 
     const citedIds = result.citations.map((c) => JSON.stringify(c)).join(" ");
     expect(citedIds).toContain(OPEN_ARTICLE.title);
     expect(citedIds).not.toContain(RESTRICTED_ARTICLE.title);
+    expect(db.insertedRows.some((r) => r["resultState"] === "answered")).toBe(true);
   });
 
   it("binds the ASKER's membership into the restriction predicate, never the article owner's", async () => {
