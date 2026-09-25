@@ -43,8 +43,6 @@ import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-o
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { ReportingRelationshipService } from "../directory/reporting-relationship.service";
-import { orgBusinessDate } from "../hr/time/attendance-business-date";
 
 @Injectable()
 export class UserOpsService {
@@ -59,7 +57,6 @@ export class UserOpsService {
     private readonly access: AccessService,
     private readonly email: EmailService,
     private readonly employment: EmploymentFactsService,
-    private readonly relationships: ReportingRelationshipService,
   ) {
     this.reporter = new UserOperationsReporter(db, cache, employment);
   }
@@ -149,8 +146,14 @@ export class UserOpsService {
     actor: InviteActor,
   ) {
     const actorUserId = actor.userId;
-    const { userIds, role, departmentId, branchId, teamId, managerUserId } =
-      data;
+    const { userIds, role, departmentId, branchId, teamId } = data;
+    // HRM-15: a reporting manager change goes through the bulk reporting change, which previews every
+    // row, asks for a reason and confirms large changes; this route does none of that.
+    if (data.managerUserId !== undefined)
+      throw new BadRequestException({
+        code: "USE_BULK_REPORTING_CHANGE",
+        message: "Reporting managers cannot be changed here. Use the bulk reporting change (POST /hr/reporting-lines/bulk-jobs), which previews and confirms the change.",
+      });
 
     if (role) await this.assertMayGrantRole(orgId, actor, role);
 
@@ -206,21 +209,6 @@ export class UserOpsService {
             )`,
           ),
         );
-      }
-
-      // HRM-15: one canonical write per employee, so each gets its own validation, D4 count and
-      // audit row; the first refusal aborts the whole bulk update rather than half-applying it.
-      if (managerUserId !== undefined) {
-        const effectiveFrom = await orgBusinessDate(this.db, orgId);
-        for (const subjectUserId of tenantUserIds)
-          await this.relationships.setRelationships(tx, {
-            orgId,
-            actor: { orgId, userId: actorUserId, isOrgOwner: actor.isOrgOwner },
-            subjectUserId,
-            primaryManagerUserId: managerUserId,
-            effectiveFrom,
-            source: "BULK_REASSIGNMENT",
-          });
       }
 
       const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
@@ -296,7 +284,7 @@ export class UserOpsService {
       targetType: "user",
       metadata: {
         userIds: scopedIds,
-        changes: { role, departmentId, branchId, teamId, managerUserId },
+        changes: { role, departmentId, branchId, teamId },
       },
     });
 

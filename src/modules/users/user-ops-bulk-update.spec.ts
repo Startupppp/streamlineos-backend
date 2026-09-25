@@ -7,13 +7,10 @@ import { users, hrEmployments } from "../../db/schema";
 import { syncStructuralRoleAssignments } from "../../common/rbac/sync-structural-role";
 import { UserOpsService } from "./user-ops.service";
 
-const setRelationships = jest.fn().mockResolvedValue({ changed: true, warnings: [] });
-
 function buildService(
   scopedMembers: Array<{ userId: string }> = [{ userId: "user-a" }],
   membershipRows: Array<{ id: number }> = [],
 ) {
-  setRelationships.mockClear();
   const updatedTables: unknown[] = [];
   const setCalls: unknown[] = [];
 
@@ -84,7 +81,6 @@ function buildService(
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) } as never,
     {} as never,
     { getFacts: jest.fn(), getFactsBatch: jest.fn() } as never,
-    { setRelationships } as never,
   );
 
   return { db, tx, service, updatedTables, setCalls };
@@ -107,14 +103,13 @@ describe("bulkUpdateUsers — removed-column regression", () => {
 });
 
 describe("bulkUpdateUsers — no users table write", () => {
-  it("does not write to the global users table when department, branch, and manager are all supplied", async () => {
+  it("does not write to the global users table when department and branch are both supplied", async () => {
     const { service, updatedTables } = buildService([{ userId: "user-a" }]);
 
     await service.bulkUpdateUsers("org-a", {
       userIds: ["user-a"],
       departmentId: "dept-1",
       branchId: "branch-1",
-      managerUserId: "manager-1",
     }, actor);
 
     expect(updatedTables).not.toContain(users);
@@ -127,15 +122,10 @@ describe("bulkUpdateUsers — cross-org isolation", () => {
 
     const result = await service.bulkUpdateUsers("org-a", {
       userIds: ["user-a", "user-b"],
-      managerUserId: "manager-1",
+      departmentId: "dept-1",
     }, actor);
 
     expect(result.updated).toBe(1);
-    expect(setRelationships).toHaveBeenCalledTimes(1);
-    expect(setRelationships).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ orgId: "org-a", subjectUserId: "user-a", primaryManagerUserId: "manager-1" }),
-    );
   });
 });
 
@@ -164,19 +154,22 @@ describe("bulkUpdateUsers — canonical destination writes", () => {
     expect(setCalls).toContainEqual(expect.objectContaining({ locationId: "branch-1" }));
   });
 
-  it("writes every in-org reportee's manager through the canonical relationship service, one audited change each", async () => {
-    const { service } = buildService([{ userId: "user-a" }, { userId: "user-b" }]);
+  it("refuses a manager change with 400 pointing to the bulk reporting change, which previews, asks a reason and confirms", async () => {
+    const { service, updatedTables } = buildService([{ userId: "user-a" }, { userId: "user-b" }]);
 
-    await service.bulkUpdateUsers("org-a", {
+    const attempt = service.bulkUpdateUsers("org-a", {
       userIds: ["user-a", "user-b"],
+      departmentId: "dept-1",
       managerUserId: "manager-1",
     }, actor);
 
-    expect(setRelationships.mock.calls.map(([, command]) => command.subjectUserId)).toEqual(["user-a", "user-b"]);
-    expect(setRelationships).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ primaryManagerUserId: "manager-1", source: "BULK_REASSIGNMENT", actor: { orgId: "org-a", userId: "actor-1", isOrgOwner: false } }),
-    );
+    await expect(attempt).rejects.toMatchObject({ status: 400, message: expect.stringContaining("bulk reporting change") });
+    expect(updatedTables).toEqual([]);
+  });
+
+  it("refuses clearing the manager the same way", async () => {
+    const { service } = buildService([{ userId: "user-a" }]);
+    await expect(service.bulkUpdateUsers("org-a", { userIds: ["user-a"], managerUserId: null }, actor)).rejects.toMatchObject({ status: 400 });
   });
 
   it("syncs the structural role for every updated membership in one batched call", async () => {
