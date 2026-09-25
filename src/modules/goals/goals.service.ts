@@ -150,6 +150,38 @@ export class GoalsService {
     });
   }
 
+  private async loadOwners(
+    orgId: string,
+    membershipIds: number[],
+  ): Promise<Map<number, GoalOwner>> {
+    const ids = [...new Set(membershipIds.filter((id) => Number.isInteger(id)))];
+    if (ids.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({
+        membershipId: organizationMembers.id,
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        image: users.image,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          inArray(organizationMembers.id, ids),
+        ),
+      );
+
+    return new Map(
+      rows.map(({ membershipId, id, name, email, image }) => [
+        membershipId,
+        { id, name, email, image },
+      ]),
+    );
+  }
+
   async list(u: CurrentUserContext, filters: ListInput): Promise<ListResponse<GoalListItem>> {
     const { orgId, userId } = u;
     const membershipId = actingMembershipId(u.principal);
@@ -203,18 +235,21 @@ export class GoalsService {
     if (goals.length === 0) return buildListResponse([], total, page);
 
     const goalIds = goals.map((g) => g.id);
-    const counts = await this.db
-      .select({ goalId: okrKeyResults.goalId, total: count() })
-      .from(okrKeyResults)
-      .where(and(eq(okrKeyResults.orgId, orgId), inArray(okrKeyResults.goalId, goalIds)))
-      .groupBy(okrKeyResults.goalId);
+    const [counts, owners] = await Promise.all([
+      this.db
+        .select({ goalId: okrKeyResults.goalId, total: count() })
+        .from(okrKeyResults)
+        .where(and(eq(okrKeyResults.orgId, orgId), inArray(okrKeyResults.goalId, goalIds)))
+        .groupBy(okrKeyResults.goalId),
+      this.loadOwners(orgId, goals.map((goal) => goal.ownerMembershipId ?? -1)),
+    ]);
 
     const countMap = new Map(counts.map((c) => [c.goalId, c.total]));
 
     return buildListResponse(
       goals.map((goal) => ({
         ...goal,
-        owner: null,
+        owner: goal.ownerMembershipId === null ? null : owners.get(goal.ownerMembershipId) ?? null,
         keyResultCount: countMap.get(goal.id) ?? 0,
       })),
       total,
@@ -307,6 +342,8 @@ export class GoalsService {
     });
     if (!goal) return null;
 
+    const owners = await this.loadOwners(orgId, goal.ownerMembershipId === null ? [] : [goal.ownerMembershipId]);
+
     const keyResults = await this.db.query.okrKeyResults.findMany({
       where: and(
         eq(okrKeyResults.goalId, goalId),
@@ -335,7 +372,13 @@ export class GoalsService {
 
     const links = await this.links.getLinks(orgId, goalId);
 
-    return { ...goal, owner: null, keyResults, updates, links };
+    return {
+      ...goal,
+      owner: goal.ownerMembershipId === null ? null : owners.get(goal.ownerMembershipId) ?? null,
+      keyResults,
+      updates,
+      links,
+    };
   }
 
   async update(orgId: string, goalId: number, input: UpdateInput): Promise<GoalDetail | null> {
