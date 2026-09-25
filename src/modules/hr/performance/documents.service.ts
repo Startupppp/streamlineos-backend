@@ -170,7 +170,7 @@ export class DocumentsService {
     read: ScopedRead,
     documentId: number,
     membershipId?: number | null,
-  ): Promise<{ documentId: number; fileUrl: string; fileName: string }> {
+  ): Promise<{ documentId: number; fileUrl: string; fileName: string; ownerUserId: string | null; classification: string }> {
     this.assertMembershipForScope(read, membershipId);
     const [document] = await read.read(
       {
@@ -183,6 +183,10 @@ export class DocumentsService {
           documentId: documents.id,
           fileUrl: documents.fileUrl,
           fileName: sql<string>`coalesce(${documents.fileName}, ${documents.name})`,
+          // Read so the audit row can say whether this was someone reading THEIR OWN document or reading an
+          // employee's. Both are allowed; only one of them is worth looking at later (V-148).
+          ownerUserId: documents.userId,
+          classification: documents.classification,
         })
         .from(documents)
         .where(where)
@@ -250,7 +254,9 @@ export class DocumentsService {
             isActive: true,
             version: 1,
           })
-          .returning();
+          // The same projection the list uses, so the one thing it deliberately withholds — the storage URL —
+          // is withheld here too. A bare `.returning()` handed the caller the raw R2 URL (V-091).
+          .returning(documentListSelection);
         if (!createdDocument) throw new Error("Failed to create document");
         await syncDocumentTags(
           transaction,
@@ -350,7 +356,8 @@ export class DocumentsService {
             updatedAt: new Date(),
           })
           .where(this.scopedWhere(read, membershipId, [eq(documents.id, documentId)]) ?? sql`false`)
-          .returning();
+          // Projected for the same reason as the create above (V-091).
+          .returning(documentListSelection);
         if (!updatedDocument)
           throw new NotFoundException("Document not found.");
         if (input.tags !== undefined)

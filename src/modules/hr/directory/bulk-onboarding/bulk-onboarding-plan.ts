@@ -13,7 +13,10 @@ import {
   canonicalAdmissionEmail,
   type AdmissionScreen,
 } from "../../../organization/core/membership-admission.service";
-import type { BulkOnboardEmployeeRow } from "../dto/hr-directory.schemas";
+import {
+  dateOfBirthProblem,
+  type BulkOnboardEmployeeRow,
+} from "../dto/hr-directory.schemas";
 import type { DepartmentCatalog } from "./bulk-onboarding-departments";
 import type { BulkOnboardPlan } from "./bulk-onboarding.types";
 import { findManagerCycles, rosterEmailsOf, type ManagerEdge } from "./bulk-onboarding-graph";
@@ -199,6 +202,16 @@ export function planBulkOnboarding(
         success: false,
         error: "This account is globally suspended. Contact platform support to restore it before adding to an organization.",
       });
+      continue;
+    }
+
+    // V-031. The row schema deliberately does not refine this. Validating it in
+    // the array schema meant ONE under-16 date of birth 400'd the whole upload
+    // and created nobody; here it is one row's reason beside the employee-ID
+    // check, and the other 99 rows are still onboarded.
+    const dobProblem = dateOfBirthProblem(source.dateOfBirth);
+    if (dobProblem !== null) {
+      plan.rejected.push({ row, email, success: false, error: dobProblem });
       continue;
     }
 

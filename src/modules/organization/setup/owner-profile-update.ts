@@ -21,7 +21,27 @@ export interface OwnerProfileInput {
 
 export interface OwnerProfilePatch {
   name?: string;
+  firstName?: string;
+  lastName?: string;
   phone?: string;
+}
+
+/**
+ * The same split sign-up uses (`auth.service.ts`, Google sign-in): everything
+ * before the first space is the given name, the rest is the family name, and a
+ * single word has no family name rather than a duplicated one.
+ *
+ * It has to be the same rule, because the passwordless path seeds
+ * `firstName = <email local part>, lastName = ""` at sign-up. Writing only
+ * `users.name` here leaves every surface that composes first + last — the
+ * employee detail heading, avatar initials, the profile PDF — still showing the
+ * email prefix.
+ */
+export function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const spaceIdx = fullName.indexOf(" ");
+  return spaceIdx === -1
+    ? { firstName: fullName, lastName: "" }
+    : { firstName: fullName.slice(0, spaceIdx), lastName: fullName.slice(spaceIdx + 1).trim() };
 }
 
 /**
@@ -35,7 +55,12 @@ export interface OwnerProfilePatch {
 export function ownerProfileUpdate(input: OwnerProfileInput): OwnerProfilePatch {
   const patch: OwnerProfilePatch = {};
   const name = input.fullName?.trim();
-  if (name) patch.name = name;
+  if (name) {
+    patch.name = name;
+    const { firstName, lastName } = splitFullName(name);
+    patch.firstName = firstName;
+    patch.lastName = lastName;
+  }
   const phone = input.phone?.trim();
   if (phone) patch.phone = phone;
   return patch;

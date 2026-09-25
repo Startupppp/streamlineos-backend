@@ -146,6 +146,11 @@ export const personRowSchema = z.object({
   phone: z.string().nullable(),
   gender: z.string().nullable(),
   avatarUrl: z.string().nullable(),
+  rowVersion: z.number().int(),
+  archivedAt: nullableWireDate(),
+  archivedByMembershipId: z.number().int().nullable(),
+  updatedByMembershipId: z.number().int().nullable(),
+  deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
@@ -181,6 +186,11 @@ export const employmentRowSchema = z.object({
   expectedLastDay: z.string().nullable(),
   lastWorkingDay: z.string().nullable(),
   isPrimary: z.boolean(),
+  rowVersion: z.number().int(),
+  archivedAt: nullableWireDate(),
+  archivedByMembershipId: z.number().int().nullable(),
+  updatedByMembershipId: z.number().int().nullable(),
+  deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });

@@ -121,6 +121,12 @@ const TIERS: Record<string, Tier> = {
   // enough for a morning's work, low enough that a stolen session cannot walk
   // the directory harvesting links.
   "hr:employee-invite-link": { limit: 20, windowSecs: 3600 },
+  // V-030. Its sibling invite-link has been limited since it mints a working
+  // credential; resend-invite mints the same credential AND mails it, and
+  // carried no limiter at all — a stolen session could walk the directory
+  // spraying invite mail from the platform's own sender. Five an hour is more
+  // than an administrator correcting a typo needs.
+  "hr:employee-resend-invite": { limit: 5, windowSecs: 3600 },
   "hr:effective-changes-apply": { limit: 10, windowSecs: 3600 },
   "hr:onboarding-reminders": { limit: 3, windowSecs: 3600 },
   "ai:invoke": { limit: 30, windowSecs: 60 },
@@ -128,6 +134,11 @@ const TIERS: Record<string, Tier> = {
   "ai:vision": { limit: 10, windowSecs: 60 },
   "ai:public-kb-ask": { limit: 10, windowSecs: 60 },
   "kb:ask": { limit: 20, windowSecs: 60 },
+  // V-147. POST /kb/linked-documents/:id/open MINTS A SIGNED URL — a 300-second bearer credential for an
+  // employee document — and was the one unthrottled route that does. Every mint is an authorised one, so the
+  // limit only has to stop a loop harvesting live URLs faster than they expire: 30/min is far above reading
+  // documents one after another, and far below a script banking a few hundred credentials a minute.
+  "kb:linked-document-open": { limit: 30, windowSecs: 60 },
   "module-access:ownership-transfer": { limit: 5, windowSecs: 3600 },
   "module-access:group-mutate": { limit: 30, windowSecs: 60 },
   "ownership:transfer": { limit: 5, windowSecs: 3600 },

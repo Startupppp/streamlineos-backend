@@ -52,10 +52,18 @@ export class KbHrLinkFlagsService {
     return { link: true, search: stored.search, ai: stored.search && stored.ai };
   }
 
-  /** 404, not 403: a disabled feature should look absent, and a 403 would confirm it exists. */
+  /**
+   * 404, not 403: a disabled feature should look absent, and a 403 would confirm it exists.
+   *
+   * The code is what makes it usable. A bare NotFoundException fell through to the filter's default
+   * `NOT_FOUND`, which is the same envelope a deleted document produces, so a client could not tell "this
+   * organisation has not turned the feature on" from "that row is gone" and had nothing to render (V-140).
+   * The message names no flag and no organisation, so it still says nothing about what exists.
+   */
   async assertEnabled(orgId: string, flag: keyof HrKbLinkFlags): Promise<void> {
     const effective = await this.getEffective(orgId);
-    if (!effective[flag]) throw new NotFoundException();
+    if (!effective[flag])
+      throw new NotFoundException({ code: "FEATURE_DISABLED", message: "This feature is not available." });
   }
 
   async getAdmin(orgId: string): Promise<HrKbLinkFlagsAdmin> {

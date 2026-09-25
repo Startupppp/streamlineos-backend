@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { publishBlockers, type PublishBlocker } from "../../hr/performance/documents-helpers";
+import { withMetadataPiiBlocker } from "../../hr/performance/document-pii-scan";
 import { KbHrLinkFlagsService } from "../core/kb-hr-link-flags.service";
 import type { PublishActor } from "./kb-linked-document-publish.service";
 import type { BackfillInput, BackfillResult } from "./dto/kb-link-backfill.schemas";
@@ -20,6 +21,9 @@ const SKIP_BUCKET: Record<PublishBlocker["code"], keyof Skipped | null> = {
   TYPE_NOT_ALLOWED: "typeNotAllowed",
   BELONGS_TO_AN_EMPLOYEE: "belongsToAnEmployee",
   HIRING_ARTEFACT: "hiringArtefact",
+  // Proposing Internal for a document whose searchable details hold an identifier would only be refused by
+  // classify(), so the backfill skips it and says so rather than counting it eligible (V-156).
+  METADATA_HOLDS_PERSONAL_IDENTIFIER: "holdsPersonalIdentifier",
 };
 
 /**
@@ -62,6 +66,10 @@ export class KbLinkedDocumentBackfillService {
             isActive: documents.isActive,
             isPublic: documents.isPublic,
             metadata: documents.metadata,
+            // For the metadata PII scan (V-156); `name` is already read above for the sample.
+            description: documents.description,
+            category: documents.category,
+            tags: documents.tags,
             // Written out: in a single-table select drizzle renders columns unqualified, so `${documents.orgId}` inside the subquery would resolve to the INNER table and the test would always be false.
             hasAudience: sql<boolean>`EXISTS (SELECT 1 FROM document_audiences da WHERE da.org_id = "documents"."org_id" AND da.document_id = "documents"."id")`,
             // A person once classified it, even if the answer was "Personal" (that also clears the audience, so the two tests above cannot see it). Written out for the same reason as above.
@@ -72,7 +80,7 @@ export class KbLinkedDocumentBackfillService {
           .orderBy(asc(documents.id))
           .limit(input.limit);
 
-        const skipped: Skipped = { alreadyClassified: 0, belongsToAnEmployee: 0, typeNotAllowed: 0, hiringArtefact: 0, inactive: 0 };
+        const skipped: Skipped = { alreadyClassified: 0, belongsToAnEmployee: 0, typeNotAllowed: 0, hiringArtefact: 0, inactive: 0, holdsPersonalIdentifier: 0 };
         const proposals: Array<{ id: number; name: string; audience: "ALL_EMPLOYEES" | "HR_ONLY" }> = [];
         for (const row of page) {
           // HR's own choice, however partial, is never overwritten.
@@ -81,7 +89,9 @@ export class KbLinkedDocumentBackfillService {
             continue;
           }
           // Judged as if it were Internal: the classification is the one thing this run is about to change.
-          const blocker = publishBlockers({ ...row, classification: "INTERNAL" }).find((candidate) => SKIP_BUCKET[candidate.code] !== null);
+          const blocker = withMetadataPiiBlocker(publishBlockers({ ...row, classification: "INTERNAL" }), row).find(
+            (candidate) => SKIP_BUCKET[candidate.code] !== null,
+          );
           const bucket = blocker ? SKIP_BUCKET[blocker.code] : null;
           if (bucket) {
             skipped[bucket] += 1;

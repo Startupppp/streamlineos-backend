@@ -1,17 +1,21 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   Logger,
 } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   employeeSkills,
+  magicLinkTokens,
   onboardingTasks,
   organizationMembers,
   users,
 } from "../../../db/schema";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { canonicalAdmissionEmail } from "../../organization/core/membership-admission.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -40,6 +44,12 @@ import {
   readInviteDelivery,
   type InviteDeliveryState,
 } from "./employee-invite-delivery";
+
+export const EMAIL_TAKEN_IN_ORG_MESSAGE =
+  "That email address is already used by another member of this organization.";
+/** Deliberately vague: `users.email` is global, and naming another tenant's account would be an enumeration oracle. */
+export const EMAIL_TAKEN_ELSEWHERE_MESSAGE =
+  "That email address is already in use. Choose a different one.";
 
 @Injectable()
 export class EmployeeMutationsService {
@@ -198,6 +208,38 @@ export class EmployeeMutationsService {
     };
   }
 
+  /**
+   * V-020. `users.email` is a GLOBAL unique index, not a per-tenant one, so a
+   * check scoped to this organization's members is not enough — an account in
+   * another tenant holding the address would pass it and then 23505 on the
+   * UPDATE. Both cases are refused here; only the in-tenant one is named,
+   * because confirming that some address exists in another organization is an
+   * enumeration oracle an HR admin has no need for.
+   */
+  private async reserveEmailChange(
+    orgId: string,
+    targetUserId: string,
+    email: string,
+  ): Promise<string> {
+    const normalised = canonicalAdmissionEmail(email);
+    const holder = await this.db.query.users.findFirst({
+      where: eq(users.email, normalised),
+      columns: { id: true },
+    });
+    if (!holder || holder.id === targetUserId) return normalised;
+
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, holder.id),
+      ),
+      columns: { id: true },
+    });
+    throw new ConflictException(
+      member ? EMAIL_TAKEN_IN_ORG_MESSAGE : EMAIL_TAKEN_ELSEWHERE_MESSAGE,
+    );
+  }
+
   async updateEmployee(
     actor: CurrentUserContext,
     targetUserId: string,
@@ -234,7 +276,7 @@ export class EmployeeMutationsService {
 
     const currentUser = await this.db.query.users.findFirst({
       where: eq(users.id, targetUserId),
-      columns: { firstName: true, lastName: true, name: true },
+      columns: { firstName: true, lastName: true, name: true, email: true },
     });
     if (!currentUser) {
       throw new BadRequestException("Employee record is unavailable.");
@@ -247,6 +289,21 @@ export class EmployeeMutationsService {
     }
 
     const updateData: Partial<typeof users.$inferInsert> = {};
+    const newEmail =
+      body.email !== undefined && body.email !== currentUser.email
+        ? await this.reserveEmailChange(actor.orgId, targetUserId, body.email)
+        : null;
+    if (newEmail !== null) {
+      updateData.email = newEmail;
+      // PROVISIONAL (product default E-4): acceptance is derived from
+      // `email_verified`, which means "this person came through a magic link at
+      // THIS address". Carrying it onto an address nobody has proved would badge
+      // them accepted at a mailbox they may not own — and an administrator's
+      // typo would be enough to hand the account to whoever holds it. Clearing
+      // it puts them back in the pending bucket, where Resend invite is the
+      // obvious next action.
+      updateData.emailVerified = null;
+    }
     if (body.name !== undefined) updateData.name = body.name;
     if (body.firstName !== undefined || body.lastName !== undefined) {
       const first = body.firstName ?? currentUser.firstName ?? "";
@@ -278,10 +335,32 @@ export class EmployeeMutationsService {
 
     await this.db.transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {
+        try {
+          await tx
+            .update(users)
+            .set(updateData)
+            .where(eq(users.id, targetUserId));
+        } catch (err) {
+          // BE-41. The check above is a read, and `users.email` is globally
+          // unique, so an account created between the two loses this race. A
+          // 409 is the answer, never a 500.
+          if (newEmail !== null && isUniqueViolation(err))
+            throw new ConflictException(EMAIL_TAKEN_ELSEWHERE_MESSAGE);
+          throw err;
+        }
+      }
+      if (newEmail !== null) {
+        // Every live magic link for this person was mailed to the OLD address.
+        // Retiring them here means the link cannot be used by whoever holds
+        // that mailbox, and the invite has to be resent to the new one — which
+        // `readInviteDelivery` already reports as "none", because it keys on
+        // the address.
         await tx
-          .update(users)
-          .set(updateData)
-          .where(eq(users.id, targetUserId));
+          .update(magicLinkTokens)
+          .set({ usedAt: new Date() })
+          .where(
+            and(eq(magicLinkTokens.userId, targetUserId), isNull(magicLinkTokens.usedAt)),
+          );
       }
       await syncOrgUnitPlacement(tx, actor.orgId, targetUserId, {
         DEPARTMENT: body.departmentId,

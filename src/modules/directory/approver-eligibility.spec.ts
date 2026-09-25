@@ -6,6 +6,7 @@ interface CandidateRow {
   membershipStatus: string;
   isOwner: boolean;
   userActive: boolean;
+  candidateName?: string;
   employmentId: number | null;
   lifecycleStatus: string | null;
 }
@@ -47,10 +48,32 @@ describe("ReportingLineService.checkApprover", () => {
   it("still refuses a non-owner with no employment record, so approval authority is not handed to any member", async () => {
     const result = await serviceFor([owner({ isOwner: false })]).checkApprover(ORG, FOUNDER);
 
+    // V-021. The expected text changed deliberately: the old sentence
+    // ("has no employment record, so they cannot own approvals") named a table
+    // and no next step. The refusal itself is unchanged — a non-owner with no
+    // employment record is still refused — so this case still proves what it
+    // was written to prove.
     expect(result).toEqual({
       ok: false,
       reason: "manager-has-no-employment",
-      message: "The selected manager has no employment record, so they cannot own approvals.",
+      message:
+        "The selected manager is not set up as an employee yet, so they cannot own approvals. Add them under People > Employees, then assign them again.",
+    });
+  });
+
+  it("names the person who was actually picked, so a founder is not told about 'the selected manager'", async () => {
+    // V-021. The founder hits this refusal about themselves more than anyone,
+    // because they are a member and a user of their own company but were never
+    // hired into it.
+    const result = await serviceFor([
+      owner({ isOwner: false, candidateName: "Asha Rao" }),
+    ]).checkApprover(ORG, FOUNDER);
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "manager-has-no-employment",
+      message:
+        "Asha Rao is not set up as an employee yet, so they cannot own approvals. Add them under People > Employees, then assign them again.",
     });
   });
 

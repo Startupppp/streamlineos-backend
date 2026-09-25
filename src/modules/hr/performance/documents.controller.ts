@@ -144,13 +144,22 @@ export class DocumentsController {
     const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn, undefined, {
       preauthorized: true,
     });
+    // V-148: every view was audited, but the row did not say WHOSE document it was, so the one view worth
+    // looking at later - an administrator opening an employee's personal file - read exactly like an employee
+    // opening their own. The predicate is recorded, not the decision: both views are allowed.
+    const actorIsOwner = document.ownerUserId !== null && document.ownerUserId === currentUser.userId;
     await this.audit.logCriticalOutsideTransaction({
       action: "hr.document_viewed",
       userId: currentUser.userId,
       orgId: currentUser.orgId,
       targetId: String(document.documentId),
       targetType: "document",
-      metadata: { fileName: document.fileName },
+      metadata: {
+        fileName: document.fileName,
+        actorIsOwner,
+        documentIsOwned: document.ownerUserId !== null,
+        classification: document.classification,
+      },
     });
     return { url, fileName: document.fileName, expiresIn };
   }

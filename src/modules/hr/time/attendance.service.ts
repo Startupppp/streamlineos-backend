@@ -31,7 +31,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import { EmailService } from "../../email/email.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { getTodayString } from "../../../common/date";
+import { orgBusinessDate } from "./attendance-business-date";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   AttendanceEmailReportInput,
@@ -153,7 +153,7 @@ export class AttendanceService {
     if (!scope.unrestricted)
       throw new ForbiddenException("Only admins can view team attendance.");
 
-    const today = getTodayString();
+    const today = await orgBusinessDate(this.db, u.orgId);
 
     const todayStatus = this.db
       .selectDistinctOn([attendance.userMembershipId], {

@@ -174,6 +174,19 @@ export const expenseImportResultSchema = z.object({
   count: z.number().int(),
   skipped: z.number().int(),
   skippedReasons: z.array(z.object({ row: z.number().int(), reason: z.string() })),
+  /**
+   * Rows that repeat an earlier row in the same file (`matchesRow`) or an expense the
+   * org already holds (`matchesExpenseId`). Unless the caller sent `confirmDuplicates`
+   * these rows were NOT inserted, so `count` is the number actually filed. [V-070b]
+   */
+  duplicateWarnings: z.array(
+    z.object({
+      row: z.number().int(),
+      matchesRow: z.number().int().optional(),
+      matchesExpenseId: z.number().int().optional(),
+      inserted: z.boolean(),
+    }),
+  ),
   warning: z.string().optional(),
 });
 

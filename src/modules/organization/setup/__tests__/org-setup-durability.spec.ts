@@ -196,6 +196,7 @@ describe("org setup post-provisioning is durable, not fire-and-forget", () => {
       const svc = await buildService(db, wakeSignal);
 
       await svc.completeSetup(ownerActor(), {
+        fullName: "Priya Raman",
         industry: "IT Services",
         companySize: "1-10",
         enabledModules: [],

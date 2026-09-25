@@ -1,15 +1,14 @@
-import { Body, Controller, ForbiddenException, Get, Param, ParseIntPipe, Patch, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Put, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { AccessService } from "../../access/access.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { resolveDocumentsManageScope, resolveDocumentsScope } from "./performance-scope";
+import { DocumentAccessService } from "./document-access.service";
 import {
   DocumentClassificationService,
   type ClassificationActor,
@@ -27,8 +26,6 @@ import {
   setDocumentAudiencesResponseSchema,
 } from "./dto/document-classification-response.schemas";
 
-const PUBLISH_PERMISSION = "hr:documents:publish";
-
 /**
  * What a document IS (Personal, Confidential, Restricted, Internal) and who it is for. Organisation-wide
  * authority, so none of it is scoped: a caller who can see only their own documents cannot read or change
@@ -40,7 +37,7 @@ const PUBLISH_PERMISSION = "hr:documents:publish";
 export class DocumentClassificationController {
   constructor(
     private readonly classification: DocumentClassificationService,
-    private readonly access: AccessService,
+    private readonly documentAccess: DocumentAccessService,
   ) {}
 
   private actor(currentUser: CurrentUserContext): ClassificationActor {
@@ -59,8 +56,8 @@ export class DocumentClassificationController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveDocumentsScope(this.access, currentUser);
-    if (!scope.unrestricted) throw new ForbiddenException("Organization-wide document access is required.");
+    const principal = await this.documentAccess.principalFor(currentUser);
+    await this.documentAccess.assertCanAct(principal, documentId, "view");
     return this.classification.get(currentUser.orgId, documentId);
   }
 
@@ -73,10 +70,14 @@ export class DocumentClassificationController {
     @Body() body: ClassifyDocumentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveDocumentsManageScope(this.access, currentUser);
-    if (!scope.unrestricted) throw new ForbiddenException("Organization-wide document access is required.");
-    const canPublish = await this.access.holds(currentUser, PUBLISH_PERMISSION);
-    return this.classification.classify(this.actor(currentUser), documentId, body, canPublish);
+    const principal = await this.documentAccess.principalFor(currentUser);
+    await this.documentAccess.assertCanAct(principal, documentId, "manage");
+    return this.classification.classify(
+      this.actor(currentUser),
+      documentId,
+      body,
+      this.documentAccess.canPerform(principal, "publish"),
+    );
   }
 
   @ResponseSchema(setDocumentAudiencesResponseSchema)

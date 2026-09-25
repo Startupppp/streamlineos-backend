@@ -459,11 +459,23 @@ export class EmployeeOnboardingService {
     // to correct it — and an invite recalled by resending was not recalled at
     // all. Retiring and issuing in one transaction means a failure here cannot
     // leave the person with no working link.
+    //
+    // V-030. The enqueue used to sit AFTER this transaction committed, with an
+    // UPDATE on `this.db` compensating when it failed. That is atomicity by
+    // apology: a crash between the commit and the enqueue left a live invite
+    // token nobody was ever mailed, and the compensating update could itself
+    // fail. `this.db` is the tenant-aware proxy, so `EmailOutboxService` writes
+    // its row on whatever transaction is ambient — enqueueing from inside this
+    // callback puts the outbox row and the token in ONE transaction. Neither
+    // enqueueOnly nor its suppression check makes a network call, so this does
+    // not hold a pooled connection through a provider outage (BE-84).
     const rawToken = randomBytes(32).toString("hex");
     const tokenId = randomUUID();
-    await runInTenantTransaction(
+    const signInUrl = `${appUrl()}/magic-link?token=${rawToken}`;
+
+    return runInTenantTransaction(
       this.db,
-      async (tx) => {
+      async (tx): Promise<InviteDelivery> => {
         await tx
           .update(magicLinkTokens)
           .set({ usedAt: new Date() })
@@ -474,35 +486,38 @@ export class EmployeeOnboardingService {
           tokenHash: hashToken(rawToken),
           expiresAt: addDays(new Date(), INVITE_TOKEN_DAYS),
         });
+
+        const outcome =
+          input.kind === "welcome"
+            ? await this.email.queueWelcomeEmail({
+                organizationId: input.orgId,
+                recipientUserId: input.userId,
+                email: input.email,
+                name: input.name,
+                setupUrl: signInUrl,
+              })
+            : await this.email.queueMembershipAddedEmail({
+                organizationId: input.orgId,
+                recipientUserId: input.userId,
+                email: input.email,
+                name: input.name,
+                organizationName: input.organizationName,
+                signInUrl,
+              });
+        if (outcome.queued) return { sent: true, reason: null };
+
+        // Not a compensation any more — the same transaction. A suppressed or
+        // unsendable address is a reported outcome, not a failure, so the
+        // earlier invites stay retired and the undeliverable token is retired
+        // with them rather than leaving a link nobody was sent.
+        await tx
+          .update(magicLinkTokens)
+          .set({ usedAt: new Date() })
+          .where(eq(magicLinkTokens.id, tokenId));
+        return { sent: false, reason: outcome.reason };
       },
       { orgId: input.orgId },
     );
-    const signInUrl = `${appUrl()}/magic-link?token=${rawToken}`;
-
-    const outcome =
-      input.kind === "welcome"
-        ? await this.email.queueWelcomeEmail({
-            organizationId: input.orgId,
-            recipientUserId: input.userId,
-            email: input.email,
-            name: input.name,
-            setupUrl: signInUrl,
-          })
-        : await this.email.queueMembershipAddedEmail({
-            organizationId: input.orgId,
-            recipientUserId: input.userId,
-            email: input.email,
-            name: input.name,
-            organizationName: input.organizationName,
-            signInUrl,
-          });
-    if (outcome.queued) return { sent: true, reason: null };
-
-    await this.db
-      .update(magicLinkTokens)
-      .set({ usedAt: new Date() })
-      .where(eq(magicLinkTokens.id, tokenId));
-    return { sent: false, reason: outcome.reason };
   }
 
   private async resolveSubject(

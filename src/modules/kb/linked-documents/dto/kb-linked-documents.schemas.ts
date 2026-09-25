@@ -3,7 +3,8 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const LINKED_DOCUMENT_STATUS_FILTERS = ["active", "unpublished", "source_removed", "all"] as const;
 
-// `status` other than "active" is for publishers; anyone else asking for it is refused rather than silently shown "active".
+// `status` other than "active" is for publishers; anyone else asking for it is answered an empty page — a
+// refusal would confirm the archive exists and that they are not allowed near it (V-146).
 export const listLinkedDocumentsQuerySchema = z
   .object({
     cursor: z.string().min(1).max(512).optional(),

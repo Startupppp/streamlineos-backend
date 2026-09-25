@@ -68,7 +68,10 @@ type PublishBlockerCode =
   | "BELONGS_TO_AN_EMPLOYEE"
   | "TYPE_NOT_ALLOWED"
   | "DOCUMENT_INACTIVE"
-  | "HIRING_ARTEFACT";
+  | "HIRING_ARTEFACT"
+  // Raised by document-pii-scan.ts, NOT by publishBlockers: it reads the four searchable metadata fields, which
+  // the SQL twin app.hr_document_is_publishable does not look at, so it must stay out of the parity pair.
+  | "METADATA_HOLDS_PERSONAL_IDENTIFIER";
 
 export type PublishBlocker = { code: PublishBlockerCode; message: string };
 

@@ -7,6 +7,10 @@ import {
   type ErrorReport,
 } from "../observability/error-reporter";
 import { runWithObservabilityContext } from "../observability/observability-context";
+import {
+  drizzlePostgresError,
+  drizzleUniqueViolation,
+} from "../../test/postgres-error-fixture";
 
 function hostWith(
   options: { correlationId?: string } = {},
@@ -147,6 +151,73 @@ describe("AllExceptionsFilter", () => {
     expect(json).toHaveBeenCalledWith({
       code: "HTTP_502",
       message: "Delivery failed.",
+    });
+  });
+
+  /**
+   * These go through `drizzlePostgresError` rather than a bare `{ code }`:
+   * Drizzle wraps every postgres-js failure, so a branch that reads `err.code`
+   * directly is dead in production and green in a spec.
+   */
+  describe("database constraint violations", () => {
+    it("answers an uncaught unique violation 409 CONFLICT instead of a 500", () => {
+      const { host, json, status } = hostWith();
+      filter.catch(drizzleUniqueViolation("hr_employees_email_key"), host);
+      expect(status).toHaveBeenCalledWith(409);
+      expect(json.mock.calls[0]?.[0]).toMatchObject({ code: "CONFLICT" });
+    });
+
+    it("answers a foreign key violation with the validation status and the offending column", () => {
+      const { host, json, status } = hostWith();
+      const error = drizzlePostgresError("23503", "hr_employments_department_id_fkey");
+      Object.assign(error.cause as object, { column_name: "department_id" });
+
+      filter.catch(error, host);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json.mock.calls[0]?.[0]).toMatchObject({
+        code: "VALIDATION_FAILED",
+        details: [{ path: "department_id", message: expect.any(String) }],
+      });
+    });
+
+    it("falls back to the constraint name when the driver names no column", () => {
+      const { host, json } = hostWith();
+      filter.catch(
+        drizzlePostgresError("23503", "hr_employments_department_id_fkey"),
+        host,
+      );
+      expect(json.mock.calls[0]?.[0]).toMatchObject({
+        details: [{ path: "hr_employments_department_id_fkey" }],
+      });
+    });
+
+    it("answers a not-null violation with the validation status and the missing column", () => {
+      const { host, json, status } = hostWith();
+      const error = drizzlePostgresError("23502");
+      Object.assign(error.cause as object, { column_name: "organization_id" });
+
+      filter.catch(error, host);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json.mock.calls[0]?.[0]).toMatchObject({
+        code: "VALIDATION_FAILED",
+        details: [{ path: "organization_id", message: expect.any(String) }],
+      });
+    });
+
+    it("leaves an unmapped SQLSTATE on the 500 path", () => {
+      const { host, json, status } = hostWith();
+      // 22001 (string too long) has no client-correctable answer here.
+      filter.catch(drizzlePostgresError("22001"), host);
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json.mock.calls[0]?.[0]).toMatchObject({ code: "INTERNAL_ERROR" });
+    });
+
+    it("carries the correlation id on a constraint answer", () => {
+      const { host, json } = hostWith({ correlationId: "pg-cid-1" });
+      filter.catch(drizzleUniqueViolation("x_key"), host);
+      expect(json.mock.calls[0]?.[0]).toMatchObject({ correlationId: "pg-cid-1" });
     });
   });
 

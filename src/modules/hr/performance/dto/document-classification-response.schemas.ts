@@ -16,6 +16,7 @@ const blockerSchema = z.object({
     "TYPE_NOT_ALLOWED",
     "DOCUMENT_INACTIVE",
     "HIRING_ARTEFACT",
+    "METADATA_HOLDS_PERSONAL_IDENTIFIER",
   ]),
   message: z.string(),
 });

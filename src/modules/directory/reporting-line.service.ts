@@ -35,13 +35,23 @@ import {
 
 const CANNOT_MANAGE_LIFECYCLE = ["EXITED", "ALUMNI", "SUSPENDED"] as const;
 
+/**
+ * V-021. A refusal that names a table ("has no employment record") tells the
+ * person nothing they can act on, and the person who hit it most was the
+ * founder — a member and a user of their own company, never hired into it.
+ * `{name}` is filled with whoever was actually picked when the caller knows it,
+ * and falls back to "The selected manager" when it does not.
+ */
+const WHO = "{name}";
+const DEFAULT_WHO = "The selected manager";
+
 const REFUSAL_MESSAGES: Record<ManagerAssignmentRefusal, string> = {
   "self-reference": "An employee cannot report to themselves.",
   "manager-not-in-organization": "The selected manager is not an active member of this organization.",
   "manager-inactive": "The selected manager's account is inactive.",
   "manager-never-accepted":
     "The selected manager has not accepted their invitation yet, so they cannot approve anything. Resend it, or pick someone else.",
-  "manager-has-no-employment": "The selected manager has no employment record, so they cannot own approvals.",
+  "manager-has-no-employment": `${WHO} is not set up as an employee yet, so they cannot own approvals. Add them under People > Employees, then assign them again.`,
   "manager-exited": "The selected manager has exited and cannot be assigned as a reporting manager.",
   circular: "This reporting structure would create a circular management chain.",
 };
@@ -107,6 +117,13 @@ export class ReportingLineService {
       .select({
         membershipStatus: organizationMembers.status,
         isOwner: organizationMembers.isOwner,
+        // V-021: so the refusal can name whoever was picked instead of saying
+        // "the selected manager" about a founder looking at their own name.
+        candidateName: sql<string>`coalesce(
+          nullif(trim(${users.name}), ''),
+          nullif(trim(concat_ws(' ', ${users.firstName}, ${users.lastName})), ''),
+          ${users.email}
+        )`,
         userActive: users.isActive,
         acceptedAt: users.emailVerified,
         employmentId: hrEmployments.id,
@@ -152,7 +169,7 @@ export class ReportingLineService {
     if (candidate.acceptedAt === null) return this.refuse("manager-never-accepted");
     if (candidate.employmentId === null || candidate.lifecycleStatus === null) {
       if (candidate.isOwner === true) return { ok: true, managerEmploymentId: null };
-      return this.refuse("manager-has-no-employment");
+      return this.refuse("manager-has-no-employment", candidate.candidateName);
     }
     if (CANNOT_MANAGE_LIFECYCLE.some((status) => status === candidate.lifecycleStatus)) return this.refuse("manager-exited");
 
@@ -302,8 +319,12 @@ export class ReportingLineService {
     };
   }
 
-  private refuse(reason: ManagerAssignmentRefusal): ManagerAssignmentCheck {
-    return { ok: false, reason, message: REFUSAL_MESSAGES[reason] };
+  private refuse(reason: ManagerAssignmentRefusal, who?: string | null): ManagerAssignmentCheck {
+    return {
+      ok: false,
+      reason,
+      message: REFUSAL_MESSAGES[reason].replace(WHO, who?.trim() || DEFAULT_WHO),
+    };
   }
 
   private unmappableMessage(reason: Exclude<ReportingLineOutcome, { status: "written" | "unchanged" | "cleared" }>["reason"]): string {
@@ -313,7 +334,7 @@ export class ReportingLineService {
       case "manager-not-in-organization":
         return REFUSAL_MESSAGES["manager-not-in-organization"];
       case "manager-has-no-employment":
-        return REFUSAL_MESSAGES["manager-has-no-employment"];
+        return REFUSAL_MESSAGES["manager-has-no-employment"].replace(WHO, DEFAULT_WHO);
       case "self-reference":
         return REFUSAL_MESSAGES["self-reference"];
     }

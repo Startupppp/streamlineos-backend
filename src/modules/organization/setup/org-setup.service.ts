@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import {
   users,
   organizations,
+  organizationPeople,
   magicLinkTokens,
 } from "../../../db/schema";
 import { addMinutes } from "date-fns";
@@ -96,6 +97,7 @@ export class OrgSetupService {
         await provisionOrgModules(tx, orgId, input.enabledModules, u.userId);
         await provisionEmployeeSelfService(tx, orgId);
 
+        const ownerPatch = ownerProfileUpdate(input);
         await tx
           .update(users)
           .set({
@@ -104,9 +106,26 @@ export class OrgSetupService {
             // this already wrote. ownerProfileUpdate omits a field that was not
             // sent rather than writing an empty one, so a name from an earlier
             // sign-in survives a later setup submission that left it out.
-            ...ownerProfileUpdate(input),
+            ...ownerPatch,
           })
           .where(eq(users.id, u.userId));
+
+        // V-023 ordering. `bootstrapCellOrganization` provisions the owner's
+        // person/employment row inside the CREATION transaction, which ran in
+        // `resolveOrCreateOrg` above — before this wizard knew the owner's name.
+        // `ensureManyFromUsers` writes names on INSERT only, so re-running it
+        // here is a no-op; the canonical row has to be patched directly or it
+        // keeps the pre-setup name forever.
+        if (ownerPatch.firstName !== undefined)
+          await tx
+            .update(organizationPeople)
+            .set({ firstName: ownerPatch.firstName, lastName: ownerPatch.lastName ?? "" })
+            .where(
+              and(
+                eq(organizationPeople.organizationId, orgId),
+                eq(organizationPeople.userId, u.userId),
+              ),
+            );
 
         await tx.insert(magicLinkTokens).values({
           id: randomUUID(),
