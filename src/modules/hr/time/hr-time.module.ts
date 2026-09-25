@@ -42,6 +42,7 @@ import { OvertimeService } from "./overtime.service";
 import { GeofencingService } from "./geofencing.service";
 import { BiometricService } from "./biometric.service";
 import { LeavePoliciesService } from "./leave-policies.service";
+import { LeavePolicyTemplatesService } from "./leave-policy-templates.service";
 import { CompOffGrantService } from "./comp-off-grant.service";
 import { LeaveTypesService } from "./leave-types.service";
 import { RateLimitModule } from "../../../common/ratelimit/rate-limit.module";
@@ -101,6 +102,7 @@ import { HrTimeApprovalAdapter } from "./hr-time-approval.adapter";
     GeofencingService,
     BiometricService,
     LeavePoliciesService,
+    LeavePolicyTemplatesService,
     CompOffGrantService,
     LeaveTypesService,
     HrTimeApprovalAdapter,

@@ -173,3 +173,45 @@ export const updateLeavePolicySchema = createLeavePolicySchema.partial();
 
 export type CreateLeavePolicyBody = z.infer<typeof createLeavePolicySchema>;
 export type UpdateLeavePolicyBody = z.infer<typeof updateLeavePolicySchema>;
+
+/**
+ * Ticket 08. What an administrator sends back after previewing and editing the
+ * first-visit templates. Every field is theirs to change, so the body carries
+ * the edited values rather than a bare list of keys — the server keeps only the
+ * key's identity, to refuse one it does not publish.
+ */
+export const importLeavePolicyTemplatesSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            key: z.enum(["casual", "sick", "comp_off"]),
+            leaveTypeName: z.string().trim().min(1, "Leave type name is required").max(100),
+            policyName: z.string().trim().min(1, "Policy name is required").max(200),
+            daysPerYear: z.number().int().min(0).max(365),
+            carryForward: z.boolean(),
+            accrualType: z.enum(["ANNUAL", "MONTHLY"]),
+            accrualRate: z
+              .string()
+              .trim()
+              .regex(DECIMAL_STRING_PATTERN, "Accrual rate must be a number of days, like 2 or 1.5"),
+            maxBalance: optionalDecimalString,
+            carryForwardDays: z
+              .string()
+              .trim()
+              .regex(DECIMAL_STRING_PATTERN, "Carry-forward days must be a number, like 0 or 5"),
+            encashable: z.boolean(),
+            probationRestricted: z.boolean(),
+            effectiveFrom: z.string().trim().min(1, "Effective from date is required"),
+          })
+          .strict(),
+      )
+      .min(1, "Select at least one template to import")
+      .max(3),
+  })
+  .strict();
+
+export type ImportLeavePolicyTemplatesBody = z.infer<
+  typeof importLeavePolicyTemplatesSchema
+>;
