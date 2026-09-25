@@ -225,6 +225,39 @@ describe("ReportingRelationshipService against a real schema", () => {
     expect(await primaryLines(employee)).toEqual(before);
   });
 
+  it("resolves the policy to its defaults until a row exists, then reports the default manager's live eligibility", async () => {
+    const empty = await ReportingProbe.create(sql, "rl-policy-defaults");
+    try {
+      const policies = new ReportingManagerPolicyService(db, access, new ReportingLineService(db), audit);
+      await expect(policies.get(empty.orgId)).resolves.toMatchObject({
+        isConfigured: false,
+        maxSecondaryManagersPerEmployee: 0,
+        defaultPrimaryManagerUserId: null,
+        fallbackOrder: "CONFIGURED_MANAGER_THEN_UPLOADER",
+        requireReasonAfterChanges: 3,
+        allowTopLevelWithoutManager: true,
+        version: 0,
+        defaultPrimaryManager: null,
+      });
+
+      const boss = await empty.person("policy-default");
+      await empty.policy({ max: 2, defaultManager: boss.userId, order: "UPLOADER_THEN_CONFIGURED_MANAGER", threshold: 5 });
+      await expect(policies.get(empty.orgId)).resolves.toMatchObject({
+        isConfigured: true,
+        maxSecondaryManagersPerEmployee: 2,
+        fallbackOrder: "UPLOADER_THEN_CONFIGURED_MANAGER",
+        requireReasonAfterChanges: 5,
+        version: 1,
+        defaultPrimaryManager: { userId: boss.userId, name: "policy-default", eligible: true },
+      });
+
+      await sql`UPDATE hr_employments SET lifecycle_status = 'EXITED' WHERE id = ${boss.employmentId}`;
+      await expect(policies.get(empty.orgId)).resolves.toMatchObject({ defaultPrimaryManager: { userId: boss.userId, eligible: false } });
+    } finally {
+      await empty.drop();
+    }
+  });
+
   describe("fallback resolution (PRD D2)", () => {
     it("prefers the configured default, then the acting administrator, then refuses", async () => {
       const defaultBoss = await probe.person("default-boss");
