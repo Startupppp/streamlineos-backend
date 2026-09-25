@@ -14,6 +14,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 @Injectable()
 export class HrAttendanceAnalyticsService {
@@ -106,7 +107,7 @@ export class HrAttendanceAnalyticsService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee())),
 
       this.db
         .select({ count: count() })

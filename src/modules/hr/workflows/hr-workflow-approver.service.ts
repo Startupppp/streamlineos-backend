@@ -16,6 +16,7 @@ import {
   type ApprovalRung,
 } from "../../directory/approval-authority.types";
 import type { HrWorkflowObjectType, ResolvedStep, WorkflowStepRouting } from "./hr-workflow-engine.types";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 const MANAGER_RUNG_BY_STEP_TYPE: Readonly<Record<string, ApprovalRung>> = {
   direct_manager: "reporting_manager",
@@ -79,12 +80,12 @@ export class HrWorkflowApproverService {
 
       case "hr_role": {
         const hrApprovers = await this.access.membersWithPermission(orgId, "hr:leaves:approve");
-        return hrApprovers.map((m) => m.userId);
+        return this.acceptedOf(orgId, hrApprovers.map((m) => m.userId));
       }
 
       case "finance_role": {
         const financeApprovers = await this.access.membersWithPermission(orgId, "accounting:approvals:decide");
-        return financeApprovers.map((m) => m.userId);
+        return this.acceptedOf(orgId, financeApprovers.map((m) => m.userId));
       }
 
       case "location_hr": {
@@ -100,6 +101,7 @@ export class HrWorkflowApproverService {
           .where(and(
             inArray(users.id, hrApprovers.map((m) => m.userId)),
             eq(hrEmployments.locationId, facts.locationId),
+            acceptedEmployee(),
           ))
           .limit(10);
         return branchHr.map((u) => u.id);
@@ -113,6 +115,25 @@ export class HrWorkflowApproverService {
       default:
         return [];
     }
+  }
+
+  /**
+   * `membersWithPermission` answers on grants alone, so a person an
+   * administrator created an hour ago and who has never opened the invitation
+   * comes back as an approver (HRMS-E2E-015). They cannot sign in, so the step
+   * sits in their name until it escalates. Order is preserved so a pool that
+   * loses nobody is byte-identical to what the caller passed in.
+   */
+  private async acceptedOf(orgId: string, userIds: string[]): Promise<string[]> {
+    if (userIds.length === 0) return [];
+    const accepted = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, userIds), acceptedEmployee()))
+      .limit(userIds.length);
+    const allowed = new Set(accepted.map((row) => row.userId));
+    return userIds.filter((userId) => allowed.has(userId));
   }
 
   private async resolveDynamicExpression(expression: string, subjectEmployeeId: string, orgId: string): Promise<string[]> {

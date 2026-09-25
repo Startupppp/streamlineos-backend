@@ -19,6 +19,7 @@ import { transitionResignation } from "./lifecycle-transition";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { ExitChecklistService } from "./exit-checklist.service";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 type StepStatus = "completed" | "active" | "pending" | "rejected";
 
@@ -411,7 +412,7 @@ export class ExitService {
       .select({ count: sql<number>`count(*)::int` })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+      .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee()));
 
     const reasonBreakdown = await this.db
       .select({

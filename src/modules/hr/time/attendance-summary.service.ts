@@ -11,6 +11,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { attendanceMemberScope, resolveAttendanceReadScope } from "./attendance-scope";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { requireOrganizationMembershipId } from "./organization-membership";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 interface ShiftInfo {
   startTime: string;
@@ -155,7 +156,7 @@ export class AttendanceSummaryService {
 
       const memberConditions = [
         eq(organizationMembers.status, "ACTIVE"),
-        eq(users.isActive, true),
+        acceptedEmployee(),
       ];
       memberConditions.push(
         scope

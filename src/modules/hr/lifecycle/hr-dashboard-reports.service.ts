@@ -14,6 +14,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { buildAttendanceAnalytics } from "./hr-dashboard-attendance";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 @Injectable()
 export class HrDashboardReportsService {
@@ -59,7 +60,7 @@ export class HrDashboardReportsService {
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
-          eq(users.isActive, true),
+          acceptedEmployee(),
           isNotNull(hrEmployments.joiningDate),
           lte(hrEmployments.joiningDate, windowEnd),
         ),

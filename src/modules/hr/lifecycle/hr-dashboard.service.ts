@@ -15,6 +15,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 export interface UpcomingBirthday {
   id: string;
@@ -59,7 +60,7 @@ export class HrDashboardService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee())),
 
       this.db
         .select({ count: count() })
@@ -249,7 +250,7 @@ export class HrDashboardService {
         .select({ gender: users.gender, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee()))
         .groupBy(users.gender),
 
       this.db
@@ -270,7 +271,7 @@ export class HrDashboardService {
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
-            eq(users.isActive, true),
+            acceptedEmployee(),
             isNotNull(users.dateOfBirth),
           ),
         )
