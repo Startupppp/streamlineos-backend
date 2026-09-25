@@ -130,7 +130,13 @@ export function evaluateRelationshipCommand(cmd: SetRelationshipsCommand, ctx: R
       if (entry.managerUserId === subjectUserId)
         issues.push({ code: CODES.SELF_REFERENCE, message: "An employee cannot be their own secondary reporting manager." });
       else if (entry.managerUserId === cmd.primaryManagerUserId)
-        issues.push({ code: CODES.SECONDARY_DUPLICATES_PRIMARY, message: "The primary reporting manager cannot also be a secondary manager." });
+        issues.push({
+          code: CODES.SECONDARY_DUPLICATES_PRIMARY,
+          message:
+            cmd.source === "ONBOARDING_FALLBACK"
+              ? "No primary manager was chosen, and this person would be assigned as primary by the organization's reporting manager policy, so they cannot also be a secondary manager. Choose the primary manager explicitly, or pick a different secondary manager."
+              : "The primary reporting manager cannot also be a secondary manager.",
+        });
       else if (seen.has(entry.managerUserId))
         issues.push({ code: CODES.SECONDARY_DUPLICATE, message: "The same person is listed twice as a secondary manager." });
       else {

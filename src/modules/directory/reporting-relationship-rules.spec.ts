@@ -195,6 +195,17 @@ describe("evaluateRelationshipCommand — secondary managers", () => {
     expect(codes(command({ secondary: [{ managerUserId: OTHER }] }), context({ managerChecks: checks }))).toEqual(["MANAGER_NOT_ELIGIBLE"]);
   });
 
+  it("explains a secondary who collides with a policy-assigned primary, without blaming a choice nobody made", () => {
+    const [issue] = evaluateRelationshipCommand(
+      command({ source: "ONBOARDING_FALLBACK", secondary: [{ managerUserId: BOSS }] }),
+      context(),
+    ).issues;
+    expect(issue?.code).toBe("SECONDARY_DUPLICATES_PRIMARY");
+    expect(issue?.message).toMatch(/assigned as primary by the organization's reporting manager policy/);
+    const [selected] = evaluateRelationshipCommand(command({ secondary: [{ managerUserId: BOSS }] }), context()).issues;
+    expect(selected?.message).toBe("The primary reporting manager cannot also be a secondary manager.");
+  });
+
   it("refuses a new primary who is already a current secondary when secondaries are left unchanged", () => {
     const secondary: RelationshipRow = { ...primaryLine(OTHER), primary: false, lineId: 2, managerEmploymentId: EMPLOYMENTS[BOSS], managerUserId: BOSS };
     expect(codes(command(), context({ currentSecondary: [secondary] }))).toEqual(["SECONDARY_DUPLICATES_PRIMARY"]);
