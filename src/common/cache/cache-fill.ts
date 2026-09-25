@@ -109,6 +109,38 @@ export class CacheFiller {
     }
   }
 
+  async runWithOutcome<T>(
+    redis: Redis | null,
+    key: string,
+    fetcher: () => Promise<T>,
+    ttlSeconds: TtlSpec<T>,
+  ): Promise<{ value: T; cacheOutcome: "hit" | "miss" | "bypass" }> {
+    const existing = this.inFlight.get(key);
+    if (existing) {
+      const memoisedUntil = this.memoUntil.get(key);
+      if (memoisedUntil === undefined) {
+        return { value: await this.coalesced<T>(existing), cacheOutcome: "hit" };
+      }
+      if (memoisedUntil > Date.now()) {
+        this.outageMemoServed += 1;
+        return { value: await this.coalesced<T>(existing), cacheOutcome: "bypass" };
+      }
+      this.drop(key);
+    }
+
+    const taggedRequest = this.loadOrFetchTagged(redis, key, fetcher, ttlSeconds);
+    const valueRequest = taggedRequest.then((r) => r.value);
+    this.inFlight.set(key, valueRequest);
+    try {
+      const result = await taggedRequest;
+      this.retainOrRelease(key, valueRequest, result.value);
+      return result;
+    } catch (error) {
+      if (this.inFlight.get(key) === valueRequest) this.drop(key);
+      throw error;
+    }
+  }
+
   jitterTtl(baseTtl: number): number {
     return Math.round(baseTtl * (0.85 + Math.random() * 0.3));
   }
@@ -153,12 +185,21 @@ export class CacheFiller {
     fetcher: () => Promise<T>,
     ttlSeconds: TtlSpec<T>,
   ): Promise<T> {
-    if (!redis) return this.degraded(key, fetcher);
+    return (await this.loadOrFetchTagged(redis, key, fetcher, ttlSeconds)).value;
+  }
+
+  private async loadOrFetchTagged<T>(
+    redis: Redis | null,
+    key: string,
+    fetcher: () => Promise<T>,
+    ttlSeconds: TtlSpec<T>,
+  ): Promise<{ value: T; cacheOutcome: "hit" | "miss" | "bypass" }> {
+    if (!redis) return { value: await this.degraded(key, fetcher), cacheOutcome: "bypass" };
     try {
       const hit = await this.breaker.execute(() => redis.get<T>(key));
-      if (hit !== null) return hit;
+      if (hit !== null) return { value: hit, cacheOutcome: "hit" };
     } catch {
-      return this.degraded(key, fetcher);
+      return { value: await this.degraded(key, fetcher), cacheOutcome: "bypass" };
     }
 
     const leaseKey = this.leaseKey(key);
@@ -170,17 +211,19 @@ export class CacheFiller {
         nx: true,
       }))) === "OK";
     } catch {
-      return this.degraded(key, fetcher);
+      return { value: await this.degraded(key, fetcher), cacheOutcome: "bypass" };
     }
 
-    if (!acquired) return this.awaitFill(redis, key, leaseKey, fetcher);
+    if (!acquired) {
+      return { value: await this.awaitFill(redis, key, leaseKey, fetcher), cacheOutcome: "miss" };
+    }
 
     try {
       const data = await fetcher();
       const ttl = this.resolveTtl(data, ttlSeconds);
-      if (data === null) return data;
+      if (data === null) return { value: data, cacheOutcome: "miss" };
       const serialized = JSON.stringify(data);
-      if (serialized === undefined) return data;
+      if (serialized === undefined) return { value: data, cacheOutcome: "miss" };
       try {
         await this.timedRedis(() => redis.eval<[string, string, string], number>(
           'if redis.call("get", KEYS[1]) == ARGV[1] then redis.call("set", KEYS[2], ARGV[2], "EX", ARGV[3]); return 1 else return 0 end',
@@ -188,9 +231,9 @@ export class CacheFiller {
           [leaseToken, serialized, String(ttl)],
         ));
       } catch {
-        return data;
+        return { value: data, cacheOutcome: "miss" };
       }
-      return data;
+      return { value: data, cacheOutcome: "miss" };
     } finally {
       try {
         await this.timedRedis(() => redis.eval<[string], number>(
