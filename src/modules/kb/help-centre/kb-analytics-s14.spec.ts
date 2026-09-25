@@ -49,7 +49,7 @@ describe("KbAnalyticsService — minimum-cohort privacy threshold", () => {
     const { db, havings } = eventGroupHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    await svc.gaps(USER, {});
+    await svc.gaps(USER, { limit: 50 });
 
     expect(havings).toHaveLength(1);
     const rendered = render(havings[0]);
