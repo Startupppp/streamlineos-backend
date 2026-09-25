@@ -96,7 +96,6 @@ describe("Box 1 — canonical KnowledgeAuthorization is the only access decision
 
   it("deferred callers in retrieval/ that still use the legacy predicate are bounded and enumerated — adding a new one here is the fix", () => {
     const KNOWN_DEFERRED = [
-      "retrieval/kb-page-access.util.ts",
       "retrieval/kb-page-visibility.ts",
       "retrieval/kb-page-visibility.spec.ts",
       "retrieval/kb-chunk-visibility.spec.ts",
@@ -123,7 +122,7 @@ describe("Box 1 — canonical KnowledgeAuthorization is the only access decision
 
   it("document-query callers of buildArticleRestrictionBranch are bounded — adding a new one must be deliberate", () => {
     const docQueryDir = path.join(KB_SRC, "document-query");
-    const KNOWN = ["kb-document-query.service.ts"];
+    const KNOWN: string[] = [];
     const actual: string[] = [];
 
     for (const file of productionSources(docQueryDir)) {

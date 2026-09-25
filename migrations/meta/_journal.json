@@ -6840,6 +6840,13 @@
       "when": 1803036010725,
       "tag": "1233_kb_research_briefs_cost_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 1105,
+      "version": "7",
+      "when": 1803039610725,
+      "tag": "1234_kb_purge_ledger_widen_stores",
+      "breakpoints": true
     }
   ]
 }

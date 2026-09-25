@@ -93,7 +93,7 @@ export const kbImportJobs = pgTable(
       .notNull(),
     fileKey: text("file_key"),
     status: text("status")
-      .$type<"pending" | "processing" | "completed" | "failed">()
+      .$type<"pending" | "processing" | "completed" | "failed" | "cancelled">()
       .notNull()
       .default("pending"),
     totalItems: integer("total_items").notNull().default(0),

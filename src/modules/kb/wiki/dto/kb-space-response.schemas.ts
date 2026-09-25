@@ -10,7 +10,7 @@ export const kbImportJobSchema = z.object({
   orgId: z.string(),
   sourceType: z.string(),
   fileKey: z.string().nullable(),
-  status: z.enum(["pending", "processing", "completed", "failed"]),
+  status: z.enum(["pending", "processing", "completed", "failed", "cancelled"]),
   totalItems: z.number().int(),
   processedItems: z.number().int(),
   succeededItems: z.number().int(),
@@ -46,6 +46,23 @@ export const kbImportResultSchema = z.object({
   duplicates: z.number().int(),
   total: z.number().int(),
   failedTitles: z.array(z.string()),
+});
+
+export const kbImportAcceptedSchema = z.object({
+  jobId: z.number().int(),
+  status: z.literal("pending"),
+});
+
+export const kbImportDryRunSchema = z.object({
+  total: z.number().int(),
+  wouldSucceed: z.number().int(),
+  wouldSkip: z.number().int(),
+  invalidItems: z.array(z.string()),
+});
+
+export const kbImportJobCancelSchema = z.object({
+  status: z.string(),
+  message: z.string(),
 });
 
 export const kbExportResultSchema = z.object({
