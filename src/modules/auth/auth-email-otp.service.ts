@@ -31,28 +31,36 @@ export class AuthEmailOtpService {
     const codeHash = hashToken(rawCode);
     const expiresAt = addMinutes(new Date(), 10);
 
-    await Promise.all([
-      this.db
-        .update(emailOtpCodes)
-        .set({ usedAt: new Date() })
-        .where(
-          and(eq(emailOtpCodes.userId, user.id), isNull(emailOtpCodes.usedAt)),
+    // Sweeping long-dead rows is housekeeping and is safe anywhere.
+    await this.db
+      .delete(emailOtpCodes)
+      .where(
+        and(
+          eq(emailOtpCodes.userId, user.id),
+          lt(emailOtpCodes.expiresAt, subDays(new Date(), 1)),
         ),
-      this.db
-        .delete(emailOtpCodes)
-        .where(
-          and(
-            eq(emailOtpCodes.userId, user.id),
-            lt(emailOtpCodes.expiresAt, subDays(new Date(), 1)),
-          ),
-        ),
-    ]);
+      );
 
     const [inserted] = await this.db
       .insert(emailOtpCodes)
       .values({ userId: user.id, codeHash, expiresAt })
       .returning({ id: emailOtpCodes.id });
 
+    // HRMS-E2E-023. The earlier codes used to be retired here, BEFORE the send
+    // was attempted, and that is what stranded people. A slow code makes someone
+    // press Resend — which is the one thing that killed the code already sitting
+    // in their inbox — and if the send then failed, the catch below burned the
+    // new one too, leaving them with nothing while the screen said a code had
+    // been sent. QA saw both halves: seven codes arriving at once, then a
+    // valid-looking one refused.
+    //
+    // Sending first and retiring only on success means a failed send leaves the
+    // person exactly as they were. The window where two codes are live is safe
+    // by construction: verifyEmailOtp reads the newest unused row and only that
+    // one, which auth-email-otp-claim.spec.ts pins as CORRECT-BY-DESIGN.
+    //
+    // An ordering, not a wrapping transaction — BE-84 forbids a network call
+    // inside one.
     try {
       await this.email.sendEmailOtpEmail(user.email, rawCode);
     } catch (error: unknown) {
@@ -70,6 +78,27 @@ export class AuthEmailOtpService {
         "Could not send the sign-in code. Please try again in a moment.",
       );
     }
+
+    // Only now, with the new code actually accepted by the provider, do the
+    // earlier ones stop working. Outside the try on purpose: a failure here is
+    // not a delivery failure, and treating it as one would burn a code the
+    // person has already received.
+    await this.db
+      .update(emailOtpCodes)
+      .set({ usedAt: new Date() })
+      .where(
+        and(
+          eq(emailOtpCodes.userId, user.id),
+          isNull(emailOtpCodes.usedAt),
+          // Older than the one just delivered, not merely "not mine". Two
+          // resends racing would otherwise retire each other's codes and leave
+          // the person with none: A kills B's, B kills A's. Bounded by id, the
+          // newer insert survives and the older is retired — which is also the
+          // row verifyEmailOtp would have picked anyway, since it reads newest
+          // first.
+          ...(inserted ? [lt(emailOtpCodes.id, inserted.id)] : []),
+        ),
+      );
   }
 
   async verifyEmailOtp(
