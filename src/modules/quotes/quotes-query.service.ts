@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, ilike, isNull } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetBefore } from "../../common/pagination/keyset";
-import { clientAccounts, deals, quotes, users } from "../../db/schema";
+import { clientAccounts, deals, projects, quotes, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -91,8 +91,8 @@ export class QuotesQueryService {
     );
   }
 
-  getQuote(orgId: string, quoteId: number) {
-    return this.db.query.quotes.findFirst({
+  async getQuote(orgId: string, quoteId: number) {
+    const quote = await this.db.query.quotes.findFirst({
       where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
       with: {
         lineItems: { orderBy: (li, { asc }) => [asc(li.displayOrder)] },
@@ -101,5 +101,14 @@ export class QuotesQueryService {
         client: { columns: { id: true, clientName: true } },
       },
     });
+
+    if (!quote || quote.dealId == null) return quote;
+
+    const project = await this.db.query.projects.findFirst({
+      where: and(eq(projects.orgId, orgId), eq(projects.dealId, quote.dealId), isNull(projects.deletedAt)),
+      columns: { id: true },
+    });
+
+    return { ...quote, projectId: project?.id ?? null };
   }
 }
