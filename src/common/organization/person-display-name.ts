@@ -12,7 +12,7 @@ interface PersonNameFields {
  * Runs of whitespace, including the ones a paste from a document brings with it:
  * non-breaking space, the zero-width family, and the byte-order mark.
  */
-const WHITESPACE_RUN = /[\s ​‌‍⁠﻿]+/gu;
+const WHITESPACE_RUN = /(?:\s|\u00a0|\u200b|\u200c|\u200d|\u2060|\ufeff)+/gu;
 
 /**
  * Ticket 07. Whitespace is the only thing normalised about a name. Letters, case

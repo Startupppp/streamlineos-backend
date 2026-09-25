@@ -19,7 +19,7 @@
  * them down afterwards. NEVER point it at a shared database: it writes, and its
  * teardown lifts the append-only trigger on `audit_logs` to remove its own rows.
  */
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { SignJWT } from "jose";
 import postgresFactory from "postgres";
 import { readFileSync } from "node:fs";
@@ -46,7 +46,7 @@ const joinerEmail = `joiner.${RUN}@allowed.test`;
 const outsiderEmail = `outsider.${RUN}@blocked.test`;
 
 const results = [];
-let tokenOf = (joinUrl) => String(joinUrl).split("/").pop();
+const tokenOf = (joinUrl) => String(joinUrl).split("/").pop();
 function check(name, ok, detail = "") {
   results.push({ name, ok, detail });
   process.stdout.write(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}\n`);
@@ -142,7 +142,6 @@ try {
   const linkB = await api(tokenB, "POST", `/users/invitations/${idB}/join-link`);
   check("a copied join link is reissued for both organisations", Boolean(linkA.body?.joinUrl && linkB.body?.joinUrl), `A=${linkA.status} B=${linkB.status}`);
 
-  tokenOf = (joinUrl) => String(joinUrl).split("/").pop();
   const acceptA = await fetch(`${API}/organization/invitations/accept`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token: tokenOf(linkA.body.joinUrl), firstName: "Joiner", lastName: "QA" }),
