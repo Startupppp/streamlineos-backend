@@ -529,9 +529,9 @@ export class HrImportCommitService {
   }
 
   private async commitAsset(tx: Tx, orgId: string, row: AssetRow): Promise<CommitRef> {
-    let assignedTo: string | null = null;
+    let assignedTo: string | null = row.resolvedUserId ?? null;
 
-    if (row.assignedToEmail) {
+    if (row.assignedToEmail && !assignedTo) {
       const person = await tx
         .select({ userId: hrPeople.userId })
         .from(hrPeople)
@@ -545,6 +545,10 @@ export class HrImportCommitService {
         .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.assignedToEmail)))
         .limit(1);
       assignedTo = person[0]?.userId ?? null;
+      // V-080b. A typo in the assignee column used to leave the asset
+      // unassigned and the row reported as imported — a silent drop of the one
+      // column an operator checks after an assets import.
+      if (!assignedTo) throw new Error(`No user found for email ${row.assignedToEmail}`);
     }
 
     const fields = {
@@ -602,7 +606,13 @@ export class HrImportCommitService {
       .values({
         orgId,
         ...fields,
-        serialNumber: row.serialNumber ?? null,
+        // V-080a. The row used to store the RAW cell while matching on
+        // `upper(trim(...))`, so `qa-sn-0001` and `QA-SN-0001` could sit side by
+        // side in one estate and every raw reader — export, search, the assets
+        // list — saw values that did not agree with each other. Storing the
+        // normalized form is what makes the stored value and the match key the
+        // same string.
+        serialNumber: serial === "" ? null : serial,
         assignedTo,
       })
       .returning({ id: assets.id });
