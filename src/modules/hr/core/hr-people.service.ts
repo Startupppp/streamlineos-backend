@@ -25,6 +25,11 @@ const PERSON_VIEW_COLUMNS = {
   phone: organizationPeople.phone,
   gender: organizationPeople.gender,
   avatarUrl: organizationPeople.avatarUrl,
+  rowVersion: hrPeople.rowVersion,
+  archivedAt: hrPeople.archivedAt,
+  archivedByMembershipId: hrPeople.archivedByMembershipId,
+  updatedByMembershipId: hrPeople.updatedByMembershipId,
+  deletedAt: hrPeople.deletedAt,
   createdAt: hrPeople.createdAt,
   updatedAt: hrPeople.updatedAt,
 };
