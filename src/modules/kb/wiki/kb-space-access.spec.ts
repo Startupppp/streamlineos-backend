@@ -45,6 +45,15 @@ function makeService(
           }),
           groupBy: jest.fn().mockResolvedValue([]),
         }),
+        leftJoin: jest.fn().mockReturnValue({
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([]),
+              }),
+            }),
+          }),
+        }),
         innerJoin: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             groupBy: jest.fn().mockResolvedValue([]),
@@ -238,6 +247,11 @@ describe("KbSpacesService — space access for move operations (authorization co
         query: {
           kbSpaces: { findFirst: jest.fn().mockResolvedValue(spaceRow) },
         },
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([{ count: 0 }]),
+          }),
+        }),
       } as unknown as Db;
       const innerAccess = {
         getAccessibleSpaceIds: jest.fn().mockResolvedValue(accessibleIds),
@@ -285,6 +299,15 @@ describe("KbSpacesService — page counts exclude pages the caller cannot see", 
               limit: jest.fn().mockResolvedValue([spaceRow]),
             }),
             groupBy: jest.fn().mockResolvedValue([{ spaceId: SPACE_ID, count: 3 }]),
+          }),
+          leftJoin: jest.fn().mockReturnValue({
+            leftJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                orderBy: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockResolvedValue([spaceRow]),
+                }),
+              }),
+            }),
           }),
           innerJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
