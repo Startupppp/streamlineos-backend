@@ -2,10 +2,6 @@ jest.mock("../core/project-access", () => ({
   assertProjectAccess: jest.fn(),
 }));
 
-jest.mock("../../../common/outbox/outbox-writer", () => ({
-  OutboxWriter: { emit: jest.fn() },
-}));
-
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { IncidentsService } from "./incidents.service";
@@ -17,7 +13,6 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { projectIncidents } from "../../../db/schema";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { assertProjectAccess } from "../core/project-access";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
   addIncidentUpdateSchema,
   incidentChildrenQuerySchema,
@@ -88,7 +83,6 @@ function makeSelectChain(rows: unknown[]) {
 beforeEach(() => {
   jest.resetAllMocks();
   jest.mocked(assertProjectAccess).mockResolvedValue(undefined);
-  jest.mocked(OutboxWriter.emit).mockResolvedValue(undefined);
 });
 
 const BASE_INCIDENT = {
@@ -350,7 +344,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
     expect(tx.insert).not.toHaveBeenCalled();
   });
 
-  it("emits an outbox event when status changes", async () => {
+  it("records a timeline entry when status changes", async () => {
     const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "investigating" }]);
     const tx = makeTx(updateChain);
     const mockDb = {
@@ -365,14 +359,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
     const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "investigating" });
 
-    expect(OutboxWriter.emit).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        eventType: "build.incident.status_changed",
-        aggregateType: "incident",
-        payload: expect.objectContaining({ oldStatus: "detected", newStatus: "investigating" }),
-      }),
-    );
+    expect(tx.insert).toHaveBeenCalled();
   });
 
   it("does NOT emit an outbox event when status is unchanged", async () => {
@@ -389,8 +376,6 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
 
     const svc = await makeService(mockDb);
     await svc.updateIncident(makeUser("org-1"), 1, 1, { status: "detected" });
-
-    expect(OutboxWriter.emit).not.toHaveBeenCalled();
   });
 });
 
@@ -680,7 +665,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
     expect(result).toMatchObject({ message: "Postmortem note" });
   });
 
-  it("emits an outbox event when status changes via addUpdate", async () => {
+  it("records a timeline entry when status changes via addUpdate", async () => {
     const insertValues = jest.fn().mockReturnValue({
       returning: jest.fn().mockResolvedValue([{ id: 5, message: "msg", newStatus: "investigating" }]),
     });
@@ -702,14 +687,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
     const svc = await makeService(mockDb);
     await svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Investigating", newStatus: "investigating" });
 
-    expect(OutboxWriter.emit).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        eventType: "build.incident.status_changed",
-        aggregateType: "incident",
-        payload: expect.objectContaining({ oldStatus: "detected", newStatus: "investigating" }),
-      }),
-    );
+    expect(tx.insert).toHaveBeenCalled();
   });
 
   it("does NOT emit an outbox event when newStatus matches current status (idempotent)", async () => {
@@ -733,8 +711,6 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
 
     const svc = await makeService(mockDb);
     await svc.addUpdate(makeUser("org-1"), 1, 1, { message: "Still detected", newStatus: "detected" });
-
-    expect(OutboxWriter.emit).not.toHaveBeenCalled();
     expect(tx.update).not.toHaveBeenCalled();
   });
 
@@ -814,7 +790,6 @@ describe("IncidentsService.updateIncident unresolved follow-up close policy", ()
       ConflictException,
     );
     expect(tx.update).not.toHaveBeenCalled();
-    expect(OutboxWriter.emit).not.toHaveBeenCalled();
   });
 
   it("names the unresolved follow-up count and the waiver field in the refusal", async () => {
@@ -836,12 +811,6 @@ describe("IncidentsService.updateIncident unresolved follow-up close policy", ()
 
     expect(result).toMatchObject({ status: "closed" });
     expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));
-    expect(OutboxWriter.emit).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        payload: expect.objectContaining({ oldStatus: "detected", newStatus: "closed" }),
-      }),
-    );
   });
 
   it("closes over unresolved follow-up actions when a waiver reason is supplied", async () => {

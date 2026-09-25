@@ -1,6 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import {
   incidentUpdates,
   incidentDecisions,
@@ -14,7 +13,6 @@ import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { UNRESOLVED_FOLLOW_UP_STATUSES } from "./dto/incidents.schemas";
 import type {
   AddIncidentDecisionInput,
@@ -218,22 +216,6 @@ export class IncidentsService {
           newStatus: input.status,
           createdBy: u.userId,
         });
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: u.orgId,
-          aggregateType: "incident",
-          aggregateId: String(incidentId),
-          aggregateVersion: now.getTime(),
-          eventType: "build.incident.status_changed",
-          payload: {
-            incidentId,
-            projectId,
-            orgId: u.orgId,
-            oldStatus: current.status,
-            newStatus: input.status,
-          },
-          occurredAt: now,
-        });
       }
 
       if (closing && waivedFollowUpCount > 0 && followUpWaiverReason !== undefined) {
@@ -344,22 +326,6 @@ export class IncidentsService {
               eq(projectIncidents.projectId, projectId),
             ),
           );
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: u.orgId,
-          aggregateType: "incident",
-          aggregateId: String(incidentId),
-          aggregateVersion: now.getTime(),
-          eventType: "build.incident.status_changed",
-          payload: {
-            incidentId,
-            projectId,
-            orgId: u.orgId,
-            oldStatus: current.status,
-            newStatus: input.newStatus,
-          },
-          occurredAt: now,
-        });
       }
 
       if (closing && waivedFollowUpCount > 0 && followUpWaiverReason !== undefined)
