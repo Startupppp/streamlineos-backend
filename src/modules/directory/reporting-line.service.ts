@@ -23,7 +23,8 @@ import {
   readReportingManagerPolicy,
   topLevelRolesBetween,
 } from "./reporting-line-queries";
-import { buildManagerCoverage, type CoverageScope } from "./reporting-line-coverage";
+import { buildManagerCoverage } from "./reporting-line-coverage";
+import type { CoverageScope } from "./reporting-line-coverage-lists";
 import type {
   ApproverEligibility,
   ManagerAssignmentCheck,
