@@ -1,11 +1,12 @@
 import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
-import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { organizationMembers, projectMembers, projects, tickets } from "../../db/schema";
 import type {
   CalendarEventProjection,
   CalendarEventSource,
+  CalendarSourceLoadResult,
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
 import { CalendarSourceRegistry, CALENDAR_PER_SOURCE_CAP } from "../calendar/calendar-source.registry";
@@ -29,7 +30,7 @@ export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
     this.registry.register(this);
   }
 
-  async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+  async load(ctx: CalendarSourceContext): Promise<CalendarSourceLoadResult> {
     const { orgId, userId, start, end } = ctx;
 
     const rows = await this.db
@@ -59,12 +60,14 @@ export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
           isNotNull(tickets.dueDate),
           gte(tickets.dueDate, dateOnly(start)),
           lte(tickets.dueDate, dateOnly(end)),
+          isNull(tickets.deletedAt),
+          isNull(projects.deletedAt),
         ),
       )
-      .limit(CALENDAR_PER_SOURCE_CAP);
+      .limit(CALENDAR_PER_SOURCE_CAP + 1);
 
     const projections: CalendarEventProjection[] = [];
-    for (const row of rows) {
+    for (const row of rows.slice(0, CALENDAR_PER_SOURCE_CAP)) {
       if (row.dueDate === null) continue;
       const date = new Date(row.dueDate);
       projections.push({
@@ -83,6 +86,6 @@ export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
         },
       });
     }
-    return projections;
+    return { events: projections, truncated: rows.length > CALENDAR_PER_SOURCE_CAP };
   }
 }

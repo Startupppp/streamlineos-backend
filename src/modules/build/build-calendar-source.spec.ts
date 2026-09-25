@@ -1,7 +1,8 @@
 import { BuildCalendarSource } from "./build-calendar-source";
 import type { CalendarSourceContext } from "../calendar/calendar-event-source";
+import { sourceLoadEvents, sourceLoadTruncated } from "../calendar/calendar-event-source";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
+import { CALENDAR_PER_SOURCE_CAP, CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import { Test } from "@nestjs/testing";
 
 const ctx: CalendarSourceContext = {
@@ -45,7 +46,8 @@ describe("BuildCalendarSource", () => {
   it("returns an empty array when no tickets exist in the range", async () => {
     const source = await buildSource(buildDb([]));
     const result = await source.load(ctx);
-    expect(result).toHaveLength(0);
+    expect(sourceLoadEvents(result)).toHaveLength(0);
+    expect(sourceLoadTruncated(result)).toBe(false);
   });
 
   it("maps a ticket to a projection with the formatted key in the title", async () => {
@@ -64,8 +66,8 @@ describe("BuildCalendarSource", () => {
     );
     const result = await source.load(ctx);
 
-    expect(result).toHaveLength(1);
-    const proj = result[0];
+    expect(sourceLoadEvents(result)).toHaveLength(1);
+    const proj = sourceLoadEvents(result)[0];
     expect(proj?.id).toBe("ticket-7");
     expect(proj?.title).toBe("WEB-12: Login broken");
     expect(proj?.allDay).toBe(true);
@@ -79,7 +81,7 @@ describe("BuildCalendarSource", () => {
   it("only surfaces tickets where the user is a project member (enforced by join in query)", async () => {
     const source = await buildSource(buildDb([]));
     const result = await source.load(ctx);
-    expect(result).toHaveLength(0);
+    expect(sourceLoadEvents(result)).toHaveLength(0);
   });
 
   it("skips rows where dueDate is null", async () => {
@@ -87,7 +89,7 @@ describe("BuildCalendarSource", () => {
       buildDb([{ id: 5, title: "No due", dueDate: null, status: "open", ticketNumber: 1, projectId: 1, projectKey: "P" }]),
     );
     const result = await source.load(ctx);
-    expect(result).toHaveLength(0);
+    expect(sourceLoadEvents(result)).toHaveLength(0);
   });
 
   it("surfaces a ticket from a project the user is a member of and returns nothing when the join yields no rows", async () => {
@@ -103,12 +105,12 @@ describe("BuildCalendarSource", () => {
 
     const allowSource = await buildSource(buildDb([ticketRow]));
     const allowResult = await allowSource.load(ctx);
-    expect(allowResult).toHaveLength(1);
-    expect(allowResult[0]?.id).toBe("ticket-15");
+    expect(sourceLoadEvents(allowResult)).toHaveLength(1);
+    expect(sourceLoadEvents(allowResult)[0]?.id).toBe("ticket-15");
 
     const denySource = await buildSource(buildDb([]));
     const denyResult = await denySource.load(ctx);
-    expect(denyResult).toHaveLength(0);
+    expect(sourceLoadEvents(denyResult)).toHaveLength(0);
   });
 
   it("has no per-source module gate — CalendarSourceRegistry gates on source.module before calling load (see calendar-source.registry.spec.ts)", () => {
@@ -132,9 +134,27 @@ describe("BuildCalendarSource", () => {
     );
     const result = await source.load(ctx);
 
-    const proj = result[0];
+    const proj = sourceLoadEvents(result)[0];
     expect(proj?.start).toEqual(new Date("2026-08-25"));
     expect(proj?.end).toEqual(new Date("2026-08-25"));
     expect(proj?.color).toBe("blue");
+  });
+
+  it("returns truncation metadata when the source exceeds its cap", async () => {
+    const rows = Array.from({ length: CALENDAR_PER_SOURCE_CAP + 1 }, (_, index) => ({
+      id: index + 1,
+      title: `Ticket ${index + 1}`,
+      dueDate: "2026-08-25",
+      status: "open",
+      ticketNumber: index + 1,
+      projectId: 1,
+      projectKey: "DOC",
+    }));
+    const source = await buildSource(buildDb(rows));
+
+    const result = await source.load(ctx);
+
+    expect(sourceLoadEvents(result)).toHaveLength(CALENDAR_PER_SOURCE_CAP);
+    expect(sourceLoadTruncated(result)).toBe(true);
   });
 });
