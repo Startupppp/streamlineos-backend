@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { hrEmployments, hrPeople, hrReportingLines, resignations } from "../../db/schema";
 import type { OwnershipScope } from "../access/scoped-read";
+import { orgBusinessDateSql } from "../directory/employment-query";
 
 export function resignationApprovalScope(orgId: string, actorUserId: string): OwnershipScope {
   const canonicalDirectReport = sql`EXISTS (
@@ -16,7 +17,7 @@ export function resignationApprovalScope(orgId: string, actorUserId: string): Ow
       AND ep.org_id = ${orgId} AND ep.deleted_at IS NULL AND ep.user_id = ${resignations.userId}
     WHERE rl.org_id = ${orgId}
       AND rl.line_type = 'primary'
-      AND rl.effective_from <= CURRENT_DATE AND rl.effective_to >= CURRENT_DATE
+      AND rl.effective_from <= ${orgBusinessDateSql(orgId)} AND rl.effective_to >= ${orgBusinessDateSql(orgId)}
   )`;
   return {
     own: canonicalDirectReport,

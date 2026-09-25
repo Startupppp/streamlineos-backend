@@ -112,6 +112,15 @@ export function liveEmployment(
   return condition;
 }
 
+/**
+ * Today in the organization's timezone, evaluated once per statement (`app.org_business_date`,
+ * migration 1220). Lines are written from `orgBusinessDate`; reading them against the session's
+ * CURRENT_DATE hid a line written "today" until UTC caught up.
+ */
+export function orgBusinessDateSql(orgId: string): SQL {
+  return sql`(SELECT app.org_business_date(${orgId}))`;
+}
+
 export function currentPrimaryReportingLine(
   orgId: string,
   lines: ReportingLinesTable = hrReportingLines,
@@ -119,8 +128,8 @@ export function currentPrimaryReportingLine(
   const condition = and(
     eq(lines.orgId, orgId),
     eq(lines.lineType, "primary"),
-    sql`${lines.effectiveFrom} <= CURRENT_DATE`,
-    sql`${lines.effectiveTo} >= CURRENT_DATE`,
+    sql`${lines.effectiveFrom} <= ${orgBusinessDateSql(orgId)}`,
+    sql`${lines.effectiveTo} >= ${orgBusinessDateSql(orgId)}`,
   );
   if (!condition)
     throw new Error("currentPrimaryReportingLine produced no condition");

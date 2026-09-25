@@ -13,7 +13,7 @@ import type { OrgChartQueryInput } from "./dto/hr-directory.schemas";
 import type { ScopedRead } from "../../access/scoped-read";
 import { decodeOrgChartCursor, encodeOrgChartCursor } from "./org-chart-cursor";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import { livePersonOfUser, orgBusinessDateSql, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   type OrgChartNode,
   type OrgChartPage,
@@ -127,8 +127,8 @@ export class OrgChartService {
         eq(rlVis.orgId, orgId),
         eq(rlVis.lineType, "primary"),
         eq(rlVisEmpPpl.userId, users.id),
-        sql`${rlVis.effectiveFrom} <= CURRENT_DATE`,
-        sql`${rlVis.effectiveTo} >= CURRENT_DATE`,
+        sql`${rlVis.effectiveFrom} <= ${orgBusinessDateSql(orgId)}`,
+        sql`${rlVis.effectiveTo} >= ${orgBusinessDateSql(orgId)}`,
         eq(orgChartManagerUsers.isActive, true),
         managerVisibleScope,
       )}
@@ -162,8 +162,8 @@ export class OrgChartService {
         eq(rlChild.orgId, orgId),
         eq(rlChild.lineType, "primary"),
         eq(rlChildMgrPpl.userId, users.id),
-        sql`${rlChild.effectiveFrom} <= CURRENT_DATE`,
-        sql`${rlChild.effectiveTo} >= CURRENT_DATE`,
+        sql`${rlChild.effectiveFrom} <= ${orgBusinessDateSql(orgId)}`,
+        sql`${rlChild.effectiveTo} >= ${orgBusinessDateSql(orgId)}`,
         eq(orgChartChildUsers.isActive, true),
         childVisibleScope,
       )}
