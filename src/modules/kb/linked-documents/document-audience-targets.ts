@@ -58,3 +58,10 @@ export function notPublishableError(blockers: readonly PublishBlocker[]): HttpEx
     HttpStatus.UNPROCESSABLE_ENTITY,
   );
 }
+
+export function publishPermissionRequired(): HttpException {
+  return new HttpException(
+    { code: "PUBLISH_PERMISSION_REQUIRED", message: "Sharing a document with the company needs the permission to publish documents." },
+    HttpStatus.FORBIDDEN,
+  );
+}

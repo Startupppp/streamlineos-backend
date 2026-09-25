@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { documentAudiences, documents, orgUnits } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -21,20 +21,11 @@ import {
   audienceKey,
   dedupeAudiences,
   notPublishableError,
+  publishPermissionRequired,
   type AudienceKey,
 } from "../../kb/linked-documents/document-audience-targets";
 
 export type ClassificationActor = { userId: string; orgId: string; membershipId: number | null };
-
-function publishPermissionRequired(): HttpException {
-  return new HttpException(
-    {
-      code: "PUBLISH_PERMISSION_REQUIRED",
-      message: "Sharing a document with the company needs the permission to publish documents.",
-    },
-    HttpStatus.FORBIDDEN,
-  );
-}
 
 type Reader = Pick<TenantTx, "select">;
 
