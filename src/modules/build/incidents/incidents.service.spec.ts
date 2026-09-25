@@ -362,7 +362,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
     expect(tx.insert).toHaveBeenCalled();
   });
 
-  it("does NOT emit an outbox event when status is unchanged", async () => {
+  it("does not add a timeline entry when status is unchanged", async () => {
     const updateChain = makeUpdateChain([{ ...BASE_INCIDENT, status: "detected" }]);
     const tx = makeTx(updateChain);
     const mockDb = {
@@ -626,7 +626,7 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
   });
 });
 
-describe("IncidentsService.addUpdate — state machine and outbox", () => {
+describe("IncidentsService.addUpdate — state machine", () => {
   it("throws ConflictException when transitioning a closed incident to another status", async () => {
     const closedIncident = { ...BASE_INCIDENT, status: "closed" as const };
     const mockDb = {
@@ -690,7 +690,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
     expect(tx.insert).toHaveBeenCalled();
   });
 
-  it("does NOT emit an outbox event when newStatus matches current status (idempotent)", async () => {
+  it("does not update incident state when newStatus matches current status (idempotent)", async () => {
     const insertValues = jest.fn().mockReturnValue({
       returning: jest.fn().mockResolvedValue([{ id: 6, message: "msg", newStatus: "detected" }]),
     });
