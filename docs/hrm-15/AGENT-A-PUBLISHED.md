@@ -163,3 +163,13 @@ Migration proof: `scratch_hrm15` and `scratch_hrm15_replay` were cloned from `sc
 7. **OPEN — outbox consumers.** `check:outbox-consumers` now FAILS: `hr.reporting_line.changed` and `hr.reporting_manager_policy.updated` are emitted (contract §2) with no registered consumer, so every emit will dead-letter. Addendum 2 routes notifications through `NotificationDispatchService.emit`, not the outbox. The main agent must either register a real consumer (e.g. the after-commit cache invalidation, or the webhook dispatcher) or drop the emits; I did not invent a consumer to green the gate.
 8. **OPEN — ratchets owned by the main agent** (I did not edit `src/scripts/**`): `check:type-assertions` RAW_ROW_LEDGER now lists `reporting-line-coverage.ts` (7 `db.execute<T>`) and `reporting-line-queries.ts` (3) — the 6 moved from `reporting-line.service.ts` (itself unledgered before) plus 4 new; `check:unbounded-reads` flags `reporting-line-queries.ts`, `reporting-line.service.ts`, `reporting-manager-fallback.resolver.ts`, `reporting-relationship.service.ts` (all reads bounded by an id set or one org's policy/employees); `check:over-300` net +3 files (`reporting-line-coverage.ts` 319, `reporting-relationship.service.ts` 343, `reporting-line.service.ts` 465 — down from 587 — and `sync-canonical-reporting-line.ts` 480). All four gates were already failing on this branch before my changes.
 9. Not done here (other owners): routes/DTOs/controllers and caller migration to `setRelationships` (Agent B); frontend permission union (Agent C). `assign`/`assignMany` stay until Block 3.
+
+## Change after publication
+
+**Outbox emits removed (main-agent decision).** `ReportingRelationshipService.setRelationships` and `ReportingManagerPolicyService.update` no longer call `OutboxWriter.emit`; `hr.reporting_line.changed` and `hr.reporting_manager_policy.updated` are no longer outbox events. The audit writes are unchanged: `hr.reporting_line.changed`, `hr.reporting_line.emergency_override` (severity high), `hr.reporting_line.fallback_confirmed`, `hr.reporting_manager_policy.updated`. Durable notifications go through `NotificationDispatchService.emit` in the transaction, and cache invalidation through `registerAfterCommit`; both are Agent B's. No public signature changed. This supersedes the outbox mentions in §3 and item 7 of §9.
+
+The relationship db spec now asserts that no outbox row is written. Reruns:
+- `check:outbox-consumers:self-test` → 32 passed.
+- `check:outbox-consumers` → still exit 1, but only on pre-existing recruitment orphans (`candidate.moved/rejected/hired/applied`, `referral.bonus_due`). No HRM-15 event remains.
+- Focused unit specs → 252/252 pass.
+- The three HRM-15 db specs on `scratch_hrm15` → 25/25 pass.

@@ -77,7 +77,7 @@ describe("ReportingRelationshipService against a real schema", () => {
     if (sql) await sql.end({ timeout: 5 });
   });
 
-  it("writes a primary and two secondary lines with provenance, one audit row and one outbox event in the same transaction", async () => {
+  it("writes a primary and two secondary lines with provenance, and one audit row, emitting no outbox event", async () => {
     await probe.policy({ max: 2 });
     const employee = await probe.person("full");
     const boss = await probe.person("full-boss");
@@ -99,7 +99,7 @@ describe("ReportingRelationshipService against a real schema", () => {
     expect(line).toMatchObject({ source: "MANUAL", change_reason: "Joined the platform team", effective_from: today, effective_to: "infinity" });
     expect(audit.entries.slice(auditBefore).map((entry) => entry.action)).toEqual(["hr.reporting_line.changed"]);
     const events = await sql`SELECT event_type FROM outbox_events WHERE organization_id = ${probe.orgId} AND aggregate_id = ${String(employee.employmentId)}`;
-    expect(events.map((event) => event.event_type)).toEqual(["hr.reporting_line.changed"]);
+    expect(events).toHaveLength(0);
   });
 
   it("enforces the policy's secondary cap", async () => {

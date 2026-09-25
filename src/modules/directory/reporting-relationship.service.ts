@@ -1,11 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DbOrTx } from "../../common/rbac/access-invalidate";
 import { AuditService } from "../../common/audit/audit.service";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { hrReportingLines, hrTopLevelRoles } from "../../db/schema";
 import {
   lockReportingLines,
@@ -82,7 +80,7 @@ export class ReportingRelationshipService {
   /**
    * THE write path for primary, secondary and top-level relationships. Validates every PRD §6 rule,
    * the secondary cap, cycles at the effective date and after, and the D4 frequency guard; then
-   * writes lines, top-level roles, the audit rows and the outbox event in the caller's transaction.
+   * writes lines, top-level roles and the audit rows in the caller's transaction.
    * Throws `ReportingLineException` with the first issue.
    */
   async setRelationships(tx: DbOrTx, cmd: SetRelationshipsCommand): Promise<SetRelationshipsResult> {
@@ -133,7 +131,7 @@ export class ReportingRelationshipService {
       primaryChanged: validation.primaryChanged,
       warnings: validation.warnings,
     };
-    if (changed) await this.record(tx, cmd, result, validation);
+    if (changed) await this.record(cmd, result, validation);
     return result;
   }
 
@@ -287,7 +285,7 @@ export class ReportingRelationshipService {
       );
   }
 
-  private async record(tx: DbOrTx, cmd: SetRelationshipsCommand, result: SetRelationshipsResult, validation: RelationshipValidation): Promise<void> {
+  private async record(cmd: SetRelationshipsCommand, result: SetRelationshipsResult, validation: RelationshipValidation): Promise<void> {
     const actorUserId = actorUserIdOf(cmd.actor);
     const who = actorUserId ? { userId: actorUserId } : { userId: null, systemActor: actorKey(cmd.actor) };
     const metadata = {
@@ -322,22 +320,5 @@ export class ReportingRelationshipService {
         before: { ...result.before },
         after: { ...result.after },
       });
-    await OutboxWriter.emit(tx, {
-      eventId: randomUUID(),
-      organizationId: cmd.orgId,
-      aggregateType: "hr_employment",
-      aggregateId: String(result.employmentId),
-      aggregateVersion: Date.now(),
-      eventType: REPORTING_LINE_EVENTS.CHANGED,
-      payload: {
-        ...metadata,
-        orgId: cmd.orgId,
-        employeeUserId: result.subjectUserId,
-        actorUserId,
-        before: result.before,
-        after: result.after,
-      },
-      occurredAt: new Date(),
-    });
   }
 }

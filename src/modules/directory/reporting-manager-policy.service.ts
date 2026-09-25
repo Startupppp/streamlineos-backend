@@ -1,5 +1,4 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -7,7 +6,6 @@ import type { DbOrTx } from "../../common/rbac/access-invalidate";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isStructuralOrgAdmin, isStructuralOrgAdminContext } from "../../common/rbac/is-structural-org-admin";
 import { AuditService } from "../../common/audit/audit.service";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { hrEmployments, hrPeople, hrReportingManagerPolicies, users } from "../../db/schema";
 import { AccessService } from "../access/access.service";
 import { liveEmployment } from "./employment-query";
@@ -94,16 +92,6 @@ export class ReportingManagerPolicyService {
       targetId: orgId,
       before: policySnapshot(before),
       after: policySnapshot(after),
-    });
-    await OutboxWriter.emit(tx, {
-      eventId: randomUUID(),
-      organizationId: orgId,
-      aggregateType: "hr_reporting_manager_policy",
-      aggregateId: orgId,
-      aggregateVersion: after.version,
-      eventType: REPORTING_LINE_EVENTS.POLICY_UPDATED,
-      payload: { orgId, version: after.version, actorUserId: actor.userId, before: policySnapshot(before), after: policySnapshot(after) },
-      occurredAt: new Date(),
     });
     return { ...after, defaultPrimaryManager: await this.defaultManagerOf(after, tx) };
   }
