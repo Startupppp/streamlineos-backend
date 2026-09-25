@@ -6714,6 +6714,13 @@
       "when": 1803000010717,
       "tag": "1202_hr_document_publishable_excludes_self_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 1087,
+      "version": "7",
+      "when": 1803000010718,
+      "tag": "1203_kb_ai_generate_grant",
+      "breakpoints": true
     }
   ]
 }

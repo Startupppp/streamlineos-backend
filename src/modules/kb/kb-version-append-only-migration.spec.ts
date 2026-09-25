@@ -18,6 +18,11 @@ interface JournalEntry {
   tag: string;
 }
 
+const BASELINED_SPLICES_ABOVE_1078 = [
+  "0464a_gl_kernel",
+  "0271a_waitlist_admission",
+];
+
 const journal: { entries: JournalEntry[] } = JSON.parse(
   readFileSync(join(BACKEND_ROOT, "migrations", "meta", "_journal.json"), "utf8"),
 );
@@ -34,7 +39,7 @@ describe("1078 — kb version tables are append-only at the database boundary", 
   // lineages were interleaved. What is 1078's own to prove is the condition that
   // strands a migration: a `when` at or below one already in the ledger is skipped
   // forever while `db:migrate` still prints success.
-  it("keeps idx and when unique, and puts 1078's when above every entry before it", () => {
+  it("keeps idx and when unique, and puts 1078's when above every entry before it bar the two chain repairs HISTORICAL_TIMESTAMP_REGRESSIONS already baselines", () => {
     const idxs = journal.entries.map((e) => e.idx);
     expect(new Set(idxs).size).toBe(idxs.length);
     const whens = journal.entries.map((e) => e.when);
@@ -43,8 +48,13 @@ describe("1078 — kb version tables are append-only at the database boundary", 
     const position = journal.entries.findIndex((e) => e.tag === TAG);
     expect(position).toBeGreaterThan(0);
     const mine = journal.entries[position]?.when ?? 0;
-    for (const earlier of journal.entries.slice(0, position))
-      expect(earlier.when).toBeLessThan(mine);
+    const before = journal.entries.slice(0, position);
+    expect(before.filter((e) => e.when >= mine).map((e) => e.tag)).toEqual(
+      BASELINED_SPLICES_ABOVE_1078,
+    );
+    for (const earlier of before)
+      if (!BASELINED_SPLICES_ABOVE_1078.includes(earlier.tag))
+        expect(earlier.when).toBeLessThan(mine);
   });
 
   it("installs a row-level BEFORE UPDATE OR DELETE trigger on both version tables", () => {

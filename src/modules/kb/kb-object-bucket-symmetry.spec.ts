@@ -286,11 +286,17 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
       delete: jest.fn(() => ({ where: async () => [] })),
     };
     const treeDb = {
-      query: { kbPages: { findFirst: async () => ({ id: 10, title: "P" }) } },
+      query: {
+        kbPages: { findFirst: async () => ({ id: 10, title: "P" }) },
+        kbPagePurgeLedger: { findFirst: async () => undefined },
+      },
       transaction: async (fn: (t: unknown) => unknown) => fn(tx),
       select: () => ({ from: () => ({ where: () => attachmentRows([{ fileKey: put.key }]) }) }),
       insert: () => ({
-        values: () => ({ onConflictDoUpdate: async () => undefined }),
+        values: () => ({
+          onConflictDoUpdate: async () => undefined,
+          onConflictDoNothing: async () => undefined,
+        }),
       }),
       update: () => ({ set: () => ({ where: async () => undefined }) }),
       delete: () => ({ where: async () => [] }),

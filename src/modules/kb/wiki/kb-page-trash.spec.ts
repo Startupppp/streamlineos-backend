@@ -267,11 +267,21 @@ describe("DELETE /kb/pages/trash/purge — bulk purge", () => {
           where: () => Promise.resolve([{ id: 3 }]),
         }),
       })),
-      query: { kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 3, title: "P3" }) } },
+      query: {
+        kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 3, title: "P3" }) },
+        kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      },
       transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
         cb({
           execute: jest.fn().mockResolvedValue([{ id: 3 }]),
           delete: () => ({ where: jest.fn().mockResolvedValue([]) }),
+          insert: () => ({
+            values: () => ({
+              onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+              onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+            }),
+          }),
+          update: () => ({ set: () => ({ where: jest.fn().mockResolvedValue([]) }) }),
         })
       ),
     } as unknown as Db;

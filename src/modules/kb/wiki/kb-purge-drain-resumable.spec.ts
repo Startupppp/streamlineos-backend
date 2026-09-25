@@ -1,6 +1,15 @@
 import { sql } from "drizzle-orm";
 import { kbPages } from "../../../db/schema";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  ...jest.requireActual("../../../common/tenant/run-in-tenant-transaction"),
+  runInNewTenantTransaction: async (
+    db: unknown,
+    _orgId: string,
+    fn: (tx: unknown) => Promise<unknown>,
+  ) => fn(db),
+}));
+
 jest.mock("./kb-page-attachment-purge", () => ({
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE: "kb:page:purge",
   recordPageAttachmentPurge: jest.fn(async (_db: unknown, _org: string, ids: number[]) => {
@@ -42,6 +51,14 @@ function makeDb(batches: number[][]) {
       deletedFrom.push(table === kbPages ? "kb_pages" : "unexpected_table");
       return { where: jest.fn().mockResolvedValue([]) };
     }),
+    insert: jest.fn(() => ({
+      values: jest.fn(() => ({ onConflictDoNothing: async () => undefined })),
+    })),
+    query: {
+      kbPagePurgeLedger: {
+        findFirst: jest.fn().mockResolvedValue({ status: "completed" }),
+      },
+    },
   };
   return { db, deletedFrom, selects: () => call };
 }

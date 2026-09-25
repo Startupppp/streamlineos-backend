@@ -1,6 +1,16 @@
 import { sql } from "drizzle-orm";
+import { kbPages } from "../../../db/schema";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  ...jest.requireActual("../../../common/tenant/run-in-tenant-transaction"),
+  runInNewTenantTransaction: async (
+    db: unknown,
+    _orgId: string,
+    fn: (tx: unknown) => Promise<unknown>,
+  ) => fn(db),
+}));
 
 jest.mock("./kb-page-attachment-purge", () => ({
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE: "kb:page:purge",
@@ -66,20 +76,31 @@ function makeTreeDb(options: {
     })),
   }));
 
-  const deleteWhere = jest.fn(() => {
-    mockCalls.push("delete");
-    return thenable([], { returning: jest.fn(() => thenable([{ id: 1 }])) });
-  });
+  const deleteFrom = jest.fn((table: unknown) => ({
+    where: jest.fn(() => {
+      if (table === kbPages) mockCalls.push("delete");
+      return thenable([], { returning: jest.fn(() => thenable([{ id: 1 }])) });
+    }),
+  }));
 
   const tx = {
     execute: jest.fn().mockResolvedValue((options.subtreeIds ?? []).map((id) => ({ id }))),
-    delete: jest.fn(() => ({ where: deleteWhere })),
+    delete: deleteFrom,
   };
 
   return {
     select,
-    delete: jest.fn(() => ({ where: deleteWhere })),
-    query: { kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 10, title: "P" }) } },
+    delete: deleteFrom,
+    insert: jest.fn(() => ({
+      values: jest.fn(() => ({ onConflictDoNothing: async () => undefined })),
+    })),
+    update: jest.fn(() => ({
+      set: jest.fn(() => ({ where: async () => undefined })),
+    })),
+    query: {
+      kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 10, title: "P" }) },
+      kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
+    },
     transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
   };
 }

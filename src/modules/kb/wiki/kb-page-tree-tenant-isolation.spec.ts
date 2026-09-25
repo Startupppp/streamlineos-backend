@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageTreeService } from "./kb-page-tree.service";
@@ -124,5 +125,50 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     await svc.move(makeUser(orgId), PAGE_ID, { parentPageId: null, index: 0 });
 
     expect(auth.assertPageAccess).toHaveBeenCalledWith(expect.anything(), PAGE_ID, "edit");
+  });
+
+  function makeMoveDb(PAGE_ID: number) {
+    const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: PAGE_ID, parentPageId: null, sortOrder: 100 }]) });
+    const txUpdate = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) });
+    const txSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) }) }) });
+    const transaction = jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn({ update: txUpdate, select: txSelect }));
+    const db = {
+      query: { kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID, parentPageId: null }) } },
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+      transaction,
+    } as unknown as Db;
+    return { db, transaction, txUpdate };
+  }
+
+  it("move authorizes the TARGET parent for 'edit', not only the page being moved", async () => {
+    const PAGE_ID = 44;
+    const TARGET_ID = 99;
+    const { db } = makeMoveDb(PAGE_ID);
+    const auth = makeAuth();
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never);
+
+    await svc.move(makeUser("org-move-target"), PAGE_ID, { parentPageId: TARGET_ID, index: 0 });
+
+    expect(auth.assertPageAccess).toHaveBeenCalledWith(expect.anything(), PAGE_ID, "edit");
+    expect(auth.assertPageAccess).toHaveBeenCalledWith(expect.anything(), TARGET_ID, "edit");
+  });
+
+  it("move refuses a target parent the actor cannot reach, and writes nothing", async () => {
+    const PAGE_ID = 45;
+    const TARGET_ID = 100;
+    const { db, transaction, txUpdate } = makeMoveDb(PAGE_ID);
+    const auth = makeAuth();
+    auth.assertPageAccess.mockImplementation(async (_u: unknown, id: number) => {
+      if (id === TARGET_ID) throw new NotFoundException("Page not found");
+      return { orgId: "o1", pageId: id, action: "edit", via: "admin" };
+    });
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never);
+
+    await expect(
+      svc.move(makeUser("org-move-denied"), PAGE_ID, { parentPageId: TARGET_ID, index: 0 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(transaction).not.toHaveBeenCalled();
+    expect(txUpdate).not.toHaveBeenCalled();
   });
 });

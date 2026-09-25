@@ -46,6 +46,12 @@ const mockDeleteTx = {
       return [];
     },
   }),
+  insert: () => ({
+    values: () => ({
+      onConflictDoNothing: async () => undefined,
+      onConflictDoUpdate: async () => undefined,
+    }),
+  }),
   update: () => ({ set: () => ({ where: async () => [] }) }),
 };
 
@@ -93,6 +99,7 @@ function makeTreeDb() {
   const db = {
     query: {
       kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID, title: "Runbook" }) },
+      kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
     },
     transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
   };

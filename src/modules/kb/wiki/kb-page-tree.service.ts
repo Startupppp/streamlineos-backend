@@ -291,16 +291,7 @@ export class KbPageTreeService {
     if (targetParentId !== null) {
       if (targetParentId === pageId)
         throw new BadRequestException("A page cannot be its own parent");
-      const targetParent = await this.db.query.kbPages.findFirst({
-        where: and(
-          eq(kbPages.id, targetParentId),
-          eq(kbPages.orgId, orgId),
-          isNull(kbPages.deletedAt),
-        ),
-        columns: { id: true },
-      });
-      if (!targetParent)
-        throw new NotFoundException("Target parent page not found");
+      await this.auth.assertPageAccess(user, targetParentId, "edit");
 
       const allPages = await this.db
         .select({ id: kbPages.id, parentPageId: kbPages.parentPageId })
