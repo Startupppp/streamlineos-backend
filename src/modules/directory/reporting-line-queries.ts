@@ -248,7 +248,7 @@ export async function cyclicProposals(
         ${sql.param(proposals.map((p) => p.key))}::int[],
         ${sql.param(proposals.map((p) => p.subjectEmploymentId))}::int[],
         ${sql.param(proposals.map((p) => p.managerEmploymentId))}::int[],
-        ${sql.param(proposals.map((p) => p.from))}::date[]
+        ${sql.param(proposals.map((p) => p.from))}::text[]::date[]
       ) AS p(key, subject, manager, day)
     ),
     checkpoints AS (

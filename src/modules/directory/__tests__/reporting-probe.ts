@@ -63,7 +63,7 @@ export class ReportingProbe {
     this.extraUserIds.push(userId);
     await this.sql`
       INSERT INTO users (id, email, name, is_active, email_verified)
-      VALUES (${userId}, ${email}, ${label}, true, ${options.accepted === false ? null : new Date()})`;
+      VALUES (${userId}, ${email}, ${label}, true, CASE WHEN ${options.accepted !== false} THEN now() END)`;
     const [member] = await this.sql<{ id: number }[]>`
       INSERT INTO organization_members (user_id, org_id, role, is_owner, status, joined_at)
       VALUES (${userId}, ${this.org.orgId}, 'MEMBER', false, 'ACTIVE', now())
