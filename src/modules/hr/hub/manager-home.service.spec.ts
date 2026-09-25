@@ -162,12 +162,12 @@ describe("ManagerHomeService — one task-oriented view for a reporting manager"
   });
 
   it("marks who is on leave today, counts each report's unsettled timesheets and lists them by period", async () => {
-    const { svc } = service({
+    const { svc, calls } = service({
       reports: [report(), report({ userId: "usr-ben", membershipId: 12, employmentId: 102, name: "Ben" })],
       availability: [
-        { userId: "usr-asha", displayName: "Asha", startDate: "2026-09-20", endDate: "2026-09-22", leaveTypeId: 1 },
-        { userId: "usr-ben", displayName: "Ben", startDate: "2026-09-28", endDate: "2026-09-28", leaveTypeId: 2 },
-        { userId: "usr-stranger", displayName: "Stranger", startDate: "2026-09-21", endDate: "2026-09-21", leaveTypeId: 1 },
+        { userId: "usr-asha", displayName: "Asha", startDate: "2026-09-20", endDate: "2026-09-22", leaveTypeId: 1, status: "APPROVED" },
+        { userId: "usr-ben", displayName: "Ben", startDate: "2026-09-28", endDate: "2026-09-28", leaveTypeId: 2, status: "APPROVED" },
+        { userId: "usr-stranger", displayName: "Stranger", startDate: "2026-09-21", endDate: "2026-09-21", leaveTypeId: 1, status: "APPROVED" },
       ],
       unsettled: [
         { id: 30, userMembershipId: 12, periodStart: "2026-09-07", periodEnd: "2026-09-13", status: "OPEN", totalHours: "0" },
@@ -177,6 +177,9 @@ describe("ManagerHomeService — one task-oriented view for a reporting manager"
 
     const home = await svc.getHome(MANAGER, NOW);
 
+    // HRMS-E2E-021: the read is narrowed to the reports in SQL, and each row carries its real status.
+    expect(calls.availability[0]?.[3]).toEqual(["usr-asha", "usr-ben"]);
+    expect(home.upcomingLeave.map((row) => row.status)).toEqual(["APPROVED", "APPROVED"]);
     expect(home.reports.map((row) => [row.name, row.onLeaveToday, row.unsettledTimesheets])).toEqual([
       ["Asha", true, 0],
       ["Ben", false, 2],
