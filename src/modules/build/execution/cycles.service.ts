@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
-import { cycles, tickets } from "../../../db/schema";
+import { cycles, projectStatuses, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateCycleInput, CycleListQuery, UpdateCycleInput } from "./dto/iterations.schemas";
@@ -41,7 +41,14 @@ export class CyclesService {
       .select({
         cycleId: tickets.cycleId,
         total: count(),
-        completed: count(sql`CASE WHEN ${tickets.status} = 'DONE' THEN 1 END`),
+        completed: count(sql`CASE WHEN EXISTS (
+          SELECT 1
+          FROM ${projectStatuses} cycle_status
+          WHERE cycle_status.org_id = ${orgId}
+            AND cycle_status.project_id = ${projectId}
+            AND cycle_status.name = ${tickets.status}
+            AND cycle_status.type = 'completed'
+        ) THEN 1 END`),
       })
       .from(tickets)
       .where(
