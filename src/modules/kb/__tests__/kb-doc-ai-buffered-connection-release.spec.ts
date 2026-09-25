@@ -62,7 +62,7 @@ function trackingDb(row: unknown) {
   emptyJoinChain.leftJoin = jest.fn().mockReturnValue(emptyJoinChain);
 
   const surface = {
-    query: { kbArticles: { findFirst }, kbPages: { findFirst } },
+    query: { kbPages: { findFirst } },
     select: jest.fn().mockImplementation(() => ({
       from: jest.fn().mockReturnValue(emptyJoinChain),
     })),

@@ -220,7 +220,7 @@ describe("Fix 3 — embedInBatches: batched calls, order preserved across bounda
       transaction: jest.fn().mockImplementation(async (fn: (client: typeof tx) => unknown) => fn(tx)),
       select: emptyChunkState,
       query: {
-        kbArticleAttachments: { findFirst: jest.fn() },
+        kbPageAttachments: { findFirst: jest.fn() },
       },
     } as unknown as Db;
 

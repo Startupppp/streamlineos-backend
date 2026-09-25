@@ -87,7 +87,7 @@ describe("KB departed-actor authority — KbAccessService.assertCanViewArticle",
     });
     return {
       query: {
-        kbArticles: {
+        kbPages: {
           findFirst: jest.fn().mockResolvedValue(undefined),
         },
       },

@@ -36,7 +36,6 @@ function makeDb(page: Record<string, unknown> | null) {
 
   const query = {
     kbPages: { findFirst: jest.fn().mockResolvedValue(page) },
-    kbArticles: { findFirst: jest.fn().mockResolvedValue(page) },
   };
   const select = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
