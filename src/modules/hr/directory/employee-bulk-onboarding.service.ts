@@ -47,11 +47,11 @@ import type {
 import { ReportingLineService } from "../../directory/reporting-line.service";
 import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 import { ReportingManagerFallbackResolver } from "../../directory/reporting-manager-fallback.resolver";
-import { readReportingManagerPolicy } from "../../directory/reporting-line-queries";
+import { readReportingManagerPolicy, subjectEmployments } from "../../directory/reporting-line-queries";
+import { checkHireSecondaries } from "./bulk-onboarding/bulk-onboarding-secondaries";
 import {
   REPORTING_LINE_ERROR_CODES,
   REPORTING_LINE_WARNINGS,
-  type ManagerAssignmentCheck,
 } from "../../directory/reporting-line.types";
 import { orgBusinessDate } from "../time/attendance-business-date";
 import { normaliseManagerColumns, type ManagerColumnsResult } from "./reporting-manager-columns";
@@ -299,12 +299,10 @@ export class EmployeeBulkOnboardingService {
       })),
     );
     const roster = new Set(plan.accepted.map((employee) => employee.email));
-    const secondaryEmails = plan.accepted.flatMap((employee) => secondaryEmailsOf(normalised[employee.row - 1]));
+    const withSecondaries = plan.accepted.filter((employee) => secondaryEmailsOf(normalised[employee.row - 1]).length > 0);
+    const secondaryEmails = withSecondaries.flatMap((employee) => secondaryEmailsOf(normalised[employee.row - 1]));
     const people = await peopleByEmails(this.db, orgId, secondaryEmails);
-    const policy = secondaryEmails.length > 0 ? await readReportingManagerPolicy(this.db, orgId) : null;
-    const checks =
-      people.size > 0 ? await this.reportingLines.checkManagers(orgId, [...people.values()].map((person) => person.userId)) : new Map<string, ManagerAssignmentCheck>();
-
+    const rules = withSecondaries.length > 0 ? await this.secondaryRuleInputs(orgId, [...people.values()].map((person) => person.userId), resolved) : null;
     const kept: PlannedEmployee[] = [];
     for (const employee of plan.accepted) {
       const refuse = (code: string, error: string) => plan.rejected.push({ row: employee.row, email: employee.email, success: false, error, code });
@@ -329,36 +327,48 @@ export class EmployeeBulkOnboardingService {
         employee.reportingManagerUserId = result.managerUserId;
         employee.reportingManagerEmail = result.managerUserId === null ? result.email : null;
       }
-      const secondaries: PlannedSecondaryManager[] = [];
-      let problem: { code: string; error: string } | null = null;
-      for (const email of secondaryEmailsOf(columns)) {
-        const person = people.get(email);
-        const check = person ? checks.get(person.userId) : undefined;
-        if (email === employee.email) problem = { code: REPORTING_LINE_ERROR_CODES.SELF_REFERENCE, error: "An employee cannot be their own secondary manager." };
-        else if (secondaries.some((entry) => entry.email === email)) problem = { code: REPORTING_LINE_ERROR_CODES.SECONDARY_DUPLICATE, error: `${email} is listed twice as a secondary manager.` };
-        else if (email === employee.primaryManager?.email) problem = { code: REPORTING_LINE_ERROR_CODES.SECONDARY_DUPLICATES_PRIMARY, error: `${email} is already the primary manager.` };
-        else if (person && !check?.ok) problem = { code: REPORTING_LINE_ERROR_CODES.MANAGER_NOT_ELIGIBLE, error: check?.message ?? `${email} cannot be a manager.` };
-        else if (!person && !roster.has(email)) problem = { code: REPORTING_LINE_ERROR_CODES.MANAGER_NOT_FOUND, error: `No member of this organization or row of this file has the email ${email}.` };
-        if (problem) break;
-        secondaries.push({ email, userId: person?.userId ?? null, name: person?.name ?? null });
-      }
-      const cap = policy?.maxSecondaryManagersPerEmployee ?? 0;
-      if (!problem && secondaries.length > cap)
-        problem = {
-          code: REPORTING_LINE_ERROR_CODES.SECONDARY_CAP_EXCEEDED,
-          error: `This organization allows at most ${cap} secondary reporting manager(s) per employee.`,
-        };
-      if (!problem && employee.source.topLevelRole && secondaries.length > 0)
-        problem = { code: REPORTING_LINE_ERROR_CODES.TOP_LEVEL_WITH_MANAGER, error: "A top-level role cannot have secondary managers." };
-      if (problem) {
-        refuse(problem.code, problem.error);
-        continue;
+      const emails = secondaryEmailsOf(columns);
+      let secondaries: PlannedSecondaryManager[] = [];
+      if (emails.length > 0 && rules) {
+        const checked = checkHireSecondaries({
+          hire: {
+            email: employee.email,
+            userId: null,
+            topLevelReason: employee.source.topLevelRole ? employee.source.topLevelRoleReason ?? null : null,
+            effectiveFrom: employee.effectiveFrom ?? employee.joiningDate ?? rules.today,
+          },
+          primary: employee.source.topLevelRole ? null : { userId: employee.primaryManager?.userId ?? null, email: employee.primaryManager?.email ?? null },
+          secondaryEmails: emails,
+          people,
+          roster,
+          policy: rules.policy,
+          managerChecks: rules.checks,
+          managerEmployments: rules.employments,
+        });
+        if (!checked.ok) {
+          refuse(checked.code, checked.error);
+          continue;
+        }
+        secondaries = checked.secondaries;
       }
       employee.secondaryManagers = secondaries;
       kept.push(employee);
     }
     plan.accepted = kept;
     plan.rejected.sort((left, right) => left.row - right.row);
+  }
+
+  /** One policy read, one eligibility check and one employment-window read for every secondary of the file. */
+  private async secondaryRuleInputs(orgId: string, secondaryUserIds: string[], resolved: Awaited<ReturnType<ReportingManagerFallbackResolver["resolveMany"]>>) {
+    const primaryUserIds = resolved.flatMap((result) => (result.ok && result.managerUserId ? [result.managerUserId] : []));
+    const [policy, checks, today] = await Promise.all([
+      readReportingManagerPolicy(this.db, orgId),
+      this.reportingLines.checkManagers(orgId, [...new Set([...secondaryUserIds, ...primaryUserIds])]),
+      orgBusinessDate(this.db, orgId),
+    ]);
+    const employmentIds = [...checks.values()].flatMap((check) => (check.ok ? [check.managerEmploymentId] : []));
+    const employments = new Map((await subjectEmployments(this.db, orgId, { employmentIds })).map((row) => [row.employmentId, row]));
+    return { policy, checks, today, employments };
   }
 
   private deferDelivery(
