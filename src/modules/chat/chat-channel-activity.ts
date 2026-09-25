@@ -106,8 +106,10 @@ export async function loadChannelActivity(
     lastMessageRows.map((r) => {
       const identity = r.senderUserId ? senderIdentities.get(subjectKey({ kind: "user", userId: r.senderUserId })) : undefined;
       const parts = [identity?.firstName, identity?.lastName].filter(Boolean).join(" ");
-      const senderName = identity?.displayName ?? (parts || null);
-      return [r.channelId, { content: r.content, senderName, createdAt: r.createdAt }];
+      // Ensure senderName is always string | null, never undefined, to match the Zod schema.
+      // If identity has displayName, use it; else use joined parts; else null.
+      const senderName = identity?.displayName ?? (parts.length > 0 ? parts : null);
+      return [r.channelId, { content: r.content ?? null, senderName, createdAt: r.createdAt }];
     }),
   );
 
