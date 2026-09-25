@@ -140,7 +140,7 @@
       "file": "src/modules/build/approvals/approvals.controller.ts",
       "class": "ApprovalsInboxController",
       "method": "getInboxCount",
-      "line": 55,
+      "line": 59,
       "verb": "GET",
       "path": "/build/approvals/inbox/count",
       "routeParams": [],
@@ -171,7 +171,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:55",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:59",
       "reviewedEvidence": null
     },
     {
@@ -179,7 +179,7 @@
       "file": "src/modules/build/approvals/approvals.controller.ts",
       "class": "ApprovalsInboxController",
       "method": "getInbox",
-      "line": 64,
+      "line": 68,
       "verb": "GET",
       "path": "/build/approvals/inbox",
       "routeParams": [],
@@ -203,14 +203,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/approvals/approvals-read.service.ts:32",
+      "orgEvidence": "src/modules/build/approvals/approvals-read.service.ts:53",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:64",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:68",
       "reviewedEvidence": null
     },
     {
@@ -218,7 +218,7 @@
       "file": "src/modules/build/approvals/approvals.controller.ts",
       "class": "BuildApprovalsController",
       "method": "listApprovals",
-      "line": 84,
+      "line": 88,
       "verb": "GET",
       "path": "/build/:projectId/approvals",
       "routeParams": [
@@ -246,14 +246,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/approvals/approvals-read.service.ts:55",
+      "orgEvidence": "src/modules/build/approvals/approvals-read.service.ts:81",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:84",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:88",
       "reviewedEvidence": null
     },
     {
@@ -261,7 +261,7 @@
       "file": "src/modules/build/approvals/approvals.controller.ts",
       "class": "BuildApprovalsController",
       "method": "getApproval",
-      "line": 96,
+      "line": 100,
       "verb": "GET",
       "path": "/build/:projectId/approvals/:approvalId",
       "routeParams": [
@@ -291,23 +291,23 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/approvals/approvals-read.service.ts:75",
+      "orgEvidence": "src/modules/build/approvals/approvals-read.service.ts:106",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/approvals/approvals-read.service.ts:75",
+      "parentEvidence": "src/modules/build/approvals/approvals-read.service.ts:106",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/approvals/:approvalId. The handler declares both @Param(\"projectId\") and @Param(\"approvalId\") and forwards both into ApprovalsReadService.getApproval(u, projectId, approvalId). That method calls assertProjectAccess(u, projectId) and then the shared loadApproval(db, orgId, projectId, approvalId) helper, whose single WHERE clause binds id=approvalId AND orgId=orgId AND projectId=projectId together and throws NotFoundException when they do not all match. A real approval that belongs to a different project (or a different org) 404s; the URL's :projectId is not decorative.",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:96",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:100",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/approvals/approvals.controller.ts",
-          "line": 100,
+          "line": 104,
           "note": "handler binds both projectId and approvalId route params and forwards both"
         },
         {
           "file": "src/modules/build/approvals/approvals-read.service.ts",
-          "line": 77,
+          "line": 108,
           "note": "projectId is passed into loadApproval alongside approvalId and orgId"
         },
         {
@@ -327,7 +327,7 @@
       "file": "src/modules/build/approvals/approvals.controller.ts",
       "class": "BuildApprovalsController",
       "method": "createApproval",
-      "line": 108,
+      "line": 112,
       "verb": "POST",
       "path": "/build/:projectId/approvals",
       "routeParams": [
@@ -362,7 +362,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:108",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:112",
       "reviewedEvidence": null
     },
     {
@@ -370,7 +370,7 @@
       "file": "src/modules/build/approvals/approvals.controller.ts",
       "class": "BuildApprovalsController",
       "method": "decideApproval",
-      "line": 122,
+      "line": 126,
       "verb": "PATCH",
       "path": "/build/:projectId/approvals/:approvalId/decide",
       "routeParams": [
@@ -407,11 +407,11 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/approvals/:approvalId/decide. The handler binds projectId+approvalId and calls ApprovalsService.decideApproval(user, projectId, approvalId, input). The method's first statement is loadApproval(this.db, orgId, projectId, approvalId), which binds id+orgId+projectId in one WHERE and 404s on any mismatch — so an approvalId belonging to a different project never reaches the decision logic or the UPDATE below it. The UPDATE itself is keyed by id+orgId only, but approvalId is a global-identity PK already proven by loadApproval to belong to this exact project, so re-stating projectId there would be redundant, not protective (verify-then-act-by-PK pattern, same shape as the loadApproval-gated methods throughout this file).",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:122",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:126",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/approvals/approvals.controller.ts",
-          "line": 127,
+          "line": 131,
           "note": "handler binds both projectId and approvalId and forwards both"
         },
         {
@@ -436,7 +436,7 @@
       "file": "src/modules/build/approvals/approvals.controller.ts",
       "class": "BuildApprovalsController",
       "method": "updateApproval",
-      "line": 136,
+      "line": 140,
       "verb": "PATCH",
       "path": "/build/:projectId/approvals/:approvalId",
       "routeParams": [
@@ -475,11 +475,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/approvals/:approvalId. Same shape as decideApproval: ApprovalsService.updateApproval(orgId, userId, projectId, approvalId, input) opens with loadApproval(this.db, orgId, projectId, approvalId), which binds id+orgId+projectId and 404s on mismatch, before building the patch and running the UPDATE keyed by the now-verified id+orgId.",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:136",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:140",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/approvals/approvals.controller.ts",
-          "line": 140,
+          "line": 144,
           "note": "handler binds both projectId and approvalId and forwards both"
         },
         {
@@ -499,7 +499,7 @@
       "file": "src/modules/build/approvals/approvals.controller.ts",
       "class": "BuildApprovalsController",
       "method": "softDeleteApproval",
-      "line": 149,
+      "line": 153,
       "verb": "DELETE",
       "path": "/build/:projectId/approvals/:approvalId",
       "routeParams": [
@@ -538,11 +538,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/:projectId/approvals/:approvalId. ApprovalsService.softDeleteApproval(orgId, projectId, approvalId) opens with the same loadApproval(this.db, orgId, projectId, approvalId) binding (id+orgId+projectId, 404 on mismatch) before setting deletedAt via an UPDATE keyed by the now-verified id+orgId.",
-      "evidence": "src/modules/build/approvals/approvals.controller.ts:149",
+      "evidence": "src/modules/build/approvals/approvals.controller.ts:153",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/approvals/approvals.controller.ts",
-          "line": 154,
+          "line": 158,
           "note": "handler binds both projectId and approvalId and forwards both"
         },
         {
@@ -8097,7 +8097,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "SprintsController",
       "method": "listSprints",
-      "line": 67,
+      "line": 79,
       "verb": "GET",
       "path": "/build/:projectId/sprints",
       "routeParams": [
@@ -8134,7 +8134,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/sprints. The lead is vacuous: there is no query to bind. The sprints table was dropped when Build cut over to the Cycle model, and SprintsService is a tombstone — every method, listSprints included, throws GoneException with the FROZEN message declared at sprints.service.ts:7 and never touches the database. The static pass follows the handler into a service method that accepts _orgId and _projectId and never uses them, which is exactly the shape of PASSED-UNBOUND; it cannot tell a 410 stub from an unbound query. The live route is /build/:projectId/cycles.",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:67",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:79",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
@@ -8153,7 +8153,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "SprintsController",
       "method": "createSprint",
-      "line": 78,
+      "line": 90,
       "verb": "POST",
       "path": "/build/:projectId/sprints",
       "routeParams": [
@@ -8190,7 +8190,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/sprints. Same tombstone as listSprints: createSprint's entire body is a GoneException throw at sprints.service.ts:21, so no INSERT exists and the orgId and projectId the controller forwards are discarded parameters (_orgId, _projectId). The static pass reads unused forwarded parameters as PASSED-UNBOUND. Cycle creation, the live replacement, is POST /build/:projectId/cycles on CyclesController.",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:78",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:90",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
@@ -8204,7 +8204,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "SprintsController",
       "method": "getSprint",
-      "line": 92,
+      "line": 104,
       "verb": "GET",
       "path": "/build/:projectId/sprints/:sprintId",
       "routeParams": [
@@ -8244,7 +8244,7 @@
       "notes": [],
       "verdict": "CLOSED",
       "verdictReason": "GET /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any read, so no sprint row is resolved by any key. The route and its @RequirePermission are retained on purpose; only the query body is gone.",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:92",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:104",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
@@ -8263,7 +8263,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "SprintsController",
       "method": "updateSprint",
-      "line": 104,
+      "line": 116,
       "verb": "PATCH",
       "path": "/build/:projectId/sprints/:sprintId",
       "routeParams": [
@@ -8305,7 +8305,7 @@
       ],
       "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any pre-read or UPDATE, so no sprint row is written by any key.",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:104",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:116",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
@@ -8324,7 +8324,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "SprintsController",
       "method": "deleteSprint",
-      "line": 117,
+      "line": 135,
       "verb": "DELETE",
       "path": "/build/:projectId/sprints/:sprintId",
       "routeParams": [
@@ -8366,7 +8366,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/:projectId/sprints/:sprintId. Flagged on BOTH org and parent scoping, and both leads are vacuous for the same reason: deleteSprint's body is a single GoneException throw at sprints.service.ts:39. No DELETE statement exists, so neither orgId nor projectId can appear in a predicate. The static pass sees three forwarded-and-unused parameters and reports each unbound dimension.",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:117",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:135",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
@@ -8385,7 +8385,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "CyclesController",
       "method": "listCycles",
-      "line": 137,
+      "line": 155,
       "verb": "GET",
       "path": "/build/:projectId/cycles",
       "routeParams": [
@@ -8420,7 +8420,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:137",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:155",
       "reviewedEvidence": null
     },
     {
@@ -8428,7 +8428,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "CyclesController",
       "method": "createCycle",
-      "line": 149,
+      "line": 167,
       "verb": "POST",
       "path": "/build/:projectId/cycles",
       "routeParams": [
@@ -8463,7 +8463,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:149",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:167",
       "reviewedEvidence": null
     },
     {
@@ -8471,7 +8471,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "CyclesController",
       "method": "updateCycle",
-      "line": 163,
+      "line": 181,
       "verb": "PATCH",
       "path": "/build/:projectId/cycles/:cycleId",
       "routeParams": [
@@ -8510,11 +8510,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/cycles/:cycleId. CyclesService.updateCycle(orgId, projectId, cycleId, input) confirms the project exists in this org, then the actual UPDATE's WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly — the mutation itself, not just a pre-check, requires the cycle to belong to the named project.",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:163",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:181",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/iterations.controller.ts",
-          "line": 167,
+          "line": 185,
           "note": "handler binds both projectId and cycleId and forwards both"
         },
         {
@@ -8534,7 +8534,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "CyclesController",
       "method": "deleteCycle",
-      "line": 176,
+      "line": 194,
       "verb": "DELETE",
       "path": "/build/:projectId/cycles/:cycleId",
       "routeParams": [
@@ -8573,11 +8573,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/:projectId/cycles/:cycleId. Same shape as updateCycle: CyclesService.deleteCycle(orgId, projectId, cycleId) confirms the project exists in this org, then the DELETE's own WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly, 404ing if zero rows are removed.",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:176",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:194",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/iterations.controller.ts",
-          "line": 181,
+          "line": 199,
           "note": "handler binds both projectId and cycleId and forwards both"
         },
         {
@@ -8597,7 +8597,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "ModulesController",
       "method": "listModules",
-      "line": 196,
+      "line": 214,
       "verb": "GET",
       "path": "/build/:projectId/modules",
       "routeParams": [
@@ -8619,20 +8619,20 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.modules.listModules(u.orgId, projectId)",
+        "call": "this.modules.listModules(u.orgId, projectId, query)",
         "type": "ModulesService",
         "file": "src/modules/build/execution/modules.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:21",
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:27",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:196",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:214",
       "reviewedEvidence": null
     },
     {
@@ -8640,7 +8640,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "ModulesController",
       "method": "createModule",
-      "line": 207,
+      "line": 226,
       "verb": "POST",
       "path": "/build/:projectId/modules",
       "routeParams": [
@@ -8668,7 +8668,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:80",
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:114",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -8677,7 +8677,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:207",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:226",
       "reviewedEvidence": null
     },
     {
@@ -8685,7 +8685,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "ModulesController",
       "method": "updateModule",
-      "line": 220,
+      "line": 239,
       "verb": "PATCH",
       "path": "/build/:projectId/modules/:moduleId",
       "routeParams": [
@@ -8715,20 +8715,20 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:124",
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:158",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/modules.service.ts:124",
+      "parentEvidence": "src/modules/build/execution/modules.service.ts:158",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/modules/:moduleId. No @Param(\"projectId\"); the UPDATE binds (id, orgId).",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:220",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:239",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/modules.service.ts",
-          "line": 133,
+          "line": 170,
           "note": "bound to the URL project"
         }
       ]
@@ -8738,7 +8738,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "ModulesController",
       "method": "deleteModule",
-      "line": 233,
+      "line": 252,
       "verb": "DELETE",
       "path": "/build/:projectId/modules/:moduleId",
       "routeParams": [
@@ -8768,20 +8768,20 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:140",
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:180",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/modules.service.ts:140",
+      "parentEvidence": "src/modules/build/execution/modules.service.ts:180",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/modules/:moduleId. No @Param(\"projectId\"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:233",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:252",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/modules.service.ts",
-          "line": 148,
+          "line": 188,
           "note": "bound to the URL project"
         }
       ]
@@ -8791,7 +8791,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "EpicsController",
       "method": "listEpics",
-      "line": 253,
+      "line": 272,
       "verb": "GET",
       "path": "/build/:projectId/epics",
       "routeParams": [
@@ -8826,7 +8826,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:253",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:272",
       "reviewedEvidence": null
     },
     {
@@ -8834,7 +8834,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "EpicsController",
       "method": "createEpic",
-      "line": 264,
+      "line": 283,
       "verb": "POST",
       "path": "/build/:projectId/epics",
       "routeParams": [
@@ -8871,7 +8871,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:264",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:283",
       "reviewedEvidence": null
     },
     {
@@ -8879,7 +8879,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "EpicsController",
       "method": "updateEpic",
-      "line": 277,
+      "line": 296,
       "verb": "PATCH",
       "path": "/build/:projectId/epics/:epicId",
       "routeParams": [
@@ -8918,11 +8918,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/epics/:epicId. EpicsService.updateEpic(orgId, projectId, epicId, input) runs the UPDATE directly with WHERE `eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, \"EPIC\")` — the mutation itself binds the epic to the named project, no separate pre-check needed.",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:277",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:296",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/iterations.controller.ts",
-          "line": 281,
+          "line": 300,
           "note": "handler binds both projectId and epicId and forwards both"
         },
         {
@@ -8942,7 +8942,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "EpicsController",
       "method": "deleteEpic",
-      "line": 290,
+      "line": 309,
       "verb": "DELETE",
       "path": "/build/:projectId/epics/:epicId",
       "routeParams": [
@@ -8981,11 +8981,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:290",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:309",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/iterations.controller.ts",
-          "line": 295,
+          "line": 314,
           "note": "handler binds both projectId and epicId and forwards both"
         },
         {
@@ -11078,7 +11078,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/forms/forms.service.ts:37",
+      "orgEvidence": "src/modules/build/forms/forms.service.ts:52",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11125,9 +11125,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/forms/forms.service.ts:72",
+      "orgEvidence": "src/modules/build/forms/forms.service.ts:98",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/forms/forms.service.ts:72",
+      "parentEvidence": "src/modules/build/forms/forms.service.ts:98",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -11141,12 +11141,12 @@
         },
         {
           "file": "src/modules/build/forms/forms.service.ts",
-          "line": 72,
+          "line": 98,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/forms/forms.service.ts",
-          "line": 24,
+          "line": 39,
           "note": "loadForm's WHERE (a few lines below) binds id+orgId+projectId together; 404 on mismatch"
         }
       ]
@@ -11182,7 +11182,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/forms/forms.service.ts:77",
+      "orgEvidence": "src/modules/build/forms/forms.service.ts:103",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11230,9 +11230,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/forms/forms.service.ts:114",
+      "orgEvidence": "src/modules/build/forms/forms.service.ts:140",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/forms/forms.service.ts:114",
+      "parentEvidence": "src/modules/build/forms/forms.service.ts:140",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11248,12 +11248,12 @@
         },
         {
           "file": "src/modules/build/forms/forms.service.ts",
-          "line": 114,
+          "line": 140,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/forms/forms.service.ts",
-          "line": 116,
+          "line": 142,
           "note": "binds id+orgId+projectId; 404 on mismatch before any patch logic runs"
         }
       ]
@@ -11293,9 +11293,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/forms/forms.service.ts:153",
+      "orgEvidence": "src/modules/build/forms/forms.service.ts:179",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/forms/forms.service.ts:153",
+      "parentEvidence": "src/modules/build/forms/forms.service.ts:179",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11311,12 +11311,12 @@
         },
         {
           "file": "src/modules/build/forms/forms.service.ts",
-          "line": 153,
+          "line": 179,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/forms/forms.service.ts",
-          "line": 155,
+          "line": 181,
           "note": "binds id+orgId+projectId; 404 on mismatch before the delete"
         }
       ]
@@ -11326,7 +11326,7 @@
       "file": "src/modules/build/forms/submissions.controller.ts",
       "class": "SubmissionsController",
       "method": "listSubmissions",
-      "line": 57,
+      "line": 58,
       "verb": "GET",
       "path": "/build/:projectId/forms/:formId/submissions",
       "routeParams": [
@@ -11353,35 +11353,35 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/forms/submissions.service.ts:152",
+      "orgEvidence": "src/modules/build/forms/submissions.service.ts:167",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/forms/submissions.service.ts:152",
+      "parentEvidence": "src/modules/build/forms/submissions.service.ts:167",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUserContext, listSubmissions asserts project membership, and loadForm binds formId+orgId+projectId before the tenant/form-scoped submissions query runs.",
-      "evidence": "src/modules/build/forms/submissions.controller.ts:57",
+      "evidence": "src/modules/build/forms/submissions.controller.ts:58",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/forms/submissions.controller.ts",
-          "line": 67,
+          "line": 68,
           "note": "route handler forwards the actor and path params"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 154,
+          "line": 169,
           "note": "project membership is enforced"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 155,
+          "line": 170,
           "note": "listSubmissions binds via loadForm before querying"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 39,
+          "line": 54,
           "note": "loadForm's WHERE binds formId to projectId and orgId together"
         }
       ]
@@ -11391,7 +11391,7 @@
       "file": "src/modules/build/forms/submissions.controller.ts",
       "class": "SubmissionsController",
       "method": "createSubmission",
-      "line": 70,
+      "line": 71,
       "verb": "POST",
       "path": "/build/:projectId/forms/:formId/submissions",
       "routeParams": [
@@ -11418,9 +11418,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/forms/submissions.service.ts:181",
+      "orgEvidence": "src/modules/build/forms/submissions.service.ts:205",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/forms/submissions.service.ts:181",
+      "parentEvidence": "src/modules/build/forms/submissions.service.ts:205",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)",
@@ -11428,26 +11428,26 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUserContext, createSubmission asserts project membership, and loadForm binds formId+orgId+projectId. runSubmission derives every insert key from that validated form row.",
-      "evidence": "src/modules/build/forms/submissions.controller.ts:70",
+      "evidence": "src/modules/build/forms/submissions.controller.ts:71",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/forms/submissions.controller.ts",
-          "line": 81,
+          "line": 82,
           "note": "route handler forwards the actor and path params"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 188,
+          "line": 212,
           "note": "project membership is enforced"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 189,
+          "line": 213,
           "note": "createSubmission binds via loadForm before running the submission"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 78,
+          "line": 93,
           "note": "runSubmission derives tenant and parent ids from the validated row"
         }
       ]
@@ -11457,7 +11457,7 @@
       "file": "src/modules/build/forms/submissions.controller.ts",
       "class": "SubmissionsController",
       "method": "updateSubmission",
-      "line": 84,
+      "line": 85,
       "verb": "PATCH",
       "path": "/build/:projectId/forms/:formId/submissions/:submissionId",
       "routeParams": [
@@ -11489,40 +11489,40 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/forms/submissions.service.ts:233",
+      "orgEvidence": "src/modules/build/forms/submissions.service.ts:257",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/forms/submissions.service.ts:233",
+      "parentEvidence": "src/modules/build/forms/submissions.service.ts:257",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/forms/:formId/submissions/:submissionId. The handler forwards CurrentUserContext, updateSubmission asserts project membership, loadForm binds the form to project+tenant, loadSubmission binds the submission to form+tenant, and the UPDATE repeats id+orgId+formId.",
-      "evidence": "src/modules/build/forms/submissions.controller.ts:84",
+      "evidence": "src/modules/build/forms/submissions.controller.ts:85",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/forms/submissions.controller.ts",
-          "line": 95,
+          "line": 96,
           "note": "route handler forwards the actor and all path params"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 241,
+          "line": 265,
           "note": "project membership is enforced"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 242,
+          "line": 266,
           "note": "binds formId to projectId"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 243,
+          "line": 267,
           "note": "binds submissionId to formId"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 250,
+          "line": 274,
           "note": "UPDATE WHERE clause re-binds formId"
         }
       ]
@@ -11532,7 +11532,7 @@
       "file": "src/modules/build/forms/submissions.controller.ts",
       "class": "SubmissionsPublicController",
       "method": "submitPublicForm",
-      "line": 106,
+      "line": 107,
       "verb": "POST",
       "path": "/public/build-forms/:publicToken/submissions",
       "routeParams": [
@@ -11566,26 +11566,26 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and IP rate-limited. One withPublicToken transaction resolves the active public form and performs capacity reservation, ticket allocation/inserts, and the submission insert under the same token-scoped RLS context. orgId and projectId come only from the resolved form row. The plaintext token comparison remains a storage hardening opportunity, not an access-control defect.",
-      "evidence": "src/modules/build/forms/submissions.controller.ts:106",
+      "evidence": "src/modules/build/forms/submissions.controller.ts:107",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 50,
+          "line": 65,
           "note": "resolved by token inside withPublicToken; orgId derived from the row"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 51,
+          "line": 66,
           "note": "non-public forms are not reachable through this route"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 207,
+          "line": 231,
           "note": "lookup and every write share one token-scoped transaction"
         },
         {
           "file": "src/modules/build/forms/submissions.service.ts",
-          "line": 209,
+          "line": 233,
           "note": "the existing token transaction is passed into the write path"
         }
       ]
@@ -12319,7 +12319,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "listIncidents",
-      "line": 74,
+      "line": 75,
       "verb": "GET",
       "path": "/build/:projectId/incidents",
       "routeParams": [
@@ -12345,7 +12345,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:89",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:109",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12354,7 +12354,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:74",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:75",
       "reviewedEvidence": null
     },
     {
@@ -12362,7 +12362,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "getIncident",
-      "line": 86,
+      "line": 87,
       "verb": "GET",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12392,28 +12392,28 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:107",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:141",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:107",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:141",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the bounded child-resource queries run.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:86",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:87",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 96,
+          "line": 97,
           "note": "route handler passes both path params and the validated child query to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 114,
+          "line": 148,
           "note": "getIncident binds via loadIncident before reading child resources"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 48,
+          "line": 68,
           "note": "loadIncident's WHERE binds incidentId to projectId and orgId together"
         }
       ]
@@ -12423,7 +12423,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "createIncident",
-      "line": 99,
+      "line": 100,
       "verb": "POST",
       "path": "/build/:projectId/incidents",
       "routeParams": [
@@ -12449,7 +12449,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:118",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:152",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12459,7 +12459,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:99",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:100",
       "reviewedEvidence": null
     },
     {
@@ -12467,7 +12467,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "updateIncident",
-      "line": 112,
+      "line": 113,
       "verb": "PATCH",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12497,35 +12497,35 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:159",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:193",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:159",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:193",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/incidents/:incidentId. updateIncident calls assertProjectAccess(projectId), then binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId), and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:112",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:113",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 122,
+          "line": 123,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 165,
+          "line": 199,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 166,
+          "line": 200,
           "note": "binds incidentId to projectId via loadIncident before patching"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 206,
+          "line": 240,
           "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -12535,7 +12535,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "deleteIncident",
-      "line": 125,
+      "line": 126,
       "verb": "DELETE",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12565,35 +12565,35 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:265",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:299",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:265",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:299",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/:projectId/incidents/:incidentId (soft delete). deleteIncident calls assertProjectAccess(projectId), then loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:125",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:126",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 135,
+          "line": 136,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 266,
+          "line": 300,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 267,
+          "line": 301,
           "note": "binds incidentId to projectId via loadIncident before deleting"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 275,
+          "line": 309,
           "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -12603,7 +12603,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "addUpdate",
-      "line": 138,
+      "line": 139,
       "verb": "POST",
       "path": "/build/:projectId/incidents/:incidentId/updates",
       "routeParams": [
@@ -12633,30 +12633,30 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:288",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:322",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:288",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:322",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:138",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:139",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 149,
+          "line": 150,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 295,
+          "line": 329,
           "note": "binds incidentId to projectId via loadIncident before writing"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 326,
+          "line": 360,
           "note": "in-transaction status UPDATE independently re-binds id+orgId+projectId"
         }
       ]
@@ -12666,7 +12666,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "addDecision",
-      "line": 152,
+      "line": 153,
       "verb": "POST",
       "path": "/build/:projectId/incidents/:incidentId/decisions",
       "routeParams": [
@@ -12696,25 +12696,25 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:359",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:393",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:359",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:393",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/incidents/:incidentId/decisions. addDecision calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) — the same helper proven elsewhere in this file to bind id+orgId+projectId together, 404 on mismatch — before inserting the decision row, which is itself scoped to the now-confirmed incidentId+orgId.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:152",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:153",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 365,
+          "line": 399,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 366,
+          "line": 400,
           "note": "binds incidentId to projectId via loadIncident before writing"
         }
       ]
@@ -12724,7 +12724,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "addFollowUpAction",
-      "line": 166,
+      "line": 167,
       "verb": "POST",
       "path": "/build/:projectId/incidents/:incidentId/follow-ups",
       "routeParams": [
@@ -12754,16 +12754,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:390",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:424",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:390",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:424",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/incidents/:incidentId/follow-ups. Same binding shape as addDecision: assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) before inserting the follow-up-action row.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:166",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:167",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
@@ -12782,7 +12782,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "updateFollowUpAction",
-      "line": 180,
+      "line": 181,
       "verb": "PATCH",
       "path": "/build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId",
       "routeParams": [
@@ -12814,30 +12814,30 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:423",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:457",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:423",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:457",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId. assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) bind the parent incident to this project; the UPDATE's own WHERE independently re-binds id=followUpActionId AND orgId AND incidentId, so a foreign followUpActionId (even one belonging to a different incident in the same org) 404s rather than matching.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:180",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:181",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 430,
+          "line": 464,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 431,
+          "line": 465,
           "note": "binds incidentId to projectId via loadIncident before updating"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 447,
+          "line": 481,
           "note": "UPDATE WHERE independently re-binds id+orgId+incidentId"
         }
       ]
@@ -12871,7 +12871,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:42",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:49",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12914,7 +12914,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:73",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:80",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12953,7 +12953,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:77",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:84",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -12968,12 +12968,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/managed-products/managed-products.service.ts",
-          "line": 84,
+          "line": 91,
           "note": "an INSERT — no WHERE clause exists to carry a predicate"
         },
         {
           "file": "src/modules/build/managed-products/managed-products.service.ts",
-          "line": 86,
+          "line": 93,
           "note": "org bound as an ES6 shorthand column in .values()"
         }
       ]
@@ -13011,7 +13011,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:114",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:121",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13056,7 +13056,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:149",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:156",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13099,7 +13099,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:208",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:277",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],

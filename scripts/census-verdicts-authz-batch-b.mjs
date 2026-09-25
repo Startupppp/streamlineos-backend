@@ -6,10 +6,10 @@ export default [
     summary: "GET /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUserContext, listSubmissions asserts project membership, and loadForm binds formId+orgId+projectId before the tenant/form-scoped submissions query runs.",
     blastRadius: "None beyond the caller's own org/project: a foreign formId under this projectId 404s at loadForm before the list query executes.",
     evidence: [
-      { file: "src/modules/build/forms/submissions.controller.ts", line: 67, anchor: /return this\.svc\.listSubmissions\(u, projectId, formId, query\);/, note: "route handler forwards the actor and path params" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 154, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 155, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "listSubmissions binds via loadForm before querying" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 39, anchor: /eq\(projectForms\.projectId, projectId\),/, note: "loadForm's WHERE binds formId to projectId and orgId together" },
+      { file: "src/modules/build/forms/submissions.controller.ts", line: 68, anchor: /return this\.svc\.listSubmissions\(u, projectId, formId, query\);/, note: "route handler forwards the actor and path params" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 169, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 170, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "listSubmissions binds via loadForm before querying" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 54, anchor: /eq\(projectForms\.projectId, projectId\),/, note: "loadForm's WHERE binds formId to projectId and orgId together" },
     ],
   },
   {
@@ -19,10 +19,10 @@ export default [
     summary: "POST /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUserContext, createSubmission asserts project membership, and loadForm binds formId+orgId+projectId. runSubmission derives every insert key from that validated form row.",
     blastRadius: "None beyond the caller's own org/project: a foreign formId under this projectId 404s at loadForm before any ticket or submission row is created.",
     evidence: [
-      { file: "src/modules/build/forms/submissions.controller.ts", line: 81, anchor: /return this\.svc\.createSubmission\(u, projectId, formId, body\);/, note: "route handler forwards the actor and path params" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 188, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 189, anchor: /const form = await this\.loadForm\(orgId, projectId, formId\);/, note: "createSubmission binds via loadForm before running the submission" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 78, anchor: /const \{ orgId, id: formId, projectId \} = form;/, note: "runSubmission derives tenant and parent ids from the validated row" },
+      { file: "src/modules/build/forms/submissions.controller.ts", line: 82, anchor: /return this\.svc\.createSubmission\(u, projectId, formId, body\);/, note: "route handler forwards the actor and path params" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 212, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 213, anchor: /const form = await this\.loadForm\(orgId, projectId, formId\);/, note: "createSubmission binds via loadForm before running the submission" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 93, anchor: /const \{ orgId, id: formId, projectId \} = form;/, note: "runSubmission derives tenant and parent ids from the validated row" },
     ],
   },
   {
@@ -32,11 +32,11 @@ export default [
     summary: "PATCH /build/:projectId/forms/:formId/submissions/:submissionId. The handler forwards CurrentUserContext, updateSubmission asserts project membership, loadForm binds the form to project+tenant, loadSubmission binds the submission to form+tenant, and the UPDATE repeats id+orgId+formId.",
     blastRadius: "None beyond the caller's own org/project/form: a foreign submissionId or formId 404s at loadForm/loadSubmission before the UPDATE executes.",
     evidence: [
-      { file: "src/modules/build/forms/submissions.controller.ts", line: 95, anchor: /return this\.svc\.updateSubmission\(u, projectId, formId, submissionId, body\);/, note: "route handler forwards the actor and all path params" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 241, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 242, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "binds formId to projectId" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 243, anchor: /await this\.loadSubmission\(orgId, formId, submissionId\);/, note: "binds submissionId to formId" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 250, anchor: /eq\(formSubmissions\.formId, formId\),/, note: "UPDATE WHERE clause re-binds formId" },
+      { file: "src/modules/build/forms/submissions.controller.ts", line: 96, anchor: /return this\.svc\.updateSubmission\(u, projectId, formId, submissionId, body\);/, note: "route handler forwards the actor and all path params" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 266, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "binds formId to projectId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 267, anchor: /await this\.loadSubmission\(orgId, formId, submissionId\);/, note: "binds submissionId to formId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 274, anchor: /eq\(formSubmissions\.formId, formId\),/, note: "UPDATE WHERE clause re-binds formId" },
     ],
   },
   {
@@ -118,9 +118,9 @@ export default [
     summary: "GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the bounded child-resource queries run.",
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s inside loadIncident.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 96, anchor: /return this\.svc\.getIncident\(u, projectId, incidentId, query\);/, note: "route handler passes both path params and the validated child query to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 114, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading child resources" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 48, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "loadIncident's WHERE binds incidentId to projectId and orgId together" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 97, anchor: /return this\.svc\.getIncident\(u, projectId, incidentId, query\);/, note: "route handler passes both path params and the validated child query to the service" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 148, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading child resources" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 68, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "loadIncident's WHERE binds incidentId to projectId and orgId together" },
     ],
   },
   {
@@ -130,10 +130,10 @@ export default [
     summary: "PATCH /build/:projectId/incidents/:incidentId. updateIncident calls assertProjectAccess(projectId), then binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId), and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction.",
     blastRadius: "None beyond the caller's own org/project: project access is required and a foreign incidentId 404s before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 122, anchor: /return this\.svc\.updateIncident\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 165, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 166, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 206, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 123, anchor: /return this\.svc\.updateIncident\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 199, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 200, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 240, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -143,10 +143,10 @@ export default [
     summary: "DELETE /build/:projectId/incidents/:incidentId (soft delete). deleteIncident calls assertProjectAccess(projectId), then loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: project access is required and a foreign incidentId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 135, anchor: /return this\.svc\.deleteIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 266, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 267, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before deleting" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 275, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 136, anchor: /return this\.svc\.deleteIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 300, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 301, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before deleting" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 309, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -156,9 +156,9 @@ export default [
     summary: "POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.",
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s before any row is written.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 149, anchor: /return this\.svc\.addUpdate\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 295, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 326, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 150, anchor: /return this\.svc\.addUpdate\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 329, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 360, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
     ],
   },
   {

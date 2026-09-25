@@ -540,7 +540,7 @@ Evidence:
 
 ### CLOSED — `GET /build/:projectId/sprints/:sprintId`
 
-`SprintsController.getSprint` — `src/modules/build/execution/iterations.controller.ts:92`
+`SprintsController.getSprint` — `src/modules/build/execution/iterations.controller.ts:104`
 
 Finding: `parent-binding-missing`
 
@@ -555,7 +555,7 @@ Evidence:
 
 ### CLOSED — `PATCH /build/:projectId/sprints/:sprintId`
 
-`SprintsController.updateSprint` — `src/modules/build/execution/iterations.controller.ts:104`
+`SprintsController.updateSprint` — `src/modules/build/execution/iterations.controller.ts:116`
 
 Finding: `parent-binding-missing`
 
@@ -570,7 +570,7 @@ Evidence:
 
 ### CLOSED — `PATCH /build/:projectId/modules/:moduleId`
 
-`ModulesController.updateModule` — `src/modules/build/execution/iterations.controller.ts:220`
+`ModulesController.updateModule` — `src/modules/build/execution/iterations.controller.ts:239`
 
 Finding: `parent-binding-missing`
 
@@ -580,11 +580,11 @@ Blast radius: Intra-tenant cross-project write.
 
 Evidence:
 
-- `src/modules/build/execution/modules.service.ts:133` — bound to the URL project
+- `src/modules/build/execution/modules.service.ts:170` — bound to the URL project
 
 ### CLOSED — `DELETE /build/:projectId/modules/:moduleId`
 
-`ModulesController.deleteModule` — `src/modules/build/execution/iterations.controller.ts:233`
+`ModulesController.deleteModule` — `src/modules/build/execution/iterations.controller.ts:252`
 
 Finding: `parent-binding-missing`
 
@@ -594,7 +594,7 @@ Blast radius: Intra-tenant cross-project delete, with a side effect on every tic
 
 Evidence:
 
-- `src/modules/build/execution/modules.service.ts:148` — bound to the URL project
+- `src/modules/build/execution/modules.service.ts:188` — bound to the URL project
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/time-entries`
 
@@ -688,43 +688,43 @@ Handlers the static pass may not certify alone, read by hand and found sound. Li
 
 ### VERIFIED — `GET /build/:projectId/approvals/:approvalId`
 
-`BuildApprovalsController.getApproval` — `src/modules/build/approvals/approvals.controller.ts:96`
+`BuildApprovalsController.getApproval` — `src/modules/build/approvals/approvals.controller.ts:100`
 
 GET /build/:projectId/approvals/:approvalId. The handler declares both @Param("projectId") and @Param("approvalId") and forwards both into ApprovalsReadService.getApproval(u, projectId, approvalId). That method calls assertProjectAccess(u, projectId) and then the shared loadApproval(db, orgId, projectId, approvalId) helper, whose single WHERE clause binds id=approvalId AND orgId=orgId AND projectId=projectId together and throws NotFoundException when they do not all match. A real approval that belongs to a different project (or a different org) 404s; the URL's :projectId is not decorative.
 
-- `src/modules/build/approvals/approvals.controller.ts:100` — handler binds both projectId and approvalId route params and forwards both
-- `src/modules/build/approvals/approvals-read.service.ts:77` — projectId is passed into loadApproval alongside approvalId and orgId
+- `src/modules/build/approvals/approvals.controller.ts:104` — handler binds both projectId and approvalId route params and forwards both
+- `src/modules/build/approvals/approvals-read.service.ts:108` — projectId is passed into loadApproval alongside approvalId and orgId
 - `src/modules/build/approvals/approval-lookup.ts:6` — shared lookup takes projectId as a required parameter
 - `src/modules/build/approvals/approval-lookup.ts:11` — WHERE clause binds the approval row to the named project; NotFoundException on any mismatch
 
 ### VERIFIED — `PATCH /build/:projectId/approvals/:approvalId/decide`
 
-`BuildApprovalsController.decideApproval` — `src/modules/build/approvals/approvals.controller.ts:122`
+`BuildApprovalsController.decideApproval` — `src/modules/build/approvals/approvals.controller.ts:126`
 
 PATCH /build/:projectId/approvals/:approvalId/decide. The handler binds projectId+approvalId and calls ApprovalsService.decideApproval(user, projectId, approvalId, input). The method's first statement is loadApproval(this.db, orgId, projectId, approvalId), which binds id+orgId+projectId in one WHERE and 404s on any mismatch — so an approvalId belonging to a different project never reaches the decision logic or the UPDATE below it. The UPDATE itself is keyed by id+orgId only, but approvalId is a global-identity PK already proven by loadApproval to belong to this exact project, so re-stating projectId there would be redundant, not protective (verify-then-act-by-PK pattern, same shape as the loadApproval-gated methods throughout this file).
 
-- `src/modules/build/approvals/approvals.controller.ts:127` — handler binds both projectId and approvalId and forwards both
+- `src/modules/build/approvals/approvals.controller.ts:131` — handler binds both projectId and approvalId and forwards both
 - `src/modules/build/approvals/approvals.service.ts:162` — first statement binds id+orgId+projectId; 404 on mismatch before any further logic
 - `src/modules/build/approvals/approvals.service.ts:183` — mutation keyed by already-verified PK+org
 - `src/modules/build/approvals/approval-lookup.ts:11` — loadApproval's project binding
 
 ### VERIFIED — `PATCH /build/:projectId/approvals/:approvalId`
 
-`BuildApprovalsController.updateApproval` — `src/modules/build/approvals/approvals.controller.ts:136`
+`BuildApprovalsController.updateApproval` — `src/modules/build/approvals/approvals.controller.ts:140`
 
 PATCH /build/:projectId/approvals/:approvalId. Same shape as decideApproval: ApprovalsService.updateApproval(orgId, userId, projectId, approvalId, input) opens with loadApproval(this.db, orgId, projectId, approvalId), which binds id+orgId+projectId and 404s on mismatch, before building the patch and running the UPDATE keyed by the now-verified id+orgId.
 
-- `src/modules/build/approvals/approvals.controller.ts:140` — handler binds both projectId and approvalId and forwards both
+- `src/modules/build/approvals/approvals.controller.ts:144` — handler binds both projectId and approvalId and forwards both
 - `src/modules/build/approvals/approvals.service.ts:206` — binds id+orgId+projectId; 404 on mismatch before the patch is built
 - `src/modules/build/approvals/approvals.service.ts:224` — UPDATE keyed by the already-verified PK
 
 ### VERIFIED — `DELETE /build/:projectId/approvals/:approvalId`
 
-`BuildApprovalsController.softDeleteApproval` — `src/modules/build/approvals/approvals.controller.ts:149`
+`BuildApprovalsController.softDeleteApproval` — `src/modules/build/approvals/approvals.controller.ts:153`
 
 DELETE /build/:projectId/approvals/:approvalId. ApprovalsService.softDeleteApproval(orgId, projectId, approvalId) opens with the same loadApproval(this.db, orgId, projectId, approvalId) binding (id+orgId+projectId, 404 on mismatch) before setting deletedAt via an UPDATE keyed by the now-verified id+orgId.
 
-- `src/modules/build/approvals/approvals.controller.ts:154` — handler binds both projectId and approvalId and forwards both
+- `src/modules/build/approvals/approvals.controller.ts:158` — handler binds both projectId and approvalId and forwards both
 - `src/modules/build/approvals/approvals.service.ts:264` — binds id+orgId+projectId; 404 on mismatch before the delete
 - `src/modules/build/approvals/approvals.service.ts:268` — soft-delete UPDATE keyed by the already-verified PK
 
@@ -1042,7 +1042,7 @@ POST /build/labels. An org-level route with no path parameters at all, so there 
 
 ### VERIFIED — `GET /build/:projectId/sprints`
 
-`SprintsController.listSprints` — `src/modules/build/execution/iterations.controller.ts:67`
+`SprintsController.listSprints` — `src/modules/build/execution/iterations.controller.ts:79`
 
 GET /build/:projectId/sprints. The lead is vacuous: there is no query to bind. The sprints table was dropped when Build cut over to the Cycle model, and SprintsService is a tombstone — every method, listSprints included, throws GoneException with the FROZEN message declared at sprints.service.ts:7 and never touches the database. The static pass follows the handler into a service method that accepts _orgId and _projectId and never uses them, which is exactly the shape of PASSED-UNBOUND; it cannot tell a 410 stub from an unbound query. The live route is /build/:projectId/cycles.
 
@@ -1051,7 +1051,7 @@ GET /build/:projectId/sprints. The lead is vacuous: there is no query to bind. T
 
 ### VERIFIED — `POST /build/:projectId/sprints`
 
-`SprintsController.createSprint` — `src/modules/build/execution/iterations.controller.ts:78`
+`SprintsController.createSprint` — `src/modules/build/execution/iterations.controller.ts:90`
 
 POST /build/:projectId/sprints. Same tombstone as listSprints: createSprint's entire body is a GoneException throw at sprints.service.ts:21, so no INSERT exists and the orgId and projectId the controller forwards are discarded parameters (_orgId, _projectId). The static pass reads unused forwarded parameters as PASSED-UNBOUND. Cycle creation, the live replacement, is POST /build/:projectId/cycles on CyclesController.
 
@@ -1059,7 +1059,7 @@ POST /build/:projectId/sprints. Same tombstone as listSprints: createSprint's en
 
 ### VERIFIED — `DELETE /build/:projectId/sprints/:sprintId`
 
-`SprintsController.deleteSprint` — `src/modules/build/execution/iterations.controller.ts:117`
+`SprintsController.deleteSprint` — `src/modules/build/execution/iterations.controller.ts:135`
 
 DELETE /build/:projectId/sprints/:sprintId. Flagged on BOTH org and parent scoping, and both leads are vacuous for the same reason: deleteSprint's body is a single GoneException throw at sprints.service.ts:39. No DELETE statement exists, so neither orgId nor projectId can appear in a predicate. The static pass sees three forwarded-and-unused parameters and reports each unbound dimension.
 
@@ -1068,41 +1068,41 @@ DELETE /build/:projectId/sprints/:sprintId. Flagged on BOTH org and parent scopi
 
 ### VERIFIED — `PATCH /build/:projectId/cycles/:cycleId`
 
-`CyclesController.updateCycle` — `src/modules/build/execution/iterations.controller.ts:163`
+`CyclesController.updateCycle` — `src/modules/build/execution/iterations.controller.ts:181`
 
 PATCH /build/:projectId/cycles/:cycleId. CyclesService.updateCycle(orgId, projectId, cycleId, input) confirms the project exists in this org, then the actual UPDATE's WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly — the mutation itself, not just a pre-check, requires the cycle to belong to the named project.
 
-- `src/modules/build/execution/iterations.controller.ts:167` — handler binds both projectId and cycleId and forwards both
+- `src/modules/build/execution/iterations.controller.ts:185` — handler binds both projectId and cycleId and forwards both
 - `src/modules/build/execution/cycles.service.ts:116` — signature takes projectId
 - `src/modules/build/execution/cycles.service.ts:134` — UPDATE's own WHERE binds id+projectId+orgId
 
 ### VERIFIED — `DELETE /build/:projectId/cycles/:cycleId`
 
-`CyclesController.deleteCycle` — `src/modules/build/execution/iterations.controller.ts:176`
+`CyclesController.deleteCycle` — `src/modules/build/execution/iterations.controller.ts:194`
 
 DELETE /build/:projectId/cycles/:cycleId. Same shape as updateCycle: CyclesService.deleteCycle(orgId, projectId, cycleId) confirms the project exists in this org, then the DELETE's own WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly, 404ing if zero rows are removed.
 
-- `src/modules/build/execution/iterations.controller.ts:181` — handler binds both projectId and cycleId and forwards both
+- `src/modules/build/execution/iterations.controller.ts:199` — handler binds both projectId and cycleId and forwards both
 - `src/modules/build/execution/cycles.service.ts:141` — signature takes projectId
 - `src/modules/build/execution/cycles.service.ts:147` — DELETE's own WHERE binds id+projectId+orgId
 
 ### VERIFIED — `PATCH /build/:projectId/epics/:epicId`
 
-`EpicsController.updateEpic` — `src/modules/build/execution/iterations.controller.ts:277`
+`EpicsController.updateEpic` — `src/modules/build/execution/iterations.controller.ts:296`
 
 PATCH /build/:projectId/epics/:epicId. EpicsService.updateEpic(orgId, projectId, epicId, input) runs the UPDATE directly with WHERE `eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, "EPIC")` — the mutation itself binds the epic to the named project, no separate pre-check needed.
 
-- `src/modules/build/execution/iterations.controller.ts:281` — handler binds both projectId and epicId and forwards both
+- `src/modules/build/execution/iterations.controller.ts:300` — handler binds both projectId and epicId and forwards both
 - `src/modules/build/execution/epics.service.ts:61` — signature takes projectId
 - `src/modules/build/execution/epics.service.ts:67` — UPDATE's own WHERE binds id+orgId+projectId+type
 
 ### VERIFIED — `DELETE /build/:projectId/epics/:epicId`
 
-`EpicsController.deleteEpic` — `src/modules/build/execution/iterations.controller.ts:290`
+`EpicsController.deleteEpic` — `src/modules/build/execution/iterations.controller.ts:309`
 
 DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).
 
-- `src/modules/build/execution/iterations.controller.ts:295` — handler binds both projectId and epicId and forwards both
+- `src/modules/build/execution/iterations.controller.ts:314` — handler binds both projectId and epicId and forwards both
 - `src/modules/build/execution/epics.service.ts:78` — signature takes projectId
 - `src/modules/build/execution/epics.service.ts:81` — existence check binds id+orgId+projectId+type; 404 on mismatch
 
@@ -1238,8 +1238,8 @@ DELETE /build/:projectId/files/:fileId. FilesService.softDeleteFile(u, projectId
 GET /build/:projectId/forms/:formId. FormsService.getForm(u, projectId, formId) delegates directly to loadForm(orgId, projectId, formId), whose WHERE binds id=formId AND orgId=orgId AND projectId=projectId together and throws NotFoundException on mismatch.
 
 - `src/modules/build/forms/forms.controller.ts:58` — handler binds both projectId and formId and forwards both
-- `src/modules/build/forms/forms.service.ts:72` — signature takes projectId
-- `src/modules/build/forms/forms.service.ts:24` — loadForm's WHERE (a few lines below) binds id+orgId+projectId together; 404 on mismatch
+- `src/modules/build/forms/forms.service.ts:98` — signature takes projectId
+- `src/modules/build/forms/forms.service.ts:39` — loadForm's WHERE (a few lines below) binds id+orgId+projectId together; 404 on mismatch
 
 ### VERIFIED — `PATCH /build/:projectId/forms/:formId`
 
@@ -1248,8 +1248,8 @@ GET /build/:projectId/forms/:formId. FormsService.getForm(u, projectId, formId) 
 PATCH /build/:projectId/forms/:formId. FormsService.updateForm(u, projectId, formId, input) opens with loadForm(orgId, projectId, formId) (id+orgId+projectId bound, 404 on mismatch) before building the patch and running the UPDATE keyed by the now-verified id+orgId (formId is a global PK already proven to belong to this exact project — verify-then-act-by-PK).
 
 - `src/modules/build/forms/forms.controller.ts:83` — handler binds both projectId and formId and forwards both
-- `src/modules/build/forms/forms.service.ts:114` — signature takes projectId
-- `src/modules/build/forms/forms.service.ts:116` — binds id+orgId+projectId; 404 on mismatch before any patch logic runs
+- `src/modules/build/forms/forms.service.ts:140` — signature takes projectId
+- `src/modules/build/forms/forms.service.ts:142` — binds id+orgId+projectId; 404 on mismatch before any patch logic runs
 
 ### VERIFIED — `DELETE /build/:projectId/forms/:formId`
 
@@ -1258,53 +1258,53 @@ PATCH /build/:projectId/forms/:formId. FormsService.updateForm(u, projectId, for
 DELETE /build/:projectId/forms/:formId. Same shape as updateForm: FormsService.deleteForm(u, projectId, formId) opens with loadForm(orgId, projectId, formId) (id+orgId+projectId bound, 404 on mismatch) before the soft-delete UPDATE keyed by the now-verified id+orgId.
 
 - `src/modules/build/forms/forms.controller.ts:97` — handler binds both projectId and formId and forwards both
-- `src/modules/build/forms/forms.service.ts:153` — signature takes projectId
-- `src/modules/build/forms/forms.service.ts:155` — binds id+orgId+projectId; 404 on mismatch before the delete
+- `src/modules/build/forms/forms.service.ts:179` — signature takes projectId
+- `src/modules/build/forms/forms.service.ts:181` — binds id+orgId+projectId; 404 on mismatch before the delete
 
 ### VERIFIED — `GET /build/:projectId/forms/:formId/submissions`
 
-`SubmissionsController.listSubmissions` — `src/modules/build/forms/submissions.controller.ts:57`
+`SubmissionsController.listSubmissions` — `src/modules/build/forms/submissions.controller.ts:58`
 
 GET /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUserContext, listSubmissions asserts project membership, and loadForm binds formId+orgId+projectId before the tenant/form-scoped submissions query runs.
 
-- `src/modules/build/forms/submissions.controller.ts:67` — route handler forwards the actor and path params
-- `src/modules/build/forms/submissions.service.ts:154` — project membership is enforced
-- `src/modules/build/forms/submissions.service.ts:155` — listSubmissions binds via loadForm before querying
-- `src/modules/build/forms/submissions.service.ts:39` — loadForm's WHERE binds formId to projectId and orgId together
+- `src/modules/build/forms/submissions.controller.ts:68` — route handler forwards the actor and path params
+- `src/modules/build/forms/submissions.service.ts:169` — project membership is enforced
+- `src/modules/build/forms/submissions.service.ts:170` — listSubmissions binds via loadForm before querying
+- `src/modules/build/forms/submissions.service.ts:54` — loadForm's WHERE binds formId to projectId and orgId together
 
 ### VERIFIED — `POST /build/:projectId/forms/:formId/submissions`
 
-`SubmissionsController.createSubmission` — `src/modules/build/forms/submissions.controller.ts:70`
+`SubmissionsController.createSubmission` — `src/modules/build/forms/submissions.controller.ts:71`
 
 POST /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUserContext, createSubmission asserts project membership, and loadForm binds formId+orgId+projectId. runSubmission derives every insert key from that validated form row.
 
-- `src/modules/build/forms/submissions.controller.ts:81` — route handler forwards the actor and path params
-- `src/modules/build/forms/submissions.service.ts:188` — project membership is enforced
-- `src/modules/build/forms/submissions.service.ts:189` — createSubmission binds via loadForm before running the submission
-- `src/modules/build/forms/submissions.service.ts:78` — runSubmission derives tenant and parent ids from the validated row
+- `src/modules/build/forms/submissions.controller.ts:82` — route handler forwards the actor and path params
+- `src/modules/build/forms/submissions.service.ts:212` — project membership is enforced
+- `src/modules/build/forms/submissions.service.ts:213` — createSubmission binds via loadForm before running the submission
+- `src/modules/build/forms/submissions.service.ts:93` — runSubmission derives tenant and parent ids from the validated row
 
 ### VERIFIED — `PATCH /build/:projectId/forms/:formId/submissions/:submissionId`
 
-`SubmissionsController.updateSubmission` — `src/modules/build/forms/submissions.controller.ts:84`
+`SubmissionsController.updateSubmission` — `src/modules/build/forms/submissions.controller.ts:85`
 
 PATCH /build/:projectId/forms/:formId/submissions/:submissionId. The handler forwards CurrentUserContext, updateSubmission asserts project membership, loadForm binds the form to project+tenant, loadSubmission binds the submission to form+tenant, and the UPDATE repeats id+orgId+formId.
 
-- `src/modules/build/forms/submissions.controller.ts:95` — route handler forwards the actor and all path params
-- `src/modules/build/forms/submissions.service.ts:241` — project membership is enforced
-- `src/modules/build/forms/submissions.service.ts:242` — binds formId to projectId
-- `src/modules/build/forms/submissions.service.ts:243` — binds submissionId to formId
-- `src/modules/build/forms/submissions.service.ts:250` — UPDATE WHERE clause re-binds formId
+- `src/modules/build/forms/submissions.controller.ts:96` — route handler forwards the actor and all path params
+- `src/modules/build/forms/submissions.service.ts:265` — project membership is enforced
+- `src/modules/build/forms/submissions.service.ts:266` — binds formId to projectId
+- `src/modules/build/forms/submissions.service.ts:267` — binds submissionId to formId
+- `src/modules/build/forms/submissions.service.ts:274` — UPDATE WHERE clause re-binds formId
 
 ### VERIFIED — `POST /public/build-forms/:publicToken/submissions`
 
-`SubmissionsPublicController.submitPublicForm` — `src/modules/build/forms/submissions.controller.ts:106`
+`SubmissionsPublicController.submitPublicForm` — `src/modules/build/forms/submissions.controller.ts:107`
 
 POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and IP rate-limited. One withPublicToken transaction resolves the active public form and performs capacity reservation, ticket allocation/inserts, and the submission insert under the same token-scoped RLS context. orgId and projectId come only from the resolved form row. The plaintext token comparison remains a storage hardening opportunity, not an access-control defect.
 
-- `src/modules/build/forms/submissions.service.ts:50` — resolved by token inside withPublicToken; orgId derived from the row
-- `src/modules/build/forms/submissions.service.ts:51` — non-public forms are not reachable through this route
-- `src/modules/build/forms/submissions.service.ts:207` — lookup and every write share one token-scoped transaction
-- `src/modules/build/forms/submissions.service.ts:209` — the existing token transaction is passed into the write path
+- `src/modules/build/forms/submissions.service.ts:65` — resolved by token inside withPublicToken; orgId derived from the row
+- `src/modules/build/forms/submissions.service.ts:66` — non-public forms are not reachable through this route
+- `src/modules/build/forms/submissions.service.ts:231` — lookup and every write share one token-scoped transaction
+- `src/modules/build/forms/submissions.service.ts:233` — the existing token transaction is passed into the write path
 
 ### VERIFIED — `GET /build/:projectId/decisions/:decisionId`
 
@@ -1368,58 +1368,58 @@ DELETE /build/:projectId/risks/:riskId (soft delete). Same binding as updateRisk
 
 ### VERIFIED — `GET /build/:projectId/incidents/:incidentId`
 
-`IncidentsController.getIncident` — `src/modules/build/incidents/incidents.controller.ts:86`
+`IncidentsController.getIncident` — `src/modules/build/incidents/incidents.controller.ts:87`
 
 GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the bounded child-resource queries run.
 
-- `src/modules/build/incidents/incidents.controller.ts:96` — route handler passes both path params and the validated child query to the service
-- `src/modules/build/incidents/incidents.service.ts:114` — getIncident binds via loadIncident before reading child resources
-- `src/modules/build/incidents/incidents.service.ts:48` — loadIncident's WHERE binds incidentId to projectId and orgId together
+- `src/modules/build/incidents/incidents.controller.ts:97` — route handler passes both path params and the validated child query to the service
+- `src/modules/build/incidents/incidents.service.ts:148` — getIncident binds via loadIncident before reading child resources
+- `src/modules/build/incidents/incidents.service.ts:68` — loadIncident's WHERE binds incidentId to projectId and orgId together
 
 ### VERIFIED — `PATCH /build/:projectId/incidents/:incidentId`
 
-`IncidentsController.updateIncident` — `src/modules/build/incidents/incidents.controller.ts:112`
+`IncidentsController.updateIncident` — `src/modules/build/incidents/incidents.controller.ts:113`
 
 PATCH /build/:projectId/incidents/:incidentId. updateIncident calls assertProjectAccess(projectId), then binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId), and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction.
 
-- `src/modules/build/incidents/incidents.controller.ts:122` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:165` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:166` — binds incidentId to projectId via loadIncident before patching
-- `src/modules/build/incidents/incidents.service.ts:206` — UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.controller.ts:123` — route handler passes raw path params straight to the service
+- `src/modules/build/incidents/incidents.service.ts:199` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:200` — binds incidentId to projectId via loadIncident before patching
+- `src/modules/build/incidents/incidents.service.ts:240` — UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `DELETE /build/:projectId/incidents/:incidentId`
 
-`IncidentsController.deleteIncident` — `src/modules/build/incidents/incidents.controller.ts:125`
+`IncidentsController.deleteIncident` — `src/modules/build/incidents/incidents.controller.ts:126`
 
 DELETE /build/:projectId/incidents/:incidentId (soft delete). deleteIncident calls assertProjectAccess(projectId), then loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.
 
-- `src/modules/build/incidents/incidents.controller.ts:135` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:266` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:267` — binds incidentId to projectId via loadIncident before deleting
-- `src/modules/build/incidents/incidents.service.ts:275` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.controller.ts:136` — route handler passes raw path params straight to the service
+- `src/modules/build/incidents/incidents.service.ts:300` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:301` — binds incidentId to projectId via loadIncident before deleting
+- `src/modules/build/incidents/incidents.service.ts:309` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/updates`
 
-`IncidentsController.addUpdate` — `src/modules/build/incidents/incidents.controller.ts:138`
+`IncidentsController.addUpdate` — `src/modules/build/incidents/incidents.controller.ts:139`
 
 POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.
 
-- `src/modules/build/incidents/incidents.controller.ts:149` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:295` — binds incidentId to projectId via loadIncident before writing
-- `src/modules/build/incidents/incidents.service.ts:326` — in-transaction status UPDATE independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.controller.ts:150` — route handler passes raw path params straight to the service
+- `src/modules/build/incidents/incidents.service.ts:329` — binds incidentId to projectId via loadIncident before writing
+- `src/modules/build/incidents/incidents.service.ts:360` — in-transaction status UPDATE independently re-binds id+orgId+projectId
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/decisions`
 
-`IncidentsController.addDecision` — `src/modules/build/incidents/incidents.controller.ts:152`
+`IncidentsController.addDecision` — `src/modules/build/incidents/incidents.controller.ts:153`
 
 POST /build/:projectId/incidents/:incidentId/decisions. addDecision calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) — the same helper proven elsewhere in this file to bind id+orgId+projectId together, 404 on mismatch — before inserting the decision row, which is itself scoped to the now-confirmed incidentId+orgId.
 
-- `src/modules/build/incidents/incidents.service.ts:365` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:366` — binds incidentId to projectId via loadIncident before writing
+- `src/modules/build/incidents/incidents.service.ts:399` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:400` — binds incidentId to projectId via loadIncident before writing
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/follow-ups`
 
-`IncidentsController.addFollowUpAction` — `src/modules/build/incidents/incidents.controller.ts:166`
+`IncidentsController.addFollowUpAction` — `src/modules/build/incidents/incidents.controller.ts:167`
 
 POST /build/:projectId/incidents/:incidentId/follow-ups. Same binding shape as addDecision: assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) before inserting the follow-up-action row.
 
@@ -1428,13 +1428,13 @@ POST /build/:projectId/incidents/:incidentId/follow-ups. Same binding shape as a
 
 ### VERIFIED — `PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId`
 
-`IncidentsController.updateFollowUpAction` — `src/modules/build/incidents/incidents.controller.ts:180`
+`IncidentsController.updateFollowUpAction` — `src/modules/build/incidents/incidents.controller.ts:181`
 
 PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId. assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) bind the parent incident to this project; the UPDATE's own WHERE independently re-binds id=followUpActionId AND orgId AND incidentId, so a foreign followUpActionId (even one belonging to a different incident in the same org) 404s rather than matching.
 
-- `src/modules/build/incidents/incidents.service.ts:430` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:431` — binds incidentId to projectId via loadIncident before updating
-- `src/modules/build/incidents/incidents.service.ts:447` — UPDATE WHERE independently re-binds id+orgId+incidentId
+- `src/modules/build/incidents/incidents.service.ts:464` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:465` — binds incidentId to projectId via loadIncident before updating
+- `src/modules/build/incidents/incidents.service.ts:481` — UPDATE WHERE independently re-binds id+orgId+incidentId
 
 ### VERIFIED — `POST /build/managed-products`
 
@@ -1442,8 +1442,8 @@ PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId. asse
 
 POST /build/managed-products. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into managed_products with orgId as a column of .values() at managed-products.service.ts:83; the unique-key conflict it catches is the per-org key constraint, which is itself evidence the row is org-scoped. PASSED-UNBOUND is the expected static reading because an INSERT carries no predicate for eq() detection. The sibling updateManagedProduct binds eq(managedProducts.orgId, orgId) in its WHERE, so the table's org column is genuinely the tenant key.
 
-- `src/modules/build/managed-products/managed-products.service.ts:84` — an INSERT — no WHERE clause exists to carry a predicate
-- `src/modules/build/managed-products/managed-products.service.ts:86` — org bound as an ES6 shorthand column in .values()
+- `src/modules/build/managed-products/managed-products.service.ts:91` — an INSERT — no WHERE clause exists to carry a predicate
+- `src/modules/build/managed-products/managed-products.service.ts:93` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `POST /build/:projectId/meetings/:meetingId/action-items`
 
@@ -1846,10 +1846,10 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | CLOSED | PATCH | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:227` | `updateTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:240` | `deleteTicket` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/projects-webhooks.controller.ts:59` | `deleteWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
-| CLOSED | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:92` | `getSprint` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | n/a |
-| CLOSED | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:104` | `updateSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:220` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:233` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:104` | `getSprint` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | n/a |
+| CLOSED | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:116` | `updateSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:239` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:252` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
 | CLOSED | POST | `/build/:projectId/tickets/:ticketId/time-entries` | `src/modules/build/execution/timesheets.controller.ts:183` | `logTicketTime` | @RequirePermission("build:timesheets:create") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | CLOSED | PATCH | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:96` | `updateMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:109` | `deleteMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
@@ -1859,14 +1859,14 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | GET | `/build/agent-pulse/top-signal` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:27` | `getTopSignal` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/agent-pulse/badge` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:36` | `badge` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | POST | `/build/agent-pulse/proposals/:draftId/apply` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:44` | `applyDraft` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [draftId] | NO (mutating) |
-| VERIFIED | GET | `/build/approvals/inbox/count` | `src/modules/build/approvals/approvals.controller.ts:55` | `getInboxCount` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | GET | `/build/approvals/inbox` | `src/modules/build/approvals/approvals.controller.ts:64` | `getInbox` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/:projectId/approvals` | `src/modules/build/approvals/approvals.controller.ts:84` | `listApprovals` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:96` | `getApproval` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | n/a |
-| VERIFIED | POST | `/build/:projectId/approvals` | `src/modules/build/approvals/approvals.controller.ts:108` | `createApproval` | @RequirePermission("build:approvals:request") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | PATCH | `/build/:projectId/approvals/:approvalId/decide` | `src/modules/build/approvals/approvals.controller.ts:122` | `decideApproval` | @RequirePermission("build:approvals:decide") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | yes |
-| VERIFIED | PATCH | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:136` | `updateApproval` | @RequirePermission("build:approvals:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:149` | `softDeleteApproval` | @RequirePermission("build:approvals:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | NO (mutating) |
+| VERIFIED | GET | `/build/approvals/inbox/count` | `src/modules/build/approvals/approvals.controller.ts:59` | `getInboxCount` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
+| VERIFIED | GET | `/build/approvals/inbox` | `src/modules/build/approvals/approvals.controller.ts:68` | `getInbox` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/:projectId/approvals` | `src/modules/build/approvals/approvals.controller.ts:88` | `listApprovals` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:100` | `getApproval` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | n/a |
+| VERIFIED | POST | `/build/:projectId/approvals` | `src/modules/build/approvals/approvals.controller.ts:112` | `createApproval` | @RequirePermission("build:approvals:request") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | PATCH | `/build/:projectId/approvals/:approvalId/decide` | `src/modules/build/approvals/approvals.controller.ts:126` | `decideApproval` | @RequirePermission("build:approvals:decide") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | yes |
+| VERIFIED | PATCH | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:140` | `updateApproval` | @RequirePermission("build:approvals:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:153` | `softDeleteApproval` | @RequirePermission("build:approvals:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/change-requests/:changeRequestId/affected-tickets` | `src/modules/build/client-portal/change-request-affected-items.controller.ts:56` | `listAffectedTickets` | @RequirePermission("build:changerequests:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, changeRequestId] | n/a |
 | VERIFIED | POST | `/build/:projectId/change-requests/:changeRequestId/affected-tickets` | `src/modules/build/client-portal/change-request-affected-items.controller.ts:69` | `linkTicket` | @RequirePermission("build:changerequests:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, changeRequestId] | yes |
 | VERIFIED | DELETE | `/build/:projectId/change-requests/:changeRequestId/affected-tickets/:affectedItemId` | `src/modules/build/client-portal/change-request-affected-items.controller.ts:84` | `unlinkTicket` | @RequirePermission("build:changerequests:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, changeRequestId, affectedItemId] | NO (mutating) |
@@ -1981,19 +1981,19 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | PATCH | `/build/labels/:labelId` | `src/modules/build/core/projects.controller.ts:118` | `updateLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [labelId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/invoice-line-detail` | `src/modules/build/core/projects.controller.ts:130` | `getInvoiceLineDetail` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | DELETE | `/build/labels/:labelId` | `src/modules/build/core/projects.controller.ts:141` | `deleteLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [labelId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:67` | `listSprints` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:78` | `createSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:117` | `deleteSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:137` | `listCycles` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:149` | `createCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:163` | `updateCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:176` | `deleteCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:196` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:207` | `createModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:253` | `listEpics` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:264` | `createEpic` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:277` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:290` | `deleteEpic` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:79` | `listSprints` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:90` | `createSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:135` | `deleteSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:155` | `listCycles` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:167` | `createCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:181` | `updateCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:194` | `deleteCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:214` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:226` | `createModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:272` | `listEpics` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:283` | `createEpic` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:296` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:309` | `deleteEpic` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
 | VERIFIED | GET | `/build/time-entries` | `src/modules/build/execution/timesheets.controller.ts:61` | `listTimeEntries` | @RequirePermission("build:timesheets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/time-entries/team` | `src/modules/build/execution/timesheets.controller.ts:72` | `teamTimesheets` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | PATCH | `/build/time-entries/:entryId/approve` | `src/modules/build/execution/timesheets.controller.ts:83` | `approveEntry` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | yes |
@@ -2034,10 +2034,10 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/:projectId/forms` | `src/modules/build/forms/forms.controller.ts:66` | `createForm` | @RequirePermission("build:forms:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
 | VERIFIED | PATCH | `/build/:projectId/forms/:formId` | `src/modules/build/forms/forms.controller.ts:79` | `updateForm` | @RequirePermission("build:forms:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, formId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/:projectId/forms/:formId` | `src/modules/build/forms/forms.controller.ts:92` | `deleteForm` | @RequirePermission("build:forms:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, formId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/forms/:formId/submissions` | `src/modules/build/forms/submissions.controller.ts:57` | `listSubmissions` | @RequirePermission("build:forms:manage") | @RequireModule("build") | OK | BOUND | BOUND | unresolved | n/a |
-| VERIFIED | POST | `/build/:projectId/forms/:formId/submissions` | `src/modules/build/forms/submissions.controller.ts:70` | `createSubmission` | @RequirePermission("build:forms:view") | @RequireModule("build") | OK | BOUND | BOUND | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/forms/:formId/submissions/:submissionId` | `src/modules/build/forms/submissions.controller.ts:84` | `updateSubmission` | @RequirePermission("build:forms:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, formId, submissionId] | NO (mutating) |
-| VERIFIED | POST | `/public/build-forms/:publicToken/submissions` | `src/modules/build/forms/submissions.controller.ts:106` | `submitPublicForm` | @Public | — | OK | N/A (@Public) | N/A (not nested) | complete [publicToken] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/forms/:formId/submissions` | `src/modules/build/forms/submissions.controller.ts:58` | `listSubmissions` | @RequirePermission("build:forms:manage") | @RequireModule("build") | OK | BOUND | BOUND | unresolved | n/a |
+| VERIFIED | POST | `/build/:projectId/forms/:formId/submissions` | `src/modules/build/forms/submissions.controller.ts:71` | `createSubmission` | @RequirePermission("build:forms:view") | @RequireModule("build") | OK | BOUND | BOUND | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/forms/:formId/submissions/:submissionId` | `src/modules/build/forms/submissions.controller.ts:85` | `updateSubmission` | @RequirePermission("build:forms:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, formId, submissionId] | NO (mutating) |
+| VERIFIED | POST | `/public/build-forms/:publicToken/submissions` | `src/modules/build/forms/submissions.controller.ts:107` | `submitPublicForm` | @Public | — | OK | N/A (@Public) | N/A (not nested) | complete [publicToken] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/decisions` | `src/modules/build/governance/decisions.controller.ts:42` | `listDecisions` | @RequirePermission("build:decisions:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/:projectId/decisions/:decisionId` | `src/modules/build/governance/decisions.controller.ts:54` | `getDecision` | @RequirePermission("build:decisions:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, decisionId] | n/a |
 | VERIFIED | POST | `/build/:projectId/decisions` | `src/modules/build/governance/decisions.controller.ts:66` | `createDecision` | @RequirePermission("build:decisions:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
@@ -2052,15 +2052,15 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/:projectId/import-export/tickets/preview` | `src/modules/build/import-export/ticket-import-export.controller.ts:47` | `previewImport` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | POST | `/build/:projectId/import-export/tickets` | `src/modules/build/import-export/ticket-import-export.controller.ts:60` | `commitImport` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/import-export/tickets/export` | `src/modules/build/import-export/ticket-import-export.controller.ts:74` | `exportTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:74` | `listIncidents` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:86` | `getIncident` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | n/a |
-| VERIFIED | POST | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:99` | `createIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:112` | `updateIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:125` | `deleteIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/updates` | `src/modules/build/incidents/incidents.controller.ts:138` | `addUpdate` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/decisions` | `src/modules/build/incidents/incidents.controller.ts:152` | `addDecision` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/follow-ups` | `src/modules/build/incidents/incidents.controller.ts:166` | `addFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId` | `src/modules/build/incidents/incidents.controller.ts:180` | `updateFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId, followUpActionId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:75` | `listIncidents` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:87` | `getIncident` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | n/a |
+| VERIFIED | POST | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:100` | `createIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:113` | `updateIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:126` | `deleteIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/updates` | `src/modules/build/incidents/incidents.controller.ts:139` | `addUpdate` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/decisions` | `src/modules/build/incidents/incidents.controller.ts:153` | `addDecision` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/incidents/:incidentId/follow-ups` | `src/modules/build/incidents/incidents.controller.ts:167` | `addFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId` | `src/modules/build/incidents/incidents.controller.ts:181` | `updateFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId, followUpActionId] | NO (mutating) |
 | VERIFIED | GET | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:43` | `listManagedProducts` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:54` | `getManagedProduct` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | n/a |
 | VERIFIED | POST | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:65` | `createManagedProduct` | @RequirePermission("build:managed-products:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |

@@ -446,7 +446,7 @@ const REVIEWED_INLINE = [
     summary: "PATCH /build/:projectId/modules/:moduleId. No @Param(\"projectId\"); the UPDATE binds (id, orgId).",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/modules.service.ts", line: 133, anchor: /\.where\(and\(eq\(modules\.id, moduleId\), eq\(modules\.projectId, projectId\), eq\(modules\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/modules.service.ts", line: 170, anchor: /eq\(modules\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -457,7 +457,7 @@ const REVIEWED_INLINE = [
       "DELETE /build/:projectId/modules/:moduleId. No @Param(\"projectId\"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).",
     blastRadius: "Intra-tenant cross-project delete, with a side effect on every ticket referencing the module.",
     evidence: [
-      { file: "src/modules/build/execution/modules.service.ts", line: 148, anchor: /\.where\(and\(eq\(modules\.id, moduleId\), eq\(modules\.projectId, projectId\), eq\(modules\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/modules.service.ts", line: 188, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -611,10 +611,10 @@ const REVIEWED_INLINE = [
       "POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and IP rate-limited. One withPublicToken transaction resolves the active public form and performs capacity reservation, ticket allocation/inserts, and the submission insert under the same token-scoped RLS context. orgId and projectId come only from the resolved form row. The plaintext token comparison remains a storage hardening opportunity, not an access-control defect.",
     blastRadius: "A submission against the one form the token names.",
     evidence: [
-      { file: "src/modules/build/forms/submissions.service.ts", line: 50, anchor: /eq\(projectForms\.publicToken, publicToken\),/, note: "resolved by token inside withPublicToken; orgId derived from the row" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 51, anchor: /eq\(projectForms\.isPublic, true\),/, note: "non-public forms are not reachable through this route" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 207, anchor: /const \{ form, result \} = await withPublicToken\(this\.db, publicToken, async \(tx\) => \{/, note: "lookup and every write share one token-scoped transaction" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 209, anchor: /const result = await this\.runSubmission\(form, input, null, tx\);/, note: "the existing token transaction is passed into the write path" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 65, anchor: /eq\(projectForms\.publicToken, publicToken\),/, note: "resolved by token inside withPublicToken; orgId derived from the row" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 66, anchor: /eq\(projectForms\.isPublic, true\),/, note: "non-public forms are not reachable through this route" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 231, anchor: /const \{ form, result \} = await withPublicToken\(this\.db, publicToken, async \(tx\) => \{/, note: "lookup and every write share one token-scoped transaction" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 233, anchor: /const result = await this\.runSubmission\(form, input, null, tx\);/, note: "the existing token transaction is passed into the write path" },
     ],
   },
 ];
