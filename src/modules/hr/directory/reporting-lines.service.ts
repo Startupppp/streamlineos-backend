@@ -2,10 +2,6 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
-import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AccessService } from "../../access/access.service";
 import { ReportingLineService } from "../../directory/reporting-line.service";
@@ -27,21 +23,6 @@ import type {
 } from "./dto/reporting-lines-line.schemas";
 import type { ManagerRef } from "./dto/reporting-lines-shared.schemas";
 
-/**
- * After a reporting relationship commits, every read that walks the hierarchy is stale: the org
- * chart and headcount namespaces, and the employee list that shows each person's manager. Both
- * run after commit (BE-85: inline when there is no transaction to wait for).
- */
-export async function invalidateReportingReads(
-  hierarchyCache: OrgHierarchyCacheService,
-  cache: CacheService,
-  orgId: string,
-): Promise<void> {
-  await hierarchyCache.invalidateAfterMutation(orgId);
-  const bustEmployees = () => cache.invalidateNamespace(CACHE_KEYS.hrEmployeesListNamespace(orgId));
-  if (!registerAfterCommit(bustEmployees)) await bustEmployees();
-}
-
 @Injectable()
 export class HrReportingLinesService {
   constructor(
@@ -52,8 +33,6 @@ export class HrReportingLinesService {
     private readonly policies: ReportingManagerPolicyService,
     private readonly fallback: ReportingManagerFallbackResolver,
     private readonly relationships: ReportingRelationshipService,
-    private readonly hierarchyCache: OrgHierarchyCacheService,
-    private readonly cache: CacheService,
   ) {}
 
   async getPolicy(actor: CurrentUserContext): Promise<ReportingManagerPolicy> {
@@ -103,18 +82,16 @@ export class HrReportingLinesService {
         }),
       { orgId: actor.orgId },
     );
-    if (result.changed) await invalidateReportingReads(this.hierarchyCache, this.cache, actor.orgId);
     return { line: await this.getLine(actor, employeeUserId), warnings: result.warnings };
   }
 
   async confirmFallback(actor: CurrentUserContext, employeeUserId: string): Promise<ReportingLineView> {
     await this.employees.assertEmployeeVisible(await resolveEmployeesScope(this.access, actor), employeeUserId);
-    const confirmed = await runInTenantTransaction(
+    await runInTenantTransaction(
       this.db,
       (tx) => this.relationships.confirmFallback(tx, { orgId: actor.orgId, actor, subjectUserId: employeeUserId }),
       { orgId: actor.orgId },
     );
-    if (confirmed.confirmed) await invalidateReportingReads(this.hierarchyCache, this.cache, actor.orgId);
     return this.getLine(actor, employeeUserId);
   }
 
@@ -152,8 +129,10 @@ export class HrReportingLinesService {
     };
   }
 
-  coverage(actor: CurrentUserContext): Promise<ManagerCoverageReport> {
-    return this.reportingLines.coverage(actor.orgId);
+  /** The unconfirmed-fallback and pending-review lists (and their counts) follow the reader's employees scope. */
+  async coverage(actor: CurrentUserContext): Promise<ManagerCoverageReport> {
+    const read = await resolveEmployeesScope(this.access, actor);
+    return this.reportingLines.coverage(actor.orgId, read.unrestricted ? {} : { onlyUserId: actor.userId });
   }
 
   async managerCandidates(actor: CurrentUserContext, query: ManagerCandidatesQuery): Promise<{ items: ManagerRef[] }> {

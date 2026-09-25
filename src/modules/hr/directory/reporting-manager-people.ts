@@ -3,6 +3,7 @@ import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { hrEmployments, hrPeople, organizationMembers, users } from "../../../db/schema";
 import { CANNOT_MANAGE_LIFECYCLE, managerStateOf } from "../../directory/reporting-line-queries";
 import type { ManagerRef } from "../../directory/reporting-line.types";
+import type { ScopedRead } from "../../access/scoped-read";
 
 /**
  * HRM-15 display reads for the people a reporting-manager screen names: a manager, a requester, a
@@ -185,4 +186,23 @@ export async function searchManagerCandidates(
     const person = refOf(row);
     return { userId: person.userId, name: person.name, email: person.email, designation: person.designation, state: person.state };
   });
+}
+
+/**
+ * The subset of `userIds` the caller's employees scope can see, in one statement: the same
+ * membership predicate `EmployeesService.assertEmployeeVisible` applies to a single id.
+ */
+export async function visibleUserIds(read: ScopedRead, db: DbOrTx, userIds: readonly string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  if (read.unrestricted) return new Set(userIds);
+  const rows = await read.read(
+    {
+      tenant: organizationMembers.orgId,
+      scope: { columns: { ownerColumn: organizationMembers.userId } },
+      and: [inArray(organizationMembers.userId, [...new Set(userIds)])],
+    },
+    ({ sql: where }) => db.select({ userId: organizationMembers.userId }).from(organizationMembers).where(where).limit(userIds.length),
+    () => [],
+  );
+  return new Set(rows.map((row) => row.userId));
 }

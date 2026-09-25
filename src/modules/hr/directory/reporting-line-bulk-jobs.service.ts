@@ -5,9 +5,10 @@ import type { Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AuditService } from "../../../common/audit/audit.service";
-import { CacheService } from "../../../common/cache/cache.service";
-import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { lockReportingLines } from "../../../common/hr/sync-canonical-reporting-line";
+import { AccessService } from "../../access/access.service";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   hrReportingLineBulkJobRows,
   hrReportingLineBulkJobs,
@@ -16,15 +17,16 @@ import {
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 import { ReportingLineException } from "../../directory/reporting-line-errors";
-import { relationshipsBetween } from "../../directory/reporting-line-queries";
+import { inForceOn, relationshipsBetween } from "../../directory/reporting-line-queries";
 import {
   REPORTING_LINE_ERROR_CODES as CODES,
   type RelationshipValidation,
   type SetRelationshipsCommand,
 } from "../../directory/reporting-line.types";
 import { orgBusinessDate } from "../time/attendance-business-date";
-import { invalidateReportingReads } from "./reporting-lines.service";
-import { peopleByEmails, peopleByEmploymentIds, peopleByUserIds, type PersonRef } from "./reporting-manager-people";
+import { resolveEmployeesScope } from "./employees-scope";
+import { findManagerCycles } from "./bulk-onboarding/bulk-onboarding-graph";
+import { peopleByEmails, peopleByEmploymentIds, peopleByUserIds, visibleUserIds, type PersonRef } from "./reporting-manager-people";
 import {
   BULK_CONFIRMATION_THRESHOLD,
   affectedCount,
@@ -79,7 +81,8 @@ export function classifyBulkRow(
     employeeEmail: row.employeeEmail,
     employeeEmploymentId: employmentId,
     requestedPrimaryManagerEmail: row.primaryManagerEmail,
-    requestedPrimaryManagerEmploymentId: validation?.primaryManagerEmploymentId ?? row.primaryManager?.employmentId ?? null,
+    // Only a manager the row names. A blank primary means "unchanged", resolved at commit time.
+    requestedPrimaryManagerEmploymentId: row.primaryManager?.employmentId ?? null,
     currentPrimaryManagerEmploymentId: employmentId === null ? null : currentOf.get(employmentId)?.managerEmploymentId ?? null,
     secondaryManagerEmail1: row.secondaryEmails[0] ?? null,
     secondaryManagerEmail2: row.secondaryEmails[1] ?? null,
@@ -94,6 +97,22 @@ export function classifyBulkRow(
 }
 
 /**
+ * Rows whose new primary managers point at each other inside this one file (A→B and B→A): each is
+ * valid against the stored hierarchy on its own, so only the file's own graph shows the loop.
+ */
+export function rejectFileCycles(rows: PlannedRow[]): void {
+  const edges = rows.flatMap((row) =>
+    row.employee && row.primaryManager && row.issues.length === 0
+      ? [{ row: row.rowNumber, email: row.employee.email.toLowerCase(), managerEmail: row.primaryManager.email.toLowerCase() }]
+      : [],
+  );
+  const cyclic = new Set(findManagerCycles(edges).map((finding) => finding.row));
+  for (const row of rows)
+    if (cyclic.has(row.rowNumber))
+      row.issues.push({ code: CODES.PRIMARY_CYCLE, message: "This file makes these employees each other's managers, which is a circular management chain." });
+}
+
+/**
  * HRM-15 §7.6 bulk reassignment: a preview is persisted as a job with one row per employee, and a
  * commit writes only the rows the preview accepted, each through the canonical relationship
  * service in its own savepoint so one refusal fails one row, never half of one employee's lines.
@@ -105,14 +124,22 @@ export class ReportingLineBulkJobsService {
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
     private readonly relationships: ReportingRelationshipService,
-    private readonly hierarchyCache: OrgHierarchyCacheService,
-    private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
+
+  /**
+   * Job visibility: a caller whose employees scope is org-wide sees every job; anyone narrower sees
+   * only the jobs they previewed, since a job's rows name people outside their scope.
+   */
+  private async jobAuthor(actor: CurrentUserContext): Promise<string | undefined> {
+    return (await resolveEmployeesScope(this.access, actor)).unrestricted ? undefined : actor.userId;
+  }
 
   async preview(actor: CurrentUserContext, body: CreateBulkJobInput): Promise<BulkJob> {
     const orgId = actor.orgId;
     const defaultDate = body.effectiveFrom ?? (await orgBusinessDate(this.db, orgId));
-    const planned = await this.plan(orgId, body, defaultDate);
+    const planned = await this.plan(await resolveEmployeesScope(this.access, actor), body, defaultDate);
+    rejectFileCycles(planned);
 
     const employmentIds = planned.flatMap((row) => (row.employee?.employmentId ? [row.employee.employmentId] : []));
     const current = (await relationshipsBetween(this.db, orgId, employmentIds, defaultDate, defaultDate)).filter((line) => line.primary);
@@ -185,7 +212,7 @@ export class ReportingLineBulkJobsService {
     await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const job = await readJob(tx, orgId, jobId);
+        const job = await readJob(tx, orgId, jobId, await this.jobAuthor(actor));
         if (job.status !== "PREVIEWED")
           throw new ConflictException({ code: "CONFLICT", message: `This bulk change is already ${job.status.toLowerCase()}.` });
         if (job.createdAt.getTime() < Date.now() - BULK_JOB_PREVIEW_TTL_HOURS * 3_600_000) {
@@ -245,33 +272,38 @@ export class ReportingLineBulkJobsService {
           link: `/hr/employees/reporting-changes/${jobId}`,
           dedupeKey: `hr-rl-bulk-job:committed:${jobId}`,
         });
-        if (committed > 0) await invalidateReportingReads(this.hierarchyCache, this.cache, orgId);
       },
       { orgId },
     );
     return jobView(this.db, orgId, jobId);
   }
 
-  list(actor: CurrentUserContext, cursor: string | undefined) {
-    return listJobs(this.db, actor.orgId, cursor);
+  async list(actor: CurrentUserContext, cursor: string | undefined) {
+    return listJobs(this.db, actor.orgId, cursor, await this.jobAuthor(actor));
   }
 
-  get(actor: CurrentUserContext, jobId: string, rowCursor: string | undefined): Promise<BulkJob> {
-    return jobView(this.db, actor.orgId, jobId, rowCursor);
+  async get(actor: CurrentUserContext, jobId: string, rowCursor: string | undefined): Promise<BulkJob> {
+    return jobView(this.db, actor.orgId, jobId, rowCursor, await this.jobAuthor(actor));
   }
 
-  failures(actor: CurrentUserContext, jobId: string): Promise<string> {
-    return failuresCsv(this.db, actor.orgId, jobId);
+  async failures(actor: CurrentUserContext, jobId: string): Promise<string> {
+    return failuresCsv(this.db, actor.orgId, jobId, await this.jobAuthor(actor));
   }
 
-  /** Both request shapes become one row list, with every person resolved in two statements. */
-  private async plan(orgId: string, body: CreateBulkJobInput, defaultDate: string): Promise<PlannedRow[]> {
+  /**
+   * Both request shapes become one row list, with every person resolved in two statements and the
+   * employees narrowed to the caller's scope in a third: an employee outside it reads exactly like
+   * one the organization does not have.
+   */
+  private async plan(read: ScopedRead, body: CreateBulkJobInput, defaultDate: string): Promise<PlannedRow[]> {
+    const orgId = read.orgId;
     if ("employeeUserIds" in body) {
       const people = await peopleByUserIds(this.db, orgId, [...body.employeeUserIds, body.primaryManagerUserId]);
+      const visible = await visibleUserIds(read, this.db, body.employeeUserIds);
       const manager = people.get(body.primaryManagerUserId);
       const seen = new Set<string>();
       return body.employeeUserIds.map((userId, index) => {
-        const employee = people.get(userId);
+        const employee = visible.has(userId) ? people.get(userId) : undefined;
         const row: PlannedRow = {
           rowNumber: index + 1,
           employeeEmail: employee?.email ?? userId,
@@ -293,13 +325,22 @@ export class ReportingLineBulkJobsService {
       ...[row.primaryManagerEmail, row.secondaryManagerEmail1, row.secondaryManagerEmail2, row.secondaryManagerEmail3].flatMap((email) => (email ? [email] : [])),
     ]);
     const people = await peopleByEmails(this.db, orgId, emails);
+    const visible = await visibleUserIds(
+      read,
+      this.db,
+      body.rows.flatMap((row) => {
+        const person = people.get(row.employeeEmail);
+        return person ? [person.userId] : [];
+      }),
+    );
     const seen = new Set<string>();
     return body.rows.map((input, index) => {
+      const found = people.get(input.employeeEmail);
       const secondaryEmails = [input.secondaryManagerEmail1, input.secondaryManagerEmail2, input.secondaryManagerEmail3].flatMap((email) => (email ? [email] : []));
       const row: PlannedRow = {
         rowNumber: index + 1,
         employeeEmail: input.employeeEmail,
-        employee: people.get(input.employeeEmail),
+        employee: found && visible.has(found.userId) ? found : undefined,
         primaryManagerEmail: input.primaryManagerEmail ?? null,
         primaryManager: input.primaryManagerEmail ? people.get(input.primaryManagerEmail) : undefined,
         secondaryEmails,
@@ -336,15 +377,25 @@ export class ReportingLineBulkJobsService {
     supplied: ReadonlyMap<number, string>,
   ): Promise<Array<{ rowNumber: number; status: "COMMITTED" | "FAILED"; codes: string | null; message: string | null; beforeLineId: number | null; afterLineId: number | null }>> {
     const orgId = actor.orgId;
-    const managerIds = rows.flatMap((row) => [row.requestedPrimaryManagerEmploymentId, row.currentPrimaryManagerEmploymentId].flatMap((id) => (id === null ? [] : [id])));
-    const [managers, secondaries] = await Promise.all([
+    // Held for the whole commit (setRelationships takes it again, re-entrantly), so the current
+    // primary read below for "unchanged" rows cannot move before it is written back.
+    await lockReportingLines(tx, orgId);
+    const managerIds = rows.flatMap((row) => (row.requestedPrimaryManagerEmploymentId === null ? [] : [row.requestedPrimaryManagerEmploymentId]));
+    const keepIds = rows.flatMap((row) => (row.requestedPrimaryManagerEmploymentId === null && row.employeeEmploymentId !== null ? [row.employeeEmploymentId] : []));
+    const days = rows.map((row) => row.effectiveFrom ?? "").filter((day) => day !== "").sort();
+    const [managers, secondaries, current] = await Promise.all([
       peopleByEmploymentIds(tx, orgId, managerIds),
       peopleByEmails(tx, orgId, rows.flatMap(secondaryEmailsOf)),
+      relationshipsBetween(tx, orgId, keepIds, days[0] ?? "", days[days.length - 1] ?? ""),
     ]);
     const outcomes = [];
     for (const row of rows) {
-      const managerEmploymentId = row.requestedPrimaryManagerEmploymentId ?? row.currentPrimaryManagerEmploymentId;
-      const managerUserId = managerEmploymentId === null ? null : managers.get(managerEmploymentId)?.userId || null;
+      // A blank primary keeps whoever is the primary manager NOW, not whoever it was at preview.
+      const managerUserId =
+        row.requestedPrimaryManagerEmploymentId !== null
+          ? managers.get(row.requestedPrimaryManagerEmploymentId)?.userId || null
+          : current.find((line) => line.primary && line.employmentId === row.employeeEmploymentId && inForceOn(line, row.effectiveFrom ?? ""))
+              ?.managerUserId ?? null;
       const secondaryEmails = secondaryEmailsOf(row);
       try {
         if (row.employeeEmploymentId === null || managerUserId === null)

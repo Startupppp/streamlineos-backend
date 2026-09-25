@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DbOrTx } from "../../common/rbac/access-invalidate";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
+import { OrgHierarchyCacheService } from "../../common/cache/org-hierarchy-cache.service";
 import { hrReportingLines, hrTopLevelRoles } from "../../db/schema";
 import {
   lockReportingLines,
@@ -28,6 +30,7 @@ import {
   type TopLevelRoleRow,
 } from "./reporting-line-queries";
 import { evaluateRelationshipCommand } from "./reporting-relationship-rules";
+import { invalidateReportingReads } from "./reporting-line-cache";
 import { ReportingLineException, rethrowReportingLineWriteError } from "./reporting-line-errors";
 import {
   REPORTING_LINE_ERROR_CODES as CODES,
@@ -76,6 +79,8 @@ export class ReportingRelationshipService {
     private readonly reportingLines: ReportingLineService,
     private readonly policies: ReportingManagerPolicyService,
     @Inject(AuditService) private readonly audit: Pick<AuditService, "logCritical">,
+    private readonly hierarchyCache: OrgHierarchyCacheService,
+    private readonly cache: CacheService,
   ) {}
 
   /**
@@ -136,7 +141,11 @@ export class ReportingRelationshipService {
       primaryChanged: validation.primaryChanged,
       warnings: validation.warnings,
     };
-    if (changed) await this.record(cmd, result, validation);
+    if (changed) {
+      await this.record(cmd, result, validation);
+      // Every writer routes through here, so no caller can forget the hierarchy and list reads.
+      await invalidateReportingReads(this.hierarchyCache, this.cache, orgId);
+    }
     return result;
   }
 
@@ -171,6 +180,7 @@ export class ReportingRelationshipService {
       )
       .returning({ id: hrReportingLines.id });
     if (!line) return { lineId: null, confirmed: false };
+    await invalidateReportingReads(this.hierarchyCache, this.cache, cmd.orgId);
     await this.audit.logCritical({
       action: REPORTING_LINE_EVENTS.FALLBACK_CONFIRMED,
       ...(actorUserId ? { userId: actorUserId } : { userId: null, systemActor: actorKey(cmd.actor) }),

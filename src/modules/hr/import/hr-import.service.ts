@@ -25,7 +25,7 @@ import { importCommitOrder, normaliseEmployeeImportRows, readImportRowsInOrder, 
 import { ReportingManagerFallbackResolver } from "../../directory/reporting-manager-fallback.resolver";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
-import { invalidateReportingReads } from "../directory/reporting-lines.service";
+import { invalidateReportingReads } from "../../directory/reporting-line-cache";
 import type {
   CreateImportJobInput,
   ExportQueryInput,

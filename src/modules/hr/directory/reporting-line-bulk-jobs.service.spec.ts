@@ -4,7 +4,7 @@ import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { RelationshipValidation } from "../../directory/reporting-line.types";
-import { ReportingLineBulkJobsService, classifyBulkRow, type PlannedRow } from "./reporting-line-bulk-jobs.service";
+import { ReportingLineBulkJobsService, classifyBulkRow, rejectFileCycles, type PlannedRow } from "./reporting-line-bulk-jobs.service";
 
 const ORG = "org-bulk-jobs";
 const ACTOR: CurrentUserContext = {
@@ -83,8 +83,7 @@ function harness(count: number, validations?: (index: number) => RelationshipVal
     { logCritical: jest.fn() } as never,
     { emit: jest.fn() } as never,
     { validateMany, setRelationships: jest.fn() } as never,
-    { invalidateAfterMutation: jest.fn() } as never,
-    { invalidateNamespace: jest.fn() } as never,
+    { resolveUserPermissions: jest.fn().mockResolvedValue(new Map([["hr:employees:view", "all"]])) } as never,
   );
   const body = {
     jobReason: "Quarterly reorganisation",
@@ -114,6 +113,27 @@ describe("ReportingLineBulkJobsService.preview", () => {
     expect(max.validateMany.mock.calls[0]?.[1]).toHaveLength(500);
   });
 
+});
+
+describe("rejectFileCycles", () => {
+  const row = (rowNumber: number, employee: ReturnType<typeof person>, manager: ReturnType<typeof person>): PlannedRow => ({
+    rowNumber,
+    employeeEmail: employee.email,
+    employee: { ...employee, state: "active" },
+    primaryManagerEmail: manager.email,
+    primaryManager: { ...manager, state: "active" },
+    secondaryEmails: [],
+    secondary: [],
+    effectiveFrom: "2026-10-01",
+    reason: null,
+    issues: [],
+  });
+
+  it("marks both rows of a loop that exists only inside the file as PRIMARY_CYCLE, and leaves an ordinary row alone", () => {
+    const rows = [row(1, person(1), person(2)), row(2, person(2), person(1)), row(3, person(3), person(2))];
+    rejectFileCycles(rows);
+    expect(rows.map((entry) => entry.issues.map((issue) => issue.code))).toEqual([["PRIMARY_CYCLE"], ["PRIMARY_CYCLE"], []]);
+  });
 });
 
 describe("classifyBulkRow", () => {

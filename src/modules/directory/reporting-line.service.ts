@@ -23,7 +23,7 @@ import {
   readReportingManagerPolicy,
   topLevelRolesBetween,
 } from "./reporting-line-queries";
-import { buildManagerCoverage } from "./reporting-line-coverage";
+import { buildManagerCoverage, type CoverageScope } from "./reporting-line-coverage";
 import type {
   ApproverEligibility,
   ManagerAssignmentCheck,
@@ -315,8 +315,8 @@ export class ReportingLineService {
     };
   }
 
-  async coverage(orgId: string): Promise<ManagerCoverageReport> {
-    return buildManagerCoverage(this.db, orgId, await orgBusinessDate(this.db, orgId));
+  async coverage(orgId: string, scope: CoverageScope = {}): Promise<ManagerCoverageReport> {
+    return buildManagerCoverage(this.db, orgId, await orgBusinessDate(this.db, orgId), scope);
   }
 
   private candidates(orgId: string, db: DbOrTx) {

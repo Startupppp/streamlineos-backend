@@ -61,7 +61,7 @@ import { ReportingManagerFallbackResolver } from "../../directory/reporting-mana
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 import { assignOnboardingManager, writeOnboardingSensitiveFields } from "./employee-onboarding-relationships";
 import { EMPLOYEES_VIEW_PERMISSION } from "./employees-scope";
-import { invalidateReportingReads } from "./reporting-lines.service";
+import { invalidateReportingReads } from "../../directory/reporting-line-cache";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 

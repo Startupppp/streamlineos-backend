@@ -34,6 +34,19 @@ class GrantedAccess {
   }
 }
 
+class RecordingInvalidation {
+  readonly hierarchy: string[] = [];
+  readonly namespaces: string[] = [];
+
+  async invalidateAfterMutation(orgId: string): Promise<void> {
+    this.hierarchy.push(orgId);
+  }
+
+  async invalidateNamespace(namespace: string): Promise<void> {
+    this.namespaces.push(namespace);
+  }
+}
+
 describe("ReportingRelationshipService against a real schema", () => {
   let sql: ReturnType<typeof connectProbe>;
   let db: Db;
@@ -42,6 +55,7 @@ describe("ReportingRelationshipService against a real schema", () => {
   let access: GrantedAccess;
   let relationships: ReportingRelationshipService;
   let fallback: ReportingManagerFallbackResolver;
+  let invalidation: RecordingInvalidation;
   let today: string;
 
   const owner = () => ({ orgId: probe.orgId, userId: probe.owner.userId, isOrgOwner: true });
@@ -67,7 +81,8 @@ describe("ReportingRelationshipService against a real schema", () => {
     access = new GrantedAccess();
     const lines = new ReportingLineService(db);
     const policies = new ReportingManagerPolicyService(db, access, lines, audit);
-    relationships = new ReportingRelationshipService(db, lines, policies, audit);
+    invalidation = new RecordingInvalidation();
+    relationships = new ReportingRelationshipService(db, lines, policies, audit, invalidation as never, invalidation as never);
     fallback = new ReportingManagerFallbackResolver(db, lines, policies);
     today = await orgBusinessDate(db, probe.orgId);
   });
@@ -100,6 +115,21 @@ describe("ReportingRelationshipService against a real schema", () => {
     expect(audit.entries.slice(auditBefore).map((entry) => entry.action)).toEqual(["hr.reporting_line.changed"]);
     const events = await sql`SELECT event_type FROM outbox_events WHERE organization_id = ${probe.orgId} AND aggregate_id = ${String(employee.employmentId)}`;
     expect(events).toHaveLength(0);
+  });
+
+  it("invalidates the org hierarchy and the employee list after a change, and not after a write that changes nothing", async () => {
+    await probe.policy({ max: 0 });
+    const employee = await probe.person("invalidate");
+    const boss = await probe.person("invalidate-boss");
+    const before = { hierarchy: invalidation.hierarchy.length, namespaces: invalidation.namespaces.length };
+
+    await set({ subjectUserId: employee.userId, primaryManagerUserId: boss.userId });
+    expect(invalidation.hierarchy.slice(before.hierarchy)).toEqual([probe.orgId]);
+    expect(invalidation.namespaces.slice(before.namespaces)).toEqual([expect.stringContaining(probe.orgId)]);
+
+    const unchanged = await set({ subjectUserId: employee.userId, primaryManagerUserId: boss.userId });
+    expect(unchanged.changed).toBe(false);
+    expect(invalidation.hierarchy.slice(before.hierarchy)).toHaveLength(1);
   });
 
   it("enforces the policy's secondary cap", async () => {
@@ -269,6 +299,24 @@ describe("ReportingRelationshipService against a real schema", () => {
 
     await expect(db.transaction((tx) => relationships.confirmFallback(tx, { orgId: probe.orgId, actor: owner(), subjectUserId: hire.userId }))).resolves.toMatchObject({ confirmed: true });
     expect((await lines.coverage(probe.orgId)).fallback.map((row) => row.userId)).not.toContain(hire.userId);
+  });
+
+  it("narrows the fallback list and its count to the one employee an own-scoped reader may see", async () => {
+    await probe.policy({ max: 0 });
+    const lead = await probe.person("scoped-coverage-lead");
+    const mine = await probe.person("scoped-coverage-mine");
+    const theirs = await probe.person("scoped-coverage-theirs");
+    await set({ subjectUserId: mine.userId, primaryManagerUserId: lead.userId, source: "ONBOARDING_FALLBACK" });
+    await set({ subjectUserId: theirs.userId, primaryManagerUserId: lead.userId, source: "ONBOARDING_FALLBACK" });
+    const lines = new ReportingLineService(db);
+
+    const everyone = await lines.coverage(probe.orgId);
+    expect(everyone.fallback.map((row) => row.userId)).toEqual(expect.arrayContaining([mine.userId, theirs.userId]));
+
+    const own = await lines.coverage(probe.orgId, { onlyUserId: mine.userId });
+    expect(own.fallback.map((row) => row.userId)).toEqual([mine.userId]);
+    expect(own.summary.fallback).toBe(1);
+    expect(own.pendingReview.every((row) => row.userId === mine.userId)).toBe(true);
   });
 
   it("resolves the policy to its defaults until a row exists, then reports the default manager's live eligibility", async () => {

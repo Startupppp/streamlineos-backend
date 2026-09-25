@@ -104,7 +104,14 @@ describeDb("employee import reaches the directory — real database", () => {
     service = new HrImportCommitService(
       admission,
       personEmployment,
-      new ReportingRelationshipService(db, reportingLines, policies, { logCritical: async () => undefined } as never),
+      new ReportingRelationshipService(
+        db,
+        reportingLines,
+        policies,
+        { logCritical: async () => undefined } as never,
+        { invalidateAfterMutation: async () => undefined } as never,
+        { invalidateNamespace: async () => undefined } as never,
+      ),
     );
 
     await sql.begin(async (tx) => {

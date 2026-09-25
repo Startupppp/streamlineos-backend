@@ -164,7 +164,7 @@ describe("POST /hr/employees/onboard against a real schema", () => {
     };
     const reportingLines = new ReportingLineService(db);
     const policies = new ReportingManagerPolicyService(db, access as never, reportingLines, { logCritical } as never);
-    const relationships = new ReportingRelationshipService(db, reportingLines, policies, { logCritical } as never);
+    const relationships = new ReportingRelationshipService(db, reportingLines, policies, { logCritical } as never, { invalidateAfterMutation: async () => undefined } as never, { invalidateNamespace: async () => undefined } as never);
     service = new EmployeeOnboardingService(
       db,
       cache,

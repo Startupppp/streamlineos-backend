@@ -72,11 +72,26 @@ export function affectedCount(job: { readyCount: number; warningCount: number })
   return job.readyCount + job.warningCount;
 }
 
-export async function readJob(db: DbOrTx, orgId: string, jobId: string) {
+/**
+ * `createdBy` narrows every job read to one author: a caller whose employees scope is not org-wide
+ * sees, reads and commits only the jobs they previewed (undefined = org-wide).
+ */
+function ownedBy(createdBy: string | undefined) {
+  return createdBy === undefined ? undefined : eq(hrReportingLineBulkJobs.createdBy, createdBy);
+}
+
+export async function readJob(db: DbOrTx, orgId: string, jobId: string, createdBy?: string) {
   const [job] = await db
     .select(jobFields)
     .from(hrReportingLineBulkJobs)
-    .where(and(eq(hrReportingLineBulkJobs.orgId, orgId), eq(hrReportingLineBulkJobs.id, jobId), isNull(hrReportingLineBulkJobs.deletedAt)))
+    .where(
+      and(
+        eq(hrReportingLineBulkJobs.orgId, orgId),
+        eq(hrReportingLineBulkJobs.id, jobId),
+        isNull(hrReportingLineBulkJobs.deletedAt),
+        ownedBy(createdBy),
+      ),
+    )
     .limit(1);
   if (!job) throw new NotFoundException("Bulk reporting change not found.");
   return job;
@@ -123,8 +138,8 @@ export function summaryOf(job: JobRow) {
   };
 }
 
-export async function jobView(db: DbOrTx, orgId: string, jobId: string, rowCursor?: string): Promise<BulkJob> {
-  const job = await readJob(db, orgId, jobId);
+export async function jobView(db: DbOrTx, orgId: string, jobId: string, rowCursor?: string, createdBy?: string): Promise<BulkJob> {
+  const job = await readJob(db, orgId, jobId, createdBy);
   const after = Number(decodeTupleCursor(rowCursor, 1)?.[0] ?? 0);
   const fetched = await readJobRows(db, orgId, jobId, Number.isSafeInteger(after) ? after : 0, BULK_JOB_ROWS_PAGE_CAP + 1);
   const page = fetched.slice(0, BULK_JOB_ROWS_PAGE_CAP);
@@ -161,7 +176,7 @@ export async function jobView(db: DbOrTx, orgId: string, jobId: string, rowCurso
   };
 }
 
-export async function listJobs(db: DbOrTx, orgId: string, cursor: string | undefined) {
+export async function listJobs(db: DbOrTx, orgId: string, cursor: string | undefined, createdBy?: string) {
   const parts = decodeTupleCursor(cursor, 2);
   const valid = parts && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$/.test(parts[0] ?? "") && /^[0-9a-f-]{36}$/i.test(parts[1] ?? "");
   const rows = await db
@@ -171,6 +186,7 @@ export async function listJobs(db: DbOrTx, orgId: string, cursor: string | undef
       and(
         eq(hrReportingLineBulkJobs.orgId, orgId),
         isNull(hrReportingLineBulkJobs.deletedAt),
+        ownedBy(createdBy),
         valid && parts
           ? sql`(${hrReportingLineBulkJobs.createdAt}, ${hrReportingLineBulkJobs.id}) < ((${parts[0]}::timestamp AT TIME ZONE 'UTC'), ${parts[1]}::uuid)`
           : undefined,
@@ -188,8 +204,8 @@ export async function listJobs(db: DbOrTx, orgId: string, cursor: string | undef
 
 const FAILURE_STATUSES = ["ERROR", "SKIPPED", "FAILED"] as const;
 
-export async function failuresCsv(db: DbOrTx, orgId: string, jobId: string): Promise<string> {
-  await readJob(db, orgId, jobId);
+export async function failuresCsv(db: DbOrTx, orgId: string, jobId: string, createdBy?: string): Promise<string> {
+  await readJob(db, orgId, jobId, createdBy);
   const rows = await db
     .select(rowFields)
     .from(hrReportingLineBulkJobRows)

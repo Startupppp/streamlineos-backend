@@ -5,8 +5,6 @@ import type { Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AuditService } from "../../../common/audit/audit.service";
-import { CacheService } from "../../../common/cache/cache.service";
-import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { hrReportingManagerRequests, type ReportingManagerRequestStatus } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
@@ -17,8 +15,7 @@ import { ReportingLineException, rethrowReportingLineWriteError } from "../../di
 import { relationshipsBetween, subjectEmployments } from "../../directory/reporting-line-queries";
 import { REPORTING_LINE_ERROR_CODES as CODES, REPORTING_LINE_PERMISSIONS } from "../../directory/reporting-line.types";
 import { orgBusinessDate } from "../time/attendance-business-date";
-import { resolveEmployeesScope } from "./employees-scope";
-import { invalidateReportingReads } from "./reporting-lines.service";
+import { EMPLOYEES_VIEW_PERMISSION, resolveEmployeesScope } from "./employees-scope";
 import { peopleByEmploymentIds, peopleByUserIds, searchManagerCandidates } from "./reporting-manager-people";
 import {
   liveRequest,
@@ -67,6 +64,9 @@ const MY_LINK = "/settings";
  * it. A request never changes a line by itself; only an approval does, through the canonical
  * relationship service, so every PRD §6 rule and the D4 guard are re-run at decision time.
  */
+/** Reviewers notified of one request; the review queue itself shows everyone past it. */
+const REVIEWER_NOTIFICATION_CAP = 100;
+
 @Injectable()
 export class ReportingManagerRequestsService {
   constructor(
@@ -76,8 +76,6 @@ export class ReportingManagerRequestsService {
     private readonly dispatch: NotificationDispatchService,
     private readonly reportingLines: ReportingLineService,
     private readonly relationships: ReportingRelationshipService,
-    private readonly hierarchyCache: OrgHierarchyCacheService,
-    private readonly cache: CacheService,
   ) {}
 
   async create(actor: CurrentUserContext, body: CreateReportingManagerRequestInput): Promise<MyReportingManagerRequest> {
@@ -246,7 +244,6 @@ export class ReportingManagerRequestsService {
           warnings = result.warnings;
           resolvedLineId = result.after.primary?.lineId ?? null;
           managers = { incoming: result.after.primary?.managerUserId ?? null, outgoing: result.before.primary?.managerUserId ?? null };
-          if (result.changed) await invalidateReportingReads(this.hierarchyCache, this.cache, orgId);
         }
 
         await this.transition(tx, orgId, row, from, {
@@ -343,8 +340,14 @@ export class ReportingManagerRequestsService {
 
   /** One actionable notification per reviewer; the employee's free text never leaves the request. */
   private async notifyReviewers(tx: DbOrTx, actor: CurrentUserContext, requestId: string, kind: "created" | "responded"): Promise<void> {
-    const reviewers = await this.access.membersWithPermission(actor.orgId, REPORTING_LINE_PERMISSIONS.REVIEW, { limit: 500 });
-    const targetUserIds = reviewers.map((member) => member.userId).filter((userId) => userId !== actor.userId);
+    const reviewers = await this.access.membersWithPermission(actor.orgId, REPORTING_LINE_PERMISSIONS.REVIEW, { limit: REVIEWER_NOTIFICATION_CAP });
+    const candidates = reviewers.map((member) => member.userId).filter((userId) => userId !== actor.userId);
+    // Only a reviewer whose employees scope reaches this employee can open the request; an own-scoped
+    // reviewer would be sent a link to a 404. The requester is never the reviewer, so "covers" is
+    // "org-wide". ponytail: one cached permission resolve per reviewer, bounded by the cap; a batch
+    // scope query belongs in AccessService if reviewer counts grow past it.
+    const scopes = await Promise.all(candidates.map((userId) => this.access.resolveUserPermissions(actor.orgId, userId)));
+    const targetUserIds = candidates.filter((_userId, index) => scopes[index]?.get(EMPLOYEES_VIEW_PERMISSION) === "all");
     if (targetUserIds.length === 0) return;
     const name = (await peopleByUserIds(tx, actor.orgId, [actor.userId])).get(actor.userId)?.name ?? "An employee";
     await this.dispatch.emit({

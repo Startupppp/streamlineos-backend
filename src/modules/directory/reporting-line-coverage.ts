@@ -27,17 +27,29 @@ function isTopLevelOn(orgId: string, today: string) {
   )`;
 }
 
+/**
+ * `onlyUserId` narrows the per-employee review lists (unconfirmed fallbacks, pending requests) and
+ * their counts to one employee, for a reader whose employees scope is not org-wide.
+ */
+export interface CoverageScope {
+  onlyUserId?: string;
+}
+
+function forPerson(scope: CoverageScope) {
+  return scope.onlyUserId === undefined ? sql`` : sql` AND p.user_id = ${scope.onlyUserId}`;
+}
+
 const ACTIVE_EMPLOYEE = sql`emp.is_primary = true AND emp.deleted_at IS NULL AND emp.lifecycle_status NOT IN ('CANDIDATE', 'EXITED', 'ALUMNI')`;
 
-export async function buildManagerCoverage(db: DbOrTx, orgId: string, today: string): Promise<ManagerCoverageReport> {
+export async function buildManagerCoverage(db: DbOrTx, orgId: string, today: string, scope: CoverageScope = {}): Promise<ManagerCoverageReport> {
   const [withoutManager, inactiveManager, circular, overSpan, totals, fallback, pendingReview, policy] = await Promise.all([
     employeesWithoutManager(db, orgId, today),
     employeesWithInactiveManager(db, orgId, today),
     circularChains(db, orgId, today),
     managersOverSpan(db, orgId, today),
-    coverageTotals(db, orgId, today),
-    unconfirmedFallbacks(db, orgId, today),
-    pendingReviews(db, orgId),
+    coverageTotals(db, orgId, today, scope),
+    unconfirmedFallbacks(db, orgId, today, scope),
+    pendingReviews(db, orgId, scope),
     readReportingManagerPolicy(db, orgId),
   ]);
 
@@ -65,7 +77,7 @@ export async function buildManagerCoverage(db: DbOrTx, orgId: string, today: str
   };
 }
 
-async function coverageTotals(db: DbOrTx, orgId: string, today: string) {
+async function coverageTotals(db: DbOrTx, orgId: string, today: string, scope: CoverageScope) {
   const [row] = await db.execute<{
     employees: string | number;
     with_manager: string | number;
@@ -84,9 +96,11 @@ async function coverageTotals(db: DbOrTx, orgId: string, today: string) {
         WHERE rl.org_id = ${orgId} AND rl.employment_id = emp.id AND rl.line_type = 'primary'
           AND rl.effective_from <= ${today}::date AND rl.effective_to >= ${today}::date
           AND rl.source = 'ONBOARDING_FALLBACK' AND rl.fallback_confirmed_at IS NULL
-      )) AS fallback,
+      )${forPerson(scope)}) AS fallback,
       (SELECT count(*) FROM hr_reporting_manager_requests rq
-        WHERE rq.org_id = ${orgId} AND rq.deleted_at IS NULL AND rq.status IN ('PENDING', 'MORE_INFO_REQUIRED')) AS pending_review
+        INNER JOIN hr_employments emp ON emp.id = rq.employee_employment_id AND emp.org_id = ${orgId}
+        INNER JOIN hr_people p ON p.id = emp.person_id AND p.org_id = ${orgId}
+        WHERE rq.org_id = ${orgId} AND rq.deleted_at IS NULL AND rq.status IN ('PENDING', 'MORE_INFO_REQUIRED')${forPerson(scope)}) AS pending_review
     FROM hr_employments emp
     INNER JOIN hr_people p ON p.id = emp.person_id AND p.org_id = ${orgId} AND p.deleted_at IS NULL
     WHERE emp.org_id = ${orgId} AND ${ACTIVE_EMPLOYEE}
@@ -261,7 +275,7 @@ async function managersOverSpan(db: DbOrTx, orgId: string, today: string): Promi
   }));
 }
 
-async function unconfirmedFallbacks(db: DbOrTx, orgId: string, today: string): Promise<ManagerCoverageReport["fallback"]> {
+async function unconfirmedFallbacks(db: DbOrTx, orgId: string, today: string, scope: CoverageScope): Promise<ManagerCoverageReport["fallback"]> {
   const rows = await db.execute<{
     user_id: string | null;
     name: string | null;
@@ -284,7 +298,7 @@ async function unconfirmedFallbacks(db: DbOrTx, orgId: string, today: string): P
       AND rl.source = 'ONBOARDING_FALLBACK'
       AND rl.fallback_confirmed_at IS NULL
       AND rl.effective_from <= ${today}::date
-      AND rl.effective_to >= ${today}::date
+      AND rl.effective_to >= ${today}::date${forPerson(scope)}
     ORDER BY rl.effective_from DESC, rl.id DESC
     LIMIT ${COVERAGE_LIST_CAP}
   `);
@@ -297,7 +311,7 @@ async function unconfirmedFallbacks(db: DbOrTx, orgId: string, today: string): P
   }));
 }
 
-async function pendingReviews(db: DbOrTx, orgId: string): Promise<ManagerCoverageReport["pendingReview"]> {
+async function pendingReviews(db: DbOrTx, orgId: string, scope: CoverageScope): Promise<ManagerCoverageReport["pendingReview"]> {
   const rows = await db.execute<{ request_id: string; user_id: string | null; name: string | null; created_at: string }>(sql`
     SELECT rq.id AS request_id, p.user_id, ${PERSON_NAME("u")} AS name, to_char(rq.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
     FROM hr_reporting_manager_requests rq
@@ -306,7 +320,7 @@ async function pendingReviews(db: DbOrTx, orgId: string): Promise<ManagerCoverag
     LEFT JOIN users u ON u.id = p.user_id
     WHERE rq.org_id = ${orgId}
       AND rq.deleted_at IS NULL
-      AND rq.status IN ('PENDING', 'MORE_INFO_REQUIRED')
+      AND rq.status IN ('PENDING', 'MORE_INFO_REQUIRED')${forPerson(scope)}
     ORDER BY rq.created_at ASC, rq.id ASC
     LIMIT ${COVERAGE_LIST_CAP}
   `);

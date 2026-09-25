@@ -56,7 +56,7 @@ import {
 import { orgBusinessDate } from "../time/attendance-business-date";
 import { normaliseManagerColumns, type ManagerColumnsResult } from "./reporting-manager-columns";
 import { peopleByEmails } from "./reporting-manager-people";
-import { invalidateReportingReads } from "./reporting-lines.service";
+import { invalidateReportingReads } from "../../directory/reporting-line-cache";
 import type { BulkOnboardCommitResult, BulkOnboardPreview } from "./dto/reporting-lines-bulk.schemas";
 
 
