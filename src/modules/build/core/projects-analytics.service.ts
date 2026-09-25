@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
-import { cycles, projects, tickets, timesheets, users } from "../../../db/schema";
+import { cycles, projectStatuses, projects, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -38,7 +38,7 @@ export class ProjectsAnalyticsService {
     const todayStr = today.toISOString().slice(0, 10);
 
     const [
-      stateDistribution,
+      stateDistributionRows,
       priorityBreakdown,
       assigneeCompletion,
       volumeOverTime,
@@ -46,7 +46,19 @@ export class ProjectsAnalyticsService {
       estimateVsActual,
       overdueResult,
     ] = await Promise.all([
-      this.db.select({ status: tickets.status, count: count() }).from(tickets).where(orgFilter).groupBy(tickets.status),
+      this.db
+        .select({ status: tickets.status, statusGroup: projectStatuses.type, count: count() })
+        .from(tickets)
+        .leftJoin(
+          projectStatuses,
+          and(
+            eq(projectStatuses.orgId, tickets.orgId),
+            eq(projectStatuses.projectId, tickets.projectId),
+            eq(projectStatuses.name, tickets.status),
+          ),
+        )
+        .where(orgFilter)
+        .groupBy(tickets.status, projectStatuses.type),
       this.db
         .select({ priority: tickets.priority, count: count() })
         .from(tickets)
@@ -57,17 +69,21 @@ export class ProjectsAnalyticsService {
           om.user_id AS "assigneeId",
           COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.name) AS "assigneeName",
           COUNT(DISTINCT combined.ticket_id) AS total,
-          COUNT(DISTINCT combined.ticket_id) FILTER (WHERE combined.status = 'DONE') AS completed
+          COUNT(DISTINCT combined.ticket_id) FILTER (WHERE combined.status_group = 'completed') AS completed
         FROM (
-          SELECT t.assignee_membership_id AS membership_id, t.id AS ticket_id, t.status
+          SELECT t.assignee_membership_id AS membership_id, t.id AS ticket_id, ps.type AS status_group
           FROM build.tickets t
+          LEFT JOIN build.project_statuses ps ON ps.org_id = t.org_id
+            AND ps.project_id = t.project_id AND ps.name = t.status
           WHERE t.project_id = ${projectId} AND t.org_id = ${orgId} AND t.deleted_at IS NULL
             AND t.assignee_membership_id IS NOT NULL
           UNION
-          SELECT ta.membership_id, ta.ticket_id, t2.status
+          SELECT ta.membership_id, ta.ticket_id, ps2.type AS status_group
           FROM build.ticket_assignees ta
           JOIN build.tickets t2 ON t2.id = ta.ticket_id
             AND t2.project_id = ${projectId} AND t2.org_id = ${orgId} AND t2.deleted_at IS NULL
+          LEFT JOIN build.project_statuses ps2 ON ps2.org_id = t2.org_id
+            AND ps2.project_id = t2.project_id AND ps2.name = t2.status
           WHERE ta.org_id = ${orgId}
         ) combined
         JOIN organization_members om ON om.id = combined.membership_id AND om.org_id = ${orgId}
@@ -100,10 +116,11 @@ export class ProjectsAnalyticsService {
         .select({
           cycleId: cycles.id,
           cycleName: cycles.name,
-          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${tickets.status} = 'DONE' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
+          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
         })
         .from(cycles)
         .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+        .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
         .where(and(eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), isNull(cycles.deletedAt)))
         .groupBy(cycles.id, cycles.name)
         .orderBy(cycles.startDate),
@@ -122,22 +139,24 @@ export class ProjectsAnalyticsService {
       this.db
         .select({ count: count() })
         .from(tickets)
+        .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
         .where(
           and(
             orgFilter,
-            sql`${tickets.status} NOT IN ('DONE', 'CANCELLED')`,
+            sql`COALESCE(${projectStatuses.type}, 'started') NOT IN ('completed', 'cancelled')`,
             sql`${tickets.dueDate} IS NOT NULL`,
             sql`${tickets.dueDate} < ${todayStr}`,
           ),
         ),
     ]);
-    const totalTickets = stateDistribution.reduce((s, r) => s + Number(r.count), 0);
-    const doneTickets = stateDistribution
-      .filter((r) => r.status === "DONE")
+    const stateDistribution = stateDistributionRows.map(({ status, count: rowCount }) => ({ status, count: rowCount }));
+    const totalTickets = stateDistributionRows.reduce((s, r) => s + Number(r.count), 0);
+    const doneTickets = stateDistributionRows
+      .filter((r) => r.statusGroup === "completed")
       .reduce((s, r) => s + Number(r.count), 0);
     const completionRate = totalTickets > 0 ? doneTickets / totalTickets : 0;
-    const openTickets = stateDistribution
-      .filter((r) => !["DONE", "CANCELLED"].includes(r.status))
+    const openTickets = stateDistributionRows
+      .filter((r) => !["completed", "cancelled"].includes(r.statusGroup ?? "started"))
       .reduce((s, r) => s + Number(r.count), 0);
     const overdueCount = Number(overdueResult[0]?.count ?? 0);
     const onTimeRate = openTickets > 0 ? 1 - overdueCount / openTickets : 1;
@@ -191,20 +210,22 @@ export class ProjectsAnalyticsService {
         .select({
           projectId: tickets.projectId,
           total: sql<number>`COUNT(*)::int`,
-          done: sql<number>`COUNT(*) FILTER (WHERE ${tickets.status} = 'DONE')::int`,
-          open: sql<number>`COUNT(*) FILTER (WHERE ${tickets.status} NOT IN ('DONE', 'CANCELLED'))::int`,
-          overdue: sql<number>`COUNT(*) FILTER (WHERE ${tickets.status} NOT IN ('DONE', 'CANCELLED') AND ${tickets.dueDate} IS NOT NULL AND ${tickets.dueDate} < ${todayStr})::int`,
+          done: sql<number>`COUNT(*) FILTER (WHERE ${projectStatuses.type} = 'completed')::int`,
+          open: sql<number>`COUNT(*) FILTER (WHERE COALESCE(${projectStatuses.type}, 'started') NOT IN ('completed', 'cancelled'))::int`,
+          overdue: sql<number>`COUNT(*) FILTER (WHERE COALESCE(${projectStatuses.type}, 'started') NOT IN ('completed', 'cancelled') AND ${tickets.dueDate} IS NOT NULL AND ${tickets.dueDate} < ${todayStr})::int`,
         })
         .from(tickets)
+        .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
         .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
         .groupBy(tickets.projectId),
       this.db
         .select({
           projectId: cycles.projectId,
-          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${tickets.status} = 'DONE' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
+          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
         })
         .from(cycles)
         .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+        .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
         .where(and(eq(cycles.orgId, orgId), isNull(cycles.deletedAt)))
         .groupBy(cycles.projectId, cycles.id, cycles.startDate)
         .orderBy(cycles.startDate),
