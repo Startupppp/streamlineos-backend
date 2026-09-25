@@ -39,6 +39,8 @@ const REFUSAL_MESSAGES: Record<ManagerAssignmentRefusal, string> = {
   "self-reference": "An employee cannot report to themselves.",
   "manager-not-in-organization": "The selected manager is not an active member of this organization.",
   "manager-inactive": "The selected manager's account is inactive.",
+  "manager-never-accepted":
+    "The selected manager has not accepted their invitation yet, so they cannot approve anything. Resend it, or pick someone else.",
   "manager-has-no-employment": "The selected manager has no employment record, so they cannot own approvals.",
   "manager-exited": "The selected manager has exited and cannot be assigned as a reporting manager.",
   circular: "This reporting structure would create a circular management chain.",
@@ -106,6 +108,7 @@ export class ReportingLineService {
         membershipStatus: organizationMembers.status,
         isOwner: organizationMembers.isOwner,
         userActive: users.isActive,
+        acceptedAt: users.emailVerified,
         employmentId: hrEmployments.id,
         lifecycleStatus: hrEmployments.lifecycleStatus,
       })
@@ -132,6 +135,21 @@ export class ReportingLineService {
 
     if (!candidate || candidate.membershipStatus !== "ACTIVE") return this.refuse("manager-not-in-organization");
     if (!candidate.userActive) return this.refuse("manager-inactive");
+    // HRMS-E2E-015/011. is_active is the ACCOUNT flag, true the moment an
+    // administrator creates the person. A manager invited and never signed in
+    // passed this check, so the resolver named them as approver and the request
+    // sat with somebody who cannot open the product — indefinitely, with nothing
+    // on screen saying why. Acceptance is email_verified, the same test the
+    // headcount queries use.
+    //
+    // Deliberately above the owner exemption below: a founder is often not
+    // hired, which is why they are excused an employment record, but an owner
+    // who has never come through the magic link cannot approve anything either.
+    //
+    // Refusing is safe — `consider()` records the reason and tries the next
+    // rung, ending at the HR queue, so the worst case is a request routed
+    // onwards with a sentence explaining it, never one that cannot be filed.
+    if (candidate.acceptedAt === null) return this.refuse("manager-never-accepted");
     if (candidate.employmentId === null || candidate.lifecycleStatus === null) {
       if (candidate.isOwner === true) return { ok: true, managerEmploymentId: null };
       return this.refuse("manager-has-no-employment");
