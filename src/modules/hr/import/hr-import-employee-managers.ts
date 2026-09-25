@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { hrImportRows } from "../../../db/schema/hr/import-jobs";
 import type { ReportingActor } from "../../directory/reporting-line.types";
@@ -47,6 +47,22 @@ export function normaliseEmployeeImportRows(rows: ReadonlyArray<Record<string, u
  * means "no change" and is left alone. Returns the rows the policy could not place.
  */
 export async function resolveImportFallbacks(
+  resolver: Pick<ReportingManagerFallbackResolver, "resolveMany">,
+  actor: ReportingActor,
+  entity: HrImportEntity,
+  rows: readonly RowValidationResult[],
+): Promise<{ valid: RowValidationResult[]; errors: RowValidationResult[] }> {
+  const failures = entity === "employees" ? await fallbackFailures(resolver, actor, rows) : new Map<number, string>();
+  return {
+    valid: rows.filter((row) => !failures.has(row.rowNumber)),
+    errors: rows.flatMap((row) => {
+      const error = failures.get(row.rowNumber);
+      return error === undefined ? [] : [{ ...row, status: "error" as const, error }];
+    }),
+  };
+}
+
+async function fallbackFailures(
   resolver: Pick<ReportingManagerFallbackResolver, "resolveMany">,
   actor: ReportingActor,
   rows: readonly RowValidationResult[],
@@ -102,5 +118,19 @@ export async function importCommitOrder(tx: DbOrTx, jobId: string, entity: HrImp
   return managersFirst(rows.map((row) => text(row.payload.email)), edges).flatMap((email) => {
     const id = idByEmail.get(email);
     return id ? [id] : [];
+  });
+}
+
+/** One batch of a job's valid rows, returned in the order `importCommitOrder` gave their ids. */
+export async function readImportRowsInOrder(tx: DbOrTx, jobId: string, ids: readonly string[]) {
+  const fetched = await tx
+    .select()
+    .from(hrImportRows)
+    .where(and(eq(hrImportRows.jobId, jobId), eq(hrImportRows.status, "valid"), inArray(hrImportRows.id, [...ids])))
+    .limit(ids.length);
+  const byId = new Map(fetched.map((row) => [row.id, row]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [row] : [];
   });
 }

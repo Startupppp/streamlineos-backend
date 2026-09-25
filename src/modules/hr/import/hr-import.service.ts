@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -21,7 +21,7 @@ import { withMembershipMutations } from "../../../common/org/membership-mutation
 import { HrImportCommitService, type CommitOutcome } from "./hr-import-commit.service";
 import { DEFAULT_IMPORT_TIME_ZONE, validateRows } from "./schemas/entity-row-schemas";
 import { resolveRowReferences, stripResolvedKeys } from "./hr-import-preflight";
-import { importCommitOrder, normaliseEmployeeImportRows, resolveImportFallbacks } from "./hr-import-employee-managers";
+import { importCommitOrder, normaliseEmployeeImportRows, readImportRowsInOrder, resolveImportFallbacks } from "./hr-import-employee-managers";
 import { ReportingManagerFallbackResolver } from "../../directory/reporting-manager-fallback.resolver";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
@@ -88,12 +88,8 @@ export class HrImportService {
     // runs here, before `hr_import_rows` is written, and stores the resolved ids
     // on the payload so the commit does not read them again.
     const preflight = await resolveRowReferences(this.db, orgId, entity, schemaValid);
-    const fallbackFailures =
-      entity === "employees" ? await resolveImportFallbacks(this.fallback, actor ?? { orgId, userId: actorId, isOrgOwner: false }, preflight.valid) : new Map<number, string>();
-    const validRows = preflight.valid.filter((row) => !fallbackFailures.has(row.rowNumber));
-    const fallbackErrors = preflight.valid
-      .filter((row) => fallbackFailures.has(row.rowNumber))
-      .map((row) => ({ ...row, status: "error" as const, error: fallbackFailures.get(row.rowNumber) ?? null }));
+    const actorRef = actor ?? { orgId, userId: actorId, isOrgOwner: false };
+    const { valid: validRows, errors: fallbackErrors } = await resolveImportFallbacks(this.fallback, actorRef, entity, preflight.valid);
     const errorRows = [...schemaErrors, ...preflight.errors, ...fallbackErrors].sort(
       (a, b) => a.rowNumber - b.rowNumber,
     );
@@ -150,14 +146,8 @@ export class HrImportService {
       entityType: "hr_import_job",
       entityId: job.id,
       action: "created",
-      after: {
-        entity,
-        fileName,
-        totalRows: rows.length,
-        validRows: validRows.length,
-        errorRows: errorRows.length,
-        ...(normalised.legacyHeaderRows > 0 ? { legacyManagerHeader: true, legacyManagerHeaderRows: normalised.legacyHeaderRows } : {}),
-      },
+      after: { entity, fileName, totalRows: rows.length, validRows: validRows.length, errorRows: errorRows.length,
+        ...(normalised.legacyHeaderRows > 0 ? { legacyManagerHeader: true, legacyManagerHeaderRows: normalised.legacyHeaderRows } : {}) },
     });
 
     return {
@@ -263,21 +253,9 @@ export class HrImportService {
       await withMembershipMutations(this.cache, (membership) =>
       this.db.transaction(async (tx) => {
       const ctx = { orgId, actorId, membership, timeZone, actor: actor ?? { orgId, userId: actorId, isOrgOwner: false } };
-      // HRM-15: row-number order, managers first for employees, so an in-file manager exists
-      // before the row that reports to them.
       const order = await importCommitOrder(tx, jobId, job.entity);
       for (let start = 0; start < order.length; start += IMPORT_ROW_BATCH_SIZE) {
-        const ids = order.slice(start, start + IMPORT_ROW_BATCH_SIZE);
-        const fetched = await tx
-          .select()
-          .from(hrImportRows)
-          .where(and(eq(hrImportRows.jobId, jobId), eq(hrImportRows.status, "valid"), inArray(hrImportRows.id, ids)))
-          .limit(ids.length);
-        const byId = new Map(fetched.map((row) => [row.id, row]));
-        const rows = ids.flatMap((id) => {
-          const row = byId.get(id);
-          return row ? [row] : [];
-        });
+        const rows = await readImportRowsInOrder(tx, jobId, order.slice(start, start + IMPORT_ROW_BATCH_SIZE));
         for (const row of rows) {
           try {
             // Each row commits inside its own savepoint (Drizzle emits
