@@ -6791,6 +6791,20 @@
       "when": 1803010810725,
       "tag": "1217_kb_page_templates_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 1098,
+      "version": "7",
+      "when": 1803014410725,
+      "tag": "1227_kb_page_fts_tsquery_resolver",
+      "breakpoints": true
+    },
+    {
+      "idx": 1099,
+      "version": "7",
+      "when": 1803018010725,
+      "tag": "1228_kb_health_items",
+      "breakpoints": true
     }
   ]
 }
