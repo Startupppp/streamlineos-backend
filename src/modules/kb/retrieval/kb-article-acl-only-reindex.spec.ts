@@ -140,6 +140,7 @@ describe("KbIndexingService.indexArticle — a help-centre article is a kb_pages
       pageCreatedById: "user-1",
       pageCreatedByMembershipId: 1,
       aclRevision: 3,
+      aclSyncedAt: expect.any(Date),
     });
   });
 

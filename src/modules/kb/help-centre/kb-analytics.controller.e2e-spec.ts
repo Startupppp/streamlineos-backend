@@ -46,17 +46,8 @@ describe("KB Analytics auth/RBAC (e2e)", () => {
     ["get", "/kb/verification/queue"],
   ];
 
-  /**
-   * Never 402. `kb` is registered `planGated: false`, so `isCoreModuleKey("kb")` is true
-   * and `moduleAvailability` answers `{ available: true }` before it reads a single
-   * entitlement row — the constitution's rule that knowledge is platform core, not a
-   * paid entitlement. This case asserted 402 and could never have passed. What it pins
-   * now is the contract that does hold: an org with the module switched off still
-   * reaches the permission check, and the permission check is what denies. The registry
-   * half is pinned in src/modules/kb/kb-module-gate.spec.ts.
-   */
   it.each(abilities)(
-    "403 on %s %s with no permission even when the kb module is not enabled",
+    "403 and never 402 on %s %s with no permission and the kb module switched off, because kb is registered planGated false so module availability answers true before reading an entitlement row and the permission check is what denies",
     async (method, path) => {
       const token = await signToken({ permissions: [], enabledModules: [] });
       const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
