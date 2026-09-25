@@ -9,34 +9,22 @@ import {
 } from "../../common/organization/organization-actor";
 import { compareDecimals, isZero, toDecimal } from "../accounting/core/money.util";
 import type { ImportInput } from "./dto/expense-import.schemas";
+import {
+  canonicalCategory,
+  EXPENSE_IMPORT_CATEGORIES,
+  normalizeHeader,
+  resolveImportField,
+} from "./expenses-import-contract";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_ROWS = 10_000;
 const BATCH_SIZE = 500;
 
-const ALLOWED_CATEGORIES = new Set([
-  "Travel",
-  "Food",
-  "Office Supplies",
-  "Software",
-  "Hardware",
-  "Marketing",
-  "Entertainment",
-  "Utilities",
-  "Rent",
-  "Insurance",
-  "Salary",
-  "Miscellaneous",
-  "Other",
-]);
-
-const CATEGORY_BY_LOWER = new Map([...ALLOWED_CATEGORIES].map((c) => [c.toLowerCase(), c]));
-
 /** The allowed category a cell names, after the person's mapping; null when it names none. */
 function resolveCategory(raw: string, mapping: Record<string, string> | undefined): string | null {
   if (raw === "") return "Other";
   const chosen = mapping?.[raw] ?? raw;
-  return CATEGORY_BY_LOWER.get(chosen.trim().toLowerCase()) ?? null;
+  return canonicalCategory(chosen);
 }
 
 interface ParsedImportRow {
@@ -46,10 +34,6 @@ interface ParsedImportRow {
 
 function sanitizeCell(value: string): string {
   return value.replace(/^[=+\-@\t\r]+/, "").trim();
-}
-
-function normalizeHeader(header: string): string {
-  return sanitizeCell(String(header)).toLowerCase().replace(/[\s_-]+/g, "");
 }
 
 const IMPORT_AMOUNT_SHAPE = /^\d{1,12}(\.\d{1,2})?$/;
@@ -106,7 +90,12 @@ function parseCsvLine(line: string): string[] {
 function readCsvRows(content: string): ParsedImportRow[] {
   const lines = content.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]).map((h) => normalizeHeader(h));
+  // A header the contract knows becomes its canonical key; anything else keeps its
+  // normalized spelling so an unrelated column can never shadow one of ours.
+  const headers = parseCsvLine(lines[0]).map((h) => {
+    const clean = sanitizeCell(h);
+    return resolveImportField(clean) ?? normalizeHeader(clean);
+  });
   const rows = lines.slice(1, MAX_ROWS + 1);
   return rows.map((line, idx) => {
     const values = parseCsvLine(line);
@@ -160,7 +149,7 @@ export class ExpensesImportService {
         skipped++;
         skippedReasons.push({
           row: rowNumber,
-          reason: `Unknown category "${rawCategory}". Use one of: ${[...ALLOWED_CATEGORIES].join(", ")}`,
+          reason: `Unknown category "${rawCategory}". Use one of: ${EXPENSE_IMPORT_CATEGORIES.join(", ")}`,
         });
         continue;
       }
@@ -176,10 +165,8 @@ export class ExpensesImportService {
 
       const description = sanitizeCell(record.description || "");
       const merchant = sanitizeCell(record.merchant || "");
-      const paymentMethod = sanitizeCell(
-        record.paymentmethod || record["payment_method"] || record["payment method"] || "",
-      );
-      const expenseDate = record.expensedate || record.date || "";
+      const paymentMethod = sanitizeCell(record.paymentMethod || "");
+      const expenseDate = record.expenseDate || "";
       const validDate = normalizeDate(expenseDate);
 
       batchValues.push({
