@@ -125,7 +125,7 @@ Services (names binding; internals Agent A's call):
 - `ReportingManagerPolicyService` — `get(orgId, db?)` returns full policy incl. defaults +
   `defaultPrimaryManager: {userId,name,designation,eligible:boolean}|null`;
   `update(actor, patch, tx)` validates default manager eligibility, bumps version,
-  audits `hr.reporting_manager_policy.updated`, outbox event.
+  audits `hr.reporting_manager_policy.updated` (no outbox event — see Addendum 3).
 - `ReportingManagerFallbackResolver` — `resolveMany(orgId, actor, rows, db)` (one
   preload, no N+1) and `resolve(...)` → per row
   `{ ok: true, managerUserId, resolution: 'SELECTED'|'IN_FILE'|'FALLBACK_CONFIGURED'|'FALLBACK_UPLOADER' }`
@@ -140,7 +140,7 @@ Services (names binding; internals Agent A's call):
   validates every PRD §6 rule, cap, cycles at the effective date, frequency guard (D4),
   writes lines via the canonical low-level writer, writes/ends `hr_top_level_roles`,
   audits (`hr.reporting_line.changed`, `hr.reporting_line.emergency_override` severity high),
-  outbox `hr.reporting_line.changed` in the same tx, and returns
+  (no outbox event — see Addendum 3), and returns
   `{ before, after, changed:boolean, warnings: string[] }`.
   Also `validateMany(...)` for preview (no writes, batched) and `countPrimaryChangesLast24h`.
 - `ReportingLineService.getLine` extended (see §4) and `coverage` extended (§4).
@@ -288,3 +288,14 @@ Every mutation invalidates: `reportingLine(userId)`, employee detail, `managerCo
 - Static routes (`coverage`, `manager-candidates`, `bulk-jobs`) are declared/registered before `:employeeUserId`.
 - Bulk-onboarding history: no `hr_import_jobs` reuse (would persist sensitive fields); enriched
   `hr.employees_bulk_onboarded` audit event is the job record.
+
+## 8. Addendum 3 — Block 3 integration decisions
+
+- No outbox events: `hr.reporting_line.changed` / `hr.reporting_manager_policy.updated` had no
+  consumer and would dead-letter. Durable notification = `NotificationDispatchService.emit` in-tx;
+  cache = `registerAfterCommit`; audit rows remain.
+- Assigning a manager does not require an accepted invitation (bulk files name managers the same
+  file creates). Routing an approval still does (`checkApprover`), so requests fall through to
+  the next rung until the manager signs in.
+- `ReportingLineService.assign/assignMany` are deleted; `setRelationships` is the only writer.
+- Metrics: warn events `hr.reporting_manager.no_default` and `hr.reporting_line.refused` (with code).
