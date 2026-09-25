@@ -150,7 +150,7 @@ export function makeAskOsDirectivePipe(
 
 export function buildSourcesEventStream(
   modelStream: ModelStreamSource,
-  eventType: string,
+  eventType: `data-${string}`,
   sources: readonly unknown[],
 ): ReadableStream<UIMessageChunk> {
   return createUIMessageStream({
@@ -178,7 +178,7 @@ export function buildSourcesEventStream(
 
 export function makeSourcesEventPipe(
   modelStream: ModelStreamSource,
-  eventType: string,
+  eventType: `data-${string}`,
   sources: readonly unknown[],
 ): PipeableAiUiStream {
   return {

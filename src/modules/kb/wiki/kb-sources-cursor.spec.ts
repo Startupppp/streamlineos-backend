@@ -52,6 +52,7 @@ function makeService(sourceRows: unknown[]) {
     undefined as never,
     undefined as never,
     undefined as never,
+    undefined as never,
   );
 
   return { svc, selectProjections };
