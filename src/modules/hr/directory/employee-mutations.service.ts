@@ -35,6 +35,11 @@ import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
 } from "../../directory/employment-query";
+import {
+  NO_INVITE_DELIVERY,
+  readInviteDelivery,
+  type InviteDeliveryState,
+} from "./employee-invite-delivery";
 
 @Injectable()
 export class EmployeeMutationsService {
@@ -106,7 +111,7 @@ export class EmployeeMutationsService {
     if (!member?.user) return null;
     const u = member.user;
 
-    const [skillRows, employment, facts] = await Promise.all([
+    const [skillRows, employment, facts, inviteDelivery] = await Promise.all([
       this.degraded(targetUserId, "skills", [] as { name: string; level: number }[], () =>
         this.db
         .select({ name: employeeSkills.skillName, level: employeeSkills.level })
@@ -141,6 +146,15 @@ export class EmployeeMutationsService {
       ),
       this.degraded(targetUserId, "employment-facts", emptyEmploymentFacts(targetUserId), () =>
         this.employment.getFacts(orgId, targetUserId),
+      ),
+      // HRMS-E2E-018. What the outbox observed about the last invite email, and
+      // nothing more: "sent" is the provider accepting the message, never arrival.
+      // A read that fails degrades to "none" rather than to an optimistic state.
+      this.degraded<InviteDeliveryState>(
+        targetUserId,
+        "invite-delivery",
+        NO_INVITE_DELIVERY,
+        () => readInviteDelivery(this.db, orgId, u.email),
       ),
     ]);
 
@@ -180,6 +194,7 @@ export class EmployeeMutationsService {
             confirmationDate: employment.confirmationDate,
           }
         : null,
+      inviteDelivery,
     };
   }
 

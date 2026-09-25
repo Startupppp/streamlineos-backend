@@ -2,6 +2,7 @@ import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { successSchema } from "../../../../common/openapi/response-envelopes";
 import { EMPLOYEE_ADMISSION_STATUSES } from "../employee-admission-status";
+import { INVITE_DELIVERY_STATUSES } from "../employee-invite-delivery";
 
 export { successSchema };
 
@@ -247,6 +248,28 @@ export const inviteDeliverySchema = z.object({
 export type InviteDelivery = z.infer<typeof inviteDeliverySchema>;
 
 /**
+ * HRMS-E2E-018. What is known about the last invite email for an employee.
+ *
+ * The enum is `INVITE_DELIVERY_STATUSES` and deliberately has no `delivered` and no
+ * `bounced` member: neither is observable per message, because the provider bounce
+ * webhook is keyed on the address and carries no message id to join back to an
+ * outbox row. `deliveryConfirmed` is pinned to `false` in the contract so no future
+ * caller can quietly start asserting arrival without changing this schema first.
+ */
+export const inviteDeliveryStatusSchema = z.object({
+  status: z.enum(INVITE_DELIVERY_STATUSES),
+  queuedAt: nullableWireDate(),
+  sentAt: nullableWireDate(),
+  attempts: z.number().int(),
+  lastError: z.string().nullable(),
+  deliveryConfirmed: z.literal(false),
+});
+
+export type InviteDeliveryStatusResponse = z.infer<
+  typeof inviteDeliveryStatusSchema
+>;
+
+/**
  * A join link handed to an administrator to pass on directly.
  *
  * The token lives in `inviteUrl` and nowhere else — not in a log, not in the
@@ -444,6 +467,7 @@ export const employeeDetailSchema = z.object({
   phone: z.string().nullable(),
   employmentStatus: z.string().nullable(),
   employment: employmentDetailSchema,
+  inviteDelivery: inviteDeliveryStatusSchema,
 });
 
 const teamEventParticipantSchema = z.object({
