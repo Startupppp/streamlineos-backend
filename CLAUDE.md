@@ -13,6 +13,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 **BE-03.** Put a parent module's own controllers and services in `<module>/core/`.
 **BE-04.** Reach another module through its service, never its repository, schema or tables.
 **BE-05.** There is no repository layer — one file exists repo-wide. Controller → service → Drizzle. Do not add a second pattern.
+**BE-143.** **Delete pass-through wrappers; never write one.** If a function's entire body is a call to one other **exported** function forwarding the same arguments, delete it and point every caller at the callee. If that wrapper is a file's only export, delete the file. *Why:* it buys an import hop and a second name for one behaviour, with nowhere for a seam to live — and a duplicated authorization or query helper is how one copy gets fixed and the other does not. `kb-article-restriction-predicate.ts` was exactly this: a 13-line file forwarding to `buildArticleRestrictionBranch` in the canonical scope module, which made the "no caller rebuilds the predicate" invariant look broken when it was merely indirected. A wrapper earns its keep only by narrowing a type, binding an argument, adapting a shape, or hiding a module-private value — a predicate over a module-private `Set`/`Map`/regex (`isScopable` → `SCOPABLE_PERMISSIONS.has`) is encapsulation and stays.
 **BE-06.** Keep DB access out of controllers. 14 controller files still hold `this.db` (42 occurrences); both counts may only shrink.
 **BE-07.** Return explicit projections, never raw ORM rows. (gate: check:query-projections)
 **BE-08.** Name every file and folder kebab-case. (gate: check:kebab-case)
@@ -202,6 +203,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 8. **BE-112** — no permission key lands in one catalog only.
 9. **BE-13** — every boundary parses with `.strict()`.
 10. No `any`, no `as X`, no `@ts-ignore`. (gate: check:type-assertions — hard zero)
+11. **BE-143** — no pass-through wrapper. A function that only forwards to another exported function is deleted, not reviewed; if it is a file's only export, the file goes with it.
 
 ## Definition of Done — backend task
 
