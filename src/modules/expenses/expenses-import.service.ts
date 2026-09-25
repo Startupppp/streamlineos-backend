@@ -30,6 +30,15 @@ const ALLOWED_CATEGORIES = new Set([
   "Other",
 ]);
 
+const CATEGORY_BY_LOWER = new Map([...ALLOWED_CATEGORIES].map((c) => [c.toLowerCase(), c]));
+
+/** The allowed category a cell names, after the person's mapping; null when it names none. */
+function resolveCategory(raw: string, mapping: Record<string, string> | undefined): string | null {
+  if (raw === "") return "Other";
+  const chosen = mapping?.[raw] ?? raw;
+  return CATEGORY_BY_LOWER.get(chosen.trim().toLowerCase()) ?? null;
+}
+
 interface ParsedImportRow {
   rowNumber: number;
   record: Record<string, string>;
@@ -145,8 +154,16 @@ export class ExpensesImportService {
 
     for (const parsedRow of rows) {
       const { rowNumber, record } = parsedRow;
-      const rawCategory = sanitizeCell(record.category || "Other");
-      const category = ALLOWED_CATEGORIES.has(rawCategory) ? rawCategory : "Other";
+      const rawCategory = sanitizeCell(record.category || "");
+      const category = resolveCategory(rawCategory, input.categoryMapping);
+      if (category === null) {
+        skipped++;
+        skippedReasons.push({
+          row: rowNumber,
+          reason: `Unknown category "${rawCategory}". Use one of: ${[...ALLOWED_CATEGORIES].join(", ")}`,
+        });
+        continue;
+      }
       const amount = parseImportAmount(record.amount ?? "");
       if (amount === null) {
         skipped++;
