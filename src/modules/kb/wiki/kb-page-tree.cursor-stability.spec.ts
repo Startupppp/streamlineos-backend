@@ -46,25 +46,25 @@ function makeRows(count: number, parentId: number | null = null): FakeRow[] {
 }
 
 function makePagedDb(rows: FakeRow[]) {
-  let callCount = 0;
   const db = {
     select: jest.fn().mockImplementation(() => ({
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount % 2 === 1) {
-            return Object.assign(Promise.resolve([]), {
-              orderBy: jest.fn().mockReturnValue(
-                Object.assign(Promise.resolve([]), {
-                  limit: jest.fn().mockImplementation((n: number) =>
-                    Promise.resolve(rows.slice(0, n)),
-                  ),
-                }),
-              ),
-            });
-          }
-          return Promise.resolve([]);
-        }),
+        where: jest.fn().mockImplementation(() =>
+          Object.assign(Promise.resolve([]), {
+            orderBy: jest.fn().mockReturnValue(
+              Object.assign(Promise.resolve([]), {
+                limit: jest.fn().mockImplementation((n: number) =>
+                  Promise.resolve(rows.slice(0, n)),
+                ),
+              }),
+            ),
+          }),
+        ),
+      }),
+    })),
+    selectDistinct: jest.fn().mockImplementation(() => ({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([]),
       }),
     })),
   } as unknown as Db;

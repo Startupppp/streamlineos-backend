@@ -29,6 +29,12 @@ import { keysetInteger } from "../../../common/pagination/keyset";
 
 const MIN_COHORT_SIZE = 3;
 const CITATION_REUSE_MIN = 2;
+const STALE_PAGE_THRESHOLD_DAYS = 90;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function staleCutoff(): Date {
+  return new Date(Date.now() - STALE_PAGE_THRESHOLD_DAYS * MILLISECONDS_PER_DAY);
+}
 
 type TopArticle = {
   id: number;
@@ -212,6 +218,7 @@ export class KbAnalyticsService {
       predicate,
     ];
     if (query.spaceId !== undefined) conditions.push(eq(kbPages.spaceId, query.spaceId));
+    if (query.staleOnly === true) conditions.push(lt(kbPages.updatedAt, staleCutoff()));
 
     const position = decodeTupleCursor(query.cursor, 2);
     const havingConditions: SQL[] = [];
@@ -329,7 +336,12 @@ export class KbAnalyticsService {
     }));
   }
 
-  async citationReuse(orgId: string, range: RangeInput): Promise<CitationReuseRow[]> {
+  async citationReuse(
+    user: CurrentUserContext,
+    range: RangeInput,
+  ): Promise<CitationReuseRow[]> {
+    const orgId = user.orgId;
+    const visiblePage = await this.auth.visiblePagePredicate(user, "view");
     const messageFrom = toDate(range.from);
     const messageTo = toDate(range.to);
     const rows = await this.db.execute(sql`
@@ -362,6 +374,17 @@ export class KbAnalyticsService {
       SELECT kind, ref_id, min(title) AS title, count(*)::int AS reuse_count
       FROM cited
       WHERE ref_id IS NOT NULL
+        AND (
+          kind <> 'page'
+          OR EXISTS (
+            SELECT 1
+            FROM ${kbPages}
+            WHERE ${kbPages.orgId} = ${orgId}
+              AND ${kbPages.id} = cited.ref_id
+              AND ${kbPages.deletedAt} IS NULL
+              AND ${visiblePage}
+          )
+        )
       GROUP BY kind, ref_id
       HAVING count(*) >= ${CITATION_REUSE_MIN}
       ORDER BY reuse_count DESC

@@ -74,6 +74,9 @@ const COLLECTION_PROJECTION = {
   aclRevision: kbPages.aclRevision,
 } as const;
 
+const CURSOR_VALUE_ALIAS = "cursorValue";
+const ID_ALIAS = "id";
+
 function sortColumn(sort: KbPageCollectionSort) {
   if (sort === "created_desc") return kbPages.createdAt;
   if (sort === "title_asc") return kbPages.title;
@@ -156,16 +159,24 @@ export class KnowledgeCollectionService {
     const column = sortColumn(query.sort);
     const selection = {
       ...COLLECTION_PROJECTION,
-      cursorValue: sortUsesTimestamp(query.sort)
+      cursorValue: (sortUsesTimestamp(query.sort)
         ? microsecondCursorValue(column)
-        : sql<string>`${kbPages.title}`,
+        : sql<string>`${kbPages.title}`
+      ).as(CURSOR_VALUE_ALIAS),
     };
+
+    const columnOrderTerms =
+      query.sort === "title_asc"
+        ? [asc(kbPages.title), asc(kbPages.id)]
+        : [desc(column), desc(kbPages.id)];
 
     const branchSelect = (branch: SQL<unknown>) =>
       this.db
         .select(selection)
         .from(kbPages)
-        .where(and(branch, ...conditions));
+        .where(and(branch, ...conditions))
+        .orderBy(...columnOrderTerms)
+        .limit(query.limit + 1);
 
     const rows =
       shared === null && scope.grantBranch !== null
@@ -173,13 +184,9 @@ export class KnowledgeCollectionService {
             .union(branchSelect(scope.grantBranch))
             .orderBy(...this.unionOrderTerms(query.sort))
             .limit(query.limit + 1)
-        : await branchSelect(shared !== null ? shared.predicate : scope.predicate)
-            .orderBy(
-              ...(query.sort === "title_asc"
-                ? [asc(kbPages.title), asc(kbPages.id)]
-                : [desc(column), desc(kbPages.id)]),
-            )
-            .limit(query.limit + 1);
+        : await branchSelect(
+            shared !== null ? shared.predicate : scope.predicate,
+          );
 
     const hasMore = rows.length > query.limit;
     const kept = hasMore ? rows.slice(0, query.limit) : rows;
@@ -226,8 +233,8 @@ export class KnowledgeCollectionService {
   private unionOrderTerms(sort: KbPageCollectionSort): SQL<unknown>[] {
     const direction = sort === "title_asc" ? sql`asc` : sql`desc`;
     return [
-      sql`${sql.identifier("cursorValue")} ${direction}`,
-      sql`${sql.identifier("id")} ${direction}`,
+      sql`${sql.identifier(CURSOR_VALUE_ALIAS)} ${direction}`,
+      sql`${sql.identifier(ID_ALIAS)} ${direction}`,
     ];
   }
 

@@ -1,5 +1,6 @@
-import { is, SQL } from "drizzle-orm";
+import { is, sql, SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { kbPages } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { encodeTupleCursor } from "../../../common/pagination/cursor";
@@ -146,12 +147,16 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
 
 function pagesHarness(rows: Record<string, unknown>[] = []) {
   const havings: unknown[] = [];
+  const wheres: Rendered[] = [];
   const chain: Record<string, unknown> = {};
   const self = () => chain;
   Object.assign(chain, {
     from: self,
     leftJoin: self,
-    where: self,
+    where: jest.fn((clause: unknown) => {
+      wheres.push(render(clause));
+      return chain;
+    }),
     groupBy: self,
     having: jest.fn((clause: unknown) => {
       havings.push(clause);
@@ -161,7 +166,7 @@ function pagesHarness(rows: Record<string, unknown>[] = []) {
     limit: jest.fn().mockResolvedValue(rows),
   });
   const db = { select: jest.fn(() => chain) } as unknown as Db;
-  return { db, havings };
+  return { db, havings, wheres };
 }
 
 describe("KbAnalyticsService.pages — cursor pagination", () => {
@@ -186,6 +191,48 @@ describe("KbAnalyticsService.pages — cursor pagination", () => {
     const rendered = render(havings[0]);
     expect(rendered.sql).toContain("<");
     expect(rendered.params).toEqual(expect.arrayContaining([7, 12]));
+  });
+
+  it("keeps only pages older than the staleness window when the reader asks for stale high-use pages", async () => {
+    const { db, wheres } = pagesHarness([]);
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.pages(USER, { limit: 50, staleOnly: true });
+
+    expect(wheres).toHaveLength(1);
+    expect(wheres[0]?.sql).toContain(`"kb_pages"."updated_at" <`);
+    const cutoffs = (wheres[0]?.params ?? [])
+      .map((p) => (p instanceof Date ? p.getTime() : Date.parse(String(p))))
+      .filter((t) => Number.isFinite(t));
+    expect(cutoffs).not.toHaveLength(0);
+    expect(Math.max(...cutoffs.map((t) => Date.now() - t))).toBeGreaterThan(
+      89 * 24 * 60 * 60 * 1000,
+    );
+  });
+
+  it("applies no staleness filter when the reader did not ask for one", async () => {
+    const { db, wheres } = pagesHarness([]);
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.pages(USER, { limit: 50 });
+
+    expect(wheres).toHaveLength(1);
+    expect(wheres[0]?.sql).not.toContain(`"kb_pages"."updated_at" <`);
+  });
+
+  it("ranks stale pages by use so the high-use ones surface first", async () => {
+    const { db } = pagesHarness([]);
+    const orderBys: unknown[] = [];
+    const svc = new KbAnalyticsService(db, auth);
+    const chain = (db as unknown as { select: () => Record<string, unknown> }).select();
+    chain.orderBy = jest.fn((...clauses: unknown[]) => {
+      orderBys.push(...clauses);
+      return chain;
+    });
+
+    await svc.pages(USER, { limit: 50, staleOnly: true });
+
+    expect(render(orderBys[0]).sql).toContain("count(distinct");
   });
 
   it("reports hasMore and a nextCursor when the sentinel row is present", async () => {
@@ -249,20 +296,25 @@ describe("KbAnalyticsService.reviewSla", () => {
   });
 });
 
+function citationHarness() {
+  const executed: unknown[] = [];
+  const db = {
+    execute: jest.fn((clause: unknown) => {
+      executed.push(clause);
+      return Promise.resolve([
+        { kind: "page", ref_id: 4, title: "Refund policy", reuse_count: 3 },
+      ]);
+    }),
+  } as unknown as Db;
+  return { db, executed };
+}
+
 describe("KbAnalyticsService.citationReuse", () => {
   it("floors reuse at more than one citation and reads both citation sources", async () => {
-    const executed: unknown[] = [];
-    const db = {
-      execute: jest.fn((clause: unknown) => {
-        executed.push(clause);
-        return Promise.resolve([
-          { kind: "page", ref_id: 4, title: "Refund policy", reuse_count: 3 },
-        ]);
-      }),
-    } as unknown as Db;
+    const { db, executed } = citationHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    const result = await svc.citationReuse("org-1", {});
+    const result = await svc.citationReuse(USER, {});
 
     const rendered = render(executed[0]);
     expect(rendered.sql.toLowerCase()).toContain("kb_chat_messages");
@@ -270,5 +322,46 @@ describe("KbAnalyticsService.citationReuse", () => {
     expect(rendered.sql.toLowerCase()).toContain("having count(*) >=");
     expect(rendered.params).toContain(2);
     expect(result).toEqual([{ kind: "page", refId: 4, title: "Refund policy", reuseCount: 3 }]);
+  });
+
+  it("consults the page-visibility predicate for the acting user before naming a cited page", async () => {
+    const { db } = citationHarness();
+    const visiblePagePredicate = jest.fn().mockResolvedValue(sql`1 = 1`);
+    const svc = new KbAnalyticsService(db, {
+      visiblePagePredicate,
+    } as unknown as never);
+
+    await svc.citationReuse(USER, {});
+
+    expect(visiblePagePredicate).toHaveBeenCalledWith(USER, "view");
+  });
+
+  it("does not disclose the title of a cited page the caller cannot see", async () => {
+    const { db, executed } = citationHarness();
+    const svc = new KbAnalyticsService(db, {
+      visiblePagePredicate: jest
+        .fn()
+        .mockResolvedValue(sql`${kbPages.visibility} = 'org'`),
+    } as unknown as never);
+
+    await svc.citationReuse(USER, {});
+
+    const rendered = render(executed[0]);
+    expect(rendered.sql.toLowerCase()).toContain("kb_pages");
+    expect(rendered.sql).toContain(`"kb_pages"."visibility"`);
+  });
+
+  it("leaves a non-page citation kind unaffected by the page-visibility guard", async () => {
+    const { db, executed } = citationHarness();
+    const svc = new KbAnalyticsService(db, {
+      visiblePagePredicate: jest
+        .fn()
+        .mockResolvedValue(sql`${kbPages.visibility} = 'org'`),
+    } as unknown as never);
+
+    await svc.citationReuse(USER, {});
+
+    const rendered = render(executed[0]);
+    expect(rendered.sql.toLowerCase()).toContain("kind <> 'page'");
   });
 });

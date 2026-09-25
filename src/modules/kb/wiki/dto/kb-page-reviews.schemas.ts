@@ -5,6 +5,7 @@ export const listPageReviewsQuerySchema = z
   .object({
     cursor: z.string().optional(),
     limit: pageSizeField(50),
+    q: z.string().trim().max(200).optional(),
     status: z.enum(["pending", "approved", "rejected", "overdue"]).optional(),
     type: z.enum(["approval", "freshness"]).optional(),
     reviewer: z.string().optional(),

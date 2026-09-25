@@ -74,22 +74,25 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     const rows = [
       { id: 10, parentPageId: null, spaceId: null, projectId: null, title: "A", icon: null, coverImage: null, sortOrder: 100, visibility: "org", createdById: null, status: "published", updatedAt: new Date() },
     ];
-    let callCount = 0;
     const wheres: unknown[] = [];
     const db = {
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockImplementation((w: unknown) => {
             wheres.push(w);
-            callCount++;
-            const result = callCount === 1
-              ? Object.assign(Promise.resolve(rows), {
-                  orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve(rows), {
-                    limit: jest.fn().mockResolvedValue(rows),
-                  })),
-                })
-              : Promise.resolve([]);
-            return result;
+            return Object.assign(Promise.resolve(rows), {
+              orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve(rows), {
+                limit: jest.fn().mockResolvedValue(rows),
+              })),
+            });
+          }),
+        }),
+      })),
+      selectDistinct: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((w: unknown) => {
+            wheres.push(w);
+            return Promise.resolve([]);
           }),
         }),
       })),

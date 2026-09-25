@@ -86,6 +86,7 @@ export class KbPagesService {
     await this.planLimits.assertWithinLimit(orgId, "kbPages");
 
     let templateContent: KbPageContent | null = null;
+    let usedTemplateId: number | null = null;
 
     if (input.templateId) {
       const tpl = await this.db.query.kbPageTemplates.findFirst({
@@ -95,6 +96,7 @@ export class KbPagesService {
         ),
         columns: { content: true },
       });
+      if (tpl) usedTemplateId = input.templateId;
       if (tpl?.content) templateContent = tpl.content;
     }
 
@@ -165,6 +167,22 @@ export class KbPagesService {
       })
       .returning(KB_PAGE_COLUMNS);
     if (!page) throw new Error("Failed to create page");
+
+    if (usedTemplateId !== null) {
+      await this.db
+        .update(kbPageTemplates)
+        .set({
+          useCount: sql`${kbPageTemplates.useCount} + 1`,
+          lastUsedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(kbPageTemplates.id, usedTemplateId),
+            eq(kbPageTemplates.orgId, orgId),
+          ),
+        );
+    }
+
     return page;
   }
 

@@ -72,6 +72,8 @@ export const kbPageTemplates = pgTable(
     description: text("description"),
     content: jsonb("content").$type<KbPageContent>(),
     createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    useCount: integer("use_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },

@@ -44,6 +44,11 @@ function makeTreeDb(rows: unknown[]) {
   };
   return {
     select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue(fromChain) }),
+    selectDistinct: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([]),
+      }),
+    }),
   } as unknown as Db;
 }
 

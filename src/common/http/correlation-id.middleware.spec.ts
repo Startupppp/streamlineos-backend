@@ -203,4 +203,43 @@ describe("request tracing", () => {
     res.emit("finish");
     expect(spans[0]!.attributes["correlation.id"]).toBe(responseHeader);
   });
+
+  it("carries the http status code, because ok covers 200 and 404 alike", () => {
+    const spans = collect();
+    const { res } = run({});
+    res.statusCode = 404;
+    res.emit("finish");
+    expect(spans[0]!.attributes["http.status_code"]).toBe(404);
+    expect(spans[0]!.status).toBe("ok");
+  });
+
+  it("distinguishes a denial from a success, which a span status alone cannot", () => {
+    const spans = collect();
+    const denied = run({});
+    denied.res.statusCode = 403;
+    denied.res.emit("finish");
+    const ok = run({});
+    ok.res.statusCode = 200;
+    ok.res.emit("finish");
+
+    expect(spans.map((span) => span.status)).toEqual(["ok", "ok"]);
+    expect(spans.map((span) => span.attributes["http.status_code"])).toEqual([403, 200]);
+  });
+
+  it("carries the status code on a server error too, so 500 and 503 are separable", () => {
+    const spans = collect();
+    const { res } = run({});
+    res.statusCode = 503;
+    res.emit("finish");
+    expect(spans[0]!.attributes["http.status_code"]).toBe(503);
+    expect(spans[0]!.status).toBe("error");
+  });
+
+  it("carries the status code on an abandoned request", () => {
+    const spans = collect();
+    const { res } = run({});
+    res.statusCode = 499;
+    res.emit("close");
+    expect(spans[0]!.attributes["http.status_code"]).toBe(499);
+  });
 });

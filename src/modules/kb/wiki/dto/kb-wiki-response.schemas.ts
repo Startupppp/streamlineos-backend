@@ -111,6 +111,8 @@ export const kbPageTemplateSchema = z.object({
   content: z.record(z.string(), z.unknown()).nullable(),
   createdById: z.string().nullable(),
   createdByName: z.string().nullable(),
+  useCount: z.number().int(),
+  lastUsedAt: wireDate().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });

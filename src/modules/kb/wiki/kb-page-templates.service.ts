@@ -28,6 +28,8 @@ const TEMPLATE_COLUMNS = {
   description: kbPageTemplates.description,
   content: kbPageTemplates.content,
   createdById: kbPageTemplates.createdById,
+  useCount: kbPageTemplates.useCount,
+  lastUsedAt: kbPageTemplates.lastUsedAt,
   createdAt: kbPageTemplates.createdAt,
   updatedAt: kbPageTemplates.updatedAt,
 };

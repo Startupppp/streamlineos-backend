@@ -93,7 +93,7 @@ export class KbAnalyticsController {
     @Query() query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.citationReuse(u.orgId, query);
+    return await this.analytics.citationReuse(u, query);
   }
 
   @Get("analytics/review-sla")

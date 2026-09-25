@@ -1,5 +1,7 @@
-import { PgDialect } from "drizzle-orm/pg-core";
+import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
+import { kbPages } from "../../../../db/schema";
 import { KnowledgeCollectionService } from "./knowledge-collection.service";
 import { buildVisiblePageScope } from "../authorization/knowledge-page-scope";
 import type { KnowledgeAuthorizationService } from "../authorization/knowledge-authorization.service";
@@ -36,6 +38,8 @@ function query(
   return { sort: "updated_desc", limit: 2, ...overrides };
 }
 
+type CollectionSelection = Record<string, SQL | SQL.Aliased | PgColumn>;
+
 interface Capture {
   wheres: SQL[];
   orderBys: unknown[][];
@@ -43,6 +47,7 @@ interface Capture {
   groupBys: number;
   selectCalls: number;
   unions: number;
+  selections: CollectionSelection[];
 }
 
 function makeChain(rows: Record<string, unknown>[], capture: Capture): Record<string, unknown> {
@@ -53,7 +58,7 @@ function makeChain(rows: Record<string, unknown>[], capture: Capture): Record<st
   });
   chain.limit = jest.fn((n: number) => {
     capture.limits.push(n);
-    return Promise.resolve(rows);
+    return Object.assign(Promise.resolve(rows), chain);
   });
   chain.groupBy = jest.fn(() => {
     capture.groupBys += 1;
@@ -78,13 +83,15 @@ function makeHarness(options: {
     groupBys: 0,
     selectCalls: 0,
     unions: 0,
+    selections: [],
   };
   const rows = options.rows ?? [];
   const grantRows = options.grantRows ?? [];
 
   const db = {
-    select: jest.fn(() => {
+    select: jest.fn((selection: CollectionSelection) => {
       capture.selectCalls += 1;
+      capture.selections.push(selection);
       const node: Record<string, unknown> = {};
       node.from = jest.fn(() => node);
       node.where = jest.fn((clause: SQL) => {
@@ -468,12 +475,70 @@ describe("KnowledgeCollectionService — BE-81 OR-to-UNION split", () => {
 
     await h.svc.listPages(user(), query({ sort: "updated_desc" }));
 
-    const rendered = h.capture.orderBys[0].map((term) => render(term as SQL));
+    const setOperationOrderBy =
+      h.capture.orderBys[h.capture.orderBys.length - 1];
+    const rendered = setOperationOrderBy.map((term) => render(term as SQL));
     for (const term of rendered) {
       expect(term.sql).not.toContain("kb_pages");
     }
     expect(rendered.some((t) => t.sql.includes("cursorValue"))).toBe(true);
     expect(rendered.some((t) => t.sql.includes("id"))).toBe(true);
+  });
+
+  it("bounds each UNION branch with its own ORDER BY and LIMIT, because the outer LIMIT cannot be pushed into a set operation and the branches would otherwise materialise every visible row", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+
+    await h.svc.listPages(user(), query({ limit: 50 }));
+
+    expect(h.capture.limits).toEqual([51, 51, 51]);
+    expect(h.capture.orderBys).toHaveLength(3);
+  });
+
+  it("orders each UNION branch by the real, table-qualified columns, so the branch can walk the keyset index instead of sorting its whole result", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+
+    await h.svc.listPages(user(), query({ limit: 50 }));
+
+    for (const index of [0, 1]) {
+      const rendered = h.capture.orderBys[index].map((term) => render(term as SQL));
+      expect(rendered.some((t) => t.sql.includes("kb_pages"))).toBe(true);
+    }
+  });
+
+  it("leaves the single-branch path with exactly one ORDER BY and one LIMIT, so the bounded-branch shape never costs a second query where there is no UNION", async () => {
+    const h = makeHarness({
+      rows: [pageRow()],
+      actor: standing({ isOrgOwner: true }),
+    });
+
+    await h.svc.listPages(user(), query({ limit: 50 }));
+
+    expect(h.capture.limits).toEqual([51]);
+    expect(h.capture.orderBys).toHaveLength(1);
+  });
+
+  it("emits cursorValue as an output column alias, because a set operation resolves ORDER BY only against output names and Postgres raises 42703 for an unaliased expression", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+
+    await h.svc.listPages(user(), query({ sort: "updated_desc" }));
+
+    const branch = new QueryBuilder()
+      .select(h.capture.selections[0])
+      .from(kbPages)
+      .toSQL();
+    expect(branch.sql).toContain('as "cursorValue"');
+  });
+
+  it("emits cursorValue as an output alias on the title sort too, where the raw expression would otherwise collide with the projected title column", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+
+    await h.svc.listPages(user(), query({ sort: "title_asc" }));
+
+    const branch = new QueryBuilder()
+      .select(h.capture.selections[0])
+      .from(kbPages)
+      .toSQL();
+    expect(branch.sql).toContain('as "cursorValue"');
   });
 
   it("still orders by the real columns, table-qualified, on the single-branch path where a UNION never happens", async () => {

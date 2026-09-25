@@ -146,7 +146,7 @@ export class KbPageTreeService {
     const childParentSet = new Set<number>();
     if (returnedIds.length > 0) {
       const childRows = await this.db
-        .select({ parentPageId: kbPages.parentPageId })
+        .selectDistinct({ parentPageId: kbPages.parentPageId })
         .from(kbPages)
         .where(
           and(

@@ -146,6 +146,7 @@ export class KbPagesController {
   }
 
   @Post("pages/trash/restore")
+  @Idempotent("kb.pages.trash-restore")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   @Validate({ body: bulkPageIdsSchema })
@@ -158,6 +159,7 @@ export class KbPagesController {
   }
 
   @Delete("pages/trash/purge")
+  @Idempotent("kb.pages.trash-purge")
   @HttpCode(200)
   @RequirePermission("kb:pages:purge")
   @Validate({ body: bulkPageIdsSchema })
@@ -294,6 +296,7 @@ export class KbPagesController {
   }
 
   @Delete("pages/trash/empty")
+  @Idempotent("kb.pages.trash-empty")
   @HttpCode(200)
   @RequirePermission("kb:pages:purge")
   @ResponseSchema(kbPageEmptyTrashSchema)
