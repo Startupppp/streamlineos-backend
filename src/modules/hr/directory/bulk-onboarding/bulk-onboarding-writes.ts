@@ -17,7 +17,9 @@ import { formatDateOnly } from "../../../../common/date";
 import { appUrl } from "../../../email/app-url";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
-import type { ReportingLineService } from "../../../directory/reporting-line.service";
+import type { ReportingRelationshipService } from "../../../directory/reporting-relationship.service";
+import { ReportingLineException } from "../../../directory/reporting-line-errors";
+import { REPORTING_LINE_ERROR_CODES } from "../../../directory/reporting-line.types";
 import {
   admissionRefusalMessage,
   type MembershipAdmissionService,
@@ -36,7 +38,9 @@ export interface BulkOnboardWriteDeps {
   admission: MembershipAdmissionService;
   personEmploymentSync: PersonEmploymentSyncService;
   membership: MembershipMutations;
-  reportingLines: ReportingLineService;
+  relationships: Pick<ReportingRelationshipService, "setRelationships">;
+  /** The organisation's business date, for rows with neither `effectiveFrom` nor a joining date. */
+  today: string;
 }
 
 async function writeSensitiveFields(
@@ -177,11 +181,10 @@ export async function writeBulkOnboarding(
   );
 
   // A manager introduced by this same file has no user id until now, which is
-  // why the plan carried the email instead. Reporting lines are the one part of
-  // this write that depends on order, so they are assigned managers-first: a
-  // line whose manager was created moments earlier in the same transaction must
-  // not be written before the manager's own line exists, or an org chart read
-  // between the two sees a report with no parent.
+  // why the plan carried the email instead. Relationships are written
+  // managers-first, so a line's manager already has their own line, and every
+  // write goes through the canonical relationship service (HRM-15): a refusal
+  // here aborts the file, because the preview promised these rows.
   const userIdByEmail = new Map(admitted.map((employee) => [employee.email, employee.userId]));
   const byEmail = new Map(admitted.map((employee) => [employee.email, employee]));
   const managerOrder = managersFirst(
@@ -198,35 +201,43 @@ export async function writeBulkOnboarding(
   for (const email of managerOrder) {
     const employee = byEmail.get(email);
     if (!employee) continue;
-    const managerUserId =
-      employee.reportingManagerUserId ??
-      (employee.reportingManagerEmail === null
-        ? null
-        : (userIdByEmail.get(employee.reportingManagerEmail) ?? null));
-
-    if (managerUserId === null) {
-      if (employee.reportingManagerEmail === null) continue;
-      // The plan rejects a row whose in-file manager it rejected, so reaching
-      // here means the manager failed admission after passing its screen — a
-      // race, not a file error. The employee exists; saying so beats writing a
-      // reporting line to nobody.
-      rejected.push({
-        row: employee.row,
-        email: employee.email,
-        success: false,
-        error: `Created, but the reporting manager "${employee.reportingManagerEmail}" could not be linked because that row did not complete. Set the manager on the employee's profile.`,
+    const effectiveFrom = employee.effectiveFrom ?? employee.joiningDate ?? deps.today;
+    const secondary = employee.secondaryManagers.flatMap((manager) => {
+      const managerUserId = manager.userId ?? userIdByEmail.get(manager.email);
+      return managerUserId ? [{ managerUserId }] : [];
+    });
+    if (employee.primaryManager === null) {
+      await deps.relationships.setRelationships(tx, {
+        orgId,
+        actor,
+        subjectUserId: employee.userId,
+        primaryManagerUserId: null,
+        topLevelReason: employee.source.topLevelRoleReason ?? null,
+        effectiveFrom,
+        source: "BULK_ONBOARDING",
       });
       continue;
     }
-
-    await deps.reportingLines.assign(
+    const managerUserId =
+      employee.primaryManager.userId ??
+      (employee.reportingManagerEmail === null ? null : (userIdByEmail.get(employee.reportingManagerEmail) ?? null));
+    if (managerUserId === null)
+      throw new ReportingLineException(
+        REPORTING_LINE_ERROR_CODES.MANAGER_ROW_FAILED,
+        `Row ${employee.row}: the reporting manager "${employee.reportingManagerEmail ?? ""}" was not created, so nothing was onboarded. Preview the file again.`,
+        { row: employee.row },
+      );
+    const fallback = employee.primaryManager.resolution === "FALLBACK_CONFIGURED" || employee.primaryManager.resolution === "FALLBACK_UPLOADER";
+    await deps.relationships.setRelationships(tx, {
       orgId,
-      employee.userId,
-      managerUserId,
-      employee.joiningDate ?? formatDateOnly(new Date()),
-      actor.userId,
-      tx,
-    );
+      actor,
+      subjectUserId: employee.userId,
+      primaryManagerUserId: managerUserId,
+      secondary: secondary.length > 0 ? secondary : undefined,
+      effectiveFrom,
+      source: fallback ? "ONBOARDING_FALLBACK" : "BULK_ONBOARDING",
+    });
+    employee.primaryManager = { ...employee.primaryManager, userId: managerUserId };
   }
 
   const salaryCurrency = admitted.some(

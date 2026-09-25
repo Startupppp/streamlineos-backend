@@ -56,7 +56,6 @@ import {
   onboardResponseSchema,
   inviteLinkSchema,
   resendInviteResponseSchema,
-  bulkOnboardResultSchema,
   employeeListPageSchema,
   employeeCountsSchema,
   employeeStatsSchema,
@@ -68,6 +67,7 @@ import {
   employeeProjectsSchema,
   employeeTicketsSchema,
 } from "./dto/directory-response.schemas";
+import { bulkOnboardCommitResultSchema, bulkOnboardPreviewSchema } from "./dto/reporting-lines-bulk.schemas";
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -128,8 +128,22 @@ export class EmployeesController {
     return this.onboarding.createInviteLink(currentUser, employeeId);
   }
 
+  @Post("onboard/bulk/preview")
+  @ResponseSchema(bulkOnboardPreviewSchema)
+  @RequirePermission("hr:onboarding:manage")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("hr:employee-bulk-onboard-preview")
+  @HttpCode(200)
+  @Validate({ body: bulkOnboardEmployeesSchema })
+  previewBulk(
+    @Body() body: BulkOnboardEmployeesInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.bulkOnboarding.previewEmployeesBulk(currentUser, body.employees);
+  }
+
   @Post("onboard/bulk")
-  @ResponseSchema(bulkOnboardResultSchema)
+  @ResponseSchema(bulkOnboardCommitResultSchema)
   @RequirePermission("hr:onboarding:manage")
   @Idempotent("hr.employees.onboard-bulk")
   @UseGuards(RateLimitGuard)

@@ -31,6 +31,7 @@ import {
 } from "./dto/import-job.dto";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ApiOkResponse } from "@nestjs/swagger";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -61,7 +62,7 @@ export class HrImportController {
     @Body() body: CreateImportJobInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.importService.createJob(u.orgId, u.userId, body);
+    return this.importService.createJob(u.orgId, u.userId, body, u);
   }
 
   @Get("hr/import/jobs")
@@ -90,6 +91,7 @@ export class HrImportController {
 
   @Post("hr/import/jobs/:jobId/commit")
   @ResponseSchema(hrImportJobRowSchema)
+  @Idempotent("hr.import.jobs.commit")
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
@@ -98,7 +100,7 @@ export class HrImportController {
     @Param("jobId") jobId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.importService.commitJob(u.orgId, u.userId, jobId);
+    return this.importService.commitJob(u.orgId, u.userId, jobId, u);
   }
 
   @Post("hr/import/jobs/:jobId/rollback")

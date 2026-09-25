@@ -2,6 +2,7 @@ import { z } from "zod";
 import { genderEnum } from "../../../../db/schema";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { canonicalEmailSchema } from "../../../users/dto/users.schemas";
+import { secondaryManagerInputSchema } from "./reporting-lines-shared.schemas";
 
 function isSuppliedOrParseableDate(value: string | undefined): boolean {
   if (!value) return true;
@@ -275,15 +276,16 @@ export const updateEmployeeSchema = z
 
 export const employeeIdParamsSchema = z.object({ employeeId: z.string().min(1) }).strict();
 
-const REPORTS_TO_REQUIRED_MESSAGE =
-  "Reports to is required. Choose a reporting manager, or mark the role as top-level with a reason.";
-
-function requireReportsTo(
-  value: { reportingManagerUserId?: string; reportingManagerEmail?: string; topLevelRole?: boolean; topLevelRoleReason?: string },
+/**
+ * HRM-15 D2/D3: a manager is optional — the backend resolves a fallback when none is named — but a
+ * top-level role may not also name one, and must say why it has none.
+ */
+function checkTopLevelRole(
+  value: { reportingManagerUserId?: string; reportingManagerEmail?: string; primaryManagerEmail?: string; topLevelRole?: boolean; topLevelRoleReason?: string },
   ctx: z.RefinementCtx,
 ): void {
-  const hasManager = Boolean(value.reportingManagerUserId || value.reportingManagerEmail);
-  if (hasManager && value.topLevelRole) {
+  if (!value.topLevelRole) return;
+  if (value.reportingManagerUserId || value.reportingManagerEmail || value.primaryManagerEmail) {
     ctx.addIssue({
       code: "custom",
       message: "A top-level role cannot also have a reporting manager.",
@@ -291,21 +293,17 @@ function requireReportsTo(
     });
     return;
   }
-  if (!hasManager && !value.topLevelRole) {
-    ctx.addIssue({ code: "custom", message: REPORTS_TO_REQUIRED_MESSAGE, path: ["reportingManagerUserId"] });
-    return;
-  }
-  if (value.topLevelRole && !value.topLevelRoleReason?.trim()) {
+  if (!value.topLevelRoleReason?.trim())
     ctx.addIssue({
       code: "custom",
       message: "Explain why this role has no reporting manager.",
       path: ["topLevelRoleReason"],
     });
-  }
 }
 
 export const onboardEmployeeFieldsSchema = z.object({
   reportingManagerUserId: z.string().trim().min(1).max(128).optional(),
+  secondaryManagers: z.array(secondaryManagerInputSchema).max(3).optional(),
   topLevelRole: z.boolean().optional(),
   topLevelRoleReason: z.string().trim().max(500).optional(),
   firstName: z
@@ -371,7 +369,7 @@ export const onboardEmployeeFieldsSchema = z.object({
     .optional(),
 }).strict();
 
-export const onboardEmployeeSchema = onboardEmployeeFieldsSchema.superRefine(requireReportsTo);
+export const onboardEmployeeSchema = onboardEmployeeFieldsSchema.superRefine(checkTopLevelRole);
 
 export const createAccessRequestSchema = z.object({
   employeeId: z.string().min(1, "Employee is required"),
@@ -390,10 +388,16 @@ export const listAccessRequestsQuerySchema = z.object({
 
 /** Row shape for spreadsheet bulk onboard — department can be an org department id or a name. */
 export const bulkOnboardEmployeeRowSchema = onboardEmployeeFieldsSchema
-  .omit({ attachToExistingMember: true })
+  .omit({ attachToExistingMember: true, secondaryManagers: true })
   .extend({
     department: z.string().trim().min(1).optional(),
+    /** Read-only legacy alias of `primaryManagerEmail` for one release (PRD §7.3). */
     reportingManagerEmail: canonicalEmailSchema.optional(),
+    primaryManagerEmail: canonicalEmailSchema.optional(),
+    secondaryManagerEmail1: canonicalEmailSchema.optional(),
+    secondaryManagerEmail2: canonicalEmailSchema.optional(),
+    secondaryManagerEmail3: canonicalEmailSchema.optional(),
+    effectiveFrom: z.iso.date().optional(),
     /**
      * V-031. Deliberately WITHOUT the age/future refinements the single-hire
      * schema carries. This schema validates an array of up to 100 rows, so one
@@ -412,7 +416,7 @@ export const bulkOnboardEmployeeRowSchema = onboardEmployeeFieldsSchema
         path: ["department"],
       });
     }
-    requireReportsTo(row, ctx);
+    checkTopLevelRole(row, ctx);
   });
 
 export const bulkOnboardEmployeesSchema = z.object({

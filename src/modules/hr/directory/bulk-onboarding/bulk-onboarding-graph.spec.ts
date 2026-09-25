@@ -1,7 +1,6 @@
 import {
   findManagerCycles,
   managersFirst,
-  rosterEmailsOf,
   type ManagerEdge,
 } from "./bulk-onboarding-graph";
 
@@ -16,17 +15,6 @@ describe("bulk onboarding reporting graph", () => {
     row,
     email,
     managerEmail,
-  });
-
-  describe("roster", () => {
-    it("canonicalises the file's own emails so case does not hide a manager", () => {
-      const roster = rosterEmailsOf([
-        { email: "QA-BulkMgr@Example.com" },
-        { email: "qa-bulkmem@example.com" },
-      ] as never);
-      expect(roster.has("qa-bulkmgr@example.com")).toBe(true);
-      expect(roster.has("qa-bulkmem@example.com")).toBe(true);
-    });
   });
 
   describe("cycles", () => {
