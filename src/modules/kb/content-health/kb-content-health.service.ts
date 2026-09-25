@@ -27,6 +27,7 @@ import type {
   ContentHealthSignalItem,
   ContentHealthSignalType,
   ContentHealthCounts,
+  ContentHealthTrend,
   DismissHealthItemBody,
   AssignHealthItemBody,
   BulkRepairBody,
@@ -392,6 +393,58 @@ export class KbContentHealthService {
       ruleVersion: item.ruleVersion,
       evidence: item.evidence ?? {},
       detectedAt: item.detectedAt,
+    };
+  }
+
+  async trend(user: CurrentUserContext): Promise<ContentHealthTrend> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [beforeRow] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(kbHealthItems)
+      .where(
+        and(
+          eq(kbHealthItems.orgId, user.orgId),
+          eq(kbHealthItems.state, "open" as KbHealthItemState),
+          lt(kbHealthItems.detectedAt, thirtyDaysAgo),
+        ),
+      );
+
+    const [afterRow] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(kbHealthItems)
+      .where(
+        and(
+          eq(kbHealthItems.orgId, user.orgId),
+          eq(kbHealthItems.state, "open" as KbHealthItemState),
+        ),
+      );
+
+    const pointRows = await this.db
+      .select({
+        date: sql<string>`date_trunc('day', ${kbHealthItems.detectedAt})::text`,
+        openCount: sql<number>`count(*) filter (where ${kbHealthItems.state} = 'open')::int`,
+        resolvedCount: sql<number>`count(*) filter (where ${kbHealthItems.state} = 'resolved')::int`,
+      })
+      .from(kbHealthItems)
+      .where(
+        and(
+          eq(kbHealthItems.orgId, user.orgId),
+          sql`${kbHealthItems.detectedAt} >= current_date - interval '30 days'`,
+        ),
+      )
+      .groupBy(sql`date_trunc('day', ${kbHealthItems.detectedAt})`)
+      .orderBy(sql`date_trunc('day', ${kbHealthItems.detectedAt})`);
+
+    return {
+      points: pointRows.map((r) => ({
+        date: new Date(r.date),
+        openCount: r.openCount,
+        resolvedCount: r.resolvedCount,
+      })),
+      beforeCount: beforeRow?.count ?? 0,
+      afterCount: afterRow?.count ?? 0,
     };
   }
 

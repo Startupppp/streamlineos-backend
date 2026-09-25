@@ -6847,6 +6847,13 @@
       "when": 1803039610725,
       "tag": "1234_kb_purge_ledger_widen_stores",
       "breakpoints": true
+    },
+    {
+      "idx": 1106,
+      "version": "7",
+      "when": 1803043210725,
+      "tag": "1235_kb_research_briefs_approval",
+      "breakpoints": true
     }
   ]
 }

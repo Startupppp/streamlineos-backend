@@ -61,6 +61,7 @@ export const kbPages = pgTable(
       .notNull()
       .$onUpdate(() => new Date()),
     aclRevision: integer("acl_revision").notNull().default(1),
+    aclRevisionChangedAt: timestamp("acl_revision_changed_at"),
     contentRevision: integer("content_revision").notNull().default(1),
     visibility: text("visibility")
       .notNull()

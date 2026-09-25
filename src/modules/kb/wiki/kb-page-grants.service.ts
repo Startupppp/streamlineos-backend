@@ -171,7 +171,7 @@ export class KbPageGrantsService {
 
         await tx
           .update(kbPages)
-          .set({ aclRevision: sql`acl_revision + 1` })
+          .set({ aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() })
           .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, user.orgId)));
 
         return row;
@@ -229,7 +229,7 @@ export class KbPageGrantsService {
 
       await tx
         .update(kbPages)
-        .set({ aclRevision: sql`acl_revision + 1` })
+        .set({ aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, user.orgId)));
     });
 
@@ -255,7 +255,8 @@ export class KbPageGrantsService {
   private async syncChunkAclRevision(orgId: string, pageId: number): Promise<void> {
     await this.db.execute(sql`
       UPDATE kb_article_chunks c
-      SET acl_revision = p.acl_revision
+      SET acl_revision = p.acl_revision,
+          acl_synced_at = NOW()
       FROM kb_pages p
       WHERE c.page_id = p.id
         AND c.org_id = ${orgId}

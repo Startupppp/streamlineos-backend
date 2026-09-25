@@ -1,5 +1,5 @@
 import { KbImportProcessConsumer } from "./kb-import-process.consumer";
-import { kbImportJobs, kbPages } from "../../../db/schema";
+import { kbImportJobs } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { OutboxConsumerRegistry, OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
@@ -17,13 +17,7 @@ jest.mock("../../../common/outbox/outbox-writer", () => ({
 const sharedAudit = { log: jest.fn() } as unknown as AuditService;
 const sharedRegistry = { register: jest.fn() } as unknown as OutboxConsumerRegistry;
 
-function makeEvent(inputOverride?: Partial<{
-  sourceType: string;
-  items: Array<{ title: string; contentText?: string; externalId?: string; externalSource?: string }>;
-  visibility: string;
-  duplicatePolicy: string;
-  spaceId?: number;
-}>): OutboxEventRow {
+function makeEvent(itemsOverride?: Array<{ title: string; contentText?: string }>, duplicatePolicy = "skip"): OutboxEventRow {
   return {
     eventId: "evt-1",
     organizationId: "org-A",
@@ -37,10 +31,9 @@ function makeEvent(inputOverride?: Partial<{
       orgId: "org-A",
       input: {
         sourceType: "markdown",
-        items: [{ title: "Doc A", contentText: "body" }],
+        items: itemsOverride ?? [{ title: "Doc A", contentText: "body" }],
         visibility: "org",
-        duplicatePolicy: "skip",
-        ...inputOverride,
+        duplicatePolicy,
       },
     },
   } as unknown as OutboxEventRow;
@@ -60,202 +53,260 @@ function makeSelectChain(rows: unknown[] = []) {
   return chain;
 }
 
+function rint(): jest.Mock {
+  const { runInNewTenantTransaction } = jest.requireMock(
+    "../../../common/tenant/run-in-tenant-transaction",
+  ) as { runInNewTenantTransaction: jest.Mock };
+  return runInNewTenantTransaction;
+}
+
+afterEach(() => jest.clearAllMocks());
+
 describe("KbImportProcessConsumer — job gate", () => {
-  afterEach(() => jest.resetAllMocks());
-
   it("skips processing when the job is already completed", async () => {
-    const updater = jest.fn();
-    const insertMock = jest.fn();
-
     const db = {
       select: jest.fn().mockReturnValue(makeSelectChain([{ status: "completed" }])),
-      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updater }) }),
-      insert: insertMock,
+      update: jest.fn(),
+      insert: jest.fn(),
     } as unknown as Db;
 
     const consumer = new KbImportProcessConsumer(db, sharedRegistry, sharedAudit);
     await consumer.handle(makeEvent());
 
-    expect(updater).not.toHaveBeenCalled();
-    expect(insertMock).not.toHaveBeenCalled();
+    expect((db.insert as jest.Mock)).not.toHaveBeenCalled();
   });
 
   it("does not process when job row is not found", async () => {
-    const insertMock = jest.fn();
     const db = {
       select: jest.fn().mockReturnValue(makeSelectChain([])),
-      insert: insertMock,
+      update: jest.fn(),
+      insert: jest.fn(),
     } as unknown as Db;
 
     const consumer = new KbImportProcessConsumer(db, sharedRegistry, sharedAudit);
     await consumer.handle(makeEvent());
 
-    expect(insertMock).not.toHaveBeenCalled();
+    expect((db.insert as jest.Mock)).not.toHaveBeenCalled();
   });
 });
 
 describe("KbImportProcessConsumer — successful processing", () => {
-  afterEach(() => jest.resetAllMocks());
-
   it("marks job processing then completed and records correct counts", async () => {
-    const updateSetWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateSetWhere });
-    const updateMock = jest.fn().mockReturnValue({ set: updateSet });
+    const updateCalls: Array<Record<string, unknown>> = [];
 
-    let updateCallCount = 0;
-    updateMock.mockImplementation(() => {
-      updateCallCount++;
-      return { set: updateSet };
-    });
+    function makeTxFor(statusRows: unknown[], titleRows: unknown[] = [], insertedRows: unknown[] = []) {
+      let selectCount = 0;
+      return {
+        select: jest.fn().mockImplementation(() => {
+          selectCount++;
+          if (selectCount === 1) return makeSelectChain(statusRows);
+          if (selectCount === 2) return makeSelectChain([]);
+          return makeSelectChain(titleRows);
+        }),
+        update: jest.fn().mockImplementation(() => ({
+          set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+            updateCalls.push(vals);
+            return { where: jest.fn().mockResolvedValue(undefined) };
+          }),
+        })),
+        insert: jest.fn().mockReturnValue({
+          values: jest.fn().mockReturnValue({
+            onConflictDoNothing: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue(insertedRows),
+            }),
+          }),
+        }),
+      };
+    }
 
-    const pagesReturning = jest
-      .fn()
-      .mockResolvedValue([{ id: 5, contentRevision: 1, aclRevision: 1 }]);
-    const pagesInsertChain = {
-      onConflictDoNothing: jest.fn().mockReturnValue({ returning: pagesReturning }),
-    };
+    const tx = makeTxFor([{ status: "pending" }], [], [{ id: 5, contentRevision: 1, aclRevision: 1 }]);
 
-    let selectCallCount = 0;
-    const db = {
-      select: jest.fn().mockImplementation(() => {
-        selectCallCount++;
-        if (selectCallCount === 1) {
-          return makeSelectChain([{ status: "pending" }]);
-        }
-        return makeSelectChain([]);
-      }),
-      update: updateMock,
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue(pagesInsertChain) }),
-    } as unknown as Db;
+    rint().mockImplementation((_db: unknown, _orgId: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer(db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
     await consumer.handle(makeEvent());
 
-    const firstSetCall = updateSet.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
-    expect(firstSetCall?.["status"]).toBe("processing");
-
-    const lastSetCall = updateSet.mock.calls[updateSet.mock.calls.length - 1]?.[0] as Record<string, unknown> | undefined;
-    expect(lastSetCall?.["status"]).toBe("completed");
-    expect(lastSetCall?.["succeededItems"]).toBe(1);
-    expect(lastSetCall?.["failedItems"]).toBe(0);
+    expect(updateCalls[0]?.["status"]).toBe("processing");
+    const lastCall = updateCalls[updateCalls.length - 1];
+    expect(lastCall?.["status"]).toBe("completed");
+    expect(lastCall?.["succeededItems"]).toBe(1);
+    expect(lastCall?.["failedItems"]).toBe(0);
   });
 });
 
 describe("KbImportProcessConsumer — BE-88 failure handling", () => {
-  afterEach(() => jest.resetAllMocks());
+  it("marks job as failed and rethrows when processing throws outside the per-batch catch", async () => {
+    const boom = new Error("infra failure");
+    const updateCalls: Array<Record<string, unknown>> = [];
+    let callCount = 0;
 
-  it("marks job as failed and rethrows when insert throws", async () => {
-    const boom = new Error("db died");
-    const updateSetWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateSetWhere });
-    const updateMock = jest.fn().mockReturnValue({ set: updateSet });
-
-    let selectCallCount = 0;
-    const db = {
-      select: jest.fn().mockImplementation(() => {
-        selectCallCount++;
-        if (selectCallCount === 1) return makeSelectChain([{ status: "pending" }]);
-        return makeSelectChain([]);
-      }),
-      update: updateMock,
-      insert: jest.fn().mockImplementation(() => {
+    rint().mockImplementation(async (_db: unknown, _orgId: string, fn: (t: unknown) => Promise<unknown>) => {
+      callCount++;
+      if (callCount === 1) {
+        const tx = {
+          select: jest.fn().mockReturnValue(makeSelectChain([{ status: "pending" }])),
+          update: jest.fn().mockImplementation(() => ({
+            set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+              updateCalls.push(vals);
+              return { where: jest.fn().mockResolvedValue(undefined) };
+            }),
+          })),
+        };
+        return fn(tx);
+      }
+      if (callCount === 2) {
         throw boom;
-      }),
-    } as unknown as Db;
+      }
+      const updateTx = {
+        update: jest.fn().mockImplementation(() => ({
+          set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+            updateCalls.push(vals);
+            return { where: jest.fn().mockResolvedValue(undefined) };
+          }),
+        })),
+      };
+      return fn(updateTx);
+    });
 
-    const consumer = new KbImportProcessConsumer(db, sharedRegistry, sharedAudit);
-    await expect(consumer.handle(makeEvent())).rejects.toThrow("db died");
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    await expect(consumer.handle(makeEvent())).rejects.toThrow("infra failure");
 
-    const lastSetCall = updateSet.mock.calls[updateSet.mock.calls.length - 1]?.[0] as Record<string, unknown> | undefined;
-    expect(lastSetCall?.["status"]).toBe("failed");
+    const lastCall = updateCalls[updateCalls.length - 1];
+    expect(lastCall?.["status"]).toBe("failed");
   });
 });
 
 describe("KbImportProcessConsumer — withoutRef TOCTOU invariant", () => {
-  afterEach(() => jest.resetAllMocks());
+  it("title check and insert for withoutRef run in the same runInNewTenantTransaction call", async () => {
+    const selectsOnSharedTx: string[] = [];
+    const insertsOnSharedTx: string[] = [];
+    const updateCalls: Array<Record<string, unknown>> = [];
+    let callCount = 0;
 
-  it("counts a plain-title match as duplicate only when the check runs inside the transaction that is also used for the insert", async () => {
-    const insideTxRef = { value: false };
+    rint().mockImplementation(async (_db: unknown, _orgId: string, fn: (t: unknown) => Promise<unknown>) => {
+      callCount++;
 
-    function makeWhereChain(): { limit: jest.Mock } & PromiseLike<Array<{ title?: string; status?: string }>> {
-      const limit = jest.fn().mockResolvedValue([]);
-      const thenable: { limit: jest.Mock } & PromiseLike<Array<{ title?: string; status?: string }>> = {
-        limit,
-        then: <T>(
-          onFulfilled: (rows: Array<{ title?: string; status?: string }>) => T,
-          onRejected?: (e: unknown) => T,
-        ) =>
-          Promise.resolve(
-            insideTxRef.value ? [{ title: "Existing Doc" }] : [{ status: "pending" }],
-          ).then(onFulfilled, onRejected),
-      };
-      return thenable;
-    }
+      if (callCount === 1) {
+        const tx = {
+          select: jest.fn().mockReturnValue(makeSelectChain([{ status: "pending" }])),
+          update: jest.fn().mockImplementation(() => ({
+            set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+              updateCalls.push(vals);
+              return { where: jest.fn().mockResolvedValue(undefined) };
+            }),
+          })),
+        };
+        return fn(tx);
+      }
 
-    const updateSetWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateSetWhere });
+      if (callCount === 2) {
+        return fn({ select: jest.fn().mockReturnValue(makeSelectChain([])) });
+      }
 
-    const pagesInsert = {
-      onConflictDoNothing: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([]),
-      }),
-    };
-
-    let selectCallCount = 0;
-    const db: Partial<Db> & { select: jest.Mock; update: jest.Mock; insert: jest.Mock } = {
-      select: jest.fn().mockImplementation(() => {
-        selectCallCount++;
-        return {
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockImplementation(() => makeWhereChain()),
+      if (callCount === 3) {
+        const sharedTx = {
+          select: jest.fn().mockImplementation(() => {
+            selectsOnSharedTx.push("select");
+            return makeSelectChain([{ title: "Existing Doc" }]);
+          }),
+          insert: jest.fn().mockImplementation(() => {
+            insertsOnSharedTx.push("insert");
+            return {
+              values: jest.fn().mockReturnValue({
+                onConflictDoNothing: jest.fn().mockReturnValue({
+                  returning: jest.fn().mockResolvedValue([{ id: 9, contentRevision: 1, aclRevision: 1 }]),
+                }),
+              }),
+            };
           }),
         };
-      }),
-      update: jest.fn().mockReturnValue({ set: updateSet }),
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue(pagesInsert) }),
-    };
+        return fn(sharedTx);
+      }
 
-    const { runInNewTenantTransaction } = jest.requireMock(
-      "../../../common/tenant/run-in-tenant-transaction",
-    ) as { runInNewTenantTransaction: jest.Mock };
+      const updateTx = {
+        update: jest.fn().mockImplementation(() => ({
+          set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+            updateCalls.push(vals);
+            return { where: jest.fn().mockResolvedValue(undefined) };
+          }),
+        })),
+      };
+      return fn(updateTx);
+    });
 
-    runInNewTenantTransaction.mockImplementation(
-      async (dbArg: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => {
-        insideTxRef.value = true;
-        try {
-          return await fn(dbArg);
-        } finally {
-          insideTxRef.value = false;
-        }
-      },
+    const event = makeEvent(
+      [
+        { title: "Existing Doc", contentText: "body" },
+        { title: "New Doc", contentText: "body" },
+      ],
+      "skip",
     );
 
-    const consumer = new KbImportProcessConsumer(db as unknown as Db, sharedRegistry, sharedAudit);
-
-    const event: OutboxEventRow = {
-      eventId: "evt-2",
-      organizationId: "org-A",
-      aggregateType: "kb_import_job",
-      aggregateId: "1",
-      aggregateVersion: 1,
-      eventType: "kb.import.process",
-      payload: {
-        jobId: 1,
-        userId: "user-1",
-        orgId: "org-A",
-        input: {
-          sourceType: "markdown",
-          items: [{ title: "Existing Doc", contentText: "body" }],
-          visibility: "org",
-          duplicatePolicy: "skip",
-        },
-      },
-    } as unknown as OutboxEventRow;
-
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
     await consumer.handle(event);
 
-    const lastSetCall = updateSet.mock.calls[updateSet.mock.calls.length - 1]?.[0] as Record<string, unknown> | undefined;
-    expect(lastSetCall?.["duplicateItems"]).toBe(1);
-    expect(lastSetCall?.["succeededItems"]).toBe(0);
+    expect(selectsOnSharedTx.length).toBeGreaterThan(0);
+    expect(insertsOnSharedTx.length).toBeGreaterThan(0);
+
+    const lastCall = updateCalls[updateCalls.length - 1];
+    expect(lastCall?.["duplicateItems"]).toBe(1);
+    expect(lastCall?.["succeededItems"]).toBe(1);
+  });
+
+  it("counts a plain-title item as duplicate only when found inside the tenant transaction", async () => {
+    const updateCalls: Array<Record<string, unknown>> = [];
+    let callCount = 0;
+
+    rint().mockImplementation(async (_db: unknown, _orgId: string, fn: (t: unknown) => Promise<unknown>) => {
+      callCount++;
+
+      if (callCount === 1) {
+        const tx = {
+          select: jest.fn().mockReturnValue(makeSelectChain([{ status: "pending" }])),
+          update: jest.fn().mockImplementation(() => ({
+            set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+              updateCalls.push(vals);
+              return { where: jest.fn().mockResolvedValue(undefined) };
+            }),
+          })),
+        };
+        return fn(tx);
+      }
+
+      if (callCount === 2) {
+        return fn({ select: jest.fn().mockReturnValue(makeSelectChain([])) });
+      }
+
+      if (callCount === 3) {
+        const withoutRefTx = {
+          select: jest.fn().mockReturnValue(makeSelectChain([{ title: "Only Doc" }])),
+          insert: jest.fn().mockReturnValue({
+            values: jest.fn().mockReturnValue({
+              onConflictDoNothing: jest.fn().mockReturnValue({
+                returning: jest.fn().mockResolvedValue([]),
+              }),
+            }),
+          }),
+        };
+        return fn(withoutRefTx);
+      }
+
+      const updateTx = {
+        update: jest.fn().mockImplementation(() => ({
+          set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+            updateCalls.push(vals);
+            return { where: jest.fn().mockResolvedValue(undefined) };
+          }),
+        })),
+      };
+      return fn(updateTx);
+    });
+
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    await consumer.handle(makeEvent([{ title: "Only Doc", contentText: "body" }], "skip"));
+
+    const lastCall = updateCalls[updateCalls.length - 1];
+    expect(lastCall?.["duplicateItems"]).toBe(1);
+    expect(lastCall?.["succeededItems"]).toBe(0);
   });
 });

@@ -157,3 +157,17 @@ export const evidenceResponseSchema = z.object({
   evidence: z.record(z.unknown()),
   detectedAt: wireDate(),
 });
+
+const contentHealthTrendPointSchema = z.object({
+  date: wireDate(),
+  openCount: z.number().int(),
+  resolvedCount: z.number().int(),
+});
+
+export const contentHealthTrendSchema = z.object({
+  points: z.array(contentHealthTrendPointSchema),
+  beforeCount: z.number().int(),
+  afterCount: z.number().int(),
+});
+
+export type ContentHealthTrend = z.infer<typeof contentHealthTrendSchema>;

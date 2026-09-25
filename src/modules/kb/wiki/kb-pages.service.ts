@@ -332,7 +332,7 @@ export class KbPagesService {
           ...(contentChanged
             ? { contentRevision: sql`content_revision + 1` }
             : {}),
-          ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
+          ...(aclChanged ? { aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() } : {}),
         })
         .where(
           and(
@@ -504,6 +504,7 @@ export class KbPagesService {
           visibility,
           ...tokenFields,
           aclRevision: sql`acl_revision + 1`,
+          aclRevisionChangedAt: new Date(),
           ...(bumpRevision ? { publicTokenRevision: sql`public_token_revision + 1` } : {}),
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))

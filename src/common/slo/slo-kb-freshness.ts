@@ -32,7 +32,7 @@ export const KB_ACCESS_REVOCATION_SLO: ServiceLevelObjective = {
   id: "module:kb:access-revocation",
   kind: "module",
   subject: "kb",
-  statement: `No KB page ACL change should remain unsynced in the chunk index for more than ${KB_ACCESS_REVOCATION_LAG_THRESHOLD_SECONDS} seconds, measured on at least ${KB_ACCESS_REVOCATION_MIN_PAGES} lagging pages. Currently inert: the indexing path does not write acl_revision_changed_at or acl_synced_at yet.`,
+  statement: `No KB page ACL change should remain unsynced in the chunk index for more than ${KB_ACCESS_REVOCATION_LAG_THRESHOLD_SECONDS} seconds, measured on at least ${KB_ACCESS_REVOCATION_MIN_PAGES} lagging pages.`,
   indicator: {
     kind: "db-threshold",
     description:

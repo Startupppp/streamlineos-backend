@@ -87,6 +87,8 @@ function evaluateUsage(rows) {
       total_credits: Number(r.total_credits ?? 0),
       request_count: Number(r.request_count ?? 0),
       top_feature: r.top_feature,
+      indexed_bytes: r.indexed_bytes !== null && r.indexed_bytes !== undefined ? Number(r.indexed_bytes) : null,
+      chunk_count: r.chunk_count !== null && r.chunk_count !== undefined ? Number(r.chunk_count) : null,
     }))
     .filter((r) => r.total_credits > threshold && threshold > 0)
     .sort((a, b) => b.total_credits - a.total_credits);
@@ -108,6 +110,8 @@ if (args.includes("--self-test")) {
     total_credits: "100",
     request_count: "10",
     top_feature: "chat",
+    indexed_bytes: 1024 * 1024,
+    chunk_count: 50,
   }));
   const noisyOrg = {
     org_id: "org_noisy",
@@ -115,10 +119,12 @@ if (args.includes("--self-test")) {
     total_credits: "10000",
     request_count: "1000",
     top_feature: "bulk-summarise",
+    indexed_bytes: 50 * 1024 * 1024,
+    chunk_count: 2500,
   };
   const tinyOrgs = [
-    { org_id: "org_a", plan_tier: null, total_credits: "50", request_count: "5", top_feature: "chat" },
-    { org_id: "org_b", plan_tier: null, total_credits: "50", request_count: "5", top_feature: "chat" },
+    { org_id: "org_a", plan_tier: null, total_credits: "50", request_count: "5", top_feature: "chat", indexed_bytes: null, chunk_count: null },
+    { org_id: "org_b", plan_tier: null, total_credits: "50", request_count: "5", top_feature: "chat", indexed_bytes: null, chunk_count: null },
   ];
 
   const case1 = evaluateUsage([...normalOrgs, noisyOrg]);
@@ -131,6 +137,8 @@ if (args.includes("--self-test")) {
     total_credits: "100",
     request_count: "10",
     top_feature: "kb.ask",
+    indexed_bytes: 2 * 1024 * 1024,
+    chunk_count: 100,
   }));
   const kbNoisyOrg = {
     org_id: "org_kb_noisy",
@@ -138,6 +146,8 @@ if (args.includes("--self-test")) {
     total_credits: "10000",
     request_count: "500",
     top_feature: "kb.embed",
+    indexed_bytes: 200 * 1024 * 1024,
+    chunk_count: 10000,
   };
   const case4 = evaluateUsage([...kbOrgs, kbNoisyOrg]);
 
@@ -149,6 +159,9 @@ if (args.includes("--self-test")) {
     kbScopedNoisyDetected: case4.fired && case4.noisy[0]?.org_id === "org_kb_noisy",
     planTierPropagatedToNoisy: case1.noisy[0]?.plan_tier === "TRIAL",
     nullPlanTierSurvives: tinyOrgs[0].plan_tier === null,
+    indexedBytesPropagatedToNoisy: case1.noisy[0]?.indexed_bytes === 50 * 1024 * 1024,
+    chunkCountPropagatedToNoisy: case1.noisy[0]?.chunk_count === 2500,
+    nullStorageSurvives: tinyOrgs[0].indexed_bytes === null && tinyOrgs[0].chunk_count === null,
   };
 
   const pass = Object.values(checks).every(Boolean);
@@ -188,7 +201,17 @@ try {
       ) AS plan_tier,
       SUM(a.credits_milli)                       AS total_credits,
       COUNT(*)                                   AS request_count,
-      mode() WITHIN GROUP (ORDER BY a.feature)   AS top_feature
+      mode() WITHIN GROUP (ORDER BY a.feature)   AS top_feature,
+      (
+        SELECT q.indexed_bytes
+        FROM kb_indexed_bytes_quota q
+        WHERE q.org_id = a.org_id
+      ) AS indexed_bytes,
+      (
+        SELECT COUNT(*)::int
+        FROM kb_article_chunks c
+        WHERE c.org_id = a.org_id
+      ) AS chunk_count
     FROM ai_usage_logs a
     WHERE a.created_at > NOW() - (${windowHours} * INTERVAL '1 hour')
     ${featureCondition}
@@ -211,8 +234,8 @@ try {
       destination:
         "CONFIGURE_ME — wire exit-code 1 to your oncall system (PagerDuty, Slack webhook, etc.)",
       noisy: result.noisy ?? [],
-      tierNote:
-        "plan_tier is joined from subscriptions.plan (most recent row per org). Storage and index cost are not metered in the current schema and are not included.",
+      storageNote:
+        "indexed_bytes from kb_indexed_bytes_quota (per-org total indexed bytes). chunk_count from kb_article_chunks (embedding dimension is 1536 per chunk). CPU/memory/network and object attachment storage have no per-tenant ledger in the current schema.",
     }) + "\n",
   );
   process.exit(result.fired ? 1 : 0);

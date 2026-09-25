@@ -249,7 +249,7 @@ export class KbArticlesService {
           ...(contentChanged
             ? { contentRevision: sql`content_revision + 1` }
             : {}),
-          ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
+          ...(aclChanged ? { aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() } : {}),
         })
         .where(
           and(

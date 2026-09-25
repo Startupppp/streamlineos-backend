@@ -17,6 +17,7 @@ import {
   bulkRepairResponseSchema,
   evidenceQuerySchema,
   evidenceResponseSchema,
+  contentHealthTrendSchema,
   healthItemSchema,
   type ContentHealthSignalsQuery,
   type DismissHealthItemBody,
@@ -90,5 +91,12 @@ export class KbContentHealthController {
     @Query() query: EvidenceQuery,
   ) {
     return this.contentHealth.getEvidence(user, query);
+  }
+
+  @RequirePermission("kb:pages:manage")
+  @ResponseSchema(contentHealthTrendSchema)
+  @Get("wiki/content-health/trend")
+  trend(@CurrentUser() user: CurrentUserContext) {
+    return this.contentHealth.trend(user);
   }
 }

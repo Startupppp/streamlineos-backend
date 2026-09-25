@@ -16,6 +16,7 @@ function makeBrief(overrides: Record<string, unknown> = {}) {
     status: "completed",
     report: "First finding\n\nSecond finding",
     citations: [],
+    approvedAt: new Date("2025-01-01T00:00:00Z"),
     ...overrides,
   };
 }
@@ -108,5 +109,28 @@ describe("KbBriefToPageService", () => {
     await svc.convert(USER, 5, {}, true);
 
     expect(pages.update.mock.calls[0][3]).toBe(true);
+  });
+
+  describe("approval gate", () => {
+    it("refuses a completed brief that has not been approved, because only approved briefs may be published as pages", async () => {
+      const { svc, pages } = makeHarness(makeBrief({ approvedAt: null }));
+
+      const call = svc.convert(USER, 5, {}, false);
+
+      await expect(call).rejects.toMatchObject({
+        status: 409,
+        response: { code: "BRIEF_NOT_APPROVED" },
+      });
+      expect(pages.create).not.toHaveBeenCalled();
+    });
+
+    it("converts a completed and approved brief successfully", async () => {
+      const { svc, pages } = makeHarness(makeBrief({ approvedAt: new Date() }));
+
+      const result = await svc.convert(USER, 5, {}, false);
+
+      expect(result.pageId).toBe(42);
+      expect(pages.create).toHaveBeenCalledTimes(1);
+    });
   });
 });

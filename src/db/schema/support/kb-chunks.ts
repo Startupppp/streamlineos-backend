@@ -48,6 +48,7 @@ export const kbArticleChunks = pgTable(
     aclRevision: integer("acl_revision").notNull().default(1),
     contentRevision: integer("content_revision"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    aclSyncedAt: timestamp("acl_synced_at"),
   },
   (table) => [
     index("idx_kb_chunks_org_page").on(table.orgId, table.pageId),

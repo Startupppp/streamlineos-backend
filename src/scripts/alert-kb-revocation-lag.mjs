@@ -56,6 +56,22 @@ async function columnsExist(sql) {
   return Number(rows[0]?.cnt ?? 0) === 2;
 }
 
+/**
+ * Pure evaluation function — accepts pre-queried lagging page count and produces
+ * a structured result. Separated from the DB call so the self-test can exercise
+ * the decision logic without a live connection.
+ */
+export function evaluate(laggingPages, maxLagSeconds, avgLagSeconds, thresholdSeconds, minPagesThreshold) {
+  return {
+    laggingPages,
+    maxLagSeconds,
+    avgLagSeconds,
+    thresholdSeconds,
+    minPages: minPagesThreshold,
+    fired: laggingPages >= minPagesThreshold,
+  };
+}
+
 async function measureLag(sql, thresholdSeconds, minPagesThreshold) {
   const rows = await sql`
     SELECT
@@ -80,21 +96,25 @@ async function measureLag(sql, thresholdSeconds, minPagesThreshold) {
   const maxLagSeconds = Number(rows[0]?.max_lag_seconds ?? 0);
   const avgLagSeconds = Number(rows[0]?.avg_lag_seconds ?? 0);
 
-  return {
-    laggingPages,
-    maxLagSeconds,
-    avgLagSeconds,
-    thresholdSeconds,
-    minPages: minPagesThreshold,
-    fired: laggingPages >= minPagesThreshold,
-  };
+  return evaluate(laggingPages, maxLagSeconds, avgLagSeconds, thresholdSeconds, minPagesThreshold);
 }
 
 if (args.includes("--self-test")) {
+  const healthyClear = evaluate(0, 0, 0, 300, 3);
+  const belowMinDoesNotFire = evaluate(2, 400, 400, 300, 3);
+  const atMinFires = evaluate(3, 400, 380, 300, 3);
+  const aboveMinFires = evaluate(10, 600, 550, 300, 3);
+  const zeroLaggingClear = evaluate(0, 0, 0, 300, 1);
+
   const checks = {
     lagThresholdDefaultIs300: lagThresholdSeconds === 300,
     minPagesDefaultIs3: minPages === 3,
-    selfTestRunsWithoutDb: true,
+    healthyClear: !healthyClear.fired && healthyClear.laggingPages === 0,
+    belowMinDoesNotFire: !belowMinDoesNotFire.fired && belowMinDoesNotFire.laggingPages === 2,
+    atMinFires: atMinFires.fired && atMinFires.laggingPages === 3,
+    aboveMinFires: aboveMinFires.fired && aboveMinFires.laggingPages === 10,
+    zeroLaggingClear: !zeroLaggingClear.fired,
+    firedPropagatesLagStats: aboveMinFires.maxLagSeconds === 600 && aboveMinFires.avgLagSeconds === 550,
   };
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(
@@ -102,7 +122,6 @@ if (args.includes("--self-test")) {
       selfTest: true,
       pass,
       checks,
-      migrationDependency: "lane-M5",
       columnNames: ["kb_pages.acl_revision_changed_at", "kb_article_chunks.acl_synced_at"],
     }) + "\n",
   );

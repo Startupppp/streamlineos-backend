@@ -68,7 +68,7 @@ export async function updateDerivedChunkAcl(
   where: ChunkFamily,
   aclRevision: number,
 ): Promise<void> {
-  await db.update(kbArticleChunks).set({ aclRevision }).where(where);
+  await db.update(kbArticleChunks).set({ aclRevision, aclSyncedAt: new Date() }).where(where);
 }
 
 /** The columns every derived chunk row shares, so the three writers cannot drift apart. */
@@ -132,6 +132,7 @@ export async function replaceAttachmentChunks(
         attachmentId,
         ...derivedChunkRow(chunk, embeddings[index], index, meta.contentHash),
         aclRevision: meta.aclRevision,
+        aclSyncedAt: new Date(),
       })),
     );
   });
@@ -165,6 +166,7 @@ export async function replacePageDocumentChunks(
         pageCreatedById: meta.pageCreatedById,
         pageCreatedByMembershipId: meta.pageCreatedByMembershipId,
         aclRevision: meta.aclRevision,
+        aclSyncedAt: new Date(),
       })),
     );
   });

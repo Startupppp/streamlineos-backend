@@ -62,7 +62,7 @@ export async function updatePageChunkAcl(
   await runInTenantTransaction(db, async (tx) =>
     tx
       .update(kbArticleChunks)
-      .set(acl)
+      .set({ ...acl, aclSyncedAt: new Date() })
       .where(pageBodyChunks(orgId, pageId)),
   { orgId });
 }
@@ -99,6 +99,7 @@ export async function replacePageBodyChunks(
         pageCreatedByMembershipId: meta.pageCreatedByMembershipId,
         aclRevision: meta.aclRevision,
         contentRevision: meta.contentRevision,
+        aclSyncedAt: new Date(),
       })),
     );
 

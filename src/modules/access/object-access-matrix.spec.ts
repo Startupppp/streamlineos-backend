@@ -1,7 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { assertPageAccessible } from "../kb/retrieval/kb-page-access.util";
+import { KnowledgeAuthorizationService } from "../kb/core/authorization/knowledge-authorization.service";
 import { pageVisibleTo } from "../kb/retrieval/kb-page-visibility";
 import { ScopedRead, type ScopedWhere } from "./scoped-read";
 import { organizationMembers } from "../../db/schema";
@@ -23,11 +23,10 @@ const actor = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
   ...overrides,
 });
 
-// A db double that records the predicate it was asked for and returns whatever the test says the database would
 function captureDb(row: unknown) {
   const captured: { where?: SQL } = {};
   const chain: Record<string, unknown> = {};
-  for (const method of ["from", "innerJoin", "leftJoin", "where", "limit", "orderBy", "groupBy"])
+  for (const method of ["from", "innerJoin", "leftJoin", "where", "limit", "orderBy", "groupBy", "selectDistinct"])
     chain[method] = () => chain;
   Object.assign(chain, { then: (resolve: (rows: unknown[]) => void) => resolve([]) });
 
@@ -41,51 +40,67 @@ function captureDb(row: unknown) {
       },
     },
     select: () => chain,
+    selectDistinct: () => chain,
   };
   return { db: db as unknown as Db, captured };
 }
 
-// c25-02's matrix, as an executed spec rather than a controller e2e file: *.e2e-spec.ts is in testPathIgnorePatterns, so a matrix written there would produce four ticks and zero running assertions
+function buildAuth(db: Db): KnowledgeAuthorizationService {
+  const cache = {
+    cachedVersioned: jest.fn().mockImplementation(
+      (_ns: unknown, _key: unknown, fill: () => Promise<unknown>) => fill(),
+    ),
+  };
+  const access = {
+    holds: jest.fn().mockResolvedValue(false),
+    getPermissionsVersion: jest.fn().mockResolvedValue(1),
+  };
+  return new KnowledgeAuthorizationService(db, cache as never, access as never);
+}
+
 describe("the record-access seam composes every arm in one predicate", () => {
   it("puts tenant, soft-delete, identity and the audience ACL in a single query", async () => {
     const { db, captured } = captureDb({ id: 7 });
-    await assertPageAccessible(db, actor(), 7);
+    const auth = buildAuth(db);
+    await auth.assertPageAccess(actor(), 7, "view");
 
-    const sql = render(captured.where as SQL);
-    expect(sql).toContain("org_id");
-    expect(sql).toContain("deleted_at");
-    expect(sql).toContain("id");
-    expect(sql).toContain("visibility");
+    const sqlStr = render(captured.where as SQL);
+    expect(sqlStr).toContain("org_id");
+    expect(sqlStr).toContain("deleted_at");
+    expect(sqlStr).toContain("id");
+    expect(sqlStr).toContain("visibility");
   });
 
   it("returns not-found, never forbidden, when the predicate matches nothing", async () => {
     const { db } = captureDb(undefined);
-    await expect(assertPageAccessible(db, actor(), 7)).rejects.toBeInstanceOf(NotFoundException);
+    const auth = buildAuth(db);
+    await expect(auth.assertPageAccess(actor(), 7, "view")).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("asks for the caller's own tenant, so another org's id cannot match", async () => {
-    const { db, captured } = captureDb({ id: 7 });
-    await assertPageAccessible(db, actor({ orgId: "org-B" }), 7);
+    const { db, captured } = captureDb({ id: 7, ownerMembershipId: null, createdById: null, createdByMembershipId: null, visibility: "org", spaceId: null, projectId: null });
+    const auth = buildAuth(db);
+    await auth.assertPageAccess(actor({ orgId: "org-B" }), 7, "view");
     expect(dialect.sqlToQuery(captured.where as SQL).params).toContain("org-B");
   });
 });
 
 describe("the audience ACL is SQL, not an application-code check", () => {
   it("narrows a member to org-wide, public and their own pages", () => {
-    const sql = render(pageVisibleTo(actor(), []));
-    expect(sql).toContain("visibility");
-    expect(sql).toContain("created_by");
+    const sqlStr = render(pageVisibleTo(actor(), []));
+    expect(sqlStr).toContain("visibility");
+    expect(sqlStr).toContain("created_by");
   });
 
   it("widens to the projects the caller can reach, still in the predicate", () => {
-    const sql = render(pageVisibleTo(actor(), [11, 12]));
-    expect(sql).toContain("project_id");
-    expect(sql).toContain("ANY");
+    const sqlStr = render(pageVisibleTo(actor(), [11, 12]));
+    expect(sqlStr).toContain("project_id");
+    expect(sqlStr).toContain("ANY");
   });
 
   it("does not narrow an org owner", () => {
-    const sql = render(pageVisibleTo(actor({ isOrgOwner: true }), []));
-    expect(sql).not.toContain("visibility");
+    const sqlStr = render(pageVisibleTo(actor({ isOrgOwner: true }), []));
+    expect(sqlStr).not.toContain("visibility");
   });
 });
 

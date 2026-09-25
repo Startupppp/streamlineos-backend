@@ -229,7 +229,7 @@ export class KbIndexingService {
   async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
     await this.db
       .update(kbPages)
-      .set({ aclRevision: sql`acl_revision + 1` })
+      .set({ aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() })
       .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId)));
 
     const deferred = registerAfterCommit(() =>
@@ -241,7 +241,8 @@ export class KbIndexingService {
   async syncAclRevisionForSpace(orgId: string, spaceId: number): Promise<void> {
     await this.db.execute(sql`
       UPDATE kb_article_chunks c
-      SET acl_revision = p.acl_revision
+      SET acl_revision = p.acl_revision,
+          acl_synced_at = NOW()
       FROM kb_pages p
       WHERE c.page_id = p.id
         AND c.org_id = ${orgId}
