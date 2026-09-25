@@ -1,5 +1,5 @@
 /**
- * `articleRestrictionFilter`'s role branch has to bind an ARRAY, and only Postgres can say
+ * `buildArticleRestrictionBranch`'s role branch has to bind an ARRAY, and only Postgres can say
  * whether it does.
  *
  * The predicate read `sql\`${kpr.role} = ANY(${principal.roleSlugs})\``. A bare JS array

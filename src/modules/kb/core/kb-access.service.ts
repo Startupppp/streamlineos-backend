@@ -51,6 +51,19 @@ export class KbAccessService {
     );
   }
 
+  async getAccessibleSpaceIdsWithCacheOutcome(
+    user: CurrentUserContext,
+  ): Promise<{ spaceIds: number[]; cacheOutcome: "hit" | "miss" | "bypass" }> {
+    const acl = await this.resolveAclDimension(user);
+    const { value, cacheOutcome } = await this.cache.cachedVersionedWithOutcome(
+      `kb:acc-spaces:${user.orgId}`,
+      kbAclCacheKey(user.userId, acl),
+      () => this.computeAccessibleSpaceIds(user, acl),
+      60,
+    );
+    return { spaceIds: value, cacheOutcome };
+  }
+
   async invalidateAccessibleSpaceIds(orgId: string): Promise<void> {
     await this.cache.invalidateNamespace(`kb:acc-spaces:${orgId}`);
   }

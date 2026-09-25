@@ -62,6 +62,7 @@ export interface KbSourceListItem {
   chunkCount: number;
   errorMessage: string | null;
   spaceId: number | null;
+  createdById: string | null;
   createdAt: Date;
 }
 
@@ -76,6 +77,7 @@ const SOURCE_LIST_COLUMNS = {
   chunkCount: kbSources.chunkCount,
   errorMessage: kbSources.errorMessage,
   spaceId: kbSources.spaceId,
+  createdById: kbSources.createdById,
   createdAt: kbSources.createdAt,
 };
 
@@ -147,6 +149,7 @@ export class KbSourcesService {
       chunkCount: r.chunkCount,
       errorMessage: r.errorMessage,
       spaceId: r.spaceId,
+      createdById: r.createdById,
       createdAt: r.createdAt,
     }));
 

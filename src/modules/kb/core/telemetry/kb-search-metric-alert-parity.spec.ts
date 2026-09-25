@@ -8,6 +8,7 @@ import { LogSpanExporter } from "../../../../common/observability/log-span-expor
 import { SLO_CATALOGUE } from "../../../../common/slo";
 import {
   KB_SEARCH_OUTCOMES,
+  KB_SEARCH_QUEUE_LANE,
   KB_SEARCH_SPAN_NAME,
   KbSearchMetrics,
 } from "./kb-search-metrics";
@@ -210,6 +211,12 @@ describe("the KB Search emitter supplies all observability dimensions", () => {
 
   it("passes sourceKind to finish so the source-kind dimension emits", () => {
     expect(searchServiceSource).toContain("sourceKind");
+  });
+
+  it("KB Search runs on a single named lane KB_SEARCH_QUEUE_LANE so a second lane has a named home", () => {
+    expect(typeof KB_SEARCH_QUEUE_LANE).toBe("string");
+    expect(searchServiceSource).toContain("KB_SEARCH_QUEUE_LANE");
+    expect(searchServiceSource).not.toMatch(/const queueLane\s*=\s*["']/);
   });
 });
 

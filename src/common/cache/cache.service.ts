@@ -100,6 +100,30 @@ export class CacheService {
     return this.fill.run(this.redis, `${namespace}:v${version}:${key}`, fetcher, ttlSeconds);
   }
 
+  async cachedVersionedWithOutcome<T>(
+    namespace: string,
+    key: string,
+    fetcher: () => Promise<T>,
+    ttlSeconds = 300,
+  ): Promise<{ value: T; cacheOutcome: "hit" | "miss" | "bypass" }> {
+    const redis = this.redis;
+    const version = await this.namespaceVersionWithRedis(redis, namespace);
+    const fullKey = `${namespace}:v${version}:${key}`;
+    let cacheOutcome: "hit" | "miss" | "bypass";
+    if (!redis) {
+      cacheOutcome = "bypass";
+    } else {
+      try {
+        const exists = await this.timedRedis(() => redis.exists(fullKey));
+        cacheOutcome = exists > 0 ? "hit" : "miss";
+      } catch {
+        cacheOutcome = "bypass";
+      }
+    }
+    const value = await this.fill.run(redis, fullKey, fetcher, ttlSeconds);
+    return { value, cacheOutcome };
+  }
+
   async invalidateNamespace(namespace: string): Promise<void> {
     const redis = this.redis;
     if (!redis) return;

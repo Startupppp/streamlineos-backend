@@ -12,6 +12,7 @@ import { KbSearchService } from "./kb-search.service";
 import type { CitedRef } from "./kb-citation-visibility.service";
 import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
 import { KbLinkedDocumentAskSource } from "../linked-documents/kb-linked-document-ask-source";
+import { REDIS } from "../../../common/cache/cache.service";
 
 const user = {
   userId: "user1",
@@ -167,6 +168,7 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
         { provide: KnowledgeAuthorizationService, useValue: mockAuth },
         KbCitationVisibilityService,
         { provide: DRIZZLE, useValue: makeDb([]) },
+        { provide: REDIS, useValue: null },
       ],
     }).compile();
 

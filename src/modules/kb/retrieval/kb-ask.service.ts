@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import type { Redis } from "@upstash/redis";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { REDIS } from "../../../common/cache/cache.service";
-import { KbAskMetrics } from "../core/telemetry/kb-ask-metrics";
+import { KbAskMetrics, KB_ASK_QUEUE_LANE } from "../core/telemetry/kb-ask-metrics";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
@@ -291,6 +291,7 @@ export class KbAskService {
     }
     const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
+      const cacheOutcome = await this.search.aclCacheOutcome(user);
       const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
         metrics.finish("no_context");
@@ -300,9 +301,8 @@ export class KbAskService {
       const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
-      const cacheOutcome = degraded ? "bypass" : "miss";
       const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
-      const queueLane = "fast";
+      const queueLane = KB_ASK_QUEUE_LANE;
       const dbRole = "primary";
 
       const callStart = Date.now();
@@ -458,6 +458,7 @@ export class KbAskService {
     const correlationId = randomUUID();
     const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
+      const cacheOutcome = await this.search.aclCacheOutcome(user);
       const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
         this.noContextAnswer(user, input.question, correlationId);
@@ -468,9 +469,8 @@ export class KbAskService {
       const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
-      const cacheOutcome = degraded ? "bypass" : "miss";
       const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
-      const queueLane = "fast";
+      const queueLane = KB_ASK_QUEUE_LANE;
       const dbRole = "primary";
 
       await runInTenantTransaction(

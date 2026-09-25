@@ -29,6 +29,8 @@ export function kbAskOutcomeForError(error: unknown): KbAskOutcome {
   return "error";
 }
 
+export const KB_ASK_QUEUE_LANE = "fast" as const;
+
 export interface KbAskFacts {
   citations?: number;
   candidates?: number;

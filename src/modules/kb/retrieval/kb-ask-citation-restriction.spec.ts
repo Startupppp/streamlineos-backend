@@ -143,11 +143,6 @@ describe("KbAskService — citation re-verification re-applies the article-restr
     return db;
   };
 
-  const auth = {
-    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
-    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
-  };
-
   const buildService = (isAdmin: boolean) => {
     const db = makeDb();
     const access = {
@@ -157,6 +152,15 @@ describe("KbAskService — citation re-verification re-applies the article-restr
         userId: "user-asker",
         membershipId: ASKER_MEMBERSHIP,
         roleSlugs: [],
+      }),
+    };
+    const auth = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+      articleRestrictionPredicate: jest.fn().mockImplementation(async (user: CurrentUserContext) => {
+        if (await access.isAdmin(user)) return null;
+        const membershipId = user.principal !== undefined ? actingMembershipId(user.principal) : null;
+        return buildArticleRestrictionBranch(user.orgId, { membershipId, roleSlugs: [] });
       }),
     };
     const gateway = {

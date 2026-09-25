@@ -11,7 +11,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { KbSearchMetrics } from "../core/telemetry/kb-search-metrics";
+import { KbSearchMetrics, KB_SEARCH_QUEUE_LANE } from "../core/telemetry/kb-search-metrics";
 import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 import { kbArticleChunks, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -130,6 +130,11 @@ export class KbSearchService {
     return sql`to_tsvector('english', ${kbArticleChunks.content}) @@ websearch_to_tsquery('english', ${text})`;
   }
 
+  async aclCacheOutcome(user: CurrentUserContext): Promise<"hit" | "miss" | "bypass"> {
+    const { cacheOutcome } = await this.access.getAccessibleSpaceIdsWithCacheOutcome(user);
+    return cacheOutcome;
+  }
+
   async search(
     user: CurrentUserContext,
     input: SearchInput,
@@ -190,15 +195,14 @@ export class KbSearchService {
       totalPages: 0,
     };
     const dbRole = "primary";
-    const cacheOutcome = "bypass";
-    const queueLane = "sync";
+    const queueLane = KB_SEARCH_QUEUE_LANE;
     const emptyKind = "none";
     if (scope.denied) {
-      metrics.finish("denied", { sourceKind: emptyKind, cacheOutcome, queueLane, dbRole });
+      metrics.finish("denied", { sourceKind: emptyKind, cacheOutcome: "bypass", queueLane, dbRole });
       return empty;
     }
 
-    const ids = await this.access.getAccessibleSpaceIds(user);
+    const { spaceIds: ids, cacheOutcome } = await this.access.getAccessibleSpaceIdsWithCacheOutcome(user);
     if (ids.length === 0) {
       metrics.finish("not_found", { sourceKind: emptyKind, cacheOutcome, queueLane, dbRole });
       return empty;

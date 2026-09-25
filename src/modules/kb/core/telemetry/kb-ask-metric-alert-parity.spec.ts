@@ -13,6 +13,7 @@ import {
 } from "../../../../common/slo";
 import {
   KB_ASK_OUTCOMES,
+  KB_ASK_QUEUE_LANE,
   KB_ASK_SPAN_NAME,
   KbAskMetrics,
   isKbAskFault,
@@ -344,6 +345,12 @@ describe("the KB Ask emitter supplies all six observability dimensions", () => {
 
   it("passes queueLane to finish so the queue-lane dimension emits", () => {
     expect(askServiceSource).toContain("queueLane");
+  });
+
+  it("KB Ask runs on a single named lane KB_ASK_QUEUE_LANE so a second lane has a named home", () => {
+    expect(typeof KB_ASK_QUEUE_LANE).toBe("string");
+    expect(askServiceSource).toContain("KB_ASK_QUEUE_LANE");
+    expect(askServiceSource).not.toMatch(/const queueLane\s*=\s*["']/);
   });
 
   it("passes sourceKind to finish so the source-kind dimension emits", () => {

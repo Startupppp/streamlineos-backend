@@ -11,6 +11,8 @@ export const KB_SEARCH_OUTCOMES = [
 
 export type KbSearchOutcome = (typeof KB_SEARCH_OUTCOMES)[number];
 
+export const KB_SEARCH_QUEUE_LANE = "sync" as const;
+
 export interface KbSearchFacts {
   results?: number;
   sourceKind?: string;
