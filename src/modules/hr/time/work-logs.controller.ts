@@ -49,7 +49,7 @@ export class WorkLogsController {
     @Body() body: PostWorkLogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.workLogs.create(u.orgId, u.userId, body, u);
+    return this.workLogs.create(u, body);
   }
 
   @Patch("status")

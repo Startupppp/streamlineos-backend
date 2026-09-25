@@ -45,6 +45,7 @@ import { AttendanceReadService } from "./attendance-read.service";
 import { livePersonOfUser, orgUnitInOrg, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { queueAttendanceEmailReport } from "./attendance-email-report.service";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 function attendanceStatusRank(status: AttendanceStatus): number {
@@ -179,7 +180,7 @@ export class AttendanceService {
     const baseConditions = [
       eq(organizationMembers.orgId, u.orgId),
       eq(organizationMembers.status, "ACTIVE"),
-      eq(users.isActive, true),
+      acceptedEmployee(),
     ];
     if (query.departmentId !== undefined) {
       baseConditions.push(eq(hrEmployments.departmentId, query.departmentId));

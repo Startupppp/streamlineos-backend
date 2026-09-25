@@ -7,6 +7,8 @@ export type ManagerAssignmentRefusal =
   | "self-reference"
   | "manager-not-in-organization"
   | "manager-inactive"
+  /** Invited, never came through the magic link — cannot sign in to decide anything. */
+  | "manager-never-accepted"
   | "manager-has-no-employment"
   | "manager-exited"
   | "circular";

@@ -58,8 +58,24 @@ export const updateLeaveSchema = z.object({
   status: z.literal("PENDING"),
 }).strict();
 
+/**
+ * PROVISIONAL (decision #8, HRMS-E2E-033) — Joseph has not ruled on whether an
+ * approval comment is required, optional or unsupported. Shipping the
+ * recommended provisional default: the comment is *optional* on approve.
+ * Reject's required reason (`rejectLeaveSchema.reason`) is deliberately
+ * untouched by this decision. Revisit when #8 is answered.
+ */
+export const APPROVE_COMMENT_MAX_LENGTH = 2000;
+
+const optionalApprovalComment = z.preprocess((value) => {
+  if (value === null) return undefined;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}, z.string().max(APPROVE_COMMENT_MAX_LENGTH).optional());
+
 export const approveLeaveSchema = z.object({
-  comment: z.string().optional(),
+  comment: optionalApprovalComment,
   forceApprove: z.boolean().optional(),
   justification: z.string().optional(),
 }).strict();

@@ -9,6 +9,7 @@ import { addMinutes } from "date-fns";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type SetupInput } from "./dto/org.schemas";
+import { ownerProfileUpdate } from "./owner-profile-update";
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -99,7 +100,11 @@ export class OrgSetupService {
           .update(users)
           .set({
             lastActiveOrgId: orgId,
-            ...(input.phone ? { phone: input.phone } : {}),
+            // HRMS-E2E-025. The owner's own name lands here, beside the phone
+            // this already wrote. ownerProfileUpdate omits a field that was not
+            // sent rather than writing an empty one, so a name from an earlier
+            // sign-in survives a later setup submission that left it out.
+            ...ownerProfileUpdate(input),
           })
           .where(eq(users.id, u.userId));
 

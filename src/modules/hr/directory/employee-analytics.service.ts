@@ -11,6 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { formatDateOnly, subDays } from "../../../common/date";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 const SCORECARD_WINDOW_DAYS = 30;
 
@@ -116,7 +117,7 @@ export class EmployeeAnalyticsService {
               and(
                 eq(organizationMembers.orgId, orgId),
                 inArray(users.id, directReportIds),
-                eq(users.isActive, true),
+                acceptedEmployee(),
               ),
             )
             .limit(directReportIds.length)

@@ -18,6 +18,7 @@ import { EmploymentFactsService } from "../../directory/employment-facts.service
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import { OrgChartService } from "./org-chart.service";
 import { HR_SCAN_PAGE } from "../hr-read-limits";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 export type { OrgChartPage } from "./org-chart.service";
 
 export interface HeadcountGroup {
@@ -157,7 +158,7 @@ export class OrgStructureService {
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
-            eq(users.isActive, true),
+            acceptedEmployee(),
           ),
         )
         .groupBy(departmentLabel)
@@ -172,7 +173,7 @@ export class OrgStructureService {
         .select({ role: organizationMembers.role, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee()))
         .groupBy(organizationMembers.role)
         .limit(100);
 
@@ -196,7 +197,7 @@ export class OrgStructureService {
             isNull(orgUnits.deletedAt),
           ),
         )
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee()))
         .groupBy(orgUnits.name)
         .limit(100);
 

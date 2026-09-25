@@ -10,6 +10,7 @@ export const listWorkLogsQuerySchema = z.object({
 }).strict();
 
 export const postWorkLogSchema = z.object({
+  userId: z.string().optional(),
   date: z.string(),
   hours: z.number().optional(),
   description: z.string().optional(),

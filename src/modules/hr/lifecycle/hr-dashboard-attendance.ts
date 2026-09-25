@@ -10,6 +10,7 @@ import {
   employeeShiftAssignments,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 const FALLBACK_LATE_CHECKIN_HOUR = 9;
 const FALLBACK_LATE_CHECKIN_MINUTE = 30;
@@ -90,7 +91,7 @@ export async function buildAttendanceAnalytics(db: Db, orgId: string) {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee())),
 
       db
         .select({

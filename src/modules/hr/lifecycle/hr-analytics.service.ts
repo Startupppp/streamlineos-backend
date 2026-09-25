@@ -19,6 +19,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { HrAttendanceAnalyticsService } from "./hr-attendance-analytics.service";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 
 const ALL_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -72,7 +73,7 @@ export class HrAnalyticsService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee())),
 
       this.db
         .select({ departmentId: hrEmployments.departmentId, count: count() })
@@ -80,7 +81,7 @@ export class HrAnalyticsService {
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee()))
         .groupBy(hrEmployments.departmentId)
         .limit(1_000),
 
@@ -88,14 +89,14 @@ export class HrAnalyticsService {
         .select({ gender: users.gender, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee()))
         .groupBy(users.gender),
 
       this.db
         .select({ role: organizationMembers.role, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), acceptedEmployee()))
         .groupBy(organizationMembers.role),
 
       this.db

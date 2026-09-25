@@ -51,6 +51,7 @@ const SKIP_EXPLANATIONS: Record<ApprovalRungSkipReason, string> = {
   "self-reference": "the employee cannot approve their own request",
   "manager-not-in-organization": "the manager is no longer a member",
   "manager-inactive": "the manager's account is deactivated",
+  "manager-never-accepted": "the manager has not accepted their invitation yet",
   "manager-has-no-employment": "the manager has no employment record",
   "manager-exited": "the manager has exited",
   circular: "the reporting chain loops back on itself",

@@ -24,6 +24,7 @@ import { boundHrReadLimit, HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-li
 import type { ListTeamLeaveRequestsQuery } from "./dto/leaves.schemas";
 import { countPendingLeavesRoutedTo, pendingLeavesRoutedToPage, type LeaveInboxRow } from "./leave-inbox-reads";
 import type { DescKeysetPosition } from "../../../common/pagination/desc-keyset";
+import { resolveLeaveBalances } from "./leave-entitlement";
 
 const TEAM_LEAVES_CAP = 500;
 
@@ -59,15 +60,55 @@ export class LeavesService {
     private readonly employment: EmploymentFactsService,
   ) {}
 
+  /**
+   * HRMS-E2E-014. This used to return stored `leave_balances` rows and nothing
+   * else. Nothing creates a row when a leave type is configured, so an
+   * organisation that had just set up a 12-day policy got an empty list — which
+   * every balance view reported, correctly from what it was handed, as "No leave
+   * policy is set up yet, so nothing has accrued". The dashboard widget beside
+   * it read 12 / 12, because it derives from the type's own `daysPerYear`.
+   *
+   * A type's `daysPerYear` is the opening entitlement, so a configured type with
+   * no row yet reports that rather than disappearing. A stored row always wins —
+   * including a stored zero, which is a person who has spent the year's leave,
+   * not a person with no row.
+   *
+   * Read-only by construction: the row itself is opened on the approval path,
+   * because a GET may not write (BE-33).
+   */
   async balance(orgId: string, userId: string) {
     const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
-    return this.db.query.leaveBalances.findMany({
-      where: and(
-        eq(leaveBalances.userMembershipId, userMembershipId),
-        eq(leaveBalances.orgId, orgId),
-        eq(leaveBalances.year, new Date().getFullYear()),
-      ),
-      limit: 50,
+    const year = new Date().getFullYear();
+    const [types, stored] = await Promise.all([
+      this.db.query.leaveTypes.findMany({
+        where: eq(leaveTypes.orgId, orgId),
+        columns: { id: true, name: true, daysPerYear: true },
+        limit: 50,
+      }),
+      this.db.query.leaveBalances.findMany({
+        where: and(
+          eq(leaveBalances.userMembershipId, userMembershipId),
+          eq(leaveBalances.orgId, orgId),
+          eq(leaveBalances.year, year),
+        ),
+        limit: 50,
+      }),
+    ]);
+
+    const byType = new Map(stored.map((row) => [row.leaveTypeId, row]));
+    return resolveLeaveBalances(types, stored).map((resolved) => {
+      const row = byType.get(resolved.leaveTypeId);
+      if (row !== undefined) return row;
+      // Shaped exactly like a stored row, so every caller reads one thing.
+      return {
+        id: 0,
+        orgId,
+        userId,
+        userMembershipId,
+        leaveTypeId: resolved.leaveTypeId,
+        balance: resolved.balance,
+        year,
+      };
     });
   }
 

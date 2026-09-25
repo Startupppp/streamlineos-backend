@@ -25,6 +25,8 @@ import {
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
 import { LeaveLedgerService } from "./leave-ledger.service";
+import { openingEntitlementOf } from "./leave-entitlement";
+import type { TenantTx } from "../../../db/drizzle.types";
 import type { ApproveLeaveInput, RejectLeaveInput, UpdateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveDecisionEffectsService } from "./leave-decision-effects.service";
 
@@ -57,6 +59,69 @@ export class LeavesApprovalService {
 
   private leaveYear(startDate: string): number {
     return Number(startDate.slice(0, 4));
+  }
+
+  /**
+   * HRMS-E2E-014. Open this person's balance for the type at its configured
+   * entitlement, so an approval has something real to deduct from.
+   *
+   * Nothing creates a `leave_balances` row when a leave type is configured, and
+   * the deduction below used to be skipped when the row was missing — so on a
+   * freshly configured organisation an approval silently subtracted nothing and
+   * wrote no ledger entry. `daysPerYear` is the opening entitlement; the row is
+   * created here, inside the approval's own transaction, rather than in the GET
+   * that reads balances, which may not write (BE-33).
+   *
+   * `onConflictDoNothing` against `uniq_leave_balances_user_type_year` makes two
+   * approvals racing for the same person and type safe: one inserts, the other
+   * re-reads. Returns null when the request has no membership or the type has
+   * gone, in which case the caller behaves exactly as it did before.
+   */
+  private async openBalanceForApproval(
+    tx: TenantTx,
+    orgId: string,
+    current: {
+      userId: string;
+      userMembershipId: number | null;
+      leaveTypeId: number;
+      startDate: string;
+    },
+  ) {
+    if (current.userMembershipId === null) return null;
+
+    const type = await tx.query.leaveTypes.findFirst({
+      where: and(eq(leaveTypes.id, current.leaveTypeId), eq(leaveTypes.orgId, orgId)),
+      columns: { id: true, name: true, daysPerYear: true },
+    });
+    if (!type) return null;
+
+    const year = this.leaveYear(current.startDate);
+    await tx
+      .insert(leaveBalances)
+      .values({
+        orgId,
+        userId: current.userId,
+        userMembershipId: current.userMembershipId,
+        leaveTypeId: current.leaveTypeId,
+        balance: openingEntitlementOf(type),
+        year,
+      })
+      .onConflictDoNothing();
+
+    const [opened] = await tx
+      .select()
+      .from(leaveBalances)
+      .where(
+        and(
+          eq(leaveBalances.userMembershipId, current.userMembershipId),
+          eq(leaveBalances.leaveTypeId, current.leaveTypeId),
+          eq(leaveBalances.orgId, orgId),
+          eq(leaveBalances.year, year),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    return opened ?? null;
   }
 
   async updateStatus(
@@ -297,7 +362,7 @@ export class LeavesApprovalService {
           current.endDate,
           current.isHalfDay,
         );
-        const [balanceRecord] = current.userMembershipId == null
+        const [existingBalance] = current.userMembershipId == null
           ? []
           : await tx
             .select()
@@ -312,6 +377,18 @@ export class LeavesApprovalService {
             )
             .limit(1)
             .for("update");
+
+        // HRMS-E2E-014. Nothing creates a balance row when a leave type is
+        // configured, so a freshly configured organisation has none — and this
+        // deduction used to be skipped entirely when the row was missing. An
+        // approval then subtracted nothing and wrote no ledger entry, which is
+        // why the audit could not verify a deduction: there was nothing to
+        // deduct from. The type's daysPerYear is the opening entitlement, so the
+        // row is opened here, on the write path, rather than in the GET that
+        // reads it (BE-33).
+        const balanceRecord =
+          existingBalance ??
+          (await this.openBalanceForApproval(tx, currentUser.orgId, current));
 
         if (balanceRecord) {
           const available = Number(balanceRecord.balance);
