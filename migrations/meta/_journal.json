@@ -6728,6 +6728,48 @@
       "when": 1803000010719,
       "tag": "1204_build_feedback_account_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 1089,
+      "version": "7",
+      "when": 1803000010720,
+      "tag": "1205_kb_page_tree_children_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1090,
+      "version": "7",
+      "when": 1803000010721,
+      "tag": "1206_kb_space_member_counts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1091,
+      "version": "7",
+      "when": 1803000010722,
+      "tag": "1207_kb_version_restore_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 1092,
+      "version": "7",
+      "when": 1803000010723,
+      "tag": "1208_kb_ai_interactions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1093,
+      "version": "7",
+      "when": 1803000010724,
+      "tag": "1209_kb_events_correlation_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 1094,
+      "version": "7",
+      "when": 1803000010725,
+      "tag": "1212_kb_indexed_bytes_quota",
+      "breakpoints": true
     }
   ]
 }
