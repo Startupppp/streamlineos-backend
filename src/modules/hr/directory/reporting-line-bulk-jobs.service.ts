@@ -242,7 +242,7 @@ export class ReportingLineBulkJobsService {
           entityId: jobId,
           title: "Bulk reporting change applied",
           message: `${committed} of ${rows.length} reporting changes were applied.`,
-          link: `/hr/employees/bulk-reporting-change/${jobId}`,
+          link: `/hr/employees/reporting-changes/${jobId}`,
           dedupeKey: `hr-rl-bulk-job:committed:${jobId}`,
         });
         if (committed > 0) await invalidateReportingReads(this.hierarchyCache, this.cache, orgId);

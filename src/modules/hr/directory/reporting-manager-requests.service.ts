@@ -59,8 +59,8 @@ const DECISION_STATUS = {
   REQUEST_INFO: "MORE_INFO_REQUIRED",
 } as const;
 
-const REVIEW_LINK = (requestId: string) => `/hr/reporting-manager-requests/${requestId}`;
-const MY_LINK = "/profile/reporting-line";
+const REVIEW_LINK = (requestId: string) => `/hr/employees/reporting-requests?request=${requestId}`;
+const MY_LINK = "/settings";
 
 /**
  * HRM-15 §7.5: an employee's request to correct their own reporting manager, and HR's decision on
