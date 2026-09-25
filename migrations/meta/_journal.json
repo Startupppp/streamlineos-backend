@@ -6805,6 +6805,20 @@
       "when": 1803018010725,
       "tag": "1228_kb_health_items",
       "breakpoints": true
+    },
+    {
+      "idx": 1100,
+      "version": "7",
+      "when": 1803021610725,
+      "tag": "1226_kb_pages_drop_source_article_bridge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1101,
+      "version": "7",
+      "when": 1803025210725,
+      "tag": "1229_kb_acl_revision_timestamps",
+      "breakpoints": true
     }
   ]
 }
