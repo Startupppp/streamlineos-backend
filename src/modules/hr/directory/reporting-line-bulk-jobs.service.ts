@@ -101,9 +101,10 @@ export function classifyBulkRow(
  * valid against the stored hierarchy on its own, so only the file's own graph shows the loop.
  */
 export function rejectFileCycles(rows: PlannedRow[]): void {
+  // The graph helper keys people by any unique string; user ids are unique where emails may be null.
   const edges = rows.flatMap((row) =>
     row.employee && row.primaryManager && row.issues.length === 0
-      ? [{ row: row.rowNumber, email: row.employee.email.toLowerCase(), managerEmail: row.primaryManager.email.toLowerCase() }]
+      ? [{ row: row.rowNumber, email: row.employee.userId, managerEmail: row.primaryManager.userId }]
       : [],
   );
   const cyclic = new Set(findManagerCycles(edges).map((finding) => finding.row));
