@@ -377,15 +377,27 @@ describe("[seeded-e2e] HRM-15 reporting managers — policy, lines, requests, bu
       );
       expect(audit?.metadata.legacyManagerHeader).toBe(true);
     });
-    it("refuses, per row, a manager this same file creates — they cannot have accepted an invitation — and still creates the rest", async () => {
+    it("onboards a report whose manager is created by the same file, manager first", async () => {
       const lead = hire({ department: "Engineering" }) as { email: string };
       const report = hire({ department: "Engineering", primaryManagerEmail: lead.email });
-      const preview = await send("post", "/hr/employees/onboard/bulk/preview", "orgAdmin", { employees: [lead, report] });
-      expect(preview.body.rows[1]).toMatchObject({ status: "ERROR", codes: ["MANAGER_NOT_ELIGIBLE"] });
+      const preview = await send("post", "/hr/employees/onboard/bulk/preview", "orgAdmin", { employees: [report, lead] });
+      expect(preview.status).toBe(200);
+      expect(preview.body.rows[0]).toMatchObject({ status: "READY", primaryManager: { userId: null, resolution: "IN_FILE" } });
 
-      const committed = await send("post", "/hr/employees/onboard/bulk", "orgAdmin", { employees: [lead, report] });
+      const committed = await send("post", "/hr/employees/onboard/bulk", "orgAdmin", { employees: [report, lead] });
       expect(committed.status).toBe(200);
-      expect(committed.body).toMatchObject({ created: 1, failed: 1 });
+      expect(committed.body).toMatchObject({ created: 2, failed: 0 });
+      const [line] = await rows<{ manager_email: string; source: string }>(sql`
+        select mu.email as manager_email, rl.source
+        from hr_reporting_lines rl
+        join hr_employments se on se.id = rl.employment_id
+        join hr_people sp on sp.id = se.person_id
+        join users su on su.id = sp.user_id
+        join hr_employments me on me.id = rl.manager_employment_id
+        join hr_people mp on mp.id = me.person_id
+        join users mu on mu.id = mp.user_id
+        where rl.org_id = ${home.orgId} and su.email = ${report.email} and rl.line_type = 'primary'`);
+      expect(line).toEqual({ manager_email: lead.email, source: "BULK_ONBOARDING" });
     });
   });
 });

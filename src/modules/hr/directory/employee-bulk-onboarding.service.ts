@@ -59,9 +59,6 @@ import { peopleByEmails } from "./reporting-manager-people";
 import { invalidateReportingReads } from "./reporting-lines.service";
 import type { BulkOnboardCommitResult, BulkOnboardPreview } from "./dto/reporting-lines-bulk.schemas";
 
-function newRowManagerMessage(email: string): string {
-  return `${email} is new in this file and has not accepted their invitation yet, so they cannot be a reporting manager. Onboard them first, or leave the manager blank to use the fallback.`;
-}
 
 function secondaryEmailsOf(columns: ManagerColumnsResult | undefined): string[] {
   return columns?.ok ? columns.secondaryManagerEmails.flatMap((email) => (email ? [email] : [])) : [];
@@ -322,13 +319,6 @@ export class EmployeeBulkOnboardingService {
           refuse(result?.code ?? REPORTING_LINE_ERROR_CODES.MANAGER_NOT_FOUND, result && !result.ok ? result.message : "The reporting manager could not be resolved.");
           continue;
         }
-        // The canonical service only accepts a manager who has accepted their invitation, and a
-        // person this file creates cannot have. Refusing the row here keeps the rest of the file
-        // committable instead of failing it whole at write time.
-        if (result.managerUserId === null) {
-          refuse(REPORTING_LINE_ERROR_CODES.MANAGER_NOT_ELIGIBLE, newRowManagerMessage(result.email ?? "the manager"));
-          continue;
-        }
         employee.primaryManager = {
           userId: result.managerUserId,
           name: result.name,
@@ -348,8 +338,7 @@ export class EmployeeBulkOnboardingService {
         else if (secondaries.some((entry) => entry.email === email)) problem = { code: REPORTING_LINE_ERROR_CODES.SECONDARY_DUPLICATE, error: `${email} is listed twice as a secondary manager.` };
         else if (email === employee.primaryManager?.email) problem = { code: REPORTING_LINE_ERROR_CODES.SECONDARY_DUPLICATES_PRIMARY, error: `${email} is already the primary manager.` };
         else if (person && !check?.ok) problem = { code: REPORTING_LINE_ERROR_CODES.MANAGER_NOT_ELIGIBLE, error: check?.message ?? `${email} cannot be a manager.` };
-        else if (!person && roster.has(email)) problem = { code: REPORTING_LINE_ERROR_CODES.MANAGER_NOT_ELIGIBLE, error: newRowManagerMessage(email) };
-        else if (!person) problem = { code: REPORTING_LINE_ERROR_CODES.MANAGER_NOT_FOUND, error: `No member of this organization or row of this file has the email ${email}.` };
+        else if (!person && !roster.has(email)) problem = { code: REPORTING_LINE_ERROR_CODES.MANAGER_NOT_FOUND, error: `No member of this organization or row of this file has the email ${email}.` };
         if (problem) break;
         secondaries.push({ email, userId: person?.userId ?? null, name: person?.name ?? null });
       }
