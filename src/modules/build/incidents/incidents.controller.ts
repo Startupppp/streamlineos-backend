@@ -44,6 +44,7 @@ import {
 } from "../../../common/openapi/zod-operation-contracts";
 import {
   incidentRowSchema,
+  incidentPageSchema,
   incidentDetailSchema,
   incidentUpdateRowSchema,
   incidentDecisionRowSchema,
@@ -73,7 +74,7 @@ export class IncidentsController {
 
   @Get()
   @RequirePermission("build:incidents:view")
-  @ResponseSchema(z.array(incidentRowSchema))
+  @ResponseSchema(incidentPageSchema)
   @Validate({ query: listIncidentsQuerySchema })
   listIncidents(
     @Param("projectId", ParseIntPipe) projectId: number,

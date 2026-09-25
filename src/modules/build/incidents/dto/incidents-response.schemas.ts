@@ -32,6 +32,15 @@ export const incidentRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
+export const incidentPageSchema = z.object({
+  data: z.array(incidentRowSchema),
+  pagination: z.object({
+    limit: z.number().int().positive(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+});
+
 export const incidentUpdateRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

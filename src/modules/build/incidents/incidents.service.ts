@@ -1,5 +1,5 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   incidentUpdates,
   incidentDecisions,
@@ -25,8 +25,28 @@ import type {
   UpdateIncidentInput,
 } from "./dto/incidents.schemas";
 import { loadIncidentChildren } from "./incident-children";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+const NULL_DETECTED_AT = "__NULL_DETECTED_AT__";
+const INCIDENT_PAGE_SIZE = 100;
+
+function decodeIncidentCursor(cursor: string | undefined) {
+  if (!cursor) return undefined;
+  const parts = decodeTupleCursor(cursor, 2);
+  if (!parts) throw new BadRequestException("Invalid pagination cursor");
+  const [detectedAtValue, idValue] = parts;
+  const id = Number(idValue);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2_147_483_647) {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+  if (detectedAtValue === NULL_DETECTED_AT) return { id, detectedAt: null };
+  const detectedAt = new Date(detectedAtValue);
+  if (Number.isNaN(detectedAt.getTime()) || detectedAt.toISOString() !== detectedAtValue) {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+  return { id, detectedAt };
+}
 
 type IncidentRow = typeof projectIncidents.$inferSelect;
 type IncidentPatch = Partial<typeof projectIncidents.$inferInsert>;
@@ -88,7 +108,8 @@ export class IncidentsService {
 
   async listIncidents(u: CurrentUserContext, projectId: number, query: ListIncidentsQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
-    return this.db
+    const cursor = decodeIncidentCursor(query.cursor);
+    const rows = await this.db
       .select()
       .from(projectIncidents)
       .where(
@@ -98,10 +119,23 @@ export class IncidentsService {
           isNull(projectIncidents.deletedAt),
           query.status ? eq(projectIncidents.status, query.status) : undefined,
           query.severity ? eq(projectIncidents.severity, query.severity) : undefined,
+          cursor
+            ? cursor.detectedAt
+              ? or(
+                  lt(projectIncidents.detectedAt, cursor.detectedAt),
+                  and(eq(projectIncidents.detectedAt, cursor.detectedAt), lt(projectIncidents.id, cursor.id)),
+                  isNull(projectIncidents.detectedAt),
+                )
+              : and(isNull(projectIncidents.detectedAt), lt(projectIncidents.id, cursor.id))
+            : undefined,
         ),
       )
-      .orderBy(sql`${projectIncidents.detectedAt} DESC NULLS LAST`)
-      .limit(100);
+      .orderBy(sql`${projectIncidents.detectedAt} DESC NULLS LAST`, desc(projectIncidents.id))
+      .limit(INCIDENT_PAGE_SIZE + 1);
+    return buildTupleCursorPage(rows, INCIDENT_PAGE_SIZE, (row) => [
+      row.detectedAt?.toISOString() ?? NULL_DETECTED_AT,
+      String(row.id),
+    ]);
   }
 
   async getIncident(
