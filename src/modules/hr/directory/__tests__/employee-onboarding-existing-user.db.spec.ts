@@ -170,7 +170,7 @@ describe("POST /hr/employees/onboard against a real schema", () => {
       cache,
       { logCritical } as never,
       email,
-      { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
+      { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined), runAutomationsForEventDetached: jest.fn() } as never,
       new WebhooksDispatchService(db),
       new PersonEmploymentSyncService(db, new HrAuditService(db)),
       access as never,
@@ -231,7 +231,7 @@ describe("POST /hr/employees/onboard against a real schema", () => {
 
     const result = await service.onboardEmployee(actorFor(org), body(email));
 
-    expect(result).toEqual({ success: true, userId, invite: { sent: true, reason: null } });
+    expect(result).toEqual({ success: true, userId, invite: { sent: true, reason: null }, primaryManager: null });
     expect(await outboxRowsFor(email)).toEqual([
       { status: "PENDING", subject: `You've been added to Probe ${org.orgId.replace("probe-org-", "")}`, recipientUserId: userId },
     ]);
@@ -392,6 +392,7 @@ describe("POST /hr/employees/onboard against a real schema", () => {
       success: true,
       userId,
       invite: { sent: false, reason: alreadyMemberInviteReason(organisation.name) },
+      primaryManager: null,
     });
     expect(await outboxRowsFor(email)).toEqual([]);
     expect(await tokensFor(userId)).toEqual([]);

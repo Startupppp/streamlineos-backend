@@ -54,6 +54,16 @@ const SHEET = [
   },
 ];
 
+const ROLLBACK_ROW = {
+  email: "qa-rollback-0926@example.com",
+  firstName: "QA",
+  lastName: "Rollback",
+  joiningDate: "2026-09-02",
+  designation: "QA Analyst",
+  employeeNumber: "EMP-QRB1",
+  topLevelRoleReason: "Rollback probe",
+};
+
 describeDb("employee import reaches the directory — real database", () => {
   const raw = process.env.DATABASE_URL
     ? requireApprovedDatabaseUrl({
@@ -114,7 +124,7 @@ describeDb("employee import reaches the directory — real database", () => {
 
   afterAll(async () => {
     if (!sql) return;
-    const emails = SHEET.map((row) => row.email);
+    const emails = [...SHEET.map((row) => row.email), ROLLBACK_ROW.email];
     await sql`delete from organizations where id = ${orgId}`;
     await sql`delete from users where email = any(${emails}) or id = ${ownerId}`;
     await sql.end({ timeout: 5 });
@@ -358,5 +368,30 @@ describeDb("employee import reaches the directory — real database", () => {
       ]),
     ).rejects.toThrow(/PRIMARY_CYCLE/);
     expect(self?.id).toBeDefined();
+  });
+
+  /**
+   * HRM-15 addendum 2. A job rollback deleted `hr_people` alone, and every imported person has an
+   * employment behind `fk_hr_employments_org_person ON DELETE RESTRICT`, so the rollback failed with
+   * 23503 and the whole job 500'd. The employment goes first now; its lines and top-level role cascade.
+   */
+  it("rolls back an employee the job created, employment and top-level role included", async () => {
+    const noop = async (): Promise<undefined> => undefined;
+    const cache = { invalidate: noop, invalidateMany: noop, invalidateNamespaceMany: noop, invalidateNamespace: noop, invalidateNamespaceForOrg: noop, del: noop };
+    const ref = await withMembershipMutations(cache as never, (membership) =>
+      db.transaction((tx) =>
+        service.commitRow(tx, { orgId, actorId: ownerId, membership, actor: { orgId, userId: ownerId, isOrgOwner: true } }, "employees", ROLLBACK_ROW),
+      ),
+    );
+    expect(ref?.outcome).toBe("created");
+    const [before] = await sql`select count(*)::int as n from hr_top_level_roles where org_id = ${orgId}`;
+    expect(Number(before?.n)).toBeGreaterThan(0);
+
+    await db.transaction((tx) => service.rollbackRef(tx, { table: "hr_people", id: Number(ref?.id), outcome: "created" }));
+
+    const [people] = await sql`select count(*)::int as n from hr_people where org_id = ${orgId} and id = ${Number(ref?.id)}`;
+    const [employments] = await sql`select count(*)::int as n from hr_employments where org_id = ${orgId} and person_id = ${Number(ref?.id)}`;
+    expect(Number(people?.n)).toBe(0);
+    expect(Number(employments?.n)).toBe(0);
   });
 });
