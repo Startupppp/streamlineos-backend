@@ -222,6 +222,21 @@ export const updateBgvSchema = z
 
 const MIN_AGE_MS = 16 * 365.25 * 24 * 60 * 60 * 1000;
 
+export const DOB_IN_FUTURE_MESSAGE = "Date of birth cannot be in the future";
+export const DOB_UNDER_AGE_MESSAGE = "Employee must be at least 16 years old";
+
+/**
+ * V-031. The one spelling of "is this date of birth usable", so the single-hire
+ * boundary and the per-row bulk check cannot drift. Returns the reason, or null.
+ */
+export function dateOfBirthProblem(value: string | undefined | null): string | null {
+  if (!value) return null;
+  const dob = new Date(value);
+  if (isNaN(dob.getTime()) || dob >= new Date()) return DOB_IN_FUTURE_MESSAGE;
+  if (Date.now() - dob.getTime() < MIN_AGE_MS) return DOB_UNDER_AGE_MESSAGE;
+  return null;
+}
+
 export const updateEmployeeSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
@@ -313,16 +328,14 @@ export const onboardEmployeeFieldsSchema = z.object({
   dateOfBirth: z
     .string()
     .optional()
-    .refine((val) => {
-      if (!val) return true;
-      const dob = new Date(val);
-      return !isNaN(dob.getTime()) && dob < new Date();
-    }, "Date of birth cannot be in the future")
-    .refine((val) => {
-      if (!val) return true;
-      const dob = new Date(val);
-      return !isNaN(dob.getTime()) && Date.now() - dob.getTime() >= MIN_AGE_MS;
-    }, "Employee must be at least 16 years old"),
+    .refine(
+      (val) => dateOfBirthProblem(val) !== DOB_IN_FUTURE_MESSAGE,
+      DOB_IN_FUTURE_MESSAGE,
+    )
+    .refine(
+      (val) => dateOfBirthProblem(val) !== DOB_UNDER_AGE_MESSAGE,
+      DOB_UNDER_AGE_MESSAGE,
+    ),
   taxId: z.string().optional(),
   monthlySalary: z.number().min(0, "Salary cannot be negative").max(9_999_999, "Salary exceeds maximum").optional(),
   salaryStructureTemplateId: z.number().int().positive().optional(),
@@ -370,6 +383,15 @@ export const bulkOnboardEmployeeRowSchema = onboardEmployeeFieldsSchema
   .extend({
     department: z.string().trim().min(1).optional(),
     reportingManagerEmail: canonicalEmailSchema.optional(),
+    /**
+     * V-031. Deliberately WITHOUT the age/future refinements the single-hire
+     * schema carries. This schema validates an array of up to 100 rows, so one
+     * under-16 date of birth 400'd the entire upload and created nothing — the
+     * per-row reason QA saw came only from the frontend preview. The same check
+     * runs per row in `planBulkOnboarding` (`dateOfBirthProblem`), where a bad
+     * row is rejected and the other 99 are still onboarded.
+     */
+    dateOfBirth: z.string().optional(),
   })
   .superRefine((row, ctx) => {
     if (row.departmentId == null && !row.department) {
