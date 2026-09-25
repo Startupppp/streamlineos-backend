@@ -276,9 +276,10 @@ export async function writePrimaryLines(
 }
 
 /**
- * THE secondary-line writer: from `from` onward the employee's secondary managers are exactly
- * `desired`. A manager already on record with the same label and open-ended is kept; everyone else
- * is ended (closed or superseded) and the missing ones start a new `matrix` line.
+ * THE secondary-line writer: from `from` onward the employee's secondary managers are `desired`. A
+ * manager already on record (open-ended, whether in force or scheduled) with the same label keeps
+ * their lines untouched; everyone not in the set is ended (closed or superseded) and the missing
+ * ones start a new `matrix` line.
  */
 export async function writeSecondaryLines(
   db: DbOrTx,
@@ -300,10 +301,11 @@ export async function writeSecondaryLines(
   for (const line of existing) byManager.set(line.managerEmploymentId, [...(byManager.get(line.managerEmploymentId) ?? []), line]);
 
   for (const [managerEmploymentId, lines] of byManager) {
-    const current = lines.find((line) => line.effectiveFrom <= from) ?? null;
     const label = wantedLabel.get(managerEmploymentId);
-    if (label !== undefined && current && current.relationshipLabel === label && covers(current, window) && lines.length === 1) {
-      kept.push(current.id);
+    // A manager the set names again keeps every line they already have, current or scheduled, so a
+    // future start date survives an edit; only a label change replaces them from `from`.
+    if (label !== undefined && lines.every((line) => line.relationshipLabel === label) && lines.some((line) => line.effectiveTo === OPEN_ENDED)) {
+      kept.push(...lines.map((line) => line.id));
       keptManagers.add(managerEmploymentId);
       continue;
     }

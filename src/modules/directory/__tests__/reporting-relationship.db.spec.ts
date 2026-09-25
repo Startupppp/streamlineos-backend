@@ -132,6 +132,42 @@ describe("ReportingRelationshipService against a real schema", () => {
     expect(invalidation.hierarchy.slice(before.hierarchy)).toHaveLength(1);
   });
 
+  it("keeps a scheduled secondary manager's start date when the set names them again, and adds the new one from today", async () => {
+    await probe.policy({ max: 2 });
+    const employee = await probe.person("keep-scheduled");
+    const boss = await probe.person("keep-scheduled-boss");
+    const scheduled = await probe.person("keep-scheduled-s");
+    const added = await probe.person("keep-scheduled-t");
+    await set({ subjectUserId: employee.userId, primaryManagerUserId: boss.userId });
+    await set({ subjectUserId: employee.userId, primaryManagerUserId: boss.userId, secondary: [{ managerUserId: scheduled.userId }], effectiveFrom: "2099-01-01" });
+    const secondaryLines = () => sql<{ id: number; manager_employment_id: number; effective_from: string }[]>`
+      SELECT id, manager_employment_id, effective_from::text FROM hr_reporting_lines
+      WHERE org_id = ${probe.orgId} AND employment_id = ${employee.employmentId} AND line_type <> 'primary' ORDER BY id`;
+    const [before] = await secondaryLines();
+
+    await set({ subjectUserId: employee.userId, primaryManagerUserId: boss.userId, secondary: [{ managerUserId: scheduled.userId }, { managerUserId: added.userId }] });
+
+    const after = await secondaryLines();
+    expect(after).toEqual([
+      { id: before?.id, manager_employment_id: scheduled.employmentId, effective_from: "2099-01-01" },
+      { id: expect.any(Number), manager_employment_id: added.employmentId, effective_from: today },
+    ]);
+  });
+
+  it("replaces a kept secondary line only when its label changes", async () => {
+    await probe.policy({ max: 1 });
+    const employee = await probe.person("relabel");
+    const boss = await probe.person("relabel-boss");
+    const secondary = await probe.person("relabel-s");
+    await set({ subjectUserId: employee.userId, primaryManagerUserId: boss.userId, secondary: [{ managerUserId: secondary.userId, label: "Project" }], effectiveFrom: "2099-01-01" });
+    await set({ subjectUserId: employee.userId, primaryManagerUserId: boss.userId, secondary: [{ managerUserId: secondary.userId, label: "Functional" }] });
+
+    const lines = await sql<{ relationship_label: string | null; effective_from: string }[]>`
+      SELECT relationship_label, effective_from::text FROM hr_reporting_lines
+      WHERE org_id = ${probe.orgId} AND employment_id = ${employee.employmentId} AND line_type <> 'primary' ORDER BY id`;
+    expect(lines).toEqual([{ relationship_label: "Functional", effective_from: today }]);
+  });
+
   it("enforces the policy's secondary cap", async () => {
     await probe.policy({ max: 1 });
     const employee = await probe.person("cap");
