@@ -100,6 +100,15 @@ export const moduleListItemSchema = z.object({
   progress: z.number().int(),
 });
 
+export const modulePageSchema = z.object({
+  data: z.array(moduleListItemSchema),
+  pagination: z.object({
+    limit: z.number().int().positive(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+});
+
 export const moduleRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

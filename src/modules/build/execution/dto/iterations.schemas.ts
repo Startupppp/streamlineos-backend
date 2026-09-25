@@ -105,6 +105,11 @@ export const cycleListQuerySchema = z.object({
   status: z.enum(["draft", "active", "completed"]).optional(),
 }).strict();
 
+export const moduleListQuerySchema = z.object({
+  cursor: z.string().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+}).strict();
+
 const moduleNameSchema = z
   .string()
   .transform((v) => v.trim())
@@ -205,6 +210,7 @@ export type UpdateEpicInput = z.infer<typeof updateEpicSchema>;
 export type CreateCycleInput = z.infer<typeof createCycleSchema>;
 export type UpdateCycleInput = z.infer<typeof updateCycleSchema>;
 export type CycleListQuery = z.infer<typeof cycleListQuerySchema>;
+export type ModuleListQuery = z.infer<typeof moduleListQuerySchema>;
 export type CreateModuleInput = z.infer<typeof createModuleSchema>;
 export type UpdateModuleInput = z.infer<typeof updateModuleSchema>;
 export type CreateSprintInput = z.infer<typeof createSprintSchema>;

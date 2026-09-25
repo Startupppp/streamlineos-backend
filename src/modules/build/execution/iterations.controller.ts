@@ -28,6 +28,7 @@ import {
   createModuleSchema,
   createSprintSchema,
   cycleListQuerySchema,
+  moduleListQuerySchema,
   updateCycleSchema,
   updateEpicSchema,
   updateModuleSchema,
@@ -37,6 +38,7 @@ import {
   type CreateModuleInput,
   type CreateSprintInput,
   type CycleListQuery,
+  type ModuleListQuery,
   type UpdateCycleInput,
   type UpdateEpicInput,
   type UpdateModuleInput,
@@ -54,6 +56,7 @@ import {
   cycleListItemSchema,
   cycleRowSchema,
   moduleListItemSchema,
+  modulePageSchema,
   moduleRowSchema,
   epicRowSchema,
 } from "./dto/execution-response.schemas";
@@ -195,13 +198,14 @@ export class ModulesController {
 
   @Get()
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(moduleListItemSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(modulePageSchema)
+  @Validate({ params: projectIdParams, query: moduleListQuerySchema })
   listModules(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ModuleListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.modules.listModules(u.orgId, projectId);
+    return this.modules.listModules(u.orgId, projectId, query);
   }
 
   @Post()
