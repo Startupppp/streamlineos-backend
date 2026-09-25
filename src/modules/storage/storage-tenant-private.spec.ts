@@ -205,6 +205,7 @@ describe("StorageController — a client-supplied key is an input, not a fact", 
       { scan: jest.fn() } as never,
       quarantine as never,
       new MediaTransformRunner(),
+      null as never,
     );
     return { controller, storage, quarantine };
   }

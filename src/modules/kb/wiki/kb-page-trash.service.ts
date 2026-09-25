@@ -49,6 +49,12 @@ import {
   purgeFavoritesForPages,
   purgeLinksForPages,
   purgeVisitsForPages,
+  purgeVersionsForPages,
+  purgeCommentsForPages,
+  purgeGrantsForPages,
+  purgeChunksForPages,
+  purgeAnalyticsForPages,
+  purgeNotificationsForPages,
 } from "./kb-multi-store-purge";
 import { purgeReviewsForPages } from "./kb-purge-reviews";
 
@@ -75,9 +81,17 @@ export class KbPageTrashService {
     const predicate = await this.auth.visiblePagePredicate(user, "view");
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), predicate),
-      columns: { id: true, title: true },
+      columns: { id: true, title: true, legalHold: true, legalHoldReason: true },
     });
     if (!page) throw new NotFoundException("Page not found");
+    if (page.legalHold) {
+      const reason = page.legalHoldReason
+        ? `: ${page.legalHoldReason}`
+        : "";
+      throw new ConflictException(
+        `This page is under a legal hold${reason} and cannot be permanently deleted.`,
+      );
+    }
 
     const subtreeIds = await this.db.transaction((tx) =>
       collectSubtreeIds(tx, orgId, pageId),
@@ -197,6 +211,96 @@ export class KbPageTrashService {
           throw err;
         }
       }
+      if (!(await isStoreComplete(this.db, orgId, id, "versions"))) {
+        try {
+          await purgeVersionsForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "versions");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "versions",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "comments"))) {
+        try {
+          await purgeCommentsForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "comments");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "comments",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "grants"))) {
+        try {
+          await purgeGrantsForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "grants");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "grants",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "chunks"))) {
+        try {
+          await purgeChunksForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "chunks");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "chunks",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "analytics"))) {
+        try {
+          await purgeAnalyticsForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "analytics");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "analytics",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "notifications"))) {
+        try {
+          await purgeNotificationsForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "notifications");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "notifications",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
     }
   }
 
@@ -208,7 +312,13 @@ export class KbPageTrashService {
       const trashed = await this.db
         .select({ id: kbPages.id })
         .from(kbPages)
-        .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)))
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            isNotNull(kbPages.deletedAt),
+            eq(kbPages.legalHold, false),
+          ),
+        )
         .orderBy(kbPages.id)
         .limit(EXPIRED_PURGE_BATCH_SIZE);
 
@@ -270,6 +380,7 @@ export class KbPageTrashService {
             eq(kbPages.orgId, orgId),
             isNotNull(kbPages.deletedAt),
             lt(kbPages.deletedAt, olderThan),
+            eq(kbPages.legalHold, false),
           ),
         )
         .orderBy(kbPages.id)

@@ -6833,6 +6833,13 @@
       "when": 1803032410725,
       "tag": "1231_kb_purge_ledger_add_reviews_store",
       "breakpoints": true
+    },
+    {
+      "idx": 1104,
+      "version": "7",
+      "when": 1803036010725,
+      "tag": "1233_kb_research_briefs_cost_metadata",
+      "breakpoints": true
     }
   ]
 }

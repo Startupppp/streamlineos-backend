@@ -9,9 +9,13 @@ import {
   rangeSchema,
   overviewQuerySchema,
   pageAnalyticsQuerySchema,
+  gapsQuerySchema,
+  gapRelatedPagesQuerySchema,
   type RangeInput,
   type OverviewQueryInput,
   type PageAnalyticsQueryInput,
+  type GapsQueryInput,
+  type GapRelatedPagesQuery,
 } from "./dto/kb-analytics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -20,6 +24,7 @@ import {
   kbAnalyticsNoResultsSchema,
   kbAnalyticsPagesSchema,
   kbAnalyticsGapsSchema,
+  kbAnalyticsGapRelatedPagesSchema,
   kbAnalyticsContentGapsSchema,
   kbAnalyticsCitationReuseSchema,
   kbAnalyticsReviewSlaSchema,
@@ -65,13 +70,24 @@ export class KbAnalyticsController {
 
   @Get("analytics/gaps")
   @RequirePermission("kb:analytics:view")
-  @Validate({ query: rangeSchema })
+  @Validate({ query: gapsQuerySchema })
   @ResponseSchema(kbAnalyticsGapsSchema)
   async gaps(
-    @Query() query: RangeInput,
+    @Query() query: GapsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.gaps(u.orgId, query);
+    return await this.analytics.gaps(u, query);
+  }
+
+  @Get("analytics/gaps/related-pages")
+  @RequirePermission("kb:analytics:view")
+  @Validate({ query: gapRelatedPagesQuerySchema })
+  @ResponseSchema(kbAnalyticsGapRelatedPagesSchema)
+  async gapRelatedPages(
+    @Query() query: GapRelatedPagesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.gapRelatedPages(u, query);
   }
 
   @Get("analytics/content-gaps")

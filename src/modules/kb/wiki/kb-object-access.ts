@@ -3,13 +3,13 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { kbPageAttachments, kbPages } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import type { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 export const KB_OBJECT_KEY_FOLDERS: ReadonlySet<string> = new Set(["kb-media", "kb-sources"]);
 
-// The cover picker uploads before any page names the key, so the uploader is the only reader until then.
 export async function assertKbObjectReadable(
   db: Db,
+  auth: KnowledgeAuthorizationService,
   user: CurrentUserContext,
   fileKey: string,
   notFoundMessage: string,
@@ -25,7 +25,7 @@ export async function assertKbObjectReadable(
   if (!attachment) throw new NotFoundException(notFoundMessage);
 
   if (attachment.pageId !== null) {
-    await assertPageAccessible(db, user, attachment.pageId);
+    await auth.assertPageAccess(user, attachment.pageId, "view");
     return;
   }
 
@@ -38,7 +38,7 @@ export async function assertKbObjectReadable(
     columns: { id: true },
   });
   if (cover) {
-    await assertPageAccessible(db, user, cover.id);
+    await auth.assertPageAccess(user, cover.id, "view");
     return;
   }
 

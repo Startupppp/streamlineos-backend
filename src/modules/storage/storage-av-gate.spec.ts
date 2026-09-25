@@ -124,6 +124,7 @@ describe("StorageController — malware scan gate", () => {
       mockScanner as unknown as AvScanner,
       mockQuarantine as never,
       transforms,
+      null as never,
     );
   });
 

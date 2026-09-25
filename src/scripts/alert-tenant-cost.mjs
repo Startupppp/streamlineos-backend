@@ -83,6 +83,7 @@ function evaluateUsage(rows) {
   const noisy = rows
     .map((r) => ({
       org_id: r.org_id,
+      plan_tier: r.plan_tier ?? null,
       total_credits: Number(r.total_credits ?? 0),
       request_count: Number(r.request_count ?? 0),
       top_feature: r.top_feature,
@@ -103,19 +104,21 @@ function evaluateUsage(rows) {
 if (args.includes("--self-test")) {
   const normalOrgs = Array.from({ length: 5 }, (_, i) => ({
     org_id: `org_normal_${i}`,
+    plan_tier: "STARTER",
     total_credits: "100",
     request_count: "10",
     top_feature: "chat",
   }));
   const noisyOrg = {
     org_id: "org_noisy",
+    plan_tier: "TRIAL",
     total_credits: "10000",
     request_count: "1000",
     top_feature: "bulk-summarise",
   };
   const tinyOrgs = [
-    { org_id: "org_a", total_credits: "50", request_count: "5", top_feature: "chat" },
-    { org_id: "org_b", total_credits: "50", request_count: "5", top_feature: "chat" },
+    { org_id: "org_a", plan_tier: null, total_credits: "50", request_count: "5", top_feature: "chat" },
+    { org_id: "org_b", plan_tier: null, total_credits: "50", request_count: "5", top_feature: "chat" },
   ];
 
   const case1 = evaluateUsage([...normalOrgs, noisyOrg]);
@@ -124,12 +127,14 @@ if (args.includes("--self-test")) {
 
   const kbOrgs = Array.from({ length: 5 }, (_, i) => ({
     org_id: `org_kb_${i}`,
+    plan_tier: "STARTER",
     total_credits: "100",
     request_count: "10",
     top_feature: "kb.ask",
   }));
   const kbNoisyOrg = {
     org_id: "org_kb_noisy",
+    plan_tier: "TRIAL",
     total_credits: "10000",
     request_count: "500",
     top_feature: "kb.embed",
@@ -142,6 +147,8 @@ if (args.includes("--self-test")) {
     tooFewOrgsClear: !case3.fired && typeof case3.reason === "string",
     featureScopeDefaultIsAll: featureScope === "",
     kbScopedNoisyDetected: case4.fired && case4.noisy[0]?.org_id === "org_kb_noisy",
+    planTierPropagatedToNoisy: case1.noisy[0]?.plan_tier === "TRIAL",
+    nullPlanTierSurvives: tinyOrgs[0].plan_tier === null,
   };
 
   const pass = Object.values(checks).every(Boolean);
@@ -171,15 +178,22 @@ try {
     : sql``;
   const rows = await sql`
     SELECT
-      org_id,
-      SUM(credits_milli)                       AS total_credits,
-      COUNT(*)                                 AS request_count,
-      mode() WITHIN GROUP (ORDER BY feature)   AS top_feature
-    FROM ai_usage_logs
-    WHERE created_at > NOW() - (${windowHours} * INTERVAL '1 hour')
+      a.org_id,
+      (
+        SELECT s.plan
+        FROM subscriptions s
+        WHERE s.org_id = a.org_id
+        ORDER BY s.created_at DESC
+        LIMIT 1
+      ) AS plan_tier,
+      SUM(a.credits_milli)                       AS total_credits,
+      COUNT(*)                                   AS request_count,
+      mode() WITHIN GROUP (ORDER BY a.feature)   AS top_feature
+    FROM ai_usage_logs a
+    WHERE a.created_at > NOW() - (${windowHours} * INTERVAL '1 hour')
     ${featureCondition}
-    GROUP BY org_id
-    ORDER BY SUM(credits_milli) DESC
+    GROUP BY a.org_id
+    ORDER BY SUM(a.credits_milli) DESC
     LIMIT 200
   `;
 
@@ -197,6 +211,8 @@ try {
       destination:
         "CONFIGURE_ME — wire exit-code 1 to your oncall system (PagerDuty, Slack webhook, etc.)",
       noisy: result.noisy ?? [],
+      tierNote:
+        "plan_tier is joined from subscriptions.plan (most recent row per org). Storage and index cost are not metered in the current schema and are not included.",
     }) + "\n",
   );
   process.exit(result.fired ? 1 : 0);

@@ -13,9 +13,23 @@ describe("KbResearchBriefHandler — denial-of-wallet guard (BE-94)", () => {
   const updates: Array<{ set: Record<string, unknown> }> = [];
   let executeResult: unknown[] = [];
 
+  function makeSelectChain() {
+    const resolved = Promise.resolve([]);
+    const chain: Record<string, unknown> = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+      then: resolved.then.bind(resolved),
+      catch: resolved.catch.bind(resolved),
+      finally: resolved.finally.bind(resolved),
+    };
+    return chain;
+  }
+
   function makeDb() {
     return {
       execute: jest.fn().mockImplementation(() => Promise.resolve(executeResult)),
+      select: jest.fn().mockImplementation(() => makeSelectChain()),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockImplementation((set: Record<string, unknown>) => ({
           where: jest.fn().mockImplementation(() => {

@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { kbResearchBriefs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -11,6 +11,8 @@ import {
   type CitedRef,
 } from "./kb-citation-visibility.service";
 import type { KbResearchBriefCreateInput, KbResearchBriefListInput } from "./dto/kb-ai.schemas";
+
+export const KB_RESEARCH_BRIEF_CONCURRENT_LIMIT = 10;
 
 function toCitedRef(citation: { kind: string; id: number }): CitedRef | null {
   if (citation.kind === "article" || citation.kind === "page" || citation.kind === "source")
@@ -29,6 +31,9 @@ type BriefSummary = {
   sourceCount: number;
   errorMessage: string | null;
   rating: "helpful" | "not_helpful" | null;
+  costCredits: number | null;
+  provider: string | null;
+  model: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -46,6 +51,18 @@ export class KbResearchBriefService {
   async enqueue(user: CurrentUserContext, input: KbResearchBriefCreateInput): Promise<{ briefId: number; jobId: number }> {
     const membershipId = actingMembershipId(user.principal);
     if (membershipId == null) throw new ForbiddenException("Organization membership required");
+
+    const [activeRow] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(kbResearchBriefs)
+      .where(and(eq(kbResearchBriefs.orgId, user.orgId), inArray(kbResearchBriefs.status, ["queued", "running"])));
+    if ((activeRow?.count ?? 0) >= KB_RESEARCH_BRIEF_CONCURRENT_LIMIT) {
+      throw new HttpException(
+        { message: `Research job quota exceeded (limit: ${KB_RESEARCH_BRIEF_CONCURRENT_LIMIT} concurrent)`, code: "KB_RESEARCH_JOB_QUOTA_EXCEEDED" },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const inserted = await this.db
       .insert(kbResearchBriefs)
       .values({
@@ -101,6 +118,9 @@ export class KbResearchBriefService {
         sourceCount: kbResearchBriefs.sourceCount,
         errorMessage: kbResearchBriefs.errorMessage,
         rating: kbResearchBriefs.rating,
+        costCredits: kbResearchBriefs.costCredits,
+        provider: kbResearchBriefs.provider,
+        model: kbResearchBriefs.model,
         createdAt: kbResearchBriefs.createdAt,
         updatedAt: kbResearchBriefs.updatedAt,
       })
@@ -133,6 +153,9 @@ export class KbResearchBriefService {
         citations: kbResearchBriefs.citations,
         errorMessage: kbResearchBriefs.errorMessage,
         rating: kbResearchBriefs.rating,
+        costCredits: kbResearchBriefs.costCredits,
+        provider: kbResearchBriefs.provider,
+        model: kbResearchBriefs.model,
         createdAt: kbResearchBriefs.createdAt,
         updatedAt: kbResearchBriefs.updatedAt,
       })

@@ -65,6 +65,12 @@ import {
   purgeFavoritesForPages,
   purgeLinksForPages,
   purgeVisitsForPages,
+  purgeVersionsForPages,
+  purgeCommentsForPages,
+  purgeGrantsForPages,
+  purgeChunksForPages,
+  purgeAnalyticsForPages,
+  purgeNotificationsForPages,
   KB_PURGE_STORES,
   type KbPurgeStore,
 } from "./kb-multi-store-purge";
@@ -251,10 +257,17 @@ describe("oldestIncompleteLedgerEntry — SLA metric query", () => {
 
 describe("resumability — interrupted purge resumes from the right store", () => {
   it("skips a store already marked completed and runs the pending store", async () => {
-    const storeState: Record<KbPurgeStore, string> = {
+    const storeState: Partial<Record<KbPurgeStore, string>> = {
       visits: "completed",
       favorites: "pending",
       source_links: "pending",
+      reviews: "pending",
+      versions: "pending",
+      comments: "pending",
+      grants: "pending",
+      chunks: "pending",
+      analytics: "pending",
+      notifications: "pending",
       page_rows: "pending",
       blobs: "pending",
     };
@@ -290,10 +303,17 @@ describe("resumability — interrupted purge resumes from the right store", () =
   });
 
   it("a failed store is retried while already-completed stores are skipped", async () => {
-    const storeState: Record<KbPurgeStore, string> = {
+    const storeState: Partial<Record<KbPurgeStore, string>> = {
       visits: "completed",
       favorites: "failed",
       source_links: "pending",
+      reviews: "pending",
+      versions: "pending",
+      comments: "pending",
+      grants: "pending",
+      chunks: "pending",
+      analytics: "pending",
+      notifications: "pending",
       page_rows: "pending",
       blobs: "pending",
     };
@@ -379,5 +399,135 @@ describe("kbPagePurgeLedger schema — correct columns are declared", () => {
       }
     ).orgId;
     expect(col).toBeDefined();
+  });
+});
+
+describe("KB_PURGE_STORES constant — all required stores are registered", () => {
+  it("includes all six original stores", () => {
+    for (const store of ["visits", "favorites", "source_links", "reviews", "page_rows", "blobs"] as const) {
+      expect(KB_PURGE_STORES).toContain(store);
+    }
+  });
+
+  it("includes all six new stores so the compliance ledger tracks every surface", () => {
+    for (const store of ["versions", "comments", "grants", "chunks", "analytics", "notifications"] as const) {
+      expect(KB_PURGE_STORES).toContain(store);
+    }
+  });
+
+  it("page_rows comes after all pre-delete stores — ordering invariant", () => {
+    const pageRowsIndex = KB_PURGE_STORES.indexOf("page_rows");
+    const prePurgeStores: KbPurgeStore[] = [
+      "visits", "favorites", "source_links", "reviews",
+      "versions", "comments", "grants", "chunks", "analytics", "notifications",
+    ];
+    for (const store of prePurgeStores) {
+      expect(KB_PURGE_STORES.indexOf(store)).toBeLessThan(pageRowsIndex);
+    }
+  });
+});
+
+describe("purgeVersionsForPages — explicit delete of kb_page_versions before page row", () => {
+  it("is a no-op for an empty page list", async () => {
+    const db = makeQueryDb(null);
+    await purgeVersionsForPages(db, ORG_A, []);
+    expect(mockTx.delete).not.toHaveBeenCalled();
+  });
+
+  it("issues a delete scoped to orgId and pageId for a non-empty list", async () => {
+    const db = makeQueryDb(null);
+    await purgeVersionsForPages(db, ORG_A, [PAGE_1]);
+    expect(mockTx.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("purgeCommentsForPages — explicit delete of kb_page_comments before page row", () => {
+  it("is a no-op for an empty page list", async () => {
+    const db = makeQueryDb(null);
+    await purgeCommentsForPages(db, ORG_A, []);
+    expect(mockTx.delete).not.toHaveBeenCalled();
+  });
+
+  it("issues a delete scoped to orgId and pageId for a non-empty list", async () => {
+    const db = makeQueryDb(null);
+    await purgeCommentsForPages(db, ORG_A, [PAGE_1]);
+    expect(mockTx.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("purgeGrantsForPages — explicit delete of kb_page_grants (always empty, required for compliance)", () => {
+  it("is a no-op for an empty page list", async () => {
+    const db = makeQueryDb(null);
+    await purgeGrantsForPages(db, ORG_A, []);
+    expect(mockTx.delete).not.toHaveBeenCalled();
+  });
+
+  it("issues a delete scoped to orgId and pageId for a non-empty list", async () => {
+    const db = makeQueryDb(null);
+    await purgeGrantsForPages(db, ORG_A, [PAGE_1]);
+    expect(mockTx.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("purgeChunksForPages — explicit delete of kb_article_chunks before page row", () => {
+  it("is a no-op for an empty page list", async () => {
+    const db = makeQueryDb(null);
+    await purgeChunksForPages(db, ORG_A, []);
+    expect(mockTx.delete).not.toHaveBeenCalled();
+  });
+
+  it("issues a delete scoped to orgId and pageId for a non-empty list", async () => {
+    const db = makeQueryDb(null);
+    await purgeChunksForPages(db, ORG_A, [PAGE_1]);
+    expect(mockTx.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("purgeAnalyticsForPages — nullifies kb_events.article_id (no FK, would outlive the page)", () => {
+  const updatedAnalytics: { status?: string }[] = [];
+  const mockAnalyticsTx = {
+    ...mockTx,
+    update: jest.fn(() => ({
+      set: jest.fn((s: { articleId: null }) => ({
+        where: jest.fn(async () => {
+          updatedAnalytics.push({ status: s.articleId === null ? "nullified" : "other" });
+        }),
+      })),
+    })),
+  };
+
+  it("is a no-op for an empty page list", async () => {
+    const db = makeQueryDb(null);
+    await purgeAnalyticsForPages(db, ORG_A, []);
+    expect(updatedAnalytics).toHaveLength(0);
+  });
+
+  it("nullifies articleId rather than deleting the event row — analytics history is preserved", async () => {
+    const runInNewTenantTransaction = jest.requireMock(
+      "../../../common/tenant/run-in-tenant-transaction",
+    ) as { runInNewTenantTransaction: jest.Mock };
+    const prev = runInNewTenantTransaction.runInNewTenantTransaction.getMockImplementation();
+    runInNewTenantTransaction.runInNewTenantTransaction.mockImplementationOnce(
+      async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) =>
+        fn(mockAnalyticsTx),
+    );
+    const db = makeQueryDb(null);
+    await purgeAnalyticsForPages(db, ORG_A, [PAGE_1]);
+    expect(mockAnalyticsTx.update).toHaveBeenCalledTimes(1);
+    if (prev) runInNewTenantTransaction.runInNewTenantTransaction.mockImplementation(prev);
+  });
+});
+
+describe("purgeNotificationsForPages — deletes notifications by entityId (no FK, would outlive the page)", () => {
+  it("is a no-op for an empty page list", async () => {
+    const db = makeQueryDb(null);
+    await purgeNotificationsForPages(db, ORG_A, []);
+    expect(mockTx.delete).not.toHaveBeenCalled();
+  });
+
+  it("issues a delete scoped to orgId and entityId strings for a non-empty list", async () => {
+    const db = makeQueryDb(null);
+    await purgeNotificationsForPages(db, ORG_A, [PAGE_1]);
+    expect(mockTx.delete).toHaveBeenCalledTimes(1);
   });
 });

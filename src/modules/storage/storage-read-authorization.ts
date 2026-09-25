@@ -22,6 +22,7 @@ import {
   assertKbObjectReadable,
   KB_OBJECT_KEY_FOLDERS,
 } from "../kb/wiki/kb-object-access";
+import type { KnowledgeAuthorizationService } from "../kb/core/authorization/knowledge-authorization.service";
 
 const CHAT_FOLDER_ROOT = "chat";
 
@@ -61,6 +62,7 @@ function isChannelScoped(owner: FileOwner): boolean {
  */
 export async function assertKeyReadable(
   db: Db,
+  auth: KnowledgeAuthorizationService,
   quarantine: QuarantineGate,
   fileKey: string,
   viewer: CurrentUserContext,
@@ -70,7 +72,7 @@ export async function assertKeyReadable(
   if (isForeignOrgKey(fileKey, orgId)) throw new NotFoundException(notFoundMessage);
 
   if (KB_OBJECT_KEY_FOLDERS.has(parseStorageKey(fileKey, orgId).folderRoot)) {
-    await assertKbObjectReadable(db, viewer, fileKey, notFoundMessage);
+    await assertKbObjectReadable(db, auth, viewer, fileKey, notFoundMessage);
     if (await quarantine.isKeyBlocked(orgId, fileKey))
       throw new NotFoundException(notFoundMessage);
     return;

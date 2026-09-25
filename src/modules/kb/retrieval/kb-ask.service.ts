@@ -31,6 +31,7 @@ import {
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
 } from "./kb-ask-context";
 import { kbAiInteractions, type KbAiInteractionState, type KbAiSourceRecord } from "../../../db/schema";
+import { LEGACY_CELL_ID } from "../../../common/region/placement";
 
 export const KB_ASK_ORG_LIMIT = 200;
 const KB_ASK_ORG_WINDOW_SECS = 60;
@@ -158,7 +159,7 @@ export class KbAskService {
             )
           : [];
         const retrievedSources = hasContent
-          ? await this.search.retrieveTopSources(user, input.question, 4)
+          ? await this.search.retrieveTopSources(user, input.question, 4, input.sourceIds)
           : [];
         if (
           retrievedTop.length === 0 &&
@@ -288,7 +289,7 @@ export class KbAskService {
         );
       }
     }
-    const metrics = KbAskMetrics.begin({ orgId: user.orgId });
+    const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: LEGACY_CELL_ID });
     try {
       const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
@@ -299,6 +300,10 @@ export class KbAskService {
       const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
+      const embeddingUsed = !degraded;
+      const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
+      const aiTier = "fast";
+      const dbRole = "primary";
 
       const callStart = Date.now();
       const gatewayResult = await this.aiGateway.invokeTextWithUsage({
@@ -319,6 +324,10 @@ export class KbAskService {
           metrics.finish("credits_exhausted", {
             citations: citations.length,
             candidates,
+            aiTier,
+            sourceKind,
+            embeddingUsed,
+            dbRole,
           });
           await runInTenantTransaction(
             this.db,
@@ -342,6 +351,10 @@ export class KbAskService {
         metrics.finish("provider_unavailable", {
           citations: citations.length,
           candidates,
+          aiTier,
+          sourceKind,
+          embeddingUsed,
+          dbRole,
         });
         await runInTenantTransaction(
           this.db,
@@ -405,6 +418,10 @@ export class KbAskService {
         citations: citations.length,
         candidates,
         degraded,
+        aiTier,
+        sourceKind,
+        embeddingUsed,
+        dbRole,
       });
       return { answer, citations, hasContext: true, aiUsage };
     } catch (error) {
@@ -428,7 +445,7 @@ export class KbAskService {
       }
   > {
     const correlationId = randomUUID();
-    const metrics = KbAskMetrics.begin({ orgId: user.orgId });
+    const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: LEGACY_CELL_ID });
     try {
       const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
@@ -440,6 +457,10 @@ export class KbAskService {
       const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
+      const embeddingUsed = !degraded;
+      const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
+      const aiTier = "fast";
+      const dbRole = "primary";
 
       await runInTenantTransaction(
         this.db,
@@ -483,6 +504,10 @@ export class KbAskService {
         citations: citations.length,
         candidates,
         degraded,
+        aiTier,
+        sourceKind,
+        embeddingUsed,
+        dbRole,
       });
       return {
         hasContext: true,

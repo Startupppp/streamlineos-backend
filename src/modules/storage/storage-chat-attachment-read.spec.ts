@@ -73,6 +73,7 @@ function build(attachment: { orgId: string } | null) {
     { scan: jest.fn() } as never,
     { isKeyBlocked: jest.fn().mockResolvedValue(false) } as never,
     new MediaTransformRunner(),
+    null as never,
   );
   return { controller, storage, chatAttachmentsFindFirst };
 }

@@ -12,6 +12,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { KbSearchMetrics } from "../core/telemetry/kb-search-metrics";
+import { LEGACY_CELL_ID } from "../../../common/region/placement";
 import { kbArticleChunks, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -158,7 +159,7 @@ export class KbSearchService {
     pageSize: number;
     totalPages: number;
   }> {
-    const metrics = KbSearchMetrics.begin({ orgId: user.orgId });
+    const metrics = KbSearchMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: LEGACY_CELL_ID });
     try {
       return await this.searchMeasured(user, input, scope, metrics);
     } catch (error) {
@@ -196,14 +197,16 @@ export class KbSearchService {
       pageSize: input.pageSize,
       totalPages: 0,
     };
+    const dbRole = "primary";
+    const emptyKind = "none";
     if (scope.denied) {
-      metrics.finish("denied");
+      metrics.finish("denied", { sourceKind: emptyKind, embeddingUsed: false, dbRole });
       return empty;
     }
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
-      metrics.finish("not_found");
+      metrics.finish("not_found", { sourceKind: emptyKind, embeddingUsed: false, dbRole });
       return empty;
     }
 
@@ -288,7 +291,8 @@ export class KbSearchService {
       },
     );
 
-    metrics.finish(total > 0 ? "found" : "not_found", { results: total });
+    const sourceKind = "article";
+    metrics.finish(total > 0 ? "found" : "not_found", { results: total, sourceKind, embeddingUsed: false, dbRole });
     return {
       items,
       total,
@@ -562,6 +566,7 @@ export class KbSearchService {
     user: CurrentUserContext,
     query: string,
     limit: number,
+    sourceIds?: number[],
   ): Promise<RetrievedSourceDocument[]> {
     const q = query.trim();
     if (!q) return [];
@@ -595,6 +600,7 @@ export class KbSearchService {
         eq(kbSources.orgId, user.orgId),
       ];
       if (spaceFilter) conditions.push(spaceFilter);
+      if (sourceIds && sourceIds.length > 0) conditions.push(inArray(kbSources.id, sourceIds));
       if (vector === null) conditions.push(this.chunkKeywordMatch(q));
       else conditions.push(inArray(kbArticleChunks.id, chunkIds));
 

@@ -13,10 +13,11 @@ import { StorageMultipartController } from "./storage-multipart.controller";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
 import { MediaTransformRunner } from "./media-transform.runner";
 import { AvScannerModule } from "../../common/security/av-scanner.module";
+import { KbCoreModule } from "../kb/core/kb-core.module";
 
 @Global()
 @Module({
-  imports: [AvScannerModule],
+  imports: [AvScannerModule, KbCoreModule],
   controllers: [
     StorageController,
     OnboardingDocumentsController,

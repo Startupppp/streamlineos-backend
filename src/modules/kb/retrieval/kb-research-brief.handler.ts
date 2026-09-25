@@ -1,6 +1,7 @@
 import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql, sum } from "drizzle-orm";
 import { kbResearchBriefs, organizationMembers } from "../../../db/schema";
+import { kbAiInteractions } from "../../../db/schema/kb/ai-interactions";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -56,9 +57,13 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
 
       const userCtx = await this.buildUserContext(job);
       const actor = { orgId: job.orgId, userId: job.userId ?? "system" };
+      const membershipId = actingMembershipId(userCtx.principal);
 
+      const briefStartedAt = new Date();
       const graph = buildResearchBriefGraph({ gateway: this.aiGateway, search: this.search });
       const { report, citations } = await runResearchBrief(graph, { topic, spaceId, userCtx, actor });
+
+      const usageMeta = await this.aggregateBriefUsage(job.orgId, membershipId, briefStartedAt);
 
       await this.db
         .update(kbResearchBriefs)
@@ -67,6 +72,9 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
           report,
           citations,
           sourceCount: citations.length,
+          costCredits: usageMeta.costCredits,
+          provider: usageMeta.provider,
+          model: usageMeta.model,
         })
         .where(eq(kbResearchBriefs.id, briefId));
 
@@ -85,6 +93,39 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
         .where(eq(kbResearchBriefs.id, briefId));
       return { briefId, status: "failed" };
     }
+  }
+
+  private async aggregateBriefUsage(
+    orgId: string,
+    membershipId: number | null,
+    startedAt: Date,
+  ): Promise<{ costCredits: number | null; provider: string | null; model: string | null }> {
+    const conditions = [
+      eq(kbAiInteractions.orgId, orgId),
+      gte(kbAiInteractions.createdAt, startedAt),
+    ];
+    if (membershipId !== null) {
+      conditions.push(eq(kbAiInteractions.actorMembershipId, membershipId));
+    }
+
+    const [totals] = await this.db
+      .select({ totalCredits: sum(kbAiInteractions.costCredits) })
+      .from(kbAiInteractions)
+      .where(and(...conditions));
+
+    const firstRow = await this.db
+      .select({ provider: kbAiInteractions.provider, model: kbAiInteractions.model })
+      .from(kbAiInteractions)
+      .where(and(...conditions))
+      .limit(1);
+
+    const rawCredits = totals?.totalCredits;
+    const costCredits = rawCredits != null ? Number(rawCredits) : null;
+    return {
+      costCredits: Number.isFinite(costCredits) ? costCredits : null,
+      provider: firstRow[0]?.provider ?? null,
+      model: firstRow[0]?.model ?? null,
+    };
   }
 
   private async orgHasIndexedContent(orgId: string): Promise<boolean> {

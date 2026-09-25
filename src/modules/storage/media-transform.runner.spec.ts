@@ -217,6 +217,7 @@ function buildUploadController(
     { scan: jest.fn().mockResolvedValue({ status: "clean" }) } as unknown as AvScanner,
     quarantine as unknown as FileQuarantineService,
     runner,
+    null as never,
   );
 
   return { controller, storage, quarantine, db };

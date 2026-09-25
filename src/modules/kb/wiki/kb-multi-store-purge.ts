@@ -10,6 +10,14 @@ import {
   kbPageLinks,
   kbPageVisits,
 } from "../../../db/schema/kb/pages";
+import {
+  kbPageVersions,
+  kbPageComments,
+} from "../../../db/schema/kb/page-collab";
+import { kbPageGrants } from "../../../db/schema/kb/page-grants";
+import { kbArticleChunks } from "../../../db/schema/support/kb-chunks";
+import { kbEvents } from "../../../db/schema/kb/events";
+import { notifications } from "../../../db/schema/common/notifications";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 export { KB_PURGE_STORES };
@@ -195,6 +203,117 @@ export async function purgeLinksForPages(
         and(
           eq(kbPageLinks.orgId, orgId),
           inArray(kbPageLinks.targetPageId, pageIds),
+        ),
+      );
+  });
+}
+
+export async function purgeVersionsForPages(
+  db: Db,
+  orgId: string,
+  pageIds: number[],
+): Promise<void> {
+  if (pageIds.length === 0) return;
+  await runInNewTenantTransaction(db, orgId, async (tx) => {
+    await tx
+      .delete(kbPageVersions)
+      .where(
+        and(
+          eq(kbPageVersions.orgId, orgId),
+          inArray(kbPageVersions.pageId, pageIds),
+        ),
+      );
+  });
+}
+
+export async function purgeCommentsForPages(
+  db: Db,
+  orgId: string,
+  pageIds: number[],
+): Promise<void> {
+  if (pageIds.length === 0) return;
+  await runInNewTenantTransaction(db, orgId, async (tx) => {
+    await tx
+      .delete(kbPageComments)
+      .where(
+        and(
+          eq(kbPageComments.orgId, orgId),
+          inArray(kbPageComments.pageId, pageIds),
+        ),
+      );
+  });
+}
+
+export async function purgeGrantsForPages(
+  db: Db,
+  orgId: string,
+  pageIds: number[],
+): Promise<void> {
+  if (pageIds.length === 0) return;
+  await runInNewTenantTransaction(db, orgId, async (tx) => {
+    await tx
+      .delete(kbPageGrants)
+      .where(
+        and(
+          eq(kbPageGrants.orgId, orgId),
+          inArray(kbPageGrants.pageId, pageIds),
+        ),
+      );
+  });
+}
+
+export async function purgeChunksForPages(
+  db: Db,
+  orgId: string,
+  pageIds: number[],
+): Promise<void> {
+  if (pageIds.length === 0) return;
+  await runInNewTenantTransaction(db, orgId, async (tx) => {
+    await tx
+      .delete(kbArticleChunks)
+      .where(
+        and(
+          eq(kbArticleChunks.orgId, orgId),
+          inArray(kbArticleChunks.pageId, pageIds),
+        ),
+      );
+  });
+}
+
+export async function purgeAnalyticsForPages(
+  db: Db,
+  orgId: string,
+  pageIds: number[],
+): Promise<void> {
+  if (pageIds.length === 0) return;
+  await runInNewTenantTransaction(db, orgId, async (tx) => {
+    await tx
+      .update(kbEvents)
+      .set({ articleId: null })
+      .where(
+        and(
+          eq(kbEvents.orgId, orgId),
+          inArray(kbEvents.articleId, pageIds),
+        ),
+      );
+  });
+}
+
+export async function purgeNotificationsForPages(
+  db: Db,
+  orgId: string,
+  pageIds: number[],
+): Promise<void> {
+  if (pageIds.length === 0) return;
+  const entityIds = pageIds.map(String);
+  await runInNewTenantTransaction(db, orgId, async (tx) => {
+    await tx
+      .delete(notifications)
+      .where(
+        and(
+          eq(notifications.orgId, orgId),
+          inArray(notifications.entityId, entityIds),
+          inArray(notifications.entityType, ["kb_page", "kb_page_review"]),
         ),
       );
   });

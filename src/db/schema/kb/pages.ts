@@ -118,6 +118,8 @@ export const kbPages = pgTable(
     reviewIntervalDays: integer("review_interval_days"),
     publishedAt: timestamp("published_at"),
     archivedAt: timestamp("archived_at"),
+    legalHold: boolean("legal_hold").notNull().default(false),
+    legalHoldReason: text("legal_hold_reason"),
   },
   (table) => [
     index("idx_kb_pages_org_parent_sort")

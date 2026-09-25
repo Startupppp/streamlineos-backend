@@ -48,6 +48,7 @@ import { ApiOkResponse } from "@nestjs/swagger";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { storageUploadResponseSchema } from "./dto/storage-response.schemas";
 import { AccessService } from "../access/access.service";
+import { KnowledgeAuthorizationService } from "../kb/core/authorization/knowledge-authorization.service";
 import { AvScanner } from "../../common/security/av-scan";
 import { Validate } from "../../common/validation/validate.decorator";
 import {
@@ -96,6 +97,7 @@ export class StorageController {
     private readonly avScanner: AvScanner,
     private readonly quarantine: FileQuarantineService,
     private readonly transforms: MediaTransformRunner,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   @Post("upload")
@@ -361,6 +363,7 @@ export class StorageController {
       () =>
         assertKeyReadable(
           this.db,
+          this.auth,
           this.quarantine,
           fileKey,
           u,
@@ -426,7 +429,7 @@ export class StorageController {
 
     await runInTenantTransaction(
       this.db,
-      () => assertKeyReadable(this.db, this.quarantine, keyParam, u, "Not found"),
+      () => assertKeyReadable(this.db, this.auth, this.quarantine, keyParam, u, "Not found"),
       { orgId: u.orgId },
     );
 

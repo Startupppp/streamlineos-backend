@@ -446,6 +446,28 @@ describe("KbAskService", () => {
     expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
   });
 
+  it("passes sourceIds from input to retrieveTopSources so scope sheet selection constrains retrieval", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Answer."));
+
+    await service.ask(user, { question: "How do I log in?", sourceIds: [10, 20, 30] });
+
+    expect(mockSearch.retrieveTopSources).toHaveBeenCalledWith(
+      expect.anything(),
+      "How do I log in?",
+      4,
+      [10, 20, 30],
+    );
+  });
+
+  it("passes undefined sourceIds when no scope selection is present so all sources are searched", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Answer."));
+
+    await service.ask(user, { question: "How do I log in?" });
+
+    const [, , , sourceIdsArg] = mockSearch.retrieveTopSources.mock.calls[0] ?? [];
+    expect(sourceIdsArg).toBeUndefined();
+  });
+
   it("throws 429 when the org has exhausted its per-minute Ask cap", async () => {
     const saturatedRedis = {
       incr: jest.fn().mockResolvedValue(KB_ASK_ORG_LIMIT + 1),

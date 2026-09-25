@@ -40,6 +40,12 @@ export type SloIndicator =
       readonly maxFaultRatio: number;
       readonly minFaults: number;
       readonly windowHours: number;
+    }
+  | {
+      readonly kind: "db-threshold";
+      readonly description: string;
+      readonly maxThreshold: number;
+      readonly windowHours: number;
     };
 
 export interface ServiceLevelObjective {
@@ -59,3 +65,6 @@ export const ALERT_RUNBOOK =
 
 export const FAILURE_RUNBOOK =
   "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
+
+export const KB_ALERT_RUNBOOK =
+  "docs/specs/knowledge-base/KB-OBSERVABILITY-RUNBOOK.md";

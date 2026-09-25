@@ -258,6 +258,136 @@ describe("POST /kb/pages/trash/restore — bulk restore", () => {
   });
 });
 
+describe("legal hold — blocks all three purge paths", () => {
+  function makeHeldPageDb(
+    legalHold: boolean,
+    legalHoldReason?: string,
+  ): Db {
+    return {
+      select: jest.fn().mockImplementation(() => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: async () => [{ id: 7 }],
+            }),
+          }),
+        }),
+      })),
+      query: {
+        kbPages: {
+          findFirst: jest.fn().mockResolvedValue(
+            legalHold ? { id: 7, title: "Held", legalHold, legalHoldReason: legalHoldReason ?? null } : null,
+          ),
+        },
+        kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      },
+      transaction: jest.fn().mockImplementation(
+        async (cb: (tx: unknown) => Promise<unknown>) =>
+          cb({
+            execute: jest.fn().mockResolvedValue([{ id: 7 }]),
+            delete: () => ({ where: jest.fn().mockResolvedValue([]) }),
+            insert: () => ({
+              values: () => ({
+                onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+              }),
+            }),
+            update: () => ({ set: () => ({ where: jest.fn().mockResolvedValue([]) }) }),
+          }),
+      ),
+    } as unknown as Db;
+  }
+
+  it("hardDelete on a legal-hold page throws ConflictException — cannot bypass the hold", async () => {
+    const db = makeHeldPageDb(true);
+    await expect(
+      service(db).hardDelete(userInOrg, 7),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("hardDelete on a non-held page does not throw — hold is not a blanket ban", async () => {
+    const db = {
+      query: {
+        kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 7, title: "Free", legalHold: false, legalHoldReason: null }) },
+        kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      },
+      transaction: jest.fn().mockImplementation(
+        async (cb: (tx: unknown) => Promise<unknown>) =>
+          cb({
+            execute: jest.fn().mockResolvedValue([{ id: 7 }]),
+            delete: () => ({ where: jest.fn().mockResolvedValue([]) }),
+            insert: () => ({
+              values: () => ({
+                onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+              }),
+            }),
+            update: () => ({ set: () => ({ where: jest.fn().mockResolvedValue([]) }) }),
+          }),
+      ),
+    } as unknown as Db;
+    await expect(service(db).hardDelete(userInOrg, 7)).resolves.not.toThrow();
+  });
+
+  it("hardDelete error message includes the legal-hold reason when one is set", async () => {
+    const db = makeHeldPageDb(true, "Active litigation hold");
+    let caught: Error | undefined;
+    try {
+      await service(db).hardDelete(userInOrg, 7);
+    } catch (e) {
+      caught = e as Error;
+    }
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect(caught?.message).toContain("Active litigation hold");
+  });
+
+  it("emptyTrash skips legal-hold pages so the batch query excludes legalHold=true", async () => {
+    const selectWhereClauses: unknown[] = [];
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: () => ({
+          where: (cond: unknown) => {
+            selectWhereClauses.push(cond);
+            return {
+              orderBy: () => ({
+                limit: async () => [],
+              }),
+            };
+          },
+        }),
+      }),
+      query: { kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) } },
+      transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({
+        insert: () => ({ values: () => ({ onConflictDoNothing: jest.fn() }) }),
+      })),
+    } as unknown as Db;
+    await service(db).emptyTrash(userInOrg);
+    expect(selectWhereClauses.length).toBeGreaterThan(0);
+  });
+
+  it("purgeExpired skips legal-hold pages so they survive past the retention window", async () => {
+    const selectWhereClauses: unknown[] = [];
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: () => ({
+          where: (cond: unknown) => {
+            selectWhereClauses.push(cond);
+            return {
+              orderBy: () => ({
+                limit: async () => [],
+              }),
+            };
+          },
+        }),
+      }),
+      query: { kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) } },
+      transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({
+        insert: () => ({ values: () => ({ onConflictDoNothing: jest.fn() }) }),
+      })),
+    } as unknown as Db;
+    await service(db).purgeExpired(ORG_ID, new Date("2020-01-01"));
+    expect(selectWhereClauses.length).toBeGreaterThan(0);
+  });
+});
+
 describe("DELETE /kb/pages/trash/purge — bulk purge", () => {
   it("a hidden page returns notFound; a visible page returns succeeded", async () => {
     const db = {

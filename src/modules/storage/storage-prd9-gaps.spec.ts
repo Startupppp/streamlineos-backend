@@ -146,6 +146,7 @@ function buildController(overrides: {
     avScanner,
     quarantine as unknown as FileQuarantineService,
     transforms,
+    null as never,
   );
 
   return { controller, quarantine, storage, transforms };
@@ -229,6 +230,7 @@ describe("AC4: unscanned file in quarantine is not downloadable (fail closed)", 
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
       new MediaTransformRunner(),
+      null as never,
     );
 
     await expect(
@@ -260,6 +262,7 @@ describe("AC4: unscanned file in quarantine is not downloadable (fail closed)", 
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
       new MediaTransformRunner(),
+      null as never,
     );
     const res = mockRes();
 
@@ -334,6 +337,7 @@ describe("AC7: cross-tenant object key denied", () => {
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
       new MediaTransformRunner(),
+      null as never,
     );
 
     await expect(
@@ -367,6 +371,7 @@ describe("AC7: re-authorized download after permission revocation denied", () =>
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
       new MediaTransformRunner(),
+      null as never,
     );
 
     await expect(
@@ -400,6 +405,7 @@ describe("AC7: re-authorized download after permission revocation denied", () =>
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
       new MediaTransformRunner(),
+      null as never,
     );
 
     await expect(

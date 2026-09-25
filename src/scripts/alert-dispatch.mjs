@@ -79,6 +79,24 @@ const REGISTRY = {
     runbookAnchor: "#kb-purge-backlog",
     severity: "high",
   },
+  "kb-db-health": {
+    owner: "knowledge-team",
+    runbookFile: KB_OBS_RUNBOOK,
+    runbookAnchor: "#kb-db-health",
+    severity: "high",
+  },
+  "kb-acl-anomaly": {
+    owner: "knowledge-team",
+    runbookFile: KB_OBS_RUNBOOK,
+    runbookAnchor: "#kb-acl-anomaly",
+    severity: "high",
+  },
+  "kb-index-freshness": {
+    owner: "knowledge-team",
+    runbookFile: KB_OBS_RUNBOOK,
+    runbookAnchor: "#kb-index-freshness",
+    severity: "high",
+  },
 };
 
 const RUNBOOK_BASE =

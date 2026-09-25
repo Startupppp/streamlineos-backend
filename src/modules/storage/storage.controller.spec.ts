@@ -116,6 +116,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       { scan: jest.fn() } as never,
       quarantine as never,
       new MediaTransformRunner(),
+      null as never,
     );
     return { controller, storage };
   }
@@ -271,6 +272,7 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
       avScanner as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
       new MediaTransformRunner(),
+      null as never,
     );
 
     const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -322,6 +324,7 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
       avScanner as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn(), recordMeasuredObject: jest.fn(), softDelete: jest.fn() } as never,
       new MediaTransformRunner(),
+      null as never,
     );
 
     const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -404,6 +407,7 @@ describe("StorageController — org-namespaced keys prove their own owner", () =
 
   function build(kbAttachment: unknown = { pageId: 7, uploadedById: "u1" }) {
     const storage = buildStorage();
+    const authMock = { assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-A", pageId: 7, action: "view", via: "space" }) };
     const controller = new StorageController(
       buildDb(kbAttachment) as never,
       storage as never,
@@ -412,6 +416,7 @@ describe("StorageController — org-namespaced keys prove their own owner", () =
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
       new MediaTransformRunner(),
+      authMock as never,
     );
     return { controller, storage };
   }

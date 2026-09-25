@@ -11,6 +11,13 @@ export const KB_SEARCH_OUTCOMES = [
 
 export type KbSearchOutcome = (typeof KB_SEARCH_OUTCOMES)[number];
 
+export interface KbSearchFacts {
+  results?: number;
+  sourceKind?: string;
+  embeddingUsed?: boolean;
+  dbRole?: string;
+}
+
 export class KbSearchMetrics {
   private readonly attributes: Record<string, string | number | boolean> = {};
   private readonly span: OpenSpan;
@@ -28,13 +35,16 @@ export class KbSearchMetrics {
     return new KbSearchMetrics(opts);
   }
 
-  finish(outcome: KbSearchOutcome, facts: { results?: number } = {}): void {
+  finish(outcome: KbSearchOutcome, facts: KbSearchFacts = {}): void {
     if (this.finished) return;
     this.finished = true;
 
     this.attributes["kb.search.outcome"] = outcome;
     this.attributes["kb.search.duration_ms"] = Date.now() - this.startedAt;
     this.attributes["kb.search.results"] = facts.results ?? 0;
+    this.attributes["kb.search.source_kind"] = facts.sourceKind ?? "none";
+    this.attributes["kb.search.embedding_used"] = facts.embeddingUsed ?? false;
+    this.attributes["kb.search.db_role"] = facts.dbRole ?? "primary";
 
     this.span.end(outcome === "error" ? "error" : "ok");
   }

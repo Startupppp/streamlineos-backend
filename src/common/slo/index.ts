@@ -3,9 +3,10 @@ import { QUEUE_SLOS } from "./slo-queues";
 import { KB_SLOS } from "./slo-kb-indexing";
 import { KB_ASK_SLOS } from "./slo-kb-ask";
 import { KB_SEARCH_SLOS } from "./slo-kb-search";
+import { KB_FRESHNESS_SLOS } from "./slo-kb-freshness";
 import type { ServiceLevelObjective } from "./slo-types";
 
-export { SLO_OWNERS } from "./slo-types";
+export { SLO_OWNERS, KB_ALERT_RUNBOOK } from "./slo-types";
 export { MODULE_SLOS } from "./slo-modules";
 export { QUEUE_SLOS, QUEUE_SUBJECTS } from "./slo-queues";
 export {
@@ -37,10 +38,21 @@ export {
   KB_SEARCH_MAX_NOT_FOUND_RATIO,
 } from "./slo-kb-search";
 
+export {
+  KB_FRESHNESS_SLOS,
+  KB_INDEX_FRESHNESS_SLO,
+  KB_ACCESS_REVOCATION_SLO,
+  KB_INDEX_FRESHNESS_STALE_THRESHOLD_MINUTES,
+  KB_INDEX_FRESHNESS_MIN_PAGES,
+  KB_ACCESS_REVOCATION_LAG_THRESHOLD_SECONDS,
+  KB_ACCESS_REVOCATION_MIN_PAGES,
+} from "./slo-kb-freshness";
+
 export const SLO_CATALOGUE: readonly ServiceLevelObjective[] = [
   ...MODULE_SLOS,
   ...QUEUE_SLOS,
   ...KB_SLOS,
   ...KB_ASK_SLOS,
   ...KB_SEARCH_SLOS,
+  ...KB_FRESHNESS_SLOS,
 ];

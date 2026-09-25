@@ -6,6 +6,7 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
 
 import { NotFoundException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
+import type { KnowledgeAuthorizationService } from "../kb/core/authorization/knowledge-authorization.service";
 import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
@@ -38,7 +39,14 @@ function mockRes() {
   return { res: res as unknown as import("express").Response, headers };
 }
 
-function build(kbAttachment: unknown = { pageId: 7, uploadedById: "user-1" }, kbPage: unknown = { id: 7 }) {
+function buildAuth(throws = false): KnowledgeAuthorizationService {
+  const assertPageAccess = throws
+    ? jest.fn().mockRejectedValue(new NotFoundException("Page not found"))
+    : jest.fn().mockResolvedValue({ orgId: ORG_A, pageId: 7, action: "view", via: "space" });
+  return { assertPageAccess } as unknown as KnowledgeAuthorizationService;
+}
+
+function build(kbAttachment: unknown = { pageId: 7, uploadedById: "user-1" }, auth?: KnowledgeAuthorizationService) {
   const findFirst = jest.fn().mockResolvedValue(null);
   const selectChain: Record<string, jest.Mock> = {};
   selectChain["from"] = jest.fn(() => selectChain);
@@ -48,8 +56,7 @@ function build(kbAttachment: unknown = { pageId: 7, uploadedById: "user-1" }, kb
     select: jest.fn(() => selectChain),
     query: {
       kbPageAttachments: { findFirst: jest.fn().mockResolvedValue(kbAttachment) },
-      kbPages: { findFirst: jest.fn().mockResolvedValue(kbPage) },
-      organizationMembers: { findMany: jest.fn().mockResolvedValue([]) },
+      kbPages: { findFirst: jest.fn().mockResolvedValue(null) },
       documents: { findFirst },
       onboardingDocuments: { findFirst },
       expenses: { findFirst },
@@ -77,6 +84,7 @@ function build(kbAttachment: unknown = { pageId: 7, uploadedById: "user-1" }, kb
     { scan: jest.fn() } as never,
     quarantine as never,
     new MediaTransformRunner(),
+    (auth ?? buildAuth()) as never,
   );
   return { controller, storage, findFirst, quarantine, body };
 }
@@ -149,7 +157,7 @@ describe("a key naming another organisation is refused before anything is read",
   });
 
   it("refuses a kb-media key whose page the caller cannot see, even inside their own org", async () => {
-    const { controller, storage } = build({ pageId: 7, uploadedById: "someone-else" }, null);
+    const { controller, storage } = build({ pageId: 7, uploadedById: "someone-else" }, buildAuth(true));
     const { res } = mockRes();
 
     await expect(
@@ -159,7 +167,7 @@ describe("a key naming another organisation is refused before anything is read",
   });
 
   it("refuses a kb-media key with no attachment row — an orphaned object is not readable", async () => {
-    const { controller, storage } = build(null, null);
+    const { controller, storage } = build(null);
     const { res } = mockRes();
 
     await expect(
