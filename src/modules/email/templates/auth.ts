@@ -10,7 +10,6 @@ import {
 } from "./components";
 import {
   EMAIL_TEMPLATE_VERSION,
-  resolveLocaleText,
   resolveLocaleValue,
   type LocalizedValues,
 } from "./email-locale";
@@ -56,9 +55,9 @@ const VERIFY_PREHEADER_MAP: LocalizedValues<(brand: string) => string> = {
 export function getVerificationEmailTemplate(verificationUrl: string, locale = "en"): string {
   const brand = getBrandName();
   const sBrand = escapeHtml(brand);
-  const title = resolveLocaleText(locale, VERIFY_TITLE_MAP);
+  const title = resolveLocaleValue(locale, VERIFY_TITLE_MAP);
   const bodyFn = resolveLocaleValue(locale, VERIFY_BODY_MAP);
-  const buttonLabel = resolveLocaleText(locale, VERIFY_BUTTON_MAP);
+  const buttonLabel = resolveLocaleValue(locale, VERIFY_BUTTON_MAP);
   const calloutFn = resolveLocaleValue(locale, VERIFY_CALLOUT_MAP);
   const preheaderFn = resolveLocaleValue(locale, VERIFY_PREHEADER_MAP);
 
@@ -80,7 +79,7 @@ export function getVerificationEmailTemplate(verificationUrl: string, locale = "
 }
 
 export function getVerificationEmailSubject(locale = "en"): string {
-  return resolveLocaleText(locale, VERIFY_TITLE_MAP);
+  return resolveLocaleValue(locale, VERIFY_TITLE_MAP);
 }
 
 export function getMagicLinkEmailTemplate(magicLinkUrl: string): string {

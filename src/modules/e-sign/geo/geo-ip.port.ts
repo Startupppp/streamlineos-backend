@@ -1,4 +1,4 @@
-import type { AddressFamily, AddressScope } from "./address-classifier";
+import type { IpAddressFamily, IpAddressScope } from "../../../common/security/ssrf-guard";
 
 /**
  * What gets written into `sign_audit_events.geolocation_json`.
@@ -12,8 +12,8 @@ import type { AddressFamily, AddressScope } from "./address-classifier";
  */
 export interface SignGeoLocation {
   ip: string | null;
-  family: AddressFamily;
-  scope: AddressScope;
+  family: IpAddressFamily;
+  scope: IpAddressScope;
   country: string | null;
   region: string | null;
   city: string | null;

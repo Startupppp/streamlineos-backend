@@ -106,16 +106,6 @@ export function tableDigestSql(
   );
 }
 
-export function partitionDigestSql(
-  schema: string,
-  partition: string,
-  tenantColumn: string,
-  orgId: string,
-  orderByColumns: readonly string[],
-): string {
-  return tableDigestSql(schema, partition, tenantColumn, orgId, orderByColumns);
-}
-
 export function objectStorageDigestKey(prefix: string, orgId: string): string {
   return prefix.replace("{orgId}", orgId);
 }

@@ -10,12 +10,15 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { bustMembershipAfterIdentityErasure } from "../../common/org/membership-bust";
+import { scheduleMembershipBust } from "../../common/org/membership-bust";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { SessionsService } from "../sessions/sessions.service";
 import { anonymiseSubjectSupportTickets } from "../support/core/support-ticket-erasure";
-import { GdprStoragePurgeService, type PurgeManifest } from "./gdpr-storage-purge.service";
+import {
+  GdprStoragePurgeService,
+  type PurgeManifest,
+} from "./gdpr-storage-purge.service";
 import {
   collectSubjectExportArtifactKeys,
   retireSubjectExportArtifacts,
@@ -73,16 +76,6 @@ const DRY_RUN_TABLES = [
   "kb_ingestion_checkpoints",
 ];
 
-/**
- * Idempotent, tenant-scoped PII erasure for a single subject. Sequences the four
- * erasure boundaries inside one transaction — identity redaction
- * (`gdpr-subject-erasure-identity`), authored content
- * (`gdpr-subject-erasure-authored-content`), support tickets and export artifacts —
- * then revokes access and purges object storage.
- *
- * Purges every object-storage file the subject owns using a manifest captured before
- * the database transaction, so a nulled key column cannot orphan its object.
- */
 @Injectable()
 export class GdprSubjectErasureService {
   constructor(
@@ -109,7 +102,8 @@ export class GdprSubjectErasureService {
         ),
       )
       .limit(1);
-    if (!membership) throw new NotFoundException("Subject not found in this organization");
+    if (!membership)
+      throw new NotFoundException("Subject not found in this organization");
 
     const hold = await this.findActiveLegalHold(subjectUserId, orgId);
     if (hold) {
@@ -124,22 +118,15 @@ export class GdprSubjectErasureService {
       };
     }
 
-    // Captured before anything is anonymised: an erased `*_key` column no longer names
-    // the object it pointed at, and a manifest built afterwards would leave that object
-    // alive in the bucket with its record gone.
-    const storageManifest: PurgeManifest = await this.storagePurge.buildManifest(
-      subjectUserId,
-      [orgId],
-    );
+    const storageManifest: PurgeManifest =
+      await this.storagePurge.buildManifest(subjectUserId, [orgId]);
 
-    // A sink the catalog cannot reach on its own: `gdpr_export_jobs.subject_user_id` is a
-    // bare `text` column with no foreign key to `users`, so `collectSubjectFileKeys...`
-    // classifies the table as org-scoped and `purgeFromManifest` deliberately skips
-    // org-scoped keys — which left the subject's own export archive, a complete dump of
-    // their personal data, alive in the bucket after their erasure.
     if (!storageManifest.blocked)
       storageManifest.keys.push(
-        ...(await collectSubjectExportArtifactKeys(this.db, { orgId, subjectUserId })),
+        ...(await collectSubjectExportArtifactKeys(this.db, {
+          orgId,
+          subjectUserId,
+        })),
       );
 
     if (options.dryRun) {
@@ -148,7 +135,10 @@ export class GdprSubjectErasureService {
         dryRun: true,
         tablesAnonymised: [...DRY_RUN_TABLES],
         globalIdentityAnonymised: false,
-        storage: { ...NO_STORAGE_WORK, manifestSize: storageManifest.keys.length },
+        storage: {
+          ...NO_STORAGE_WORK,
+          manifestSize: storageManifest.keys.length,
+        },
       };
     }
 
@@ -156,13 +146,10 @@ export class GdprSubjectErasureService {
     let globalIdentityAnonymised = false;
     const scope = { orgId, subjectUserId, membershipId: membership.id };
 
-    // Asked out here, on its own identity-scoped connection, because the transaction
-    // below cannot answer it: `organization_members` admits a row only when its org is
-    // the tenant GUC's or its user is `app.user_id`, and a tenant transaction never sets
-    // the second. Inside, this guard read 0 rows for every subject and the shared `users`
-    // row — which has no RLS of its own — was redacted out from under whatever OTHER
-    // organisation the subject still belongs to. See `subjectHasSurvivingMembership`.
-    const hasSurvivingMembership = await subjectHasSurvivingMembership(this.db, scope);
+    const hasSurvivingMembership = await subjectHasSurvivingMembership(
+      this.db,
+      scope,
+    );
 
     let dataRequestId: number | undefined;
 
@@ -170,14 +157,13 @@ export class GdprSubjectErasureService {
       tablesAnonymised.push(...(await anonymiseSubjectProfile(tx, scope)));
       const conversations = await anonymiseSubjectConversations(tx, scope);
       tablesAnonymised.push(...conversations.tables);
-
-      // `chat_attachments` hangs off `chat_messages.sender_membership_id` with no foreign
-      // key to `users`, so the file-key catalog classifies it org-scoped and the purge
-      // skips it. Deleted here with RETURNING, and the keys ride the manifest that is
-      // drained after this transaction commits.
       const attachmentKeys = storageManifest.blocked
         ? []
-        : await purgeSubjectChatAttachments(tx, { orgId }, conversations.chatMessageIds);
+        : await purgeSubjectChatAttachments(
+            tx,
+            { orgId },
+            conversations.chatMessageIds,
+          );
       if (attachmentKeys.length > 0) {
         tablesAnonymised.push("chat_attachments");
         storageManifest.keys.push(...attachmentKeys);
@@ -191,9 +177,14 @@ export class GdprSubjectErasureService {
 
       // Must precede the `users.email` update below: `support_tickets.requester_email`
       // is free text with no FK to the subject, so the live address is the only link.
-      const supportErasure = await anonymiseSubjectSupportTickets(tx, { orgId, subjectUserId });
-      if (supportErasure.ticketsAnonymised > 0) tablesAnonymised.push("support_tickets");
-      if (supportErasure.embeddingsDeleted > 0) tablesAnonymised.push("support_ticket_embeddings");
+      const supportErasure = await anonymiseSubjectSupportTickets(tx, {
+        orgId,
+        subjectUserId,
+      });
+      if (supportErasure.ticketsAnonymised > 0)
+        tablesAnonymised.push("support_tickets");
+      if (supportErasure.embeddingsDeleted > 0)
+        tablesAnonymised.push("support_ticket_embeddings");
 
       globalIdentityAnonymised = await anonymiseGlobalIdentity(tx, scope, {
         hasSurvivingMembership,
@@ -225,7 +216,10 @@ export class GdprSubjectErasureService {
             providerIdempotency: "NONE",
           })
           .onConflictDoNothing({
-            target: [externalEffectLedger.organizationId, externalEffectLedger.effectKey],
+            target: [
+              externalEffectLedger.organizationId,
+              externalEffectLedger.effectKey,
+            ],
           });
       }
 
@@ -248,7 +242,7 @@ export class GdprSubjectErasureService {
       await bumpPermissionsVersion(tx, orgId);
     });
 
-    await bustMembershipAfterIdentityErasure(this.cache, subjectUserId);
+    await scheduleMembershipBust(this.cache, subjectUserId);
     await this.sessionsService.revokeAllForUser(subjectUserId);
 
     let purgeDeleted = 0;
@@ -280,7 +274,8 @@ export class GdprSubjectErasureService {
 
           if (purgeDeleted > 0) tablesAnonymised.push("object_storage");
 
-          const finalStatus: "completed" | "partial" = purgeFailed > 0 ? "partial" : "completed";
+          const finalStatus: "completed" | "partial" =
+            purgeFailed > 0 ? "partial" : "completed";
           await this.db
             .update(hrDataRequests)
             .set({ status: finalStatus, completedAt: new Date() })
@@ -292,7 +287,11 @@ export class GdprSubjectErasureService {
             orgId,
             targetId: subjectUserId,
             targetType: "user",
-            metadata: { finalStatus, storageDeleted: purgeDeleted, storageFailed: purgeFailed },
+            metadata: {
+              finalStatus,
+              storageDeleted: purgeDeleted,
+              storageFailed: purgeFailed,
+            },
             isPlatformEvent: false,
           });
         },

@@ -93,10 +93,13 @@ function makeDb(opts: { updatedPage: typeof BASE_PAGE }) {
 
   const findFirstVersionMock = jest.fn().mockResolvedValue(null);
 
+  const executeMock = jest.fn().mockResolvedValue([]);
+
   const tx = {
     update: updateMock,
     insert: insertMock,
     delete: deleteMock,
+    execute: executeMock,
     query: {
       kbPageVersions: { findFirst: findFirstVersionMock },
     },
@@ -110,7 +113,7 @@ function makeDb(opts: { updatedPage: typeof BASE_PAGE }) {
     transaction: jest.fn((cb: (tx: unknown) => Promise<unknown>) => cb(tx)),
   } as unknown as Db;
 
-  return { db, insertCaptures, deleteMock };
+  return { db, insertCaptures, deleteMock, executeMock };
 }
 
 function makeAuth() {
@@ -158,6 +161,31 @@ describe("KbPageVersionsService.restoreVersion — append-only semantics", () =>
 
     const versionInserts = insertCaptures.filter((c) => c.table === kbPageVersions);
     expect(versionInserts.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("KbPageVersionsService.restoreVersion — audit entry", () => {
+  it("(a) calls tx.execute once to write the restore audit row inside the transaction", async () => {
+    const updatedPage = { ...BASE_PAGE, contentRevision: 4, content: VERSION_ROW.content };
+    const { db, executeMock } = makeDb({ updatedPage });
+    const svc = new KbPageVersionsService(db, makeAuth() as never);
+
+    await svc.restoreVersion(makeUser(), 1, 2, false);
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("(b) the audit execute call includes page_id, source_version_number and actor_user_id", async () => {
+    const updatedPage = { ...BASE_PAGE, contentRevision: 4, content: VERSION_ROW.content };
+    const { db, executeMock } = makeDb({ updatedPage });
+    const svc = new KbPageVersionsService(db, makeAuth() as never);
+
+    await svc.restoreVersion(makeUser("org-a"), 1, 2, false);
+
+    const call = executeMock.mock.calls[0]?.[0];
+    const rendered = JSON.stringify(call);
+    expect(rendered).toContain("kb_version_restore_audit");
+    expect(rendered).toContain("u1");
   });
 });
 

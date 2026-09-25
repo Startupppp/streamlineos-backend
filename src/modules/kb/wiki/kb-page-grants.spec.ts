@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -194,6 +195,33 @@ describe("KbPageGrantsService.list", () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(NotFoundException);
     expect(err).not.toBeInstanceOf(BadRequestException);
+  });
+
+  it("route denial from assertPageAccess surfaces as a ForbiddenException — 403, not 404", async () => {
+    const auth = makeAuth({
+      assertPageAccess: jest.fn().mockRejectedValue(new ForbiddenException("No org membership")),
+    });
+    const { db } = makeSimpleSelectDb([]);
+    const err = await makeService(db, auth)
+      .list(makeUser(), PAGE_ID, { limit: 10 })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err).not.toBeInstanceOf(NotFoundException);
+  });
+
+  it("a NotFoundException and a ForbiddenException from assertPageAccess are distinguishable so hidden pages are 404 and denied actors are 403", async () => {
+    const { db: dbA } = makeSimpleSelectDb([]);
+    const authA = makeAuth({ assertPageAccess: jest.fn().mockRejectedValue(new NotFoundException("Page not found")) });
+    const errA = await makeService(dbA, authA).list(makeUser(), PAGE_ID, { limit: 10 }).catch((e: unknown) => e);
+
+    const { db: dbB } = makeSimpleSelectDb([]);
+    const authB = makeAuth({ assertPageAccess: jest.fn().mockRejectedValue(new ForbiddenException("No membership")) });
+    const errB = await makeService(dbB, authB).list(makeUser(), PAGE_ID, { limit: 10 }).catch((e: unknown) => e);
+
+    expect(errA).toBeInstanceOf(NotFoundException);
+    expect(errB).toBeInstanceOf(ForbiddenException);
+    expect(errA).not.toBeInstanceOf(ForbiddenException);
+    expect(errB).not.toBeInstanceOf(NotFoundException);
   });
 
   it("the list query includes a revoked_at IS NULL predicate so revoked grants are excluded", async () => {

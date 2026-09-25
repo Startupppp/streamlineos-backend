@@ -4,6 +4,8 @@ import { OutboxConsumerRegistry, type OutboxEventRow } from "../../common/outbox
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
+import { QuotesLifecycleService } from "../quotes/quotes-lifecycle.service";
+import { ProjectsProvisionService } from "../build/core/projects-provision.service";
 
 const ORG_ID = "org-sign-1";
 const EVENT_ID = "evt-sign-aaa";
@@ -46,17 +48,28 @@ interface DbMock {
   query: {
     signEnvelopes: { findFirst: jest.Mock };
     organizationMembers: { findFirst: jest.Mock };
+    quotes: { findFirst: jest.Mock };
   };
   execute: jest.Mock;
 }
 
 function buildDbMock(options: {
   claimed?: boolean;
-  envelope?: { senderMembershipId: number | null; orgId: string; title: string } | null;
+  envelope?: {
+    senderMembershipId: number | null;
+    orgId: string;
+    title: string;
+    sourceModule?: string | null;
+    sourceEntityType?: string | null;
+    sourceEntityId?: string | null;
+    finalPdfFileKey?: string | null;
+  } | null;
+  quote?: { dealId: number | null; subject: string } | null;
 }): DbMock {
   const {
     claimed = true,
     envelope = { senderMembershipId: SENDER_MEMBERSHIP_ID, orgId: ORG_ID, title: TITLE },
+    quote = null,
   } = options;
 
   const claimReturn = claimed ? [{ id: 1 }] : [];
@@ -77,6 +90,7 @@ function buildDbMock(options: {
     query: {
       signEnvelopes: { findFirst: jest.fn().mockResolvedValue(envelope) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue({ user: { id: SENDER_USER_ID } }) },
+      quotes: { findFirst: jest.fn().mockResolvedValue(quote) },
     },
     execute: dbExecute,
   };
@@ -84,7 +98,16 @@ function buildDbMock(options: {
 
 async function buildService(options: {
   claimed?: boolean;
-  envelope?: { senderMembershipId: number | null; orgId: string; title: string } | null;
+  envelope?: {
+    senderMembershipId: number | null;
+    orgId: string;
+    title: string;
+    sourceModule?: string | null;
+    sourceEntityType?: string | null;
+    sourceEntityId?: string | null;
+    finalPdfFileKey?: string | null;
+  } | null;
+  quote?: { dealId: number | null; subject: string } | null;
   emitImpl?: () => Promise<void>;
   finalizeImpl?: () => Promise<unknown>;
 }) {
@@ -95,6 +118,8 @@ async function buildService(options: {
   } as unknown as NotificationDispatchService;
   const finalize = jest.fn().mockImplementation(finalizeImpl);
   const finalization = { finalize } as unknown as SignFinalizationService;
+  const quotesLifecycle = { markSigned: jest.fn().mockResolvedValue(undefined) } as unknown as QuotesLifecycleService;
+  const projectsProvision = { createFromDeal: jest.fn().mockResolvedValue(undefined) } as unknown as ProjectsProvisionService;
   const registry = new OutboxConsumerRegistry();
 
   const module = await Test.createTestingModule({
@@ -103,12 +128,14 @@ async function buildService(options: {
       { provide: DRIZZLE, useValue: db },
       { provide: NotificationDispatchService, useValue: dispatch },
       { provide: SignFinalizationService, useValue: finalization },
+      { provide: QuotesLifecycleService, useValue: quotesLifecycle },
+      { provide: ProjectsProvisionService, useValue: projectsProvision },
       { provide: OutboxConsumerRegistry, useValue: registry },
     ],
   }).compile();
 
   const svc = module.get(SignEnvelopeCompletedConsumerService);
-  return { svc, db, dispatch, finalize, registry };
+  return { svc, db, dispatch, finalize, quotesLifecycle, projectsProvision, registry };
 }
 
 describe("SignEnvelopeCompletedConsumerService", () => {
@@ -223,6 +250,48 @@ describe("SignEnvelopeCompletedConsumerService", () => {
 
       const emitCall = (dispatch.emit as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown> | undefined;
       expect(emitCall?.orgId).toBe(isolatedOrg);
+    });
+  });
+
+  describe("CRM-to-Build handoff", () => {
+    it("marks the tenant's source quote signed and provisions its deal project", async () => {
+      const { svc, quotesLifecycle, projectsProvision } = await buildService({
+        envelope: {
+          senderMembershipId: SENDER_MEMBERSHIP_ID,
+          orgId: ORG_ID,
+          title: TITLE,
+          sourceModule: "crm",
+          sourceEntityType: "quote",
+          sourceEntityId: "91",
+          finalPdfFileKey: "signos/org-sign-1/77/final-signed.pdf",
+        },
+        quote: { dealId: 42, subject: "Website build" },
+      });
+
+      await svc.handle(makeEvent());
+
+      expect(quotesLifecycle.markSigned).toHaveBeenCalledWith(
+        ORG_ID,
+        SENDER_USER_ID,
+        91,
+        "signos/org-sign-1/77/final-signed.pdf",
+      );
+      expect(projectsProvision.createFromDeal).toHaveBeenCalledWith(ORG_ID, SENDER_USER_ID, {
+        dealId: 42,
+        name: "Website build",
+      });
+    });
+
+    it("does not hand off an envelope whose source belongs to another tenant", async () => {
+      const { svc, quotesLifecycle, projectsProvision } = await buildService({
+        envelope: null,
+        quote: { dealId: 42, subject: "Website build" },
+      });
+
+      await svc.handle(makeEvent({ organizationId: "other-org", payload: { envelopeId: ENVELOPE_ID, orgId: "other-org" } }));
+
+      expect(quotesLifecycle.markSigned).not.toHaveBeenCalled();
+      expect(projectsProvision.createFromDeal).not.toHaveBeenCalled();
     });
   });
 

@@ -58,18 +58,6 @@ export function assertCatchWeightLine(mode: MeasureMode, line: CatchWeightLine):
 }
 
 /**
- * What a catch-weight line is worth: price per unit of **weight**, times the
- * actual weight.
- *
- * The whole point of catch-weight is that this is not `price × pieces`. Two bags
- * of chicken at 250 a kilo are 250 × 10.35, not 250 × 2, and a system that
- * cannot say that cannot invoice a butcher.
- */
-export function catchWeightAmount(unitPricePerWeight: string, actualWeight: string): string {
-  return mulDec(unitPricePerWeight, actualWeight);
-}
-
-/**
  * The average weight of a piece on this line, for a picker's sanity check.
  *
  * Reported, never enforced: bags genuinely differ, and a tolerance somebody

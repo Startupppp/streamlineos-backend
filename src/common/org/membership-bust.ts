@@ -50,20 +50,6 @@ export function revokeMembershipAccessCaches(
   );
 }
 
-export function bustMembershipsAfterOrgTeardown(
-  cache: CacheService,
-  userIds: readonly string[],
-): Promise<void> {
-  return scheduleMembershipBustMany(cache, userIds);
-}
-
-export function bustMembershipAfterIdentityErasure(
-  cache: CacheService,
-  userId: string,
-): Promise<void> {
-  return scheduleMembershipBust(cache, userId);
-}
-
 // Module ownership moves resolved permissions without touching the membership row.
 export async function bustMembershipAfterOwnershipChange(
   cache: CacheService,

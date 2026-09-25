@@ -3,9 +3,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import {
   assertCatchWeightLine,
   averagePieceWeight,
-  catchWeightAmount,
 } from "../catch-weight";
-import { availableQty, subDec } from "../../stock-engine/decimal";
+import { availableQty, mulDec, subDec } from "../../stock-engine/decimal";
 import { availableQtySql } from "../../stock-engine/available-sql";
 import { levelKey } from "../../stock-engine/stock-level-locks";
 import { EXPECTED_COMMITTED, EXPECTED_OUTGOING } from "../../stock-engine/projection-definitions";
@@ -41,7 +40,7 @@ describe("NEO-10 - catch-weight lines", () => {
   it("prices from the actual weight, not the piece count", () => {
     // The whole point. Two bags at 250 a kilo are 250 x 10.35, not 250 x 2, and a
     // system that cannot say that cannot invoice a butcher.
-    expect(catchWeightAmount("250.0000", "10.3500")).toBe("2587.5000");
+    expect(mulDec("250.0000", "10.3500")).toBe("2587.5000");
   });
 
   it("reports an average piece weight without enforcing one", () => {

@@ -7,7 +7,7 @@ import { KbAccessService } from "../core/kb-access.service";
 import { AccessService } from "../../access/access.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { articleOwnerScope } from "../retrieval/kb-article-owner-scope";
-import { buildArticleRestrictionPredicate } from "../retrieval/kb-article-restriction-predicate";
+import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -77,7 +77,7 @@ export class KbDocumentQueryService {
         ne(kbPages.status, "archived"),
         sql`${kbPages.title} ILIKE ${term}`,
       ];
-      if (!isAdmin) domain.push(buildArticleRestrictionPredicate(user.orgId, principal));
+      if (!isAdmin) domain.push(buildArticleRestrictionBranch(user.orgId, principal));
 
       const where = articleRead.compose(
         { tenant: kbPages.orgId, scope: articleOwnerScope(membershipId), and: domain },

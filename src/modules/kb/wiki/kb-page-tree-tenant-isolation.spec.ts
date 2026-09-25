@@ -62,7 +62,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     const { db, wheres } = makeDb();
     const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
 
-    await svc.getTree(makeUser(ATTACKER));
+    await svc.getTreeLevel(makeUser(ATTACKER), { limit: 50 });
 
     expect(wheres.length).toBeGreaterThan(0);
     const vals = wheres.flatMap(w => sqlValues(w));
@@ -70,13 +70,72 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     expect(vals).not.toContain(OWNER);
   });
 
-  it("returns page tree for the owning org (same-tenant control)", async () => {
+  it("scopes children query to the requesting org — a sibling org page never appears", async () => {
+    const rows = [
+      { id: 10, parentPageId: null, spaceId: null, projectId: null, title: "A", icon: null, coverImage: null, sortOrder: 100, visibility: "org", createdById: null, status: "published", updatedAt: new Date() },
+    ];
+    let callCount = 0;
+    const wheres: unknown[] = [];
+    const db = {
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((w: unknown) => {
+            wheres.push(w);
+            callCount++;
+            const result = callCount === 1
+              ? Object.assign(Promise.resolve(rows), {
+                  orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve(rows), {
+                    limit: jest.fn().mockResolvedValue(rows),
+                  })),
+                })
+              : Promise.resolve([]);
+            return result;
+          }),
+        }),
+      })),
+    } as unknown as Db;
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+
+    await svc.getTreeLevel(makeUser(ATTACKER), { limit: 50 });
+
+    const allVals = wheres.flatMap(w => sqlValues(w));
+    expect(allVals).toContain(ATTACKER);
+    expect(allVals).not.toContain(OWNER);
+  });
+
+  it("returns cursor-page structure for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
     const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
 
-    const result = await svc.getTree(makeUser(OWNER));
+    const result = await svc.getTreeLevel(makeUser(OWNER), { limit: 50 });
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveProperty("data");
+    expect(result).toHaveProperty("pagination");
+    expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  it("returns only root-level nodes when no parentId is provided", async () => {
+    const wheres: unknown[] = [];
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((w: unknown) => {
+            wheres.push(w);
+            return Object.assign(Promise.resolve([]), {
+              orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), {
+                limit: jest.fn().mockResolvedValue([]),
+              })),
+            });
+          }),
+        }),
+      }),
+    } as unknown as Db;
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+
+    await svc.getTreeLevel(makeUser("org-root"), { limit: 50 });
+
+    const allVals = wheres.flatMap(w => sqlValues(w));
+    expect(allVals).toContain(" is null");
   });
 
   it("softDelete authorizes with action 'manage', not 'view' — a viewer must not trash a page", async () => {

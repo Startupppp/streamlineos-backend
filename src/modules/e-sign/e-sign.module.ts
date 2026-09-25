@@ -50,6 +50,8 @@ import { SignAdminController } from "./sign-admin.controller";
 import { SignReportsService } from "./sign-reports.service";
 import { SignReportsController } from "./sign-reports.controller";
 import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
+import { QuotesModule } from "../quotes/quotes.module";
+import { ProjectsModule } from "../build/core/projects.module";
 
 @Module({
   imports: [
@@ -63,6 +65,8 @@ import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-
     AiModule,
     /** For OutboxConsumerRegistry: bulk send is queued rather than run inline. */
     OutboxModule,
+    QuotesModule,
+    ProjectsModule,
   ],
   controllers: [
     SignDocumentsController,

@@ -1,6 +1,8 @@
+import * as fc from "fast-check";
 import { eq } from "drizzle-orm";
 import { kbPages } from "../../../../db/schema";
 import {
+  buildArticleRestrictionBranch,
   buildVisiblePageScope,
   permissionFingerprintOf,
 } from "./knowledge-page-scope";
@@ -221,6 +223,174 @@ describe("permissionFingerprintOf", () => {
   it("separates two tenants that otherwise hold identical standing", () => {
     expect(permissionFingerprintOf(makeStanding({ orgId: "org-1" }), "view")).not.toEqual(
       permissionFingerprintOf(makeStanding({ orgId: "org-2" }), "view"),
+    );
+  });
+});
+
+const arbitraryStanding = (): fc.Arbitrary<KbActorStanding> =>
+  fc.record<KbActorStanding>({
+    orgId: fc.uuid(),
+    userId: fc.uuid(),
+    membershipId: fc.option(fc.integer({ min: 1, max: 9_999 }), { nil: null }),
+    roleSlugs: fc.array(fc.string({ minLength: 2, maxLength: 16 }), { maxLength: 3 }),
+    isOrgOwner: fc.boolean(),
+    isKbAdmin: fc.boolean(),
+    accessibleSpaceIds: fc.uniqueArray(fc.integer({ min: 1, max: 999 }), { maxLength: 4 }),
+    accessibleProjectIds: fc.uniqueArray(fc.integer({ min: 1, max: 999 }), { maxLength: 4 }),
+    permissionsVersion: fc.integer({ min: 1, max: 1_000 }),
+  });
+
+const arbitraryAction = (): fc.Arbitrary<KbPageAction> =>
+  fc.constantFrom<KbPageAction>("view", "comment", "edit", "manage");
+
+describe("buildVisiblePageScope — property-based invariants", () => {
+  it("an admin actor always collapses to a simple tenant equality regardless of every other field", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding().map((s) => ({ ...s, isOrgOwner: true as const })),
+        arbitraryAction(),
+        (standing, action) => {
+          const scope = buildVisiblePageScope(standing, action);
+          expect(scope.predicate).toStrictEqual(eq(kbPages.orgId, standing.orgId));
+          expect(scope.grantBranch).toBeNull();
+        },
+      ),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("an actor with no membership and no roles receives no grant branch, denying by default", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding().map((s) => ({
+          ...s,
+          membershipId: null,
+          roleSlugs: [] as string[],
+          isOrgOwner: false as const,
+          isKbAdmin: false as const,
+        })),
+        (standing) => {
+          const scope = buildVisiblePageScope(standing, "view");
+          expect(scope.grantBranch).toBeNull();
+          expect(text(scope.predicate)).not.toContain("kb_page_grants");
+        },
+      ),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("whenever a grant branch exists it always requires revoked_at IS NULL so a revoked grant never grants", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding().filter(
+          (s) => !s.isOrgOwner && !s.isKbAdmin && (s.membershipId !== null || s.roleSlugs.length > 0),
+        ),
+        (standing) => {
+          const scope = buildVisiblePageScope(standing, "view");
+          if (scope.grantBranch === null) return;
+          const rendered = text(scope.grantBranch);
+          expect(rendered.toLowerCase()).toContain("revoked_at");
+          expect(rendered.toLowerCase()).toContain("is null");
+        },
+      ),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("every predicate contains the actor's own org_id so cross-tenant records cannot match", () => {
+    fc.assert(
+      fc.property(arbitraryStanding(), arbitraryAction(), (standing, action) => {
+        const scope = buildVisiblePageScope(standing, action);
+        expect(text(scope.predicate)).toContain(standing.orgId);
+      }),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("the fingerprint is stable — identical standing produces identical output on two calls", () => {
+    fc.assert(
+      fc.property(arbitraryStanding(), arbitraryAction(), (standing, action) => {
+        const a = permissionFingerprintOf(standing, action);
+        const b = permissionFingerprintOf({ ...standing }, action);
+        expect(a).toBe(b);
+      }),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("any two actors in different orgs with otherwise identical fields get different fingerprints", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding(),
+        arbitraryAction(),
+        fc.uuid().filter((id) => id !== "org-1"),
+        (standing, action, altOrgId) => {
+          const a = permissionFingerprintOf(standing, action);
+          const b = permissionFingerprintOf({ ...standing, orgId: altOrgId }, action);
+          expect(a).not.toBe(b);
+        },
+      ),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("space membership in the standing produces a space_id term in the indexed branch only for view and comment", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding()
+          .filter((s) => !s.isOrgOwner && !s.isKbAdmin && s.accessibleSpaceIds.length > 0)
+          .map((s) => ({
+            ...s,
+            isOrgOwner: false as const,
+            isKbAdmin: false as const,
+          })),
+        (standing) => {
+          const viewBranch = text(buildVisiblePageScope(standing, "view").indexedBranch);
+          const editBranch = text(buildVisiblePageScope(standing, "edit").indexedBranch);
+          expect(viewBranch).toContain("space_id");
+          expect(editBranch).not.toContain("space_id");
+        },
+      ),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+});
+
+describe("buildArticleRestrictionBranch — property-based invariants", () => {
+  const arbitraryPrincipal = () =>
+    fc.record({
+      membershipId: fc.option(fc.integer({ min: 1, max: 9_999 }), { nil: null }),
+      roleSlugs: fc.array(fc.string({ minLength: 2, maxLength: 16 }), { maxLength: 4 }),
+    });
+
+  it("always produces a NOT EXISTS / OR EXISTS pair structure", () => {
+    fc.assert(
+      fc.property(fc.uuid(), arbitraryPrincipal(), (orgId, principal) => {
+        const rendered = text(buildArticleRestrictionBranch(orgId, principal));
+        expect(rendered.toLowerCase()).toContain("not exists");
+        expect(rendered.toLowerCase()).toContain("exists");
+      }),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("binds the caller's own org_id in every subquery so cross-tenant rows cannot satisfy it", () => {
+    fc.assert(
+      fc.property(fc.uuid(), arbitraryPrincipal(), (orgId, principal) => {
+        const rendered = text(buildArticleRestrictionBranch(orgId, principal));
+        expect(rendered).toContain(orgId);
+      }),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("when the principal has no roles the EXISTS arm uses false so it cannot be satisfied by a role match", () => {
+    fc.assert(
+      fc.property(fc.uuid(), arbitraryPrincipal().map((p) => ({ ...p, roleSlugs: [] as string[] })), (orgId, principal) => {
+        const rendered = text(buildArticleRestrictionBranch(orgId, principal));
+        expect(rendered.toLowerCase()).toContain("false");
+      }),
+      { numRuns: 200, seed: 42 },
     );
   });
 });

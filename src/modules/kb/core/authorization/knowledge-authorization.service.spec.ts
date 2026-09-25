@@ -174,6 +174,66 @@ describe("KnowledgeAuthorizationService.assertPageAccess", () => {
   });
 });
 
+describe("KnowledgeAuthorizationService — fail-closed cache behavior", () => {
+  it("propagates cache errors so access is never silently granted when the cache is unavailable", async () => {
+    const cacheError = new Error("Redis connection refused");
+    mockedSpaceIds.mockRejectedValue(cacheError);
+    const findPage = jest.fn();
+    const db = { query: { kbPages: { findFirst: findPage }, kbSpaces: { findFirst: jest.fn() } } };
+    const access = {
+      holds: jest.fn().mockResolvedValue(false),
+      getPermissionsVersion: jest.fn().mockResolvedValue(3),
+    } as unknown as AccessService;
+    const cache = {
+      cachedVersioned: jest
+        .fn()
+        .mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()),
+      invalidateNamespace: jest.fn(),
+    } as unknown as CacheService;
+
+    const service = new KnowledgeAuthorizationService(db as never, cache, access);
+
+    await expect(service.resolvePageAccess(makeUser(), 5, "view")).rejects.toThrow(cacheError);
+    expect(findPage).not.toHaveBeenCalled();
+  });
+
+  it("never returns an allowed decision when space-scope resolution throws", async () => {
+    const cacheError = new Error("cache unavailable");
+    mockedSpaceIds.mockRejectedValue(cacheError);
+    const db = {
+      query: {
+        kbPages: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 5,
+            ownerMembershipId: 7,
+            createdById: "u1",
+            createdByMembershipId: 7,
+            visibility: "org",
+            spaceId: null,
+            projectId: null,
+          }),
+        },
+        kbSpaces: { findFirst: jest.fn() },
+      },
+    };
+    const access = {
+      holds: jest.fn().mockResolvedValue(false),
+      getPermissionsVersion: jest.fn().mockResolvedValue(3),
+    } as unknown as AccessService;
+    const cache = {
+      cachedVersioned: jest
+        .fn()
+        .mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()),
+      invalidateNamespace: jest.fn(),
+    } as unknown as CacheService;
+
+    const service = new KnowledgeAuthorizationService(db as never, cache, access);
+    const result = await service.resolvePageAccess(makeUser(), 5, "view").catch((e: unknown) => e);
+
+    expect(result).not.toMatchObject({ outcome: "allowed" });
+  });
+});
+
 describe("KnowledgeAuthorizationService.resolveSpaceAccess", () => {
   it("reports a space outside the actor's reach as not found", async () => {
     const { service, findSpace } = makeHarness({ spaceIds: [1] });

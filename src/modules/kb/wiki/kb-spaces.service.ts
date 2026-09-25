@@ -16,7 +16,7 @@ import {
   ne,
   sql,
 } from "drizzle-orm";
-import { kbSpaces, kbSpaceMembers, kbPages, kbPageLinks } from "../../../db/schema";
+import { kbSpaces, kbSpaceMembers, kbPages, kbPageLinks, kbSources } from "../../../db/schema";
 import {
   supportArticlePredicate,
   wikiContentTypeOnly,
@@ -397,7 +397,7 @@ export class KbSpacesService {
     });
     if (!space) throw new NotFoundException("Space not found");
 
-    const [pageResult, publicResult, recordResult] = await Promise.all([
+    const [pageResult, publicResult, recordResult, indexedResult] = await Promise.all([
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(kbPages)
@@ -436,17 +436,29 @@ export class KbSpacesService {
             isNotNull(kbPageLinks.targetId),
           ),
         ),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(kbSources)
+        .where(
+          and(
+            eq(kbSources.orgId, orgId),
+            eq(kbSources.spaceId, spaceId),
+            gt(kbSources.chunkCount, 0),
+            isNull(kbSources.deletedAt),
+          ),
+        ),
     ]);
 
     const pageCount = pageResult[0]?.count ?? 0;
     const publicLinkCount = publicResult[0]?.count ?? 0;
     const recordLinkCount = recordResult[0]?.count ?? 0;
+    const askIndexed = (indexedResult[0]?.count ?? 0) > 0;
 
     return {
       pageCount,
       publicLinkCount,
       recordLinkCount,
-      askIndexed: pageCount > 0,
+      askIndexed,
     };
   }
 

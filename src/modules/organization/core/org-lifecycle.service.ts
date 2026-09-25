@@ -20,7 +20,7 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipsAfterOrgTeardown } from "../../../common/org/membership-bust";
+import { scheduleMembershipBustMany } from "../../../common/org/membership-bust";
 import { OrgMembershipService } from "./org-membership.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -71,7 +71,7 @@ export class OrgLifecycleService {
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
-    await bustMembershipsAfterOrgTeardown(this.cache, memberUserIds);
+    await scheduleMembershipBustMany(this.cache, memberUserIds);
     await this.cache.invalidateMany(memberUserIds.map(CACHE_KEYS.userSession));
   }
 

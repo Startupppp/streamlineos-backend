@@ -1,14 +1,14 @@
 /**
  * Validates the locale resolver utility and its integration with representative templates.
  *
- * Bite proof: neuter resolveLocaleText to always return "" → the email body is empty
+ * Bite proof: neuter resolveLocaleValue to always return "" → the email body is empty
  * even for known locales → restore → correct strings appear.
  */
 jest.mock("./email-locale", () => {
   const actual = jest.requireActual<typeof import("./email-locale")>("./email-locale");
   return {
     ...actual,
-    resolveLocaleText: jest.fn(actual.resolveLocaleText),
+    resolveLocaleValue: jest.fn(actual.resolveLocaleValue),
   };
 });
 
@@ -37,12 +37,12 @@ jest.mock("../branding", () => ({
 
 jest.mock("../app-url", () => ({ appUrl: () => "https://app.streamlineos.com" }));
 
-import { resolveLocaleText, type LocalizedValues } from "./email-locale";
+import { resolveLocaleValue, type LocalizedValues } from "./email-locale";
 import { getVerificationEmailTemplate } from "./auth";
 import { getPayslipEmailTemplate } from "./payroll";
 
-const { resolveLocaleText: mockResolveLocaleText } = jest.requireMock("./email-locale") as {
-  resolveLocaleText: jest.Mock;
+const { resolveLocaleValue: mockResolveLocaleValue } = jest.requireMock("./email-locale") as {
+  resolveLocaleValue: jest.Mock;
 };
 
 const MAP: LocalizedValues<string> = {
@@ -51,43 +51,43 @@ const MAP: LocalizedValues<string> = {
   de: "German text",
 };
 
-describe("resolveLocaleText — fallback chain", () => {
+describe("resolveLocaleValue — fallback chain", () => {
   beforeEach(() => jest.clearAllMocks());
 
   it("returns the exact locale match", () => {
-    expect(resolveLocaleText("fr", MAP)).toBe("French text");
+    expect(resolveLocaleValue("fr", MAP)).toBe("French text");
   });
 
   it("falls back to base language (en-GB → en)", () => {
-    expect(resolveLocaleText("en-GB", MAP)).toBe("English text");
+    expect(resolveLocaleValue("en-GB", MAP)).toBe("English text");
   });
 
   it("falls back to en for unknown locale", () => {
-    expect(resolveLocaleText("ja", MAP)).toBe("English text");
+    expect(resolveLocaleValue("ja", MAP)).toBe("English text");
   });
 
   it("falls back to en for unknown locale with unknown base language", () => {
-    expect(resolveLocaleText("ja-JP", MAP)).toBe("English text");
+    expect(resolveLocaleValue("ja-JP", MAP)).toBe("English text");
   });
 
   it("never throws or returns empty for any locale when en is present", () => {
     const locales = ["en", "en-US", "en-GB", "fr", "fr-CA", "es", "zh", "zh-TW", "ar", "ru", "xyz"];
     for (const locale of locales) {
-      const result = resolveLocaleText(locale, MAP);
+      const result = resolveLocaleValue(locale, MAP);
       expect(result).not.toBe("");
       expect(typeof result).toBe("string");
     }
   });
 
-  it("bites: neutering resolveLocaleText to return empty causes template body to be empty", () => {
-    mockResolveLocaleText.mockReturnValue("");
+  it("bites: neutering resolveLocaleValue to return empty causes template body to be empty", () => {
+    mockResolveLocaleValue.mockReturnValue("");
 
-    const result = resolveLocaleText("en", MAP);
+    const result = resolveLocaleValue("en", MAP);
     expect(result).toBe("");
 
     const actual = jest.requireActual<typeof import("./email-locale")>("./email-locale");
-    mockResolveLocaleText.mockImplementation(actual.resolveLocaleText);
-    const restored = resolveLocaleText("en", MAP);
+    mockResolveLocaleValue.mockImplementation(actual.resolveLocaleValue);
+    const restored = resolveLocaleValue("en", MAP);
     expect(restored).toBe("English text");
   });
 });
@@ -96,7 +96,7 @@ describe("getVerificationEmailTemplate — locale support", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     const actual = jest.requireActual<typeof import("./email-locale")>("./email-locale");
-    mockResolveLocaleText.mockImplementation(actual.resolveLocaleText);
+    mockResolveLocaleValue.mockImplementation(actual.resolveLocaleValue);
   });
 
   it("returns English content by default", () => {
@@ -126,7 +126,7 @@ describe("getPayslipEmailTemplate — locale support", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     const actual = jest.requireActual<typeof import("./email-locale")>("./email-locale");
-    mockResolveLocaleText.mockImplementation(actual.resolveLocaleText);
+    mockResolveLocaleValue.mockImplementation(actual.resolveLocaleValue);
   });
 
   const params = { employeeName: "Jane Doe", month: "January 2026", orgName: "Acme Ltd" };

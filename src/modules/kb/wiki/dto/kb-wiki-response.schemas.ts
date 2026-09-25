@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+} from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
-
 
 const aiUsageMetaSchema = z.object({
   model: z.string(),
@@ -78,7 +80,9 @@ export const kbPageReviewWithContextSchema = kbPageReviewSchema.extend({
   reviewerName: z.string().nullable(),
 });
 
-export const kbPageReviewListPageSchema = cursorPageSchema(kbPageReviewWithContextSchema);
+export const kbPageReviewListPageSchema = cursorPageSchema(
+  kbPageReviewWithContextSchema,
+);
 export const kbPageReviewListSchema = z.array(kbPageReviewWithContextSchema);
 
 export const bulkDecideResultItemSchema = z.object({
@@ -103,7 +107,8 @@ export const kbPageTemplateSchema = z.object({
 
 export const kbPageTemplateListSchema = z.array(kbPageTemplateSchema);
 
-export const kbPageTemplateListPageSchema = cursorPageSchema(kbPageTemplateSchema);
+export const kbPageTemplateListPageSchema =
+  cursorPageSchema(kbPageTemplateSchema);
 
 const kbPageContentSchema = z.record(z.string(), z.unknown()).nullable();
 
@@ -152,7 +157,10 @@ export const kbPageWithAncestorsSchema = kbPageSchema.extend({
   canEdit: z.boolean(),
 });
 
-export const kbPageListItemSchema = kbPageSchema.omit({ content: true, contentText: true });
+export const kbPageListItemSchema = kbPageSchema.omit({
+  content: true,
+  contentText: true,
+});
 
 export const kbPageListSchema = z.array(kbPageListItemSchema);
 
@@ -187,14 +195,24 @@ export const kbPageTreeItemSchema = z.object({
 
 export const kbPageTreeSchema = z.array(kbPageTreeItemSchema);
 
-export const kbPageSoftDeleteSchema = z.object({ deletedCount: z.number().int() });
+export const kbPageTreeLevelSchema = cursorPageSchema(kbPageTreeItemSchema);
 
-export const kbPageEmptyTrashSchema = z.object({ purgedCount: z.number().int() });
+export const kbPageSoftDeleteSchema = z.object({
+  deletedCount: z.number().int(),
+});
+
+export const kbPageEmptyTrashSchema = z.object({
+  purgedCount: z.number().int(),
+});
 
 export const kbPageSuccessSchema = z.object({ success: z.boolean() });
 
 export const kbPageBacklinkSchema = z.array(
-  z.object({ id: z.number().int(), title: z.string(), icon: z.string().nullable() }),
+  z.object({
+    id: z.number().int(),
+    title: z.string(),
+    icon: z.string().nullable(),
+  }),
 );
 
 const kbPageVersionItemSchema = z.object({
@@ -212,7 +230,9 @@ const kbPageVersionItemSchema = z.object({
   createdAt: wireDate(),
 });
 
-export const kbPageVersionListSchema = cursorPageSchema(kbPageVersionItemSchema);
+export const kbPageVersionListSchema = cursorPageSchema(
+  kbPageVersionItemSchema,
+);
 
 export const kbPageVersionSchema = kbPageVersionItemSchema;
 

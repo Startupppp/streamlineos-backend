@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { classifyAddress } from "./address-classifier";
+import { classifyIpAddress } from "../../../common/security/ssrf-guard";
 import type { SignGeoIpPort, SignGeoLocation } from "./geo-ip.port";
 
 /**
@@ -15,7 +15,7 @@ import type { SignGeoIpPort, SignGeoLocation } from "./geo-ip.port";
 export class AddressGeoIp implements SignGeoIpPort {
   async locate(ip: string | null | undefined): Promise<SignGeoLocation | null> {
     try {
-      const facts = classifyAddress(ip);
+      const facts = classifyIpAddress(ip);
       return {
         ip: ip ?? null,
         family: facts.family,

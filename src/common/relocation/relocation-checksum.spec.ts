@@ -2,7 +2,6 @@ import {
   assertChecksumMatch,
   compareChecksums,
   objectStorageDigestKey,
-  partitionDigestSql,
   tableDigestSql,
   type ChecksumEntry,
 } from "./relocation-checksum";
@@ -133,9 +132,9 @@ describe("tableDigestSql", () => {
   });
 });
 
-describe("partitionDigestSql", () => {
-  it("produces the same shape as tableDigestSql for a named partition", () => {
-    const sql = partitionDigestSql(
+describe("tableDigestSql — partition name", () => {
+  it("produces the expected shape for a named partition", () => {
+    const sql = tableDigestSql(
       "public",
       "outbox_events_2026_01",
       "organization_id",

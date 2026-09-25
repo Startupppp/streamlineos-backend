@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbAskMetrics } from "../core/telemetry/kb-ask-metrics";
@@ -27,6 +28,7 @@ import {
   buildKbContext,
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
 } from "./kb-ask-context";
+import { kbAiInteractions, type KbAiInteractionState, type KbAiSourceRecord } from "../../../db/schema";
 
 export type AskCitation =
   | {
@@ -80,12 +82,25 @@ export function restrictToCited<
 }
 
 export interface KbAskOptions {
-  /**
-   * Let the answer draw on, and cite, HR documents shared into the knowledge base, when the tenant has opted in.
-   * Off unless the caller can show such a citation: a surface that has not been built for one (support) never
-   * gets one, whatever the tenant's switch says.
-   */
   companyDocuments?: boolean;
+}
+
+function buildSourceRecords(
+  top: ReadonlyArray<{ kind: "article" | "page"; id: number }>,
+  sources: ReadonlyArray<{ sourceId: number }>,
+  linked: ReadonlyArray<{ id: number }>,
+): KbAiSourceRecord[] {
+  const records: KbAiSourceRecord[] = [];
+  for (const item of top) {
+    records.push({ kind: item.kind, id: item.id, aclRevision: null });
+  }
+  for (const s of sources) {
+    records.push({ kind: "source", id: s.sourceId, aclRevision: null });
+  }
+  for (const doc of linked) {
+    records.push({ kind: "document", id: doc.id, aclRevision: null });
+  }
+  return records;
 }
 
 @Injectable()
@@ -119,7 +134,6 @@ export class KbAskService {
     return runInTenantTransaction(
       this.db,
       async () => {
-        // Company documents shared from HR: none unless the tenant opted in, and never one the asker could not open.
         const linked =
           options.companyDocuments === true
             ? await this.linkedDocuments.retrieve(user, input.question)
@@ -127,7 +141,6 @@ export class KbAskService {
         const hasContent = await this.orgHasIndexedContent(user.orgId);
         if (!hasContent && linked.length === 0) return { kind: "no-context" as const };
 
-        // An organisation with no indexed content is not worth an embedding call: only its company documents can answer.
         const retrievedTop = hasContent
           ? await this.search.retrieveTopArticles(
               user,
@@ -199,11 +212,13 @@ export class KbAskService {
   private noContextAnswer(
     user: CurrentUserContext,
     question: string,
+    correlationId: string,
   ): { answer: string; citations: AskCitation[]; hasContext: boolean } {
     this.events
       .record(user.orgId, "ai_answer_no_context", {
         actorMembershipId: actingMembershipId(user.principal) ?? null,
         query: question,
+        correlationId,
       })
       .catch((err: unknown) => {
         this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
@@ -216,6 +231,27 @@ export class KbAskService {
     };
   }
 
+  private async writeNoContextInteraction(
+    user: CurrentUserContext,
+    correlationId: string,
+  ): Promise<void> {
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx.insert(kbAiInteractions).values({
+          orgId: user.orgId,
+          correlationId,
+          actorMembershipId: actingMembershipId(user.principal) ?? null,
+          resultState: "no_context",
+          sourceIdsWithRevisions: [],
+        });
+      },
+      { orgId: user.orgId },
+    ).catch((err: unknown) => {
+      this.logger.warn(`Failed to write no-context interaction row: ${err}`);
+    });
+  }
+
   async ask(
     user: CurrentUserContext,
     input: AskInput,
@@ -226,16 +262,20 @@ export class KbAskService {
     hasContext: boolean;
     aiUsage?: AiUsageMeta;
   }> {
+    const correlationId = randomUUID();
     const metrics = KbAskMetrics.begin({ orgId: user.orgId });
     try {
       const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
         metrics.finish("no_context");
-        return this.noContextAnswer(user, input.question);
+        void this.writeNoContextInteraction(user, correlationId);
+        return this.noContextAnswer(user, input.question, correlationId);
       }
       const { fullContext, top, sources, linked, citations } = gathered;
       const candidates = top.length + sources.length + linked.length;
+      const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
 
+      const callStart = Date.now();
       const gatewayResult = await this.aiGateway.invokeTextWithUsage({
         actor: { orgId: user.orgId, userId: user.userId },
         feature: "kb.ask",
@@ -247,6 +287,7 @@ export class KbAskService {
           user: `Question: ${input.question}\n\nContext:\n${fullContext}`,
         },
       });
+      const latencyMs = Date.now() - callStart;
 
       if (!gatewayResult.ok) {
         if (gatewayResult.kind === "quota_exceeded") {
@@ -254,6 +295,21 @@ export class KbAskService {
             citations: citations.length,
             candidates,
           });
+          await runInTenantTransaction(
+            this.db,
+            async (tx) => {
+              await tx.insert(kbAiInteractions).values({
+                orgId: user.orgId,
+                correlationId,
+                actorMembershipId: actingMembershipId(user.principal) ?? null,
+                resultState: "credits_exhausted",
+                sourceIdsWithRevisions,
+                latencyMs,
+                gatewayCorrelationId: gatewayResult.correlationId,
+              });
+            },
+            { orgId: user.orgId },
+          );
           throw new InsufficientAiCreditsException({
             message: gatewayResult.message,
           });
@@ -262,6 +318,21 @@ export class KbAskService {
           citations: citations.length,
           candidates,
         });
+        await runInTenantTransaction(
+          this.db,
+          async (tx) => {
+            await tx.insert(kbAiInteractions).values({
+              orgId: user.orgId,
+              correlationId,
+              actorMembershipId: actingMembershipId(user.principal) ?? null,
+              resultState: "provider_unavailable",
+              sourceIdsWithRevisions,
+              latencyMs,
+              gatewayCorrelationId: gatewayResult.correlationId,
+            });
+          },
+          { orgId: user.orgId },
+        );
         return {
           answer:
             "The AI assistant is temporarily unavailable. Here are the most relevant sources found for your question.",
@@ -275,8 +346,22 @@ export class KbAskService {
 
       await runInTenantTransaction(
         this.db,
-        () =>
-          this.events.record(user.orgId, "ai_answer", {
+        async (tx) => {
+          await tx.insert(kbAiInteractions).values({
+            orgId: user.orgId,
+            correlationId,
+            actorMembershipId: actingMembershipId(user.principal) ?? null,
+            resultState: "answered",
+            model: aiUsage.model,
+            promptTokens: aiUsage.promptTokens,
+            completionTokens: aiUsage.completionTokens,
+            totalTokens: aiUsage.totalTokens,
+            costCredits: aiUsage.credits,
+            latencyMs,
+            gatewayCorrelationId: gatewayResult.correlationId,
+            sourceIdsWithRevisions,
+          });
+          await this.events.record(user.orgId, "ai_answer", {
             actorMembershipId: actingMembershipId(user.principal) ?? null,
             query: input.question,
             metadata: {
@@ -285,7 +370,9 @@ export class KbAskService {
                 ...linked.map((document) => `document:${document.id}`),
               ],
             },
-          }),
+            correlationId,
+          });
+        },
         { orgId: user.orgId },
       );
 
@@ -311,21 +398,31 @@ export class KbAskService {
         verifyCitations: () => Promise<AskCitation[]>;
       }
   > {
+    const correlationId = randomUUID();
     const metrics = KbAskMetrics.begin({ orgId: user.orgId });
     try {
       const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
-        this.noContextAnswer(user, input.question);
+        this.noContextAnswer(user, input.question, correlationId);
+        void this.writeNoContextInteraction(user, correlationId);
         metrics.finish("no_context");
         return { hasContext: false };
       }
       const { fullContext, top, sources, linked, citations } = gathered;
       const candidates = top.length + sources.length + linked.length;
+      const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
 
       await runInTenantTransaction(
         this.db,
-        () =>
-          this.events.record(user.orgId, "ai_answer", {
+        async (tx) => {
+          await tx.insert(kbAiInteractions).values({
+            orgId: user.orgId,
+            correlationId,
+            actorMembershipId: actingMembershipId(user.principal) ?? null,
+            resultState: "answered",
+            sourceIdsWithRevisions,
+          });
+          await this.events.record(user.orgId, "ai_answer", {
             actorMembershipId: actingMembershipId(user.principal) ?? null,
             query: input.question,
             metadata: {
@@ -334,7 +431,9 @@ export class KbAskService {
                 ...linked.map((document) => `document:${document.id}`),
               ],
             },
-          }),
+            correlationId,
+          });
+        },
         { orgId: user.orgId },
       );
 

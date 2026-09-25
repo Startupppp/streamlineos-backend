@@ -1,4 +1,4 @@
-import { classifyAddress } from "../address-classifier";
+import { classifyIpAddress } from "../../../../common/security/ssrf-guard";
 import { AddressGeoIp } from "../address-geo-ip";
 
 /**
@@ -10,7 +10,7 @@ import { AddressGeoIp } from "../address-geo-ip";
  * "signed from the server", which is a real finding and one that a null
  * `geolocation_json` column hid completely.
  */
-describe("classifyAddress", () => {
+describe("classifyIpAddress", () => {
   /*
   A genuinely routable address, not a documentation range. The classifier
   shares one table with the outbound guard now, and that table names
@@ -18,38 +18,38 @@ describe("classifyAddress", () => {
   Using one here asserted that a reserved range reads as public.
 */
 it("recognises ordinary public addresses", () => {
-    expect(classifyAddress("93.184.216.34")).toEqual({ family: "ipv4", scope: "public" });
-    expect(classifyAddress("2606:4700:4700::1111")).toEqual({ family: "ipv6", scope: "public" });
+    expect(classifyIpAddress("93.184.216.34")).toEqual({ family: "ipv4", scope: "public" });
+    expect(classifyIpAddress("2606:4700:4700::1111")).toEqual({ family: "ipv6", scope: "public" });
   });
 
   it("names the loopback, which is the interesting one", () => {
-    expect(classifyAddress("127.0.0.1")).toEqual({ family: "ipv4", scope: "loopback" });
-    expect(classifyAddress("::1")).toEqual({ family: "ipv6", scope: "loopback" });
+    expect(classifyIpAddress("127.0.0.1")).toEqual({ family: "ipv4", scope: "loopback" });
+    expect(classifyIpAddress("::1")).toEqual({ family: "ipv6", scope: "loopback" });
   });
 
   it("recognises every private IPv4 range, including carrier-grade NAT", () => {
     for (const ip of ["10.0.0.1", "172.16.0.1", "172.31.255.254", "192.168.1.1", "100.64.0.1"]) {
-      expect(classifyAddress(ip).scope).toBe("private");
+      expect(classifyIpAddress(ip).scope).toBe("private");
     }
   });
 
   /** 172.15 and 172.32 are outside the private block and must stay public. */
   it("does not over-claim the 172 block", () => {
-    expect(classifyAddress("172.15.0.1").scope).toBe("public");
-    expect(classifyAddress("172.32.0.1").scope).toBe("public");
+    expect(classifyIpAddress("172.15.0.1").scope).toBe("public");
+    expect(classifyIpAddress("172.32.0.1").scope).toBe("public");
   });
 
   it("recognises reserved ranges", () => {
-    expect(classifyAddress("169.254.1.1").scope).toBe("reserved");
-    expect(classifyAddress("0.0.0.0").scope).toBe("reserved");
-    expect(classifyAddress("239.255.255.250").scope).toBe("reserved");
+    expect(classifyIpAddress("169.254.1.1").scope).toBe("reserved");
+    expect(classifyIpAddress("0.0.0.0").scope).toBe("reserved");
+    expect(classifyIpAddress("239.255.255.250").scope).toBe("reserved");
     /** RFC 2544 benchmark space, which the SSRF guard permits and tests use. */
-    expect(classifyAddress("198.18.0.1").scope).toBe("reserved");
+    expect(classifyIpAddress("198.18.0.1").scope).toBe("reserved");
   });
 
   it("recognises IPv6 unique-local and link-local", () => {
-    expect(classifyAddress("fd00::1").scope).toBe("private");
-    expect(classifyAddress("fe80::1").scope).toBe("reserved");
+    expect(classifyIpAddress("fd00::1").scope).toBe("private");
+    expect(classifyIpAddress("fe80::1").scope).toBe("reserved");
   });
 
   /**
@@ -58,15 +58,15 @@ it("recognises ordinary public addresses", () => {
    * never used.
    */
   it("unwraps IPv4-mapped IPv6 rather than mislabelling the family", () => {
-    expect(classifyAddress("::ffff:93.184.216.34")).toEqual({ family: "ipv4", scope: "public" });
-    expect(classifyAddress("::ffff:10.0.0.1")).toEqual({ family: "ipv4", scope: "private" });
+    expect(classifyIpAddress("::ffff:93.184.216.34")).toEqual({ family: "ipv4", scope: "public" });
+    expect(classifyIpAddress("::ffff:10.0.0.1")).toEqual({ family: "ipv4", scope: "private" });
   });
 
   it("says unknown rather than guessing", () => {
-    expect(classifyAddress(null)).toEqual({ family: "unknown", scope: "unknown" });
-    expect(classifyAddress("")).toEqual({ family: "unknown", scope: "unknown" });
-    expect(classifyAddress("not-an-address")).toEqual({ family: "unknown", scope: "unknown" });
-    expect(classifyAddress("999.1.1.1")).toEqual({ family: "unknown", scope: "unknown" });
+    expect(classifyIpAddress(null)).toEqual({ family: "unknown", scope: "unknown" });
+    expect(classifyIpAddress("")).toEqual({ family: "unknown", scope: "unknown" });
+    expect(classifyIpAddress("not-an-address")).toEqual({ family: "unknown", scope: "unknown" });
+    expect(classifyIpAddress("999.1.1.1")).toEqual({ family: "unknown", scope: "unknown" });
   });
 });
 

@@ -152,6 +152,12 @@ export class KbPageVersionsService {
         await resyncPageLinks(tx, orgId, pageId, version.content);
       }
 
+      await tx.execute(
+        sql`INSERT INTO "public"."kb_version_restore_audit"
+          ("org_id", "page_id", "source_version_number", "actor_user_id", "actor_membership_id")
+          VALUES (${orgId}, ${pageId}, ${versionNumber}, ${user.userId}, ${membershipId ?? null})`,
+      );
+
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
         organizationId: orgId,

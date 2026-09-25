@@ -56,7 +56,7 @@ function makeDb() {
   const set = jest.fn().mockReturnValue({ where });
   const txUpdate = jest.fn().mockReturnValue({ set });
   const txInsert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) });
-  const tx = { update: txUpdate, insert: txInsert };
+  const tx = { update: txUpdate, insert: txInsert, execute: jest.fn().mockResolvedValue([]) };
 
   const db = {
     query: {

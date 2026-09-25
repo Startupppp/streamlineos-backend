@@ -4,6 +4,7 @@ export * from "./translations";
 export * from "./tags";
 export * from "./events";
 export * from "./credits";
+export * from "./ai-interactions";
 export * from "./pages";
 export * from "./page-grants";
 export * from "./page-collab";

@@ -6,14 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import {
-  and,
-  eq,
-  inArray,
-  isNull,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { kbPages, kbArticleChunks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -22,17 +15,35 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
-import {
-  KB_PAGE_COLUMNS,
-  type KbPageRow,
-} from "./kb-page-columns";
+import type { ListPageTreeChildrenInput } from "./dto/kb-page-tree.dto";
+import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { collectSubtreeIds } from "./kb-page-subtree.util";
 import { resolveProjectAccess } from "../../build/core/project-access";
+import {
+  buildCursorPage,
+  decodeCursor,
+  type CursorPage,
+} from "../../../common/pagination/cursor";
+import { keysetAfterIntValue } from "../../../common/pagination/keyset";
 
 type PageRow = KbPageRow;
 
-const MAX_TREE_NODES = 2000;
+type KbPageTreeItem = {
+  id: number;
+  parentPageId: number | null;
+  spaceId: number | null;
+  projectId: number | null;
+  title: string;
+  icon: string | null;
+  coverImage: string | null;
+  sortOrder: number;
+  visibility: string;
+  createdById: string | null;
+  status: string;
+  updatedAt: Date;
+  hasChildren: boolean;
+};
 
 export function isDescendant(
   allPages: Pick<PageRow, "id" | "parentPageId">[],
@@ -62,28 +73,17 @@ export class KbPageTreeService {
     private readonly access: AccessService,
   ) {}
 
-  async getTree(
+  async getTreeLevel(
     user: CurrentUserContext,
-    projectId?: number,
-  ): Promise<
-    {
-      id: number;
-      parentPageId: number | null;
-      spaceId: number | null;
-      projectId: number | null;
-      title: string;
-      icon: string | null;
-      coverImage: string | null;
-      sortOrder: number;
-      visibility: string;
-      createdById: string | null;
-      status: string;
-      updatedAt: Date;
-      hasChildren: boolean;
-    }[]
-  > {
-    if (projectId !== undefined) {
-      const { hasAccess } = await resolveProjectAccess(this.db, this.access, user, projectId);
+    input: ListPageTreeChildrenInput,
+  ): Promise<CursorPage<KbPageTreeItem>> {
+    if (input.projectId !== undefined) {
+      const { hasAccess } = await resolveProjectAccess(
+        this.db,
+        this.access,
+        user,
+        input.projectId,
+      );
       if (!hasAccess) throw new NotFoundException("Project not found");
     }
     const orgId = user.orgId;
@@ -93,9 +93,28 @@ export class KbPageTreeService {
       isNull(kbPages.deletedAt),
       predicate,
     ];
-    if (projectId !== undefined) {
-      filters.push(eq(kbPages.projectId, projectId));
+
+    if (input.parentId !== undefined) {
+      filters.push(eq(kbPages.parentPageId, input.parentId));
+    } else {
+      filters.push(isNull(kbPages.parentPageId));
     }
+
+    if (input.spaceId !== undefined) {
+      filters.push(eq(kbPages.spaceId, input.spaceId));
+    }
+    if (input.projectId !== undefined) {
+      filters.push(eq(kbPages.projectId, input.projectId));
+    }
+
+    const position = decodeCursor(input.cursor);
+    if (position) {
+      filters.push(
+        keysetAfterIntValue(kbPages.sortOrder, kbPages.id, position),
+      );
+    }
+
+    const limit = input.limit;
     const rows = await this.db
       .select({
         id: kbPages.id,
@@ -113,13 +132,43 @@ export class KbPageTreeService {
       })
       .from(kbPages)
       .where(and(...filters))
-      .orderBy(kbPages.sortOrder)
-      .limit(MAX_TREE_NODES);
+      .orderBy(kbPages.sortOrder, kbPages.id)
+      .limit(limit + 1);
 
-    const childSet = new Set(
-      rows.map((r) => r.parentPageId).filter((id): id is number => id !== null),
-    );
-    return rows.map((r) => ({ ...r, hasChildren: childSet.has(r.id) }));
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.sortOrder),
+      id: String(row.id),
+    }));
+
+    const returnedIds = page.data.map((r) => r.id);
+    const childParentSet = new Set<number>();
+    if (returnedIds.length > 0) {
+      const childRows = await this.db
+        .select({ parentPageId: kbPages.parentPageId })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            isNull(kbPages.deletedAt),
+            sql`${kbPages.parentPageId} = ANY(ARRAY[${sql.join(
+              returnedIds.map((id) => sql`${id}`),
+              sql`, `,
+            )}]::int[])`,
+          ),
+        );
+      childRows.forEach((r) => {
+        if (r.parentPageId !== null) childParentSet.add(r.parentPageId);
+      });
+    }
+
+    return {
+      data: page.data.map((r) => ({
+        ...r,
+        sortOrder: r.sortOrder ?? 0,
+        hasChildren: childParentSet.has(r.id),
+      })),
+      pagination: page.pagination,
+    };
   }
 
   async softDelete(

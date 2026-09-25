@@ -17,6 +17,7 @@ import { KbLinkedDocumentAskSource } from "../linked-documents/kb-linked-documen
 const makeGatewayOk = (text: string) => ({
   ok: true as const,
   data: text,
+  correlationId: "gw-corr-1",
   aiUsage: {
     model: "gpt-4o-mini",
     promptTokens: 10,
@@ -85,6 +86,8 @@ const mockAccess = {
   isAdmin: jest.fn().mockResolvedValue(false),
 };
 
+const insertedRows: unknown[] = [];
+
 const mockDb = {
   transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(mockDb)),
   execute: jest.fn().mockResolvedValue([{ one: 1 }]),
@@ -96,6 +99,12 @@ const mockDb = {
       where: jest.fn().mockResolvedValue([{ id: articleResult.id }]),
     }),
   }),
+  insert: jest.fn().mockImplementation(() => ({
+    values: jest.fn().mockImplementation((row: unknown) => {
+      insertedRows.push(row);
+      return Promise.resolve([]);
+    }),
+  })),
 };
 
 describe("KbAskService", () => {
@@ -103,6 +112,7 @@ describe("KbAskService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    insertedRows.length = 0;
     mockSearch.retrieveTopArticles.mockResolvedValue([articleResult]);
     mockSearch.retrieveTopSources.mockResolvedValue([]);
     mockSearch.retrieveDocumentPassages.mockResolvedValue([]);
@@ -261,15 +271,6 @@ describe("KbAskService", () => {
   });
 
   it("does not call retrieval or gateway when org has no indexed chunks", async () => {
-    /**
-     * `mockResolvedValue`, not `...Once`: KB Ask now carries
-     * `@NoTenantTransaction()`, so `runInTenantTransaction` opens a real
-     * `withTenant` whose own `SELECT set_config(...)` is the FIRST execute on
-     * this double. A `...Once` would be consumed by that and the content check
-     * would see the default non-empty row, quietly inverting this test. An
-     * empty result for the settings statement is harmless — withTenant only
-     * inspects those rows when a write fence is active.
-     */
     mockDb.execute.mockResolvedValue([]);
 
     const result = await service.ask(user, input);
@@ -285,5 +286,99 @@ describe("KbAskService", () => {
       "ai_answer_no_context",
       expect.objectContaining({ actorMembershipId: 1 }),
     );
+  });
+
+  it("writes one interaction row per Ask — correlation_id present on the inserted row", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Answer."));
+
+    await service.ask(user, input);
+
+    const interactionRow = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "correlationId" in r && "resultState" in r,
+    );
+    expect(interactionRow).toBeDefined();
+    expect(typeof interactionRow?.correlationId).toBe("string");
+    expect((interactionRow?.correlationId as string).length).toBeGreaterThan(0);
+    expect(interactionRow?.resultState).toBe("answered");
+  });
+
+  it("interaction row carries token counts and cost from the gateway response", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Answer."));
+
+    await service.ask(user, input);
+
+    const interactionRow = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "resultState" in r && r["resultState"] === "answered",
+    );
+    expect(interactionRow?.promptTokens).toBe(10);
+    expect(interactionRow?.completionTokens).toBe(5);
+    expect(interactionRow?.totalTokens).toBe(15);
+    expect(interactionRow?.costCredits).toBe(1);
+    expect(interactionRow?.model).toBe("gpt-4o-mini");
+    expect(interactionRow?.gatewayCorrelationId).toBe("gw-corr-1");
+  });
+
+  it("event emitted for a successful Ask carries the same correlation_id as the interaction row", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Answer."));
+
+    await service.ask(user, input);
+
+    const interactionRow = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "correlationId" in r && "resultState" in r,
+    );
+    const interactionCorrelationId = interactionRow?.correlationId;
+
+    const eventCall = mockEvents.record.mock.calls.find(
+      ([, type]: [string, string]) => type === "ai_answer",
+    );
+    expect(eventCall).toBeDefined();
+    const eventOptions = eventCall?.[2] as Record<string, unknown>;
+    expect(eventOptions?.correlationId).toBe(interactionCorrelationId);
+  });
+
+  it("interaction row records source ids that were sent to the model", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Answer."));
+
+    await service.ask(user, input);
+
+    const interactionRow = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "sourceIdsWithRevisions" in r,
+    );
+    expect(Array.isArray(interactionRow?.sourceIdsWithRevisions)).toBe(true);
+    const sources = interactionRow?.sourceIdsWithRevisions as Array<{kind: string; id: number}>;
+    expect(sources.some((s) => s.kind === "article" && s.id === 1)).toBe(true);
+  });
+
+  it("credits_exhausted interaction row is written before the 402 is thrown", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayFail("quota_exceeded", "Insufficient AI credits"),
+    );
+
+    await expect(service.ask(user, input)).rejects.toThrow(InsufficientAiCreditsException);
+
+    const interactionRow = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "resultState" in r,
+    );
+    expect(interactionRow?.resultState).toBe("credits_exhausted");
+  });
+
+  it("provider_unavailable interaction row is written and the fallback response is returned", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayFail("provider_unavailable"),
+    );
+
+    const result = await service.ask(user, input);
+
+    expect(result.hasContext).toBe(true);
+    const interactionRow = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "resultState" in r,
+    );
+    expect(interactionRow?.resultState).toBe("provider_unavailable");
   });
 });

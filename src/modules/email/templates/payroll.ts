@@ -2,7 +2,6 @@ import { getEmailTemplate, escapeHtml } from "./base";
 import { renderKeyValueRows, renderCallout } from "./components";
 import {
   EMAIL_TEMPLATE_VERSION,
-  resolveLocaleText,
   resolveLocaleValue,
   type LocalizedValues,
 } from "./email-locale";
@@ -71,8 +70,8 @@ export function getPayslipEmailTemplate(params: PayslipEmailParams): { subject: 
   const subjectFn = resolveLocaleValue(locale, SUBJECT_MAP);
   const titleFn = resolveLocaleValue(locale, TITLE_MAP);
   const greetingFn = resolveLocaleValue(locale, GREETING_MAP);
-  const periodLabel = resolveLocaleText(locale, PERIOD_LABEL_MAP);
-  const calloutText = resolveLocaleText(locale, CALLOUT_MAP);
+  const periodLabel = resolveLocaleValue(locale, PERIOD_LABEL_MAP);
+  const calloutText = resolveLocaleValue(locale, CALLOUT_MAP);
   const preheaderFn = resolveLocaleValue(locale, PREHEADER_MAP);
 
   const subject = subjectFn(month);

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { organizationMembers, signEnvelopes } from "../../db/schema";
+import { organizationMembers, quotes, signEnvelopes } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { InboxConsumer } from "../../common/outbox/inbox-consumer";
@@ -13,6 +13,8 @@ import {
 } from "../../common/outbox/outbox-consumer.registry";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { SignFinalizationService } from "./sign-finalization.service";
+import { QuotesLifecycleService } from "../quotes/quotes-lifecycle.service";
+import { ProjectsProvisionService } from "../build/core/projects-provision.service";
 
 const payloadSchema = z.object({
   envelopeId: z.number().int(),
@@ -33,6 +35,8 @@ export class SignEnvelopeCompletedConsumerService
     private readonly registry: OutboxConsumerRegistry,
     private readonly dispatch: NotificationDispatchService,
     private readonly finalization: SignFinalizationService,
+    private readonly quotesLifecycle: QuotesLifecycleService,
+    private readonly projectsProvision: ProjectsProvisionService,
   ) {}
 
   onModuleInit(): void {
@@ -69,8 +73,16 @@ export class SignEnvelopeCompletedConsumerService
     const orgId = event.organizationId;
 
     const envelope = await this.db.query.signEnvelopes.findFirst({
-      where: eq(signEnvelopes.id, envelopeId),
-      columns: { senderMembershipId: true, orgId: true, title: true },
+      where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
+      columns: {
+        senderMembershipId: true,
+        orgId: true,
+        title: true,
+        sourceModule: true,
+        sourceEntityType: true,
+        sourceEntityId: true,
+        finalPdfFileKey: true,
+      },
     });
 
     if (!envelope) {
@@ -108,6 +120,34 @@ export class SignEnvelopeCompletedConsumerService
     if (!senderMember?.user?.id) {
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "SKIPPED", "sender user not found");
       return;
+    }
+
+    if (
+      envelope.sourceModule === "crm" &&
+      envelope.sourceEntityType === "quote" &&
+      envelope.sourceEntityId !== null
+    ) {
+      const quoteId = Number(envelope.sourceEntityId);
+      if (Number.isSafeInteger(quoteId) && quoteId > 0) {
+        const quote = await this.db.query.quotes.findFirst({
+          where: and(eq(quotes.orgId, orgId), eq(quotes.id, quoteId)),
+          columns: { dealId: true, subject: true },
+        });
+        if (quote) {
+          await this.quotesLifecycle.markSigned(
+            orgId,
+            senderMember.user.id,
+            quoteId,
+            envelope.finalPdfFileKey ?? undefined,
+          );
+          if (quote.dealId !== null) {
+            await this.projectsProvision.createFromDeal(orgId, senderMember.user.id, {
+              dealId: quote.dealId,
+              name: quote.subject,
+            });
+          }
+        }
+      }
     }
 
     await this.dispatch.emit({

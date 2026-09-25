@@ -38,7 +38,6 @@ import {
   movePageSchema,
   lockPageSchema,
   searchPagesSchema,
-  listPagesSchema,
   setVisibilitySchema,
   trashPagesQuerySchema,
   verifyPageSchema,
@@ -49,17 +48,24 @@ import {
   type MovePageInput,
   type LockPageInput,
   type SearchPagesInput,
-  type ListPagesInput,
   type SetVisibilityInput,
   type TrashPagesQuery,
   type VerifyPageInput,
   type ListVersionsQuery,
 } from "./dto/kb-pages.schemas";
+import {
+  listPageTreeChildrenSchema,
+  type ListPageTreeChildrenInput,
+} from "./dto/kb-page-tree.dto";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  BodylessAction,
+  ResponseSchema,
+  NoContentResponse,
+} from "../../../common/openapi/zod-operation-contracts";
 import {
   kbBulkPageResultSchema,
-  kbPageTreeSchema,
+  kbPageTreeLevelSchema,
   kbPageSchema,
   kbPageListSchema,
   kbPageWithAncestorsSchema,
@@ -104,13 +110,13 @@ export class KbPagesController {
 
   @Get("pages/tree")
   @RequirePermission("kb:pages:view")
-  @Validate({ query: listPagesSchema })
-  @ResponseSchema(kbPageTreeSchema)
+  @Validate({ query: listPageTreeChildrenSchema })
+  @ResponseSchema(kbPageTreeLevelSchema)
   async getTree(
-    @Query() query: ListPagesInput,
+    @Query() query: ListPageTreeChildrenInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.tree.getTree(u, query.projectId);
+    return this.tree.getTreeLevel(u, query);
   }
 
   @Get("pages/recent")
@@ -471,5 +477,4 @@ export class KbPagesController {
   ): Promise<unknown> {
     return this.status.markStale(u, pageId);
   }
-
 }

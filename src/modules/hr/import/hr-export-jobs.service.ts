@@ -21,8 +21,7 @@ import type { FileStreamResult } from "../../storage/storage.service";
 import { StorageService } from "../../storage/storage.service";
 import { AccessService } from "../../access/access.service";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
-import type { ScopedRead } from "../../access/scoped-read";
-import { exportExecutionRead } from "./hr-export-scope";
+import { ScopedRead } from "../../access/scoped-read";
 import { authorize } from "../../access/authorize";
 import type { CreateEmployeeExportJobInput } from "./dto/export-job.dto";
 import {
@@ -242,7 +241,7 @@ export class HrExportJobsService {
         "No employee records are available in your current access scope.",
       );
     }
-    return exportExecutionRead(job.orgId, job.requestedBy, scope);
+    return ScopedRead.of(job.orgId, job.requestedBy, scope);
   }
 
   async claimForOrg(orgId: string): Promise<HrExportJobRow | null> {
