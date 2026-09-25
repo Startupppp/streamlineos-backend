@@ -32,7 +32,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
  */
 function makeDb(visibleIds: readonly number[]) {
   const select = jest.fn();
-  const builder = {
+  const builder: { from: jest.Mock; where: jest.Mock; limit: jest.Mock } = {
     from: jest.fn(() => builder),
     where: jest.fn(() => builder),
     limit: jest.fn(() => Promise.resolve(visibleIds.map((id) => ({ id })))),

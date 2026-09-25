@@ -25,7 +25,7 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
  * real one over a database double that answers with the ids this caller may read.
  */
 function makeDocumentAccess(grants: Map<string, DataScope>, visibleIds: readonly number[]) {
-  const builder = {
+  const builder: { from: jest.Mock; where: jest.Mock; limit: jest.Mock } = {
     from: jest.fn(() => builder),
     where: jest.fn(() => builder),
     limit: jest.fn(() => Promise.resolve(visibleIds.map((id) => ({ id })))),
