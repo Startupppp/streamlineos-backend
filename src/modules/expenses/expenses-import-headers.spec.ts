@@ -9,6 +9,8 @@ async function importCsv(header: string, body: string) {
   const inserted: InsertedRow[] = [];
   // `useValue` is untyped, so the capture needs no cast to `Db`.
   const db = {
+    // no expense is already on file in these cases; the duplicate pass reads nothing.
+    select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
     insert: () => ({
       values: (rows: InsertedRow[]) => {
         inserted.push(...rows);
