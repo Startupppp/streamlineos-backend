@@ -56,6 +56,7 @@ const minOrgs = Math.max(
   1,
   parseInt(args.find((a) => a.startsWith("--min-orgs="))?.slice(11) ?? "3", 10),
 );
+const featureScope = args.find((a) => a.startsWith("--feature="))?.slice(10) ?? "";
 
 function median(sorted) {
   if (sorted.length === 0) return 0;
@@ -121,10 +122,26 @@ if (args.includes("--self-test")) {
   const case2 = evaluateUsage(normalOrgs);
   const case3 = evaluateUsage(tinyOrgs);
 
+  const kbOrgs = Array.from({ length: 5 }, (_, i) => ({
+    org_id: `org_kb_${i}`,
+    total_credits: "100",
+    request_count: "10",
+    top_feature: "kb.ask",
+  }));
+  const kbNoisyOrg = {
+    org_id: "org_kb_noisy",
+    total_credits: "10000",
+    request_count: "500",
+    top_feature: "kb.embed",
+  };
+  const case4 = evaluateUsage([...kbOrgs, kbNoisyOrg]);
+
   const checks = {
     noisyOrgDetected: case1.fired && case1.noisy[0]?.org_id === "org_noisy",
     allNormalClear: !case2.fired,
     tooFewOrgsClear: !case3.fired && typeof case3.reason === "string",
+    featureScopeDefaultIsAll: featureScope === "",
+    kbScopedNoisyDetected: case4.fired && case4.noisy[0]?.org_id === "org_kb_noisy",
   };
 
   const pass = Object.values(checks).every(Boolean);
@@ -149,6 +166,9 @@ if (!url) {
 
 const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {} });
 try {
+  const featureCondition = featureScope
+    ? sql`AND feature LIKE ${featureScope + "%"}`
+    : sql``;
   const rows = await sql`
     SELECT
       org_id,
@@ -157,6 +177,7 @@ try {
       mode() WITHIN GROUP (ORDER BY feature)   AS top_feature
     FROM ai_usage_logs
     WHERE created_at > NOW() - (${windowHours} * INTERVAL '1 hour')
+    ${featureCondition}
     GROUP BY org_id
     ORDER BY SUM(credits_milli) DESC
     LIMIT 200
@@ -167,6 +188,7 @@ try {
     JSON.stringify({
       fired: result.fired,
       windowHours,
+      featureScope: featureScope || "all",
       threshold: { multiplier, minOrgs },
       medianCredits: result.medianCredits ?? null,
       thresholdCredits: result.thresholdCredits ?? null,

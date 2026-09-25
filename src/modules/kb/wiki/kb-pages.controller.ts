@@ -195,6 +195,7 @@ export class KbPagesController {
   }
 
   @Post("pages")
+  @Idempotent("kb.pages.create")
   @HttpCode(201)
   @RequirePermission("kb:pages:create")
   @Validate({ body: createPageSchema })
@@ -207,6 +208,7 @@ export class KbPagesController {
   }
 
   @Post("research-briefs/:briefId/convert-to-page")
+  @Idempotent("kb.research-brief.convert-to-page")
   @HttpCode(201)
   @RequirePermission("kb:pages:create")
   @Validate({ params: briefIdParams, body: convertBriefToPageSchema })
@@ -259,6 +261,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/duplicate")
+  @Idempotent("kb.pages.duplicate")
   @BodylessAction()
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
@@ -389,6 +392,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/versions/:versionNumber/restore")
+  @Idempotent("kb.page-version.restore")
   @BodylessAction()
   @RequirePermission("kb:pages:update")
   @HttpCode(200)

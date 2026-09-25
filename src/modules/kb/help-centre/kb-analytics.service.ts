@@ -10,6 +10,7 @@ import {
   kbPages,
   kbResearchBriefs,
 } from "../../../db/schema";
+import { like } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {

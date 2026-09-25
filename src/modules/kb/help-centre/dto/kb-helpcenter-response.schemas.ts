@@ -68,13 +68,22 @@ export const kbAnalyticsReviewSlaSchema = z.object({
   overdueOpen: z.number().int(),
 });
 
-export const kbAnalyticsGapsSchema = z.array(
-  z.object({
-    query: z.string().nullable(),
-    count: z.number().int(),
-    lastOccurredAt: wireDate(),
-  }),
-);
+const kbAnalyticsGapItemSchema = z.object({
+  query: z.string().nullable(),
+  count: z.number().int(),
+  lastOccurredAt: wireDate(),
+});
+
+export const kbAnalyticsGapsSchema = cursorPageSchema(kbAnalyticsGapItemSchema);
+
+export const kbAnalyticsGapRelatedPageItemSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  status: z.string(),
+  updatedAt: wireDate(),
+});
+
+export const kbAnalyticsGapRelatedPagesSchema = cursorPageSchema(kbAnalyticsGapRelatedPageItemSchema);
 
 export const kbAnalyticsContentGapsSchema = z.array(
   z.object({

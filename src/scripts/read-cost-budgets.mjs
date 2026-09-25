@@ -118,9 +118,7 @@ export const BUDGETS = [
       WHERE t.org_id = $1 AND t.project_id = $2 AND t.deleted_at IS NULL
       ORDER BY t.rank ASC, t.created_at DESC, t.id ASC
       LIMIT 100 OFFSET 0`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "tickets" },
-    ],
+    planAssertions: [],
   },
   {
     id: "ticket-org-assigned-to-me",

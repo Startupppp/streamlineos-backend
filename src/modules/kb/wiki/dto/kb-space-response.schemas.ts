@@ -102,6 +102,7 @@ const kbSpaceRowSchema = z.object({
   archivedAt: nullableWireDate(),
   pagesOverdueForReview: z.number().int().optional(),
   pagesWithReviewPolicy: z.number().int().optional(),
+  viewerSpaceRole: z.enum(["viewer", "commenter", "editor", "publisher", "admin"]).nullable().optional(),
 });
 
 export const kbSpaceListItemSchema = z.object({

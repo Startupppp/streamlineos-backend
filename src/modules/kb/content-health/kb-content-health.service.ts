@@ -6,6 +6,7 @@ import {
   eq,
   exists,
   gt,
+  inArray,
   isNull,
   lt,
   sql,
@@ -27,6 +28,10 @@ import type {
   ContentHealthSignalType,
   ContentHealthCounts,
   DismissHealthItemBody,
+  AssignHealthItemBody,
+  BulkRepairBody,
+  BulkRepairResponse,
+  EvidenceQuery,
 } from "./dto/kb-content-health.schemas";
 import type { KbHealthItemState, KbHealthItemKind } from "../../../db/schema/kb/health-items";
 
@@ -112,6 +117,7 @@ export class KbContentHealthService {
       "broken_link",
       "overexposed",
       "duplicate_candidate",
+      "contradictory_claim",
     ];
 
     const counts = await Promise.all(
@@ -192,6 +198,203 @@ export class KbContentHealthService {
     return inserted!;
   }
 
+  async assign(
+    user: CurrentUserContext,
+    body: AssignHealthItemBody,
+  ): Promise<typeof kbHealthItems.$inferSelect> {
+    const visibilityPredicate = await this.auth.visiblePagePredicate(user, "view");
+    const [page] = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, user.orgId),
+          eq(kbPages.id, body.pageId),
+          isNull(kbPages.deletedAt),
+          visibilityPredicate,
+        ),
+      );
+    if (!page) throw new NotFoundException("Page not found");
+
+    const now = new Date();
+    const ruleVersion = 1;
+
+    const updated = await this.db
+      .update(kbHealthItems)
+      .set({
+        assigneeMembershipId: body.assigneeMembershipId,
+        dueAt: body.dueAt ?? null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(kbHealthItems.orgId, user.orgId),
+          eq(kbHealthItems.pageId, body.pageId),
+          eq(kbHealthItems.kind, body.kind as KbHealthItemKind),
+          eq(kbHealthItems.state, "open"),
+        ),
+      )
+      .returning();
+
+    if (updated.length > 0) return updated[0]!;
+
+    const [inserted] = await this.db
+      .insert(kbHealthItems)
+      .values({
+        orgId: user.orgId,
+        pageId: body.pageId,
+        kind: body.kind as KbHealthItemKind,
+        ruleVersion,
+        state: "open" as KbHealthItemState,
+        assigneeMembershipId: body.assigneeMembershipId,
+        dueAt: body.dueAt ?? null,
+        detectedAt: now,
+      })
+      .returning();
+
+    return inserted!;
+  }
+
+  async bulkRepair(
+    user: CurrentUserContext,
+    body: BulkRepairBody,
+  ): Promise<BulkRepairResponse> {
+    const visibilityPredicate = await this.auth.visiblePagePredicate(user, "view");
+
+    const visiblePages = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, user.orgId),
+          inArray(kbPages.id, body.pageIds),
+          isNull(kbPages.deletedAt),
+          visibilityPredicate,
+        ),
+      );
+
+    const visibleIds = new Set(visiblePages.map((p) => p.id));
+
+    const existingItems = await this.db
+      .select({
+        pageId: kbHealthItems.pageId,
+        state: kbHealthItems.state,
+      })
+      .from(kbHealthItems)
+      .where(
+        and(
+          eq(kbHealthItems.orgId, user.orgId),
+          inArray(kbHealthItems.pageId, body.pageIds),
+          eq(kbHealthItems.kind, body.kind as KbHealthItemKind),
+        ),
+      );
+
+    const resolvedIds = new Set(
+      existingItems.filter((i) => i.state === "resolved").map((i) => i.pageId),
+    );
+    const existingPageIds = new Set(existingItems.map((i) => i.pageId));
+
+    const results: BulkRepairResponse["results"] = [];
+
+    for (const pageId of body.pageIds) {
+      if (!visibleIds.has(pageId)) {
+        results.push({ pageId, outcome: "skipped" });
+        continue;
+      }
+      if (resolvedIds.has(pageId)) {
+        results.push({ pageId, outcome: "already_resolved" });
+        continue;
+      }
+
+      const now = new Date();
+
+      if (body.repairAction === "assign_owner" && body.assigneeMembershipId !== undefined) {
+        if (existingPageIds.has(pageId)) {
+          await this.db
+            .update(kbHealthItems)
+            .set({ assigneeMembershipId: body.assigneeMembershipId, updatedAt: now })
+            .where(
+              and(
+                eq(kbHealthItems.orgId, user.orgId),
+                eq(kbHealthItems.pageId, pageId),
+                eq(kbHealthItems.kind, body.kind as KbHealthItemKind),
+              ),
+            );
+        } else {
+          await this.db
+            .insert(kbHealthItems)
+            .values({
+              orgId: user.orgId,
+              pageId,
+              kind: body.kind as KbHealthItemKind,
+              ruleVersion: 1,
+              state: "open" as KbHealthItemState,
+              assigneeMembershipId: body.assigneeMembershipId,
+              detectedAt: now,
+            });
+        }
+      }
+
+      results.push({ pageId, outcome: "applied" });
+    }
+
+    return { results };
+  }
+
+  async getEvidence(
+    user: CurrentUserContext,
+    query: EvidenceQuery,
+  ): Promise<{ pageId: number; kind: string; ruleVersion: number; evidence: Record<string, unknown>; detectedAt: Date }> {
+    const visibilityPredicate = await this.auth.visiblePagePredicate(user, "view");
+    const [page] = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, user.orgId),
+          eq(kbPages.id, query.pageId),
+          isNull(kbPages.deletedAt),
+          visibilityPredicate,
+        ),
+      );
+    if (!page) throw new NotFoundException("Page not found");
+
+    const [item] = await this.db
+      .select({
+        pageId: kbHealthItems.pageId,
+        kind: kbHealthItems.kind,
+        ruleVersion: kbHealthItems.ruleVersion,
+        evidence: kbHealthItems.evidence,
+        detectedAt: kbHealthItems.detectedAt,
+      })
+      .from(kbHealthItems)
+      .where(
+        and(
+          eq(kbHealthItems.orgId, user.orgId),
+          eq(kbHealthItems.pageId, query.pageId),
+          eq(kbHealthItems.kind, query.kind as KbHealthItemKind),
+        ),
+      );
+
+    if (!item) {
+      return {
+        pageId: query.pageId,
+        kind: query.kind,
+        ruleVersion: 1,
+        evidence: {},
+        detectedAt: new Date(0),
+      };
+    }
+
+    return {
+      pageId: item.pageId,
+      kind: item.kind,
+      ruleVersion: item.ruleVersion,
+      evidence: item.evidence ?? {},
+      detectedAt: item.detectedAt,
+    };
+  }
+
   private buildSignalPredicate(signalType: ContentHealthSignalType): SQL {
     switch (signalType) {
       case "unowned":
@@ -265,6 +468,21 @@ export class KbContentHealthService {
               AND md5(other.content_text) = md5(${kbPages.contentText})
           )
         )`;
+
+      case "contradictory_claim":
+        return exists(
+          this.db
+            .select({ present: sql<number>`1` })
+            .from(kbHealthItems)
+            .where(
+              and(
+                eq(kbHealthItems.orgId, kbPages.orgId),
+                eq(kbHealthItems.pageId, kbPages.id),
+                eq(kbHealthItems.kind, "contradictory_claim" as KbHealthItemKind),
+                eq(kbHealthItems.state, "open" as KbHealthItemState),
+              ),
+            ),
+        );
     }
   }
 }

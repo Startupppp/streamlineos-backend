@@ -7,6 +7,11 @@ import {
   ReplicaShedError,
   routingStrategyFor,
 } from "../db/replica-router";
+import {
+  NullReplicaHealthProbe,
+  PostgresReplicaLagProbe,
+  type ReplicaHealthProbe,
+} from "../db/replica-lag-probe";
 
 describe("Read replica degraded — correctness-sensitive reads go to primary", () => {
   describe("single-connection ratchet: replica env var and routing seam were added together", () => {
@@ -157,6 +162,112 @@ describe("Read replica degraded — correctness-sensitive reads go to primary", 
       expect(caught).toBeInstanceOf(ReplicaShedError);
       if (!(caught instanceof ReplicaShedError)) throw new Error("unreachable");
       expect(caught.workClass).toBe("analytics-refresh");
+    });
+  });
+
+  describe("routeWithFallback — falls back to primary instead of shedding when replica is faulted", () => {
+    const primary: { id: string; connectionString: string } = {
+      id: "primary",
+      connectionString: "postgres://primary",
+    };
+    const replica: { id: string; connectionString: string } = {
+      id: "replica",
+      connectionString: "postgres://replica",
+    };
+
+    it("routes analytics-refresh to replica when healthy, same as routeWithFaultAwareness", () => {
+      const router = new ReplicaRouter(primary, replica);
+      expect(router.routeWithFallback("analytics-refresh", true).id).toBe("replica");
+    });
+
+    it("falls back to primary when replica is configured but faulted — does NOT throw ReplicaShedError", () => {
+      const router = new ReplicaRouter(primary, replica);
+      expect(() => router.routeWithFallback("analytics-refresh", false)).not.toThrow();
+      expect(router.routeWithFallback("analytics-refresh", false).id).toBe("primary");
+    });
+
+    it("falls back to primary when no replica is configured", () => {
+      const router = new ReplicaRouter(primary, null);
+      expect(router.routeWithFallback("analytics-refresh", true).id).toBe("primary");
+    });
+
+    it("routes primary-required classes to primary regardless of health", () => {
+      const router = new ReplicaRouter(primary, replica);
+      expect(router.routeWithFallback("authentication", false).id).toBe("primary");
+      expect(router.routeWithFallback("billing-ledger", false).id).toBe("primary");
+    });
+  });
+
+  describe("probe-driven route() — NullReplicaHealthProbe and PostgresReplicaLagProbe", () => {
+    const primary: { id: string; connectionString: string } = {
+      id: "primary",
+      connectionString: "postgres://primary",
+    };
+    const replica: { id: string; connectionString: string } = {
+      id: "replica",
+      connectionString: "postgres://replica",
+    };
+
+    it("NullReplicaHealthProbe always returns true — unconfigured deployments assume healthy", async () => {
+      const probe = new NullReplicaHealthProbe();
+      expect(await probe.probe()).toBe(true);
+    });
+
+    it("route() uses the injected probe — faulted probe causes ReplicaShedError for analytics-refresh", async () => {
+      const faultedProbe: ReplicaHealthProbe = { probe: async () => false };
+      const router = new ReplicaRouter(primary, replica, faultedProbe);
+      await expect(router.route("analytics-refresh")).rejects.toBeInstanceOf(ReplicaShedError);
+    });
+
+    it("route() uses the injected probe — healthy probe routes analytics-refresh to replica", async () => {
+      const healthyProbe: ReplicaHealthProbe = { probe: async () => true };
+      const router = new ReplicaRouter(primary, replica, healthyProbe);
+      expect((await router.route("analytics-refresh")).id).toBe("replica");
+    });
+
+    it("route() with no probe defaults to NullReplicaHealthProbe — replica-safe routes to replica when replica is configured", async () => {
+      const router = new ReplicaRouter(primary, replica);
+      expect((await router.route("analytics-refresh")).id).toBe("replica");
+    });
+
+    it("PostgresReplicaLagProbe returns false when DB raises an exception (connection failure path)", async () => {
+      const failingDb = {
+        execute: async () => { throw new Error("connection refused"); },
+      };
+      const probe = new PostgresReplicaLagProbe(failingDb);
+      expect(await probe.probe()).toBe(false);
+    });
+
+    it("PostgresReplicaLagProbe returns false when the connection points at a primary (not a replica)", async () => {
+      const primaryDb = {
+        execute: async () => [{ is_replica: false, lag_ms: null }],
+      };
+      const probe = new PostgresReplicaLagProbe(primaryDb);
+      expect(await probe.probe()).toBe(false);
+    });
+
+    it("PostgresReplicaLagProbe returns true when lag is within the threshold", async () => {
+      const replicaDb = {
+        execute: async () => [{ is_replica: true, lag_ms: 200 }],
+      };
+      const probe = new PostgresReplicaLagProbe(replicaDb, 1000);
+      expect(await probe.probe()).toBe(true);
+    });
+
+    it("PostgresReplicaLagProbe returns false when lag exceeds the threshold", async () => {
+      const replicaDb = {
+        execute: async () => [{ is_replica: true, lag_ms: 6000 }],
+      };
+      const probe = new PostgresReplicaLagProbe(replicaDb, 5000);
+      expect(await probe.probe()).toBe(false);
+    });
+
+    it("PostgresReplicaLagProbe returns false when the query returns no rows", async () => {
+      const emptyDb = {
+        execute: async () => [],
+      };
+      const probe = new PostgresReplicaLagProbe(emptyDb);
+      expect(await probe.probe()).toBe(false);
     });
   });
 

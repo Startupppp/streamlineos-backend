@@ -22,3 +22,18 @@ export const pageAnalyticsQuerySchema = z
   })
   .strict();
 export type PageAnalyticsQueryInput = z.infer<typeof pageAnalyticsQuerySchema>;
+
+export const gapsQuerySchema = rangeSchema.extend({
+  cursor: z.string().optional(),
+  limit: pageSizeField(50),
+}).strict();
+export type GapsQueryInput = z.infer<typeof gapsQuerySchema>;
+
+export const gapRelatedPagesQuerySchema = z
+  .object({
+    query: z.string().min(1).max(500),
+    cursor: z.string().optional(),
+    limit: pageSizeField(20),
+  })
+  .strict();
+export type GapRelatedPagesQuery = z.infer<typeof gapRelatedPagesQuerySchema>;

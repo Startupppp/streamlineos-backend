@@ -293,7 +293,7 @@ describe("KbContentHealthService — signals", () => {
 describe("KbContentHealthService — counts", () => {
   afterEach(() => jest.resetAllMocks());
 
-  it("returns counts for all eight signal types including overexposed and duplicate_candidate", async () => {
+  it("returns counts for all nine signal types including overexposed, duplicate_candidate and contradictory_claim", async () => {
     const countRow = { count: 3 };
     const db = {
       select: jest.fn().mockReturnValue({
@@ -304,11 +304,11 @@ describe("KbContentHealthService — counts", () => {
     } as unknown as Db;
     const svc = new KbContentHealthService(db, auth as never);
     const result = await svc.counts(makeUser());
-    expect(result.counts).toHaveLength(8);
+    expect(result.counts).toHaveLength(9);
     expect(result.counts.every((c) => c.count === 3)).toBe(true);
   });
 
-  it("gives each of the eight counts a distinct signal type, so one predicate is not being counted eight times", async () => {
+  it("gives each of the nine counts a distinct signal type, so one predicate is not being counted nine times", async () => {
     const db = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
@@ -322,10 +322,10 @@ describe("KbContentHealthService — counts", () => {
     );
 
     const types = result.counts.map((c) => c.signalType);
-    expect(new Set(types).size).toBe(8);
+    expect(new Set(types).size).toBe(9);
   });
 
-  it("builds a different predicate per signal, so the eight counts are not the same query repeated", async () => {
+  it("builds a different predicate per signal, so the nine counts are not the same query repeated", async () => {
     const { db, wheres } = makeCapturingDb([{ count: 3 }]);
     const capturing = db as unknown as { select: jest.Mock };
     capturing.select = jest.fn(() => {
@@ -343,7 +343,7 @@ describe("KbContentHealthService — counts", () => {
     const outer = wheres
       .map((w) => renderedWhere([w]))
       .filter((text) => text.includes('"kb_pages"."deleted_at" is null'));
-    expect(outer).toHaveLength(8);
+    expect(outer).toHaveLength(9);
     expect(new Set(outer).size).toBeGreaterThanOrEqual(5);
 
     const everything = renderedWhere(wheres);

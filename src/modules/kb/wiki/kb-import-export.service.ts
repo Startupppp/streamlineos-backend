@@ -332,26 +332,27 @@ export class KbImportExportService {
 
     if (withoutRef.length > 0) {
       const plainTitles = withoutRef.map((v) => v.title);
-      let toInsert = withoutRef;
 
-      if (input.duplicatePolicy === "skip") {
-        const existingPlain = await this.db
-          .select({ title: kbPages.title })
-          .from(kbPages)
-          .where(
-            and(
-              eq(kbPages.orgId, orgId),
-              inArray(kbPages.title, plainTitles),
-              isNull(kbPages.deletedAt),
-            ),
-          );
-        const existingTitles = new Set(existingPlain.map((r) => r.title));
-        toInsert = withoutRef.filter((v) => !existingTitles.has(v.title));
-        duplicates += withoutRef.length - toInsert.length;
-      }
+      await this.db.transaction(async (tx) => {
+        let toInsert = withoutRef;
 
-      if (toInsert.length > 0) {
-        await this.db.transaction(async (tx) => {
+        if (input.duplicatePolicy === "skip") {
+          const existingPlain = await tx
+            .select({ title: kbPages.title })
+            .from(kbPages)
+            .where(
+              and(
+                eq(kbPages.orgId, orgId),
+                inArray(kbPages.title, plainTitles),
+                isNull(kbPages.deletedAt),
+              ),
+            );
+          const existingTitles = new Set(existingPlain.map((r) => r.title));
+          duplicates += withoutRef.filter((v) => existingTitles.has(v.title)).length;
+          toInsert = withoutRef.filter((v) => !existingTitles.has(v.title));
+        }
+
+        if (toInsert.length > 0) {
           try {
             const inserted = await tx
               .insert(kbPages)
@@ -385,8 +386,8 @@ export class KbImportExportService {
             failed += toInsert.length;
             failedTitles.push(...toInsert.map((v) => v.title));
           }
-        });
-      }
+        }
+      });
     }
 
     const [job] = await this.db

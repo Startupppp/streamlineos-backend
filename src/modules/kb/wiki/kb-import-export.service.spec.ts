@@ -9,6 +9,10 @@ import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportPagesInput } from "./dto/kb-import-export.schemas";
 
+jest.mock("../../../common/outbox/outbox-writer", () => ({
+  OutboxWriter: { emit: jest.fn().mockResolvedValue(undefined) },
+}));
+
 function makeUser(): CurrentUserContext {
   return {
     userId: "user-1",
@@ -174,5 +178,140 @@ describe("KbImportExportService.importPages — external-ref idempotency", () =>
 
     expect(wasNoConflictCalled()).toBe(true);
     expect(wasUpsertCalled()).toBe(false);
+  });
+});
+
+describe("KbImportExportService.importPages — withoutRef title dedup inside the transaction", () => {
+  afterEach(() => jest.resetAllMocks());
+
+  function makeConditionalSelectDb(existingTitle: string) {
+    const insideTxRef = { value: false };
+
+    function makeWhereChain(): { groupBy: jest.Mock } & PromiseLike<Array<{ title?: string }>> {
+      const groupBy = jest.fn().mockResolvedValue([]);
+      const thenable: { groupBy: jest.Mock } & PromiseLike<Array<{ title?: string }>> = {
+        groupBy,
+        then: <T>(
+          onFulfilled: (rows: Array<{ title?: string }>) => T,
+          onRejected?: (e: unknown) => T,
+        ) =>
+          Promise.resolve(
+            insideTxRef.value ? [{ title: existingTitle }] : [],
+          ).then(onFulfilled, onRejected),
+      };
+      return thenable;
+    }
+
+    const jobsInsert = { returning: jest.fn().mockResolvedValue([{ id: 1 }]) };
+    const pagesInsert = {
+      onConflictDoNothing: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([]),
+      }),
+    };
+
+    const db: Partial<Db> & {
+      transaction: jest.Mock;
+      select: jest.Mock;
+      insert: jest.Mock;
+    } = {
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation(() => makeWhereChain()),
+        }),
+      })),
+      insert: jest.fn().mockImplementation((table: unknown) => {
+        if (table === kbImportJobs) return { values: jest.fn().mockReturnValue(jobsInsert) };
+        return { values: jest.fn().mockReturnValue(pagesInsert) };
+      }),
+      transaction: jest.fn().mockImplementation(async (cb: (tx: typeof db) => Promise<unknown>) => {
+        insideTxRef.value = true;
+        try {
+          return await cb(db as typeof db);
+        } finally {
+          insideTxRef.value = false;
+        }
+      }),
+    };
+
+    return db as unknown as Db;
+  }
+
+  it("counts a plain-title match as a duplicate when duplicatePolicy is skip and the check runs inside the transaction", async () => {
+    const db = makeConditionalSelectDb("Existing Doc");
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+
+    const input: ImportPagesInput = {
+      sourceType: "markdown",
+      items: [{ title: "Existing Doc", contentText: "body" }],
+      duplicatePolicy: "skip",
+    } as unknown as ImportPagesInput;
+
+    const result = await service.importPages(makeUser(), input);
+
+    expect(result.duplicates).toBe(1);
+    expect(result.succeeded).toBe(0);
+  });
+
+  it("inserts a plain-title item when no collision is found inside the transaction", async () => {
+    const insideTxRef = { value: false };
+
+    function makeEmptyWhereChain(): { groupBy: jest.Mock } & PromiseLike<unknown[]> {
+      const groupBy = jest.fn().mockResolvedValue([]);
+      const thenable: { groupBy: jest.Mock } & PromiseLike<unknown[]> = {
+        groupBy,
+        then: <T>(onFulfilled: (rows: unknown[]) => T, onRejected?: (e: unknown) => T) =>
+          Promise.resolve([]).then(onFulfilled, onRejected),
+      };
+      return thenable;
+    }
+
+    const jobsInsert = { returning: jest.fn().mockResolvedValue([{ id: 1 }]) };
+    const pagesInsert = {
+      onConflictDoNothing: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([{ id: 9, contentRevision: 1, aclRevision: 1 }]),
+      }),
+    };
+
+    const db: Partial<Db> & {
+      transaction: jest.Mock;
+      select: jest.Mock;
+      insert: jest.Mock;
+    } = {
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation(() => makeEmptyWhereChain()),
+        }),
+      })),
+      insert: jest.fn().mockImplementation((table: unknown) => {
+        if (table === kbImportJobs) return { values: jest.fn().mockReturnValue(jobsInsert) };
+        return { values: jest.fn().mockReturnValue(pagesInsert) };
+      }),
+      transaction: jest.fn().mockImplementation(async (cb: (tx: typeof db) => Promise<unknown>) => {
+        insideTxRef.value = true;
+        try {
+          return await cb(db as typeof db);
+        } finally {
+          insideTxRef.value = false;
+        }
+      }),
+    };
+
+    const service = new KbImportExportService(
+      db as unknown as Db,
+      sharedAudit,
+      sharedPlanLimits,
+      sharedAuth as never,
+    );
+
+    const input: ImportPagesInput = {
+      sourceType: "markdown",
+      items: [{ title: "New Doc", contentText: "body" }],
+      duplicatePolicy: "skip",
+    } as unknown as ImportPagesInput;
+
+    const result = await service.importPages(makeUser(), input);
+
+    expect(result.succeeded).toBe(1);
+    expect(result.duplicates).toBe(0);
   });
 });

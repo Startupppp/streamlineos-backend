@@ -44,6 +44,7 @@ function makeService(
             limit: jest.fn().mockResolvedValue([]),
           }),
           groupBy: jest.fn().mockResolvedValue([]),
+          limit: jest.fn().mockResolvedValue([]),
         }),
         leftJoin: jest.fn().mockReturnValue({
           leftJoin: jest.fn().mockReturnValue({
@@ -249,7 +250,11 @@ describe("KbSpacesService — space access for move operations (authorization co
         },
         select: jest.fn().mockReturnValue({
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue([{ count: 0 }]),
+            where: jest.fn().mockReturnValue(
+              Object.assign(Promise.resolve([{ count: 0 }]), {
+                limit: jest.fn().mockResolvedValue([]),
+              }),
+            ),
           }),
         }),
       } as unknown as Db;

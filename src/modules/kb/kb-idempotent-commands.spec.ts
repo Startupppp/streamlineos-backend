@@ -5,6 +5,9 @@ import { KbMediaController } from "./wiki/kb-media.controller";
 import { KbSourcesController } from "./wiki/kb-sources.controller";
 import { KbPageIndexingController } from "./retrieval/kb-page-indexing.controller";
 import { KbAskController } from "./retrieval/kb-ask.controller";
+import { KbPagesController } from "./wiki/kb-pages.controller";
+import { KbPageDuplicateService } from "./wiki/kb-page-duplicate.service";
+import { KbPageVersionsService } from "./wiki/kb-page-versions.service";
 
 /**
  * `check:idempotent-commands` is green over the whole KB module and always has been:
@@ -99,5 +102,29 @@ describe("KB command fencing", () => {
   ])("%s stays outside the request transaction while fenced", (_route, handler) => {
     expect(commandOf(handler)).toEqual(expect.any(String));
     expect(isNoTenantTransaction(handler)).toBe(true);
+  });
+
+  describe("retriable creates — fenced so a network retry creates exactly one resource", () => {
+    const RETRIABLE_CREATES: ReadonlyArray<[string, unknown, string]> = [
+      ["POST /kb/pages", KbPagesController.prototype.create, "kb.pages.create"],
+      [
+        "POST /kb/research-briefs/:briefId/convert-to-page",
+        KbPagesController.prototype.convertBriefToPage,
+        "kb.research-brief.convert-to-page",
+      ],
+    ];
+
+    it.each(RETRIABLE_CREATES)("%s is fenced as the correct command name", (_route, handler, expected) => {
+      expect(commandOf(handler)).toBe(expected);
+    });
+
+    it("POST /kb/pages and POST /kb/research-briefs/:briefId/convert-to-page are both fenced — no unfenced retriable create", () => {
+      for (const [route, handler] of RETRIABLE_CREATES) {
+        expect(commandOf(handler)).toEqual(
+          expect.any(String),
+          `${route} is unfenced`,
+        );
+      }
+    });
   });
 });

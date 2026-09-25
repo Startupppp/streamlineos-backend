@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { KnowledgeAuthorizationService } from "./knowledge-authorization.service";
 import type { AccessService } from "../../../access/access.service";
 import type { CacheService } from "../../../../common/cache/cache.service";
@@ -306,6 +307,45 @@ describe("KnowledgeAuthorizationService.resolveSpaceAccess", () => {
     const decision = await service.resolveSpaceAccess(makeUser(), 2, "view");
 
     expect(decision.outcome).toBe("notFound");
+  });
+});
+
+describe("KnowledgeAuthorizationService.articleRestrictionPredicate", () => {
+  it("returns null for an org owner so restriction rows never gate an admin", async () => {
+    const { service } = makeHarness({ isAdmin: false });
+    const owner = makeUser({ isOrgOwner: true, principal: undefined });
+
+    const result = await inRequest(() => service.articleRestrictionPredicate(owner));
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null for a knowledge admin so restriction rows never gate an admin", async () => {
+    const { service } = makeHarness({ isAdmin: true });
+
+    const result = await inRequest(() => service.articleRestrictionPredicate(makeUser()));
+
+    expect(result).toBeNull();
+  });
+
+  it("returns a SQL predicate for a non-admin member so restriction rows can filter the query", async () => {
+    const { service } = makeHarness({ isAdmin: false });
+
+    const result = await inRequest(() => service.articleRestrictionPredicate(makeUser()));
+
+    expect(result).not.toBeNull();
+  });
+
+  it("binds the actor's org in the returned predicate so cross-tenant restriction rows cannot match", async () => {
+    const { service } = makeHarness({ isAdmin: false });
+    const user = makeUser({ orgId: "specific-org" });
+    const dialect = new PgDialect();
+
+    const result = await inRequest(() => service.articleRestrictionPredicate(user));
+
+    expect(result).not.toBeNull();
+    const { params } = dialect.sqlToQuery(result!);
+    expect(params).toContain("specific-org");
   });
 });
 

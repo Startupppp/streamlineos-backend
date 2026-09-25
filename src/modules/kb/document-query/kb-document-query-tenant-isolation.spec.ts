@@ -59,12 +59,6 @@ function makeHarness() {
 
   const kbAccess = {
     getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
-    isAdmin: jest.fn().mockResolvedValue(true),
-    getPrincipalIds: jest.fn().mockResolvedValue({
-      userId: "user-1",
-      membershipId: 1,
-      roleSlugs: [],
-    }),
   } as unknown as KbAccessService;
 
   const access = {
@@ -73,6 +67,7 @@ function makeHarness() {
 
   const auth = {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
     assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
   };
 

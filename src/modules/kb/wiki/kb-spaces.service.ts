@@ -332,7 +332,7 @@ export class KbSpacesService {
     user: CurrentUserContext,
     spaceId: number,
   ): Promise<
-    SpaceRow & { pagesOverdueForReview: number; pagesWithReviewPolicy: number }
+    SpaceRow & { pagesOverdueForReview: number; pagesWithReviewPolicy: number; viewerSpaceRole: string | null }
   > {
     const space = await this.db.query.kbSpaces.findFirst({
       where: and(
@@ -344,7 +344,9 @@ export class KbSpacesService {
     if (!space) throw new NotFoundException("Space not found");
     await this.access.assertSpaceAccessible(user, spaceId);
 
-    const [overdueResult, policyResult] = await Promise.all([
+    const membershipId = actingMembershipId(user.principal);
+
+    const [overdueResult, policyResult, memberRow] = await Promise.all([
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(kbPages)
@@ -368,12 +370,26 @@ export class KbSpacesService {
             isNotNull(kbPages.nextReviewAt),
           ),
         ),
+      membershipId !== null
+        ? this.db
+            .select({ spaceRole: kbSpaceMembers.spaceRole })
+            .from(kbSpaceMembers)
+            .where(
+              and(
+                eq(kbSpaceMembers.orgId, user.orgId),
+                eq(kbSpaceMembers.spaceId, spaceId),
+                eq(kbSpaceMembers.membershipId, membershipId),
+              ),
+            )
+            .limit(1)
+        : Promise.resolve([]),
     ]);
 
     return {
       ...space,
       pagesOverdueForReview: overdueResult[0]?.count ?? 0,
       pagesWithReviewPolicy: policyResult[0]?.count ?? 0,
+      viewerSpaceRole: memberRow[0]?.spaceRole ?? null,
     };
   }
 

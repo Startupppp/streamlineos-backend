@@ -23,7 +23,10 @@ import {
   computeAccessibleSpaceIds,
   resolveRoleSlugs,
 } from "./knowledge-space-scope";
-import { buildVisiblePageScope } from "./knowledge-page-scope";
+import {
+  buildArticleRestrictionBranch,
+  buildVisiblePageScope,
+} from "./knowledge-page-scope";
 import {
   allowed,
   denied,
@@ -109,6 +112,17 @@ export class KnowledgeAuthorizationService {
       action,
     );
     return scope.predicate;
+  }
+
+  async articleRestrictionPredicate(
+    user: CurrentUserContext,
+  ): Promise<SQL<unknown> | null> {
+    const standing = await this.resolveStanding(user);
+    if (standing.isOrgOwner || standing.isKbAdmin) return null;
+    return buildArticleRestrictionBranch(standing.orgId, {
+      membershipId: standing.membershipId,
+      roleSlugs: standing.roleSlugs,
+    });
   }
 
   async invalidateSpaceScope(orgId: string): Promise<void> {

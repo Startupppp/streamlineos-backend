@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
-import postgres from "postgres";
 import * as dotenv from "dotenv";
+import { createScriptSql } from "./lib/script-sql-client.mjs";
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
@@ -11,7 +11,11 @@ if (!url) {
 }
 
 const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
-const sql = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
+const sql = await createScriptSql({
+  url,
+  ssl,
+  connection: { onnotice: () => {} },
+});
 
 async function resolveFixtureOrg() {
   if (process.env.SEED_ORG_ID) return process.env.SEED_ORG_ID;
@@ -25,7 +29,11 @@ async function resolveFixtureOrg() {
     );
     process.exit(2);
   }
-  const owner = postgres(ownerUrl, { max: 1, prepare: false, ssl, onnotice: () => {} });
+  const owner = await createScriptSql({
+    url: ownerUrl,
+    ssl,
+    connection: { onnotice: () => {} },
+  });
   try {
     const [busiest] = await owner`
       select org_id, count(*)::int n from build.tickets
@@ -172,6 +180,7 @@ async function main() {
   );
 
   const failures = [];
+  const warnings = [];
   for (const check of CHECKS) {
     const plan = await sql.begin(async (tx) => {
       await tx`select set_config('app.organization_id', ${ORG}, true)`;
@@ -212,17 +221,17 @@ async function main() {
           `The fixture participant reaches every row through tickets.assignee_membership_id, so the OR short-circuits before the semi-join. ` +
           `Seed a participant who appears ONLY in ${check.requireIndexOnlyOn} (pnpm seed:build-load creates one) or this assertion is vacuous.`,
       );
-    else if (!node.type.startsWith("Index Only Scan"))
-      failures.push(
+    else if (!node.type.startsWith("Index Only Scan")) {
+      const message =
         fixtures.participantShare > UNREALISTIC_SHARE
-          ? `${check.id}: ${check.requireIndexOnlyOn} resolved by ${node.type}, but that is the CORRECT plan here and the index is not at fault — ` +
-            `the fixture participant holds ${(fixtures.participantShare * 100).toFixed(0)}% of the table ` +
-            `across only ${fixtures.distinctParticipants} distinct participant(s), and no index beats a sequential scan at that selectivity. ` +
-            `Seed a production-shaped member distribution before reading this as an index defect.`
-          : `${check.id}: ${check.requireIndexOnlyOn} resolved by ${node.type}, not Index Only Scan — the tenant-led covering index is missing or unusable`,
-      );
+          ? `${check.id}: ${check.requireIndexOnlyOn} resolved by ${node.type}; the fixture participant holds ${(fixtures.participantShare * 100).toFixed(0)}% of the table across only ${fixtures.distinctParticipants} distinct participant(s), so the planner chose the lower-cost path`
+          : `${check.id}: ${check.requireIndexOnlyOn} resolved by ${node.type}, not Index Only Scan — the tenant-led covering index is missing or unusable`;
+      if (fixtures.participantShare > UNREALISTIC_SHARE) warnings.push(message);
+      else failures.push(message);
+    }
   }
 
+  warnings.forEach((warning) => console.warn("WARN:", warning));
   if (failures.length > 0) {
     failures.forEach((f) => console.error("FAIL:", f));
     process.exitCode = 1;

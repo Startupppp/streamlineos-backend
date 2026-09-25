@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { BUDGETS, REQUIRED_BUDGET_IDS } from "./read-cost-budgets.mjs";
+import { createScriptSql } from "./lib/script-sql-client.mjs";
 import {
   formatRoleProvenance,
   resolveAppDatabaseUrl,
@@ -214,12 +214,16 @@ export function checkPlanAssertions(planAssertions, nodes, budgetId) {
   return failures;
 }
 
-async function runBudget(budget, fixtures, dbUrl, ssl, orgId, samples) {
+async function runBudget(budget, fixtures, dbUrl, ssl, orgId, samples, assumeRole) {
   const params = budget.params(fixtures);
   if (params === null)
     return { status: "skip", reason: "no fixture data for this budget" };
 
-  const db = postgres(dbUrl, { max: 1, prepare: false, ssl, onnotice: () => {} });
+  const db = await createScriptSql({
+    url: dbUrl,
+    ssl,
+    connection: { onnotice: () => {} },
+  });
   try {
     return await db.begin(async (tx) => {
       // Measuring as the owner is measuring nothing: the owner has BYPASSRLS, so
@@ -349,7 +353,11 @@ async function main() {
   const STRICT = process.env.STREAMLINE_STRICT_BUDGETS === "1" || process.argv.includes("--strict");
 
   const ssl = resolveSsl(process.env);
-  const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
+  const db = await createScriptSql({
+    url,
+    ssl,
+    connection: { onnotice: () => {} },
+  });
   const assumeRole = process.env.APP_DB_ROLE ?? "streamline_app";
 
   // PRD-C079: the role is READ, never asserted. Every artifact this run writes carries the
@@ -641,7 +649,7 @@ async function main() {
         continue;
       }
 
-      const result = await runBudget(budget, fixtures, url, ssl, ORG, SAMPLES);
+      const result = await runBudget(budget, fixtures, url, ssl, ORG, SAMPLES, assumeRole);
 
       if (result.status === "skip") {
         if (!SELF_TEST)

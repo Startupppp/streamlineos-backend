@@ -15,6 +15,7 @@ export const contentHealthSignalTypeEnum = z.enum([
   "broken_link",
   "overexposed",
   "duplicate_candidate",
+  "contradictory_claim",
 ]);
 
 export type ContentHealthSignalType = z.infer<
@@ -103,3 +104,56 @@ export const healthItemSchema = z.object({
 });
 
 export type HealthItem = z.infer<typeof healthItemSchema>;
+
+export const assignHealthItemBodySchema = z
+  .object({
+    pageId: z.number().int().positive(),
+    kind: contentHealthSignalTypeEnum,
+    assigneeMembershipId: z.number().int().positive(),
+    dueAt: z.string().datetime({ offset: true }).optional().transform((v) => (v !== undefined ? new Date(v) : undefined)),
+  })
+  .strict();
+
+export type AssignHealthItemBody = z.infer<typeof assignHealthItemBodySchema>;
+
+export const bulkRepairBodySchema = z
+  .object({
+    pageIds: z.array(z.number().int().positive()).min(1).max(100),
+    kind: contentHealthSignalTypeEnum,
+    repairAction: z.enum(["assign_owner", "request_review", "mark_needs_content"]),
+    assigneeMembershipId: z.number().int().positive().optional(),
+  })
+  .strict();
+
+export type BulkRepairBody = z.infer<typeof bulkRepairBodySchema>;
+
+const bulkRepairOutcomeEnum = z.enum(["applied", "already_resolved", "skipped"]);
+
+const bulkRepairResultItemSchema = z.object({
+  pageId: z.number().int(),
+  outcome: bulkRepairOutcomeEnum,
+});
+
+export const bulkRepairResponseSchema = z.object({
+  results: z.array(bulkRepairResultItemSchema),
+});
+
+export type BulkRepairResponse = z.infer<typeof bulkRepairResponseSchema>;
+export type BulkRepairOutcome = z.infer<typeof bulkRepairOutcomeEnum>;
+
+export const evidenceQuerySchema = z
+  .object({
+    pageId: z.coerce.number().int().positive(),
+    kind: contentHealthSignalTypeEnum,
+  })
+  .strict();
+
+export type EvidenceQuery = z.infer<typeof evidenceQuerySchema>;
+
+export const evidenceResponseSchema = z.object({
+  pageId: z.number().int(),
+  kind: contentHealthSignalTypeEnum,
+  ruleVersion: z.number().int(),
+  evidence: z.record(z.unknown()),
+  detectedAt: wireDate(),
+});

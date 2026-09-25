@@ -7,7 +7,6 @@ import { KbAccessService } from "../core/kb-access.service";
 import { AccessService } from "../../access/access.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { articleOwnerScope } from "../retrieval/kb-article-owner-scope";
-import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -55,20 +54,16 @@ export class KbDocumentQueryService {
     const cap = Math.min(limit, KB_DOCUMENT_QUERY_CAP);
     const term = `%${query}%`;
 
-    const [articleRead, spaceIds, predicate] = await Promise.all([
+    const [articleRead, spaceIds, predicate, restrictionPredicate] = await Promise.all([
       resolveKbArticlesViewScope(this.access, user),
       this.kbAccess.getAccessibleSpaceIds(user),
       this.auth.visiblePagePredicate(user, "view"),
+      this.auth.articleRestrictionPredicate(user),
     ]);
 
     const results: KbDocumentHit[] = [];
 
     if (!articleRead.denied && spaceIds.length > 0) {
-      const [isAdmin, principal] = await Promise.all([
-        this.kbAccess.isAdmin(user),
-        this.kbAccess.getPrincipalIds(user),
-      ]);
-
       const membershipId =
         user.principal === undefined ? null : actingMembershipId(user.principal);
       const domain: SQL[] = [
@@ -77,7 +72,7 @@ export class KbDocumentQueryService {
         ne(kbPages.status, "archived"),
         sql`${kbPages.title} ILIKE ${term}`,
       ];
-      if (!isAdmin) domain.push(buildArticleRestrictionBranch(user.orgId, principal));
+      if (restrictionPredicate !== null) domain.push(restrictionPredicate);
 
       const where = articleRead.compose(
         { tenant: kbPages.orgId, scope: articleOwnerScope(membershipId), and: domain },

@@ -1,4 +1,5 @@
 import { isReserved, type WorkClass } from "../common/admission/work-class";
+import { NullReplicaHealthProbe, type ReplicaHealthProbe } from "./replica-lag-probe";
 
 export type ReadStrategy = "primary-required" | "replica-safe";
 
@@ -57,19 +58,44 @@ export interface PoolHandle {
  * Call `routeWithFaultAwareness()` when you need to inject fault state (tests, health-check loops).
  */
 export class ReplicaRouter {
+  private readonly healthProbe: ReplicaHealthProbe;
+
   constructor(
     private readonly primary: PoolHandle,
     private readonly replica: PoolHandle | null,
-  ) {}
+    healthProbe?: ReplicaHealthProbe,
+  ) {
+    this.healthProbe = healthProbe ?? new NullReplicaHealthProbe();
+  }
 
   /**
-   * Routes a read without explicit fault injection.
+   * Routes a read using the injected health probe to determine replica health.
    *
    * When no replica is configured, replica-safe classes fall through to primary — this is
    * not a fault condition, merely an unconfigured deployment.
+   *
+   * When a replica IS configured but faulted (probe returns false), throws `ReplicaShedError`
+   * to prevent stale-tolerant projections from competing for primary capacity.
+   * Use `routeWithFallback` when silent fallback to primary is acceptable.
    */
-  route(wc: WorkClass): PoolHandle {
-    return this.routeWithFaultAwareness(wc, true);
+  async route(wc: WorkClass): Promise<PoolHandle> {
+    const isHealthy = await this.healthProbe.probe();
+    return this.routeWithFaultAwareness(wc, isHealthy);
+  }
+
+  /**
+   * Routes a read with fallback to primary when the replica is faulted, rather than shedding.
+   *
+   * Use this for lower-priority background work where completing on the primary is better
+   * than failing. For analytics and search-index reads where primary capacity is precious,
+   * prefer `route()` / `routeWithFaultAwareness()` with explicit shedding.
+   */
+  routeWithFallback(wc: WorkClass, isReplicaHealthy: boolean): PoolHandle {
+    const strategy = routingStrategyFor(wc);
+    if (strategy === "primary-required") return this.primary;
+    if (this.replica === null) return this.primary;
+    if (!isReplicaHealthy) return this.primary;
+    return this.replica;
   }
 
   /**
