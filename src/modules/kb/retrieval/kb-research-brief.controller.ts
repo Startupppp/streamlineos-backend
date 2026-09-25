@@ -20,6 +20,7 @@ import {
   kbResearchBriefListSchema as kbResearchBriefListResponseSchema,
   kbResearchBriefDetailSchema,
   kbResearchBriefRateSchema as kbResearchBriefRateResponseSchema,
+  kbResearchBriefApproveSchema,
 } from "./dto/kb-retrieval-response.schemas";
 import { z } from "zod";
 
@@ -100,5 +101,19 @@ export class KbResearchBriefController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<void> {
     await this.briefs.cancelBrief(u, briefId);
+  }
+
+  @Post("research-briefs/:briefId/approve")
+  @BodylessAction()
+  @RequirePermission("kb:pages:manage")
+  @HttpCode(200)
+  @Validate({ params: briefIdParams })
+  @ResponseSchema(kbResearchBriefApproveSchema)
+  async approveBrief(
+    @Param("briefId", ParseIntPipe) briefId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<{ success: true }> {
+    await this.briefs.approveBrief(u, briefId);
+    return { success: true };
   }
 }

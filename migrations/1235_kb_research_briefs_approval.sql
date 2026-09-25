@@ -7,3 +7,5 @@ ALTER TABLE "kb_research_briefs" ADD COLUMN IF NOT EXISTS "approved_by_membershi
 ALTER TABLE "kb_research_briefs" ADD CONSTRAINT "fk_kb_research_briefs_approved_by" FOREIGN KEY ("org_id", "approved_by_membership_id") REFERENCES "organization_members" ("org_id", "id") ON DELETE SET NULL ("approved_by_membership_id") NOT VALID;
 --> statement-breakpoint
 ALTER TABLE "kb_research_briefs" VALIDATE CONSTRAINT "fk_kb_research_briefs_approved_by";
+--> statement-breakpoint
+CREATE INDEX "idx_kb_research_briefs_approved_by" ON "kb_research_briefs" ("org_id", "approved_by_membership_id") WHERE "approved_by_membership_id" IS NOT NULL;

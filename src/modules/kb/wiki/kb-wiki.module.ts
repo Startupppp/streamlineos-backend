@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AiModule } from "../../ai/core/ai.module";
 import { BillingModule } from "../../billing/core/billing.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { KbCoreModule } from "../core/kb-core.module";
 import { KbWikiAnalyticsController } from "../analytics/kb-wiki-analytics.controller";
 import { KbWikiAnalyticsService } from "../analytics/kb-wiki-analytics.service";
@@ -25,6 +26,7 @@ import { KbPageRecordLinksService } from "./kb-page-record-links.service";
 import { KbMediaService } from "./kb-media.service";
 import { KbSourcesService } from "./kb-sources.service";
 import { KbImportExportService } from "./kb-import-export.service";
+import { KbImportProcessConsumer } from "./kb-import-process.consumer";
 import { KbPageAiService } from "./kb-page-ai.service";
 import { KbPageStatusService } from "./kb-page-status.service";
 import { KbSpacesController } from "./kb-spaces.controller";
@@ -48,6 +50,7 @@ import { KbBriefToPageService } from "./kb-brief-to-page.service";
     AiModule,
     BillingModule,
     NotificationsModule,
+    OutboxModule,
     KbCoreModule,
     KbRetrievalModule,
   ],
@@ -86,6 +89,7 @@ import { KbBriefToPageService } from "./kb-brief-to-page.service";
     KbPageTemplatesService,
     KbPageReviewsService,
     KbImportExportService,
+    KbImportProcessConsumer,
     KbWikiAnalyticsService,
     KbContentHealthService,
     KbContentHealthScannerService,

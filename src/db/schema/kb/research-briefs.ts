@@ -51,6 +51,8 @@ export const kbResearchBriefs = pgTable(
     costCredits: integer("cost_credits"),
     provider: text("provider"),
     model: text("model"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedByMembershipId: integer("approved_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

@@ -24,14 +24,18 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
-  kbImportResultSchema,
+  kbImportAcceptedSchema,
+  kbImportDryRunSchema,
+  kbImportJobCancelSchema,
   kbImportJobListSchema,
+  kbImportJobSchema,
   kbExportResultSchema,
   kbExportJobListSchema,
 } from "./dto/kb-space-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
+const importJobIdParams = z.object({ importJobId: z.coerce.number().int().positive() }).strict();
 const jobListQuery = z.object({ cursor: z.string().optional() }).strict();
 
 @Controller("kb")
@@ -43,12 +47,23 @@ export class KbImportExportController {
   @Idempotent("kb:pages.import")
   @RequirePermission("kb:pages:import")
   @Validate({ body: importPagesSchema })
-  @ResponseSchema(kbImportResultSchema)
+  @ResponseSchema(kbImportAcceptedSchema)
   async importPages(
     @Body() body: ImportPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.importExport.importPages(u, body);
+  }
+
+  @Post("pages/import/dry-run")
+  @RequirePermission("kb:pages:import")
+  @Validate({ body: importPagesSchema })
+  @ResponseSchema(kbImportDryRunSchema)
+  async dryRunImport(
+    @Body() body: ImportPagesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.importExport.dryRunImport(u, body);
   }
 
   @Get("import-jobs")
@@ -60,6 +75,28 @@ export class KbImportExportController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.importExport.listImportJobs(u.orgId, cursor);
+  }
+
+  @Get("import-jobs/:importJobId")
+  @RequirePermission("kb:pages:import")
+  @Validate({ params: importJobIdParams })
+  @ResponseSchema(kbImportJobSchema)
+  async getImportJob(
+    @Param("importJobId", ParseIntPipe) importJobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.importExport.getImportJob(u.orgId, importJobId);
+  }
+
+  @Post("import-jobs/:importJobId/cancel")
+  @RequirePermission("kb:pages:import")
+  @Validate({ params: importJobIdParams })
+  @ResponseSchema(kbImportJobCancelSchema)
+  async cancelImportJob(
+    @Param("importJobId", ParseIntPipe) importJobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.importExport.cancelImportJob(u.orgId, importJobId);
   }
 
   @Post("pages/:pageId/export")

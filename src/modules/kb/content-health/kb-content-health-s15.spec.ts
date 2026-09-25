@@ -303,16 +303,7 @@ describe("KbContentHealthService — bulkRepair cannot publish a page", () => {
 describe("KbContentHealthScannerService — producers for all nine kinds", () => {
   afterEach(() => jest.resetAllMocks());
 
-  it("exposes a recordContradiction method, proving the contradictory_claim kind has a producer pathway", () => {
-    const db = {
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ onConflictDoUpdate: jest.fn().mockResolvedValue([]) }) }),
-    } as unknown as Db;
-    const scanner = new KbContentHealthScannerService(db);
-    expect(typeof scanner.recordContradiction).toBe("function");
-  });
-
-  it("calls recordContradiction with the orgId, pageId and evidence, so the scanner can persist an AI-detected contradiction", async () => {
+  it("recordContradiction writes an open health item with kind=contradictory_claim and the supplied evidence — removing this test breaks the producer contract", async () => {
     const insertValues = jest.fn().mockReturnValue({
       onConflictDoUpdate: jest.fn().mockResolvedValue([]),
     });

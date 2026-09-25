@@ -34,6 +34,7 @@ type BriefSummary = {
   costCredits: number | null;
   provider: string | null;
   model: string | null;
+  approvedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -121,6 +122,7 @@ export class KbResearchBriefService {
         costCredits: kbResearchBriefs.costCredits,
         provider: kbResearchBriefs.provider,
         model: kbResearchBriefs.model,
+        approvedAt: kbResearchBriefs.approvedAt,
         createdAt: kbResearchBriefs.createdAt,
         updatedAt: kbResearchBriefs.updatedAt,
       })
@@ -156,6 +158,7 @@ export class KbResearchBriefService {
         costCredits: kbResearchBriefs.costCredits,
         provider: kbResearchBriefs.provider,
         model: kbResearchBriefs.model,
+        approvedAt: kbResearchBriefs.approvedAt,
         createdAt: kbResearchBriefs.createdAt,
         updatedAt: kbResearchBriefs.updatedAt,
       })
@@ -272,5 +275,27 @@ export class KbResearchBriefService {
       .update(kbResearchBriefs)
       .set({ rating })
       .where(eq(kbResearchBriefs.id, briefId));
+  }
+
+  async approveBrief(user: CurrentUserContext, briefId: number): Promise<void> {
+    const approverMembershipId = actingMembershipId(user.principal);
+    if (approverMembershipId == null) throw new ForbiddenException("Organization membership required");
+    const rows = await this.db
+      .select({ id: kbResearchBriefs.id, status: kbResearchBriefs.status, orgId: kbResearchBriefs.orgId })
+      .from(kbResearchBriefs)
+      .where(and(eq(kbResearchBriefs.id, briefId), eq(kbResearchBriefs.orgId, user.orgId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new NotFoundException("Research brief not found");
+    if (row.status !== "completed") {
+      throw new HttpException(
+        { code: "BRIEF_NOT_COMPLETED", message: "Only completed research briefs can be approved" },
+        HttpStatus.CONFLICT,
+      );
+    }
+    await this.db
+      .update(kbResearchBriefs)
+      .set({ approvedAt: new Date(), approvedByMembershipId: approverMembershipId })
+      .where(and(eq(kbResearchBriefs.id, briefId), eq(kbResearchBriefs.orgId, user.orgId)));
   }
 }

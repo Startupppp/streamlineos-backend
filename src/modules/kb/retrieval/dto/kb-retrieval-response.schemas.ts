@@ -110,9 +110,12 @@ const kbBriefSummarySchema = z.object({
   costCredits: z.number().int().nullable(),
   provider: z.string().nullable(),
   model: z.string().nullable(),
+  approvedAt: wireDate().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
+
+export const kbResearchBriefApproveSchema = z.object({ success: z.literal(true) });
 
 export const kbResearchBriefEnqueueSchema = z.object({
   briefId: z.number().int(),

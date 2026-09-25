@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import { ConflictException, HttpException, HttpStatus, Injectable } from "@nestjs/common";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { paragraphize } from "../help-centre/lib/kb-page-content";
 import { KbResearchBriefService } from "../retrieval/kb-research-brief.service";
@@ -23,6 +23,12 @@ export class KbBriefToPageService {
     const brief = await this.briefs.getById(user, briefId);
     if (brief.status !== "completed" || !brief.report) {
       throw new ConflictException("Research brief has no completed report to convert");
+    }
+    if (brief.approvedAt == null) {
+      throw new HttpException(
+        { code: "BRIEF_NOT_APPROVED", message: "This research brief has not been approved for publishing" },
+        HttpStatus.CONFLICT,
+      );
     }
 
     const page = await this.pages.create(user, {
