@@ -58,7 +58,7 @@ describeDb("document versions — real database", () => {
     if (!sql) return;
     await seed.dispose();
     await sql.end({ timeout: 5 });
-  });
+  }, 120_000);
 
   async function doc(org: SeededOrg, fileUrl = key(org)): Promise<number> {
     const [row] = await sql`

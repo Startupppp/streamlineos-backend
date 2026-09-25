@@ -64,7 +64,7 @@ describeDb("publishing a document to the knowledge base — real database", () =
     if (!sql) return;
     await seed.dispose();
     await sql.end({ timeout: 5 });
-  });
+  }, 120_000);
 
   async function unit(org: SeededOrg, kind: "DEPARTMENT" | "LOCATION"): Promise<string> {
     const id = randomUUID();

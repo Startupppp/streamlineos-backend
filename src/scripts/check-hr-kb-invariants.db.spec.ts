@@ -47,7 +47,7 @@ describeDb("check:hr-kb-invariants against a real database", () => {
     if (!sql) return;
     await seed.dispose();
     await sql.end({ timeout: 5 });
-  });
+  }, 120_000);
 
   async function gate(org: SeededOrg | null, env: Record<string, string> = { HR_KB_DATABASE_URL: raw }): Promise<Outcome> {
     try {

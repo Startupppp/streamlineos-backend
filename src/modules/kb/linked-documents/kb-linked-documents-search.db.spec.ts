@@ -57,7 +57,7 @@ describeDb("linked documents: search and assistant retrieval — real database",
     if (!sql) return;
     await seed.dispose();
     await sql.end({ timeout: 5 });
-  });
+  }, 120_000);
 
   async function unit(org: SeededOrg): Promise<string> {
     const id = randomUUID();

@@ -71,7 +71,7 @@ describeDb("document classification and audiences — real database", () => {
     if (!sql) return;
     await seed.dispose();
     await sql.end({ timeout: 5 });
-  });
+  }, 120_000);
 
   async function unit(org: SeededOrg, kind: "DEPARTMENT" | "LOCATION"): Promise<string> {
     const id = randomUUID();

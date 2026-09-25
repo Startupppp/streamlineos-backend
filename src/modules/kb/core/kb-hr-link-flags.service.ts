@@ -16,7 +16,9 @@ const HR_MODULE = "hr";
  * The per-tenant switches for HR documents in the knowledge base: `link` (publish and browse), `search`
  * (find them in KB search) and `ai` (let the assistants cite them). Stored on `kb_settings`, default off.
  *
- * Read UNCACHED, one indexed row, so turning a switch off is felt on the very next request. Every route of
+ * The three switches are read UNCACHED, one indexed row, so turning one off is felt on the very next request. The HR
+ * module condition alongside them follows the entitlement cache instead (a few seconds per instance), so disabling the
+ * HR module itself can take that long to reach every instance. Every route of
  * the feature calls `assertEnabled` first and answers 404 while its switch is off, as if the route did not
  * exist; with all three off nothing about the knowledge base or HR documents changes.
  */
