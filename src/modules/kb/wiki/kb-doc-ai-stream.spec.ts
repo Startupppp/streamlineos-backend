@@ -82,12 +82,6 @@ const SURFACES: Surface[] = [
   },
 ];
 
-/**
- * The two KB document surfaces are the same shape, so they are driven by the
- * same table. Asserting each one separately is what makes a divergence — a
- * feature key that drifts, a ceiling that does not — visible on the surface
- * that drifted rather than on whichever the test happened to pick.
- */
 describe.each(SURFACES)("$name.stream — the KB document panel actually streams", (surface) => {
   beforeEach(() => {
     authMock.visiblePagePredicate.mockClear();

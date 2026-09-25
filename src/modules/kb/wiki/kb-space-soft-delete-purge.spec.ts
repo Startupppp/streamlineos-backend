@@ -22,7 +22,6 @@ interface SelectChain {
 
 const dialect = new PgDialect();
 
-/** `gt(id, afterId)` is the last bound parameter of the keyset predicate. */
 function cursorOf(condition: SQL | undefined): number {
   if (condition === undefined) throw new Error("the space content select ran with no WHERE clause");
   const { params } = dialect.sqlToQuery(condition);

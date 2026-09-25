@@ -1,26 +1,3 @@
-/**
- * A KB source upload must survive the process that accepted it.
- *
- * WHAT WAS WRONG. `createNote`/`createFile` registered indexing through `registerAfterCommit`
- * and emitted nothing else. `TenantContextInterceptor` fires those hooks as
- * `void run().catch(...)` — detached, after the response, with no shutdown drain — so a deploy
- * or SIGTERM between the commit and the drain left `kb_sources.status = 'processing'` with no
- * lease, no retry and no dead letter able to reclaim it. The sheet polls that row every three
- * seconds for as long as it is open, `/kb/ask` ignores the document, and the only recourse is
- * delete-and-re-upload, which re-charges embedding credits.
- *
- * WHY THE AUDIT'S PROPOSED FIX WOULD NOT HAVE WORKED. It said to emit `kb.content.index` and
- * let `KbIngestionConsumer` own it, because `KbSourceAdapter` is already registered so "the
- * consumer side needs no new code". It did: the adapter opened with
- * `if (!source || source.status !== "ready") return;` and a source is created `processing`, so
- * the event would have drained, done nothing, and left the row exactly as stranded as before.
- * Both halves — the emit and the adapter's ownership of the terminal status — are asserted here.
- *
- *   APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
- *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable npx jest --config jest-db.json --runInBand \
- *   --testPathPattern="kb-source-ingestion-durability.db"
- */
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -65,9 +42,6 @@ describe("KB source ingestion is durable, not only after-commit", () => {
 
     indexSource = jest.fn().mockResolvedValue(CHUNKS_WRITTEN);
 
-    // `useValue` is the seam Nest gives for a collaborator that is not the subject: it needs
-    // no cast, so the spec introduces no forced typing. The embedding gateway and object store
-    // are stood in for; the database is real, because the invariant is about what commits.
     const moduleRef = await Test.createTestingModule({
       providers: [
         KbSourcesService,
@@ -115,7 +89,6 @@ describe("KB source ingestion is durable, not only after-commit", () => {
     indexSource.mockClear();
   });
 
-  /** A request: one tenant transaction with the GUC set. */
   async function inTenant<T>(fn: () => Promise<T>): Promise<T> {
     return base.transaction(async (tx) => {
       await tx.execute(sql`SELECT set_config('app.organization_id', ${ORG}, true)`);
@@ -123,7 +96,6 @@ describe("KB source ingestion is durable, not only after-commit", () => {
     });
   }
 
-  /** A whole `CurrentUserContext`, built rather than forced — the service reads orgId and userId. */
   const user: CurrentUserContext = {
     userId: PROBE_USER,
     orgId: ORG,
@@ -154,7 +126,6 @@ describe("KB source ingestion is durable, not only after-commit", () => {
       sources.createNote(user, { title: "Stranded note", text: "policy text" }),
     );
 
-    // Exactly what a SIGTERM between commit and drain leaves behind.
     await owner`UPDATE kb_sources SET status = 'processing', chunk_count = 0 WHERE org_id = ${ORG} AND id = ${created.id}`;
     indexSource.mockClear();
     const [stranded] = await owner<{ status: string }[]>`
@@ -176,7 +147,6 @@ describe("KB source ingestion is durable, not only after-commit", () => {
       sources.createNote(user, { title: "Deleted note", text: "policy text" }),
     );
     await owner`UPDATE kb_sources SET deleted_at = now(), status = 'processing' WHERE org_id = ${ORG} AND id = ${created.id}`;
-    // `createNote` already ran the fast path once; the question is what the LATE event does.
     indexSource.mockClear();
 
     await inTenant(() => adapter.handle(ORG, created.id));

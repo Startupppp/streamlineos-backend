@@ -15,7 +15,6 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
 describe("KbSourcesService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-  /* The list is a keyset page now; the tenant predicate this file guards is unchanged. */
   const FIRST_PAGE = kbSourcesListQuerySchema.parse({});
 
   const storage = {} as never;

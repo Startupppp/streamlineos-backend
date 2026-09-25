@@ -24,7 +24,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   const aiGateway = {} as never;
   const events = { record: jest.fn().mockResolvedValue(undefined) } as never;
-  const search = {} as never;
+  const search = { aclCacheOutcome: jest.fn().mockResolvedValue("bypass") } as never;
   const access = {} as never;
   const auth = {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
@@ -100,6 +100,7 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
     retrieveTopSources: jest.fn().mockResolvedValue([]),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
     articleOwnerFilterFor: jest.fn().mockResolvedValue(sql`true`),
+    aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
   };
 
   function makeDbForPageTest(returnPageIds: number[]) {

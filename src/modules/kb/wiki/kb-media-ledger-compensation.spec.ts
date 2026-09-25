@@ -71,11 +71,6 @@ interface Harness {
   loggedErrors: string[];
 }
 
-/**
- * The insert chain is a real mock rather than a permissive proxy: the whole
- * point of these tests is which link rejected and what ran afterwards, and a
- * proxy that resolves everything cannot express that.
- */
 function harness(kbBucket: string | undefined): Harness {
   const chain = {
     rotate: jest.fn(),
@@ -129,13 +124,6 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-/**
- * KB media keeps both the scan and the object write on the request path, which
- * is only safe while the scan verdict is known BEFORE any byte reaches the
- * bucket. Deferring either half would break a different guarantee — the editor
- * renders the returned key immediately — so this ordering is the whole of the
- * argument and is pinned here rather than left to the reading of the method.
- */
 describe("KB media — nothing is written before a clean verdict", () => {
   it("the scan completes before uploadFile is ever invoked", async () => {
     const h = harness(KB_BUCKET);
@@ -165,12 +153,6 @@ describe("KB media — nothing is written before a clean verdict", () => {
   });
 });
 
-/**
- * A `kb-media` key resolves to its organisation off the key alone, so
- * `assertKeyReadable` never reads this table and an object whose row never
- * landed stays readable by the whole tenant; and both KB purge paths enumerate
- * `kb_page_attachments`, so nothing would ever collect it.
- */
 describe("KB media — a failed attachment row takes its object with it", () => {
   it("deletes the uploaded object when the row insert rejects", async () => {
     const h = harness(KB_BUCKET);

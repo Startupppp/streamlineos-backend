@@ -50,10 +50,6 @@ const makeAuth = () => ({
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "manage", via: "admin" }),
 });
 
-/**
- * The one assertion the first two tests rest on, extracted so the bite can run
- * it against a transaction that deleted no chunks and prove it fails there.
- */
 function assertChunksDeletedInTx(txDelete: jest.Mock): void {
   const chunkDeleteCall = txDelete.mock.calls.find(([table]: [unknown]) => table === kbArticleChunks);
   expect(chunkDeleteCall).toBeDefined();

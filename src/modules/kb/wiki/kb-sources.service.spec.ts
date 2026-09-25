@@ -21,12 +21,6 @@ function makeIndexing() {
   return { removeSourceChunks: jest.fn().mockResolvedValue(undefined) };
 }
 
-/*
- * A non-empty KB bucket, deliberately. With "" the override resolves to undefined
- * and requireBucket falls through to the default bucket, so the delete and the
- * upload agree by accident and the assertion below would pass on a service that
- * dropped the override entirely.
- */
 const KB_BUCKET = "kb-files";
 
 function makeConfig() {

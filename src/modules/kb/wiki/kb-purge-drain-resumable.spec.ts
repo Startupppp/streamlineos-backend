@@ -32,8 +32,6 @@ import { KbPageTrashService } from "./kb-page-trash.service";
 const ORG = "org-drain";
 const BATCH = 500;
 
-// A Drizzle table is circular, so a failing matcher holding one crashes the jest
-// reporter before it can print the diff. Record identity as a name instead.
 function makeDb(batches: number[][]) {
   const deletedFrom: string[] = [];
   let call = 0;

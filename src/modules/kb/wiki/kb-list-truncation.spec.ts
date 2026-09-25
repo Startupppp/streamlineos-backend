@@ -15,19 +15,6 @@ const auth = {
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
 };
 
-/**
- * Two KB lists answered a hard cap with no way past it and no signal that anything was
- * cut.
- *
- *   GET /kb/sources      .limit(100), plain array — a tenant past 100 sources could never
- *                        reach the rest from any client.
- *   GET /kb/pages/search .limit(20), plain array — a query matching 500 pages was
- *                        indistinguishable from one matching 20.
- *
- * Neither is a page size; both are silent truncation. Sources is a keyset page now; page
- * search stays a bounded top-N (paging a `ts_rank` ordering means re-ranking every page)
- * but declares its ceiling and reports the cut.
- */
 
 function makeSourcesDb(rows: Array<{ id: number; createdAt: Date }>): {
   db: Db;
@@ -91,10 +78,6 @@ describe("GET /kb/sources — a cursor, not a ceiling", () => {
     expect(page.pagination.hasMore).toBe(true);
   });
 
-  /**
-   * The sentinel bug: a next cursor taken from the DISCARDED row makes an exclusive bound
-   * skip it permanently. It must come from the last row the caller keeps.
-   */
   it("takes the next cursor from the last row kept, never from the sentinel", async () => {
     const rows = Array.from({ length: 60 }, (_, i) => ({
       id: 100 - i,
@@ -124,10 +107,6 @@ describe("GET /kb/sources — a cursor, not a ceiling", () => {
     expect(page.pagination.nextCursor).toBeNull();
   });
 
-  /**
-   * `created_at` carries no uniqueness, so the tie-breaker has to be in the cursor or two
-   * sources uploaded in the same millisecond straddle a page boundary forever.
-   */
   it("carries the id tie-breaker alongside the timestamp", async () => {
     const sameInstant = new Date(1_700_000_000_000);
     const rows = Array.from({ length: 6 }, (_, i) => ({ id: 10 - i, createdAt: sameInstant }));

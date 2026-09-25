@@ -63,11 +63,6 @@ interface SelectChain {
 
 const dialect = new PgDialect();
 
-/**
- * The keyset cursor is read off the rendered predicate rather than assumed:
- * `gt(id, afterId)` is the last bound parameter, so a mock that answered the
- * same page forever — which is what the previous one did — cannot exist here.
- */
 function cursorOf(condition: SQL | undefined): number {
   if (condition === undefined) throw new Error("the purge select ran with no WHERE clause");
   const { params } = dialect.sqlToQuery(condition);

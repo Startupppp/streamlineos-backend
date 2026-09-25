@@ -49,14 +49,6 @@ describe("KbPageAiService — cross-tenant isolation", () => {
       chain.leftJoin = jest.fn().mockReturnValue(chain);
       return chain;
     };
-    /**
-     * `summarize` reads through `loadPage`, which opens a SHORT tenant
-     * transaction that COMMITS before `invokeTextWithUsage` — the fix for a
-     * pooled connection held across the provider round trip. The double
-     * therefore needs a `transaction` seam and the `execute` that `withTenant`'s
-     * placement-fence probe issues; without them the isolation assertions below
-     * never reach the query at all.
-     */
     const surface = {
       query: {
         kbPages: {

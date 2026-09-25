@@ -62,6 +62,7 @@ function build(opts: { ai: boolean; hasChunks?: boolean; hits?: LinkedDocumentIt
     retrieveTopArticles: jest.fn().mockResolvedValue([article]),
     retrieveTopSources: jest.fn().mockResolvedValue([]),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
+    aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
   };
   const citationVisibility = {
     visibleArticles: jest.fn(async (_u: unknown, ids: number[]) => new Set(ids)),

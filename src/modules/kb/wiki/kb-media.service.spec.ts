@@ -38,12 +38,6 @@ interface MockDb {
   db: Db;
 }
 
-/**
- * The insert is a three-link chain (`insert().values().onConflictDoNothing()`)
- * and the page lookup is a relational `query.kbPages.findFirst`. Both are real
- * jest mocks rather than a permissive proxy, so a test can assert the row that
- * was actually written and a missing await shows up as an unresolved promise.
- */
 function makeDb(): MockDb {
   const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
   const values = jest.fn().mockReturnValue({ onConflictDoNothing });

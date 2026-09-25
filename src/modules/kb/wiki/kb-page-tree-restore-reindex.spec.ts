@@ -94,7 +94,6 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
 
     await svc.restore(makeUser(), 10);
 
-    // One statement for the whole subtree, carrying one event per page.
     expect(emitSpy).toHaveBeenCalledTimes(1);
     const events = emitSpy.mock.calls[0]?.[1] ?? [];
     expect(events).toHaveLength(1);
@@ -116,8 +115,6 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
 
     await svc.restore(makeUser(), 10);
 
-    // emitMany still runs for the subtree; what must be empty is the event LIST,
-    // which is the property this case exists for.
     const events = emitSpy.mock.calls[0]?.[1] ?? [];
     expect(events).toEqual([]);
   });
@@ -136,7 +133,6 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
 
     await svc.restore(makeUser(), 10);
 
-    // Still ONE statement, now carrying two events.
     expect(emitSpy).toHaveBeenCalledTimes(1);
     const events = emitSpy.mock.calls[0]?.[1] ?? [];
     const ids = events.map((event) => Number(event.payload["contentId"]));

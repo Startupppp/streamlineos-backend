@@ -4,20 +4,6 @@ import {
   pageSizeField,
 } from "../../../../common/pagination/list-query.schema";
 
-/**
- * The deepest page KB search will serve. `pageNumberField` has no `.max()` — it is
- * `z.coerce.number().int().min(1).default(1)` — so `?page=100000000&pageSize=50` asked for
- * `OFFSET 5,000,000,000`, and the sort behind it is over the whole match set whatever the
- * offset. Measured on a 60,000-match tenant: `OFFSET 0` cost 35.5 ms, `OFFSET 59,980` cost
- * 55.5 ms and an external merge, from a GET needing only `kb:articles:view` — cheap
- * amplification for a scripted `page=` sweep.
- *
- * Clamped rather than rejected, which is how `pageSizeField` already treats an over-large
- * request: a bookmarked deep link gets the last page it is allowed instead of a 400. At the
- * 50-row ceiling this bounds the offset at 10,000; `total` is still exact, so a UI can say how
- * many results exist beyond it. The platform-wide `pageNumberField` is deliberately untouched
- * — every module shares it, and a ceiling there is a different change with a different owner.
- */
 const KB_SEARCH_MAX_PAGE = 200;
 
 export const searchSchema = z
