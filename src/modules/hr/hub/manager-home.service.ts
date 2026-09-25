@@ -50,14 +50,14 @@ export class ManagerHomeService {
       membershipId === null ? Promise.resolve([]) : this.timesheetApprovals.pendingRoutedTo(u.orgId, membershipId, MANAGER_HOME_APPROVAL_CAP),
       membershipId === null ? Promise.resolve({ data: [], total: 0 }) : this.workflows.getInbox(u, 1, MANAGER_HOME_APPROVAL_CAP),
       this.periods.unsettledForMembers(u.orgId, reportMembershipIds, today, 100),
-      reports.length === 0 ? Promise.resolve([]) : this.leaves.teamAvailability(u.orgId, today, horizon),
+      reports.length === 0 ? Promise.resolve([]) : this.leaves.teamAvailability(u.orgId, today, horizon, reports.map((report) => report.userId)),
     ]);
 
     const reportIds = new Set(reports.map((report) => report.userId));
     const reportByMembership = new Map(reports.filter((report) => report.membershipId !== null).map((report) => [report.membershipId, report]));
     const upcomingLeave = availability
       .filter((row) => reportIds.has(row.userId))
-      .map((row) => ({ userId: row.userId, name: row.displayName, startDate: row.startDate, endDate: row.endDate, leaveTypeId: row.leaveTypeId }));
+      .map((row) => ({ userId: row.userId, name: row.displayName, startDate: row.startDate, endDate: row.endDate, leaveTypeId: row.leaveTypeId, status: row.status }));
     const onLeaveToday = new Set(upcomingLeave.filter((row) => row.startDate <= today && row.endDate >= today).map((row) => row.userId));
     const unsettledByMembership = new Map<number, number>();
     for (const period of unsettled)

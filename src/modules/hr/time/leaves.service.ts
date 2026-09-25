@@ -494,13 +494,16 @@ export class LeavesService {
     }));
   }
 
-  async teamAvailability(orgId: string, startDate: string, endDate: string) {
+  /** `userIds` narrows to those people in SQL, so the row cap cannot drop them (HRMS-E2E-021). */
+  async teamAvailability(orgId: string, startDate: string, endDate: string, userIds?: readonly string[]) {
+    if (userIds !== undefined && userIds.length === 0) return [];
     const rows = await this.db
       .select({
         userId: leaveRequests.userId,
         startDate: leaveRequests.startDate,
         endDate: leaveRequests.endDate,
         leaveTypeId: leaveRequests.leaveTypeId,
+        status: leaveRequests.status,
         userName: users.name,
         userFirstName: users.firstName,
         userLastName: users.lastName,
@@ -514,6 +517,7 @@ export class LeavesService {
           eq(leaveRequests.status, "APPROVED"),
           lte(leaveRequests.startDate, endDate),
           gte(leaveRequests.endDate, startDate),
+          userIds === undefined ? undefined : inArray(leaveRequests.userId, [...userIds]),
         ),
       )
       .limit(100);
@@ -526,6 +530,7 @@ export class LeavesService {
       startDate: r.startDate,
       endDate: r.endDate,
       leaveTypeId: r.leaveTypeId,
+      status: r.status,
     }));
   }
 
