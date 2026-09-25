@@ -399,6 +399,7 @@ export class ProjectsTicketsReadService {
   async getColumnCounts(
     u: CurrentUserContext,
     projectId: number,
+    query: TicketsListQuery = { limit: 50, orderBy: "rank" },
   ): Promise<Record<string, number>> {
     const { hasAccess } = await this.checkProjectAccess(
       u.orgId,
@@ -411,11 +412,61 @@ export class ProjectsTicketsReadService {
     const read = await resolveTicketsScope(this.access, u);
     if (read.denied) return {};
 
+    const filterConditions: SQL<unknown>[] = [];
+    if (query.search && query.search.trim()) {
+      const term = query.search.trim();
+      const isTicketRef = /^[A-Za-z]+-\d+$/.test(term) || /^#?\d+$/.test(term);
+      const titleMatch = await this.resolveTitleMatch(term);
+      if (isTicketRef) {
+        const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
+        const num = parseInt(numStr, 10);
+        const searchCondition = or(titleMatch, Number.isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num));
+        if (searchCondition) filterConditions.push(searchCondition);
+      } else {
+        filterConditions.push(titleMatch);
+      }
+    }
+    if (query.status?.length) filterConditions.push(inArray(tickets.status, query.status));
+    if (query.priority?.length) filterConditions.push(inArray(tickets.priority, query.priority));
+    if (query.type?.length) {
+      filterConditions.push(
+        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(query.type.map((value) => sql`${value}`), sql`, `)}])`,
+      );
+    }
+    if (query.assigneeId?.length) {
+      const resolved = query.assigneeId.map((id) => (id === "@me" ? u.userId : id));
+      const unassigned = resolved.includes("__unassigned__");
+      const realIds = resolved.filter((id) => id !== "__unassigned__");
+      if (unassigned && realIds.length > 0) {
+        const assigneeCondition = or(
+          isNull(tickets.assigneeMembershipId),
+          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`,
+        );
+        if (assigneeCondition) filterConditions.push(assigneeCondition);
+      } else if (unassigned) {
+        filterConditions.push(isNull(tickets.assigneeMembershipId));
+      } else {
+        filterConditions.push(sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`);
+      }
+    }
+    if (query.labelIds?.length) {
+      filterConditions.push(sql`EXISTS (
+        SELECT 1 FROM build.ticket_label_mappings tlm
+        WHERE tlm.ticket_id = ${tickets.id}
+          AND tlm.label_id = ANY(ARRAY[${sql.join(query.labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+      )`);
+    }
+    if (query.cycleId?.length) filterConditions.push(inArray(tickets.cycleId, query.cycleId));
+    if (query.moduleIds?.length) filterConditions.push(inArray(tickets.moduleId, query.moduleIds));
+    if (query.epicId !== undefined) filterConditions.push(eq(tickets.epicId, query.epicId));
+    if (query.dueDateFrom) filterConditions.push(gte(tickets.dueDate, query.dueDateFrom));
+    if (query.dueDateTo) filterConditions.push(lte(tickets.dueDate, query.dueDateTo));
+
     const rows = await read.read(
       {
         tenant: tickets.orgId,
         scope: ticketScope(read.orgId, read.actorId),
-        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt)],
+        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...filterConditions],
       },
       ({ sql: where }) => this.db
         .select({ status: tickets.status, cnt: sql<string>`count(*)` })

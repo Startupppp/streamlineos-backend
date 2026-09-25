@@ -97,12 +97,13 @@ export class ProjectsTicketsController {
   @Get(":projectId/tickets/column-counts")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(columnCountsSchema)
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: ticketsListQuerySchema })
   getColumnCounts(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: TicketsListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.getColumnCounts(u, projectId);
+    return this.tickets.getColumnCounts(u, projectId, query);
   }
 
   @Get(":projectId/tickets/export")

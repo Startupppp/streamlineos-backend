@@ -267,7 +267,7 @@ export class ProjectsTicketsService {
     return this.workQuery.getAllWork(u, query);
   }
 
-  async getColumnCounts(u: CurrentUserContext, projectId: number) {
-    return this.read.getColumnCounts(u, projectId);
+  async getColumnCounts(u: CurrentUserContext, projectId: number, query?: TicketsListQuery) {
+    return this.read.getColumnCounts(u, projectId, query);
   }
 }
