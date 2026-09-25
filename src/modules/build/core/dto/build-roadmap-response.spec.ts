@@ -42,6 +42,8 @@ function feedbackBase(overrides: Record<string, unknown> = {}): Record<string, u
     submittedByEmail: null,
     crmContactId: null,
     crmOrganizationId: null,
+    accountValueSnapshot: null,
+    accountTierSnapshot: null,
     linkedRoadmapItemId: null,
     duplicateOfId: null,
     mergedAt: null,

@@ -115,6 +115,8 @@ export const feedbackPostSchema = z.object({
   submittedByEmail: z.string().nullable(),
   crmContactId: z.number().int().nullable(),
   crmOrganizationId: z.number().int().nullable(),
+  accountValueSnapshot: z.string().nullable(),
+  accountTierSnapshot: z.enum(crmAccountTierEnum.enumValues).nullable(),
   linkedRoadmapItemId: z.number().int().nullable(),
   duplicateOfId: z.number().int().nullable(),
   mergedAt: nullableWireDate(),

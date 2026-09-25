@@ -12,12 +12,22 @@ const OTHER_ORG = "org-intruder";
 interface FeedbackRowShape {
   id: number;
   crmOrganizationId: number | null;
+  accountValueSnapshot?: string | null;
+  accountTierSnapshot?: "free" | "pro" | "enterprise" | null;
   linkedRoadmapItemId: number | null;
   duplicateOfId: number | null;
 }
 
 function feedbackRow(overrides: Partial<FeedbackRowShape> = {}): FeedbackRowShape {
-  return { id: 5, crmOrganizationId: null, linkedRoadmapItemId: null, duplicateOfId: null, ...overrides };
+  return {
+    id: 5,
+    crmOrganizationId: null,
+    accountValueSnapshot: null,
+    accountTierSnapshot: null,
+    linkedRoadmapItemId: null,
+    duplicateOfId: null,
+    ...overrides,
+  };
 }
 
 /**
@@ -86,7 +96,13 @@ describe("ProjectsFeedbackService.createFeedback — the account link reaches th
       status: "open",
       crmOrganizationId: 42,
     });
-    expect(values).toHaveBeenCalledWith(expect.objectContaining({ crmOrganizationId: 42 }));
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        crmOrganizationId: 42,
+        accountValueSnapshot: null,
+        accountTierSnapshot: null,
+      }),
+    );
   });
 
   it("writes null rather than undefined when no company is named", async () => {
@@ -115,7 +131,13 @@ describe("ProjectsFeedbackService.updateFeedback — the account link round-trip
     const { update, set } = updateCapture(feedbackRow({ crmOrganizationId: 42 }));
     const { service } = makeService({ update });
     await service.updateFeedback(ORG, 5, { crmOrganizationId: 42 });
-    expect(set).toHaveBeenCalledWith(expect.objectContaining({ crmOrganizationId: 42 }));
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        crmOrganizationId: 42,
+        accountValueSnapshot: null,
+        accountTierSnapshot: null,
+      }),
+    );
   });
 
   it("refuses a cross-tenant company id on update with a 404 and leaves the row untouched", async () => {

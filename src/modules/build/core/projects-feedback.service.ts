@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { assertLinkedRoadmapItemInOrg } from "./roadmap-references";
-import { assertCrmOrganizationInOrg } from "./roadmap-accounts";
+import { loadCrmAccountSnapshot } from "./roadmap-accounts";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import type {
   CreateFeedbackInput,
@@ -65,7 +65,7 @@ export class ProjectsFeedbackService {
 
   async createFeedback(orgId: string, userId: string, input: CreateFeedbackInput) {
     await assertLinkedRoadmapItemInOrg(this.db, orgId, input.linkedRoadmapItemId);
-    await assertCrmOrganizationInOrg(this.db, orgId, input.crmOrganizationId);
+    const accountSnapshot = await loadCrmAccountSnapshot(this.db, orgId, input.crmOrganizationId);
     const [post] = await this.db
       .insert(feedbackPosts)
       .values({
@@ -77,6 +77,7 @@ export class ProjectsFeedbackService {
         submittedByName: input.submittedByName ?? null,
         submittedByEmail: input.submittedByEmail ?? null,
         crmOrganizationId: input.crmOrganizationId ?? null,
+        ...accountSnapshot,
         linkedRoadmapItemId: input.linkedRoadmapItemId ?? null,
         createdBy: userId,
       })
@@ -94,10 +95,16 @@ export class ProjectsFeedbackService {
 
   async updateFeedback(orgId: string, postId: number, input: UpdateFeedbackInput) {
     await assertLinkedRoadmapItemInOrg(this.db, orgId, input.linkedRoadmapItemId);
-    await assertCrmOrganizationInOrg(this.db, orgId, input.crmOrganizationId);
+    const accountSnapshot =
+      input.crmOrganizationId === undefined
+        ? {}
+        : (await loadCrmAccountSnapshot(this.db, orgId, input.crmOrganizationId)) ?? {
+            accountTierSnapshot: null,
+            accountValueSnapshot: null,
+          };
     const [updated] = await this.db
       .update(feedbackPosts)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...input, ...accountSnapshot, updatedAt: new Date() })
       .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Feedback post not found");

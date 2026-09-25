@@ -4,15 +4,18 @@ import { crmAccountTierEnum, feedbackPosts } from "../../../db/schema";
 import { businessParties, crmOrgPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_CRM_ORG } from "../../crm/crm-party-reads";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
-import { roundToScoreDecimals, type RoadmapPrioritization } from "./roadmap-prioritization";
+import {
+  roundToScoreDecimals,
+  type RoadmapPrioritization,
+} from "./roadmap-prioritization";
 
 export type RoadmapAccountTier = (typeof crmAccountTierEnum.enumValues)[number];
 
-/**
- * What a customer's tier multiplies its requests by, and the order the tiers
- * stand in. Both are `Record<RoadmapAccountTier, number>`, so a fourth label on
- * `crm_account_tier` fails to compile here until somebody prices it.
- */
+export interface CrmAccountSnapshot {
+  accountTierSnapshot: RoadmapAccountTier | null;
+  accountValueSnapshot: string | null;
+}
+
 export const ROADMAP_TIER_WEIGHTS: Record<RoadmapAccountTier, number> = {
   free: 1,
   pro: 2,
@@ -31,9 +34,11 @@ export const ROADMAP_TIER_UNWEIGHTED_REASONS = [
   "account_tier_unset",
   "score_unavailable",
 ] as const;
-export type RoadmapTierUnweightedReason = (typeof ROADMAP_TIER_UNWEIGHTED_REASONS)[number];
+export type RoadmapTierUnweightedReason =
+  (typeof ROADMAP_TIER_UNWEIGHTED_REASONS)[number];
 
-const RANKED_TIERS: readonly RoadmapAccountTier[] = crmAccountTierEnum.enumValues;
+const RANKED_TIERS: readonly RoadmapAccountTier[] =
+  crmAccountTierEnum.enumValues;
 const TIER_BY_RANK = new Map<number, RoadmapAccountTier>(
   RANKED_TIERS.map((tier) => [ROADMAP_TIER_RANKS[tier], tier]),
 );
@@ -88,9 +93,12 @@ export function applyRoadmapTierWeighting(
   prioritization: RoadmapPrioritization,
   summary: RoadmapAccountTierSummary = EMPTY_ACCOUNT_TIER_SUMMARY,
 ): RoadmapTierWeighting {
-  if (summary.linkedFeedbackCount <= 0) return unweighted(summary, "no_linked_feedback", null);
-  if (summary.linkedAccountCount <= 0) return unweighted(summary, "no_linked_account", null);
-  if (summary.topTier === null) return unweighted(summary, "account_tier_unset", null);
+  if (summary.linkedFeedbackCount <= 0)
+    return unweighted(summary, "no_linked_feedback", null);
+  if (summary.linkedAccountCount <= 0)
+    return unweighted(summary, "no_linked_account", null);
+  if (summary.topTier === null)
+    return unweighted(summary, "account_tier_unset", null);
   if (prioritization.score === null)
     return unweighted(summary, "score_unavailable", summary.topTier);
 
@@ -153,11 +161,16 @@ export async function loadRoadmapAccountTiers(
       itemId: feedbackPosts.linkedRoadmapItemId,
       linkedFeedbackCount: sql<number>`COUNT(*)::int`.mapWith(Number),
       linkedAccountCount:
-        sql<number>`COUNT(DISTINCT ${feedbackPosts.crmOrganizationId})::int`.mapWith(Number),
+        sql<number>`COUNT(DISTINCT ${feedbackPosts.crmOrganizationId})::int`.mapWith(
+          Number,
+        ),
       topTierRank: topTierRankExpression(),
       linkedRevenue: linkedRevenueExpression(),
-      revenueKnownAccountCount: sql<number>`COUNT(DISTINCT ${feedbackPosts.crmOrganizationId})
-        FILTER (WHERE ${businessParties.lifetimeValue} IS NOT NULL)::int`.mapWith(Number),
+      revenueKnownAccountCount:
+        sql<number>`COUNT(DISTINCT ${feedbackPosts.crmOrganizationId})
+        FILTER (WHERE ${businessParties.lifetimeValue} IS NOT NULL)::int`.mapWith(
+          Number,
+        ),
     })
     .from(feedbackPosts)
     .leftJoin(
@@ -169,7 +182,11 @@ export async function loadRoadmapAccountTiers(
     )
     .leftJoin(
       businessParties,
-      and(PARTY_OF_CRM_ORG, eq(businessParties.partyKind, "ORGANISATION"), isNull(businessParties.deletedAt)),
+      and(
+        PARTY_OF_CRM_ORG,
+        eq(businessParties.partyKind, "ORGANISATION"),
+        isNull(businessParties.deletedAt),
+      ),
     )
     .where(
       and(
@@ -183,14 +200,19 @@ export async function loadRoadmapAccountTiers(
 
   for (const row of rows) {
     if (row.itemId === null) continue;
-    const rank = row.topTierRank === null || row.topTierRank === undefined ? null : Number(row.topTierRank);
+    const rank =
+      row.topTierRank === null || row.topTierRank === undefined
+        ? null
+        : Number(row.topTierRank);
     const revenueKnownAccountCount = Number(row.revenueKnownAccountCount ?? 0);
     resolved.set(row.itemId, {
       linkedFeedbackCount: Number(row.linkedFeedbackCount),
       linkedAccountCount: Number(row.linkedAccountCount),
       topTier: rank === null ? null : (TIER_BY_RANK.get(rank) ?? null),
       linkedRevenue:
-        revenueKnownAccountCount === 0 || row.linkedRevenue === null || row.linkedRevenue === undefined
+        revenueKnownAccountCount === 0 ||
+        row.linkedRevenue === null ||
+        row.linkedRevenue === undefined
           ? null
           : roundToScoreDecimals(Number(row.linkedRevenue)),
       revenueKnownAccountCount,
@@ -199,12 +221,6 @@ export async function loadRoadmapAccountTiers(
   return resolved;
 }
 
-/**
- * The company id space `feedback_posts.crm_organization_id` speaks is
- * `crm_org_party_map`'s, not `business_parties`' — so an id is real only when
- * the map row and the party it names are both in the caller's tenant. A miss is
- * a 404 rather than a 403 (BE-91): a 403 would confirm the company exists.
- */
 export async function assertCrmOrganizationInOrg(
   db: Db | TenantTx,
   orgId: string,
@@ -226,4 +242,35 @@ export async function assertCrmOrganizationInOrg(
     )
     .limit(1);
   if (!row) throw new NotFoundException("Organization not found");
+}
+
+export async function loadCrmAccountSnapshot(
+  db: Db | TenantTx,
+  orgId: string,
+  crmOrganizationId: number | null | undefined,
+): Promise<CrmAccountSnapshot | null> {
+  if (crmOrganizationId === undefined || crmOrganizationId === null)
+    return null;
+  const [row] = await db
+    .select({
+      accountTierSnapshot: businessParties.tier,
+      accountValueSnapshot: businessParties.lifetimeValue,
+    })
+    .from(crmOrgPartyMap)
+    .innerJoin(businessParties, PARTY_OF_CRM_ORG)
+    .where(
+      and(
+        eq(crmOrgPartyMap.crmOrganizationId, crmOrganizationId),
+        eq(crmOrgPartyMap.organizationId, orgId),
+        eq(businessParties.organizationId, orgId),
+        eq(businessParties.partyKind, "ORGANISATION"),
+        isNull(businessParties.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new NotFoundException("Organization not found");
+  return {
+    accountTierSnapshot: row.accountTierSnapshot ?? null,
+    accountValueSnapshot: row.accountValueSnapshot ?? null,
+  };
 }
