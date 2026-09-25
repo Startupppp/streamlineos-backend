@@ -100,6 +100,9 @@ export class EmployeesController {
   @Post(":employeeId/resend-invite")
   @ResponseSchema(resendInviteResponseSchema)
   @RequirePermission("hr:onboarding:manage")
+  // V-030: invite-link below has been limited since it mints a credential.
+  // This route mints the same credential and mails it, and had no limiter.
+  @UseRateLimit("hr:employee-resend-invite")
   @Idempotent("hr.employees.resend-invite")
   @HttpCode(200)
   @Validate({ params: employeeIdParamsSchema })

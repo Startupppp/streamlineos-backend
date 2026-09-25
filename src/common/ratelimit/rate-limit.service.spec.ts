@@ -49,6 +49,10 @@ describe("RateLimitService (in-memory fallback, no redis)", () => {
     ["hr:employee-bulk-onboard", 10],
     ["hr:effective-changes-apply", 10],
     ["hr:onboarding-reminders", 3],
+    // V-030. resend-invite mints a working magic link AND mails it from the
+    // platform's own sender; its sibling invite-link has been limited since it
+    // mints one, but this route carried no limiter at all.
+    ["hr:employee-resend-invite", 5],
   ])("enforces the %s command tier", async (tier, limit) => {
     const instance = svc();
     const results = await Promise.all(
