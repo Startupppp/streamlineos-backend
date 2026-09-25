@@ -8,6 +8,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 
+const CHECKLIST_ITEM_LIMIT = 200;
+
 export function toChecklistItemRow(item: typeof ticketChecklistItems.$inferSelect) {
   return {
     id: item.id,
@@ -71,7 +73,12 @@ export class ProjectsTicketChecklistsService {
         eq(ticketChecklists.ticketId, ticketId),
         eq(ticketChecklists.orgId, orgId),
       ),
-      with: { items: { orderBy: (i, { asc }) => [asc(i.order)] } },
+      with: {
+        items: {
+          orderBy: (i, { asc }) => [asc(i.order)],
+          limit: CHECKLIST_ITEM_LIMIT,
+        },
+      },
       orderBy: (c, { asc }) => [asc(c.createdAt)],
       limit: 100,
     });
