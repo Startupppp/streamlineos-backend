@@ -8,12 +8,8 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { OrgHierarchyCacheService } from "../../common/cache/org-hierarchy-cache.service";
 import { hrReportingLines, type ReportingLineSource } from "../../db/schema";
-import {
-  lockReportingLines,
-  writePrimaryLines,
-  writeSecondaryLines,
-  type LineProvenance,
-} from "../../common/hr/sync-canonical-reporting-line";
+import { lockReportingLines, writePrimaryLines, writeSecondaryLines } from "../../common/hr/sync-canonical-reporting-line";
+import type { LineProvenance } from "../../common/hr/reporting-line-timeline";
 import { orgBusinessDate } from "../hr/time/attendance-business-date";
 import { ReportingLineService } from "./reporting-line.service";
 import { ReportingManagerPolicyService } from "./reporting-manager-policy.service";

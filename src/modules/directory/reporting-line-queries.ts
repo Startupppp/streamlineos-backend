@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DbOrTx } from "../../common/rbac/access-invalidate";
-import { OPEN_ENDED } from "../../common/hr/sync-canonical-reporting-line";
+import { OPEN_ENDED } from "../../common/hr/reporting-line-timeline";
 import {
   hrEmployments,
   hrPeople,

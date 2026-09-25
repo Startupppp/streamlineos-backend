@@ -2,7 +2,8 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { hrEmployments, hrPeople, organizationMembers } from "../db/schema";
 import type { DbOrTx } from "../common/rbac/access-invalidate";
-import { writePrimaryLines, type LineProvenance } from "../common/hr/sync-canonical-reporting-line";
+import { writePrimaryLines } from "../common/hr/sync-canonical-reporting-line";
+import type { LineProvenance } from "../common/hr/reporting-line-timeline";
 
 /**
  * TEST SEEDING ONLY. A user-id front door onto `writePrimaryLines` that skips every relationship rule
