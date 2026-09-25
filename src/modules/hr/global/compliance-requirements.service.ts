@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, gt, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import {
@@ -328,67 +328,74 @@ export class ComplianceRequirementsService {
 
     const year = input.year ?? new Date().getFullYear();
 
-    const holidayDates = pack.defaultHolidays.map((h) => `${year}-${h.date}`);
-    const reqNames = pack.complianceRequirements.map((r) => r.name);
+    // Serialise seeds per org: the read-then-insert below is not safe under a
+    // double-click, and holidays have no unique index to fall back on. Inside the
+    // request transaction this is a savepoint; the lock lasts until it commits.
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`hr-country-pack:${orgId}`}), 0)`);
 
-    const [existingHolidays, existingReqs] = await Promise.all([
-      holidayDates.length > 0
-        ? this.db
-            .select({ date: holidays.date })
-            .from(holidays)
-            .where(and(eq(holidays.orgId, orgId), inArray(holidays.date, holidayDates)))
-            .limit(100)
-        : Promise.resolve([]),
-      reqNames.length > 0
-        ? this.db
-            .select({ name: hrComplianceRequirements.name })
-            .from(hrComplianceRequirements)
-            .where(and(eq(hrComplianceRequirements.orgId, orgId), inArray(hrComplianceRequirements.name, reqNames)))
-            .limit(100)
-        : Promise.resolve([]),
-    ]);
+      const holidayDates = pack.defaultHolidays.map((h) => `${year}-${h.date}`);
+      const reqNames = pack.complianceRequirements.map((r) => r.name);
 
-    const existingHolidayDates = new Set(existingHolidays.map((h) => h.date));
-    const existingReqNames = new Set(existingReqs.map((r) => r.name));
+      const [existingHolidays, existingReqs] = await Promise.all([
+        holidayDates.length > 0
+          ? tx
+              .select({ date: holidays.date })
+              .from(holidays)
+              .where(and(eq(holidays.orgId, orgId), inArray(holidays.date, holidayDates)))
+              .limit(100)
+          : Promise.resolve([]),
+        reqNames.length > 0
+          ? tx
+              .select({ name: hrComplianceRequirements.name })
+              .from(hrComplianceRequirements)
+              .where(and(eq(hrComplianceRequirements.orgId, orgId), inArray(hrComplianceRequirements.name, reqNames)))
+              .limit(100)
+          : Promise.resolve([]),
+      ]);
 
-    const holidaysToInsert = pack.defaultHolidays
-      .map((h) => ({ fullDate: `${year}-${h.date}`, h }))
-      .filter(({ fullDate }) => !existingHolidayDates.has(fullDate));
+      const existingHolidayDates = new Set(existingHolidays.map((h) => h.date));
+      const existingReqNames = new Set(existingReqs.map((r) => r.name));
 
-    const reqsToInsert = pack.complianceRequirements.filter((r) => !existingReqNames.has(r.name));
+      const holidaysToInsert = pack.defaultHolidays
+        .map((h) => ({ fullDate: `${year}-${h.date}`, h }))
+        .filter(({ fullDate }) => !existingHolidayDates.has(fullDate));
 
-    const [holidaysResult, reqsResult] = await Promise.all([
-      holidaysToInsert.length > 0
-        ? this.db
-            .insert(holidays)
-            .values(holidaysToInsert.map(({ fullDate, h }) => ({ orgId, name: h.name, date: fullDate, isPublic: h.isPublic })))
-            .returning({ id: holidays.id })
-        : Promise.resolve([]),
-      reqsToInsert.length > 0
-        ? this.db
-            .insert(hrComplianceRequirements)
-            .values(
-              reqsToInsert.map((r) => ({
-                orgId,
-                name: r.name,
-                countryCode: pack.countryCode,
-                category: r.category,
-                frequency: r.frequency,
-                dueRule: r.dueRule,
-                reminderDaysBefore: r.reminderDaysBefore,
-                active: true,
-                createdBy: actorId,
-              })),
-            )
-            .returning({ id: hrComplianceRequirements.id })
-        : Promise.resolve([]),
-    ]);
+      const reqsToInsert = pack.complianceRequirements.filter((r) => !existingReqNames.has(r.name));
 
-    return {
-      country: pack.countryCode,
-      holidays: holidaysResult.length,
-      requirements: reqsResult.length,
-      sensitiveFieldKeys: pack.sensitiveFieldKeys,
-    };
+      const [holidaysResult, reqsResult] = await Promise.all([
+        holidaysToInsert.length > 0
+          ? tx
+              .insert(holidays)
+              .values(holidaysToInsert.map(({ fullDate, h }) => ({ orgId, name: h.name, date: fullDate, isPublic: h.isPublic })))
+              .returning({ id: holidays.id })
+          : Promise.resolve([]),
+        reqsToInsert.length > 0
+          ? tx
+              .insert(hrComplianceRequirements)
+              .values(
+                reqsToInsert.map((r) => ({
+                  orgId,
+                  name: r.name,
+                  countryCode: pack.countryCode,
+                  category: r.category,
+                  frequency: r.frequency,
+                  dueRule: r.dueRule,
+                  reminderDaysBefore: r.reminderDaysBefore,
+                  active: true,
+                  createdBy: actorId,
+                })),
+              )
+              .returning({ id: hrComplianceRequirements.id })
+          : Promise.resolve([]),
+      ]);
+
+      return {
+        country: pack.countryCode,
+        holidays: holidaysResult.length,
+        requirements: reqsResult.length,
+        sensitiveFieldKeys: pack.sensitiveFieldKeys,
+      };
+    });
   }
 }
