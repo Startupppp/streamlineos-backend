@@ -1,5 +1,6 @@
-import { ForbiddenException } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
 import { DocumentClassificationController } from "./document-classification.controller";
+import { DocumentAccessService } from "./document-access.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
@@ -26,7 +27,25 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
  * from the caller's grants, never from the request. The service is a mock: what is pinned is that it is not
  * reached, and what it is handed when it is.
  */
-function build(view: DataScope, manage: DataScope, publish: DataScope) {
+
+/**
+ * The controllers no longer decide access themselves: they ask `DocumentAccessService`, so the spec builds the
+ * real one over a database double that answers with the ids this caller may read.
+ */
+function makeDocumentAccess(grants: Map<string, DataScope>, visibleIds: readonly number[]) {
+  const builder = {
+    from: jest.fn(() => builder),
+    where: jest.fn(() => builder),
+    limit: jest.fn(() => Promise.resolve(visibleIds.map((id) => ({ id })))),
+  };
+  const access = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(grants),
+    holds: jest.fn(async (_user: CurrentUserContext, key: string) => (grants.get(key) ?? "none") !== "none"),
+  };
+  return new DocumentAccessService({ select: jest.fn(() => builder) } as never, access as never);
+}
+
+function build(view: DataScope, manage: DataScope, publish: DataScope, visibleIds: readonly number[] = []) {
   const service = {
     get: jest.fn().mockResolvedValue({ documentId: DOCUMENT_ID }),
     classify: jest.fn().mockResolvedValue({ documentId: DOCUMENT_ID }),
@@ -37,11 +56,8 @@ function build(view: DataScope, manage: DataScope, publish: DataScope) {
     ["hr:documents:manage", manage],
     ["hr:documents:publish", publish],
   ]);
-  const access = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(grants),
-    holds: jest.fn(async (_user: CurrentUserContext, key: string) => (grants.get(key) ?? "none") !== "none"),
-  };
-  return { controller: new DocumentClassificationController(service as never, access as never), service, access };
+  const documentAccess = makeDocumentAccess(grants, visibleIds);
+  return { controller: new DocumentClassificationController(service as never, documentAccess), service };
 }
 
 describe("document classification controller", () => {
@@ -49,14 +65,14 @@ describe("document classification controller", () => {
     it("cannot read a document's classification, and the service is not reached", async () => {
       const { controller, service } = build(scope, "all", "all");
 
-      await expect(controller.get(DOCUMENT_ID, makeUser())).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(controller.get(DOCUMENT_ID, makeUser())).rejects.toBeInstanceOf(NotFoundException);
       expect(service.get).not.toHaveBeenCalled();
     });
 
     it("cannot classify a document, and the service is not reached", async () => {
       const { controller, service } = build("all", scope, "all");
 
-      await expect(controller.classify(DOCUMENT_ID, { classification: "INTERNAL" }, makeUser())).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(controller.classify(DOCUMENT_ID, { classification: "INTERNAL" }, makeUser())).rejects.toBeInstanceOf(NotFoundException);
       expect(service.classify).not.toHaveBeenCalled();
     });
   });

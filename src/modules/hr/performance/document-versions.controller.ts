@@ -1,16 +1,15 @@
-import { Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { AccessService } from "../../access/access.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { resolveDocumentsManageScope, resolveDocumentsScope } from "./performance-scope";
+import { DocumentAccessService } from "./document-access.service";
 import { DocumentVersionsService } from "./document-versions.service";
 import type { ClassificationActor } from "./document-classification.service";
 import {
@@ -32,7 +31,7 @@ import { documentVersionsResponseSchema } from "./dto/document-versions-response
 export class DocumentVersionsController {
   constructor(
     private readonly versions: DocumentVersionsService,
-    private readonly access: AccessService,
+    private readonly documentAccess: DocumentAccessService,
   ) {}
 
   private actor(currentUser: CurrentUserContext): ClassificationActor {
@@ -44,8 +43,7 @@ export class DocumentVersionsController {
   @RequirePermission("hr:documents:view")
   @Validate({ params: documentVersionsParams })
   async list(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() currentUser: CurrentUserContext) {
-    const scope = await resolveDocumentsScope(this.access, currentUser);
-    if (!scope.unrestricted) throw new ForbiddenException("Organization-wide document access is required.");
+    await this.documentAccess.assertCanAct(await this.documentAccess.principalFor(currentUser), documentId, "view");
     return this.versions.list(currentUser.orgId, documentId);
   }
 
@@ -60,8 +58,7 @@ export class DocumentVersionsController {
     @Body() body: UploadDocumentVersionInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveDocumentsManageScope(this.access, currentUser);
-    if (!scope.unrestricted) throw new ForbiddenException("Organization-wide document access is required.");
+    await this.documentAccess.assertCanAct(await this.documentAccess.principalFor(currentUser), documentId, "manage");
     return this.versions.upload(this.actor(currentUser), documentId, body);
   }
 

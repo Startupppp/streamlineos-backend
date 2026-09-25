@@ -1,12 +1,12 @@
 import { Controller, Get, Header, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
-import { AccessService } from "../../access/access.service";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { DocumentAccessService } from "../../hr/performance/document-access.service";
 import { KbHrLinkFlagsService } from "../core/kb-hr-link-flags.service";
 import { KbLinkedDocumentQueryService, type LinkedDocumentCaller } from "./kb-linked-document-query.service";
 import { KbLinkedDocumentFileService } from "./kb-linked-document-file.service";
@@ -33,16 +33,18 @@ export class KbLinkedDocumentsController {
     private readonly flags: KbHrLinkFlagsService,
     private readonly query: KbLinkedDocumentQueryService,
     private readonly files: KbLinkedDocumentFileService,
-    private readonly access: AccessService,
+    private readonly documentAccess: DocumentAccessService,
   ) {}
 
   // Searching needs the search switch, which itself needs linking; every other read needs only linking.
   private async caller(currentUser: CurrentUserContext, needs: "link" | "search" = "link"): Promise<LinkedDocumentCaller> {
     await this.flags.assertEnabled(currentUser.orgId, needs);
+    // One principal per request, from the auth context only — the same assembly every HR document route runs.
+    const principal = await this.documentAccess.principalFor(currentUser);
     return {
-      orgId: currentUser.orgId,
-      userId: currentUser.userId,
-      canPublish: await this.access.holds(currentUser, "hr:documents:publish"),
+      orgId: principal.orgId,
+      userId: principal.userId,
+      canPublish: this.documentAccess.canPerform(principal, "publish"),
     };
   }
 

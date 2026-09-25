@@ -1,5 +1,6 @@
-import { ForbiddenException } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
 import { DocumentKbLinkController } from "./document-kb-link.controller";
+import { DocumentAccessService } from "./document-access.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
@@ -18,7 +19,25 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   ...overrides,
 });
 
-function build(view: DataScope) {
+
+/**
+ * The controllers no longer decide access themselves: they ask `DocumentAccessService`, so the spec builds the
+ * real one over a database double that answers with the ids this caller may read.
+ */
+function makeDocumentAccess(grants: Map<string, DataScope>, visibleIds: readonly number[]) {
+  const builder = {
+    from: jest.fn(() => builder),
+    where: jest.fn(() => builder),
+    limit: jest.fn(() => Promise.resolve(visibleIds.map((id) => ({ id })))),
+  };
+  const access = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(grants),
+    holds: jest.fn(async (_user: CurrentUserContext, key: string) => (grants.get(key) ?? "none") !== "none"),
+  };
+  return new DocumentAccessService({ select: jest.fn(() => builder) } as never, access as never);
+}
+
+function build(view: DataScope, visibleIds: readonly number[] = []) {
   const links = {
     getState: jest.fn().mockResolvedValue({ documentId: DOCUMENT_ID }),
     publish: jest.fn().mockResolvedValue({ documentId: DOCUMENT_ID }),
@@ -26,8 +45,8 @@ function build(view: DataScope) {
     unpublish: jest.fn().mockResolvedValue({ documentId: DOCUMENT_ID }),
   };
   const backfill = { run: jest.fn().mockResolvedValue({ dryRun: true, applied: 0 }) };
-  const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map<string, DataScope>([["hr:documents:view", view]])) };
-  return { controller: new DocumentKbLinkController(links as never, backfill as never, access as never), links, backfill };
+  const documentAccess = makeDocumentAccess(new Map<string, DataScope>([["hr:documents:view", view]]), visibleIds);
+  return { controller: new DocumentKbLinkController(links as never, backfill as never, documentAccess), links, backfill };
 }
 
 describe("document knowledge-base link controller", () => {
@@ -35,7 +54,7 @@ describe("document knowledge-base link controller", () => {
     it("cannot read where a document stands in the knowledge base, and the service is not reached", async () => {
       const { controller, links } = build(scope);
 
-      await expect(controller.state(DOCUMENT_ID, makeUser())).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(controller.state(DOCUMENT_ID, makeUser())).rejects.toBeInstanceOf(NotFoundException);
       expect(links.getState).not.toHaveBeenCalled();
     });
   });
