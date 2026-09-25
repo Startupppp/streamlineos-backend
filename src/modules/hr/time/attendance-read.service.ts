@@ -4,7 +4,8 @@ import { attendance } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
-import { formatDateOnly, getTodayString } from "../../../common/date";
+import { formatDateOnly } from "../../../common/date";
+import { orgBusinessDate } from "./attendance-business-date";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveAttendanceScope, type AttendanceStatus } from "./attendance-scope";
 import { AttendancePolicyService } from "./attendance-policy.service";
@@ -27,7 +28,7 @@ export class AttendanceReadService {
 
   async status(orgId: string, userId: string) {
     const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
-    const today = getTodayString();
+    const today = await orgBusinessDate(this.db, orgId);
     const now = new Date();
 
     const todayLogs = await this.db.query.attendance.findMany({
