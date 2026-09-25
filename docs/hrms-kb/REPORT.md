@@ -53,7 +53,7 @@ and was pushed to `main` as a fast-forward. Every one of those fourteen head com
 closed with a comment saying so. Backend `main` at `9e3a8b86c`, frontend `main` at `295cb3a34`.
 
 **Migration numbers changed on the way in.** `main` took migration 1197 while this work was in flight, so the four new
-migrations are **1198–1201** (journal idx 1082–1085). The PR descriptions and commit messages still say 1197–1200; this
+migrations are **1198–1201** (journal idx 1082–1085), and a review after the merge added **1202** (idx 1086). The PR descriptions and commit messages still say 1197–1200; this
 report and `PLAN.md` use the merged numbers. Nothing had been applied to a shared database, so no applied migration was
 edited (BE-60).
 
@@ -122,8 +122,18 @@ page, so every existing KB reader is blind to it.
 
 **Not verified** — built and tested, but not exercised the way a person or a real deployment would.
 
-- **No browser run at all.** Nothing was looked at on screen at 375 / 768 / 1280, driven with a keyboard, or checked in dark
-  mode. jsdom cannot see layout, focus order or paint. Every frontend PR body says so.
+- **Little browser time.** After the merge, headless Chromium (Playwright) drove the real frontend and backend against the local
+  scratch database as an organisation owner: the three switches (each confirmation dialog, the stored flags, the audit rows
+  with their request ids), the Document Library with the switches off and on, and the backfill preview (nothing changed) and
+  real run (three documents classified Internal, none linked) — no console errors and no failing API call. Not done: 375 / 768
+  px, dark mode, keyboard-only use, an employee's view of the Company documents area, publish and withdraw through the UI.
+  jsdom cannot see layout, focus order or paint.
+- **Stored answers are not re-checked.** Replay and stream verify citations before answering again, but two paths hand back
+  what was stored without re-verifying it: a same-key retry of `POST /kb/ask` within 24 hours (the idempotency layer replays the
+  first response body), and `GET /kb/ask/history` / `…/conversations/:id/messages`. A document withdrawn or reclassified since
+  still shows in that person's own earlier answer, as a KB page a person later lost access to already does.
+- **The HR-module condition follows the entitlement cache.** The three switches are read uncached; whether the HR module is
+  enabled is read through the entitlement cache (seconds per instance), so disabling HR itself can take that long everywhere.
 - **The assistants were never run against a model.** Retrieval, the `document` citation kind, replay and stream verification
   are tested with doubles and against real Postgres; "ask about a department-only SOP as the other employee" is unproven end to
   end (checklist line 16).
@@ -136,6 +146,13 @@ page, so every existing KB reader is blind to it.
 - **The official seeded-e2e runner refuses the scratch database** (its preflight stops at migration 1174, another lane's), so
   the HTTP e2e ran through a local wrapper that skips only that preflight, against `scratch_hrmskb` as the application's own
   non-owner role. That wrapper is not committed.
+- **Found by review and left as they are** (pre-existing behaviour outside the linking code, or judged not worth the change):
+  acknowledgment requests accept any document in the organisation and the recipient's own list returns the whole document row
+  (`compliance.service.ts`); `POST /hr/templates/:id/render` needs only `hr:templates:view` and reads any member's details
+  (SEC-02 gated the renders listing, not this call); `PATCH /hr/documents/:id` can unpublish an entry by changing `type` or
+  owner and the audit row for that carries only the system actor; the database guard reads the document without a lock, so a
+  writer that bypasses the application can race a reclassification (the service path locks); a refusal raised by the locked
+  re-check in publish is rolled back with its transaction and leaves no `publish_refused` row.
 - **`to_tsvector` is computed per row at query time with no GIN index.** Correct and bounded (≤ 100 rows a page), unmeasured at
   tenant scale.
 - **Saved assistant conversations keep the answer text already given.** On replay the citation is re-verified and dropped, but
@@ -208,7 +225,7 @@ Full evidence: [`PHASE0-FINDINGS.md`](./PHASE0-FINDINGS.md). The headline result
 
 ## 6. Migrations
 
-Four, all hand-authored, journalled (idx 1082–1085), each with a rollback in `migrations/rollback/`:
+Five, all hand-authored, journalled (idx 1082–1086), each with a rollback in `migrations/rollback/`:
 
 | Migration | Adds |
 |---|---|
@@ -216,13 +233,14 @@ Four, all hand-authored, journalled (idx 1082–1085), each with a rollback in `
 | `1199_document_audiences_and_versions` | `document_audiences`, `document_versions` |
 | `1200_kb_linked_documents` | `kb_linked_documents`, `kb_linked_document_audiences`, the three `kb_settings` switches (default `false`), RLS `tenant_isolation` on each |
 | `1201_kb_linked_document_guard` | `app.hr_document_is_publishable(documents)`; the `BEFORE` trigger on links; the `AFTER UPDATE` trigger on documents that unlinks in the same transaction and audits |
+| `1202_hr_document_publishable_excludes_self_uploads` | Replaces `app.hr_document_is_publishable` so a document stored under `<org>/onboarding/` (the employee self-service upload) is never publishable; found by review after the merge |
 
 **Applied where:** only to a local cold-built database (`scratch_hrmskb`, journal replay) and to seeded organisations in it. **No
 migration was applied to any shared, live, Neon or RDS database**, and the census scripts were not run against one.
 
 **`NOT VALID` constraints still pending validation: none.** 15 composite and tenant foreign keys were added `NOT VALID` and each
-is `VALIDATE`d within its own migration (1199: 7 of 7; 1200: 8 of 8) — checked by script over the four files, not by eye.
-Migration 1198 and 1201 add none. PR 1 and PR 6 ship **no** migration.
+is `VALIDATE`d within its own migration (1199: 7 of 7; 1200: 8 of 8) — checked by script over the migration files, not by eye.
+Migrations 1198, 1201 and 1202 add none. PR 1 and PR 6 ship **no** migration.
 
 ---
 

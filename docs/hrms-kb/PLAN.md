@@ -89,7 +89,7 @@ DEFAULT false`.
 **Migrations as built (four, not the two or three first estimated):** `1198` (`documents.classification`, `effective_date`),
 `1199` (`document_audiences`, `document_versions`), `1200` (`kb_linked_documents`, `kb_linked_document_audiences`, the three
 `kb_settings` switches), `1201` (`app.hr_document_is_publishable`, the link guard and the unlink trigger). All hand-authored, journalled
-(idx 1082–1085; renumbered from 1197–1200 on merge, because `main` took 1197 for `1197_build_cycle_permissions` while the chain was open), each with a rollback; every one of the 15 `NOT VALID` foreign keys is validated inside its own migration.
+(idx 1082–1085, plus `1202` at idx 1086 added after the merge review; renumbered from 1197–1200 on merge, because `main` took 1197 for `1197_build_cycle_permissions` while the chain was open), each with a rollback; every one of the 15 `NOT VALID` foreign keys is validated inside its own migration.
 
 Every table: `ENABLE ROW LEVEL SECURITY` + explicit `tenant_isolation` policy (BE-72/74), grants to `streamline_app`,
 composite tenant FKs added `NOT VALID` then validated (BE-62), `lock_timeout`, a rollback file, journal entry, Drizzle
