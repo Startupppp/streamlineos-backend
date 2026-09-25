@@ -1,6 +1,7 @@
 import {
   allWorkQuerySchema,
   createTicketSchema,
+  searchTicketsQuerySchema,
   ticketsListQuerySchema,
   updateTicketSchema,
 } from "./ticket.schemas";
@@ -80,5 +81,18 @@ describe("Build ticket numeric bounds", () => {
     expect(result.data.type).toEqual(["BUG", "TASK"]);
     expect(result.data.labelIds).toEqual([1, 2]);
     expect(result.data.cycleId).toEqual([7, 8]);
+  });
+
+  it.each([ticketsListQuerySchema, allWorkQuerySchema])("rejects oversized search terms and trims valid terms", (schema) => {
+    expect(schema.safeParse({ search: "x".repeat(201) }).success).toBe(false);
+    const result = schema.safeParse({ search: "  login  " });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.search).toBe("login");
+  });
+
+  it("bounds the organization search endpoint too", () => {
+    expect(searchTicketsQuerySchema.safeParse({ q: "x".repeat(201) }).success).toBe(false);
+    expect(searchTicketsQuerySchema.parse({ q: "  login  " }).q).toBe("login");
   });
 });

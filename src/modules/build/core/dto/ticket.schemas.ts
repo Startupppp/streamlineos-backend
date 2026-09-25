@@ -10,6 +10,8 @@ import {
   pageSizeField,
 } from "../../../../common/pagination/list-query.schema";
 
+const SEARCH_TERM_MAX_LENGTH = 200;
+
 function normalizeCsv(value: unknown) {
   if (value === undefined || value === "") return undefined;
   if (typeof value !== "string") return value;
@@ -54,7 +56,7 @@ const csvToTicketTypeArray = z.preprocess(
 export const ticketsListQuerySchema = baseListQuerySchema
   .omit({ page: true, sortDir: true })
   .extend({
-    search: z.string().optional(),
+    search: z.string().trim().max(SEARCH_TERM_MAX_LENGTH).optional(),
     status: csvToStringArray,
     priority: csvToTicketPriorityArray,
     type: csvToTicketTypeArray,
@@ -76,7 +78,7 @@ export const ticketsListQuerySchema = baseListQuerySchema
 export const allWorkQuerySchema = baseListQuerySchema
   .omit({ page: true, sortDir: true })
   .extend({
-    search: z.string().optional(),
+    search: z.string().trim().max(SEARCH_TERM_MAX_LENGTH).optional(),
     status: csvToStringArray,
     priority: csvToTicketPriorityArray,
     type: csvToTicketTypeArray,
@@ -98,7 +100,7 @@ export const allWorkQuerySchema = baseListQuerySchema
   .superRefine((data, ctx) => refineDueDateRange(data, ctx));
 
 export const searchTicketsQuerySchema = z.object({
-  q: z.string().default(""),
+  q: z.string().trim().max(SEARCH_TERM_MAX_LENGTH).default(""),
   limit: pageSizeField(10, 20),
 }).strict();
 export type SearchTicketsQuery = z.infer<typeof searchTicketsQuerySchema>;
