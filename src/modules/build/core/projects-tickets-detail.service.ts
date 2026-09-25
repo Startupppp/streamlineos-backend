@@ -22,6 +22,8 @@ const USER_COLS = {
   image: true,
 } as const;
 
+const DETAIL_RELATION_LIMIT = 100;
+
 @Injectable()
 export class ProjectsTicketsDetailService {
   constructor(
@@ -73,9 +75,11 @@ export class ProjectsTicketsDetailService {
         reporter: { columns: USER_COLS },
         assignees: {
           with: { user: { with: { user: { columns: USER_COLS } } } },
+          limit: DETAIL_RELATION_LIMIT,
         },
         watchers: {
           with: { user: { with: { user: { columns: USER_COLS } } } },
+          limit: DETAIL_RELATION_LIMIT,
         },
         comments: {
           where: isNull(ticketComments.deletedAt),
@@ -90,9 +94,13 @@ export class ProjectsTicketsDetailService {
           orderBy: [desc(ticketComments.createdAt)],
           limit: 50,
         },
-        attachments: { with: { uploader: { columns: USER_COLS } } },
+        attachments: {
+          with: { uploader: { columns: USER_COLS } },
+          limit: DETAIL_RELATION_LIMIT,
+        },
         labels: {
           with: { label: { columns: { id: true, name: true, color: true } } },
+          limit: DETAIL_RELATION_LIMIT,
         },
       },
     });
