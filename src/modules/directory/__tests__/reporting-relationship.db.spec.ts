@@ -5,6 +5,7 @@ import type { AuditEntry } from "../../../common/audit/audit.service";
 import type { DataScope } from "../../access/access.types";
 import { orgBusinessDate } from "../../hr/time/attendance-business-date";
 import { ReportingLineService } from "../reporting-line.service";
+import { ScopedRead } from "../../access/scoped-read";
 import { ReportingManagerPolicyService } from "../reporting-manager-policy.service";
 import { ReportingManagerFallbackResolver } from "../reporting-manager-fallback.resolver";
 import { ReportingRelationshipService } from "../reporting-relationship.service";
@@ -223,6 +224,51 @@ describe("ReportingRelationshipService against a real schema", () => {
 
     expect(results.map((result) => result.issues.map((issue) => issue.code))).toEqual([[], ["SELF_REFERENCE"], ["EMPLOYEE_NOT_FOUND"]]);
     expect(await primaryLines(employee)).toEqual(before);
+  });
+
+  it("reads secondary lines, the change count and a top-level role, hiding reasons from readers without manage or review", async () => {
+    await probe.policy({ max: 2 });
+    const employee = await probe.person("read-model");
+    const boss = await probe.person("read-model-boss");
+    const project = await probe.person("read-model-project");
+    const founder = await probe.person("read-model-founder");
+    await set({ subjectUserId: employee.userId, primaryManagerUserId: boss.userId, secondary: [{ managerUserId: project.userId, label: "Project" }], reason: "Initial assignment" });
+    await set({ subjectUserId: founder.userId, primaryManagerUserId: null, topLevelReason: "Founder and CEO" });
+    const lines = new ReportingLineService(db);
+    const read = ScopedRead.of(probe.orgId, probe.owner.userId, "all");
+
+    const hr = await lines.getLine(read, employee.userId, { permittedActions: { manage: true, review: false, override: false } });
+    expect(hr?.current).toMatchObject({ managerUserId: boss.userId, relationshipType: "PRIMARY", source: "MANUAL", changeReason: "Initial assignment" });
+    expect(hr?.secondary).toEqual([expect.objectContaining({ relationshipType: "SECONDARY", label: "Project", manager: expect.objectContaining({ userId: project.userId }) })]);
+    expect(hr).toMatchObject({ primaryChangesLast24h: 1, maxSecondaryManagers: 2, topLevel: null, pendingRequest: null });
+
+    const plain = await lines.getLine(read, employee.userId);
+    expect(plain?.current?.changeReason).toBeNull();
+    expect(await lines.getLine(read, founder.userId, { permittedActions: { manage: false, review: true, override: false } })).toMatchObject({
+      current: null,
+      topLevel: { reason: "Founder and CEO", effectiveFrom: today },
+    });
+    expect((await lines.getLine(read, founder.userId))?.topLevel).toEqual({ reason: null, effectiveFrom: today });
+  });
+
+  it("reports top-level employees apart from missing managers, and lists unconfirmed fallbacks until HR confirms them", async () => {
+    await probe.policy({ max: 0 });
+    const ceo = await probe.person("coverage-ceo");
+    const orphan = await probe.person("coverage-orphan");
+    const hire = await probe.person("coverage-hire");
+    await set({ subjectUserId: ceo.userId, primaryManagerUserId: null, topLevelReason: "Chief executive" });
+    await set({ subjectUserId: hire.userId, primaryManagerUserId: ceo.userId, source: "ONBOARDING_FALLBACK" });
+    const lines = new ReportingLineService(db);
+
+    const report = await lines.coverage(probe.orgId);
+    expect(report.withoutManager.map((row) => row.userId)).toContain(orphan.userId);
+    expect(report.withoutManager.map((row) => row.userId)).not.toContain(ceo.userId);
+    expect(report.summary.topLevel).toBeGreaterThanOrEqual(1);
+    expect(report.fallback).toEqual(expect.arrayContaining([expect.objectContaining({ userId: hire.userId, managerUserId: ceo.userId })]));
+    expect(report.policyMissing).toBe(true);
+
+    await expect(db.transaction((tx) => relationships.confirmFallback(tx, { orgId: probe.orgId, actor: owner(), subjectUserId: hire.userId }))).resolves.toMatchObject({ confirmed: true });
+    expect((await lines.coverage(probe.orgId)).fallback.map((row) => row.userId)).not.toContain(hire.userId);
   });
 
   it("resolves the policy to its defaults until a row exists, then reports the default manager's live eligibility", async () => {

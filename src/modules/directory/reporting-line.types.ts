@@ -79,7 +79,8 @@ export interface ReportingLineView {
   upcoming: ReportingLineHistoryEntry[];
   history: ReportingLineHistoryEntry[];
   secondary: RelationshipEntry[];
-  topLevel: { reason: string; effectiveFrom: string } | null;
+  /** `reason` is null unless `permittedActions` grants `manage` or `review` (contract addendum 2, §4.3). */
+  topLevel: { reason: string | null; effectiveFrom: string } | null;
   primaryChangesLast24h: number;
   changeThreshold: number;
   maxSecondaryManagers: number;

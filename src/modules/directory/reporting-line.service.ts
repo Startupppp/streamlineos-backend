@@ -346,7 +346,7 @@ export class ReportingLineService {
       upcoming,
       history,
       secondary: secondary.reverse(),
-      topLevel: role && current === null ? { reason: role.reason, effectiveFrom: role.effectiveFrom } : null,
+      topLevel: role && current === null ? { reason: showReasons ? role.reason : null, effectiveFrom: role.effectiveFrom } : null,
       primaryChangesLast24h: employmentId === null ? 0 : changes.get(employmentId) ?? 0,
       changeThreshold: policy.requireReasonAfterChanges,
       maxSecondaryManagers: policy.maxSecondaryManagersPerEmployee,
