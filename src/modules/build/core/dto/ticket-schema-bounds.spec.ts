@@ -51,4 +51,8 @@ describe("Build ticket numeric bounds", () => {
   it.each([ticketsListQuerySchema, allWorkQuerySchema])("rejects non-date due-date filters", (schema) => {
     expect(schema.safeParse({ dueDateFrom: "soon", dueDateTo: "2026/08/31" }).success).toBe(false);
   });
+
+  it.each([ticketsListQuerySchema, allWorkQuerySchema])("rejects a reversed due-date range", (schema) => {
+    expect(schema.safeParse({ dueDateFrom: "2026-09-01", dueDateTo: "2026-08-31" }).success).toBe(false);
+  });
 });

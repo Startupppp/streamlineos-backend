@@ -52,6 +52,18 @@ export function refineDueOnOrAfterStart(
   }
 }
 
+export function refineDueDateRange(
+  data: { dueDateFrom?: string; dueDateTo?: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (!data.dueDateFrom || !data.dueDateTo || data.dueDateTo >= data.dueDateFrom) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: "Due date end must be on or after due date start",
+    path: ["dueDateTo"],
+  });
+}
+
 export const listProjectsSchema = z.object({
   search: z.string().optional(),
   status: z.enum(["ACTIVE", "COMPLETED", "ARCHIVED", "ALL"]).default("ALL"),

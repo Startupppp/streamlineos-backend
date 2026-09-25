@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   projectPrioritySchema,
+  refineDueDateRange,
   refineDueOnOrAfterStart,
 } from "./project-core.schemas";
 import {
@@ -75,7 +76,9 @@ export const ticketsListQuerySchema = baseListQuerySchema
       .enum(["created", "updated", "priority", "dueDate", "rank"])
       .default("rank"),
     orderDir: z.enum(["asc", "desc"]).optional(),
-  }).strict();
+  })
+  .strict()
+  .superRefine((data, ctx) => refineDueDateRange(data, ctx));
 
 export const allWorkQuerySchema = baseListQuerySchema
   .omit({ page: true, sortDir: true })
@@ -121,7 +124,9 @@ export const allWorkQuerySchema = baseListQuerySchema
     projectIds: csvToIntArray,
     excludeStatus: csvToStringArray,
     scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
-  }).strict();
+  })
+  .strict()
+  .superRefine((data, ctx) => refineDueDateRange(data, ctx));
 
 export const searchTicketsQuerySchema = z.object({
   q: z.string().default(""),
