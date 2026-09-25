@@ -96,10 +96,10 @@ describe("KB command fencing", () => {
 
     it("all four retriable creates are fenced — no unfenced retriable create", () => {
       for (const [route, handler] of RETRIABLE_CREATES) {
-        expect(commandOf(handler)).toEqual(
-          expect.any(String),
-          `${route} is unfenced`,
-        );
+        expect({ route, command: commandOf(handler) }).toEqual({
+          route,
+          command: expect.any(String),
+        });
       }
     });
   });

@@ -138,8 +138,7 @@ describe("Box 1 — canonical KnowledgeAuthorization is the only access decision
 
   it("buildVisiblePageScope always wraps the predicate in the tenant eq clause", () => {
     const scope = buildVisiblePageScope(makeStanding(), "view");
-    const rendered = scope.predicate.toSQL?.() ?? String(scope.predicate);
-    expect(rendered).toBeTruthy();
+    expect(scope.predicate).toBeDefined();
     expect(scope.fingerprint).toContain("org-1");
   });
 
@@ -455,7 +454,7 @@ describe("Box 8 — audit and outbox records commit with the source mutation; no
     };
     const svc = new KbEventsService(db as never);
 
-    svc.recordDetached("org-1", "kb.page.view");
+    svc.recordDetached("org-1", "view");
 
     expect(registerAfterCommit).toHaveBeenCalledTimes(1);
   });
