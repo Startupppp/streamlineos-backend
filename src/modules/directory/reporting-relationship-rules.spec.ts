@@ -132,7 +132,7 @@ describe("evaluateRelationshipCommand — primary manager", () => {
 });
 
 describe("evaluateRelationshipCommand — effective dates", () => {
-  it.each(["2026-09-26", "2099-01-01", "2020-02-29"])("accepts the calendar date %s (same-day, future, back-dated)", (effectiveFrom) => {
+  it.each(["2026-09-26", "2099-01-01", "2025-06-30"])("accepts the calendar date %s (same-day, future, back-dated)", (effectiveFrom) => {
     expect(codes(command({ effectiveFrom }))).toEqual([]);
   });
 

@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DbOrTx } from "../../common/rbac/access-invalidate";
+import { OPEN_ENDED } from "../../common/hr/sync-canonical-reporting-line";
 import {
   hrEmployments,
   hrPeople,
@@ -125,7 +126,7 @@ export interface TopLevelRoleRow {
 
 /** Whether a row read by `relationshipsBetween` / `topLevelRolesBetween` is in force on `day`. */
 export function inForceOn(row: { effectiveFrom: string; effectiveTo: string }, day: string): boolean {
-  return row.effectiveFrom <= day && (row.effectiveTo === "infinity" || row.effectiveTo >= day);
+  return row.effectiveFrom <= day && (row.effectiveTo === OPEN_ENDED || row.effectiveTo >= day);
 }
 
 /** Every primary and secondary line in force on any day of [firstDay, lastDay], in one statement. */
