@@ -145,7 +145,10 @@ export class ReportingLineService {
     managerUserId: string,
     db: DbOrTx = this.db,
   ): Promise<ManagerAssignmentCheck> {
-    return this.asManager(await this.checkApprover(orgId, managerUserId, db));
+    const [candidate] = await this.candidates(orgId, db)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, managerUserId)))
+      .limit(1);
+    return this.asManager(this.eligibilityOf(candidate, { requireAccepted: false }));
   }
 
   /** `checkManager` for many candidates in one statement — the preview and bulk path. */
@@ -159,7 +162,7 @@ export class ReportingLineService {
     if (wanted.length === 0) return checks;
     const rows = await this.candidates(orgId, db).where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, wanted)));
     const byUser = new Map(rows.map((row) => [row.userId, row]));
-    for (const userId of wanted) checks.set(userId, this.asManager(this.eligibilityOf(byUser.get(userId))));
+    for (const userId of wanted) checks.set(userId, this.asManager(this.eligibilityOf(byUser.get(userId), { requireAccepted: false })));
     return checks;
   }
 
@@ -171,7 +174,7 @@ export class ReportingLineService {
     const [candidate] = await this.candidates(orgId, db)
       .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, candidateUserId)))
       .limit(1);
-    return this.eligibilityOf(candidate);
+    return this.eligibilityOf(candidate, { requireAccepted: true });
   }
 
   async assign(
@@ -382,7 +385,12 @@ export class ReportingLineService {
       );
   }
 
-  private eligibilityOf(candidate: Candidate | undefined): ApproverEligibility {
+  /**
+   * `requireAccepted` separates two questions. Routing an approval needs someone who can sign in
+   * today; recording a reporting line does not — HRM-15 §7.3 bulk files name managers created by
+   * the same file, all of them unopened invitations when the line is written.
+   */
+  private eligibilityOf(candidate: Candidate | undefined, options: { requireAccepted: boolean }): ApproverEligibility {
     if (!candidate || candidate.membershipStatus !== "ACTIVE") return this.refuse("manager-not-in-organization");
     if (!candidate.userActive) return this.refuse("manager-inactive");
     // HRMS-E2E-015/011. is_active is the ACCOUNT flag, true the moment an
@@ -399,7 +407,7 @@ export class ReportingLineService {
     // Refusing is safe — `consider()` records the reason and tries the next
     // rung, ending at the HR queue, so the worst case is a request routed
     // onwards with a sentence explaining it, never one that cannot be filed.
-    if (candidate.acceptedAt === null) return this.refuse("manager-never-accepted");
+    if (options.requireAccepted && candidate.acceptedAt === null) return this.refuse("manager-never-accepted");
     if (candidate.employmentId === null || candidate.lifecycleStatus === null) {
       if (candidate.isOwner === true) return { ok: true, managerEmploymentId: null };
       return this.refuse("manager-has-no-employment", candidate.candidateName);
