@@ -7,7 +7,7 @@ import { pageVisibleTo } from "./kb-page-visibility";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
+import { buildArticleRestrictionBranch, buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
 import type { KbActorStanding } from "../core/authorization/knowledge-authorization.types";
 
 const dialect = new PgDialect();
@@ -144,8 +144,6 @@ describe("Revocation dimension 1 — space membership is re-read per query, not 
 });
 
 describe("Revocation dimension 2 — kb_page_restrictions is a live subquery on both paths", () => {
-  const candidates = new KbCandidateService(makeCapturingDb().db as never);
-
   it("reaches both the keyword and the vector article query", async () => {
     const access = makeAccess(GRANTED_SPACES, GRANTED_PROJECTS, ["SUPPORT"], 5);
     const { wheres, run } = retrieve(access);
@@ -158,7 +156,7 @@ describe("Revocation dimension 2 — kb_page_restrictions is a live subquery on 
 
   it("binds the reader's membership and roles while the grant holds", () => {
     const { text, params } = render(
-      candidates.articleRestrictionFilter(ORG, { userId: "user-1", membershipId: 5, roleSlugs: ["SUPPORT"] }),
+      buildArticleRestrictionBranch(ORG, { membershipId: 5, roleSlugs: ["SUPPORT"] }),
     );
 
     expect(text).toContain("kb_page_restrictions");
@@ -168,7 +166,7 @@ describe("Revocation dimension 2 — kb_page_restrictions is a live subquery on 
 
   it("collapses the allow arm to false once the membership and roles are revoked", () => {
     const { text, params } = render(
-      candidates.articleRestrictionFilter(ORG, { userId: "user-1", membershipId: null, roleSlugs: [] }),
+      buildArticleRestrictionBranch(ORG, { membershipId: null, roleSlugs: [] }),
     );
 
     expect(text).toContain("false");
@@ -178,10 +176,10 @@ describe("Revocation dimension 2 — kb_page_restrictions is a live subquery on 
 
   it("a role the reader no longer holds is not bound, so a restricted article stays out", () => {
     const before = render(
-      candidates.articleRestrictionFilter(ORG, { userId: "user-1", membershipId: null, roleSlugs: ["SUPPORT"] }),
+      buildArticleRestrictionBranch(ORG, { membershipId: null, roleSlugs: ["SUPPORT"] }),
     );
     const after = render(
-      candidates.articleRestrictionFilter(ORG, { userId: "user-1", membershipId: null, roleSlugs: ["OTHER"] }),
+      buildArticleRestrictionBranch(ORG, { membershipId: null, roleSlugs: ["OTHER"] }),
     );
 
     expect(before.params).toContain("SUPPORT");

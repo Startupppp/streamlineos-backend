@@ -60,7 +60,7 @@ export class KbCitationVisibilityService {
     if (spaceIds.length === 0) return new Set();
     const [ownerFilter, restrictionFilter] = await Promise.all([
       this.search.articleOwnerFilterFor(user),
-      this.search.articleRestrictionFilterFor(user),
+      this.auth.articleRestrictionPredicate(user),
     ]);
     const conditions: SQL[] = [
       eq(kbPages.orgId, user.orgId),

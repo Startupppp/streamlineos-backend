@@ -115,6 +115,7 @@ function makeTree() {
     { R2_KB_BUCKET_NAME: KB_BUCKET } as never,
     auth as never,
     { restore: jest.fn().mockResolvedValue({ id: PAGE_ID }) } as never,
+    { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { service, deleted };
 }

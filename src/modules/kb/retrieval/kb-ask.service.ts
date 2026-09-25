@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { Redis } from "@upstash/redis";
@@ -31,7 +31,7 @@ import {
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
 } from "./kb-ask-context";
 import { kbAiInteractions, type KbAiInteractionState, type KbAiSourceRecord } from "../../../db/schema";
-import { LEGACY_CELL_ID } from "../../../common/region/placement";
+import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 
 export const KB_ASK_ORG_LIMIT = 200;
 const KB_ASK_ORG_WINDOW_SECS = 60;
@@ -289,7 +289,7 @@ export class KbAskService {
         );
       }
     }
-    const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: LEGACY_CELL_ID });
+    const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
       const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
@@ -300,9 +300,9 @@ export class KbAskService {
       const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
-      const embeddingUsed = !degraded;
+      const cacheOutcome = degraded ? "bypass" : "miss";
       const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
-      const aiTier = "fast";
+      const queueLane = "fast";
       const dbRole = "primary";
 
       const callStart = Date.now();
@@ -324,9 +324,9 @@ export class KbAskService {
           metrics.finish("credits_exhausted", {
             citations: citations.length,
             candidates,
-            aiTier,
+            queueLane,
             sourceKind,
-            embeddingUsed,
+            cacheOutcome,
             dbRole,
           });
           await runInTenantTransaction(
@@ -348,12 +348,23 @@ export class KbAskService {
             message: gatewayResult.message,
           });
         }
+        if (gatewayResult.kind === "concurrency_exceeded") {
+          metrics.finish("provider_unavailable", {
+            citations: citations.length,
+            candidates,
+            queueLane,
+            sourceKind,
+            cacheOutcome,
+            dbRole,
+          });
+          throw new ServiceUnavailableException("AI concurrency limit reached — retry shortly");
+        }
         metrics.finish("provider_unavailable", {
           citations: citations.length,
           candidates,
-          aiTier,
+          queueLane,
           sourceKind,
-          embeddingUsed,
+          cacheOutcome,
           dbRole,
         });
         await runInTenantTransaction(
@@ -418,9 +429,9 @@ export class KbAskService {
         citations: citations.length,
         candidates,
         degraded,
-        aiTier,
+        queueLane,
         sourceKind,
-        embeddingUsed,
+        cacheOutcome,
         dbRole,
       });
       return { answer, citations, hasContext: true, aiUsage };
@@ -445,7 +456,7 @@ export class KbAskService {
       }
   > {
     const correlationId = randomUUID();
-    const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: LEGACY_CELL_ID });
+    const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
       const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
@@ -457,9 +468,9 @@ export class KbAskService {
       const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
-      const embeddingUsed = !degraded;
+      const cacheOutcome = degraded ? "bypass" : "miss";
       const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
-      const aiTier = "fast";
+      const queueLane = "fast";
       const dbRole = "primary";
 
       await runInTenantTransaction(
@@ -504,9 +515,9 @@ export class KbAskService {
         citations: citations.length,
         candidates,
         degraded,
-        aiTier,
+        queueLane,
         sourceKind,
-        embeddingUsed,
+        cacheOutcome,
         dbRole,
       });
       return {

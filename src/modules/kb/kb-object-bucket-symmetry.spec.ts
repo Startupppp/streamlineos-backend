@@ -316,6 +316,7 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
       config as never,
       auth as never,
       { restore: jest.fn().mockResolvedValue({ id: 10 }) } as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await tree.hardDelete(USER, 10);

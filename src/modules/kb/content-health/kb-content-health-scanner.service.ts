@@ -34,7 +34,56 @@ export class KbContentHealthScannerService {
       "duplicate_candidate",
     ];
 
-    await Promise.all(dynamicKinds.map((kind) => this.scanKind(orgId, kind)));
+    await Promise.all([
+      ...dynamicKinds.map((kind) => this.scanKind(orgId, kind)),
+      this.scanContradictions(orgId),
+    ]);
+  }
+
+  private async scanContradictions(orgId: string): Promise<void> {
+    const rows = await this.db.execute<{
+      page_id: number;
+      other_id: number;
+      title: string;
+      space_id: number | null;
+    }>(sql`
+      SELECT p.id AS page_id, o.id AS other_id, p.title, p.space_id
+      FROM kb_pages p
+      JOIN kb_pages o
+        ON  o.org_id = p.org_id
+        AND o.id <> p.id
+        AND o.deleted_at IS NULL
+        AND o.status = 'published'
+        AND o.space_id IS NOT DISTINCT FROM p.space_id
+        AND (
+          lower(split_part(trim(p.title), ' ', 1)) = lower(split_part(trim(o.title), ' ', 1))
+          AND lower(split_part(trim(p.title), ' ', 2)) = lower(split_part(trim(o.title), ' ', 2))
+          AND lower(split_part(trim(p.title), ' ', 3)) = lower(split_part(trim(o.title), ' ', 3))
+          AND length(trim(p.title)) >= 10
+        )
+        AND md5(coalesce(p.content_text,'')) <> md5(coalesce(o.content_text,''))
+        AND coalesce(p.content_text, '') <> ''
+        AND coalesce(o.content_text, '') <> ''
+      WHERE p.org_id = ${orgId}
+        AND p.deleted_at IS NULL
+        AND p.status = 'published'
+      LIMIT ${SCAN_PAGE_LIMIT}
+    `);
+
+    const seen = new Set<number>();
+    for (const row of rows) {
+      if (seen.has(row.page_id)) continue;
+      seen.add(row.page_id);
+      await this.recordContradiction(orgId, row.page_id, {
+        detectionMethod: "title_prefix_content_divergence",
+        conflictingPageId: row.other_id,
+        spaceId: row.space_id,
+        titlePrefix: row.title?.slice(0, 60) ?? "",
+      });
+    }
+
+    const stillMatchingIds = seen;
+    await this.resolveStaleItems(orgId, "contradictory_claim" as KbHealthItemKind, stillMatchingIds);
   }
 
   async recordContradiction(

@@ -71,6 +71,7 @@ function makeTree(db: unknown) {
     { R2_KB_BUCKET_NAME: "kb-files" } as never,
     auth as never,
     { restore: jest.fn().mockResolvedValue({ id: 1 }) } as never,
+    { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
   );
 }
 

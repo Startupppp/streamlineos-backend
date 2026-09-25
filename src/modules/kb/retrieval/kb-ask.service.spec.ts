@@ -1,4 +1,4 @@
-import { HttpException } from "@nestjs/common";
+import { HttpException, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { REDIS } from "../../../common/cache/cache.service";
 import { setSpanExporter, resetSpanExporter, type FinishedSpan } from "../../../common/observability";
@@ -37,7 +37,8 @@ const makeGatewayFail = (
     | "quota_exceeded"
     | "provider_unavailable"
     | "not_configured"
-    | "invalid_output",
+    | "invalid_output"
+    | "concurrency_exceeded",
   message = "error",
 ) => ({
   ok: false as const,
@@ -69,7 +70,6 @@ const mockSearch = {
   retrieveTopSources: jest.fn().mockResolvedValue([]),
   retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
   articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
-  articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
 };
 
 const user = {
@@ -137,6 +137,7 @@ describe("KbAskService", () => {
           useValue: {
             visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
             assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org1", pageId: 1, action: "view", via: "admin" }),
+            articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
           },
         },
         { provide: DRIZZLE, useValue: mockDb },
@@ -468,6 +469,13 @@ describe("KbAskService", () => {
     expect(sourceIdsArg).toBeUndefined();
   });
 
+  it("throws 503 when the AI concurrency cap is reached so clients can retry without treating it as an error", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayFail("concurrency_exceeded"),
+    );
+    await expect(service.ask(user, input)).rejects.toThrow(ServiceUnavailableException);
+  });
+
   it("throws 429 when the org has exhausted its per-minute Ask cap", async () => {
     const saturatedRedis = {
       incr: jest.fn().mockResolvedValue(KB_ASK_ORG_LIMIT + 1),
@@ -488,6 +496,7 @@ describe("KbAskService", () => {
           useValue: {
             visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
             assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org1", pageId: 1, action: "view", via: "admin" }),
+            articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
           },
         },
         { provide: DRIZZLE, useValue: mockDb },

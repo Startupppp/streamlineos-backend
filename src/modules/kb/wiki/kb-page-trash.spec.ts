@@ -95,6 +95,7 @@ function service(db: Db, treeMock?: ReturnType<typeof makeTreeMock>): KbPageTras
     configMock,
     auth as never,
     (treeMock ?? makeTreeMock()) as never,
+    { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
   );
 }
 
@@ -153,7 +154,7 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
       assertPageAccess: jest.fn(),
     };
     const { db } = makeTrashDb([]);
-    const svc = new KbPageTrashService(db, auditMock as never, storageMock, configMock, restrictedAuth as never, makeTreeMock() as never);
+    const svc = new KbPageTrashService(db, auditMock as never, storageMock, configMock, restrictedAuth as never, makeTreeMock() as never, { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never);
     const page = await svc.getTrash(userInOrg, trashQuery());
     expect(page.data).toHaveLength(0);
     expect(restrictedAuth.visiblePagePredicate).toHaveBeenCalledWith(userInOrg, "view");

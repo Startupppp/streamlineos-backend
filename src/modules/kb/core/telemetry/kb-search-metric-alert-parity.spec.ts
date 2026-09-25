@@ -139,8 +139,9 @@ describe("the KB Search span carries no tenant content and survives redaction", 
       "kb.search.duration_ms",
       "kb.search.results",
       "kb.search.source_kind",
-      "kb.search.embedding_used",
+      "kb.search.cache_outcome",
       "kb.search.db_role",
+      "kb.search.queue_lane",
     ]);
     expect(declared.filter((key) => !allowed.has(key))).toEqual([]);
   });
@@ -196,11 +197,11 @@ describe("the KB Search emitter supplies all observability dimensions", () => {
 
   it("wires orgCell from the cell placement constant so the tenant-bucket dimension emits", () => {
     expect(searchServiceSource).toContain("orgCell");
-    expect(searchServiceSource).toContain("LEGACY_CELL_ID");
+    expect(searchServiceSource).toContain("PROCESS_CELL_ID");
   });
 
-  it("passes embeddingUsed to finish so the cache-outcome dimension emits", () => {
-    expect(searchServiceSource).toContain("embeddingUsed");
+  it("passes cacheOutcome to finish so the cache-outcome dimension emits", () => {
+    expect(searchServiceSource).toContain("cacheOutcome");
   });
 
   it("passes dbRole to finish so the primary-replica dimension emits", () => {

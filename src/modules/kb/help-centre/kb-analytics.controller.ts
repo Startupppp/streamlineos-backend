@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -11,20 +11,28 @@ import {
   pageAnalyticsQuerySchema,
   gapsQuerySchema,
   gapRelatedPagesQuerySchema,
+  gapAssignBodySchema,
+  gapDismissBodySchema,
+  gapCreateFixBodySchema,
   type RangeInput,
   type OverviewQueryInput,
   type PageAnalyticsQueryInput,
   type GapsQueryInput,
   type GapRelatedPagesQuery,
+  type GapAssignBody,
+  type GapDismissBody,
+  type GapCreateFixBody,
 } from "./dto/kb-analytics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   kbAnalyticsOverviewSchema,
   kbAnalyticsNoResultsSchema,
   kbAnalyticsPagesSchema,
   kbAnalyticsGapsSchema,
   kbAnalyticsGapRelatedPagesSchema,
+  kbAnalyticsGapActionSchema,
   kbAnalyticsContentGapsSchema,
   kbAnalyticsCitationReuseSchema,
   kbAnalyticsReviewSlaSchema,
@@ -121,5 +129,39 @@ export class KbAnalyticsController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.reviewSla(u.orgId, query);
+  }
+
+  @Post("analytics/gaps/assign")
+  @RequirePermission("kb:analytics:view")
+  @Validate({ body: gapAssignBodySchema })
+  @ResponseSchema(kbAnalyticsGapActionSchema)
+  async assignGap(
+    @Body() body: GapAssignBody,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.assignGap(u, body);
+  }
+
+  @Post("analytics/gaps/dismiss")
+  @RequirePermission("kb:analytics:view")
+  @Validate({ body: gapDismissBodySchema })
+  @ResponseSchema(kbAnalyticsGapActionSchema)
+  async dismissGap(
+    @Body() body: GapDismissBody,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.dismissGap(u, body);
+  }
+
+  @Post("analytics/gaps/create-fix")
+  @RequirePermission("kb:analytics:view")
+  @Validate({ body: gapCreateFixBodySchema })
+  @Idempotent("kb.analytics.gap.create-fix")
+  @ResponseSchema(kbAnalyticsGapActionSchema)
+  async createFix(
+    @Body() body: GapCreateFixBody,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.createFix(u, body);
   }
 }

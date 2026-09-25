@@ -104,7 +104,6 @@ describe("KbAskService — source citation re-verification", () => {
     retrieveTopSources: jest.fn(),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
     articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
-    articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
   };
 
   beforeEach(async () => {
@@ -133,6 +132,7 @@ describe("KbAskService — source citation re-verification", () => {
           useValue: {
             visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
             assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+            articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
           },
         },
         { provide: DRIZZLE, useValue: mockDb },
@@ -281,7 +281,6 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
       ]),
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
       articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
-      articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
     });
 
     const makeGatewayOk2 = () => ({
@@ -306,6 +305,7 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
           useValue: {
             visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
             assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+            articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
           },
         },
         { provide: DRIZZLE, useValue: normalDb },
@@ -326,6 +326,7 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
           useValue: {
             visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
             assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+            articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
           },
         },
         { provide: DRIZZLE, useValue: adversarialDb },

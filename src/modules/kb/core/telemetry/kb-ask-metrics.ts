@@ -33,9 +33,9 @@ export interface KbAskFacts {
   citations?: number;
   candidates?: number;
   degraded?: boolean;
-  aiTier?: string;
+  queueLane?: string;
   sourceKind?: string;
-  embeddingUsed?: boolean;
+  cacheOutcome?: string;
   dbRole?: string;
 }
 
@@ -65,9 +65,9 @@ export class KbAskMetrics {
     this.attributes["kb.ask.citations"] = facts.citations ?? 0;
     this.attributes["kb.ask.candidates"] = facts.candidates ?? 0;
     this.attributes["kb.ask.degraded"] = facts.degraded ?? false;
-    this.attributes["kb.ask.ai_tier"] = facts.aiTier ?? "fast";
+    this.attributes["kb.ask.queue_lane"] = facts.queueLane ?? "fast";
     this.attributes["kb.ask.source_kind"] = facts.sourceKind ?? "none";
-    this.attributes["kb.ask.embedding_used"] = facts.embeddingUsed ?? false;
+    this.attributes["kb.ask.cache_outcome"] = facts.cacheOutcome ?? "miss";
     this.attributes["kb.ask.db_role"] = facts.dbRole ?? "primary";
 
     this.span.end(NON_FAULT_ASK_OUTCOMES.has(outcome) ? "ok" : "error");

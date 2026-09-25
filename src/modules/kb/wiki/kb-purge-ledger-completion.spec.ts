@@ -25,6 +25,9 @@ jest.mock("./kb-multi-store-purge", () => ({
     "chunks",
     "analytics",
     "notifications",
+    "caches",
+    "public_cdn",
+    "connector_projections",
     "page_rows",
     "blobs",
   ],
@@ -41,6 +44,9 @@ jest.mock("./kb-multi-store-purge", () => ({
   purgeChunksForPages: jest.fn(async () => undefined),
   purgeAnalyticsForPages: jest.fn(async () => undefined),
   purgeNotificationsForPages: jest.fn(async () => undefined),
+  purgeCachesForPages: jest.fn(async () => undefined),
+  purgePublicCdnForPages: jest.fn(async () => undefined),
+  purgeConnectorProjectionsForPages: jest.fn(async () => undefined),
 }));
 
 import { KbPageTrashService } from "./kb-page-trash.service";
@@ -97,6 +103,7 @@ function makeService(): KbPageTrashService {
     { R2_KB_BUCKET_NAME: "kb-files" } as never,
     { visiblePagePredicate: jest.fn(), assertPageAccess: jest.fn() } as never,
     { restore: jest.fn() } as never,
+    { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
   );
 }
 
@@ -112,7 +119,7 @@ beforeEach(() => {
 });
 
 describe("every store a purge opens in the ledger is also closed", () => {
-  it("emptyTrash opens all twelve stores per page, so leaving any pending is a ledger leak", async () => {
+  it("emptyTrash opens all fifteen stores per page, so leaving any pending is a ledger leak", async () => {
     const service = makeService();
 
     await service.emptyTrash(makeUser());
@@ -120,7 +127,7 @@ describe("every store a purge opens in the ledger is also closed", () => {
     expect(jest.mocked(openMultiStoreLedger).mock.calls[0]?.[2]).toEqual(
       PAGE_IDS,
     );
-    expect(KB_PURGE_STORES).toHaveLength(12);
+    expect(KB_PURGE_STORES).toHaveLength(15);
     expect(KB_PURGE_STORES).toContain("reviews");
   });
 

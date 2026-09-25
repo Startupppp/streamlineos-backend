@@ -22,6 +22,9 @@ export const KB_PURGE_STORES = [
   "chunks",
   "analytics",
   "notifications",
+  "caches",
+  "public_cdn",
+  "connector_projections",
   "page_rows",
   "blobs",
 ] as const;
@@ -59,7 +62,7 @@ export const kbPagePurgeLedger = pgTable(
     ),
     check(
       "chk_kb_purge_ledger_store",
-      sql`${table.store} IN ('visits', 'favorites', 'source_links', 'reviews', 'versions', 'comments', 'grants', 'chunks', 'analytics', 'notifications', 'page_rows', 'blobs')`,
+      sql`${table.store} IN ('visits', 'favorites', 'source_links', 'reviews', 'versions', 'comments', 'grants', 'chunks', 'analytics', 'notifications', 'caches', 'public_cdn', 'connector_projections', 'page_rows', 'blobs')`,
     ),
     check(
       "chk_kb_purge_ledger_status",

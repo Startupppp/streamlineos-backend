@@ -21,12 +21,18 @@ import {
   kbPageVisits,
   kbPages,
   kbResearchBriefs,
+  kbSpaces,
+  supportKnowledgeGaps,
 } from "../../../db/schema";
+import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
   GapRelatedPagesQuery,
   GapsQueryInput,
+  GapAssignBody,
+  GapDismissBody,
+  GapCreateFixBody,
   OverviewQueryInput,
   PageAnalyticsQueryInput,
   RangeInput,
@@ -528,5 +534,129 @@ export class KbAnalyticsService {
       slaRate: decided > 0 ? metSla / decided : 0,
       overdueOpen: overdueStats?.overdueOpen ?? 0,
     };
+  }
+
+  async assignGap(user: CurrentUserContext, body: GapAssignBody) {
+    const now = new Date();
+    const [row] = await this.db
+      .insert(supportKnowledgeGaps)
+      .values({
+        orgId: user.orgId,
+        clusterKey: body.query,
+        representativeQuestion: body.query,
+        ticketCount: 0,
+        status: SupportKnowledgeGapStatus.OPEN,
+        draftedBy: body.assigneeUserId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [supportKnowledgeGaps.orgId, supportKnowledgeGaps.clusterKey],
+        set: { draftedBy: body.assigneeUserId, updatedAt: now },
+      })
+      .returning({
+        id: supportKnowledgeGaps.id,
+        clusterKey: supportKnowledgeGaps.clusterKey,
+        status: supportKnowledgeGaps.status,
+        proposedArticleId: supportKnowledgeGaps.proposedArticleId,
+        draftedBy: supportKnowledgeGaps.draftedBy,
+        updatedAt: supportKnowledgeGaps.updatedAt,
+      });
+    return row!;
+  }
+
+  async dismissGap(user: CurrentUserContext, body: GapDismissBody) {
+    const now = new Date();
+    const [row] = await this.db
+      .insert(supportKnowledgeGaps)
+      .values({
+        orgId: user.orgId,
+        clusterKey: body.query,
+        representativeQuestion: body.query,
+        ticketCount: 0,
+        status: SupportKnowledgeGapStatus.DISMISSED,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [supportKnowledgeGaps.orgId, supportKnowledgeGaps.clusterKey],
+        set: { status: SupportKnowledgeGapStatus.DISMISSED, updatedAt: now },
+      })
+      .returning({
+        id: supportKnowledgeGaps.id,
+        clusterKey: supportKnowledgeGaps.clusterKey,
+        status: supportKnowledgeGaps.status,
+        proposedArticleId: supportKnowledgeGaps.proposedArticleId,
+        draftedBy: supportKnowledgeGaps.draftedBy,
+        updatedAt: supportKnowledgeGaps.updatedAt,
+      });
+    return row!;
+  }
+
+  async createFix(user: CurrentUserContext, body: GapCreateFixBody) {
+    const now = new Date();
+
+    const spaceId = body.spaceId
+      ?? await this.db
+        .select({ id: kbSpaces.id })
+        .from(kbSpaces)
+        .where(and(eq(kbSpaces.orgId, user.orgId), isNull(kbSpaces.deletedAt)))
+        .limit(1)
+        .then((rows) => rows[0]?.id ?? null);
+
+    const slug = body.query
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 200);
+
+    const [page] = await this.db
+      .insert(kbPages)
+      .values({
+        orgId: user.orgId,
+        spaceId: spaceId ?? null,
+        title: body.query,
+        slug: `${slug}-${Date.now()}`,
+        status: "draft",
+        visibility: "internal",
+        content: "",
+        contentText: "",
+        authorId: user.userId,
+      })
+      .returning({ id: kbPages.id });
+
+    const pageId = page!.id;
+
+    const [row] = await this.db
+      .insert(supportKnowledgeGaps)
+      .values({
+        orgId: user.orgId,
+        clusterKey: body.query,
+        representativeQuestion: body.query,
+        ticketCount: 0,
+        status: SupportKnowledgeGapStatus.DRAFTED,
+        proposedArticleId: pageId,
+        draftedBy: user.userId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [supportKnowledgeGaps.orgId, supportKnowledgeGaps.clusterKey],
+        set: {
+          proposedArticleId: pageId,
+          draftedBy: user.userId,
+          status: SupportKnowledgeGapStatus.DRAFTED,
+          updatedAt: now,
+        },
+      })
+      .returning({
+        id: supportKnowledgeGaps.id,
+        clusterKey: supportKnowledgeGaps.clusterKey,
+        status: supportKnowledgeGaps.status,
+        proposedArticleId: supportKnowledgeGaps.proposedArticleId,
+        draftedBy: supportKnowledgeGaps.draftedBy,
+        updatedAt: supportKnowledgeGaps.updatedAt,
+      });
+    return row!;
   }
 }

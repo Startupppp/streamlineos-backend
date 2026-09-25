@@ -131,6 +131,7 @@ describe("KbPageTrashService — every path that cascades kb_page_attachments re
       makeConfig() as never,
       makeAuth() as never,
       makeTreeMock() as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     );
   }
 
@@ -143,6 +144,7 @@ describe("KbPageTrashService — every path that cascades kb_page_attachments re
       makeConfig() as never,
       makeAuth() as never,
       makeTreeMock() as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await svc.emptyTrash(makeUser());
@@ -203,6 +205,7 @@ describe("KbPageTrashService — every path that cascades kb_page_attachments re
       makeConfig() as never,
       makeAuth() as never,
       makeTreeMock() as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await svc.hardDelete(makeUser(), 10);
@@ -220,6 +223,7 @@ describe("KbPageTrashService — every path that cascades kb_page_attachments re
       makeConfig() as never,
       makeAuth() as never,
       makeTreeMock() as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await expect(svc.emptyTrash(makeUser())).rejects.toThrow("write-ahead failed");
@@ -235,6 +239,7 @@ describe("KbPageTrashService — every path that cascades kb_page_attachments re
       makeConfig() as never,
       makeAuth() as never,
       makeTreeMock() as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await expect(svc.emptyTrash(makeUser())).resolves.toEqual({ purgedCount: 0 });

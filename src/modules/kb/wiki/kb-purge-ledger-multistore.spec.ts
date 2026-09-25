@@ -71,6 +71,9 @@ import {
   purgeChunksForPages,
   purgeAnalyticsForPages,
   purgeNotificationsForPages,
+  purgeCachesForPages,
+  purgePublicCdnForPages,
+  purgeConnectorProjectionsForPages,
   KB_PURGE_STORES,
   type KbPurgeStore,
 } from "./kb-multi-store-purge";
@@ -268,6 +271,9 @@ describe("resumability — interrupted purge resumes from the right store", () =
       chunks: "pending",
       analytics: "pending",
       notifications: "pending",
+      caches: "pending",
+      public_cdn: "pending",
+      connector_projections: "pending",
       page_rows: "pending",
       blobs: "pending",
     };
@@ -314,6 +320,9 @@ describe("resumability — interrupted purge resumes from the right store", () =
       chunks: "pending",
       analytics: "pending",
       notifications: "pending",
+      caches: "pending",
+      public_cdn: "pending",
+      connector_projections: "pending",
       page_rows: "pending",
       blobs: "pending",
     };
@@ -415,11 +424,18 @@ describe("KB_PURGE_STORES constant — all required stores are registered", () =
     }
   });
 
+  it("includes the three remaining stores: caches, public_cdn, connector_projections", () => {
+    for (const store of ["caches", "public_cdn", "connector_projections"] as const) {
+      expect(KB_PURGE_STORES).toContain(store);
+    }
+  });
+
   it("page_rows comes after all pre-delete stores — ordering invariant", () => {
     const pageRowsIndex = KB_PURGE_STORES.indexOf("page_rows");
     const prePurgeStores: KbPurgeStore[] = [
       "visits", "favorites", "source_links", "reviews",
       "versions", "comments", "grants", "chunks", "analytics", "notifications",
+      "caches", "public_cdn", "connector_projections",
     ];
     for (const store of prePurgeStores) {
       expect(KB_PURGE_STORES.indexOf(store)).toBeLessThan(pageRowsIndex);
@@ -529,5 +545,49 @@ describe("purgeNotificationsForPages — deletes notifications by entityId (no F
     const db = makeQueryDb(null);
     await purgeNotificationsForPages(db, ORG_A, [PAGE_1]);
     expect(mockTx.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("purgeCachesForPages — invalidates org-level access space cache so purged pages are not served from cache", () => {
+  it("calls invalidateNamespace with the org-scoped cache key", async () => {
+    const invalidateNamespace = jest.fn().mockResolvedValue(undefined);
+    const cache = { invalidateNamespace } as never;
+    await purgeCachesForPages(cache, ORG_A, [PAGE_1]);
+    expect(invalidateNamespace).toHaveBeenCalledWith(`kb:acc-spaces:${ORG_A}`);
+  });
+
+  it("still calls invalidateNamespace even for an empty page list, because the cache is org-scoped not page-scoped", async () => {
+    const invalidateNamespace = jest.fn().mockResolvedValue(undefined);
+    const cache = { invalidateNamespace } as never;
+    await purgeCachesForPages(cache, ORG_A, []);
+    expect(invalidateNamespace).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("purgePublicCdnForPages — nullifies publicToken before the row is deleted so the public URL stops resolving", () => {
+  it("is a no-op for an empty page list", async () => {
+    const db = makeQueryDb(null);
+    await purgePublicCdnForPages(db, ORG_A, []);
+    expect(mockTx.update).not.toHaveBeenCalled();
+  });
+
+  it("issues an UPDATE setting publicToken to null for a non-empty list", async () => {
+    const db = makeQueryDb(null);
+    await purgePublicCdnForPages(db, ORG_A, [PAGE_1]);
+    expect(mockTx.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("purgeConnectorProjectionsForPages — no-op placeholder: no connector tables exist in this repository", () => {
+  it("resolves without throwing for a non-empty page list", async () => {
+    const db = makeQueryDb(null);
+    await expect(purgeConnectorProjectionsForPages(db, ORG_A, [PAGE_1])).resolves.not.toThrow();
+  });
+
+  it("issues no DB call because there are no connector tables to clean", async () => {
+    const db = makeQueryDb(null);
+    await purgeConnectorProjectionsForPages(db, ORG_A, [PAGE_1]);
+    expect(mockTx.delete).not.toHaveBeenCalled();
+    expect(mockTx.update).not.toHaveBeenCalled();
   });
 });

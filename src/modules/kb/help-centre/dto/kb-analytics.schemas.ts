@@ -37,3 +37,27 @@ export const gapRelatedPagesQuerySchema = z
   })
   .strict();
 export type GapRelatedPagesQuery = z.infer<typeof gapRelatedPagesQuerySchema>;
+
+export const gapAssignBodySchema = z
+  .object({
+    query: z.string().min(1).max(500),
+    assigneeUserId: z.string().min(1),
+  })
+  .strict();
+export type GapAssignBody = z.infer<typeof gapAssignBodySchema>;
+
+export const gapDismissBodySchema = z
+  .object({
+    query: z.string().min(1).max(500),
+    reason: z.string().min(1).max(1000),
+  })
+  .strict();
+export type GapDismissBody = z.infer<typeof gapDismissBodySchema>;
+
+export const gapCreateFixBodySchema = z
+  .object({
+    query: z.string().min(1).max(500),
+    spaceId: z.number().int().positive().optional(),
+  })
+  .strict();
+export type GapCreateFixBody = z.infer<typeof gapCreateFixBodySchema>;

@@ -18,6 +18,7 @@ const audit = { log: jest.fn() } as never;
 const storage = { isConfigured: jest.fn().mockReturnValue(false) } as never;
 const config = { R2_KB_BUCKET_NAME: undefined } as never;
 const tree = {} as never;
+const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never;
 
 function makeAuth() {
   return {
@@ -30,7 +31,7 @@ describe("KbPageTrashService.hardDelete — enumeration guard", () => {
 
   it("throws NotFoundException when the page does not exist", async () => {
     const auth = makeAuth();
-    const svc = new KbPageTrashService(makeDb(null), audit, storage, config, auth as never, tree);
+    const svc = new KbPageTrashService(makeDb(null), audit, storage, config, auth as never, tree, cache);
 
     await expect(svc.hardDelete(makeUser(), PAGE_ID)).rejects.toThrow(NotFoundException);
     await expect(svc.hardDelete(makeUser(), PAGE_ID)).rejects.toThrow("Page not found");
@@ -39,7 +40,7 @@ describe("KbPageTrashService.hardDelete — enumeration guard", () => {
   it("throws NotFoundException when the page exists but is restricted", async () => {
     const auth = makeAuth();
     const db = makeDb(null);
-    const svc = new KbPageTrashService(db, audit, storage, config, auth as never, tree);
+    const svc = new KbPageTrashService(db, audit, storage, config, auth as never, tree, cache);
 
     const error = await svc.hardDelete(makeUser(), PAGE_ID).catch((e: unknown) => e);
 
@@ -56,6 +57,7 @@ describe("KbPageTrashService.hardDelete — enumeration guard", () => {
       config,
       makeAuth() as never,
       tree,
+      cache,
     ).hardDelete(makeUser(), PAGE_ID).catch((e: unknown) => e);
 
     const errorB = await new KbPageTrashService(
@@ -65,6 +67,7 @@ describe("KbPageTrashService.hardDelete — enumeration guard", () => {
       config,
       makeAuth() as never,
       tree,
+      cache,
     ).hardDelete(makeUser(), PAGE_ID).catch((e: unknown) => e);
 
     expect((errorA as NotFoundException).message).toBe((errorB as NotFoundException).message);

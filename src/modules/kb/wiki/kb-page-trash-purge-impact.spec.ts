@@ -49,7 +49,7 @@ function makeDb(
 }
 
 function service(db: Db, auth: ReturnType<typeof makeAuth>): KbPageTrashService {
-  return new KbPageTrashService(db, auditMock as never, storageMock, configMock, auth as never, treeMock);
+  return new KbPageTrashService(db, auditMock as never, storageMock, configMock, auth as never, treeMock, { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never);
 }
 
 describe("KbPageTrashService.purgeImpact — dependency impact before a destructive purge", () => {

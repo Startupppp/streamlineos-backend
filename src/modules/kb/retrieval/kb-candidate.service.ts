@@ -84,7 +84,7 @@ export class KbCandidateService {
       inArray(kbPages.spaceId, spaceIds),
       eq(kbPages.status, "published"),
       keywordCond,
-      this.articleRestrictionFilter(orgId, principal),
+      buildArticleRestrictionBranch(orgId, principal),
     ];
     if (ownerScopeFilter) conditions.push(ownerScopeFilter);
     if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
@@ -115,7 +115,7 @@ export class KbCandidateService {
       inArray(kbPages.spaceId, spaceIds),
       eq(kbPages.status, "published"),
       supportArticlePredicate(),
-      this.articleRestrictionFilter(orgId, principal),
+      buildArticleRestrictionBranch(orgId, principal),
     ];
     if (ownerScopeFilter) conditions.push(ownerScopeFilter);
     if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
@@ -167,17 +167,6 @@ export class KbCandidateService {
       extra,
       "KB page",
     );
-  }
-
-  articleRestrictionFilter(
-    orgId: string,
-    principal: {
-      userId: string;
-      membershipId: number | null;
-      roleSlugs: string[];
-    },
-  ): SQL {
-    return buildArticleRestrictionBranch(orgId, principal);
   }
 
   async resolveArticleKeywordCondition(

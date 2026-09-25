@@ -48,12 +48,12 @@ const mockAccess = {
 
 const mockSearch = {
   articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
-  articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
 };
 
 const mockAuth = {
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+  articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
 };
 
 async function makeVisibility(rows: { id: number }[]) {

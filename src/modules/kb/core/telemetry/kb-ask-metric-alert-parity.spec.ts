@@ -233,9 +233,9 @@ describe("the KB Ask span carries no tenant content and survives redaction", () 
       "kb.ask.citations",
       "kb.ask.candidates",
       "kb.ask.degraded",
-      "kb.ask.ai_tier",
+      "kb.ask.queue_lane",
       "kb.ask.source_kind",
-      "kb.ask.embedding_used",
+      "kb.ask.cache_outcome",
       "kb.ask.db_role",
     ]);
     expect(declared.filter((key) => !allowed.has(key))).toEqual([]);
@@ -331,19 +331,19 @@ describe("the KB Ask emitter supplies all six observability dimensions", () => {
 
   it("wires orgCell from the cell placement constant so the tenant-bucket dimension emits", () => {
     expect(askServiceSource).toContain("orgCell");
-    expect(askServiceSource).toContain("LEGACY_CELL_ID");
+    expect(askServiceSource).toContain("PROCESS_CELL_ID");
   });
 
-  it("passes embeddingUsed to finish so the cache-outcome dimension emits", () => {
-    expect(askServiceSource).toContain("embeddingUsed");
+  it("passes cacheOutcome to finish so the cache-outcome dimension emits", () => {
+    expect(askServiceSource).toContain("cacheOutcome");
   });
 
   it("passes dbRole to finish so the primary-replica dimension emits", () => {
     expect(askServiceSource).toContain("dbRole");
   });
 
-  it("passes aiTier to finish so the queue-lane dimension emits", () => {
-    expect(askServiceSource).toContain("aiTier");
+  it("passes queueLane to finish so the queue-lane dimension emits", () => {
+    expect(askServiceSource).toContain("queueLane");
   });
 
   it("passes sourceKind to finish so the source-kind dimension emits", () => {

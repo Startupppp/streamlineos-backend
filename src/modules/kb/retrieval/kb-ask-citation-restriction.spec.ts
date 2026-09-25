@@ -5,8 +5,9 @@ import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbCandidateService } from "./kb-candidate.service";
-import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { humanSessionPrincipal, actingMembershipId } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 import type { AskCitation } from "./kb-ask.service";
 import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
 
@@ -20,9 +21,9 @@ import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source
  * The fake below is predicate-honouring in the same sense as `test/security/bola/kb-rag-fake-db.ts`:
  * the WHERE the service actually built is compiled with drizzle's own dialect and then
  * answered the way Postgres would for the dimension under test. The restriction SQL it is
- * answering is the production SQL — `KbCandidateService.articleRestrictionFilter` is the
- * real object here, not a stub — and the membership the fake enforces is read back out of
- * the compiled predicate, so "the restricted article is not cited" is a result of the SQL
+ * answering is the production SQL — `buildArticleRestrictionBranch` is the real predicate
+ * builder here, not a stub — and the membership the fake enforces is read back out of the
+ * compiled predicate, so "the restricted article is not cited" is a result of the SQL
  * rather than a restatement of the source text.
  */
 

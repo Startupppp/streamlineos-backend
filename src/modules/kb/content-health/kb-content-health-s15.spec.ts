@@ -319,6 +319,42 @@ describe("KbContentHealthScannerService — producers for all nine kinds", () =>
       expect.objectContaining({ kind: "contradictory_claim", pageId: 1 }),
     );
   });
+
+  it("scan() calls scanContradictions so contradictory_claim is produced on the sweep path, not only via the API — removing this test breaks the nine-preset contract", async () => {
+    const insertChain = {
+      values: jest.fn().mockReturnValue({
+        onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+        onConflictDoNothing: jest.fn().mockResolvedValue([]),
+        catch: jest.fn().mockResolvedValue(undefined),
+      }),
+      onConflictDoNothing: jest.fn().mockReturnValue({ catch: jest.fn().mockResolvedValue(undefined) }),
+    };
+    const executeSpy = jest.fn().mockResolvedValue([
+      { page_id: 10, other_id: 20, title: "API Rate Limits Guide", space_id: 1 },
+    ]);
+    const db = {
+      insert: jest.fn().mockReturnValue(insertChain),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ catch: jest.fn().mockResolvedValue(undefined) }) }),
+      }),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+            then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
+          }),
+        }),
+      }),
+      execute: executeSpy,
+    } as unknown as Db;
+
+    const scanner = new KbContentHealthScannerService(db);
+    await scanner.scan("org-1");
+
+    expect(executeSpy).toHaveBeenCalled();
+    const callArg = render(executeSpy.mock.calls[0]?.[0]);
+    expect(callArg).toMatch(/split_part|contradictory_claim|title_prefix/i);
+  });
 });
 
 describe("KbContentHealthService — evidence endpoint", () => {

@@ -65,7 +65,6 @@ function buildSearch(article = articleResult) {
     retrieveTopSources: jest.fn().mockResolvedValue([]),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
     articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
-    articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
   };
 }
 

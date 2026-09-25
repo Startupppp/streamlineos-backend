@@ -124,6 +124,8 @@ export const trashPagesQuerySchema = z
     q: z.string().trim().max(200).optional(),
     spaceId: z.coerce.number().int().positive().optional(),
     deletedByMembershipId: z.coerce.number().int().positive().optional(),
+    deletedFrom: z.string().datetime().optional(),
+    deletedBefore: z.string().datetime().optional(),
   })
   .strict();
 export type TrashPagesQuery = z.infer<typeof trashPagesQuerySchema>;

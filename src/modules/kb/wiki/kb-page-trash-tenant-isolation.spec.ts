@@ -83,6 +83,7 @@ describe("KbPageTrashService — cross-tenant isolation", () => {
       configMock,
       auth as never,
       treeMock as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await expect(svc.hardDelete(makeUser(ATTACKER_ORG), PAGE_ID)).rejects.toThrow(
@@ -103,6 +104,7 @@ describe("KbPageTrashService — cross-tenant isolation", () => {
       configMock,
       auth as never,
       treeMock as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await expect(svc.hardDelete(makeUser(OWNER_ORG), PAGE_ID)).resolves.toBeUndefined();

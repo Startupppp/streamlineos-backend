@@ -44,7 +44,6 @@ describe("KbAiInteractions — cross-tenant write isolation", () => {
       retrieveTopSources: jest.fn().mockResolvedValue([]),
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
       articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
-      articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
     };
     const citationVisibility = {
       visibleArticles: jest.fn().mockResolvedValue(new Set([1])),

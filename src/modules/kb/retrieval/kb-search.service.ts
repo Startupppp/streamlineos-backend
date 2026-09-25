@@ -12,7 +12,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { KbSearchMetrics } from "../core/telemetry/kb-search-metrics";
-import { LEGACY_CELL_ID } from "../../../common/region/placement";
+import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 import { kbArticleChunks, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -96,14 +96,6 @@ export class KbSearchService {
     return articleOwnerScopeFilter(read, user);
   }
 
-  async articleRestrictionFilterFor(
-    user: CurrentUserContext,
-  ): Promise<SQL | null> {
-    if (await this.access.isAdmin(user)) return null;
-    const principal = await this.access.getPrincipalIds(user);
-    return this.candidates.articleRestrictionFilter(user.orgId, principal);
-  }
-
   private async embedOrDegrade(
     text: string,
     orgId: string,
@@ -159,7 +151,7 @@ export class KbSearchService {
     pageSize: number;
     totalPages: number;
   }> {
-    const metrics = KbSearchMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: LEGACY_CELL_ID });
+    const metrics = KbSearchMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
       return await this.searchMeasured(user, input, scope, metrics);
     } catch (error) {
@@ -198,20 +190,19 @@ export class KbSearchService {
       totalPages: 0,
     };
     const dbRole = "primary";
+    const cacheOutcome = "bypass";
+    const queueLane = "sync";
     const emptyKind = "none";
     if (scope.denied) {
-      metrics.finish("denied", { sourceKind: emptyKind, embeddingUsed: false, dbRole });
+      metrics.finish("denied", { sourceKind: emptyKind, cacheOutcome, queueLane, dbRole });
       return empty;
     }
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
-      metrics.finish("not_found", { sourceKind: emptyKind, embeddingUsed: false, dbRole });
+      metrics.finish("not_found", { sourceKind: emptyKind, cacheOutcome, queueLane, dbRole });
       return empty;
     }
-
-    const isAdmin = await this.access.isAdmin(user);
-    const principal = await this.access.getPrincipalIds(user);
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
     const keywordCond = await this.candidates.resolveArticleKeywordCondition(
@@ -225,10 +216,8 @@ export class KbSearchService {
       ne(kbPages.status, "archived"),
       keywordCond,
     ];
-    if (!isAdmin)
-      domain.push(
-        this.candidates.articleRestrictionFilter(user.orgId, principal),
-      );
+    const articleRestriction = await this.auth.articleRestrictionPredicate(user);
+    if (articleRestriction) domain.push(articleRestriction);
     if (input.spaceId) domain.push(eq(kbPages.spaceId, input.spaceId));
     // The same narrowing `GET /kb/articles` applies, in the predicate rather than
     // downstream: these rows carry article text and are what retrieval hands on.
@@ -292,7 +281,7 @@ export class KbSearchService {
     );
 
     const sourceKind = "article";
-    metrics.finish(total > 0 ? "found" : "not_found", { results: total, sourceKind, embeddingUsed: false, dbRole });
+    metrics.finish(total > 0 ? "found" : "not_found", { results: total, sourceKind, cacheOutcome, queueLane, dbRole });
     return {
       items,
       total,
@@ -313,7 +302,6 @@ export class KbSearchService {
     const q = query.trim();
     if (!q) return [];
 
-    const isAdmin = await this.access.isAdmin(user);
     const principal = await this.access.getPrincipalIds(user);
     const ownerFilter = await this.articleOwnerFilterFor(user);
 
@@ -402,10 +390,8 @@ export class KbSearchService {
       ];
       if (spaceId) articleConditions.push(eq(kbPages.spaceId, spaceId));
       if (ownerFilter) articleConditions.push(ownerFilter);
-      if (!isAdmin)
-        articleConditions.push(
-          this.candidates.articleRestrictionFilter(user.orgId, principal),
-        );
+      const articleRestriction = await this.auth.articleRestrictionPredicate(user);
+      if (articleRestriction) articleConditions.push(articleRestriction);
       const articleRows = await this.db
         .select({
           id: kbPages.id,
@@ -469,7 +455,7 @@ export class KbSearchService {
   ): Promise<SQL[]> {
     const [ownerFilter, restrictionFilter] = await Promise.all([
       this.articleOwnerFilterFor(user),
-      this.articleRestrictionFilterFor(user),
+      this.auth.articleRestrictionPredicate(user),
     ]);
     const conditions: SQL[] = [
       inArray(kbArticleChunks.pageId, articleIds),

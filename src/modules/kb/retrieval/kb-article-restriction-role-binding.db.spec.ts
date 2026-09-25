@@ -31,9 +31,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../../../db/schema";
 import { kbPages } from "../../../db/schema";
-import { createTenantAwareDb } from "../../../common/tenant/tenant-db";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
-import { KbCandidateService } from "./kb-candidate.service";
+import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 
 const suffix = randomUUID().slice(0, 8);
 const ORG = `kbrestr-${suffix}`;
@@ -45,7 +44,6 @@ describe("KB article restriction filter binds role slugs as an array", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let base: ReturnType<typeof drizzle<typeof schema>>;
-  let candidates: KbCandidateService;
   let membershipId = 0;
   let openArticleId = 0;
   let roleArticleId = 0;
@@ -59,9 +57,6 @@ describe("KB article restriction filter binds role slugs as an array", () => {
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });
     appClient = postgres(appUrl, { prepare: false, max: 2, connect_timeout: 30 });
     base = drizzle(appClient, { schema });
-    candidates = new KbCandidateService(
-      createTenantAwareDb(Object.assign(base, { __client: appClient })),
-    );
 
     await owner.begin(async (tx) => {
       await tx`SET CONSTRAINTS ALL DEFERRED`;
@@ -113,8 +108,7 @@ describe("KB article restriction filter binds role slugs as an array", () => {
             and(
               eq(kbPages.orgId, ORG),
               inArray(kbPages.id, [openArticleId, roleArticleId]),
-              candidates.articleRestrictionFilter(ORG, {
-                userId: PROBE_USER,
+              buildArticleRestrictionBranch(ORG, {
                 membershipId,
                 roleSlugs,
               }),

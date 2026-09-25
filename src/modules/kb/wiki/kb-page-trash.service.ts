@@ -4,10 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { CacheService } from "../../../common/cache/cache.service";
 import {
   and,
   desc,
   eq,
+  gte,
   inArray,
   isNotNull,
   lt,
@@ -55,6 +57,9 @@ import {
   purgeChunksForPages,
   purgeAnalyticsForPages,
   purgeNotificationsForPages,
+  purgeCachesForPages,
+  purgePublicCdnForPages,
+  purgeConnectorProjectionsForPages,
 } from "./kb-multi-store-purge";
 import { purgeReviewsForPages } from "./kb-purge-reviews";
 
@@ -74,6 +79,7 @@ export class KbPageTrashService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly auth: KnowledgeAuthorizationService,
     private readonly tree: KbPageTreeService,
+    private readonly cache: CacheService,
   ) {}
 
   async hardDelete(user: CurrentUserContext, pageId: number): Promise<void> {
@@ -301,6 +307,51 @@ export class KbPageTrashService {
           throw err;
         }
       }
+      if (!(await isStoreComplete(this.db, orgId, id, "caches"))) {
+        try {
+          await purgeCachesForPages(this.cache, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "caches");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "caches",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "public_cdn"))) {
+        try {
+          await purgePublicCdnForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "public_cdn");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "public_cdn",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "connector_projections"))) {
+        try {
+          await purgeConnectorProjectionsForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "connector_projections");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "connector_projections",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
     }
   }
 
@@ -468,6 +519,10 @@ export class KbPageTrashService {
       filters.push(
         eq(kbPages.deletedByMembershipId, query.deletedByMembershipId),
       );
+    if (query.deletedFrom !== undefined)
+      filters.push(gte(kbPages.deletedAt, new Date(query.deletedFrom)));
+    if (query.deletedBefore !== undefined)
+      filters.push(lt(kbPages.deletedAt, new Date(query.deletedBefore)));
     if (query.q) {
       const words = query.q
         .trim()

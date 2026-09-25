@@ -85,6 +85,15 @@ export const kbAnalyticsGapRelatedPageItemSchema = z.object({
 
 export const kbAnalyticsGapRelatedPagesSchema = cursorPageSchema(kbAnalyticsGapRelatedPageItemSchema);
 
+export const kbAnalyticsGapActionSchema = z.object({
+  id: z.number().int(),
+  clusterKey: z.string(),
+  status: z.string(),
+  proposedArticleId: z.number().int().nullable(),
+  draftedBy: z.string().nullable(),
+  updatedAt: wireDate(),
+});
+
 export const kbAnalyticsContentGapsSchema = z.array(
   z.object({
     query: z.string().nullable(),

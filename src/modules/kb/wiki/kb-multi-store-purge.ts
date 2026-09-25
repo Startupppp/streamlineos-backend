@@ -6,10 +6,12 @@ import {
   type KbPurgeStore,
 } from "../../../db/schema/kb/purge-ledger";
 import {
+  kbPages,
   kbPageFavorites,
   kbPageLinks,
   kbPageVisits,
 } from "../../../db/schema/kb/pages";
+import type { CacheService } from "../../../common/cache/cache.service";
 import {
   kbPageVersions,
   kbPageComments,
@@ -317,4 +319,39 @@ export async function purgeNotificationsForPages(
         ),
       );
   });
+}
+
+export async function purgeCachesForPages(
+  cache: CacheService,
+  orgId: string,
+  _pageIds: number[],
+): Promise<void> {
+  await cache.invalidateNamespace(`kb:acc-spaces:${orgId}`);
+}
+
+export async function purgePublicCdnForPages(
+  db: Db,
+  orgId: string,
+  pageIds: number[],
+): Promise<void> {
+  if (pageIds.length === 0) return;
+  await runInNewTenantTransaction(db, orgId, async (tx) => {
+    await tx
+      .update(kbPages)
+      .set({ publicToken: null })
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          inArray(kbPages.id, pageIds),
+        ),
+      );
+  });
+}
+
+export async function purgeConnectorProjectionsForPages(
+  _db: Db,
+  _orgId: string,
+  _pageIds: number[],
+): Promise<void> {
+  return;
 }
