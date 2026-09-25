@@ -7,11 +7,11 @@ const GREAT_BRITAIN_REQUIREMENTS: CountryOnboardingRequirements = {
   bankFields: [
     ACCOUNT_HOLDER,
     BANK_NAME,
-    accountNumberField("12345678", "8-digit account number."),
+    accountNumberField("e.g. 12345678", "8-digit account number."),
     {
       key: "routingCode",
       label: "Sort code",
-      placeholder: "12-34-56",
+      placeholder: "e.g. 12-34-56",
       required: true,
       help: "6-digit sort code (dashes optional).",
     },
@@ -20,7 +20,7 @@ const GREAT_BRITAIN_REQUIREMENTS: CountryOnboardingRequirements = {
     {
       key: "ni_number",
       label: "National Insurance number",
-      placeholder: "QQ123456C",
+      placeholder: "e.g. QQ123456C",
       required: true,
       uppercase: true,
       pattern: "^[A-Z]{2}[0-9]{6}[A-Z]$",
@@ -62,7 +62,7 @@ export const EMEA_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
       {
         key: "iban",
         label: "IBAN",
-        placeholder: "AE070331234567890123456",
+        placeholder: "e.g. AE070331234567890123456",
         required: true,
         uppercase: true,
         help: "23-character UAE IBAN.",
@@ -70,7 +70,7 @@ export const EMEA_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
       {
         key: "swift",
         label: "SWIFT / BIC",
-        placeholder: "ADCBAEAA",
+        placeholder: "e.g. ADCBAEAA",
         required: false,
         uppercase: true,
       },
@@ -79,7 +79,7 @@ export const EMEA_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
       {
         key: "emirates_id",
         label: "Emirates ID",
-        placeholder: "784-1234-1234567-1",
+        placeholder: "e.g. 784-1234-1234567-1",
         required: true,
         pattern: "^784-?\\d{4}-?\\d{7}-?\\d$",
         patternMessage: "Enter a valid Emirates ID (784-XXXX-XXXXXXX-X)",
