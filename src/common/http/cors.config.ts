@@ -27,6 +27,13 @@ export const CORS_ALLOWED_HEADERS = [
   "traceparent",
   // HR performance engagement routes read `@Headers("x-action")` from the app.
   "x-action",
+  // Machine auth (api-key.guard.ts). Browser-side use of an API key leaks it, so
+  // nothing in our own app sends this from a page — but until `allowedHeaders`
+  // was declared here the cors package reflected whatever the browser asked for,
+  // so any existing direct-from-browser integration could send it. Declaring the
+  // list is meant to stop header smuggling, not to withdraw a header callers may
+  // already rely on; withdrawing it is a separate, announced decision.
+  "x-api-key",
 ] as const;
 
 /**
