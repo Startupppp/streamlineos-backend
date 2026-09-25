@@ -105,6 +105,7 @@ export const listFormsQuerySchema = z
         z.boolean().optional(),
       )
       .optional(),
+    cursor: z.string().min(1).optional(),
   })
   .strict();
 

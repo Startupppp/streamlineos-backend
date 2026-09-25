@@ -1,6 +1,6 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { projectForms } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -9,9 +9,24 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import type { CreateFormInput, ListFormsQuery, UpdateFormInput } from "./dto/forms.schemas";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
 
 type FormRow = typeof projectForms.$inferSelect;
 type FormPatch = Partial<typeof projectForms.$inferInsert>;
+const FORM_PAGE_SIZE = 100;
+
+function decodeFormCursor(cursor: string | undefined) {
+  if (!cursor) return undefined;
+  const parts = decodeTupleCursor(cursor, 2);
+  if (!parts) throw new BadRequestException("Invalid pagination cursor");
+  const [createdAtValue, idValue] = parts;
+  const id = Number(idValue);
+  const createdAt = new Date(createdAtValue);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2_147_483_647 || Number.isNaN(createdAt.getTime()) || createdAt.toISOString() !== createdAtValue) {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+  return { createdAt, id };
+}
 
 @Injectable()
 export class FormsService {
@@ -36,7 +51,8 @@ export class FormsService {
 
   async listForms(u: CurrentUserContext, projectId: number, query: ListFormsQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
-    return this.db
+    const cursor = decodeFormCursor(query.cursor);
+    const rows = await this.db
       .select({
         id: projectForms.id,
         orgId: projectForms.orgId,
@@ -63,10 +79,20 @@ export class FormsService {
           isNull(projectForms.deletedAt),
           query.type !== undefined ? eq(projectForms.type, query.type) : undefined,
           query.isActive !== undefined ? eq(projectForms.isActive, query.isActive) : undefined,
+          cursor
+            ? or(
+                lt(projectForms.createdAt, cursor.createdAt),
+                and(eq(projectForms.createdAt, cursor.createdAt), lt(projectForms.id, cursor.id)),
+              )
+            : undefined,
         ),
       )
-      .orderBy(desc(projectForms.createdAt))
-      .limit(100);
+      .orderBy(desc(projectForms.createdAt), desc(projectForms.id))
+      .limit(FORM_PAGE_SIZE + 1);
+    return buildTupleCursorPage(rows, FORM_PAGE_SIZE, (row) => [
+      row.createdAt.toISOString(),
+      String(row.id),
+    ]);
   }
 
   async getForm(u: CurrentUserContext, projectId: number, formId: number) {

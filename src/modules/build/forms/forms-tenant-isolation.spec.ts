@@ -132,7 +132,10 @@ describe("FormsService — project-membership gate (BOLA)", () => {
     } as unknown as Db;
     const svc = new FormsService(mockDb, makeAccess(), audit);
 
-    await expect(svc.listForms(u, 1, {})).resolves.toEqual([]);
+    await expect(svc.listForms(u, 1, {})).resolves.toEqual({
+      data: [],
+      pagination: { limit: 100, hasMore: false, nextCursor: null },
+    });
   });
 });
 

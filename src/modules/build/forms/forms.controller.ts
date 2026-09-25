@@ -29,7 +29,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { formRowSchema } from "./dto/forms-response.schemas";
+import { formPageSchema, formRowSchema } from "./dto/forms-response.schemas";
 
 export const formIdParams = z.object({ projectId: z.coerce.number().int().positive(), formId: z.coerce.number().int().positive() }).strict();
 
@@ -41,7 +41,7 @@ export class FormsController {
 
   @Get()
   @RequirePermission("build:forms:view")
-  @ResponseSchema(z.array(formRowSchema))
+  @ResponseSchema(formPageSchema)
   @Validate({ query: listFormsQuerySchema })
   listForms(
     @Param("projectId", ParseIntPipe) projectId: number,
