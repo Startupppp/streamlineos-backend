@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, ilike, isNull } from "drizzle-orm";
 import { feedbucketSubmissions, feedbucketWidgets, managedProducts, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -46,6 +46,9 @@ export class ManagedProductsService {
   ) {
     const { cursor, limit, status } = query;
     const pos = decodeCursor(cursor);
+    if (cursor !== undefined && pos === null) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
     const conds = [
       eq(managedProducts.orgId, orgId),
       isNull(managedProducts.deletedAt),

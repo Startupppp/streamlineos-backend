@@ -78,6 +78,9 @@ export class PortfoliosService {
     const portfolio = alias(projectPortfolios, "portfolio");
     const { cursor, limit, q, status } = query;
     const pos = decodeCursor(cursor);
+    if (cursor !== undefined && pos === null) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
     const conds = [
       eq(portfolio.orgId, orgId),
       isNull(portfolio.deletedAt),
@@ -127,6 +130,9 @@ export class PortfoliosService {
   ) {
     const { cursor, limit } = query;
     const pos = decodeCursor(cursor);
+    if (cursor !== undefined && pos === null) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
     const rows = await this.db
       .select({
         id: projects.id,
@@ -184,6 +190,9 @@ export class PortfoliosService {
   ) {
     const { cursor, limit } = query;
     const pos = decodeCursor(cursor);
+    if (cursor !== undefined && pos === null) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
     const rows = await this.db
       .select({
         id: projectPrograms.id,
