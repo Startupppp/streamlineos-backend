@@ -71,14 +71,19 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
     for (const field of fields) expect(decode(field, "12.50")).toBe(12.5);
   });
 
-  it("decodes the org health summary completedPoints too, so the declared sql<number> is not a lie a future caller inherits", async () => {
+  it("coerces the single-row org health aggregate without fetching project rows", async () => {
     const { db, selections } = captureSelections();
+    (db.execute as jest.Mock).mockResolvedValueOnce([{ total: "2", healthy: "1", atRisk: "1", critical: "0", avgScore: "55" }]);
 
-    await new ProjectsAnalyticsService(db, passThroughCache()).getOrgProjectHealthSummary("org-1");
-
-    const fields = fieldsNamed(selections, "completedPoints");
-    expect(fields.length).toBeGreaterThan(0);
-    for (const field of fields) expect(decode(field, "60")).toBe(60);
+    await expect(new ProjectsAnalyticsService(db, passThroughCache()).getOrgProjectHealthSummary("org-1")).resolves.toEqual({
+      total: 2,
+      healthy: 1,
+      atRisk: 1,
+      critical: 0,
+      avgScore: 55,
+    });
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(selections).toHaveLength(0);
   });
 
   it("leaves a raw string unconverted when no decoder is attached, proving these assertions can fail", () => {

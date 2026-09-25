@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
-import { cycles, projectStatuses, projects, tickets, timesheets, users } from "../../../db/schema";
+import { cycles, projectStatuses, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -204,86 +204,99 @@ export class ProjectsAnalyticsService {
     avgScore: number;
   }> {
     const todayStr = new Date().toISOString().slice(0, 10);
+    type OrgHealthSummaryRow = {
+      total: number | string | null;
+      healthy: number | string | null;
+      atRisk: number | string | null;
+      critical: number | string | null;
+      avgScore: number | string | null;
+    };
+    const [summary] = await this.db.execute<OrgHealthSummaryRow>(sql`
+      WITH project_ticket_stats AS (
+        SELECT
+          p.id AS project_id,
+          COUNT(t.id)::int AS total,
+          COUNT(t.id) FILTER (WHERE ps.type = 'completed')::int AS done,
+          COUNT(t.id) FILTER (WHERE COALESCE(ps.type, 'started') NOT IN ('completed', 'cancelled'))::int AS open,
+          COUNT(t.id) FILTER (
+            WHERE COALESCE(ps.type, 'started') NOT IN ('completed', 'cancelled')
+              AND t.due_date IS NOT NULL
+              AND t.due_date < ${todayStr}
+          )::int AS overdue
+        FROM build.projects p
+        LEFT JOIN build.tickets t
+          ON t.project_id = p.id
+          AND t.org_id = p.org_id
+          AND t.deleted_at IS NULL
+        LEFT JOIN build.project_statuses ps
+          ON ps.org_id = t.org_id
+          AND ps.project_id = t.project_id
+          AND ps.name = t.status
+        WHERE p.org_id = ${orgId}
+          AND p.deleted_at IS NULL
+        GROUP BY p.id
+      ), cycle_points AS (
+        SELECT
+          c.project_id,
+          c.id AS cycle_id,
+          c.start_date,
+          COALESCE(SUM(
+            CASE WHEN ps.type = 'completed'
+              THEN COALESCE(t.story_points, t.estimate, 0)
+              ELSE 0
+            END
+          ), 0) AS completed_points
+        FROM build.cycles c
+        LEFT JOIN build.tickets t
+          ON t.cycle_id = c.id
+          AND t.org_id = ${orgId}
+          AND t.deleted_at IS NULL
+        LEFT JOIN build.project_statuses ps
+          ON ps.org_id = t.org_id
+          AND ps.project_id = t.project_id
+          AND ps.name = t.status
+        WHERE c.org_id = ${orgId}
+          AND c.deleted_at IS NULL
+        GROUP BY c.project_id, c.id, c.start_date
+      ), cycle_stats AS (
+        SELECT
+          project_id,
+          COUNT(*)::int AS cycle_count,
+          COALESCE(SUM(completed_points), 0) AS total_points,
+          (ARRAY_AGG(completed_points ORDER BY start_date))[COUNT(*)] AS latest_points
+        FROM cycle_points
+        GROUP BY project_id
+      ), project_scores AS (
+        SELECT
+          pts.project_id,
+          ROUND(
+            CASE WHEN pts.total > 0 THEN pts.done::numeric / pts.total * 50 ELSE 0 END
+            + CASE WHEN pts.open > 0 THEN (1 - pts.overdue::numeric / pts.open) * 30 ELSE 30 END
+            + CASE
+                WHEN cs.cycle_count > 0 AND cs.total_points / cs.cycle_count > 0
+                  THEN LEAST(1, cs.latest_points / (cs.total_points / cs.cycle_count)) * 20
+                ELSE 20
+              END
+          )::int AS health_score
+        FROM project_ticket_stats pts
+        LEFT JOIN cycle_stats cs ON cs.project_id = pts.project_id
+      )
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE health_score >= 60)::int AS healthy,
+        COUNT(*) FILTER (WHERE health_score >= 40 AND health_score < 60)::int AS "atRisk",
+        COUNT(*) FILTER (WHERE health_score < 40)::int AS critical,
+        COALESCE(ROUND(AVG(health_score)), 0)::int AS "avgScore"
+      FROM project_scores
+    `);
 
-    const [ticketStats, cycleStats] = await Promise.all([
-      this.db
-        .select({
-          projectId: tickets.projectId,
-          total: sql<number>`COUNT(*)::int`,
-          done: sql<number>`COUNT(*) FILTER (WHERE ${projectStatuses.type} = 'completed')::int`,
-          open: sql<number>`COUNT(*) FILTER (WHERE COALESCE(${projectStatuses.type}, 'started') NOT IN ('completed', 'cancelled'))::int`,
-          overdue: sql<number>`COUNT(*) FILTER (WHERE COALESCE(${projectStatuses.type}, 'started') NOT IN ('completed', 'cancelled') AND ${tickets.dueDate} IS NOT NULL AND ${tickets.dueDate} < ${todayStr})::int`,
-        })
-        .from(tickets)
-        .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
-        .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
-        .groupBy(tickets.projectId),
-      this.db
-        .select({
-          projectId: cycles.projectId,
-          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
-        })
-        .from(cycles)
-        .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
-        .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
-        .where(and(eq(cycles.orgId, orgId), isNull(cycles.deletedAt)))
-        .groupBy(cycles.projectId, cycles.id, cycles.startDate)
-        .orderBy(cycles.startDate),
-    ]);
-
-    const orgProjects = await this.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)));
-
-    const ticketMap = new Map<number, (typeof ticketStats)[number]>();
-    for (const row of ticketStats) {
-      if (row.projectId !== null) ticketMap.set(row.projectId, row);
-    }
-
-    const cyclesByProject = new Map<number, number[]>();
-    for (const row of cycleStats) {
-      if (row.projectId === null) continue;
-      const pts = cyclesByProject.get(row.projectId) ?? [];
-      pts.push(Number(row.completedPoints));
-      cyclesByProject.set(row.projectId, pts);
-    }
-
-    let healthy = 0;
-    let atRisk = 0;
-    let critical = 0;
-    let totalScore = 0;
-
-    for (const p of orgProjects) {
-      const t = ticketMap.get(p.id);
-      const total = t ? Number(t.total) : 0;
-      const done = t ? Number(t.done) : 0;
-      const open = t ? Number(t.open) : 0;
-      const overdue = t ? Number(t.overdue) : 0;
-
-      const completionRate = total > 0 ? done / total : 0;
-      const onTimeRate = open > 0 ? 1 - overdue / open : 1;
-
-      const velocities = cyclesByProject.get(p.id) ?? [];
-      const avgVelocity = velocities.length > 0 ? velocities.reduce((a, b) => a + b, 0) / velocities.length : 0;
-      const latestVelocity = velocities.length > 0 ? velocities[velocities.length - 1] : 0;
-      const velocityScore = avgVelocity > 0 ? Math.min(1, latestVelocity / avgVelocity) : 1;
-
-      const healthScore = Math.round(completionRate * 50 + onTimeRate * 30 + velocityScore * 20);
-
-      totalScore += healthScore;
-      if (healthScore >= 60) healthy++;
-      else if (healthScore >= 40) atRisk++;
-      else critical++;
-    }
-
-    const total = orgProjects.length;
+    const total = Number(summary?.total ?? 0);
     return {
       total,
-      healthy,
-      atRisk,
-      critical,
-      avgScore: total > 0 ? Math.round(totalScore / total) : 0,
+      healthy: Number(summary?.healthy ?? 0),
+      atRisk: Number(summary?.atRisk ?? 0),
+      critical: Number(summary?.critical ?? 0),
+      avgScore: Number(summary?.avgScore ?? 0),
     };
   }
 

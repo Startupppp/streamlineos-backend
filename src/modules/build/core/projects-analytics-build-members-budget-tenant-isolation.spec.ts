@@ -101,16 +101,21 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
     expect(allJoinValues).not.toContain(OWNER_ORG);
   });
 
-  it("getOrgProjectHealthSummary cycleStats LEFT JOIN binds org_id on tickets so soft-deleted and cross-org tickets never inflate cycle velocity", async () => {
-    const { db, capturedJoins } = makeAnalyticsDb();
+  it("getOrgProjectHealthSummary aggregates only the requesting org and excludes soft-deleted projects and tickets", async () => {
+    const { db, execute } = makeAnalyticsDb();
     const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     await svc.getOrgProjectHealthSummary(ATTACKER_ORG);
 
-    const allJoinValues = capturedJoins.flatMap((j) => sqlValues(j));
-    expect(allJoinValues).toContain(ATTACKER_ORG);
-    expect(allJoinValues).not.toContain(OWNER_ORG);
-    expect(allJoinValues.some((value) => typeof value === "string" && /is null/i.test(value))).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(1);
+    const values = sqlValues(execute.mock.calls[0]?.[0]);
+    expect(values).toContain(ATTACKER_ORG);
+    expect(values).not.toContain(OWNER_ORG);
+    const sqlText = values.filter((value): value is string => typeof value === "string").join(" ");
+    expect(sqlText).toContain("build.projects");
+    expect(sqlText).toContain("p.deleted_at IS NULL");
+    expect(sqlText).toContain("t.deleted_at IS NULL");
+    expect(sqlText).toContain("COUNT(*) FILTER");
   });
 
   it("getProjectAnalytics assigneeCompletion queries build.ticket_assignees via db.execute so multi-assigned users are not invisible in completion stats", async () => {
