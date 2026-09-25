@@ -55,9 +55,13 @@ export function requestsFrom(db: DbOrTx, orgId: string) {
     .from(hrReportingManagerRequests)
     .innerJoin(
       hrEmployments,
-      and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, hrReportingManagerRequests.employeeEmploymentId)),
+      and(
+        eq(hrEmployments.orgId, orgId),
+        eq(hrEmployments.id, hrReportingManagerRequests.employeeEmploymentId),
+        isNull(hrEmployments.deletedAt),
+      ),
     )
-    .innerJoin(hrPeople, and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, hrEmployments.personId)));
+    .innerJoin(hrPeople, and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, hrEmployments.personId), isNull(hrPeople.deletedAt)));
 }
 
 export const liveRequest = isNull(hrReportingManagerRequests.deletedAt);
