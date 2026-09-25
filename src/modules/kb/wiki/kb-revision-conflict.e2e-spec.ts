@@ -8,7 +8,6 @@ import { KbPagesService } from "./kb-pages.service";
 
 const NOW = new Date("2026-02-01T09:00:00.000Z");
 
-/** The full `kbPageSchema` shape, because the response contract interceptor enforces it under NODE_ENV=test. */
 const UPDATED_PAGE = {
   id: 1,
   orgId: "org_1",

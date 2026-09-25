@@ -2,18 +2,6 @@ import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { KbArticlesService } from "./kb-articles.service";
 
-/**
- * Every KB article write that can change what retrieval should be serving has
- * to emit a `kb.content.index` outbox event on the SAME transaction as the
- * row it describes — otherwise search keeps answering from the old content
- * and nothing reports it.
- *
- * Written 2026-09-11 alongside the split that moved that emit into
- * `lib/kb-article-write.ts`. Before this file existed the emit was copied
- * into five methods and NOTHING covered it: stubbing the emit to a no-op left
- * all 72 kb suites green. The mutation that now fails is exactly that —
- * `return;` as the first statement of `emitArticleIndexEvent`.
- */
 describe("KbArticlesService — kb.content.index outbox event", () => {
   const ORG = "org-1";
   const ARTICLE_ID = 77;

@@ -52,10 +52,6 @@ const DOC_CAP = 25 * 1024 * 1024;
 
 const COMPRESSIBLE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-/**
- * A 10MB PNG can decode to tens of gigabytes. The byte cap above bounds what
- * arrives; this bounds what the decoder is allowed to allocate from it.
- */
 const MAX_IMAGE_PIXELS = 50_000_000;
 
 const MAX_IMAGE_MEGAPIXELS = MAX_IMAGE_PIXELS / 1_000_000;
@@ -166,26 +162,6 @@ export class KbMediaService {
           const indexPageId = pageId;
           const index = () =>
             this.attachmentIndexing.indexPageDocument(u.orgId, indexPageId, buffer, mimetype, originalname);
-          /**
-           * This was a bare `void`-with-`.catch` fire-and-forget, and it never
-           * indexed anything. The promise inherits the request's AsyncLocalStorage
-           * context, so `this.db` resolved to the request transaction — but the
-           * handler had already returned and that transaction had COMMITTED by the
-           * time the extract and the embedding round trip finished, so
-           * `indexPageDocument`'s own `db.transaction(...)` ran on a dead handle.
-           * The `.catch` then swallowed the failure into a log line, which is why
-           * page-document uploads reported success and were never searchable.
-           *
-           * `registerAfterCommit` is the right mechanism here (backend/CLAUDE.md 4,
-           * case 3): the attachment row is already committed and carries the file
-           * key, so a crash before indexing is re-drivable from stored state. The
-           * interceptor drains each hook inside its own
-           * `runInNewTenantTransaction`, so the GUC is present. It returns false
-           * when there is no ambient context, in which case the work runs inline
-           * rather than being dropped, and the hook deliberately does NOT swallow —
-           * the drain reports a rejection, and a silent indexing failure is what
-           * hid this for so long.
-           */
           const deferred = registerAfterCommit(async () => {
             await index();
           });
@@ -209,20 +185,6 @@ export class KbMediaService {
     return { ...result, name: originalname };
   }
 
-  /**
-   * The ledger row is the object's only pointer, so it is written under
-   * compensation rather than after a bare `await`.
-   *
-   * A `kb-media` key resolves to its organisation off the key alone
-   * (`ORG_NAMESPACED_KEY_FOLDERS`, `storage-key.ts`), so `assertKeyReadable`
-   * never consults this table and an object with no row stays readable by the
-   * whole tenant. Nothing collects it either: both KB purge paths enumerate
-   * `kb_page_attachments` (`kb-page-attachment-purge.ts`) and the storage sweep
-   * works from the rows they register, so no sweep lists the bucket. The bytes
-   * are therefore removed before the failure propagates, carrying the same
-   * bucket override the upload used — an S3 delete addressed at the wrong bucket
-   * answers success while the object survives.
-   */
   private async recordAttachment(
     u: CurrentUserContext,
     pageId: number | null,

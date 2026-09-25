@@ -10,18 +10,11 @@ import { KbLinkedDocumentFileService, LINKED_DOCUMENT_URL_TTL_SECONDS } from "./
 const ORG_ID = "org-open-throttle";
 const TIER = "kb:linked-document-open";
 
-// What a presigned R2 URL looks like. Whatever else happens, this string must not reach a log line.
 const SIGNED_URL =
   "https://streamline-hr.r2.cloudflarestorage.com/org-open-throttle/hr-documents/leave-policy.pdf" +
   "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLE%2F20260925%2Fauto%2Fs3%2Faws4_request" +
   "&X-Amz-Expires=300&X-Amz-Signature=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
-/**
- * V-147. Opening a linked document mints a 300-second bearer credential. Two things follow from that and
- * neither was pinned: a mint must be throttled, because an authorised reader looping the route banks live URLs
- * far faster than they expire; and the URL must never be written anywhere it outlives the response, which in
- * practice means a log line.
- */
 
 function contextFor(handler: (...args: never[]) => unknown, userId: string | undefined, setHeader: jest.Mock): ExecutionContext {
   const request = { user: userId === undefined ? undefined : { userId }, ip: "203.0.113.7" };
@@ -41,7 +34,6 @@ describe("minting a signed URL for a linked document is throttled", () => {
     expect(reflector.get<string>(RATE_LIMIT_TIER, open)).toBe(TIER);
     expect(reflector.get<string>(RATE_LIMIT_TIER, KbLinkedDocumentsController.prototype.list)).toBeUndefined();
     expect(reflector.get<string>(RATE_LIMIT_TIER, KbLinkedDocumentsController.prototype.get)).toBeUndefined();
-    // Declared at the class level it would limit browsing too, which is a read and not a credential.
     expect(reflector.get<string>(RATE_LIMIT_TIER, KbLinkedDocumentsController)).toBeUndefined();
   });
 
@@ -66,7 +58,6 @@ describe("minting a signed URL for a linked document is throttled", () => {
   });
 
   it("is registered in TIERS: check() returns allowed for an unknown tier, so the guard would look protected and do nothing", () => {
-    // The table is module-private, and this is exactly the failure its own SEC-004 comment records.
     const table = readFileSync(resolve(__dirname, "../../../common/ratelimit/rate-limit.service.ts"), "utf8");
     expect(table).toMatch(new RegExp(`"${TIER}":\\s*\\{`));
   });
@@ -107,7 +98,6 @@ describe("the signed URL never reaches a log line", () => {
       for (const spy of spies) spy.mockRestore();
     }
 
-    // Positive half: the caller really did get the credential, so the negatives below are not over an empty call.
     expect(result.url).toBe(SIGNED_URL);
     expect(result.expiresIn).toBe(LINKED_DOCUMENT_URL_TTL_SECONDS);
 

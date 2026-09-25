@@ -9,11 +9,6 @@ import { KbLinkedDocumentPublishService } from "./kb-linked-document-publish.ser
 import { KbLinkedDocumentQueryService } from "./kb-linked-document-query.service";
 import { KbLinkedDocumentsController } from "./kb-linked-documents.controller";
 
-/**
- * `DocumentAccessService` lives in HR but is registered here as well as in HrPerformanceModule: HrPerformanceModule
- * already imports this one, so importing it back would be a cycle. The service is stateless, so two instances are
- * the cheaper answer than a third module.
- */
 @Module({
   imports: [KbCoreModule],
   controllers: [KbLinkedDocumentsController],

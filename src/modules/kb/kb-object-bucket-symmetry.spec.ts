@@ -22,19 +22,6 @@ import { attemptPageAttachmentPurge } from "./wiki/kb-page-attachment-purge";
 import { KbSourceAdapter } from "./retrieval/kb-content-adapter";
 import { KbAttachmentIndexingService } from "./retrieval/kb-attachment-indexing.service";
 
-/*
- * Every KB object that travels through R2_KB_BUCKET_NAME is written with a bucket
- * override and, until this spec existed, read and deleted without one. That cannot
- * surface as an error: an S3-compatible DELETE of a key that is absent answers
- * SUCCESS, so the caller is told the object is gone while it survives in the KB
- * bucket with the row that named it already deleted.
- *
- * So nothing below reasons about S3 semantics. Every command is captured off
- * S3Client.prototype.send, and each assertion compares the Bucket the delete or the
- * read addressed against the Bucket the UPLOAD in the same test actually used. The
- * upload is performed by the real service that owns it, not by the test, so an
- * override that stops reaching either end fails here.
- */
 
 const auth = {
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
@@ -136,9 +123,6 @@ function quota() {
 
 describe("KB sources — the delete addresses the bucket the upload used", () => {
   function sourcesDb(removed: Record<string, unknown>[]) {
-    // `createNote`/`createFile` write the row and its `kb.content.index` outbox event in one
-    // transaction, so the stub has to invoke the callback — a bare jest.fn() would silently
-    // void every assertion inside it (root CLAUDE.md §11).
     const inserter = { values: () => ({ returning: async () => [{ id: 1 }] }) };
     const tx = { insert: () => inserter };
     return {
@@ -209,7 +193,6 @@ describe("KB sources — the delete addresses the bucket the upload used", () =>
           }),
         },
       },
-      // The adapter now settles the source's terminal status, so it writes as well as reads.
       update: () => ({ set: () => ({ where: async () => undefined }) }),
     };
     const adapter = new KbSourceAdapter(
@@ -328,13 +311,6 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
   });
 });
 
-/*
- * The control, and the reason it is here rather than a fourth fix: kb_page_attachments
- * rows carry a fileKey the client obtained from POST /storage/upload, which writes with NO
- * override. The read is therefore already symmetric with its upload, and threading the KB
- * bucket into it would 404 the read wherever the two buckets differ. This test fails if
- * someone "completes" the change by adding an override here.
- */
 describe("KB article attachments — the read stays on the bucket /storage/upload wrote to", () => {
   it("reads an article attachment from the default bucket, matching its upload", async () => {
     const sent = captureS3(() => Readable.from(["   "]));
@@ -349,8 +325,6 @@ describe("KB article attachments — the read stays on the bucket /storage/uploa
     );
     const put = only(sent, "PutObjectCommand");
 
-    // `indexAttachment` resolves the attachment and its page's acl_revision in one
-    // joined select, so the stub answers that chain rather than a relational findFirst.
     const attachmentRow = {
       pageId: 3,
       fileKey: uploaded.key,

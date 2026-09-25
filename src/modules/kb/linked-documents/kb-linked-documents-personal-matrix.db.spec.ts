@@ -1,21 +1,3 @@
-/**
- * HRMS-KB PR 8 — no personal document ever reaches the knowledge base, proved over a grid rather than a handful of cases.
- *
- * Every document in the grid is a combination of type x classification x who owns it x whether hiring stamped it x
- * whether it is public x whether it is active. Each one is put through every door the knowledge base has: the
- * publish service, a direct write of a link row, the list, the words search, the assistant retrieval, and (for the
- * ones that were shared) the moment they stop being shareable. The expected answer comes from a restatement of the
- * requirement in this file, not from the code under test, and the database function and the TypeScript helper are
- * separately required to agree with it, so a single wrong definition cannot make the grid agree with itself.
- *
- * The second half takes a document that WAS legitimately shared and changes it every way that should take it out
- * (personal, confidential, a person's type, an employee's file, removed, a hiring document) and asks the same
- * doors what a reader, a publisher and another tenant can now see.
- *
- * Run with:
- *   DATABASE_URL=postgres://user@localhost:5432/scratch_… ALLOW_DESTRUCTIVE_DB_TESTS=1 \
- *     npx jest --config ./jest-db.json --runInBand --testPathPattern=kb-linked-documents-personal-matrix
- */
 import { randomUUID } from "node:crypto";
 import { HttpException, NotFoundException } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -54,8 +36,6 @@ interface Cell {
   isActive: boolean;
 }
 
-// The requirement, restated from the brief rather than imported: a person classified it Internal or Restricted, it is a
-// company type, it belongs to nobody but its uploader, it did not come from hiring, and it has not been removed.
 function shouldBeShareable(cell: Cell): boolean {
   return (
     cell.isActive &&
@@ -66,8 +46,6 @@ function shouldBeShareable(cell: Cell): boolean {
   );
 }
 
-// Consonants only (no `y`), fixed width. The search stems words, and a stem needs a vowel to strip an ending, so
-// no two of these can collapse into one word (`zqbcd` and `zqbcds` would, with a vowel in the stem).
 const CONSONANTS = "bcdfghjklmnpqrstvwxz";
 function word(n: number, width = 4): string {
   let out = "";
@@ -156,7 +134,6 @@ describeDb("personal documents and the knowledge base — the whole grid, real d
     const seen: Awaited<ReturnType<KbLinkedDocumentQueryService["list"]>>["data"] = [];
     let cursor: string | undefined;
     for (;;) {
-      // A page at a time is the point: the list is bounded and this walks all of it.
       const page = await query.list(caller, { limit: 100, ...filter, ...(cursor ? { cursor } : {}) });
       seen.push(...page.data);
       if (!page.pagination.hasMore || !page.pagination.nextCursor) return seen;
@@ -191,7 +168,6 @@ describeDb("personal documents and the knowledge base — the whole grid, real d
     }, 300_000);
 
     it("self-check: the grid holds both kinds, and the expected count of shareable cells is the one the rules give", () => {
-      // POLICY|OTHER x INTERNAL|RESTRICTED x three company-level ownerships x no hiring stamp x public|private x active
       expect(shareable).toHaveLength(2 * 2 * 3 * 1 * 2 * 1);
       expect(notShareable.length).toBeGreaterThan(1000);
       expect(cells.filter((cell) => cell.classification === "PERSONAL" && shouldBeShareable(cell))).toEqual([]);
@@ -244,7 +220,6 @@ describeDb("personal documents and the knowledge base — the whole grid, real d
         }
       });
       const counts = codes.reduce<Record<string, number>>((acc, code) => ({ ...acc, [code]: (acc[code] ?? 0) + 1 }), {});
-      // 23514 is check_violation: DOCUMENT_NOT_PUBLISHABLE. Anything else is either a hole ("inserted") or an unrelated failure.
       expect(counts).toEqual({ "23514": notShareable.length });
     }, 300_000);
 
@@ -312,7 +287,6 @@ describeDb("personal documents and the knowledge base — the whole grid, real d
   describe("a document that WAS shared, and then stops being shareable", () => {
     interface Degrade {
       label: string;
-      /** The SET clause, fixed text; the arguments are bound after the organisation and the document. */
       set: string;
       args?: string[];
     }
@@ -363,7 +337,6 @@ describeDb("personal documents and the knowledge base — the whole grid, real d
       expect(await seenBy(employee(), linkId, token)).toEqual({ live: false, ai: false, cited: false, detail: false, file: false });
       expect(await seenBy(outsider(), linkId, token)).toEqual({ live: false, ai: false, cited: false, detail: false, file: false });
       expect(await seenBy(otherTenantHr(), linkId, token)).toEqual({ live: false, ai: false, cited: false, detail: false, file: false });
-      // The publisher keeps the record so it can be managed, but nothing findable, citable or openable, and no detail of the document.
       const publisher = await seenBy(hr(), linkId, token);
       expect(publisher).toMatchObject({ live: false, ai: false, cited: false, file: false });
 
@@ -385,7 +358,6 @@ describeDb("personal documents and the knowledge base — the whole grid, real d
         }
       });
 
-      // The link still says `active`: only the read-time guard stands between it and every reader.
       const [link] = await sql<Array<{ status: string }>>`select status from kb_linked_documents where org_id = ${a.orgId} and id = ${linkId}`;
       expect(link?.status).toBe("active");
       for (const caller of [hr(), employee(), outsider(), otherTenantHr()])

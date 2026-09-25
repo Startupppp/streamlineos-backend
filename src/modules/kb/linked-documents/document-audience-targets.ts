@@ -8,7 +8,6 @@ export type AudienceKey = { kind: "ALL_EMPLOYEES" | "DEPARTMENT" | "LOCATION"; r
 
 export const audienceKey = (audience: AudienceKey): string => `${audience.kind}:${audience.refId ?? ""}`;
 
-/** The same audience twice is one audience; `ALL_EMPLOYEES` never carries a ref, whatever the caller sent. */
 export function dedupeAudiences(entries: ReadonlyArray<{ kind: AudienceKey["kind"]; refId?: string | null }>): AudienceKey[] {
   const seen = new Map<string, AudienceKey>();
   for (const entry of entries) {
@@ -18,11 +17,6 @@ export function dedupeAudiences(entries: ReadonlyArray<{ kind: AudienceKey["kind
   return [...seen.values()];
 }
 
-/**
- * A department or location in an audience must be a live unit of the same kind in THIS tenant. An id from
- * another tenant, a deleted one, and one of the wrong kind all read as "not found", which is all the caller is
- * told: the answer must not confirm that another tenant's unit exists.
- */
 export async function assertAudienceTargetsExist(
   reader: Pick<TenantTx, "select">,
   orgId: string,

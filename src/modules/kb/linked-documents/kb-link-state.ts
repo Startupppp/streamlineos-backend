@@ -30,11 +30,9 @@ async function labelledDocumentAudiences(reader: Reader, orgId: string, document
     .limit(MAX_DOCUMENT_AUDIENCES);
 }
 
-/** Where a document stands in the knowledge base: its latest entry (live or not), and whether it could be published right now. */
 export async function loadLinkState(reader: Reader, orgId: string, documentId: number): Promise<KbLinkState> {
   const [doc] = await reader.select(JUDGED_DOCUMENT_COLUMNS).from(documents).where(and(eq(documents.orgId, orgId), eq(documents.id, documentId))).limit(1);
   if (!doc) throw new NotFoundException("Document not found.");
-  // Same list the judge builds, so "publishable" here and the refusal on publish can never disagree (V-156).
   const blockers = withMetadataPiiBlocker(publishBlockers(doc), doc);
   const [link] = await reader
     .select({

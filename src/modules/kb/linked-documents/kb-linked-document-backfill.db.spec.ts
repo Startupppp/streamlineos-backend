@@ -1,15 +1,3 @@
-/**
- * HRMS-KB PR 7 — proposing a classification for existing HR documents, against a real Postgres.
- *
- * Every document starts Personal, so without a backfill HR would classify each existing policy by hand. What the
- * backfill may do is narrow on purpose: propose Internal (for all employees only where employees can read the
- * document today, otherwise for HR only) for a document that already looks company-level, never publish, never
- * overwrite what HR decided, and never touch anything that describes a person or belongs to another tenant.
- *
- * Run with:
- *   DATABASE_URL=postgres://user@localhost:5432/scratch_… ALLOW_DESTRUCTIVE_DB_TESTS=1 \
- *     npx jest --config ./jest-db.json --runInBand --testPathPattern=kb-linked-document-backfill
- */
 import { randomUUID } from "node:crypto";
 import { NotFoundException } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -83,7 +71,6 @@ describeDb("backfilling classifications — real database", () => {
     return { classification: String(row?.classification), everyone: Number(row?.everyone), links: Number(row?.links) };
   };
 
-  /** Walks every page from the start, as a caller resuming with the cursor would. */
   async function runAll(org: SeededOrg, dryRun: boolean, limit = 100) {
     const pages = [];
     let cursor = 0;
@@ -119,7 +106,6 @@ describeDb("backfilling classifications — real database", () => {
       const removed = await doc(a, { isActive: false });
       const classified = await doc(a, { classification: "RESTRICTED" });
       const withAudience = await doc(a, { audience: true });
-      // An employee's own file, typed OTHER and filed under their own name through the self-service upload: owner and uploader are one person, the shape of a company handbook, and only the storage folder tells them apart.
       const selfUpload = await doc(a, { type: "OTHER", owner: "uploader", folder: "onboarding" });
 
       const pages = await runAll(a, true);

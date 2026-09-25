@@ -26,24 +26,6 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024;
 export class KbMediaController {
   constructor(private readonly media: KbMediaService) {}
 
-  /**
-   * `@Idempotent` for the same reason `POST /kb/sources` carries one, and the
-   * dedupe that looks like it already covers this does not.
-   *
-   * Every attempt calls `StorageService.uploadFile`, which mints a FRESH object key,
-   * so the `onConflictDoNothing` on `(org_id, file_key)` in `KbMediaService.upload`
-   * can never match a retry — it dedupes the same key, and a retry never has the
-   * same key. A 100 MB video re-sent after the client's timeout is therefore a
-   * second billed object in the R2 bucket that nothing will ever reference, and for
-   * a `DOC_TYPES` upload against a page it is also a second full
-   * `indexPageDocument` run: another extract and another billed embed batch over
-   * the same bytes.
-   *
-   * `check:idempotent-commands` is green over this route and always was — its scope
-   * is a keyword list (`checkout|purchase|payout|…|publish|approve|…`) that matches
-   * no AI-metered or storage-metered KB route. Widening that list is not the fix;
-   * fencing the route is.
-   */
   @Post("media")
   @NoTenantTransaction()
   @MultipartAction({ file: "file", fields: { pageId: "string" } })

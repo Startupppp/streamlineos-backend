@@ -10,30 +10,6 @@ import { KB_ARTICLE_COLUMNS, toArticleRow, type KbArticleRow } from "../kb-artic
 import { supportArticlePredicate } from "../kb-article-page-scope";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
-/**
- * What every KB article write owes, regardless of which write it is.
- *
- * `KbArticlesService` has six write entry points — create, update, publish,
- * unpublish, archive, restore — and each one does two different kinds of
- * work. The part that stays on the service is the part that differs per
- * entry point: the authorization call (`assertArticleEditable`) and the
- * status transition. The part here is the part that is the SAME every time,
- * and was previously copied into each method:
- *
- *  - a slug unique within the org (`uniqueArticleSlug` walks `-2`, `-3`, …),
- *  - the article's tag rows, delete-then-reinsert (`syncArticleTags`),
- *  - and an outbox `kb.content.index` event so retrieval reindexes it.
- *
- * That last one is the reason this file exists rather than five near-copies:
- * the emit block was duplicated verbatim in five methods, so a change to the
- * event shape had five places to miss. It must stay an `OutboxWriter.emit`
- * on the caller's `tx` — the index event has to commit with the row it
- * describes, or a crash between them leaves retrieval serving stale content.
- *
- * Plain `db`/`tx` parameters rather than a deps bag: nothing here needs
- * anything but the connection. `tx` where the work must be atomic with the
- * caller's write, `db` only for the pre-transaction slug probe.
- */
 
 export type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -47,7 +23,6 @@ export type SnapshotSource = {
   excerpt: string | null;
 };
 
-/** Only the two revision counters the index event carries. */
 export type IndexableArticle = { contentRevision: number; aclRevision: number };
 
 export async function uniqueArticleSlug(
@@ -57,11 +32,6 @@ export async function uniqueArticleSlug(
   excludeId?: number,
 ): Promise<string> {
   const root = kbSlugify(base) || "article";
-  /*
-   * One read for every candidate rather than one per suffix: the loop that
-   * probed `-2`, `-3`, … issued a query per collision, so a popular title cost
-   * a round trip for every article that already carried it.
-   */
   const conditions: SQL[] = [
     eq(kbPages.orgId, orgId),
     sql`(${kbPages.slug} = ${root} OR ${kbPages.slug} LIKE ${root + "-%"})`,
@@ -160,10 +130,6 @@ export async function snapshotArticleVersion(
   });
 }
 
-/**
- * Tells retrieval to reindex. Emitted on the caller's `tx` so the event
- * commits with the row it describes.
- */
 export async function emitArticleIndexEvent(
   tx: KbTransaction,
   orgId: string,
@@ -187,10 +153,6 @@ export async function emitArticleIndexEvent(
   });
 }
 
-/**
- * The caller is responsible for authorizing the edit before calling this —
- * `KbArticlesService.restoreVersion` runs `assertArticleEditable` first.
- */
 export async function restoreArticleVersion(
   db: Db,
   user: CurrentUserContext,
@@ -224,7 +186,6 @@ export async function restoreArticleVersion(
         content: version.content,
         excerpt: version.excerpt,
         contentText: version.contentText,
-        /* A restore changes the content, so readers holding the old revision must see it move. */
         contentRevision: sql`content_revision + 1`,
       })
       .where(and(eq(kbPages.id, articleId), eq(kbPages.orgId, orgId), supportArticlePredicate()))

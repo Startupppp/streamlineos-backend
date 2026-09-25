@@ -18,20 +18,14 @@ import type { LinkedDocumentDetail, LinkedDocumentItem } from "./dto/kb-linked-d
 export interface LinkedDocumentCaller {
   orgId: string;
   userId: string;
-  /** Holds `hr:documents:publish`: sees every live entry, and the audience and version detail behind it. */
   canPublish: boolean;
 }
 
 const MAX_AUDIENCES_SHOWN = 50;
 
 const pinned = sql`(${kbLinkedDocuments.versionMode} = 'PINNED')`;
-// A pinned entry reads its file from the pinned version; a following one reads whatever the document currently is.
 const fileRef = sql<string | null>`(CASE WHEN ${pinned} THEN ${documentVersions.fileUrl} ELSE ${documents.fileUrl} END)`;
 
-// What an entry says about its DOCUMENT is said only while that document is shareable right now, judged by the same
-// database function as every other read. A publisher may open the record of an entry that is no longer live (to
-// manage it), and that record must not carry the name, type or file of a document that has since become personal,
-// confidential, an employee's, or has been removed: it is masked in SQL, so it never leaves the database.
 const shareableNow = sql`app.hr_document_is_publishable(${documents})`;
 const whenShareable = (value: SQL) => sql`(CASE WHEN ${shareableNow} THEN ${value} END)`;
 
@@ -45,7 +39,6 @@ const PROJECTION = {
   effectiveDate: sql<string | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${documentVersions.effectiveDate} ELSE ${documents.effectiveDate} END)::text`)}`,
   version: sql<number | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${kbLinkedDocuments.pinnedVersion} ELSE ${documents.version} END)`)}`,
   publishedAt: kbLinkedDocuments.publishedAt,
-  // An external https link is metadata only: there is no stored file to open.
   hasFile: sql<boolean>`coalesce(${whenShareable(sql`${fileRef} <> '' AND ${fileRef} !~* '^https?://'`)}, false)`,
   fileName: sql<string | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${documentVersions.fileName} ELSE ${documents.fileName} END)`)}`,
   fileSize: sql<number | null>`${whenShareable(sql`(CASE WHEN ${pinned} THEN ${documentVersions.fileSize} ELSE ${documents.fileSize} END)`)}`,
@@ -104,17 +97,10 @@ function toItem(row: Row): LinkedDocumentItem {
   };
 }
 
-/**
- * The knowledge base's view of linked HR documents, for one caller. Every read is filtered IN SQL by the
- * live guard (the entry is active and its document is publishable right now) and by the caller's audience;
- * nothing is fetched and then hidden. An entry the caller may not see does not exist as far as they can tell:
- * detail and open answer 404, exactly as for an id that was never issued.
- */
 @Injectable()
 export class KbLinkedDocumentQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  // Select, filter, order and bound in one statement, so no caller can forget the limit.
   private selectEntries(where: SQL | undefined, limit: number, order: SQL[] = [desc(kbLinkedDocuments.publishedAt), desc(kbLinkedDocuments.id)]): Promise<Row[]> {
     return this.db
       .select(PROJECTION)
@@ -141,17 +127,13 @@ export class KbLinkedDocumentQueryService {
 
   async list(caller: LinkedDocumentCaller, query: ListLinkedDocumentsQuery) {
     const status = query.status ?? "active";
-    // A reader asking for entries that are not live is told what they can see, which is none of them. Refusing
-    // would say the archive exists and that they are not allowed near it; an empty page says nothing (V-146).
     if (status !== "active" && !caller.canPublish)
       return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
 
     const search = query.q === undefined ? undefined : metadataSearch(query.q, "all");
-    // Words that hold no letter or digit find nothing; they must not fall through to "everything".
     if (query.q !== undefined && !search) return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
 
     const conditions: SQL[] = [eq(kbLinkedDocuments.orgId, caller.orgId)];
-    // Words match a document's own fields, so they only find a document that is shareable now, whatever status is asked for.
     if (search) conditions.push(search.match, shareableNow);
     if (status === "active") conditions.push(await this.visibility(caller));
     else if (status === "all") conditions.push(publisherCanSeeRecord);
@@ -183,7 +165,6 @@ export class KbLinkedDocumentQueryService {
       and(
         eq(kbLinkedDocuments.orgId, caller.orgId),
         eq(kbLinkedDocuments.id, linkedDocumentId),
-        // A publisher may open the record of an entry that is no longer live; everyone else only sees a live one.
         caller.canPublish ? publisherCanSeeRecord : await this.visibility(caller),
       ),
       1,
@@ -199,11 +180,6 @@ export class KbLinkedDocumentQueryService {
     };
   }
 
-  /**
-   * The live entries a question is about, best match first, for an assistant to cite. The same audience and live
-   * guard as every other read, applied in SQL; the assistant is handed what the caller could already open and
-   * nothing else. Metadata only: the words are matched against the document's own fields.
-   */
   async searchForCaller(caller: LinkedDocumentCaller, question: string, limit: number): Promise<LinkedDocumentItem[]> {
     const search = metadataSearch(question, "any");
     if (!search) return [];
@@ -215,7 +191,6 @@ export class KbLinkedDocumentQueryService {
     return rows.map(toItem);
   }
 
-  /** Which of these entries the caller may open right now. Used to re-check a citation before it is shown or replayed. */
   async visibleIds(caller: LinkedDocumentCaller, linkedDocumentIds: readonly number[]): Promise<Set<number>> {
     if (linkedDocumentIds.length === 0) return new Set();
     const rows = await this.selectEntries(
@@ -225,7 +200,6 @@ export class KbLinkedDocumentQueryService {
     return new Set(rows.map((row) => row.id));
   }
 
-  /** The file behind an entry, for `open`. Same visibility as `get`, and an entry with no stored file has nothing to open. */
   async resolveFile(caller: LinkedDocumentCaller, linkedDocumentId: number): Promise<{ fileKey: string; fileName: string }> {
     const [row] = await this.db
       .select({ fileKey: fileRef, name: documents.name, fileName: sql<string | null>`(CASE WHEN ${pinned} THEN ${documentVersions.fileName} ELSE ${documents.fileName} END)` })

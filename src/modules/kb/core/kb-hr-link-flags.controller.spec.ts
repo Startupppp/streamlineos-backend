@@ -25,11 +25,6 @@ const user: CurrentUserContext = {
 const EFFECTIVE = { link: true, search: false, ai: false };
 const ADMIN_VIEW = { stored: EFFECTIVE, effective: EFFECTIVE, hrModuleEnabled: true };
 
-/**
- * The three routes of the HR-documents-in-KB switches, judged by the real PermissionGuard so the deny branch
- * is the guard's and not a mock's. A member reads the effective switches (the UI needs to know whether to
- * render the feature); only `kb:settings:manage` reads or changes what is stored.
- */
 describe("KbHrLinkFlagsController authorisation", () => {
   let moduleRef: TestingModule;
   let guard: PermissionGuard;

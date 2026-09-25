@@ -1,14 +1,3 @@
-/**
- * HRMS-KB PR 7 — clearing the entries whose HR document was removed, against a real Postgres.
- *
- * Readers stopped seeing an entry the moment its document was removed. The entry stays as "Source removed" for 30
- * days so a publisher can find it, then it goes. What must NOT go: an entry that is still live, one withdrawn on
- * purpose, one removed less than 30 days ago, one brought back since, or anything in another organisation.
- *
- * Run with:
- *   DATABASE_URL=postgres://user@localhost:5432/scratch_… ALLOW_DESTRUCTIVE_DB_TESTS=1 \
- *     npx jest --config ./jest-db.json --runInBand --testPathPattern=kb-linked-document-purge
- */
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
@@ -44,7 +33,6 @@ describeDb("purging removed-source entries — real database", () => {
     await sql.end({ timeout: 5 });
   }, 60_000);
 
-  /** An entry over a fresh company document, put into the given state the way the database's own triggers leave it. */
   async function entry(org: SeededOrg, status: "active" | "unpublished" | "source_removed", removedDaysAgo?: number): Promise<number> {
     const [doc] = await sql`
       insert into documents (org_id, uploaded_by, name, type, classification, file_url)

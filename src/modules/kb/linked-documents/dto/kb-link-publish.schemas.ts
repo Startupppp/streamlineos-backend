@@ -10,7 +10,6 @@ const pinConsistent = (value: { versionMode?: string; pinnedVersion?: number }):
   value.versionMode === undefined ? value.pinnedVersion === undefined : (value.versionMode === "PINNED") === (value.pinnedVersion !== undefined);
 const PIN_MESSAGE = { message: "A pinned entry names its version; an entry that follows the latest does not.", path: ["pinnedVersion"] };
 
-// `audiences` omitted means "the same people the document is for"; an empty list means HR only.
 export const publishLinkSchema = z
   .object({
     audiences: audiencesField.optional(),
@@ -34,6 +33,5 @@ export type UpdateLinkInput = z.infer<typeof updateLinkSchema>;
 
 export const UNPUBLISH_REASON_MAX_LENGTH = 500;
 
-// Why an entry is being withdrawn, in the publisher's own words. Optional so a caller that sends nothing still withdraws (a DELETE with no body reaches the schema as `undefined`); blank is refused rather than stored.
 export const unpublishLinkSchema = z.object({ reason: z.string().trim().min(1).max(UNPUBLISH_REASON_MAX_LENGTH).optional() }).strict().default({});
 export type UnpublishLinkInput = z.infer<typeof unpublishLinkSchema>;

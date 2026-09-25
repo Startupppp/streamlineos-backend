@@ -8,20 +8,6 @@ import {
 import { KbSourcesController } from "../wiki/kb-sources.controller";
 import { ALL_PERMISSION_NAMES } from "../../rbac/permissions";
 
-/**
- * The deny branch of every authorization gate on the kb HTTP surface that
- * this branch left without one.
- *
- * Each route is driven twice. Once by a caller holding EVERY catalogued
- * permission EXCEPT the one the route names, so a 403 can only be that route
- * reading its own key — not a fixture that holds nothing. Once more with the
- * key held, which must NOT answer 403: without that half a route that 404'd,
- * or whose class guard refused first, would look covered.
- *
- * `PermissionGuard` answers 401 when no `AuthContext` is attached, which is a
- * different failure and no evidence of a deny path; the two are pinned apart
- * below rather than left to the reader.
- */
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
@@ -73,10 +59,6 @@ describe("kb — authorization deny", () => {
   });
 
   it("names only catalogued permission keys, so no case passes on a typo", () => {
-    /*
-     * `authorize()` refuses an uncatalogued key with FORBIDDEN before it reads
-     * any grant, so a typo below would produce a 403 that proves nothing.
-     */
     const catalogued = new Set<string>(ALL_PERMISSION_NAMES);
     expect(ALL_ROUTES.map((r) => r.key).filter((k) => !catalogued.has(k))).toEqual([]);
   });
@@ -140,12 +122,6 @@ describe("kb — authorization deny", () => {
     });
 
     it("answers 402 — not 403 — when the module behind the key is unavailable", async () => {
-      /*
-       * `authorize()` resolves the key's namespace through `AuthContext` before
-       * it looks at any grant, and reports NO_MODULE as a 402 the frontend keys
-       * its upgrade prompt on. A module-gate refusal must not be read as proof
-       * that the permission itself was checked.
-       */
       harness.disableModule("org-disabled");
       harness.allowAll();
       const res = await request(harness.server()).get(`/kb/articles/${ID}/indexing-status`);

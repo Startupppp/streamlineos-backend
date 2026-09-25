@@ -11,15 +11,6 @@ export type KbLinkedDocumentVersionMode = (typeof KB_LINKED_DOCUMENT_VERSION_MOD
 export const DOCUMENT_AUDIENCE_KINDS = ["ALL_EMPLOYEES", "DEPARTMENT", "LOCATION"] as const;
 export type DocumentAudienceKind = (typeof DOCUMENT_AUDIENCE_KINDS)[number];
 
-/**
- * A pointer from the knowledge base to one HR document. Deliberately NOT a `kb_pages` row: the KB has readers
- * that bypass the canonical page predicate, so an HR document modelled as a page would have to be excluded
- * by every one of them. Here they are blind to it by construction (migration 1200 has the full rationale;
- * 1201 is the database guard that keeps a personal document from being linked).
- *
- * The live constraints below carry Postgres 15's column-list form, `ON DELETE SET NULL (<pointer>)`, which
- * drizzle-orm 0.45 cannot express (see kb/pages.ts); `check:composite-fk-set-null` guards the regression.
- */
 export const kbLinkedDocuments = pgTable(
   "kb_linked_documents",
   {
@@ -62,7 +53,6 @@ export const kbLinkedDocuments = pgTable(
   ],
 );
 
-/** The link's own audience. It must stay inside `document_audiences`; the application enforces the subset and readers re-check it. */
 export const kbLinkedDocumentAudiences = pgTable(
   "kb_linked_document_audiences",
   {

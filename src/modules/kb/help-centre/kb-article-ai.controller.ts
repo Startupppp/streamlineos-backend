@@ -37,17 +37,6 @@ const articleIdParams = z.object({ articleId: z.coerce.number().int().positive()
 export class KbArticleAiController {
   constructor(private readonly svc: KbArticleAiService) {}
 
-  /**
-   * Every streamed action lands here, so the abort seam, the awaited pipe and
-   * the `HttpException` passthrough are configured once for the four of them
-   * rather than four times.
-   *
-   * All four handlers carry `@NoTenantTransaction()` for the same reason: the
-   * pipe is awaited, so the request-scoped transaction would stay open and idle
-   * for the whole provider stream and pin a pooled connection to it. The service
-   * does its tenant-scoped read in its own `runInTenantTransaction` that commits
-   * before the provider call, so nothing here reaches the pool without a GUC.
-   */
   private streamAction(
     req: Request,
     res: Response,
@@ -68,28 +57,6 @@ export class KbArticleAiController {
     );
   }
 
-  /**
-   * The four buffered actions carry `@NoTenantTransaction()` for the SAME reason
-   * their streamed siblings do, and it took longer to notice because nothing
-   * about the shape looks long-running: `KbArticleAiService.run` awaits
-   * `gateway.invokeTextWithUsage`, a network round trip to an AI provider, and
-   * with the request transaction open that pooled connection is idle in
-   * transaction for the whole of it. `withTenant` sets
-   * `idle_in_transaction_session_timeout` to 60s, so a slow provider does not
-   * just make one request slow — the server kills the transaction while the
-   * borrow is still outstanding, which under pool pressure is a tenant-wide
-   * failure shape.
-   *
-   * `check:placement-bypass` was blind to this: it enumerated the DECORATOR, so
-   * the four handlers that released the connection were the ones it flagged and
-   * the four that held it were invisible. Its `provider-in-transaction` rule now
-   * looks for the shape instead.
-   *
-   * The decorator also removes the tenant context's disconnect signal, which is
-   * where `getAmbientAiAbortSignal` was reading cancellation from — hence
-   * `@UseInterceptors(AiRequestAbortInterceptor)` on the class, the AI module's
-   * own convention for a metered route outside a request transaction.
-   */
   @Post("summarize")
   @BodylessAction()
   @HttpCode(200)

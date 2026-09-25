@@ -1,20 +1,3 @@
-/**
- * HRMS-KB V-166 — an id belonging to another tenant is worth exactly what an id that was never issued is worth,
- * whichever way it arrives, against a real Postgres.
- *
- * The existing isolation spec covers one read path with one foreign id. What it does not cover, and what this
- * does: EVERY entry point of the feature; an id supplied somewhere other than the path; an `orgId`/`tenantId`
- * in the body or an `x-org-id` header being ignored rather than honoured; and a signed URL never being minted
- * for an object key that belongs to the other tenant — the storage guard was pinned for an INVALID key, which
- * is a different thing from a well-formed key belonging to somebody else.
- *
- * The two tenants are seeded with IDENTICAL document titles and categories on purpose: a leak that copies by
- * name rather than by id would otherwise pass, and so would an assertion that only checks a result is non-empty.
- *
- * Run with:
- *   DATABASE_URL=postgres://user@localhost:5432/scratch_… ALLOW_DESTRUCTIVE_DB_TESTS=1 \
- *     npx jest --config ./jest-db.json --runInBand --forceExit --testPathPattern=kb-linked-documents-cross-tenant
- */
 import { randomUUID } from "node:crypto";
 import { NotFoundException } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -32,7 +15,6 @@ import { kbLinkParamsSchema, publishLinkSchema, unpublishLinkSchema, updateLinkS
 
 const describeDb = dbSpecSuite();
 
-// Identical in both tenants, so nothing below can pass by telling the two apart on their contents.
 const SHARED_TITLE = "Code of Conduct";
 const SHARED_CATEGORY = "Policies";
 
@@ -84,8 +66,6 @@ describeDb("linked documents: another tenant's id, however it arrives — real d
     await employ(b, "reader");
     mine = await entry(a);
     theirs = await entry(b);
-    // A's own entry, but the document points at an object key inside B's prefix. The row is authorised — it is
-    // A's row — so only the storage guard stands between the caller and another tenant's bytes.
     foreignKeyed = await entry(a, `${b.orgId}/hr-documents/${randomUUID()}.pdf`);
   }, 60_000);
 
@@ -131,8 +111,6 @@ describeDb("linked documents: another tenant's id, however it arrives — real d
   });
 
   describe("every entry point, given B's id, answers A as though it did not exist", () => {
-    // Each is a way an id reaches the feature. A publisher is used deliberately: the widest authority there is
-    // inside A must still be worth nothing outside it.
     const notFound = [
       ["read one entry", () => query.get(caller(a, "hr"), theirs.linkId)],
       ["resolve the file behind an entry", () => query.resolveFile(caller(a, "hr"), theirs.linkId)],
@@ -153,13 +131,10 @@ describeDb("linked documents: another tenant's id, however it arrives — real d
 
     it("re-checking a citation drops B's id rather than confirming it", async () => {
       await expect(query.visibleIds(caller(a, "hr"), [theirs.linkId])).resolves.toEqual(new Set());
-      // Positive half: A's own id survives the same call, so the empty set above is not a dead code path.
       await expect(query.visibleIds(caller(a, "hr"), [mine.linkId])).resolves.toEqual(new Set([mine.linkId]));
     });
 
     it("an id carried in the QUERY — a cursor minted over B's entry — pages A's rows and never reaches B's", async () => {
-      // A cursor is the one place a caller legitimately hands an id back in a query string. One built over B's
-      // entry must page A's own rows from that position, not become a way to name a row in another tenant.
       const cursor = encodeLinkedDocumentCursor({ publishedAt: new Date(Date.now() + 60_000).toISOString(), id: theirs.linkId });
       const page = await query.list(caller(a, "hr"), { limit: 100, cursor });
       const ids = page.data.map((item) => item.id);
@@ -178,11 +153,6 @@ describeDb("linked documents: another tenant's id, however it arrives — real d
   });
 
   describe("an organisation named by the caller is not an organisation", () => {
-    /**
-     * There is no code path that reads a tenant from a body or a header, and the way that is kept true is that
-     * no schema has anywhere to put one: every boundary schema is `.strict()`, so `orgId`, `tenantId` or an id
-     * of any kind in a body is a 400 and never a value the service sees. The header has no reader at all.
-     */
     it.each([
       ["publish", publishLinkSchema],
       ["update", updateLinkSchema],
@@ -191,7 +161,6 @@ describeDb("linked documents: another tenant's id, however it arrives — real d
       for (const smuggled of [{ orgId: "org-b" }, { tenantId: "org-b" }, { documentId: 1 }, { linkedDocumentId: 1 }, { "x-org-id": "org-b" }]) {
         expect(spec.safeParse({ ...smuggled }).success).toBe(false);
       }
-      // Positive half: the legitimate body still parses, so the refusals above are not a schema that rejects everything.
       expect(publishLinkSchema.safeParse({ audiences: [] }).success).toBe(true);
       expect(updateLinkSchema.safeParse({ versionMode: "FOLLOW_LATEST" }).success).toBe(true);
       expect(unpublishLinkSchema.safeParse({ reason: "Superseded" }).success).toBe(true);
@@ -206,8 +175,6 @@ describeDb("linked documents: another tenant's id, however it arrives — real d
     });
 
     it("a header naming B does not change what A is shown, because nothing reads one", async () => {
-      // The caller is assembled from the auth context alone. Spelling B's organisation anywhere else — here, the
-      // nearest thing a service-level spec has to a header — cannot reach it.
       const spoofed = { ...caller(a, "hr"), ["x-org-id"]: b.orgId } as LinkedDocumentCaller;
 
       const ids = (await query.list(spoofed, { limit: 100 })).data.map((item) => item.id);
@@ -221,11 +188,9 @@ describeDb("linked documents: another tenant's id, however it arrives — real d
     it("refuses a well-formed key that belongs to the other tenant, not just a malformed one", async () => {
       signed.mockClear();
 
-      // A's own row, A's own authority — the only thing standing between the caller and B's bytes is the key check.
       await expect(files.open(caller(a, "hr"), foreignKeyed.linkId)).rejects.toBeInstanceOf(NotFoundException);
       expect(signed).not.toHaveBeenCalled();
 
-      // Positive half: the same call over A's own key does mint one, so the refusal above is about the key.
       await expect(files.open(caller(a, "hr"), mine.linkId)).resolves.toMatchObject({ expiresIn: 300 });
       expect(signed).toHaveBeenCalledTimes(1);
       expect(signed.mock.calls[0]?.[0]).toBe(a.orgId);

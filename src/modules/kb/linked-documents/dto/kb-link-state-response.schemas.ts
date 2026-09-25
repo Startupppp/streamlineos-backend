@@ -29,7 +29,6 @@ const blockerSchema = z.object({
   message: z.string(),
 });
 
-/** Where a document stands in the knowledge base: its latest entry (live or not), and whether it could be published right now. */
 export const kbLinkStateResponseSchema = z.object({
   documentId: z.number().int(),
   link: linkSchema.nullable(),

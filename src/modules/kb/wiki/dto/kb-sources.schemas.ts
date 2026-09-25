@@ -26,6 +26,8 @@ export const kbSourcesListQuerySchema = z
   .object({
     cursor: z.string().min(1).max(512).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
+    kind: z.enum(["file", "note"]).optional(),
+    createdById: z.string().optional(),
   })
   .strict();
 

@@ -9,7 +9,6 @@ export const kbSettings = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     trashRetentionDays: integer("trash_retention_days").notNull().default(30),
     chatHistoryRetentionDays: integer("chat_history_retention_days").default(90),
-    // The three per-tenant switches for HR documents in the knowledge base. Default off; `search` needs `link`, `ai` needs `search`.
     hrmsKbLinkEnabled: boolean("hrms_kb_link_enabled").notNull().default(false),
     hrmsKbSearchEnabled: boolean("hrms_kb_search_enabled").notNull().default(false),
     hrmsKbAiEnabled: boolean("hrms_kb_ai_enabled").notNull().default(false),

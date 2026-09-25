@@ -19,25 +19,6 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { kbAuthoringContentSchema } from "./dto/kb-helpcenter-response.schemas";
 
-/**
- * Every handler here carries `@NoTenantTransaction()`. `KbAuthoringService.run`
- * awaits `gateway.invokeTextWithUsage`, a network round trip to an AI provider,
- * and with the request transaction open that pooled connection is idle in
- * transaction for the whole of it. `withTenant` sets
- * `idle_in_transaction_session_timeout` to 60s, so a slow provider does not
- * merely make one request slow — the server kills the transaction while the
- * borrow is still outstanding, which under pool pressure is a tenant-wide
- * failure shape rather than a latency one.
- *
- * Nothing here reads a tenant row before the provider call: the prompt is built
- * entirely from the request body, and the only database touch is the
- * `kb_events` write afterwards, which `KbEventsService.record` now opens its own
- * short tenant transaction for. The decorator also removes the tenant context's
- * disconnect signal that `getAmbientAiAbortSignal` was reading, hence
- * `AiRequestAbortInterceptor` on the class — the AI module's own convention for
- * a metered route outside a request transaction, and the same pairing
- * `KbArticleAiController` uses.
- */
 @Controller("kb/ai")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @UseInterceptors(AiRequestAbortInterceptor)

@@ -17,7 +17,6 @@ const makeUser = (): CurrentUserContext => ({
   principal: humanSessionPrincipal(61, false),
 });
 
-/** The controller reads publish authority from the one document principal, so the spec builds the real service. */
 function makeDocumentAccess(holdsPublish: boolean) {
   const grants = new Map<string, DataScope>([["hr:documents:publish", holdsPublish ? "all" : "none"]]);
   const access = {

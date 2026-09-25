@@ -131,7 +131,13 @@ export class KbSourcesService {
       })
       .from(kbSources)
       .where(
-        and(eq(kbSources.orgId, orgId), isNull(kbSources.deletedAt), after),
+        and(
+          eq(kbSources.orgId, orgId),
+          isNull(kbSources.deletedAt),
+          after,
+          query.kind !== undefined ? eq(kbSources.kind, query.kind) : undefined,
+          query.createdById !== undefined ? eq(kbSources.createdById, query.createdById) : undefined,
+        ),
       )
       .orderBy(desc(kbSources.createdAt), desc(kbSources.id))
       .limit(query.limit + 1);
@@ -374,7 +380,6 @@ export class KbSourcesService {
     return { success: true };
   }
 
-  /** The durable half of ingestion, committed with the row so a crash cannot lose it. */
   private async emitIndexEvent(
     tx: TenantTx,
     orgId: string,
@@ -392,7 +397,6 @@ export class KbSourcesService {
     });
   }
 
-  /** Recording a failure must not itself fail silently (backend CLAUDE.md §4). */
   private async markFailed(
     orgId: string,
     sourceId: number,

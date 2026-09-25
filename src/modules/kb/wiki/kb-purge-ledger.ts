@@ -5,11 +5,6 @@ import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-
 
 export const PURGE_BOOKKEEPING_CHUNK = 500;
 
-/**
- * Persist the object pointer before attachment rows can cascade away. The bucket
- * is explicit: inferring it from purpose can confirm a delete in the wrong bucket.
- * A separate tenant transaction keeps the pointer retryable after caller rollback.
- */
 export async function openPurgeRecords(
   db: Db,
   orgId: string,
@@ -43,7 +38,6 @@ interface PurgeMark {
   failedReason: string | null;
 }
 
-/** Record each storage attempt without depending on a caller's ambient transaction. */
 export async function markPurge(
   db: Db,
   orgId: string,

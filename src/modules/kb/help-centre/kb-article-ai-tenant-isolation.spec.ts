@@ -26,14 +26,6 @@ describe("KbArticleAiService — cross-tenant isolation", () => {
   } as never;
   const audit = { log: jest.fn() } as never;
 
-  /**
-   * `summarize` reads through `loadArticle`, which opens a SHORT tenant
-   * transaction that COMMITS before `invokeTextWithUsage` — the fix for a pooled
-   * connection held across the provider round trip. The double therefore needs a
-   * `transaction` seam and the `execute` that `withTenant`'s placement-fence
-   * probe issues; without them the isolation assertions below never reach the
-   * query at all.
-   */
   function makeDb(articleRow: unknown) {
     const wheres: unknown[] = [];
     const surface = {

@@ -128,10 +128,6 @@ describe("KbLinkedDocumentAskSource", () => {
     expect(passage.text.trim().length).toBeGreaterThan(0);
   });
 
-  /**
-   * V-148. Retrieval was audited nowhere: an HR document could be named in an assistant's answer with no record
-   * that it had been. This is the last point before it is, so it is where the record is written.
-   */
   it("records every HR document an answer may cite, outside the request transaction, with no name or text", async () => {
     const { source, audit } = build(true);
 

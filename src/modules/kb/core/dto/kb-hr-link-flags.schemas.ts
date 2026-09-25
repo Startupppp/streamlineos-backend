@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-/** The three per-tenant switches for HR documents in the knowledge base. Absent = off. */
 export const hrKbLinkFlagsSchema = z.object({
   link: z.boolean(),
   search: z.boolean(),
@@ -8,7 +7,6 @@ export const hrKbLinkFlagsSchema = z.object({
 });
 export type HrKbLinkFlags = z.infer<typeof hrKbLinkFlagsSchema>;
 
-/** What an administrator sees: what is stored, what the routes will act on, and why they can differ. */
 export const hrKbLinkFlagsAdminSchema = z.object({
   stored: hrKbLinkFlagsSchema,
   effective: hrKbLinkFlagsSchema,

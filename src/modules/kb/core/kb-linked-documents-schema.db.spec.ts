@@ -1,15 +1,3 @@
-/**
- * HRMS-KB PR 2 — migrations 1198-1201 against a real Postgres, as the role the application uses.
- *
- * What is proven here is the database's own refusal: a writer that has never heard of the knowledge-base
- * feature (the CSV import, an onboarding upload, a manual UPDATE) still cannot leave a personal document linked,
- * and a link never outlives the document state that allowed it. The application layers on top (PR 3-4) add
- * messages and audiences; this spec is about the floor they stand on.
- *
- * Run with:
- *   DATABASE_URL=postgres://user@localhost:5432/scratch_… ALLOW_DESTRUCTIVE_DB_TESTS=1 \
- *     npx jest --config ./jest-db.json --runInBand --testPathPattern=kb-linked-documents-schema
- */
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
@@ -36,9 +24,6 @@ describeDb("linked documents: schema, guard and tenant isolation — real databa
 
   beforeAll(async () => {
     sql = dbSpecClient(raw, { max: 4 });
-    // The RLS cases run as `streamline_app`. On a database built from the migration chain alone it holds grants only
-    // on tables created after the role existed; `pnpm db:bootstrap-role` grants the rest. Say so, rather than fail
-    // later with "permission denied" that reads like a defect in the feature.
     const [grants] = await sql`select has_table_privilege('streamline_app', 'documents', 'SELECT') and has_table_privilege('streamline_app', 'kb_settings', 'SELECT') as ok`;
     if (!grants?.ok)
       throw new Error("streamline_app lacks table grants on this database: run pnpm db:bootstrap-role against it (or GRANT SELECT, INSERT, UPDATE, DELETE on the public tables) before this spec.");
@@ -265,8 +250,6 @@ describeDb("linked documents: schema, guard and tenant isolation — real databa
 
       const after = await statusOf(linkId);
       expect(after.document_id).toBeNull();
-      // Deliberate: no DELETE trigger (it collides with cascades). The row is invisible to readers, who join the
-      // document, and the purge job marks it source_removed. Recorded here so nobody assumes otherwise.
       expect(after.status).toBe("active");
     });
 
@@ -284,7 +267,6 @@ describeDb("linked documents: schema, guard and tenant isolation — real databa
 
       const [left] = await sql`select (select count(*) from kb_linked_documents where org_id = ${doomed.orgId})::int as links`;
       expect(left?.links).toBe(0);
-      // dispose() also removed org a and b; recreate them for the suites below.
       a = await seed.org("a2", ["hr", "employee"]);
       b = await seed.org("b2", ["hr"]);
     }, 60_000);

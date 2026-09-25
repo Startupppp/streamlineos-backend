@@ -81,11 +81,6 @@ describe("KbHrLinkFlagsService — reading", () => {
     await expect(service.assertEnabled("org-flags", "link")).resolves.toBeUndefined();
   });
 
-  /**
-   * V-140. The 404 is right; a BARE 404 is not. It reached the client as the filter's default `NOT_FOUND`,
-   * indistinguishable from a document that was deleted, so nothing could tell an administrator "your
-   * organisation has this switched off" rather than "that is gone".
-   */
   it("carries a FEATURE_DISABLED code, and a message that names neither the flag nor the organisation", async () => {
     const { service } = harness(ROW(true, false, false));
 

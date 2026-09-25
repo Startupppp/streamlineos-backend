@@ -45,15 +45,6 @@ function user(orgId: string) {
   return { orgId, userId: "user-1", isOrgOwner: false } as never;
 }
 
-/**
- * A `Db` that reports how many transactions are OPEN at any instant, which is
- * the quantity the defect was about: not how long a query took, but whether a
- * pooled connection was still borrowed while the process waited on a provider.
- *
- * Shaped to satisfy the real `withTenant` — `tx.execute` answers the placement
- * fence probe — so the tenant transaction under test is the production one and
- * not a stand-in that commits wherever the test wants it to.
- */
 function trackingDb(row: unknown) {
   const state = { open: 0, opened: 0 };
   const findFirst = jest.fn().mockImplementation(async () => row);
@@ -147,14 +138,6 @@ function runBuffered(
   return svc.suggestRelated(u, DOC_ID);
 }
 
-/**
- * PRD-C078: "release connections before external provider calls". The four
- * buffered actions on each KB document AI surface awaited
- * `gateway.invokeTextWithUsage` — a network round trip — inside the ambient
- * request transaction, so a pooled connection sat idle in transaction for its
- * whole duration, against the 60s `idle_in_transaction_session_timeout`
- * `resolveTransactionGuards` sets. Their streamed siblings never did.
- */
 describe.each(SURFACES)("$name — the buffered actions release the connection", (surface) => {
   it.each(ACTIONS)(
     "%s: no transaction is open when the provider call is made",
@@ -202,14 +185,6 @@ describe.each(SURFACES)("$name — the buffered actions release the connection",
     expect(state.open).toBe(0);
   });
 
-  /**
-   * The anti-vacuity half, and the one that says why `@NoTenantTransaction()` is
-   * load-bearing rather than decorative. `runInTenantTransaction` REUSES an
-   * ambient transaction instead of opening a short one, so with the request
-   * transaction still open the wrapper inside the service releases nothing —
-   * exactly the pre-fix behaviour. Without this, "0 open at the provider call"
-   * would also pass on a service that never opened a transaction at all.
-   */
   it("reproduces the defect when the route keeps the request transaction", async () => {
     const { db, state } = trackingDb(DOC_ROW);
     const gateway = providerProbe(state);
@@ -262,7 +237,6 @@ describe.each([
   });
 });
 
-// -- end to end ---------------------------------------------------------------
 
 @Injectable()
 class StubAuth implements CanActivate {
@@ -272,12 +246,6 @@ class StubAuth implements CanActivate {
   }
 }
 
-/**
- * Shaped like the KB AI controller was before the fix: authenticated, no opt-out,
- * so `TenantContextInterceptor` opens a request transaction around it. Its only
- * job is to prove the transaction counter below can reach 1, so "0 for the KB
- * routes" is a measurement rather than a broken fake.
- */
 @Controller("in-transaction-probe")
 @UseGuards(StubAuth)
 class InTransactionProbeController {
@@ -366,14 +334,6 @@ describe("the buffered KB AI routes, end to end through the real interceptor sta
     expect(opened.count).toBe(0);
   });
 
-  /**
-   * PRD-C091. The opt-out removes the tenant context's disconnect signal, which
-   * is where `getAmbientAiAbortSignal` used to find one on these routes — so
-   * without `AiRequestAbortInterceptor` the fix above would have silently traded
-   * a held connection for an uncancellable provider call the org still pays for.
-   * This also proves Nest really applies an enhancer named by class on a
-   * controller whose own module does not list it as a provider.
-   */
   it.each([
     ["article", "kb/articles/7/ai/summarize"],
     ["page", "kb/pages/7/ai/summarize"],

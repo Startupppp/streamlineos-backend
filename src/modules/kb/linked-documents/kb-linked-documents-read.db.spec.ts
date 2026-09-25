@@ -1,15 +1,3 @@
-/**
- * HRMS-KB PR 4 — what a reader of the knowledge base can see of a linked HR document, against a real Postgres.
- *
- * The properties pinned here are the ones the whole feature exists for: an entry is visible only to someone
- * inside its audience (judged from live employment, in SQL), an entry whose document has stopped being
- * publishable is invisible EVEN IF nothing unlinked it, a narrowed document ceiling takes effect without the
- * entry being rewritten, and nothing about the HR document beyond a small projection ever leaves the service.
- *
- * Run with:
- *   DATABASE_URL=postgres://user@localhost:5432/scratch_… ALLOW_DESTRUCTIVE_DB_TESTS=1 \
- *     npx jest --config ./jest-db.json --runInBand --testPathPattern=kb-linked-documents-read
- */
 import { randomUUID } from "node:crypto";
 import { NotFoundException } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -78,7 +66,6 @@ describeDb("linked documents: what a reader can see — real database", () => {
 
   type Audience = readonly [kind: string, ref: string | null];
 
-  /** A document, its ceiling and one entry with its own audience, exactly as HR would leave them. */
   async function entry(
     org: SeededOrg,
     opts: {
@@ -146,7 +133,6 @@ describeDb("linked documents: what a reader can see — real database", () => {
       const narrowed = await entry(a, { ceiling: [["DEPARTMENT", deptOne]], link: [["DEPARTMENT", deptOne]] });
       expect(await ids(reader(a, "onedept"))).toContain(narrowed.linkId);
 
-      // Nobody rewrote the entry; only the document's ceiling changed.
       await sql`delete from document_audiences where document_id = ${narrowed.documentId}`;
       await sql`insert into document_audiences (org_id, document_id, kind, ref_id) values (${a.orgId}, ${narrowed.documentId}, 'DEPARTMENT', ${deptTwo})`;
 
@@ -169,7 +155,6 @@ describeDb("linked documents: what a reader can see — real database", () => {
 
     it("holds even if nothing took the entry down: the read path judges the document itself", async () => {
       const shown = await entry(a, { ceiling: [["ALL_EMPLOYEES", null]], link: [["ALL_EMPLOYEES", null]] });
-      // Simulate a writer that bypassed the unlink trigger, so the entry still says `active` over a personal document.
       await sql.begin(async (tx) => {
         await tx`alter table documents disable trigger trg_documents_unlink_when_unpublishable`;
         try {
@@ -193,8 +178,6 @@ describeDb("linked documents: what a reader can see — real database", () => {
       expect(await ids(reader(a, "onedept"))).not.toContain(removed.linkId);
       const listed = await service.list(reader(a, "hr", true), { limit: 100, status: "source_removed" });
       expect(listed.data.map((item) => item.id)).toContain(removed.linkId);
-      // A non-publisher asking for entries that are not live gets an empty page, not a refusal: a 403 would
-      // confirm the archive exists and that they are not allowed near it (V-146).
       const refused = await service.list(reader(a, "onedept"), { limit: 100, status: "source_removed" });
       expect(refused.data).toEqual([]);
       expect(refused.pagination.hasMore).toBe(false);

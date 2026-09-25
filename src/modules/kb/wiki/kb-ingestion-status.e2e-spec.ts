@@ -31,12 +31,6 @@ const auth = {
 
 const dialect = new PgDialect();
 
-/**
- * Predicate-capturing rather than predicate-honouring: the service's real WHERE clauses are
- * kept so a 404 can be shown to have come from a tenant-bound query, and the table each read
- * touched is recorded so "visibility is asserted before any outbox row is read" is an
- * observation rather than a restatement.
- */
 function makeDb(options: FakeDbOptions): FakeDb {
   const tables: string[] = [];
   const conditions: SQL[] = [];

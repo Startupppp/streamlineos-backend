@@ -1,15 +1,3 @@
-/**
- * HRMS-KB PR 5 — finding a linked HR document by its words, and handing one to an assistant, against a real Postgres.
- *
- * Search must never widen what a reader can see. Every case below is a person who could type the exact title of a
- * document and still must not be told it exists: the wrong audience, a personal document, a withdrawn entry,
- * another tenant. The search runs over the document's own metadata, joined at query time; there is no copy of it
- * to go stale, and nothing here reads a file.
- *
- * Run with:
- *   DATABASE_URL=postgres://user@localhost:5432/scratch_… ALLOW_DESTRUCTIVE_DB_TESTS=1 \
- *     npx jest --config ./jest-db.json --runInBand --testPathPattern=kb-linked-documents-search
- */
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
@@ -253,12 +241,6 @@ describeDb("linked documents: search and assistant retrieval — real database",
     });
   });
 
-  /**
-   * V-159. The paging case seeded a homogeneous set, so "a page is still full after the audience filter runs"
-   * was never actually tested: with every row visible, full pages prove nothing. Visibility is applied in SQL,
-   * inside the same statement that takes the limit — if it were applied in TypeScript after the rows came back,
-   * a page of 5 would arrive as 2 or 3 and a reader would page through the document list seeing gaps.
-   */
   describe("paging a set where visible and invisible entries alternate", () => {
     const PAGE = 5;
     const PAIRS = 12;
@@ -269,8 +251,6 @@ describeDb("linked documents: search and assistant retrieval — real database",
       const visible: number[] = [];
       const hidden: number[] = [];
 
-      // Interleaved as they are written, so the ids alternate and no page can be filled without the SQL
-      // predicate skipping over rows the caller may not see.
       for (let index = 0; index < PAIRS; index += 1) {
         visible.push((await entry(a, { name: `${word} page ${index} mine`, audience: everyone })).linkId);
         hidden.push((await entry(a, { name: `${word} page ${index} theirs`, audience: [["DEPARTMENT", deptTwo]] })).linkId);
@@ -279,7 +259,6 @@ describeDb("linked documents: search and assistant retrieval — real database",
       const seen: number[] = [];
       const pageSizes: number[] = [];
       let cursor: string | undefined;
-      // Bounded so a paging bug cannot spin here forever.
       for (let guard = 0; guard <= PAIRS + 2; guard += 1) {
         const page = await service.list(caller, { limit: PAGE, q: word, ...(cursor === undefined ? {} : { cursor }) });
         pageSizes.push(page.data.length);
@@ -289,7 +268,6 @@ describeDb("linked documents: search and assistant retrieval — real database",
         expect(cursor).toBeDefined();
       }
 
-      // The fixture is real: there genuinely are invisible rows interleaved with the visible ones.
       expect(visible).toHaveLength(PAIRS);
       expect(hidden).toHaveLength(PAIRS);
       expect(seen).toEqual(expect.arrayContaining(visible));
@@ -297,7 +275,6 @@ describeDb("linked documents: search and assistant retrieval — real database",
       expect(new Set(seen).size).toBe(PAIRS);
       for (const id of hidden) expect(seen).not.toContain(id);
 
-      // Every page but the last is exactly the limit. A filter applied after the fetch would short them.
       expect(pageSizes.slice(0, -1).every((size) => size === PAGE)).toBe(true);
       expect(pageSizes.at(-1)).toBe(PAIRS % PAGE === 0 ? PAGE : PAIRS % PAGE);
       expect(pageSizes.slice(0, -1)).not.toHaveLength(0);

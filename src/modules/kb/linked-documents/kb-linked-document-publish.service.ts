@@ -18,7 +18,6 @@ import type { PublishLinkInput, UnpublishLinkInput, UpdateLinkInput } from "./dt
 
 type Reader = Pick<TenantTx, "select">;
 
-// Bounded like every other read here; one approved row anywhere in the history is all the check needs.
 const MAX_VERSIONS_INSPECTED = 200;
 
 export interface PublishActor {
@@ -27,14 +26,6 @@ export interface PublishActor {
   membershipId: number | null;
 }
 
-/**
- * Publishing, re-scoping and withdrawing a knowledge-base entry for an HR document. This decides nothing about
- * what a document IS (that is the classification, PR 3) and nothing about who may READ an entry (that is the
- * query service, in SQL). It guards the writes: the document must be publishable right now, the entry's audience
- * must sit inside the document's, and every refusal is audited outside the transaction so it survives the
- * rollback. The database refuses the same link again (`trg_kb_linked_documents_guard`), so a caller that skipped
- * this service still could not link a personal document.
- */
 @Injectable()
 export class KbLinkedDocumentPublishService {
   constructor(
@@ -75,7 +66,6 @@ export class KbLinkedDocumentPublishService {
           .limit(1)
           .for("update");
 
-        // Bringing back a withdrawn entry keeps its id, so a bookmark to it works again.
         const live: KbLinkedDocumentStatus = "active";
         const values = {
           status: live,
@@ -162,7 +152,6 @@ export class KbLinkedDocumentPublishService {
 
   async unpublish(actor: PublishActor, documentId: number, input: UnpublishLinkInput = {}): Promise<KbLinkState> {
     const { orgId } = actor;
-    // "manual" is the code for a withdrawal nobody explained; the audit row says whether a reason was really given.
     const reason = input.reason ?? "manual";
     await this.flags.assertEnabled(orgId, "link");
     return runInTenantTransaction(
@@ -193,15 +182,6 @@ export class KbLinkedDocumentPublishService {
     return { versionMode, pinnedVersion: versionMode === "PINNED" ? (input.pinnedVersion ?? null) : null };
   }
 
-  /**
-   * Whichever mode the entry is in, it must point at content a reader can actually open.
-   *
-   * PINNED names its version, so that version has to exist and be approved. FOLLOW_LATEST reads the document's
-   * own current file — which normally IS the latest approved version, because approving one is what writes it —
-   * except for a document whose file was never set (an external link, or a metadata-only row) and which then had
-   * a version uploaded but never approved. That document has version history and no approved content at all, and
-   * publishing it put an entry in the knowledge base with nothing behind it (V-151).
-   */
   private async assertPinExists(reader: Reader, orgId: string, documentId: number, mode: { versionMode: string; pinnedVersion: number | null }): Promise<void> {
     if (mode.versionMode !== "PINNED" || mode.pinnedVersion === null) return this.assertFollowableVersion(reader, orgId, documentId);
     const [found] = await reader
@@ -213,10 +193,6 @@ export class KbLinkedDocumentPublishService {
     throw new HttpException({ code: "PINNED_VERSION_NOT_FOUND", message: "That version of the document does not exist or has not been approved." }, HttpStatus.UNPROCESSABLE_ENTITY);
   }
 
-  /**
-   * A document with version history but nothing approved in it has no content anyone may read. A document with
-   * no history at all is fine: its file IS the document, and there is no draft to confuse it with.
-   */
   private async assertFollowableVersion(reader: Reader, orgId: string, documentId: number): Promise<void> {
     const rows = await reader
       .select({ status: documentVersions.status })
@@ -233,7 +209,6 @@ export class KbLinkedDocumentPublishService {
     );
   }
 
-  // The refusal is delivered by throwing, which rolls the request transaction back, so its audit row is written on its own connection first.
   private async refuseAhead(actor: PublishActor, documentId: number, attempted: string, judgeNow: () => Promise<{ refusal: HttpException | null; blockers: PublishBlocker[] }>): Promise<void> {
     const verdict = await judgeNow();
     if (!verdict.refusal) return;

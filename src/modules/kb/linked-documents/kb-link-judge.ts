@@ -19,8 +19,6 @@ export const JUDGED_DOCUMENT_COLUMNS = {
   classification: documents.classification,
   isActive: documents.isActive,
   metadata: documents.metadata,
-  // The four fields knowledge-base search indexes and shows. They are read here so an identifier typed into them
-  // is refused before the entry exists, not discovered in search afterwards (V-156).
   name: documents.name,
   description: documents.description,
   category: documents.category,
@@ -33,17 +31,10 @@ export interface Verdict {
   refusal: HttpException | null;
 }
 
-/** An audience is inside the ceiling when the ceiling says everyone, or names that very department or location. */
 function coveredBy(ceiling: readonly AudienceKey[], audience: AudienceKey): boolean {
   return ceiling.some((entry) => entry.kind === "ALL_EMPLOYEES" || audienceKey(entry) === audienceKey(audience));
 }
 
-/**
- * Is publishing (or re-scoping to) this audience allowed for this document, right now? Returns the audience to
- * write and, when it is not allowed, the exception to throw. Run once unlocked, so a refusal can be audited before
- * the throw, and again under the row lock inside the transaction, so the answer that is acted on is the current
- * one. `requested` omitted means "the same people the document is for".
- */
 export async function judgeAudience(
   reader: Reader,
   orgId: string,

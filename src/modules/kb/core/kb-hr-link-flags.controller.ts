@@ -14,14 +14,6 @@ import {
   type UpdateHrKbLinkFlagsInput,
 } from "./dto/kb-hr-link-flags.schemas";
 
-/**
- * The switches for HR documents in the knowledge base. Two audiences, two routes: an administrator reads and
- * changes the stored switches, and every member reads the effective ones so the UI knows whether to render
- * the feature at all (employees cannot read `/settings/*` or `/kb/settings`).
- *
- * There is no module-gate decorator here: KB is a universal module and no KB controller carries one
- * (pinned by kb-module-gate.spec). The HR module is checked inside the service instead.
- */
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbHrLinkFlagsController {

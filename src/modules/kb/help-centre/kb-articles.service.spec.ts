@@ -10,12 +10,6 @@ import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/post
 import { uniqueArticleSlug } from "./lib/kb-article-write";
 import { KbArticlesService } from "./kb-articles.service";
 
-/**
- * `create` picks a slug outside its transaction and inserts inside it, so two
- * authors who title an article the same thing at the same moment race on
- * uniq_kb_pages_org_slug_ref (org_id, slug). The loser's 23505 is the retry
- * signal: it should get a second slug, not a 500.
- */
 describe("KbArticlesService.create — a slug that loses a race", () => {
   const ORG = "org-1";
   const PAGE_ROW = {

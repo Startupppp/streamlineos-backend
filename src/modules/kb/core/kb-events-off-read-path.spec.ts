@@ -3,19 +3,6 @@ import { runWithTenantContext, type AfterCommitHook } from "../../../common/tena
 import type { TenantTx } from "../../../common/tenant/with-tenant";
 import type { Db } from "../../../db/drizzle.module";
 
-/**
- * The two hottest KB read paths must not carry a write in the read's own transaction.
- *
- * `KbArticlesService.recordView` fires on every article GET and `KbSearchService.search`
- * on every search, and both awaited `KbEventsService.record`, which is
- * `runInTenantTransaction` — so on a request that already has a transaction open the
- * insert went ON that transaction. Three costs, of which the third is the one that cannot
- * be tuned away: the reader waits, a WAL record is produced for a page view, and neither
- * route can ever be served from a read replica, because a replica cannot take the insert.
- *
- * `recordDetached` is what breaks that. These tests assert on the observable difference —
- * whether a hook was registered instead of a statement issued — rather than on timings.
- */
 
 interface Recorded {
   inserts: number;
@@ -76,11 +63,6 @@ describe("KbEventsService.recordDetached", () => {
     expect(recorded.inserts).toBe(1);
   });
 
-  /**
-   * `registerAfterCommit` returns false with no ambient context — the state every
-   * `@NoTenantTransaction()` KB route is in. Dropping the event there would be a silent
-   * hole that shows up only as a suspiciously quiet analytics table.
-   */
   it("falls back to writing inline when there is no request transaction to defer to", async () => {
     const { service, recorded } = makeService();
 
@@ -102,7 +84,6 @@ describe("KbEventsService.recordDetached", () => {
     ).resolves.toBeUndefined();
   });
 
-  /** `record` itself is unchanged: the write paths that need the event in their own transaction keep it. */
   it("leaves record() writing on the ambient transaction", async () => {
     const { service, recorded, tx } = makeService();
 

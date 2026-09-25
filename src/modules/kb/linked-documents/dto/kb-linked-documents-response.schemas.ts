@@ -3,11 +3,6 @@ import { wireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 import { DOCUMENT_AUDIENCE_KINDS, KB_LINKED_DOCUMENT_STATUSES, KB_LINKED_DOCUMENT_VERSION_MODES } from "../../../../db/schema/kb/linked-documents";
 
-/**
- * What a reader sees of a linked HR document. Deliberately NOT the document row: no storage key, no
- * metadata, no uploader, no owner. The file is reachable only through `POST …/open`, which signs a 300 second
- * URL after authorising the entry again.
- */
 const linkedDocumentItemSchema = z.object({
   id: z.number().int(),
   name: z.string().nullable(),
@@ -18,7 +13,6 @@ const linkedDocumentItemSchema = z.object({
   effectiveDate: z.string().nullable(),
   version: z.number().int().nullable(),
   publishedAt: wireDate(),
-  // The badge on every entry: this is not a knowledge-base page, it is a pointer at a document HR owns.
   source: z.literal("HR_DOCUMENT"),
   hasFile: z.boolean(),
   fileName: z.string().nullable(),
@@ -33,7 +27,6 @@ export type LinkedDocumentItem = z.infer<typeof linkedDocumentItemSchema>;
 export const listLinkedDocumentsResponseSchema = cursorPageSchema(linkedDocumentItemSchema);
 
 export const linkedDocumentDetailSchema = linkedDocumentItemSchema.extend({
-  // Publisher-only: null for everyone else, who are told nothing about how the entry is scoped.
   audiences: z
     .array(z.object({ kind: z.enum(DOCUMENT_AUDIENCE_KINDS), refId: z.string().nullable(), label: z.string().nullable() }))
     .nullable(),

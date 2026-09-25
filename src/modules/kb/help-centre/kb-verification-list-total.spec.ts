@@ -3,7 +3,6 @@ import type { Db } from "../../../db/drizzle.module";
 import type { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-// listDue counted first, then read the page — two round trips in series, and the count ran even for an empty space list.
 
 const USER = { userId: "user-1", orgId: "org-1", isOrgOwner: false } as unknown as CurrentUserContext;
 

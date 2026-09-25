@@ -23,13 +23,7 @@ import {
   openLinkedDocumentResponseSchema,
 } from "./dto/kb-linked-documents-response.schemas";
 
-/**
- * HR documents in the knowledge base, for readers. No module-gate decorator: KB is a universal module and no KB
- * controller carries one (pinned by kb-module-gate.spec). Every route answers 404 while `hrms.kb.link` is off.
- * Who may see an entry is decided in SQL by the query service, never here.
- */
 @Controller("kb/linked-documents")
-// RateLimitGuard is a no-op on a route that declares no tier, so only `open` below is throttled by it.
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 export class KbLinkedDocumentsController {
   constructor(
@@ -39,10 +33,8 @@ export class KbLinkedDocumentsController {
     private readonly documentAccess: DocumentAccessService,
   ) {}
 
-  // Searching needs the search switch, which itself needs linking; every other read needs only linking.
   private async caller(currentUser: CurrentUserContext, needs: "link" | "search" = "link"): Promise<LinkedDocumentCaller> {
     await this.flags.assertEnabled(currentUser.orgId, needs);
-    // One principal per request, from the auth context only — the same assembly every HR document route runs.
     const principal = await this.documentAccess.principalFor(currentUser);
     return {
       orgId: principal.orgId,
@@ -67,8 +59,6 @@ export class KbLinkedDocumentsController {
     return this.query.get(await this.caller(currentUser), linkedDocumentId);
   }
 
-  // A signed URL is a bearer credential: it is never cached, never logged, and lives 300 seconds. Minting one is
-  // also the only route here that hands out a credential, so it is the only one with a limit (V-147).
   @ResponseSchema(openLinkedDocumentResponseSchema)
   @Post(":linkedDocumentId/open")
   @UseRateLimit("kb:linked-document-open")

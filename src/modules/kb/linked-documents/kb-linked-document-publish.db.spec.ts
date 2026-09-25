@@ -1,15 +1,3 @@
-/**
- * HRMS-KB PR 4 — publishing, re-scoping and withdrawing a knowledge-base entry, against a real Postgres.
- *
- * What is pinned: a document that is not publishable cannot be published by ANYONE, whatever the request says
- * (the refusal is 422, audited, and leaves no row); an entry can never show a document to more people than the
- * document is for; withdrawing and republishing keeps the entry's id; every write is audited; and one tenant can
- * neither publish nor read another's.
- *
- * Run with:
- *   DATABASE_URL=postgres://user@localhost:5432/scratch_… ALLOW_DESTRUCTIVE_DB_TESTS=1 \
- *     npx jest --config ./jest-db.json --runInBand --testPathPattern=kb-linked-document-publish
- */
 import { randomUUID } from "node:crypto";
 import { ConflictException, HttpException, NotFoundException } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -339,12 +327,6 @@ describeDb("publishing a document to the knowledge base — real database", () =
       expect((await service.getState(a.orgId, documentId)).link?.newerVersionAvailable).toBe(true);
     });
 
-    /**
-     * V-151. FOLLOW_LATEST reads the document's own current file, which normally IS the latest approved version,
-     * because approving one is what writes it. The exception is a document whose file was never set and which
-     * then had a version uploaded but never approved: version history, and nothing approved in it. Publishing
-     * that put an entry in the knowledge base with nothing behind it, and nothing checked.
-     */
     it("refuses to follow the latest version of a document that has no approved version at all", async () => {
       const documentId = await doc(a);
       await sql`update documents set file_url = '' where id = ${documentId}`;
@@ -355,7 +337,6 @@ describeDb("publishing a document to the knowledge base — real database", () =
       expect(refused.getStatus()).toBe(422);
       expect((await service.getState(a.orgId, documentId)).link).toBeNull();
 
-      // Approving it is all that was missing: the same publish then goes through.
       await sql`update document_versions set status = 'approved', approved_at = now() where document_id = ${documentId} and version = 1`;
       expect((await service.publish(actorOf(a), documentId, {})).link).toMatchObject({ status: "active", versionMode: "FOLLOW_LATEST" });
     });
