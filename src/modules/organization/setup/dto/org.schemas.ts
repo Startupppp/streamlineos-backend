@@ -43,9 +43,13 @@ export const setupSchema = z.object({
   // HRMS-E2E-025. The owner appeared everywhere as the local part of their
   // sign-up address, because nothing ever asked for their name: sign-up takes an
   // address, and this wizard took the company's name, industry, size and phone
-  // but never the person's. Optional, because the schema is already live and
-  // making it required would 400 every client that has not shipped the field.
-  fullName: z.string().trim().min(1).max(120).optional(),
+  // but never the person's.
+  //
+  // V-023: required on the server too. It was optional here while only the
+  // wizard enforced it, which means "required" was a client-side courtesy —
+  // any other caller of this route could still create an org with no founder
+  // name and reproduce the whole defect.
+  fullName: z.string().trim().min(1, "Your name is required").max(120),
   industry: z.string().min(1, "Industry is required").max(100),
   companySize: z.string().min(1, "Company size is required").max(50),
   country: z.string().max(100).optional(),

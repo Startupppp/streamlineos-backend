@@ -15,11 +15,11 @@ export const AMERICAS_ONBOARDING_REQUIREMENTS: Record<
     bankFields: [
       ACCOUNT_HOLDER,
       BANK_NAME,
-      accountNumberField("000123456789"),
+      accountNumberField("e.g. 000123456789"),
       {
         key: "routingCode",
         label: "Routing number (ABA)",
-        placeholder: "021000021",
+        placeholder: "e.g. 021000021",
         required: true,
         help: "9-digit ABA routing number.",
       },
@@ -28,7 +28,7 @@ export const AMERICAS_ONBOARDING_REQUIREMENTS: Record<
       {
         key: "ssn",
         label: "Social Security Number",
-        placeholder: "123-45-6789",
+        placeholder: "e.g. 123-45-6789",
         required: true,
         pattern: "^\\d{3}-?\\d{2}-?\\d{4}$",
         patternMessage: "Enter a valid SSN (123-45-6789)",

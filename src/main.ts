@@ -8,6 +8,7 @@ import type { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import compression from "compression";
 import { httpCompressionOptions } from "./common/http/compression.config";
+import { corsOptions } from "./common/http/cors.config";
 import { trustProxySetting } from "./common/http/trust-proxy";
 import { SwaggerModule } from "@nestjs/swagger";
 import { buildOpenApiDocument } from "./common/openapi/build-openapi-document";
@@ -112,27 +113,7 @@ async function bootstrap(): Promise<void> {
   app.use(shutdownGate);
   app.use(correlationIdMiddleware);
 
-  app.enableCors({
-    origin: isDevelopment
-      ? (origin, callback) => {
-          callback(null, !origin || config.corsOrigins.includes(origin));
-        }
-      : config.corsOrigins,
-    credentials: true,
-    // A cross-origin download can only read the headers named here. Without
-    // Content-Disposition the browser hands the caller a blob with no filename,
-    // and without the pagination headers an export that spans pages looks
-    // complete after the first one — which is how a partial asset export read as
-    // a finished file (HRMS-E2E-013).
-    exposedHeaders: [
-      "x-correlation-id",
-      "x-request-id",
-      "traceparent",
-      "content-disposition",
-      "x-has-more",
-      "x-next-cursor",
-    ],
-  });
+  app.enableCors(corsOptions({ origins: config.corsOrigins, isDevelopment }));
 
   const admission = resolveAdmissionConfig(process.env);
 

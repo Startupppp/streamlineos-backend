@@ -2,6 +2,8 @@ import { NotFoundException } from "@nestjs/common";
 import { KbLinkedDocumentsController } from "./kb-linked-documents.controller";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { DataScope } from "../../access/access.types";
+import { DocumentAccessService } from "../../hr/performance/document-access.service";
 
 const ORG_ID = "org-kb-read-controller";
 
@@ -15,6 +17,16 @@ const makeUser = (): CurrentUserContext => ({
   principal: humanSessionPrincipal(61, false),
 });
 
+/** The controller reads publish authority from the one document principal, so the spec builds the real service. */
+function makeDocumentAccess(holdsPublish: boolean) {
+  const grants = new Map<string, DataScope>([["hr:documents:publish", holdsPublish ? "all" : "none"]]);
+  const access = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(grants),
+    holds: jest.fn(async (_user: CurrentUserContext, key: string) => (grants.get(key) ?? "none") !== "none"),
+  };
+  return { documentAccess: new DocumentAccessService({ select: jest.fn() } as never, access as never), access };
+}
+
 function build(enabled: boolean, holdsPublish: boolean) {
   const flags = { assertEnabled: jest.fn().mockImplementation(async () => { if (!enabled) throw new NotFoundException(); }) };
   const query = {
@@ -22,8 +34,8 @@ function build(enabled: boolean, holdsPublish: boolean) {
     get: jest.fn().mockResolvedValue({ id: 5 }),
   };
   const files = { open: jest.fn().mockResolvedValue({ url: "u", fileName: "f", expiresIn: 300 }) };
-  const access = { holds: jest.fn().mockResolvedValue(holdsPublish) };
-  const controller = new KbLinkedDocumentsController(flags as never, query as never, files as never, access as never);
+  const { documentAccess, access } = makeDocumentAccess(holdsPublish);
+  const controller = new KbLinkedDocumentsController(flags as never, query as never, files as never, documentAccess);
   return { controller, flags, query, files, access };
 }
 
@@ -75,7 +87,7 @@ describe("KB linked documents controller", () => {
   it("answers 404 to a search while the search switch is off, before any query runs", async () => {
     const flags = { assertEnabled: jest.fn().mockImplementation(async (_org: string, flag: string) => { if (flag === "search") throw new NotFoundException(); }) };
     const query = { list: jest.fn(), get: jest.fn() };
-    const controller = new KbLinkedDocumentsController(flags as never, query as never, {} as never, { holds: jest.fn().mockResolvedValue(false) } as never);
+    const controller = new KbLinkedDocumentsController(flags as never, query as never, {} as never, makeDocumentAccess(false).documentAccess);
 
     await expect(controller.list({ limit: 30, q: "leave" }, makeUser())).rejects.toBeInstanceOf(NotFoundException);
     expect(query.list).not.toHaveBeenCalled();

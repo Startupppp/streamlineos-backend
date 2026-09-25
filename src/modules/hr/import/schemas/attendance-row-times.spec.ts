@@ -1,4 +1,9 @@
-import { attendanceInstant, attendanceRowSchema, todayInTimeZone } from "./entity-row-schemas";
+import {
+  attendanceInstant,
+  attendanceRowSchema,
+  todayInTimeZone,
+  validateRows,
+} from "./entity-row-schemas";
 
 /**
  * HRMS-E2E-005b. QA's fixture previewed `19:00 -> 09:00` as valid: nothing
@@ -92,5 +97,41 @@ describe("attendance import time formats", () => {
     expect(
       attendanceRowSchema.safeParse({ ...row, checkIn: "2026-09-21T02:00:00Z", checkOut: "10:00" }).success,
     ).toBe(true);
+  });
+});
+
+/**
+ * V-012b. `todayInTimeZone()` was called with no argument everywhere, so the
+ * future-date refusal was hardcoded to Asia/Kolkata. An org in Los Angeles had
+ * today's attendance rejected as "in the future" for most of its working day,
+ * and an org in Auckland could import tomorrow's.
+ *
+ * The zone is now a parameter threaded from the organisation's own setting.
+ * Both the clock and the zones are pinned below, so the host's zone cannot
+ * change the verdict.
+ */
+describe("attendance future-date check reads the organisation's zone", () => {
+  // 2026-09-24T19:00Z: already the 25th in Kolkata, still the 24th in UTC and
+  // the 24th in Los Angeles.
+  const NOW = new Date("2026-09-24T19:00:00Z");
+  beforeAll(() => jest.useFakeTimers({ now: NOW, doNotFake: ["performance"] }));
+  afterAll(() => jest.useRealTimers());
+
+  const rows = [{ employeeEmail: "employee@example.test", date: "2026-09-25" }];
+
+  it("accepts a row dated today in the org's zone", () => {
+    const result = validateRows("attendance", rows, "Asia/Kolkata");
+    expect(result.errorRows).toEqual([]);
+    expect(result.validRows).toHaveLength(1);
+  });
+
+  it("rejects the same row for an org whose day has not reached it", () => {
+    const result = validateRows("attendance", rows, "America/Los_Angeles");
+    expect(result.validRows).toEqual([]);
+    expect(result.errorRows[0]?.error).toContain("cannot be in the future");
+  });
+
+  it("falls back to Asia/Kolkata when the org has no zone configured", () => {
+    expect(validateRows("attendance", rows).validRows).toHaveLength(1);
   });
 });

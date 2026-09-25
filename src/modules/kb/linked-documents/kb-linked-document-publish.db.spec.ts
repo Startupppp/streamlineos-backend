@@ -339,6 +339,33 @@ describeDb("publishing a document to the knowledge base — real database", () =
       expect((await service.getState(a.orgId, documentId)).link?.newerVersionAvailable).toBe(true);
     });
 
+    /**
+     * V-151. FOLLOW_LATEST reads the document's own current file, which normally IS the latest approved version,
+     * because approving one is what writes it. The exception is a document whose file was never set and which
+     * then had a version uploaded but never approved: version history, and nothing approved in it. Publishing
+     * that put an entry in the knowledge base with nothing behind it, and nothing checked.
+     */
+    it("refuses to follow the latest version of a document that has no approved version at all", async () => {
+      const documentId = await doc(a);
+      await sql`update documents set file_url = '' where id = ${documentId}`;
+      await sql`insert into document_versions (org_id, document_id, version, file_url, status) values (${a.orgId}, ${documentId}, 1, ${`${a.orgId}/hr-documents/draft.pdf`}, 'pending')`;
+
+      const refused = await refusal(service.publish(actorOf(a), documentId, {}));
+      expect(codeOf(refused)).toBe("DOCUMENT_VERSION_NOT_APPROVED");
+      expect(refused.getStatus()).toBe(422);
+      expect((await service.getState(a.orgId, documentId)).link).toBeNull();
+
+      // Approving it is all that was missing: the same publish then goes through.
+      await sql`update document_versions set status = 'approved', approved_at = now() where document_id = ${documentId} and version = 1`;
+      expect((await service.publish(actorOf(a), documentId, {})).link).toMatchObject({ status: "active", versionMode: "FOLLOW_LATEST" });
+    });
+
+    it("lets a document with no version history at all follow the latest: its file IS the document", async () => {
+      const documentId = await doc(a);
+
+      expect((await service.publish(actorOf(a), documentId, {})).link).toMatchObject({ status: "active", versionMode: "FOLLOW_LATEST" });
+    });
+
     it("answers 404 when there is no live entry to change", async () => {
       const documentId = await doc(a);
 

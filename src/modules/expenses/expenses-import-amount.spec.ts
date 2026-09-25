@@ -14,6 +14,8 @@ interface InsertedExpense {
 function makeCapturingDb(): { db: Db; inserted: InsertedExpense[] } {
   const inserted: InsertedExpense[] = [];
   const db = {
+    // no expense is already on file in these cases; the duplicate pass reads nothing.
+    select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
     insert() {
       return {
         values(rows: InsertedExpense[]) {

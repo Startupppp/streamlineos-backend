@@ -21,6 +21,13 @@ export interface OrgChartNode {
   departmentId: string | null;
   departmentName: string | null;
   hasDirectReports: boolean;
+  /**
+   * V-026. A root of this page is anyone with no VISIBLE manager, so the page
+   * mixes the founder with every hire nobody has assigned a manager to.
+   * Splitting those on `hasDirectReports` produced a tree with several apparent
+   * CEOs; the owner is the only one the organisation actually has.
+   */
+  isOwner: boolean;
 }
 
 export interface OrgChartPage {

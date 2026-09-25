@@ -22,7 +22,7 @@ export const backfillResultSchema = z
     eligible: count,
     proposals: z.object({ allEmployees: count, hrOnly: count }).strict(),
     skipped: z
-      .object({ alreadyClassified: count, belongsToAnEmployee: count, typeNotAllowed: count, hiringArtefact: count, inactive: count })
+      .object({ alreadyClassified: count, belongsToAnEmployee: count, typeNotAllowed: count, hiringArtefact: count, inactive: count, holdsPersonalIdentifier: count })
       .strict(),
     /** Documents actually changed: always 0 on a dry run. */
     applied: count,

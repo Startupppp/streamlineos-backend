@@ -45,6 +45,25 @@ import type { checkEmailSchema, employeeCountsSchema } from "./dto/directory-res
 type EmployeeAdmissionCheck = z.infer<typeof checkEmailSchema>;
 type EmployeeDirectoryCounts = z.infer<typeof employeeCountsSchema>;
 
+/**
+ * The one spelling of "accepted" / "still pending" on this screen.
+ *
+ * PROVISIONAL (product default E-4): acceptance is derived, never stored —
+ * `users.is_active` is the ACCOUNT flag and is true the moment an admin creates
+ * the person, so it alone badges a never-accepted invitee as Active. These two
+ * back BOTH the counters and the list filter, so the `pending` bucket and the
+ * `pending` filter cannot drift apart.
+ */
+export function acceptedCondition(): SQL {
+  return sql`(${users.isActive} and ${users.emailVerified} is not null)`;
+}
+export function pendingCondition(): SQL {
+  return sql`(${users.isActive} and ${users.emailVerified} is null)`;
+}
+
+/** Directory status filter. `pending` = invited but never accepted. */
+export type EmployeeActiveFilter = "true" | "false" | "all" | "pending";
+
 export type EmployeeDirectoryFilters = {
   search?: string;
   departmentId?: string;
@@ -76,7 +95,7 @@ export class EmployeesService {
     opts: EmployeeDirectoryFilters & {
       cursor?: string;
       limit?: number;
-      isActive?: "true" | "false" | "all";
+      isActive?: EmployeeActiveFilter;
     },
   ) {
     const limitN = opts.limit ?? 20;
@@ -124,11 +143,12 @@ export class EmployeesService {
 
   private async directoryConditions(
     filters: EmployeeDirectoryFilters,
-    isActive: "true" | "false" | "all",
+    isActive: EmployeeActiveFilter,
   ): Promise<(SQL | undefined)[]> {
     const conditions: (SQL | undefined)[] = [];
     if (isActive === "true") conditions.push(eq(users.isActive, true));
     else if (isActive === "false") conditions.push(eq(users.isActive, false));
+    else if (isActive === "pending") conditions.push(pendingCondition());
     if (filters.departmentId != null) conditions.push(eq(hrEmployments.departmentId, filters.departmentId));
     if (filters.role) conditions.push(eq(organizationMembers.role, filters.role));
     if (filters.search) conditions.push(await this.employeeSearchCondition(filters.search));
@@ -163,8 +183,8 @@ export class EmployeesService {
             // product decides a joining date also has to have passed, this
             // predicate is where that lands; no stored status changes, so
             // nothing needs migrating either way.
-            active: sql<number>`count(*) filter (where ${users.isActive} and ${users.emailVerified} is not null)`.mapWith(Number),
-            pending: sql<number>`count(*) filter (where ${users.isActive} and ${users.emailVerified} is null)`.mapWith(Number),
+            active: sql<number>`count(*) filter (where ${acceptedCondition()})`.mapWith(Number),
+            pending: sql<number>`count(*) filter (where ${pendingCondition()})`.mapWith(Number),
             inactive: sql<number>`count(*) filter (where not ${users.isActive})`.mapWith(Number),
           })
           .from(organizationMembers)
@@ -186,7 +206,7 @@ export class EmployeesService {
     encodedCursor: string | undefined,
     limit: number,
     filters: EmployeeDirectoryFilters,
-    isActive: "true" | "false" | "all",
+    isActive: EmployeeActiveFilter,
   ) {
     const orgId = read.orgId;
     const cursor = encodedCursor ? decodeEmployeeListCursor(encodedCursor) : undefined;
@@ -225,6 +245,7 @@ export class EmployeesService {
               orgDepartmentName: orgUnits.name,
               image: users.image,
               isActive: users.isActive,
+              hasAccepted: sql<boolean>`${acceptedCondition()}`,
           })
           .from(organizationMembers)
           .innerJoin(users, eq(organizationMembers.userId, users.id))
@@ -267,6 +288,7 @@ export class EmployeesService {
               : null,
           image: row.image,
           isActive: row.isActive,
+          hasAccepted: row.hasAccepted === true,
           joiningDate: facts?.joiningDate ?? null,
           reportingTo: facts?.managerUserId ?? null,
         };

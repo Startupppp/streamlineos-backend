@@ -180,6 +180,14 @@ const orgChartNodeSchema = z.object({
   departmentId: z.string().nullable(),
   departmentName: z.string().nullable(),
   hasDirectReports: z.boolean(),
+  /**
+   * V-026. Additive. A root of this page is anyone with no VISIBLE manager, so
+   * the page mixes the founder with every hire nobody has assigned a manager
+   * to. Splitting those on `hasDirectReports` produced a tree with several
+   * apparent CEOs; the owner is the only one of them the organisation actually
+   * has.
+   */
+  isOwner: z.boolean(),
 });
 
 export const orgChartPageSchema = z.object({
@@ -227,6 +235,13 @@ export const employeeListItemSchema = z.object({
   department: z.object({ id: z.string(), name: z.string() }).nullable(),
   image: z.string().nullable(),
   isActive: z.boolean(),
+  /**
+   * PROVISIONAL (product default E-4): derived at read time, never stored —
+   * the invitee accepted (came through the magic link) rather than merely
+   * having an account row. Without it a never-accepted invitee badges as
+   * "Active" beside a counter saying "Pending invite: 1".
+   */
+  hasAccepted: z.boolean(),
   joiningDate: z.string().nullable(),
   reportingTo: z.string().nullable(),
 });

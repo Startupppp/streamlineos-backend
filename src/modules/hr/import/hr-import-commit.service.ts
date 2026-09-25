@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrPeople,
@@ -10,7 +10,11 @@ import {
   leaveBalances,
   leaveTypes,
   documents,
+  orgUnits,
+  hrReportingLines,
+  users,
 } from "../../../db/schema";
+import { acceptedEmployee } from "../shared/employee-acceptance";
 import { hrImportRows } from "../../../db/schema/hr/import-jobs";
 import {
   employeeRowSchema,
@@ -23,6 +27,7 @@ import {
   type AttendanceRow,
   type AssetRow,
   attendanceInstant,
+  todayInTimeZone,
 } from "./schemas/entity-row-schemas";
 import type { HrImportEntity } from "./dto/import-job.dto";
 import { normalizeCode, normalizeName } from "./schemas/import-row-identity";
@@ -49,6 +54,8 @@ export interface ImportCommitContext {
   orgId: string;
   actorId: string;
   membership: MembershipMutations;
+  /** The organisation's calendar. Wall-clock cells are read in it (V-012b). */
+  timeZone?: string;
 }
 
 @Injectable()
@@ -63,14 +70,17 @@ export class HrImportCommitService {
     ctx: ImportCommitContext,
     entity: HrImportEntity,
     payload: Record<string, unknown>,
-  ): Promise<CommitRef | null> {
+  ): Promise<CommitRef> {
     const orgId = ctx.orgId;
     if (entity === "employees") return this.commitEmployee(tx, ctx, employeeRowSchema.parse(payload));
     if (entity === "leave_balances") return this.commitLeaveBalance(tx, orgId, leaveBalanceRowSchema.parse(payload));
-    if (entity === "attendance") return this.commitAttendance(tx, orgId, attendanceRowSchema.parse(payload));
+    if (entity === "attendance") return this.commitAttendance(tx, ctx, attendanceRowSchema.parse(payload));
     if (entity === "assets") return this.commitAsset(tx, orgId, assetRowSchema.parse(payload));
     if (entity === "document_metadata") return commitDocumentRow(tx, orgId, documentMetadataRowSchema.parse(payload));
-    return null;
+    // This used to `return null`, which the caller read as "nothing to do": the
+    // row was counted in no bucket, kept `status='valid'` and the job still
+    // reported success over it. A row that writes nothing is a row error.
+    throw new Error(`No importer is wired for entity '${String(entity)}'`);
   }
 
   /**
@@ -148,13 +158,27 @@ export class HrImportCommitService {
     // The columns an operator re-uploads to correct. `ensureFromUser` creates
     // the employment but leaves an existing one alone, so the sheet's values are
     // applied here or a second import would silently change nothing.
+    // V-010. `departmentName` is advertised as a template column and
+    // `departmentId` is accepted by the schema, but neither was ever read: the
+    // value parsed, validated and was thrown away, and the employee landed with
+    // no department. The preflight resolved the name to an org unit in THIS org
+    // (an unresolvable name is a row error there, not a silent NULL here), so
+    // all that is left is to write it.
+    const departmentId = await this.resolveDepartment(tx, orgId, row);
+
     await tx
       .update(hrEmployments)
       .set({
         ...(row.designation === undefined ? {} : { designation: row.designation || null }),
         ...(row.joiningDate ? { joiningDate: row.joiningDate } : {}),
+        ...(departmentId === null ? {} : { departmentId }),
       })
       .where(and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, ensured.employmentId)));
+
+    // `managerEmail` had the same fate as `departmentName` — parsed, then
+    // ignored. A reporting line is effective-dated, so the import closes the
+    // open primary line and opens a new one rather than overwriting history.
+    await this.applyImportedManager(tx, ctx, ensured.employmentId, row);
 
     await tx
       .update(organizationPeople)
@@ -176,6 +200,123 @@ export class HrImportCommitService {
       id: ensured.personId,
       outcome: existing && !ensured.createdPerson ? "updated" : "created",
     };
+  }
+
+  /**
+   * The org unit the row names, or null when it names none.
+   *
+   * The preflight already resolved it; this re-resolves only for a job that was
+   * previewed before the preflight existed, and refuses rather than writing NULL
+   * so the two paths fail the same way.
+   */
+  private async resolveDepartment(
+    tx: Tx,
+    orgId: string,
+    row: EmployeeRow,
+  ): Promise<string | null> {
+    if (row.resolvedDepartmentId) return row.resolvedDepartmentId;
+    const stated =
+      (typeof row.departmentId === "number" ? String(row.departmentId) : row.departmentId ?? "").trim() ||
+      (row.departmentName ?? "").trim();
+    if (stated === "") return null;
+
+    const [unit] = await tx
+      .select({ id: orgUnits.id })
+      .from(orgUnits)
+      .where(
+        and(
+          eq(orgUnits.orgId, orgId),
+          isNull(orgUnits.deletedAt),
+          sql`(${orgUnits.id} = ${stated} or lower(trim(${orgUnits.name})) = ${stated.toLowerCase()})`,
+        ),
+      )
+      .limit(1);
+
+    if (!unit) throw new Error(`Department "${stated}" was not found in this organization.`);
+    return unit.id;
+  }
+
+  /**
+   * Writes the reporting line the sheet's `managerEmail` names.
+   *
+   * The manager employment id comes from the preflight, which resolved the email
+   * inside this org — a manager who is not an employee here is a row error at
+   * preview. A line is effective-dated, so an existing open primary line is
+   * closed rather than rewritten, and a re-import naming the same manager is a
+   * no-op. The cycle check is the same recursive walk the effective-change
+   * applier makes; without it an import could close a loop that every
+   * manager-chain read then walks.
+   */
+  private async applyImportedManager(
+    tx: Tx,
+    ctx: ImportCommitContext,
+    employmentId: number,
+    row: EmployeeRow,
+  ): Promise<void> {
+    const managerEmploymentId = row.resolvedManagerEmploymentId;
+    if (managerEmploymentId === undefined) return;
+    if (managerEmploymentId === employmentId)
+      throw new Error(`${row.email}: an employee cannot report to themselves.`);
+
+    const orgId = ctx.orgId;
+    const effectiveFrom = row.joiningDate || todayInTimeZone(ctx.timeZone);
+
+    const [open] = await tx
+      .select({ id: hrReportingLines.id, managerEmploymentId: hrReportingLines.managerEmploymentId })
+      .from(hrReportingLines)
+      .where(
+        and(
+          eq(hrReportingLines.orgId, orgId),
+          eq(hrReportingLines.employmentId, employmentId),
+          eq(hrReportingLines.lineType, "primary"),
+          sql`${hrReportingLines.effectiveTo} > ${effectiveFrom}::date`,
+        ),
+      )
+      .orderBy(desc(hrReportingLines.effectiveFrom))
+      .limit(1);
+
+    if (open?.managerEmploymentId === managerEmploymentId) return;
+
+    const [cycle] = await tx.execute<{ creates_cycle: boolean }>(sql`
+      WITH RECURSIVE manager_chain AS (
+        SELECT ${managerEmploymentId}::integer AS employment_id,
+               ARRAY[${managerEmploymentId}::integer] AS path
+        UNION ALL
+        SELECT line.manager_employment_id, chain.path || line.manager_employment_id
+        FROM manager_chain chain
+        INNER JOIN hr_reporting_lines line
+          ON line.org_id = ${orgId}
+         AND line.employment_id = chain.employment_id
+         AND line.line_type = 'primary'
+         AND line.effective_from <= ${effectiveFrom}::date
+         AND line.effective_to > ${effectiveFrom}::date
+        WHERE NOT line.manager_employment_id = ANY(chain.path)
+          AND cardinality(chain.path) < 1000
+      )
+      SELECT EXISTS (
+        SELECT 1 FROM manager_chain WHERE employment_id = ${employmentId}
+      ) AS creates_cycle
+    `);
+    if (cycle?.creates_cycle)
+      throw new Error(
+        `${row.email}: manager "${row.managerEmail}" would create a circular reporting chain.`,
+      );
+
+    if (open) {
+      await tx
+        .update(hrReportingLines)
+        .set({ effectiveTo: effectiveFrom })
+        .where(and(eq(hrReportingLines.orgId, orgId), eq(hrReportingLines.id, open.id)));
+    }
+
+    await tx.insert(hrReportingLines).values({
+      orgId,
+      employmentId,
+      managerEmploymentId,
+      lineType: "primary",
+      effectiveFrom,
+      createdBy: ctx.actorId,
+    });
   }
 
   /** Turns an admission refusal into the row error an operator can act on. */
@@ -219,30 +360,40 @@ export class HrImportCommitService {
   }
 
   private async commitLeaveBalance(tx: Tx, orgId: string, row: LeaveBalanceRow): Promise<CommitRef> {
-    const person = await tx
-      .select({ userId: hrPeople.userId })
-      .from(hrPeople)
-      .innerJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
-        ),
-      )
-      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
-      .limit(1);
+    // Both references were resolved by the preflight, which is what makes the
+    // preview's verdict and the commit's agree (V-011). The queries below are
+    // the fallback for a job previewed before the preflight existed; they throw
+    // the same messages the preflight reports as row errors.
+    let userId = row.resolvedUserId;
+    if (!userId) {
+      const person = await tx
+        .select({ userId: hrPeople.userId })
+        .from(hrPeople)
+        .innerJoin(
+          organizationPeople,
+          and(
+            eq(organizationPeople.organizationId, hrPeople.orgId),
+            eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          ),
+        )
+        .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
+        .limit(1);
 
-    const userId = person[0]?.userId;
-    if (!userId) throw new Error(`No user found for email ${row.employeeEmail}`);
+      userId = person[0]?.userId ?? undefined;
+      if (!userId) throw new Error(`No user found for email ${row.employeeEmail}`);
+    }
 
-    const leaveType = await tx
-      .select({ id: leaveTypes.id })
-      .from(leaveTypes)
-      .where(and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, row.leaveTypeName)))
-      .limit(1);
+    let leaveTypeId = row.resolvedLeaveTypeId;
+    if (leaveTypeId === undefined) {
+      const leaveType = await tx
+        .select({ id: leaveTypes.id })
+        .from(leaveTypes)
+        .where(and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, row.leaveTypeName)))
+        .limit(1);
 
-    const leaveTypeId = leaveType[0]?.id;
-    if (!leaveTypeId) throw new Error(`Leave type '${row.leaveTypeName}' not found`);
+      leaveTypeId = leaveType[0]?.id;
+      if (!leaveTypeId) throw new Error(`Leave type '${row.leaveTypeName}' not found`);
+    }
 
     const balance = String(typeof row.balance === "number" ? row.balance : parseFloat(String(row.balance)));
     const year = typeof row.year === "number" ? row.year : parseInt(String(row.year));
@@ -285,30 +436,49 @@ export class HrImportCommitService {
     };
   }
 
-  private async commitAttendance(tx: Tx, orgId: string, row: AttendanceRow): Promise<CommitRef> {
-    const person = await tx
-      .select({ userId: hrPeople.userId })
-      .from(hrPeople)
-      .innerJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
-        ),
-      )
-      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
-      .limit(1);
+  private async commitAttendance(tx: Tx, ctx: ImportCommitContext, row: AttendanceRow): Promise<CommitRef> {
+    const orgId = ctx.orgId;
+    // The preflight resolved this against the org, `deleted_at IS NULL` AND
+    // acceptance, so a preview that said "valid" and a commit that writes agree.
+    // The query below is the fallback for a job previewed before the preflight
+    // existed, and carries the same acceptance predicate for the same reason.
+    let userId = row.resolvedUserId;
+    if (!userId) {
+      const person = await tx
+        .select({ userId: hrPeople.userId, accepted: sql<boolean>`(${acceptedEmployee()})` })
+        .from(hrPeople)
+        .innerJoin(
+          organizationPeople,
+          and(
+            eq(organizationPeople.organizationId, hrPeople.orgId),
+            eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          ),
+        )
+        .innerJoin(users, eq(users.id, hrPeople.userId))
+        .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
+        .limit(1);
 
-    const userId = person[0]?.userId;
-    if (!userId) throw new Error(`No user found for email ${row.employeeEmail}`);
+      const found = person[0];
+      if (!found?.userId) throw new Error(`No user found for email ${row.employeeEmail}`);
+      // V-012a. The lookup used to stop at "exists in this org", so a pending
+      // hire who has never opened their invitation could be given attendance —
+      // which then counts towards attendance rate and payable days. Distinct
+      // message: "not found" and "not accepted yet" need different operator
+      // actions.
+      if (found.accepted !== true)
+        throw new Error(
+          `${row.employeeEmail} has not accepted their invitation yet, so attendance cannot be imported for them`,
+        );
+      userId = found.userId;
+    }
 
     // `new Date("09:30")` is an Invalid Date, and 09:30 is exactly what the
     // import dialog documents this column as. Every row written in the
     // documented format therefore failed at insert time with an error the file
     // gave no clue about. `attendanceInstant` reads a wall clock on the row's
     // own date in the organisation's zone, and passes a full timestamp through.
-    const checkIn = attendanceInstant(row.date, row.checkIn);
-    const checkOut = attendanceInstant(row.date, row.checkOut);
+    const checkIn = attendanceInstant(row.date, row.checkIn, ctx.timeZone);
+    const checkOut = attendanceInstant(row.date, row.checkOut, ctx.timeZone);
 
     // The `onConflictDoNothing()` that used to sit on this insert could never
     // fire: `attendance`'s only unique indexes are attendance_pkey (id) and
@@ -359,9 +529,9 @@ export class HrImportCommitService {
   }
 
   private async commitAsset(tx: Tx, orgId: string, row: AssetRow): Promise<CommitRef> {
-    let assignedTo: string | null = null;
+    let assignedTo: string | null = row.resolvedUserId ?? null;
 
-    if (row.assignedToEmail) {
+    if (row.assignedToEmail && !assignedTo) {
       const person = await tx
         .select({ userId: hrPeople.userId })
         .from(hrPeople)
@@ -375,6 +545,10 @@ export class HrImportCommitService {
         .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.assignedToEmail)))
         .limit(1);
       assignedTo = person[0]?.userId ?? null;
+      // V-080b. A typo in the assignee column used to leave the asset
+      // unassigned and the row reported as imported — a silent drop of the one
+      // column an operator checks after an assets import.
+      if (!assignedTo) throw new Error(`No user found for email ${row.assignedToEmail}`);
     }
 
     const fields = {
@@ -382,7 +556,10 @@ export class HrImportCommitService {
       type: row.type,
       brand: row.brand ?? null,
       model: row.model ?? null,
-      status: row.status ?? ("AVAILABLE" as const),
+      // V-082. `status` defaulted to AVAILABLE even when the same row named an
+      // assignee, which is exactly why the Assigned tile disagreed with the
+      // rows underneath it. The file still wins when it states a status.
+      status: row.status ?? (assignedTo ? ("ASSIGNED" as const) : ("AVAILABLE" as const)),
       purchaseDate: row.purchaseDate || null,
       location: row.location ?? null,
     };
@@ -432,7 +609,13 @@ export class HrImportCommitService {
       .values({
         orgId,
         ...fields,
-        serialNumber: row.serialNumber ?? null,
+        // V-080a. The row used to store the RAW cell while matching on
+        // `upper(trim(...))`, so `qa-sn-0001` and `QA-SN-0001` could sit side by
+        // side in one estate and every raw reader — export, search, the assets
+        // list — saw values that did not agree with each other. Storing the
+        // normalized form is what makes the stored value and the match key the
+        // same string.
+        serialNumber: serial === "" ? null : serial,
         assignedTo,
       })
       .returning({ id: assets.id });

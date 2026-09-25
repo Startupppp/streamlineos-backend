@@ -8,6 +8,8 @@ async function importCsv(body: string, categoryMapping?: Record<string, string>)
   const inserted: Array<{ category: string }> = [];
   // `useValue` is untyped, so the capture needs no cast to `Db`.
   const db = {
+    // no expense is already on file in these cases; the duplicate pass reads nothing.
+    select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
     insert: () => ({
       values: (rows: Array<{ category: string }>) => {
         inserted.push(...rows);
@@ -54,6 +56,28 @@ describe("expense import — a category is never silently rewritten (HRMS-E2E-00
     const { categories, result } = await importCsv("Flights,10,Air,Airline,2026-01-05", { Flights: "Yachts" });
     expect(categories).toEqual([]);
     expect(result.skipped).toBe(1);
+  });
+
+  it("maps Meals onto Food through the alias map instead of erroring", async () => {
+    const { categories, result } = await importCsv("Meals,10,Team lunch,Cafe,2026-01-05");
+    expect(categories).toEqual(["Food"]);
+    expect(result.skipped).toBe(0);
+    expect(result.skippedReasons).toEqual([]);
+  });
+
+  it("maps an alias regardless of case and surrounding space", async () => {
+    const { categories } = await importCsv("  DINING ,10,Team dinner,Cafe,2026-01-05");
+    expect(categories).toEqual(["Food"]);
+  });
+
+  it("still makes a genuinely unknown category a row error, alias map or not", async () => {
+    const { categories, result } = await importCsv("Cryptocurrency,10,Coins,Exchange,2026-01-05");
+    expect(categories).toEqual([]);
+    expect(result.skipped).toBe(1);
+    expect(result.skippedReasons[0]).toMatchObject({ row: 2 });
+    expect(result.skippedReasons[0]?.reason).toMatch(
+      /Unknown category "Cryptocurrency"\. Use one of: /,
+    );
   });
 
   it("files a blank category as Other, the documented default", async () => {

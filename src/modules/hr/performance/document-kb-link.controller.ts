@@ -1,16 +1,15 @@
-import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { AccessService } from "../../access/access.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { resolveDocumentsScope } from "./performance-scope";
+import { DocumentAccessService } from "./document-access.service";
 import { KbLinkedDocumentPublishService, type PublishActor } from "../../kb/linked-documents/kb-linked-document-publish.service";
 import { KbLinkedDocumentBackfillService } from "../../kb/linked-documents/kb-linked-document-backfill.service";
 import { backfillInputSchema, backfillResultSchema, type BackfillInput } from "../../kb/linked-documents/dto/kb-link-backfill.schemas";
@@ -38,7 +37,7 @@ export class DocumentKbLinkController {
   constructor(
     private readonly links: KbLinkedDocumentPublishService,
     private readonly backfill: KbLinkedDocumentBackfillService,
-    private readonly access: AccessService,
+    private readonly documentAccess: DocumentAccessService,
   ) {}
 
   private actor(currentUser: CurrentUserContext): PublishActor {
@@ -61,8 +60,7 @@ export class DocumentKbLinkController {
   @RequirePermission("hr:documents:view")
   @Validate({ params: kbLinkParamsSchema })
   async state(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() currentUser: CurrentUserContext) {
-    const scope = await resolveDocumentsScope(this.access, currentUser);
-    if (!scope.unrestricted) throw new ForbiddenException("Organization-wide document access is required.");
+    await this.documentAccess.assertCanAct(await this.documentAccess.principalFor(currentUser), documentId, "view");
     return this.links.getState(currentUser.orgId, documentId);
   }
 

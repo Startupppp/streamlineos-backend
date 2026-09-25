@@ -8,11 +8,11 @@ export const APAC_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
     bankFields: [
       ACCOUNT_HOLDER,
       BANK_NAME,
-      accountNumberField("00000000000"),
+      accountNumberField("e.g. 00000000000"),
       {
         key: "routingCode",
         label: "IFSC code",
-        placeholder: "HDFC0001234",
+        placeholder: "e.g. HDFC0001234",
         required: true,
         uppercase: true,
       },
@@ -21,7 +21,7 @@ export const APAC_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
       {
         key: "pan",
         label: "PAN",
-        placeholder: "ABCDE1234F",
+        placeholder: "e.g. ABCDE1234F",
         required: true,
         uppercase: true,
         pattern: "^[A-Z]{5}[0-9]{4}[A-Z]$",
@@ -31,7 +31,7 @@ export const APAC_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
       {
         key: "uan",
         label: "PF UAN",
-        placeholder: "100000000000",
+        placeholder: "e.g. 100000000000",
         required: false,
         pattern: "^[0-9]{12}$",
         patternMessage: "UAN must be 12 digits",
@@ -59,11 +59,11 @@ export const APAC_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
     bankFields: [
       ACCOUNT_HOLDER,
       BANK_NAME,
-      accountNumberField("0123456789"),
+      accountNumberField("e.g. 0123456789"),
       {
         key: "swift",
         label: "SWIFT / BIC",
-        placeholder: "DBSSSGSG",
+        placeholder: "e.g. DBSSSGSG",
         required: true,
         uppercase: true,
       },
@@ -72,7 +72,7 @@ export const APAC_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
       {
         key: "nric_fin",
         label: "NRIC / FIN",
-        placeholder: "S1234567D",
+        placeholder: "e.g. S1234567D",
         required: true,
         uppercase: true,
         pattern: "^[STFG][0-9]{7}[A-Z]$",
@@ -101,11 +101,11 @@ export const APAC_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
     bankFields: [
       ACCOUNT_HOLDER,
       BANK_NAME,
-      accountNumberField("123456789"),
+      accountNumberField("e.g. 123456789"),
       {
         key: "routingCode",
         label: "BSB",
-        placeholder: "123-456",
+        placeholder: "e.g. 123-456",
         required: true,
         help: "6-digit BSB (dash optional).",
       },
@@ -114,7 +114,7 @@ export const APAC_ONBOARDING_REQUIREMENTS: Record<string, CountryOnboardingRequi
       {
         key: "tfn",
         label: "Tax File Number",
-        placeholder: "123456789",
+        placeholder: "e.g. 123456789",
         required: true,
         pattern: "^\\d{9}$",
         patternMessage: "TFN must be 9 digits",

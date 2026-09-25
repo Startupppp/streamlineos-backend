@@ -10,6 +10,12 @@ const placeOrganization = jest.fn();
 const placedOrganizationCoordinates = jest.fn();
 const unplaceOrganization = jest.fn();
 const bootstrapCellOrganization = jest.fn();
+// V-021 drives the REAL bootstrap at the bottom of this file, so its own
+// collaborators are stubbed here. The tests above never reach them.
+const runInNewTenantTransaction = jest.fn(
+  (db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(db),
+);
+const ensureManyFromUsers = jest.fn().mockResolvedValue({ rows: [], auditEntries: [] });
 const persistedPlacements = new Map<
   string,
   { region: string; cellId: string }
@@ -35,11 +41,31 @@ jest.mock("./bootstrap-cell-organization", () => ({
     `${name.toLowerCase()}-${suffix}`,
 }));
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
-  runInNewTenantTransaction: (
-    db: unknown,
-    _orgId: string,
-    fn: (tx: unknown) => unknown,
-  ) => fn(db),
+  runInNewTenantTransaction: (...args: unknown[]) =>
+    (runInNewTenantTransaction as (...a: unknown[]) => unknown)(...args),
+}));
+jest.mock("../../../common/org/membership-mutations", () => ({
+  withMembershipMutations: (
+    _cache: unknown,
+    fn: (membership: unknown) => unknown,
+  ) => fn({ allocateMembershipId: async () => 7, createOwnerMembership: async () => undefined }),
+}));
+jest.mock("../../billing/core/trial-subscription", () => ({
+  insertTrialSubscription: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("../../../common/org/provision-org-modules", () => ({
+  DEFAULT_SKIP_MODULES: ["hr"],
+  provisionOrgModules: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("../../../common/org/provision-employee-self-service", () => ({
+  provisionEmployeeSelfService: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("../../rbac/seed-system-roles", () => ({
+  seedSystemRolesForOrg: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("../../hr/core/person-employment-sync-batch", () => ({
+  ensureManyFromUsers: (...args: unknown[]) =>
+    (ensureManyFromUsers as (...a: unknown[]) => unknown)(...args),
 }));
 
 function selectOwner(rows: unknown[]) {
@@ -396,5 +422,112 @@ describe("OrganizationCreationService", () => {
         moduleKeys: undefined,
       }),
     );
+  });
+});
+
+/**
+ * V-021. The owner's own employment record is what every HR surface reads to
+ * answer "who is this person at work". Without one, a bulk file naming the
+ * founder as `reportingManagerEmail` failed every dependent row, the leave
+ * approval chain resolved to nobody, and the founder's directory export came
+ * back with empty employment columns.
+ *
+ * `owner-employment-bootstrap.db.spec.ts` proves the write is idempotent, but
+ * it re-implements the call rather than driving `bootstrapCellOrganization`, so
+ * nothing failed if the bootstrap simply stopped making it. This drives the
+ * real bootstrap — the module the tests above deliberately stub out — and
+ * asserts the provisioning happens on the SAME transaction handle the rest of
+ * the creation runs on, not after it commits.
+ */
+describe("bootstrapCellOrganization", () => {
+  const realBootstrap = () =>
+    jest.requireActual<typeof import("./bootstrap-cell-organization")>(
+      "./bootstrap-cell-organization",
+    ).bootstrapCellOrganization;
+
+  function buildTx(ownerRow: Record<string, unknown> | undefined) {
+    // First select is the "does this org already exist" probe (empty), the
+    // second reads the owner off `users`.
+    const selects = [[], ownerRow ? [ownerRow] : []];
+    const tx = {
+      execute: jest.fn().mockResolvedValue([{ id: 7 }]),
+      select: jest.fn(() => {
+        const rows = selects.shift() ?? [];
+        const chain: Record<string, jest.Mock> = {};
+        chain.from = jest.fn().mockReturnValue(chain);
+        chain.where = jest.fn().mockReturnValue(chain);
+        chain.limit = jest.fn().mockResolvedValue(rows);
+        return chain;
+      }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      }),
+    };
+    return tx;
+  }
+
+  const INPUT = {
+    orgId: "org-fixed",
+    userId: "user-1",
+    region: "in",
+    name: "Acme",
+    slug: "acme-orgfixed",
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("provisions the owner's employment inside the creation transaction", async () => {
+    const tx = buildTx({
+      email: "founder@example.test",
+      name: "Asha Rao",
+      firstName: "Asha",
+      lastName: "Rao",
+      phone: null,
+    });
+    runInNewTenantTransaction.mockImplementation(
+      async (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
+    );
+
+    await realBootstrap()({} as never, {} as never, INPUT);
+
+    expect(ensureManyFromUsers).toHaveBeenCalledTimes(1);
+    const [handle, orgId, inputs] = ensureManyFromUsers.mock.calls[0] as [
+      unknown,
+      string,
+      Array<{ userId: string; workEmail: string; lifecycleStatus: string }>,
+    ];
+    // The same handle the organisation, membership and modules were written on:
+    // provisioning after the commit would leave a founder with no employment
+    // record whenever the transaction rolled back.
+    expect(handle).toBe(tx);
+    expect(orgId).toBe("org-fixed");
+    expect(inputs).toEqual([
+      expect.objectContaining({
+        userId: "user-1",
+        workEmail: "founder@example.test",
+        // Not ACTIVE: the founder is on record as a person at work without
+        // being counted as a hire in headcount or attrition.
+        lifecycleStatus: "PRE_JOINING",
+      }),
+    ]);
+  });
+
+  it("does nothing at all when the organization already exists, so a replay creates no second record", async () => {
+    const tx = buildTx(undefined);
+    tx.select = jest.fn(() => {
+      const chain: Record<string, jest.Mock> = {};
+      chain.from = jest.fn().mockReturnValue(chain);
+      chain.where = jest.fn().mockReturnValue(chain);
+      chain.limit = jest.fn().mockResolvedValue([{ id: "org-fixed" }]);
+      return chain;
+    });
+    runInNewTenantTransaction.mockImplementation(
+      async (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
+    );
+
+    await realBootstrap()({} as never, {} as never, INPUT);
+
+    expect(ensureManyFromUsers).not.toHaveBeenCalled();
   });
 });

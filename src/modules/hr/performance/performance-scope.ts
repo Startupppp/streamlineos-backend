@@ -31,9 +31,11 @@ export async function resolveDocumentsScope(
 export async function resolveDocumentsManageScope(
   access: AccessService,
   currentUser: CurrentUserContext,
+  resolvedPermissions?: ReadonlyMap<string, DataScope>,
 ): Promise<ScopedRead> {
   if (currentUser.isOrgOwner) return ScopedRead.of(currentUser.orgId, currentUser.userId, "all");
   if (!isScopable(DOCUMENTS_MANAGE_PERMISSION)) return ScopedRead.of(currentUser.orgId, currentUser.userId, "none");
-  const resolved = await access.resolveUserPermissions(currentUser.orgId, currentUser.userId);
+  const resolved =
+    resolvedPermissions ?? (await access.resolveUserPermissions(currentUser.orgId, currentUser.userId));
   return ScopedRead.of(currentUser.orgId, currentUser.userId, resolved.get(DOCUMENTS_MANAGE_PERMISSION) ?? "none");
 }

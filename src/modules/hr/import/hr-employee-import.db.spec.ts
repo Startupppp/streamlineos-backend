@@ -211,4 +211,132 @@ describeDb("employee import reaches the directory — real database", () => {
       importSheet([{ ...SHEET[1], employeeNumber: "EMP-QS01" }]),
     ).rejects.toThrow(/already belongs to someone else/i);
   });
+
+  /**
+   * V-010. `departmentName` is advertised as a template column and
+   * `departmentId` is accepted by the schema, but `commitEmployee` read
+   * neither: the cell parsed, validated, and was thrown away, so every
+   * imported employee landed with no department and the org chart and the
+   * department filters stayed empty. These assertions are on
+   * `hr_employments.department_id` because that is the column the drop was in.
+   */
+  describe("the department the sheet names", () => {
+    const unitId = `qa-unit-${randomUUID()}`;
+
+    beforeAll(async () => {
+      await sql`
+        insert into org_units (id, org_id, kind, name, code)
+        values (${unitId}, ${orgId}, ${"DEPARTMENT"}, ${"QA Engineering"}, ${`QAENG-${unitId.slice(-8)}`})
+      `;
+    });
+
+    const departmentOf = async (email: string): Promise<string | null> => {
+      const [row] = await sql`
+        select e.department_id
+        from hr_employments e
+        join hr_people p on p.id = e.person_id and p.org_id = e.org_id
+        join organization_people op
+          on op.organization_id = p.org_id
+         and op.organization_person_id = p.organization_person_id
+        where e.org_id = ${orgId} and op.work_email = ${email}
+      `;
+      return (row?.department_id as string | null) ?? null;
+    };
+
+    it("writes the department a name resolves to", async () => {
+      expect(await departmentOf(SHEET[0].email)).toBeNull();
+      await importSheet([{ ...SHEET[0], departmentName: "qa engineering" }]);
+      // Matched case-insensitively on the trimmed name, which is how an
+      // operator types it into a spreadsheet.
+      expect(await departmentOf(SHEET[0].email)).toBe(unitId);
+    });
+
+    it("refuses a department name no unit in this org carries", async () => {
+      await expect(
+        importSheet([{ ...SHEET[1], departmentName: "Astrophysics" }]),
+      ).rejects.toThrow(/Department "Astrophysics" was not found/);
+      // The row must not land with a NULL department reported as imported.
+      expect(await departmentOf(SHEET[1].email)).toBeNull();
+    });
+  });
+
+  /**
+   * V-010, second half. `managerEmail` had the same fate as `departmentName`.
+   * The id comes from the preflight (which is what turns an unknown manager
+   * into a row error at PREVIEW); the assertion here is that the commit turns
+   * it into an effective-dated reporting line rather than dropping it.
+   */
+  it("opens a reporting line for the manager the sheet names", async () => {
+    const [manager] = await sql`
+      select e.id
+      from hr_employments e
+      join hr_people p on p.id = e.person_id and p.org_id = e.org_id
+      join organization_people op
+        on op.organization_id = p.org_id
+       and op.organization_person_id = p.organization_person_id
+      where e.org_id = ${orgId} and op.work_email = ${SHEET[1].email}
+    `;
+    const managerEmploymentId = Number(manager?.id);
+
+    await importSheet([
+      {
+        ...SHEET[0],
+        managerEmail: SHEET[1].email,
+        resolvedManagerEmploymentId: managerEmploymentId,
+      },
+    ]);
+
+    const lines = await sql`
+      select l.manager_employment_id, l.line_type, l.effective_to::text as effective_to
+      from hr_reporting_lines l
+      join hr_employments e on e.id = l.employment_id and e.org_id = l.org_id
+      join hr_people p on p.id = e.person_id and p.org_id = e.org_id
+      join organization_people op
+        on op.organization_id = p.org_id
+       and op.organization_person_id = p.organization_person_id
+      where l.org_id = ${orgId} and op.work_email = ${SHEET[0].email}
+    `;
+    expect(lines).toHaveLength(1);
+    expect(Number(lines[0]?.manager_employment_id)).toBe(managerEmploymentId);
+    expect(lines[0]?.line_type).toBe("primary");
+    expect(lines[0]?.effective_to).toBe("infinity");
+
+    // Re-importing the same manager is a no-op, not a second overlapping line
+    // (the exclusion constraint would refuse one anyway — this asserts the
+    // importer does not even try).
+    await importSheet([
+      {
+        ...SHEET[0],
+        managerEmail: SHEET[1].email,
+        resolvedManagerEmploymentId: managerEmploymentId,
+      },
+    ]);
+    const [again] = await sql`
+      select count(*)::int as n from hr_reporting_lines where org_id = ${orgId}
+    `;
+    expect(Number(again?.n)).toBe(1);
+  });
+
+  it("refuses a manager that would close a reporting cycle", async () => {
+    const [self] = await sql`
+      select e.id
+      from hr_employments e
+      join hr_people p on p.id = e.person_id and p.org_id = e.org_id
+      join organization_people op
+        on op.organization_id = p.org_id
+       and op.organization_person_id = p.organization_person_id
+      where e.org_id = ${orgId} and op.work_email = ${SHEET[0].email}
+    `;
+    // SHEET[0] already reports to SHEET[1]; pointing SHEET[1] back at SHEET[0]
+    // closes the loop every manager-chain read then walks.
+    await expect(
+      importSheet([
+        {
+          ...SHEET[1],
+          managerEmail: SHEET[0].email,
+          resolvedManagerEmploymentId: Number(self?.id),
+        },
+      ]),
+    ).rejects.toThrow(/circular reporting chain/i);
+  });
 });

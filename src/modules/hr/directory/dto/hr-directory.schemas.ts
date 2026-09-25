@@ -20,8 +20,15 @@ export const listEmployeesSchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   ...employeeDirectoryFilterFields,
-  /** "true" | "false" | "all" — default active-only for directory */
-  isActive: z.enum(["true", "false", "all"]).optional().default("true"),
+  /**
+   * "true" | "false" | "all" | "pending" — default active-only for directory.
+   *
+   * PROVISIONAL (product default E-4): `pending` is "invited but never came
+   * through the magic link" — account-active with no `email_verified`. It is
+   * the same predicate the `pending` counter on this screen uses, derived at
+   * read time; there is no stored status column.
+   */
+  isActive: z.enum(["true", "false", "all", "pending"]).optional().default("true"),
 }).strict();
 
 export const countEmployeesSchema = z.object(employeeDirectoryFilterFields).strict();
@@ -215,11 +222,37 @@ export const updateBgvSchema = z
 
 const MIN_AGE_MS = 16 * 365.25 * 24 * 60 * 60 * 1000;
 
+export const DOB_IN_FUTURE_MESSAGE = "Date of birth cannot be in the future";
+export const DOB_UNDER_AGE_MESSAGE = "Employee must be at least 16 years old";
+
+/**
+ * V-031. The one spelling of "is this date of birth usable", so the single-hire
+ * boundary and the per-row bulk check cannot drift. Returns the reason, or null.
+ */
+export function dateOfBirthProblem(value: string | undefined | null): string | null {
+  if (!value) return null;
+  const dob = new Date(value);
+  if (isNaN(dob.getTime()) || dob >= new Date()) return DOB_IN_FUTURE_MESSAGE;
+  if (Date.now() - dob.getTime() < MIN_AGE_MS) return DOB_UNDER_AGE_MESSAGE;
+  return null;
+}
+
 export const updateEmployeeSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     firstName: z.string().trim().min(1).max(100).optional(),
     lastName: z.string().trim().min(1).max(100).optional(),
+    /**
+     * V-020. There was no way to change an employee's address at all: this
+     * schema is `.strict()` and had no `email` key, so an administrator who
+     * typed one wrong had to delete the person and start again — and could not
+     * even do that once anything referenced them.
+     *
+     * `users.email` is GLOBALLY unique, not per-tenant, so the service checks
+     * for any account holding the address (not just a member of this org) and
+     * still catches 23505 behind it.
+     */
+    email: canonicalEmailSchema.optional(),
     designation: z.string().max(200).optional(),
     departmentId: z.string().optional(),
     phone: z.string().optional(),
@@ -306,16 +339,14 @@ export const onboardEmployeeFieldsSchema = z.object({
   dateOfBirth: z
     .string()
     .optional()
-    .refine((val) => {
-      if (!val) return true;
-      const dob = new Date(val);
-      return !isNaN(dob.getTime()) && dob < new Date();
-    }, "Date of birth cannot be in the future")
-    .refine((val) => {
-      if (!val) return true;
-      const dob = new Date(val);
-      return !isNaN(dob.getTime()) && Date.now() - dob.getTime() >= MIN_AGE_MS;
-    }, "Employee must be at least 16 years old"),
+    .refine(
+      (val) => dateOfBirthProblem(val) !== DOB_IN_FUTURE_MESSAGE,
+      DOB_IN_FUTURE_MESSAGE,
+    )
+    .refine(
+      (val) => dateOfBirthProblem(val) !== DOB_UNDER_AGE_MESSAGE,
+      DOB_UNDER_AGE_MESSAGE,
+    ),
   taxId: z.string().optional(),
   monthlySalary: z.number().min(0, "Salary cannot be negative").max(9_999_999, "Salary exceeds maximum").optional(),
   salaryStructureTemplateId: z.number().int().positive().optional(),
@@ -363,6 +394,15 @@ export const bulkOnboardEmployeeRowSchema = onboardEmployeeFieldsSchema
   .extend({
     department: z.string().trim().min(1).optional(),
     reportingManagerEmail: canonicalEmailSchema.optional(),
+    /**
+     * V-031. Deliberately WITHOUT the age/future refinements the single-hire
+     * schema carries. This schema validates an array of up to 100 rows, so one
+     * under-16 date of birth 400'd the entire upload and created nothing — the
+     * per-row reason QA saw came only from the frontend preview. The same check
+     * runs per row in `planBulkOnboarding` (`dateOfBirthProblem`), where a bad
+     * row is rejected and the other 99 are still onboarded.
+     */
+    dateOfBirth: z.string().optional(),
   })
   .superRefine((row, ctx) => {
     if (row.departmentId == null && !row.department) {

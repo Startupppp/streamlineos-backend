@@ -16,6 +16,7 @@ import type {
   SetDocumentAudiencesResult,
 } from "./dto/document-classification-response.schemas";
 import { isPublishableClassification, publishBlockers, type PublishBlocker } from "./documents-helpers";
+import { withMetadataPiiBlocker } from "./document-pii-scan";
 import {
   assertAudienceTargetsExist,
   audienceKey,
@@ -40,6 +41,11 @@ const DOCUMENT_COLUMNS = {
   isActive: documents.isActive,
   metadata: documents.metadata,
   effectiveDate: documents.effectiveDate,
+  // Read for the metadata PII scan: these four fields are what knowledge-base search indexes (V-156).
+  name: documents.name,
+  description: documents.description,
+  category: documents.category,
+  tags: documents.tags,
 } as const;
 
 type DocumentRow = {
@@ -53,6 +59,10 @@ type DocumentRow = {
   isActive: boolean;
   metadata: Record<string, unknown> | null;
   effectiveDate: string | null;
+  name: string;
+  description: string | null;
+  category: string | null;
+  tags: string[] | null;
 };
 
 /**
@@ -96,7 +106,7 @@ export class DocumentClassificationService {
       throw publishPermissionRequired();
     }
     if (isPublishableClassification(target)) {
-      const blockers = publishBlockers({ ...current, classification: target });
+      const blockers = withMetadataPiiBlocker(publishBlockers({ ...current, classification: target }), current);
       if (blockers.length > 0) {
         await this.refuse(actor, documentId, target, blockers, "DOCUMENT_NOT_PUBLISHABLE");
         throw notPublishableError(blockers);
@@ -111,7 +121,7 @@ export class DocumentClassificationService {
         // Whether this is a move INTO the shareable set was judged on the unlocked row too. Someone with the publish permission may have demoted the document in between, which turns "Internal to Internal" into a real promotion.
         if (isPublishableClassification(target) && target !== locked.classification && !canPublish) throw publishPermissionRequired();
         if (isPublishableClassification(target)) {
-          const blockers = publishBlockers({ ...locked, classification: target });
+          const blockers = withMetadataPiiBlocker(publishBlockers({ ...locked, classification: target }), locked);
           if (blockers.length > 0) throw notPublishableError(blockers);
         }
 
@@ -265,7 +275,9 @@ export class DocumentClassificationService {
       .where(and(eq(documentAudiences.orgId, orgId), eq(documentAudiences.documentId, row.id)))
       .orderBy(documentAudiences.id)
       .limit(MAX_DOCUMENT_AUDIENCES);
-    const blockers = publishBlockers(row);
+    // The scan runs here too, so a document whose name holds an identifier reads as not publishable in the UI
+    // rather than only failing at the moment someone tries to share it (V-156).
+    const blockers = withMetadataPiiBlocker(publishBlockers(row), row);
     return {
       documentId: row.id,
       classification: row.classification,

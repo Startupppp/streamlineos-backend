@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { documentAudiences, documentVersions, documents, kbLinkedDocumentAudiences, kbLinkedDocuments, orgUnits } from "../../../db/schema";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { publishBlockers } from "../../hr/performance/documents-helpers";
+import { withMetadataPiiBlocker } from "../../hr/performance/document-pii-scan";
 import { MAX_DOCUMENT_AUDIENCES } from "./dto/document-audience-entry.schema";
 import type { KbLinkState } from "./dto/kb-link-state-response.schemas";
 import { JUDGED_DOCUMENT_COLUMNS } from "./kb-link-judge";
@@ -33,7 +34,8 @@ async function labelledDocumentAudiences(reader: Reader, orgId: string, document
 export async function loadLinkState(reader: Reader, orgId: string, documentId: number): Promise<KbLinkState> {
   const [doc] = await reader.select(JUDGED_DOCUMENT_COLUMNS).from(documents).where(and(eq(documents.orgId, orgId), eq(documents.id, documentId))).limit(1);
   if (!doc) throw new NotFoundException("Document not found.");
-  const blockers = publishBlockers(doc);
+  // Same list the judge builds, so "publishable" here and the refusal on publish can never disagree (V-156).
+  const blockers = withMetadataPiiBlocker(publishBlockers(doc), doc);
   const [link] = await reader
     .select({
       id: kbLinkedDocuments.id,

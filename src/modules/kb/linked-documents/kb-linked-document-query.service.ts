@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   documentVersions,
@@ -141,7 +141,10 @@ export class KbLinkedDocumentQueryService {
 
   async list(caller: LinkedDocumentCaller, query: ListLinkedDocumentsQuery) {
     const status = query.status ?? "active";
-    if (status !== "active" && !caller.canPublish) throw new ForbiddenException("Only publishers can list entries that are not live.");
+    // A reader asking for entries that are not live is told what they can see, which is none of them. Refusing
+    // would say the archive exists and that they are not allowed near it; an empty page says nothing (V-146).
+    if (status !== "active" && !caller.canPublish)
+      return { data: [], pagination: { limit: query.limit, hasMore: false, nextCursor: null } };
 
     const search = query.q === undefined ? undefined : metadataSearch(query.q, "all");
     // Words that hold no letter or digit find nothing; they must not fall through to "everything".

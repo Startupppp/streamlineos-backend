@@ -14,7 +14,7 @@ const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
  * Formatting "now" in the target zone and comparing the two YYYY-MM-DD strings
  * gives the same answer on every host.
  */
-const DEFAULT_IMPORT_TIME_ZONE = "Asia/Kolkata";
+export const DEFAULT_IMPORT_TIME_ZONE = "Asia/Kolkata";
 
 export function todayInTimeZone(timeZone: string = DEFAULT_IMPORT_TIME_ZONE, now: Date = new Date()): string {
   // en-CA renders ISO order (2026-09-24), which is what the CSV carries.
@@ -80,8 +80,19 @@ const isoDateOrBlank = z
 
 const emailSchema = z.string().email({ message: "Invalid email address" });
 
+/**
+ * Ids the preflight pass resolved and wrote onto the stored payload
+ * (`hr-import-preflight.ts`). They are org-scoped query results, never CSV
+ * cells — `stripResolvedKeys` removes them from every raw row before validation
+ * so a file cannot name a column `resolvedUserId` and hand the commit a user id
+ * from another tenant.
+ */
+const resolvedUserId = z.string().optional();
+
 export const employeeRowSchema = z.object({
   email: emailSchema,
+  resolvedDepartmentId: z.string().optional(),
+  resolvedManagerEmploymentId: z.number().int().optional(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   joiningDate: isoDateOrBlank,
@@ -105,6 +116,8 @@ export const employeeRowSchema = z.object({
 
 export const leaveBalanceRowSchema = z.object({
   employeeEmail: emailSchema,
+  resolvedUserId,
+  resolvedLeaveTypeId: z.number().int().optional(),
   leaveTypeName: z.string().min(1, "Leave type name is required"),
   balance: z
     .union([z.string(), z.number()])
@@ -126,15 +139,22 @@ export const leaveBalanceRowSchema = z.object({
     ),
 });
 
-export const attendanceRowSchema = z
+/**
+ * "Not in the future" is a question about the organisation's calendar, so the
+ * zone is a parameter (V-012b). It used to be the module's hardcoded
+ * Asia/Kolkata, which rejected today's rows for an org in Los Angeles and
+ * accepted tomorrow's for one in Auckland.
+ */
+export const attendanceRowSchemaFor = (timeZone: string = DEFAULT_IMPORT_TIME_ZONE) => z
   .object({
     employeeEmail: emailSchema,
+    resolvedUserId,
     date: z.string().refine((v) => dateRegex.test(v), { message: "Invalid date (YYYY-MM-DD)" }),
     checkIn: z.string().optional(),
     checkOut: z.string().optional(),
     status: z.enum(ATTENDANCE_RECORD_STATUSES).optional(),
   })
-  .refine((data) => data.date <= todayInTimeZone(), {
+  .refine((data) => data.date <= todayInTimeZone(timeZone), {
     message: "Attendance date cannot be in the future",
     path: ["date"],
   })
@@ -159,7 +179,10 @@ export const attendanceRowSchema = z
     { message: "Check-out must be later than check-in", path: ["checkOut"] },
   );
 
+export const attendanceRowSchema = attendanceRowSchemaFor();
+
 export const assetRowSchema = z.object({
+  resolvedUserId,
   name: z.string().min(1, "Asset name is required"),
   type: z.string().min(1, "Asset type is required"),
   brand: z.string().optional(),
@@ -199,13 +222,13 @@ type RowSchema =
   | typeof assetRowSchema
   | typeof documentMetadataRowSchema;
 
-const ENTITY_SCHEMAS: Record<HrImportEntity, RowSchema> = {
-  employees: employeeRowSchema,
-  leave_balances: leaveBalanceRowSchema,
-  attendance: attendanceRowSchema,
-  assets: assetRowSchema,
-  document_metadata: documentMetadataRowSchema,
-};
+function schemaFor(entity: HrImportEntity, timeZone: string): RowSchema {
+  if (entity === "employees") return employeeRowSchema;
+  if (entity === "leave_balances") return leaveBalanceRowSchema;
+  if (entity === "attendance") return attendanceRowSchemaFor(timeZone);
+  if (entity === "assets") return assetRowSchema;
+  return documentMetadataRowSchema;
+}
 
 export interface RowValidationResult {
   rowNumber: number;
@@ -217,12 +240,13 @@ export interface RowValidationResult {
 export function validateRows(
   entity: HrImportEntity,
   rows: Array<Record<string, unknown>>,
+  timeZone: string = DEFAULT_IMPORT_TIME_ZONE,
 ): {
   validRows: RowValidationResult[];
   errorRows: RowValidationResult[];
   topErrors: Array<{ row: number; message: string }>;
 } {
-  const schema = ENTITY_SCHEMAS[entity];
+  const schema = schemaFor(entity, timeZone);
   const schemaValid: RowValidationResult[] = [];
   const errorRows: RowValidationResult[] = [];
 

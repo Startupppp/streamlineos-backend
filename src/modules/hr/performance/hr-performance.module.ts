@@ -26,6 +26,7 @@ import { EngagementMoodPollsService } from "./engagement-mood-polls.service";
 import { EngagementBadgesService } from "./engagement-badges.service";
 import { EngagementCommunitiesCampaignsService } from "./engagement-communities-campaigns.service";
 import { DocumentsService } from "./documents.service";
+import { DocumentAccessService } from "./document-access.service";
 import { DocumentClassificationService } from "./document-classification.service";
 import { DocumentVersionsService } from "./document-versions.service";
 import { ComplianceService } from "./compliance.service";
@@ -63,6 +64,7 @@ import { SuccessionService } from "./succession.service";
     EngagementBadgesService,
     EngagementCommunitiesCampaignsService,
     DocumentsService,
+    DocumentAccessService,
     DocumentClassificationService,
     DocumentVersionsService,
     ComplianceService,

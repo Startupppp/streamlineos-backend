@@ -18,6 +18,9 @@ import type { PublishLinkInput, UnpublishLinkInput, UpdateLinkInput } from "./dt
 
 type Reader = Pick<TenantTx, "select">;
 
+// Bounded like every other read here; one approved row anywhere in the history is all the check needs.
+const MAX_VERSIONS_INSPECTED = 200;
+
 export interface PublishActor {
   userId: string;
   orgId: string;
@@ -190,9 +193,17 @@ export class KbLinkedDocumentPublishService {
     return { versionMode, pinnedVersion: versionMode === "PINNED" ? (input.pinnedVersion ?? null) : null };
   }
 
-  // A pin names a version that exists and is approved, or it would point at nothing readers can open.
+  /**
+   * Whichever mode the entry is in, it must point at content a reader can actually open.
+   *
+   * PINNED names its version, so that version has to exist and be approved. FOLLOW_LATEST reads the document's
+   * own current file — which normally IS the latest approved version, because approving one is what writes it —
+   * except for a document whose file was never set (an external link, or a metadata-only row) and which then had
+   * a version uploaded but never approved. That document has version history and no approved content at all, and
+   * publishing it put an entry in the knowledge base with nothing behind it (V-151).
+   */
   private async assertPinExists(reader: Reader, orgId: string, documentId: number, mode: { versionMode: string; pinnedVersion: number | null }): Promise<void> {
-    if (mode.versionMode !== "PINNED" || mode.pinnedVersion === null) return;
+    if (mode.versionMode !== "PINNED" || mode.pinnedVersion === null) return this.assertFollowableVersion(reader, orgId, documentId);
     const [found] = await reader
       .select({ id: documentVersions.id })
       .from(documentVersions)
@@ -200,6 +211,26 @@ export class KbLinkedDocumentPublishService {
       .limit(1);
     if (found) return;
     throw new HttpException({ code: "PINNED_VERSION_NOT_FOUND", message: "That version of the document does not exist or has not been approved." }, HttpStatus.UNPROCESSABLE_ENTITY);
+  }
+
+  /**
+   * A document with version history but nothing approved in it has no content anyone may read. A document with
+   * no history at all is fine: its file IS the document, and there is no draft to confuse it with.
+   */
+  private async assertFollowableVersion(reader: Reader, orgId: string, documentId: number): Promise<void> {
+    const rows = await reader
+      .select({ status: documentVersions.status })
+      .from(documentVersions)
+      .where(and(eq(documentVersions.orgId, orgId), eq(documentVersions.documentId, documentId)))
+      .limit(MAX_VERSIONS_INSPECTED);
+    if (rows.length === 0 || rows.some((row) => row.status === "approved")) return;
+    throw new HttpException(
+      {
+        code: "DOCUMENT_VERSION_NOT_APPROVED",
+        message: "Every version of this document is still waiting to be approved, so there is nothing for readers to open. Approve one first.",
+      },
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
   }
 
   // The refusal is delivered by throwing, which rolls the request transaction back, so its audit row is written on its own connection first.

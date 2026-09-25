@@ -1,12 +1,14 @@
 import { Controller, Get, Header, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
-import { AccessService } from "../../access/access.service";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { DocumentAccessService } from "../../hr/performance/document-access.service";
 import { KbHrLinkFlagsService } from "../core/kb-hr-link-flags.service";
 import { KbLinkedDocumentQueryService, type LinkedDocumentCaller } from "./kb-linked-document-query.service";
 import { KbLinkedDocumentFileService } from "./kb-linked-document-file.service";
@@ -27,22 +29,25 @@ import {
  * Who may see an entry is decided in SQL by the query service, never here.
  */
 @Controller("kb/linked-documents")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+// RateLimitGuard is a no-op on a route that declares no tier, so only `open` below is throttled by it.
+@UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 export class KbLinkedDocumentsController {
   constructor(
     private readonly flags: KbHrLinkFlagsService,
     private readonly query: KbLinkedDocumentQueryService,
     private readonly files: KbLinkedDocumentFileService,
-    private readonly access: AccessService,
+    private readonly documentAccess: DocumentAccessService,
   ) {}
 
   // Searching needs the search switch, which itself needs linking; every other read needs only linking.
   private async caller(currentUser: CurrentUserContext, needs: "link" | "search" = "link"): Promise<LinkedDocumentCaller> {
     await this.flags.assertEnabled(currentUser.orgId, needs);
+    // One principal per request, from the auth context only — the same assembly every HR document route runs.
+    const principal = await this.documentAccess.principalFor(currentUser);
     return {
-      orgId: currentUser.orgId,
-      userId: currentUser.userId,
-      canPublish: await this.access.holds(currentUser, "hr:documents:publish"),
+      orgId: principal.orgId,
+      userId: principal.userId,
+      canPublish: this.documentAccess.canPerform(principal, "publish"),
     };
   }
 
@@ -62,9 +67,11 @@ export class KbLinkedDocumentsController {
     return this.query.get(await this.caller(currentUser), linkedDocumentId);
   }
 
-  // A signed URL is a bearer credential: it is never cached, never logged, and lives 300 seconds.
+  // A signed URL is a bearer credential: it is never cached, never logged, and lives 300 seconds. Minting one is
+  // also the only route here that hands out a credential, so it is the only one with a limit (V-147).
   @ResponseSchema(openLinkedDocumentResponseSchema)
   @Post(":linkedDocumentId/open")
+  @UseRateLimit("kb:linked-document-open")
   @HttpCode(200)
   @Header("Cache-Control", "no-store")
   @BodylessAction()
