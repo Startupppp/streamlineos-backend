@@ -119,8 +119,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s inside loadIncident.",
     evidence: [
       { file: "src/modules/build/incidents/incidents.controller.ts", line: 96, anchor: /return this\.svc\.getIncident\(u, projectId, incidentId, query\);/, note: "route handler passes both path params and the validated child query to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 116, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading child resources" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 50, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "loadIncident's WHERE binds incidentId to projectId and orgId together" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 114, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading child resources" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 48, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "loadIncident's WHERE binds incidentId to projectId and orgId together" },
     ],
   },
   {
@@ -131,9 +131,9 @@ export default [
     blastRadius: "None beyond the caller's own org/project: project access is required and a foreign incidentId 404s before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/incidents/incidents.controller.ts", line: 122, anchor: /return this\.svc\.updateIncident\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 167, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 168, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 208, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 165, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 166, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 206, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -144,9 +144,9 @@ export default [
     blastRadius: "None beyond the caller's own org/project: project access is required and a foreign incidentId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/incidents/incidents.controller.ts", line: 135, anchor: /return this\.svc\.deleteIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 284, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 285, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before deleting" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 293, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 266, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 267, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before deleting" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 275, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -157,8 +157,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s before any row is written.",
     evidence: [
       { file: "src/modules/build/incidents/incidents.controller.ts", line: 149, anchor: /return this\.svc\.addUpdate\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 313, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 344, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 295, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 326, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -291,8 +291,8 @@ export default [
     blastRadius: "None: the DELETE only ever removes the one (portfolioId, projectId, orgId) association row; a mismatched projectId is a no-op, and the underlying project row is never touched.",
     evidence: [
       { file: "src/modules/build/portfolios/portfolios.controller.ts", line: 134, anchor: /return this\.svc\.unlinkProject\(u\.orgId, u\.userId, portfolioId, projectId\);/, note: "route handler passes both raw path params straight to the service" },
-      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 349, anchor: /await this\.loadPortfolio\(orgId, portfolioId\);/, note: "binds portfolioId to orgId via loadPortfolio before the delete" },
-      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 356, anchor: /eq\(portfolioProjects\.orgId, orgId\),/, note: "DELETE WHERE clause scopes to portfolioId + projectId + orgId together" },
+      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 359, anchor: /await this\.loadPortfolio\(orgId, portfolioId\);/, note: "binds portfolioId to orgId via loadPortfolio before the delete" },
+      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 366, anchor: /eq\(portfolioProjects\.orgId, orgId\),/, note: "DELETE WHERE clause scopes to portfolioId + projectId + orgId together" },
     ],
   },
   {

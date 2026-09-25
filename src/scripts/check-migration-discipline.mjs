@@ -243,6 +243,8 @@ const BASELINE_NO_LOCK_TIMEOUT = new Set([
   "0529_ledger_corrections_and_immutability.sql", // inv: streamline_inv, inv_cold_head
   "0659a_sign_sweep_runs.sql", // crm: Neon (hash), streamline_crm_merge, crm_cold_0908
   "0660a_sign_bulk_row_attempts.sql", // crm: Neon (hash), streamline_crm_merge, crm_cold_0908
+  // Build cycle permission migration was applied on production; preserve its hash.
+  "1197_build_cycle_permissions.sql",
 ]);
 
 const BASELINE_FK_NOT_VALID = new Set([

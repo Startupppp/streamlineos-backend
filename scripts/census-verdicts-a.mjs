@@ -280,13 +280,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/managed-products/managed-products.service.ts",
-        line: 81,
+        line: 84,
         anchor: /\.insert\(managedProducts\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/managed-products/managed-products.service.ts",
-        line: 83,
+        line: 86,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -304,13 +304,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/portfolios/portfolios.service.ts",
-        line: 237,
+        line: 247,
         anchor: /\.insert\(projectPortfolios\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/portfolios/portfolios.service.ts",
-        line: 239,
+        line: 249,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },

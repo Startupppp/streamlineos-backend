@@ -3806,7 +3806,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-analytics.service.ts:269",
+      "orgEvidence": "src/modules/build/core/projects-analytics.service.ts:290",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -5948,7 +5948,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 61,
+          "line": 63,
           "note": "ticket lookup binds id+projectId+orgId; 404 on mismatch"
         }
       ]
@@ -6011,7 +6011,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 101,
+          "line": 108,
           "note": "ticket lookup binds id+projectId+orgId; 404 on mismatch"
         }
       ]
@@ -6071,7 +6071,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 161,
+          "line": 168,
           "note": "the checklist is bound to the authorized ticket"
         }
       ]
@@ -6131,7 +6131,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 185,
+          "line": 192,
           "note": "bound to the URL project"
         }
       ]
@@ -6191,7 +6191,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 212,
+          "line": 219,
           "note": "the checklist is bound to the authorized ticket"
         }
       ]
@@ -6253,12 +6253,12 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 243,
+          "line": 250,
           "note": "the checklist is bound to the authorized ticket"
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 248,
+          "line": 255,
           "note": "the item is bound to the URL checklist"
         }
       ]
@@ -6320,12 +6320,12 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 277,
+          "line": 284,
           "note": "the checklist is bound to the authorized ticket"
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 282,
+          "line": 289,
           "note": "the item is bound to the URL checklist"
         }
       ]
@@ -6858,7 +6858,7 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.tickets.getColumnCounts(u, projectId)",
+        "call": "this.tickets.getColumnCounts(u, projectId, query)",
         "type": "ProjectsTicketsService",
         "file": "src/modules/build/core/projects-tickets.service.ts",
         "resolved": true
@@ -6879,7 +6879,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "exportTickets",
-      "line": 108,
+      "line": 109,
       "verb": "GET",
       "path": "/build/:projectId/tickets/export",
       "routeParams": [
@@ -6914,7 +6914,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:108",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:109",
       "reviewedEvidence": null
     },
     {
@@ -6922,7 +6922,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "importTickets",
-      "line": 119,
+      "line": 120,
       "verb": "POST",
       "path": "/build/:projectId/tickets/import",
       "routeParams": [
@@ -6957,7 +6957,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:119",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:120",
       "reviewedEvidence": null
     },
     {
@@ -6965,7 +6965,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "listTickets",
-      "line": 133,
+      "line": 134,
       "verb": "GET",
       "path": "/build/:projectId/tickets",
       "routeParams": [
@@ -7000,7 +7000,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:133",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:134",
       "reviewedEvidence": null
     },
     {
@@ -7008,7 +7008,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "createTicket",
-      "line": 145,
+      "line": 146,
       "verb": "POST",
       "path": "/build/:projectId/tickets",
       "routeParams": [
@@ -7043,7 +7043,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:145",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:146",
       "reviewedEvidence": null
     },
     {
@@ -7051,7 +7051,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "bulkUpdate",
-      "line": 159,
+      "line": 160,
       "verb": "POST",
       "path": "/build/:projectId/tickets/bulk",
       "routeParams": [
@@ -7086,7 +7086,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:159",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:160",
       "reviewedEvidence": null
     },
     {
@@ -7094,7 +7094,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "rankTicket",
-      "line": 173,
+      "line": 174,
       "verb": "PATCH",
       "path": "/build/:projectId/tickets/:ticketId/rank",
       "routeParams": [
@@ -7133,11 +7133,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/tickets/:ticketId/rank. The controller forwards to ProjectsTicketsService.rankTicket → the standalone rankTicket() helper in projects-tickets-rank-utils.ts. That helper authorizes and locks against the named projectId, reads the mutation candidates via readMutationTickets(tx, actor, projectId, ids, policy), and — decisively — the final UPDATE itself binds `eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.id, ticketId)` all together, throwing NotFoundException if no row matches. The mutation, not just a pre-check, re-asserts the parent binding.",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:173",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:174",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets.controller.ts",
-          "line": 177,
+          "line": 178,
           "note": "handler binds both projectId and ticketId and forwards both"
         },
         {
@@ -7157,7 +7157,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "getActivity",
-      "line": 186,
+      "line": 187,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId/activity",
       "routeParams": [
@@ -7194,11 +7194,11 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/tickets/:ticketId/activity. The controller forwards the actor and both route ids to getActivity, which calls assertTicketReadAccess before querying activity. The helper binds tenant+project+ticket, verifies project membership, and applies ticket DataScope.",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:186",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:187",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets.controller.ts",
-          "line": 190,
+          "line": 191,
           "note": "handler binds both projectId and ticketId and forwards both"
         },
         {
@@ -7223,7 +7223,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "getTicketByKey",
-      "line": 202,
+      "line": 203,
       "verb": "GET",
       "path": "/build/:projectId/tickets/key/:ticketNumber",
       "routeParams": [
@@ -7260,31 +7260,31 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/tickets/key/:ticketNumber. getTicketByKey passes a projectId+ticketNumber selector into readTicket; readTicket adds orgId, resolves ticket DataScope, and verifies project membership before returning the ticket.",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:202",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:203",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets.controller.ts",
-          "line": 206,
+          "line": 207,
           "note": "handler binds both projectId and ticketNumber and forwards both"
         },
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 33,
+          "line": 35,
           "note": "signature"
         },
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 42,
+          "line": 44,
           "note": "selector binds the lookup to the named project"
         },
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 61,
+          "line": 63,
           "note": "ticket DataScope is resolved"
         },
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 100,
+          "line": 108,
           "note": "project membership is verified"
         }
       ]
@@ -7294,7 +7294,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "getTicket",
-      "line": 214,
+      "line": 215,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId",
       "routeParams": [
@@ -7331,21 +7331,21 @@
       "notes": [],
       "verdict": "CLOSED",
       "verdictReason": "GET /build/:projectId/tickets/:ticketId. Closed: the selector binds ticketId+projectId, readTicket binds orgId and deletedAt, resolves the ticket DataScope, and separately verifies project membership before returning the record.",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:214",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:215",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 52,
+          "line": 54,
           "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 61,
+          "line": 63,
           "note": "the ticket DataScope is resolved"
         },
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 100,
+          "line": 108,
           "note": "project membership is checked before the record is returned"
         }
       ]
@@ -7355,7 +7355,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "updateTicket",
-      "line": 226,
+      "line": 227,
       "verb": "PATCH",
       "path": "/build/:projectId/tickets/:ticketId",
       "routeParams": [
@@ -7394,7 +7394,7 @@
       ],
       "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/tickets/:ticketId. Closed: the pre-read binds ticketId+projectId+orgId, project access is checked, and authorizeMutation applies the canonical record-level mutation policy before the transaction updates the ticket.",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:226",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:227",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets-update.service.ts",
@@ -7413,7 +7413,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "deleteTicket",
-      "line": 239,
+      "line": 240,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId",
       "routeParams": [
@@ -7452,11 +7452,11 @@
       ],
       "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/tickets/:ticketId. Closed: the controller forwards CurrentUserContext, and deleteTicket calls assertTicketReadAccess before its tenant/project-bound pre-read or any delete work. The helper verifies project membership and ticket DataScope.",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:239",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:240",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets.controller.ts",
-          "line": 250,
+          "line": 251,
           "note": "the complete authenticated actor reaches the service"
         },
         {
@@ -8456,7 +8456,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/cycles.service.ts:71",
+      "orgEvidence": "src/modules/build/execution/cycles.service.ts:78",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -8501,9 +8501,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/cycles.service.ts:109",
+      "orgEvidence": "src/modules/build/execution/cycles.service.ts:116",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/cycles.service.ts:109",
+      "parentEvidence": "src/modules/build/execution/cycles.service.ts:116",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -8519,12 +8519,12 @@
         },
         {
           "file": "src/modules/build/execution/cycles.service.ts",
-          "line": 109,
+          "line": 116,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/cycles.service.ts",
-          "line": 127,
+          "line": 134,
           "note": "UPDATE's own WHERE binds id+projectId+orgId"
         }
       ]
@@ -8564,9 +8564,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/cycles.service.ts:134",
+      "orgEvidence": "src/modules/build/execution/cycles.service.ts:141",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/cycles.service.ts:134",
+      "parentEvidence": "src/modules/build/execution/cycles.service.ts:141",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -8582,12 +8582,12 @@
         },
         {
           "file": "src/modules/build/execution/cycles.service.ts",
-          "line": 134,
+          "line": 141,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/cycles.service.ts",
-          "line": 140,
+          "line": 147,
           "note": "DELETE's own WHERE binds id+projectId+orgId"
         }
       ]
@@ -12345,7 +12345,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:91",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:89",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12392,9 +12392,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:109",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:107",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:109",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:107",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -12408,12 +12408,12 @@
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 116,
+          "line": 114,
           "note": "getIncident binds via loadIncident before reading child resources"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 50,
+          "line": 48,
           "note": "loadIncident's WHERE binds incidentId to projectId and orgId together"
         }
       ]
@@ -12449,7 +12449,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:120",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:118",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12497,9 +12497,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:161",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:159",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:161",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:159",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12515,17 +12515,17 @@
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 167,
+          "line": 165,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 168,
+          "line": 166,
           "note": "binds incidentId to projectId via loadIncident before patching"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 208,
+          "line": 206,
           "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -12565,9 +12565,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:283",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:265",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:283",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:265",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12583,17 +12583,17 @@
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 284,
+          "line": 266,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 285,
+          "line": 267,
           "note": "binds incidentId to projectId via loadIncident before deleting"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 293,
+          "line": 275,
           "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -12633,9 +12633,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:306",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:288",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:306",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:288",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12651,12 +12651,12 @@
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 313,
+          "line": 295,
           "note": "binds incidentId to projectId via loadIncident before writing"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 344,
+          "line": 326,
           "note": "in-transaction status UPDATE independently re-binds id+orgId+projectId"
         }
       ]
@@ -12696,9 +12696,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:393",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:359",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:393",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:359",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12709,12 +12709,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 399,
+          "line": 365,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 400,
+          "line": 366,
           "note": "binds incidentId to projectId via loadIncident before writing"
         }
       ]
@@ -12754,9 +12754,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:424",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:390",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:424",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:390",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12814,9 +12814,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:457",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:423",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:457",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:423",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12827,17 +12827,17 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 464,
+          "line": 430,
           "note": "project-membership gate"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 465,
+          "line": 431,
           "note": "binds incidentId to projectId via loadIncident before updating"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 481,
+          "line": 447,
           "note": "UPDATE WHERE independently re-binds id+orgId+incidentId"
         }
       ]
@@ -12914,7 +12914,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:70",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:73",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12953,7 +12953,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:74",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:77",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -12968,12 +12968,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/managed-products/managed-products.service.ts",
-          "line": 81,
+          "line": 84,
           "note": "an INSERT — no WHERE clause exists to carry a predicate"
         },
         {
           "file": "src/modules/build/managed-products/managed-products.service.ts",
-          "line": 83,
+          "line": 86,
           "note": "org bound as an ES6 shorthand column in .values()"
         }
       ]
@@ -13011,7 +13011,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:111",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:114",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13056,7 +13056,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:146",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:149",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13099,7 +13099,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:205",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:208",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13917,7 +13917,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:216",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:226",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13956,7 +13956,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:231",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:241",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -13971,12 +13971,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
-          "line": 237,
+          "line": 247,
           "note": "an INSERT — no WHERE clause exists to carry a predicate"
         },
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
-          "line": 239,
+          "line": 249,
           "note": "org bound as an ES6 shorthand column in .values()"
         }
       ]
@@ -14014,7 +14014,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:261",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:271",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14059,7 +14059,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:299",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:309",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14104,7 +14104,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:320",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:330",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -14151,9 +14151,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:343",
+      "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:353",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/portfolios/portfolios.service.ts:343",
+      "parentEvidence": "src/modules/build/portfolios/portfolios.service.ts:353",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14169,12 +14169,12 @@
         },
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
-          "line": 349,
+          "line": 359,
           "note": "binds portfolioId to orgId via loadPortfolio before the delete"
         },
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
-          "line": 356,
+          "line": 366,
           "note": "DELETE WHERE clause scopes to portfolioId + projectId + orgId together"
         }
       ]

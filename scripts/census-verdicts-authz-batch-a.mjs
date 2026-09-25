@@ -380,7 +380,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/projects-ticket-checklists.controller.ts", line: 48, anchor: /getChecklists\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 476, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware project and DataScope authorization runs first" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 61, anchor: /eq\(tickets\.projectId, projectId\),/, note: "ticket lookup binds id+projectId+orgId; 404 on mismatch" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 63, anchor: /eq\(tickets\.projectId, projectId\),/, note: "ticket lookup binds id+projectId+orgId; 404 on mismatch" },
     ],
   },
   {
@@ -394,7 +394,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/projects-ticket-checklists.controller.ts", line: 61, anchor: /createChecklist\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 486, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware project and DataScope authorization runs first" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 101, anchor: /eq\(tickets\.projectId, projectId\),/, note: "ticket lookup binds id+projectId+orgId; 404 on mismatch" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 108, anchor: /eq\(tickets\.projectId, projectId\),/, note: "ticket lookup binds id+projectId+orgId; 404 on mismatch" },
     ],
   },
 
@@ -487,7 +487,7 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s directly at the final UPDATE's WHERE clause, which independently requires projectId=projectId.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 177, anchor: /rankTicket\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 178, anchor: /rankTicket\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/projects-tickets-rank-utils.ts", line: 26, anchor: /export async function rankTicket\(db: Db, cache: CacheService, access: AccessService, actor: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput\) \{/, note: "signature takes projectId" },
       { file: "src/modules/build/core/projects-tickets-rank-utils.ts", line: 70, anchor: /eq\(tickets\.orgId, actor\.orgId\), eq\(tickets\.projectId, projectId\), eq\(tickets\.id, ticketId\), isNull\(tickets\.deletedAt\)/, note: "the actual UPDATE's WHERE binds orgId+projectId+id together; 404 on mismatch" },
     ],
@@ -501,7 +501,7 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s at assertTicketReadAccess before any activity is read.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 190, anchor: /getActivity\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 191, anchor: /getActivity\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 143, anchor: /async getActivity\(/, note: "signature carries the actor and route ids" },
       { file: "src/modules/build/core/build-ticket-read-access.ts", line: 37, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch" },
       { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
@@ -516,11 +516,11 @@ export default [
     blastRadius:
       "None: tenant, project membership, composite key binding, and ticket DataScope are enforced before the record is returned.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 206, anchor: /getTicketByKey\(/, note: "handler binds both projectId and ticketNumber and forwards both" },
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 33, anchor: /async getTicketByKey\(/, note: "signature" },
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 42, anchor: /eq\(tickets\.projectId, projectId\),/, note: "selector binds the lookup to the named project" },
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 61, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "ticket DataScope is resolved" },
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 100, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is verified" },
+      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 207, anchor: /getTicketByKey\(/, note: "handler binds both projectId and ticketNumber and forwards both" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 35, anchor: /async getTicketByKey\(/, note: "signature" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 44, anchor: /eq\(tickets\.projectId, projectId\),/, note: "selector binds the lookup to the named project" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 63, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "ticket DataScope is resolved" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 108, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is verified" },
     ],
   },
 
@@ -565,8 +565,8 @@ export default [
       "None: a cycleId belonging to a different project 404s directly at the UPDATE's own WHERE clause.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 167, anchor: /updateCycle\(/, note: "handler binds both projectId and cycleId and forwards both" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 109, anchor: /async updateCycle\(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 127, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "UPDATE's own WHERE binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 116, anchor: /async updateCycle\(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 134, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "UPDATE's own WHERE binds id+projectId+orgId" },
     ],
   },
   {
@@ -579,8 +579,8 @@ export default [
       "None: a cycleId belonging to a different project 404s directly at the DELETE's own WHERE clause.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 181, anchor: /deleteCycle\(/, note: "handler binds both projectId and cycleId and forwards both" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 134, anchor: /async deleteCycle\(orgId: string, projectId: number, cycleId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 140, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "DELETE's own WHERE binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 141, anchor: /async deleteCycle\(orgId: string, projectId: number, cycleId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 147, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "DELETE's own WHERE binds id+projectId+orgId" },
     ],
   },
   {

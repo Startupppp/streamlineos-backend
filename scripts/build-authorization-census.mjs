@@ -323,7 +323,7 @@ const REVIEWED_INLINE = [
     blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before mutation.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 502, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 161, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 168, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
     ],
   },
   {
@@ -334,7 +334,7 @@ const REVIEWED_INLINE = [
     blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before deletion.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 518, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 185, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 192, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -345,7 +345,7 @@ const REVIEWED_INLINE = [
     blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before insertion.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 539, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 219, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
     ],
   },
   {
@@ -358,8 +358,8 @@ const REVIEWED_INLINE = [
       "None: every route parent and the item itself are bound before the mutation.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 563, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 243, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 248, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 250, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 255, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
     ],
   },
   {
@@ -370,8 +370,8 @@ const REVIEWED_INLINE = [
     blastRadius: "None: every route parent and the item itself are bound before deletion.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 581, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 277, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 282, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 284, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 289, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
     ],
   },
 
@@ -383,9 +383,9 @@ const REVIEWED_INLINE = [
       "GET /build/:projectId/tickets/:ticketId. Closed: the selector binds ticketId+projectId, readTicket binds orgId and deletedAt, resolves the ticket DataScope, and separately verifies project membership before returning the record.",
     blastRadius: "None: tenant, route binding, project membership, and ticket DataScope are enforced.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 52, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 61, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "the ticket DataScope is resolved" },
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 100, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is checked before the record is returned" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 54, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 63, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "the ticket DataScope is resolved" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 108, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is checked before the record is returned" },
     ],
   },
   {
@@ -409,7 +409,7 @@ const REVIEWED_INLINE = [
       "DELETE /build/:projectId/tickets/:ticketId. Closed: the controller forwards CurrentUserContext, and deleteTicket calls assertTicketReadAccess before its tenant/project-bound pre-read or any delete work. The helper verifies project membership and ticket DataScope.",
     blastRadius: "None: an inaccessible or mismatched ticket is rejected before blocker inspection or deletion.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 250, anchor: /return this\.tickets\.deleteTicket\(u, projectId, ticketId, force === "true"\);/, note: "the complete authenticated actor reaches the service" },
+      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 251, anchor: /return this\.tickets\.deleteTicket\(u, projectId, ticketId, force === "true"\);/, note: "the complete authenticated actor reaches the service" },
       { file: "src/modules/build/core/projects-tickets.service.ts", line: 115, anchor: /async deleteTicket\(/, note: "the terminal service accepts CurrentUserContext" },
       { file: "src/modules/build/core/projects-tickets.service.ts", line: 122, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before the pre-read and delete path" },
       { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
