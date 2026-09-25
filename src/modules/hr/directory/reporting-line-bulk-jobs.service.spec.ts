@@ -4,7 +4,8 @@ import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { RelationshipValidation } from "../../directory/reporting-line.types";
-import { ReportingLineBulkJobsService, classifyBulkRow, rejectFileCycles, type PlannedRow } from "./reporting-line-bulk-jobs.service";
+import { ReportingLineBulkJobsService } from "./reporting-line-bulk-jobs.service";
+import { classifyBulkRow, rejectFileCycles, type PlannedRow } from "./reporting-line-bulk-jobs-plan";
 
 const ORG = "org-bulk-jobs";
 const ACTOR: CurrentUserContext = {
