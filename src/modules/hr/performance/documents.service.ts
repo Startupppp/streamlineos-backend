@@ -250,7 +250,9 @@ export class DocumentsService {
             isActive: true,
             version: 1,
           })
-          .returning();
+          // The same projection the list uses, so the one thing it deliberately withholds — the storage URL —
+          // is withheld here too. A bare `.returning()` handed the caller the raw R2 URL (V-091).
+          .returning(documentListSelection);
         if (!createdDocument) throw new Error("Failed to create document");
         await syncDocumentTags(
           transaction,
@@ -350,7 +352,8 @@ export class DocumentsService {
             updatedAt: new Date(),
           })
           .where(this.scopedWhere(read, membershipId, [eq(documents.id, documentId)]) ?? sql`false`)
-          .returning();
+          // Projected for the same reason as the create above (V-091).
+          .returning(documentListSelection);
         if (!updatedDocument)
           throw new NotFoundException("Document not found.");
         if (input.tags !== undefined)
