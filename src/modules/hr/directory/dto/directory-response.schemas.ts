@@ -227,6 +227,13 @@ export const employeeListItemSchema = z.object({
   department: z.object({ id: z.string(), name: z.string() }).nullable(),
   image: z.string().nullable(),
   isActive: z.boolean(),
+  /**
+   * PROVISIONAL (product default E-4): derived at read time, never stored —
+   * the invitee accepted (came through the magic link) rather than merely
+   * having an account row. Without it a never-accepted invitee badges as
+   * "Active" beside a counter saying "Pending invite: 1".
+   */
+  hasAccepted: z.boolean(),
   joiningDate: z.string().nullable(),
   reportingTo: z.string().nullable(),
 });

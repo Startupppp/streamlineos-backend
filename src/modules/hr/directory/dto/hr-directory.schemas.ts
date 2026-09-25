@@ -20,8 +20,15 @@ export const listEmployeesSchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   ...employeeDirectoryFilterFields,
-  /** "true" | "false" | "all" — default active-only for directory */
-  isActive: z.enum(["true", "false", "all"]).optional().default("true"),
+  /**
+   * "true" | "false" | "all" | "pending" — default active-only for directory.
+   *
+   * PROVISIONAL (product default E-4): `pending` is "invited but never came
+   * through the magic link" — account-active with no `email_verified`. It is
+   * the same predicate the `pending` counter on this screen uses, derived at
+   * read time; there is no stored status column.
+   */
+  isActive: z.enum(["true", "false", "all", "pending"]).optional().default("true"),
 }).strict();
 
 export const countEmployeesSchema = z.object(employeeDirectoryFilterFields).strict();
