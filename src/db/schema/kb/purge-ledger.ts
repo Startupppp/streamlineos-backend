@@ -15,6 +15,7 @@ export const KB_PURGE_STORES = [
   "visits",
   "favorites",
   "source_links",
+  "reviews",
   "page_rows",
   "blobs",
 ] as const;

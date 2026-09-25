@@ -9,8 +9,19 @@ jest.mock("./kb-page-attachment-purge", () => ({
   purgeOrphanedKbMedia: jest.fn(async () => 0),
 }));
 
+jest.mock("./kb-purge-reviews", () => ({
+  purgeReviewsForPages: jest.fn(async () => undefined),
+}));
+
 jest.mock("./kb-multi-store-purge", () => ({
-  KB_PURGE_STORES: ["visits", "favorites", "source_links", "page_rows", "blobs"],
+  KB_PURGE_STORES: [
+    "visits",
+    "favorites",
+    "source_links",
+    "reviews",
+    "page_rows",
+    "blobs",
+  ],
   openMultiStoreLedger: jest.fn(async () => undefined),
   isStoreComplete: jest.fn(async () => false),
   markStoreComplete: jest.fn(async () => undefined),
@@ -25,6 +36,7 @@ import {
   markStoreComplete,
   openMultiStoreLedger,
 } from "./kb-multi-store-purge";
+import { purgeReviewsForPages } from "./kb-purge-reviews";
 
 const ORG = "org-led";
 const PAGE_IDS = [31, 32];
@@ -88,7 +100,7 @@ beforeEach(() => {
 });
 
 describe("every store a purge opens in the ledger is also closed", () => {
-  it("emptyTrash opens all five stores per page, so leaving any pending is a ledger leak", async () => {
+  it("emptyTrash opens all six stores per page, so leaving any pending is a ledger leak", async () => {
     const service = makeService();
 
     await service.emptyTrash(makeUser());
@@ -96,7 +108,20 @@ describe("every store a purge opens in the ledger is also closed", () => {
     expect(jest.mocked(openMultiStoreLedger).mock.calls[0]?.[2]).toEqual(
       PAGE_IDS,
     );
-    expect(KB_PURGE_STORES).toHaveLength(5);
+    expect(KB_PURGE_STORES).toHaveLength(6);
+    expect(KB_PURGE_STORES).toContain("reviews");
+  });
+
+  it("emptyTrash deletes review history before the page rows, because the review FK outlives a page that was never purged", async () => {
+    const service = makeService();
+
+    await service.emptyTrash(makeUser());
+
+    for (const id of PAGE_IDS) {
+      expect(jest.mocked(purgeReviewsForPages).mock.calls.map((c) => c[2]))
+        .toContainEqual([id]);
+      expect(storesMarkedFor(id)).toContain("reviews");
+    }
   });
 
   it("emptyTrash marks page_rows complete after deleting the rows, or the ledger stays pending forever", async () => {

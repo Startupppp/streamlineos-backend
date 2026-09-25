@@ -50,6 +50,7 @@ import {
   purgeLinksForPages,
   purgeVisitsForPages,
 } from "./kb-multi-store-purge";
+import { purgeReviewsForPages } from "./kb-purge-reviews";
 
 export interface BulkPageResult {
   pageId: number;
@@ -176,6 +177,21 @@ export class KbPageTrashService {
             orgId,
             id,
             "source_links",
+            String(err),
+          ).catch(() => undefined);
+          throw err;
+        }
+      }
+      if (!(await isStoreComplete(this.db, orgId, id, "reviews"))) {
+        try {
+          await purgeReviewsForPages(this.db, orgId, [id]);
+          await markStoreComplete(this.db, orgId, id, "reviews");
+        } catch (err) {
+          await markStoreFailed(
+            this.db,
+            orgId,
+            id,
+            "reviews",
             String(err),
           ).catch(() => undefined);
           throw err;
