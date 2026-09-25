@@ -179,7 +179,8 @@ export class ReportingManagerFallbackResolver {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(eq(organizationMembers.orgId, orgId), or(...matches)));
+      .where(and(eq(organizationMembers.orgId, orgId), or(...matches)))
+      .limit(userIds.length + emails.length);
   }
 }
 

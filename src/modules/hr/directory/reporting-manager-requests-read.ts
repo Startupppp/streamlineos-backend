@@ -49,7 +49,7 @@ export interface RequestRow {
 }
 
 /** Requests joined to the employee's person, so the scope predicate can name the employee's user. */
-export function requestsFrom(db: DbOrTx, orgId: string) {
+export function requestsFrom(db: DbOrTx, orgId: string, where: SQL | undefined, limit: number) {
   return db
     .select(requestFields)
     .from(hrReportingManagerRequests)
@@ -61,7 +61,10 @@ export function requestsFrom(db: DbOrTx, orgId: string) {
         isNull(hrEmployments.deletedAt),
       ),
     )
-    .innerJoin(hrPeople, and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, hrEmployments.personId), isNull(hrPeople.deletedAt)));
+    .innerJoin(hrPeople, and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, hrEmployments.personId), isNull(hrPeople.deletedAt)))
+    .where(where)
+    .orderBy(...requestOrder)
+    .limit(limit);
 }
 
 export const liveRequest = isNull(hrReportingManagerRequests.deletedAt);
@@ -144,7 +147,7 @@ export function scopedRequests(read: ScopedRead, db: DbOrTx, where: SQL[], limit
       scope: { columns: { ownerColumn: hrPeople.userId } },
       and: [liveRequest, ...where],
     },
-    ({ sql: scoped }) => requestsFrom(db, read.orgId).where(scoped).orderBy(...requestOrder).limit(limit),
+    ({ sql: scoped }) => requestsFrom(db, read.orgId, scoped, limit),
     () => [],
   );
 }

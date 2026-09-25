@@ -35,6 +35,7 @@ import { ReportingLineException, rethrowReportingLineWriteError } from "./report
 import {
   REPORTING_LINE_ERROR_CODES as CODES,
   REPORTING_LINE_EVENTS,
+  TOP_LEVEL_ROLE_HISTORY_CAP,
   type ReportingActor,
   type RelationshipSnapshot,
   type RelationshipValidation,
@@ -305,7 +306,8 @@ export class ReportingRelationshipService {
           eq(hrTopLevelRoles.employmentId, employmentId),
           sql`${hrTopLevelRoles.effectiveTo} >= ${from}::date`,
         ),
-      );
+      )
+      .limit(TOP_LEVEL_ROLE_HISTORY_CAP);
   }
 
   private async record(cmd: SetRelationshipsCommand, result: SetRelationshipsResult, validation: RelationshipValidation): Promise<void> {

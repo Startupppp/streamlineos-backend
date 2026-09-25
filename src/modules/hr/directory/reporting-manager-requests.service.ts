@@ -20,7 +20,6 @@ import { peopleByEmploymentIds, peopleByUserIds, searchManagerCandidates } from 
 import {
   liveRequest,
   requestCursorBefore,
-  requestOrder,
   requestPage,
   requestsFrom,
   scopedRequests,
@@ -126,17 +125,17 @@ export class ReportingManagerRequestsService {
   }
 
   async listMine(actor: CurrentUserContext, query: ListMyReportingManagerRequestsInput) {
-    const rows = await requestsFrom(this.db, actor.orgId)
-      .where(
-        and(
-          eq(hrReportingManagerRequests.orgId, actor.orgId),
-          eq(hrReportingManagerRequests.requestedByUserId, actor.userId),
-          liveRequest,
-          requestCursorBefore(query.cursor),
-        ),
-      )
-      .orderBy(...requestOrder)
-      .limit(query.limit + 1);
+    const rows = await requestsFrom(
+      this.db,
+      actor.orgId,
+      and(
+        eq(hrReportingManagerRequests.orgId, actor.orgId),
+        eq(hrReportingManagerRequests.requestedByUserId, actor.userId),
+        liveRequest,
+        requestCursorBefore(query.cursor),
+      ),
+      query.limit + 1,
+    );
     return requestPage(rows, query.limit, (page) => toMyRequests(this.db, actor.orgId, page));
   }
 
@@ -287,16 +286,17 @@ export class ReportingManagerRequestsService {
   }
 
   private async ownRow(tx: DbOrTx, actor: CurrentUserContext, requestId: string): Promise<RequestRow> {
-    const [row] = await requestsFrom(tx, actor.orgId)
-      .where(
-        and(
-          eq(hrReportingManagerRequests.orgId, actor.orgId),
-          eq(hrReportingManagerRequests.id, requestId),
-          eq(hrReportingManagerRequests.requestedByUserId, actor.userId),
-          liveRequest,
-        ),
-      )
-      .limit(1);
+    const [row] = await requestsFrom(
+      tx,
+      actor.orgId,
+      and(
+        eq(hrReportingManagerRequests.orgId, actor.orgId),
+        eq(hrReportingManagerRequests.id, requestId),
+        eq(hrReportingManagerRequests.requestedByUserId, actor.userId),
+        liveRequest,
+      ),
+      1,
+    );
     if (!row) throw new NotFoundException("Request not found.");
     return row;
   }

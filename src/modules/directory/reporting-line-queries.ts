@@ -12,6 +12,7 @@ import {
   CYCLE_CHECK_FUTURE_DATE_CAP,
   MANAGER_CHAIN_DEPTH_CAP,
   PRIMARY_CHANGE_WINDOW_HOURS,
+  TOP_LEVEL_ROLE_HISTORY_CAP,
   type ManagerState,
   type ReportingManagerPolicy,
 } from "./reporting-line.types";
@@ -100,7 +101,8 @@ export async function subjectEmployments(
         isNull(hrEmployments.deletedAt),
         userIds.length > 0 ? inArray(hrPeople.userId, userIds) : inArray(hrEmployments.id, employmentIds),
       ),
-    );
+    )
+    .limit(userIds.length + employmentIds.length);
 }
 
 export interface RelationshipRow {
@@ -198,7 +200,8 @@ export async function topLevelRolesBetween(
         sql`${hrTopLevelRoles.effectiveFrom} <= ${lastDay}::date`,
         sql`${hrTopLevelRoles.effectiveTo} >= ${firstDay}::date`,
       ),
-    );
+    )
+    .limit(employmentIds.length * TOP_LEVEL_ROLE_HISTORY_CAP);
 }
 
 /**

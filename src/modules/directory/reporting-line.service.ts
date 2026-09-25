@@ -123,7 +123,8 @@ export class ReportingLineService {
       .select({ employmentId: hrEmployments.id })
       .from(hrEmployments)
       .innerJoin(hrPeople, and(eq(hrPeople.id, hrEmployments.personId), eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt)))
-      .where(and(liveEmployment(orgId), eq(hrEmployments.isPrimary, true), inArray(hrPeople.userId, [...subjectUserIds])));
+      .where(and(liveEmployment(orgId), eq(hrEmployments.isPrimary, true), inArray(hrPeople.userId, [...subjectUserIds])))
+      .limit(subjectUserIds.length);
     const today = await orgBusinessDate(this.db, orgId);
     const cyclic = await cyclicProposals(
       db,
@@ -139,9 +140,7 @@ export class ReportingLineService {
     managerUserId: string,
     db: DbOrTx = this.db,
   ): Promise<ManagerAssignmentCheck> {
-    const [candidate] = await this.candidates(orgId, db)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, managerUserId)))
-      .limit(1);
+    const [candidate] = await this.candidates(orgId, db, [managerUserId]);
     return this.asManager(this.eligibilityOf(candidate, { requireAccepted: false }));
   }
 
@@ -154,7 +153,7 @@ export class ReportingLineService {
     const checks = new Map<string, ManagerAssignmentCheck>();
     const wanted = [...new Set(managerUserIds)];
     if (wanted.length === 0) return checks;
-    const rows = await this.candidates(orgId, db).where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, wanted)));
+    const rows = await this.candidates(orgId, db, wanted);
     const byUser = new Map(rows.map((row) => [row.userId, row]));
     for (const userId of wanted) checks.set(userId, this.asManager(this.eligibilityOf(byUser.get(userId), { requireAccepted: false })));
     return checks;
@@ -165,9 +164,7 @@ export class ReportingLineService {
     candidateUserId: string,
     db: DbOrTx = this.db,
   ): Promise<ApproverEligibility> {
-    const [candidate] = await this.candidates(orgId, db)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, candidateUserId)))
-      .limit(1);
+    const [candidate] = await this.candidates(orgId, db, [candidateUserId]);
     return this.eligibilityOf(candidate, { requireAccepted: true });
   }
 
@@ -322,7 +319,8 @@ export class ReportingLineService {
     return buildManagerCoverage(this.db, orgId, await orgBusinessDate(this.db, orgId), scope);
   }
 
-  private candidates(orgId: string, db: DbOrTx) {
+  /** One row per member asked about — a member has one live primary employment. */
+  private candidates(orgId: string, db: DbOrTx, userIds: readonly string[]) {
     return db
       .select(candidateFields)
       .from(organizationMembers)
@@ -342,7 +340,9 @@ export class ReportingLineService {
           eq(hrEmployments.personId, hrPeople.id),
           eq(hrEmployments.isPrimary, true),
         ),
-      );
+      )
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, [...userIds])))
+      .limit(userIds.length);
   }
 
   /**

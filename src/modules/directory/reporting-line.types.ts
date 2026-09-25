@@ -4,6 +4,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 export const SPAN_OF_CONTROL_LIMIT = 12;
 export const COVERAGE_LIST_CAP = 100;
 export const REPORTING_LINE_HISTORY_CAP = 50;
+/** Top-level roles one employee can hold inside any date window read at once. */
+export const TOP_LEVEL_ROLE_HISTORY_CAP = 50;
 export const MANAGER_CHAIN_DEPTH_CAP = 100;
 
 export type ManagerAssignmentRefusal =
