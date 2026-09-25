@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrPeople,
@@ -10,6 +10,8 @@ import {
   leaveBalances,
   leaveTypes,
   documents,
+  orgUnits,
+  hrReportingLines,
 } from "../../../db/schema";
 import { hrImportRows } from "../../../db/schema/hr/import-jobs";
 import {
@@ -23,6 +25,7 @@ import {
   type AttendanceRow,
   type AssetRow,
   attendanceInstant,
+  todayInTimeZone,
 } from "./schemas/entity-row-schemas";
 import type { HrImportEntity } from "./dto/import-job.dto";
 import { normalizeCode, normalizeName } from "./schemas/import-row-identity";
@@ -49,6 +52,8 @@ export interface ImportCommitContext {
   orgId: string;
   actorId: string;
   membership: MembershipMutations;
+  /** The organisation's calendar. Wall-clock cells are read in it (V-012b). */
+  timeZone?: string;
 }
 
 @Injectable()
@@ -151,13 +156,27 @@ export class HrImportCommitService {
     // The columns an operator re-uploads to correct. `ensureFromUser` creates
     // the employment but leaves an existing one alone, so the sheet's values are
     // applied here or a second import would silently change nothing.
+    // V-010. `departmentName` is advertised as a template column and
+    // `departmentId` is accepted by the schema, but neither was ever read: the
+    // value parsed, validated and was thrown away, and the employee landed with
+    // no department. The preflight resolved the name to an org unit in THIS org
+    // (an unresolvable name is a row error there, not a silent NULL here), so
+    // all that is left is to write it.
+    const departmentId = await this.resolveDepartment(tx, orgId, row);
+
     await tx
       .update(hrEmployments)
       .set({
         ...(row.designation === undefined ? {} : { designation: row.designation || null }),
         ...(row.joiningDate ? { joiningDate: row.joiningDate } : {}),
+        ...(departmentId === null ? {} : { departmentId }),
       })
       .where(and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, ensured.employmentId)));
+
+    // `managerEmail` had the same fate as `departmentName` — parsed, then
+    // ignored. A reporting line is effective-dated, so the import closes the
+    // open primary line and opens a new one rather than overwriting history.
+    await this.applyImportedManager(tx, ctx, ensured.employmentId, row);
 
     await tx
       .update(organizationPeople)
@@ -179,6 +198,123 @@ export class HrImportCommitService {
       id: ensured.personId,
       outcome: existing && !ensured.createdPerson ? "updated" : "created",
     };
+  }
+
+  /**
+   * The org unit the row names, or null when it names none.
+   *
+   * The preflight already resolved it; this re-resolves only for a job that was
+   * previewed before the preflight existed, and refuses rather than writing NULL
+   * so the two paths fail the same way.
+   */
+  private async resolveDepartment(
+    tx: Tx,
+    orgId: string,
+    row: EmployeeRow,
+  ): Promise<string | null> {
+    if (row.resolvedDepartmentId) return row.resolvedDepartmentId;
+    const stated =
+      (typeof row.departmentId === "number" ? String(row.departmentId) : row.departmentId ?? "").trim() ||
+      (row.departmentName ?? "").trim();
+    if (stated === "") return null;
+
+    const [unit] = await tx
+      .select({ id: orgUnits.id })
+      .from(orgUnits)
+      .where(
+        and(
+          eq(orgUnits.orgId, orgId),
+          isNull(orgUnits.deletedAt),
+          sql`(${orgUnits.id} = ${stated} or lower(trim(${orgUnits.name})) = ${stated.toLowerCase()})`,
+        ),
+      )
+      .limit(1);
+
+    if (!unit) throw new Error(`Department "${stated}" was not found in this organization.`);
+    return unit.id;
+  }
+
+  /**
+   * Writes the reporting line the sheet's `managerEmail` names.
+   *
+   * The manager employment id comes from the preflight, which resolved the email
+   * inside this org — a manager who is not an employee here is a row error at
+   * preview. A line is effective-dated, so an existing open primary line is
+   * closed rather than rewritten, and a re-import naming the same manager is a
+   * no-op. The cycle check is the same recursive walk the effective-change
+   * applier makes; without it an import could close a loop that every
+   * manager-chain read then walks.
+   */
+  private async applyImportedManager(
+    tx: Tx,
+    ctx: ImportCommitContext,
+    employmentId: number,
+    row: EmployeeRow,
+  ): Promise<void> {
+    const managerEmploymentId = row.resolvedManagerEmploymentId;
+    if (managerEmploymentId === undefined) return;
+    if (managerEmploymentId === employmentId)
+      throw new Error(`${row.email}: an employee cannot report to themselves.`);
+
+    const orgId = ctx.orgId;
+    const effectiveFrom = row.joiningDate || todayInTimeZone(ctx.timeZone);
+
+    const [open] = await tx
+      .select({ id: hrReportingLines.id, managerEmploymentId: hrReportingLines.managerEmploymentId })
+      .from(hrReportingLines)
+      .where(
+        and(
+          eq(hrReportingLines.orgId, orgId),
+          eq(hrReportingLines.employmentId, employmentId),
+          eq(hrReportingLines.lineType, "primary"),
+          sql`${hrReportingLines.effectiveTo} > ${effectiveFrom}::date`,
+        ),
+      )
+      .orderBy(desc(hrReportingLines.effectiveFrom))
+      .limit(1);
+
+    if (open?.managerEmploymentId === managerEmploymentId) return;
+
+    const [cycle] = await tx.execute<{ creates_cycle: boolean }>(sql`
+      WITH RECURSIVE manager_chain AS (
+        SELECT ${managerEmploymentId}::integer AS employment_id,
+               ARRAY[${managerEmploymentId}::integer] AS path
+        UNION ALL
+        SELECT line.manager_employment_id, chain.path || line.manager_employment_id
+        FROM manager_chain chain
+        INNER JOIN hr_reporting_lines line
+          ON line.org_id = ${orgId}
+         AND line.employment_id = chain.employment_id
+         AND line.line_type = 'primary'
+         AND line.effective_from <= ${effectiveFrom}::date
+         AND line.effective_to > ${effectiveFrom}::date
+        WHERE NOT line.manager_employment_id = ANY(chain.path)
+          AND cardinality(chain.path) < 1000
+      )
+      SELECT EXISTS (
+        SELECT 1 FROM manager_chain WHERE employment_id = ${employmentId}
+      ) AS creates_cycle
+    `);
+    if (cycle?.creates_cycle)
+      throw new Error(
+        `${row.email}: manager "${row.managerEmail}" would create a circular reporting chain.`,
+      );
+
+    if (open) {
+      await tx
+        .update(hrReportingLines)
+        .set({ effectiveTo: effectiveFrom })
+        .where(and(eq(hrReportingLines.orgId, orgId), eq(hrReportingLines.id, open.id)));
+    }
+
+    await tx.insert(hrReportingLines).values({
+      orgId,
+      employmentId,
+      managerEmploymentId,
+      lineType: "primary",
+      effectiveFrom,
+      createdBy: ctx.actorId,
+    });
   }
 
   /** Turns an admission refusal into the row error an operator can act on. */
