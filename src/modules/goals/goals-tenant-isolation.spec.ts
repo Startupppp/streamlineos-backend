@@ -20,7 +20,7 @@ function makeThenable(resolved: unknown[]): jest.Mock {
   const fn = jest.fn();
   fn.mockImplementation(() => {
     const obj: Record<string, unknown> = {};
-    const methods = ["from", "where", "groupBy", "leftJoin", "orderBy", "limit", "offset"];
+    const methods = ["from", "where", "groupBy", "leftJoin", "innerJoin", "orderBy", "limit", "offset"];
     for (const m of methods) {
       obj[m] = jest.fn(() => obj);
     }
@@ -35,17 +35,20 @@ function makeThenable(resolved: unknown[]): jest.Mock {
  * `okr_goals`, and the per-goal key-result roll-up. Only the first projects a bare
  * `total`, which is how they are told apart here.
  */
-function makeSelect(total: number): jest.Mock {
+function makeSelect(total: number, owners: unknown[] = []): jest.Mock {
   const countChain = makeThenable([{ total }]);
   const rollupChain = makeThenable([]);
+  const ownerChain = makeThenable(owners);
   return jest.fn().mockImplementation((projection?: Record<string, unknown>) =>
     projection !== undefined && Object.keys(projection).length === 1 && "total" in projection
       ? countChain()
+      : projection !== undefined && "membershipId" in projection
+        ? ownerChain()
       : rollupChain(),
   );
 }
 
-function makeDb(goalRows: unknown[]): Db {
+function makeDb(goalRows: unknown[], owners: unknown[] = []): Db {
   return {
     query: {
       okrGoals: {
@@ -55,7 +58,7 @@ function makeDb(goalRows: unknown[]): Db {
       okrKeyResults: { findMany: jest.fn().mockResolvedValue([]) },
       okrUpdates: { findMany: jest.fn().mockResolvedValue([]) },
     },
-    select: makeSelect(goalRows.length),
+    select: makeSelect(goalRows.length, owners),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({} as unknown)),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }) }),
@@ -114,6 +117,36 @@ describe("GoalsService — cross-tenant isolation", () => {
     const result = await svc.list(userCtx(OWNER_ORG), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
     expect(result.total).toBe(1);
+  });
+
+  it("projects a tenant-scoped owner for an owned goal", async () => {
+    const goalRow = {
+      id: 1,
+      orgId: OWNER_ORG,
+      title: "Goal A",
+      status: "on_track",
+      level: "company",
+      progress: 50,
+      ownerMembershipId: 7,
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdByMembershipId: 1,
+      description: null,
+      startDate: null,
+      dueDate: null,
+      parentGoalId: null,
+      projectId: null,
+    };
+    const db = makeDb([goalRow], [{ membershipId: 7, id: "owner-1", name: "Owner", email: "owner@example.com", image: null }]);
+    const svc = new GoalsService(db, makeAccessService(), new GoalLinksService(db));
+    const result = await svc.list(userCtx(OWNER_ORG), { page: 1, limit: 20 });
+    expect(result.items[0]?.owner).toEqual({
+      id: "owner-1",
+      name: "Owner",
+      email: "owner@example.com",
+      image: null,
+    });
   });
 
   it("returns null for a goal in another org (getGoal cross-tenant isolation)", async () => {

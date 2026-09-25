@@ -62,6 +62,13 @@ describe("ManagedProductsService.listManagedProducts — keyset matches the sort
     expect(sql).not.toMatch(/"created_at"\s*</);
   });
 
+  it("rejects a malformed cursor instead of silently returning the first page", async () => {
+    const svc = new ManagedProductsService(buildDb({ where: undefined, orderBy: [] }), {} as AuditService);
+    await expect(svc.listManagedProducts("org-1", { cursor: "not-a-cursor", limit: 20 }, 1)).rejects.toThrow(
+      "Invalid pagination cursor",
+    );
+  });
+
   it("bite proof: no ORDER BY would silently repeat rows at page boundaries", () => {
     const noSortQuery = ["WHERE org_id = $1 LIMIT 20"];
     expect(noSortQuery[0]).not.toContain("ORDER BY");

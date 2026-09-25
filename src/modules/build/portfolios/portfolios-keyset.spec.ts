@@ -90,6 +90,13 @@ describe("PortfoliosService.listPortfolios — keyset matches the sort", () => {
     expect(wrongSort[0]).not.toContain("desc");
   });
 
+  it("rejects a malformed cursor instead of silently returning the first page", async () => {
+    const svc = new PortfoliosService(buildDb({ where: undefined, orderBy: [] }), {} as AuditService);
+    await expect(svc.listPortfolios("org-1", { cursor: "not-a-cursor", limit: 20 })).rejects.toThrow(
+      "Invalid pagination cursor",
+    );
+  });
+
   it("evaluates the search term in the SQL predicate", async () => {
     const { where } = await capture(undefined, "platform");
     expect(render(where).toLowerCase()).toContain("ilike");
