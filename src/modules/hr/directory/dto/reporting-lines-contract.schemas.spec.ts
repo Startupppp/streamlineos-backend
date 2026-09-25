@@ -96,6 +96,8 @@ describe("HRM-15 §4.3 line detail", () => {
       managerState: "active",
       source: "ONBOARDING_FALLBACK",
       isFallback: true,
+      fallbackConfirmedAt: null,
+      changeReason: null,
       relationshipType: "PRIMARY",
     };
     const detail = {

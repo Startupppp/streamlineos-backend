@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { managerCoverageReportSchema, reportingLineViewSchema } from "./reporting-lines-response.schemas";
+import { reportingManagerRequestStatusSchema } from "./reporting-lines-requests.schemas";
 import {
   effectiveDateSchema,
   managerRefSchema,
@@ -40,6 +41,8 @@ export const updateReportingManagerPolicySchema = z
 const primaryHistoryEntrySchema = reportingLineViewSchema.shape.history.element.extend({
   source: reportingLineSourceSchema,
   isFallback: z.boolean(),
+  fallbackConfirmedAt: z.string().nullable(),
+  changeReason: z.string().nullable(),
   relationshipType: z.literal("PRIMARY"),
 });
 
@@ -48,12 +51,12 @@ export const reportingLineDetailSchema = reportingLineViewSchema.extend({
   upcoming: z.array(primaryHistoryEntrySchema),
   history: z.array(primaryHistoryEntrySchema),
   secondary: z.array(relationshipEntrySchema),
-  topLevel: z.object({ reason: z.string(), effectiveFrom: z.string() }).nullable(),
+  topLevel: z.object({ reason: z.string().nullable(), effectiveFrom: z.string() }).nullable(),
   primaryChangesLast24h: z.number().int(),
   changeThreshold: z.number().int(),
   maxSecondaryManagers: z.number().int(),
   pendingRequest: z
-    .object({ requestId: z.string(), status: z.string(), createdAt: z.string() })
+    .object({ requestId: z.string(), status: reportingManagerRequestStatusSchema, createdAt: z.string() })
     .nullable(),
   permittedActions: z.object({ manage: z.boolean(), review: z.boolean(), override: z.boolean() }),
 });
@@ -96,6 +99,12 @@ export const managerCoverageDetailSchema = managerCoverageReportSchema.extend({
     pendingReview: z.number().int(),
   }),
   policyMissing: z.boolean(),
+  circular: z.array(
+    z.object({
+      userIds: z.array(z.string()),
+      members: z.array(z.object({ userId: z.string(), name: z.string().nullable() })),
+    }),
+  ),
   fallback: z.array(
     z.object({
       userId: z.string().nullable(),
@@ -116,6 +125,7 @@ export const managerCoverageDetailSchema = managerCoverageReportSchema.extend({
 });
 
 export const myReportingLineSchema = z.object({
+  hasEmployment: z.boolean(),
   primary: relationshipEntrySchema.nullable(),
   secondary: z.array(relationshipEntrySchema),
   topLevel: z.object({ effectiveFrom: z.string() }).nullable(),

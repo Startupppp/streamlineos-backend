@@ -107,13 +107,17 @@ export const bulkJobSchema = z.object({
   nextRowCursor: z.string().nullable(),
 });
 
-/** §4.19 names `BulkJob` for the list too; a list of jobs cannot be one job, so items omit rows. */
+/** Addendum 2: the list is `{ items: BulkJobSummary[], nextCursor }`. */
+export const bulkJobSummarySchema = z.object(bulkJobSummaryFields);
+
 export const bulkJobPageSchema = z.object({
-  items: z.array(z.object(bulkJobSummaryFields)),
+  items: z.array(bulkJobSummarySchema),
   nextCursor: z.string().nullable(),
 });
 
 export const bulkOnboardRowStatusSchema = z.enum(["READY", "WARNING", "ERROR", "SKIPPED"]);
+/** Addendum 2: a commit reports what happened to the row, not how the preview classified it. */
+export const bulkOnboardCommitStatusSchema = z.enum(["CREATED", "FAILED", "SKIPPED"]);
 
 export const onboardingPrimaryManagerSchema = z.object({
   userId: z.string().nullable(),
@@ -155,7 +159,7 @@ export const bulkOnboardCommitResultSchema = z.object({
       success: z.boolean(),
       userId: z.string().optional(),
       error: z.string().optional(),
-      status: bulkOnboardRowStatusSchema,
+      status: bulkOnboardCommitStatusSchema,
       codes: z.array(z.string()),
       primaryManager: onboardingPrimaryManagerSchema.nullable(),
     }),

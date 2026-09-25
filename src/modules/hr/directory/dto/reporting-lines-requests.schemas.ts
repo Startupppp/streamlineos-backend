@@ -24,7 +24,7 @@ export const createReportingManagerRequestSchema = z
   .strict();
 
 export const respondReportingManagerRequestSchema = z
-  .object({ reason: z.string().trim().min(1).max(1000) })
+  .object({ reason: employeeReasonSchema })
   .strict();
 
 export const listMyReportingManagerRequestsSchema = z
