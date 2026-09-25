@@ -28,7 +28,7 @@ describe("KbLinkedDocumentFileService.open", () => {
 
     expect(result).toEqual({ url: SIGNED, fileName: "Code of Conduct.pdf", expiresIn: 300 });
     expect(LINKED_DOCUMENT_URL_TTL_SECONDS).toBe(300);
-    expect(storage.getFileUrl).toHaveBeenCalledWith(ORG, `${ORG}/hr-documents/coc.pdf`, 300, undefined, { preauthorized: true });
+    expect(storage.getFileUrl).toHaveBeenCalledWith(ORG, `${ORG}/hr-documents/coc.pdf`, 300, undefined, { preauthorized: true, attachmentName: "Code of Conduct.pdf" });
     expect(audit.logCriticalOutsideTransaction).toHaveBeenCalledTimes(1);
     const entry = JSON.stringify(audit.logCriticalOutsideTransaction.mock.calls[0]?.[0]);
     expect(entry).toContain("kb.hr_link.document_opened");

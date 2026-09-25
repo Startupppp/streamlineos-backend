@@ -30,7 +30,10 @@ export class KbLinkedDocumentFileService {
     if (!this.storage.isValidFileKey(fileKey) || !isOwnOrgStorageKey(fileKey, caller.orgId)) throw new NotFoundException();
     if (!HR_DOCUMENT_FOLDERS.has(parseStorageKey(fileKey, caller.orgId).folderRoot)) throw new NotFoundException();
 
-    const url = await this.storage.getFileUrl(caller.orgId, fileKey, LINKED_DOCUMENT_URL_TTL_SECONDS, undefined, { preauthorized: true });
+    const url = await this.storage.getFileUrl(caller.orgId, fileKey, LINKED_DOCUMENT_URL_TTL_SECONDS, undefined, {
+      preauthorized: true,
+      attachmentName: target.fileName,
+    });
     await this.audit.logCriticalOutsideTransaction({
       action: "kb.hr_link.document_opened",
       userId: caller.userId,

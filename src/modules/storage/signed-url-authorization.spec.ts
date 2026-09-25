@@ -199,3 +199,35 @@ describe("StorageService.getFileUrl — the URL expires", () => {
     expect(url).toContain("X-Amz-Signature");
   });
 });
+
+describe("StorageService.getFileUrl — attachment disposition", () => {
+  const key = `${ORG_A}/hr-documents/1-policy.pdf`;
+  const disposition = (url: string) => new URL(url).searchParams.get("response-content-disposition");
+
+  it("asks the object store to answer as an attachment when a name is given, and signs that instruction into the URL", async () => {
+    const url = await serviceWith().getFileUrl(ORG_A, key, 300, undefined, { preauthorized: true, attachmentName: "Code of Conduct.pdf" });
+
+    expect(disposition(url)).toBe(`attachment; filename="Code of Conduct.pdf"; filename*=UTF-8''Code%20of%20Conduct.pdf`);
+    expect(url).toContain("X-Amz-Signature");
+  });
+
+  it("leaves the response as the object store would have it when no name is given", async () => {
+    const url = await serviceWith().getFileUrl(ORG_A, key, 300, undefined, { preauthorized: true });
+
+    expect(disposition(url)).toBeNull();
+  });
+
+  it("cannot be talked into a second header or a broken quote by a file name", async () => {
+    const url = await serviceWith().getFileUrl(ORG_A, key, 300, undefined, { preauthorized: true, attachmentName: 'a"b\r\nSet-Cookie: x=1.pdf' });
+
+    const value = disposition(url) ?? "";
+    expect(value).not.toMatch(/[\r\n]/);
+    expect(value.startsWith("attachment; filename=\"a_b__Set-Cookie: x=1.pdf\"")).toBe(true);
+  });
+
+  it("keeps a name that is not ASCII in the extended form", async () => {
+    const url = await serviceWith().getFileUrl(ORG_A, key, 300, undefined, { preauthorized: true, attachmentName: "Réglement.pdf" });
+
+    expect(disposition(url)).toBe(`attachment; filename="R_glement.pdf"; filename*=UTF-8''R%C3%A9glement.pdf`);
+  });
+});

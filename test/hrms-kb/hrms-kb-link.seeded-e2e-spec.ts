@@ -256,7 +256,7 @@ describe("[seeded-e2e] HR documents in the knowledge base — switch, classify, 
         expect(response.status).toBe(200);
         expect(response.body).toMatchObject({ url: signed, expiresIn: 300 });
         expect(response.headers["cache-control"]).toContain("no-store");
-        expect(spy).toHaveBeenCalledWith(home.orgId, policyKey, 300, undefined, { preauthorized: true });
+        expect(spy).toHaveBeenCalledWith(home.orgId, policyKey, 300, undefined, { preauthorized: true, attachmentName: "file.pdf" });
         const audited = await auditFor(home.orgId, "kb.hr_link.document_opened", linkId);
         expect(audited).toHaveLength(1);
         expect(JSON.stringify(audited[0]?.metadata)).not.toContain("secret-signature");

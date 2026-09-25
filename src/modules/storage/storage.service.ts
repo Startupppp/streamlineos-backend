@@ -46,6 +46,15 @@ export interface UploadJobResult {
 
 export interface SignedUrlOptions {
   readonly preauthorized?: boolean;
+  /** Asks the object store to answer with `Content-Disposition: attachment`, so the browser saves the file instead of rendering it under our origin's cookies. */
+  readonly attachmentName?: string;
+}
+
+/** `attachment; filename="…"; filename*=UTF-8''…` for any name: no control character or quote can leave the header, and non-ASCII survives in the extended form. */
+export function attachmentDisposition(name: string): string {
+  const fallback = name.replace(/[^\x20-\x7e]|["\\%]/g, "_").trim().slice(0, 200) || "download";
+  const extended = encodeURIComponent(name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${extended}`;
 }
 
 export interface FileStreamResult {
@@ -261,7 +270,11 @@ export class StorageService {
       placement,
       this.bucketForKey(orgId, key, bucketOverride),
     );
-    const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      ...(options.attachmentName ? { ResponseContentDisposition: attachmentDisposition(options.attachmentName) } : {}),
+    });
     return getSignedUrl(placement.client, command, { expiresIn });
   }
 
