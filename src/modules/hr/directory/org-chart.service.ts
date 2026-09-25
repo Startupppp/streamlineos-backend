@@ -240,6 +240,13 @@ export class OrgChartService {
         departmentId: orgUnits.id,
         departmentName: orgUnits.name,
         hasDirectReports,
+        // V-026. The root page is "everyone with no visible manager", and the
+        // frontend split those roots on hasDirectReports — so an UNMANAGED hire
+        // who happens to have reports rendered as a peer root beside the
+        // founder, which is the fake multi-CEO tree. The owner is a fact this
+        // query already has in hand; without it no consumer can tell the real
+        // root from someone nobody has assigned a manager to yet.
+        isOwner: organizationMembers.isOwner,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
@@ -273,6 +280,7 @@ export class OrgChartService {
         departmentId: row.departmentId,
         departmentName: row.departmentName,
         hasDirectReports: row.hasDirectReports,
+        isOwner: row.isOwner === true,
       })),
       pageInfo: {
         limit: query.limit,

@@ -180,6 +180,14 @@ const orgChartNodeSchema = z.object({
   departmentId: z.string().nullable(),
   departmentName: z.string().nullable(),
   hasDirectReports: z.boolean(),
+  /**
+   * V-026. Additive. A root of this page is anyone with no VISIBLE manager, so
+   * the page mixes the founder with every hire nobody has assigned a manager
+   * to. Splitting those on `hasDirectReports` produced a tree with several
+   * apparent CEOs; the owner is the only one of them the organisation actually
+   * has.
+   */
+  isOwner: z.boolean(),
 });
 
 export const orgChartPageSchema = z.object({
