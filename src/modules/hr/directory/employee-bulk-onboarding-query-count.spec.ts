@@ -95,6 +95,7 @@ function collaborators() {
 
 interface Harness {
   run: () => Promise<{ total: number; created: number; failed: number }>;
+  preview: () => Promise<{ counts: { ready: number; warning: number; error: number; skipped: number } }>;
   statements: () => number;
   countOf: (op: CountingOp) => number;
   planLimits: { assertWithinLimit: jest.Mock };
@@ -170,6 +171,11 @@ function harness(count: number): Harness {
         { orgId: ORG, audience: "INTERNAL", tx: counting.db as TenantTx, afterCommit: [] },
         () => service.onboardEmployeesBulk(ACTOR, rows),
       ),
+    preview: () =>
+      runWithTenantContext(
+        { orgId: ORG, audience: "INTERNAL", tx: counting.db as TenantTx, afterCommit: [] },
+        () => service.previewEmployeesBulk(ACTOR, rows),
+      ),
     statements: counting.statements,
     countOf: counting.countOf,
     planLimits: deps.planLimits,
@@ -205,6 +211,18 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
     expect(fifty.countOf("insert")).toBe(one.countOf("insert"));
     expect(fifty.countOf("update")).toBe(one.countOf("update"));
     expect(fifty.countOf("execute")).toBe(one.countOf("execute"));
+  });
+
+  it("HRM-15: previews a maximum-size (100-row) file in the same statements as a 1-row file, and writes nothing", async () => {
+    const one = harness(1);
+    await expect(one.preview()).resolves.toMatchObject({ counts: { ready: 0, warning: 1, error: 0, skipped: 0 } });
+    const hundred = harness(100);
+    await expect(hundred.preview()).resolves.toMatchObject({ counts: { ready: 0, warning: 100, error: 0, skipped: 0 } });
+
+    expect(hundred.statements()).toBe(one.statements());
+    expect(hundred.countOf("insert")).toBe(0);
+    expect(hundred.countOf("update")).toBe(0);
+    expect(hundred.countOf("delete")).toBe(0);
   });
 
   it("reserves the whole batch's quota once, not once per row", async () => {

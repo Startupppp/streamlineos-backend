@@ -43,7 +43,7 @@ import type { BulkJob, CommitBulkJobInput, CreateBulkJobInput } from "./dto/repo
 export const BULK_JOB_PREVIEW_TTL_HOURS = 24;
 const COMMITTED_EVENT = "hr.reporting_line_bulk_job.committed";
 
-interface PlannedRow {
+export interface PlannedRow {
   rowNumber: number;
   employeeEmail: string;
   employee: PersonRef | undefined;
@@ -59,6 +59,38 @@ interface PlannedRow {
 function meaningful(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+export function classifyBulkRow(
+  row: PlannedRow,
+  validation: RelationshipValidation | undefined,
+  currentOf: Map<number, { managerEmploymentId: number }>,
+): Omit<typeof hrReportingLineBulkJobRows.$inferInsert, "orgId" | "jobId"> {
+  const needsReasonOnly = validation?.issues.every((issue) => issue.code === CODES.CHANGE_REASON_REQUIRED) ?? false;
+  const issues = [...row.issues, ...(validation && !needsReasonOnly ? validation.issues : [])];
+  const warnings = validation?.warnings ?? [];
+  const reasonCodes = validation && !validation.ok && needsReasonOnly ? [CODES.CHANGE_REASON_REQUIRED] : [];
+  const status: ReportingLineBulkRowStatus =
+    issues.length > 0 ? "ERROR" : warnings.length > 0 || reasonCodes.length > 0 ? "WARNING" : "READY";
+  const codes = [...new Set([...issues.map((issue) => issue.code), ...reasonCodes, ...warnings])];
+  const employmentId = row.employee?.employmentId ?? null;
+  return {
+    rowNumber: row.rowNumber,
+    employeeEmail: row.employeeEmail,
+    employeeEmploymentId: employmentId,
+    requestedPrimaryManagerEmail: row.primaryManagerEmail,
+    requestedPrimaryManagerEmploymentId: validation?.primaryManagerEmploymentId ?? row.primaryManager?.employmentId ?? null,
+    currentPrimaryManagerEmploymentId: employmentId === null ? null : currentOf.get(employmentId)?.managerEmploymentId ?? null,
+    secondaryManagerEmail1: row.secondaryEmails[0] ?? null,
+    secondaryManagerEmail2: row.secondaryEmails[1] ?? null,
+    secondaryManagerEmail3: row.secondaryEmails[2] ?? null,
+    effectiveFrom: row.effectiveFrom,
+    rowReason: row.reason,
+    changesLast24h: validation?.primaryChangesLast24h ?? 0,
+    status,
+    codes: codes.length > 0 ? codes.join(",") : null,
+    message: issues[0]?.message ?? (reasonCodes.length > 0 ? "Give this employee an individual reason before committing." : null),
+  };
 }
 
 /**
@@ -119,7 +151,7 @@ export class ReportingLineBulkJobsService {
       if (validation) validationOf.set(entry.row.rowNumber, validation);
     });
 
-    const stored = planned.map((row) => this.classify(row, validationOf.get(row.rowNumber), currentOf));
+    const stored = planned.map((row) => classifyBulkRow(row, validationOf.get(row.rowNumber), currentOf));
     const counts = { READY: 0, WARNING: 0, ERROR: 0 };
     for (const row of stored) if (row.status === "READY" || row.status === "WARNING" || row.status === "ERROR") counts[row.status] += 1;
 
@@ -293,38 +325,6 @@ export class ReportingLineBulkJobsService {
       if (!person)
         row.issues.push({ code: CODES.MANAGER_NOT_FOUND, message: `${row.secondaryEmails[index] ?? "A secondary manager"} is not a member of this organization.` });
     });
-  }
-
-  private classify(
-    row: PlannedRow,
-    validation: RelationshipValidation | undefined,
-    currentOf: Map<number, { managerEmploymentId: number }>,
-  ): Omit<typeof hrReportingLineBulkJobRows.$inferInsert, "orgId" | "jobId"> {
-    const needsReasonOnly = validation?.issues.every((issue) => issue.code === CODES.CHANGE_REASON_REQUIRED) ?? false;
-    const issues = [...row.issues, ...(validation && !needsReasonOnly ? validation.issues : [])];
-    const warnings = validation?.warnings ?? [];
-    const reasonCodes = validation && !validation.ok && needsReasonOnly ? [CODES.CHANGE_REASON_REQUIRED] : [];
-    const status: ReportingLineBulkRowStatus =
-      issues.length > 0 ? "ERROR" : warnings.length > 0 || reasonCodes.length > 0 ? "WARNING" : "READY";
-    const codes = [...new Set([...issues.map((issue) => issue.code), ...reasonCodes, ...warnings])];
-    const employmentId = row.employee?.employmentId ?? null;
-    return {
-      rowNumber: row.rowNumber,
-      employeeEmail: row.employeeEmail,
-      employeeEmploymentId: employmentId,
-      requestedPrimaryManagerEmail: row.primaryManagerEmail,
-      requestedPrimaryManagerEmploymentId: validation?.primaryManagerEmploymentId ?? row.primaryManager?.employmentId ?? null,
-      currentPrimaryManagerEmploymentId: employmentId === null ? null : currentOf.get(employmentId)?.managerEmploymentId ?? null,
-      secondaryManagerEmail1: row.secondaryEmails[0] ?? null,
-      secondaryManagerEmail2: row.secondaryEmails[1] ?? null,
-      secondaryManagerEmail3: row.secondaryEmails[2] ?? null,
-      effectiveFrom: row.effectiveFrom,
-      rowReason: row.reason,
-      changesLast24h: validation?.primaryChangesLast24h ?? 0,
-      status,
-      codes: codes.length > 0 ? codes.join(",") : null,
-      message: issues[0]?.message ?? (reasonCodes.length > 0 ? "Give this employee an individual reason before committing." : null),
-    };
   }
 
   private async apply(
