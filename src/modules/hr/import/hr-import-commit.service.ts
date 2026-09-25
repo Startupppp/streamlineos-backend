@@ -556,7 +556,10 @@ export class HrImportCommitService {
       type: row.type,
       brand: row.brand ?? null,
       model: row.model ?? null,
-      status: row.status ?? ("AVAILABLE" as const),
+      // V-082. `status` defaulted to AVAILABLE even when the same row named an
+      // assignee, which is exactly why the Assigned tile disagreed with the
+      // rows underneath it. The file still wins when it states a status.
+      status: row.status ?? (assignedTo ? ("ASSIGNED" as const) : ("AVAILABLE" as const)),
       purchaseDate: row.purchaseDate || null,
       location: row.location ?? null,
     };
