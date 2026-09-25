@@ -69,8 +69,8 @@ export const ticketsListQuerySchema = baseListQuerySchema
     cycleId: csvToIntArray,
     moduleIds: csvToIntArray,
     epicId: z.coerce.number().int().positive().optional(),
-    dueDateFrom: z.string().optional(),
-    dueDateTo: z.string().optional(),
+    dueDateFrom: z.iso.date().optional(),
+    dueDateTo: z.iso.date().optional(),
     orderBy: z
       .enum(["created", "updated", "priority", "dueDate", "rank"])
       .default("rank"),
@@ -112,8 +112,8 @@ export const allWorkQuerySchema = baseListQuerySchema
     labelIds: csvToIntArray,
     cycleId: csvToIntArray,
     epicId: z.coerce.number().int().positive().optional(),
-    dueDateFrom: z.string().optional(),
-    dueDateTo: z.string().optional(),
+    dueDateFrom: z.iso.date().optional(),
+    dueDateTo: z.iso.date().optional(),
     orderBy: z
       .enum(["created", "updated", "priority", "dueDate", "rank"])
       .default("rank"),

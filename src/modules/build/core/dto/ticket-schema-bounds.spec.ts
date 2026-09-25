@@ -1,4 +1,9 @@
-import { createTicketSchema, updateTicketSchema } from "./ticket.schemas";
+import {
+  allWorkQuerySchema,
+  createTicketSchema,
+  ticketsListQuerySchema,
+  updateTicketSchema,
+} from "./ticket.schemas";
 
 describe("Build ticket numeric bounds", () => {
   it.each([-1, 1.5, Number.POSITIVE_INFINITY])(
@@ -37,5 +42,13 @@ describe("Build ticket numeric bounds", () => {
   it.each([0, 0.25, 100])("accepts valid original estimates: %s", (originalEstimate) => {
     expect(createTicketSchema.safeParse({ title: "Valid ticket", originalEstimate }).success).toBe(true);
     expect(updateTicketSchema.safeParse({ originalEstimate }).success).toBe(true);
+  });
+
+  it.each([ticketsListQuerySchema, allWorkQuerySchema])("accepts ISO due-date filters", (schema) => {
+    expect(schema.safeParse({ dueDateFrom: "2026-08-01", dueDateTo: "2026-08-31" }).success).toBe(true);
+  });
+
+  it.each([ticketsListQuerySchema, allWorkQuerySchema])("rejects non-date due-date filters", (schema) => {
+    expect(schema.safeParse({ dueDateFrom: "soon", dueDateTo: "2026/08/31" }).success).toBe(false);
   });
 });
