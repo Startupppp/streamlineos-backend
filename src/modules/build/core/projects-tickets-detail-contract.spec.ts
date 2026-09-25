@@ -59,3 +59,31 @@ it.each(["id", "key"])("returns the complete existing detail contract for %s loo
     expect(findFirst).toHaveBeenCalledTimes(2);
   } finally { await module.close(); }
 });
+
+it("bounds every ticket detail collection that can grow independently", async () => {
+  const findFirst = jest.fn().mockResolvedValueOnce(row).mockResolvedValueOnce({ id: 2, title: "Epic" });
+  const module = await Test.createTestingModule({ providers: [
+    ProjectsTicketsDetailService,
+    {
+      provide: DRIZZLE,
+      useValue: {
+        query: {
+          tickets: { findFirst },
+          projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+        },
+      },
+    },
+    { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all") } },
+    { provide: AuditService, useValue: { log: jest.fn() } },
+  ] }).compile();
+  try {
+    const service = module.get(ProjectsTicketsDetailService);
+    await service.getTicket(actor, 42, 1);
+    const relationConfig = findFirst.mock.calls[0]?.[0]?.with as Record<string, { limit?: number }>;
+    expect(relationConfig.assignees?.limit).toBe(100);
+    expect(relationConfig.watchers?.limit).toBe(100);
+    expect(relationConfig.comments?.limit).toBe(50);
+    expect(relationConfig.attachments?.limit).toBe(100);
+    expect(relationConfig.labels?.limit).toBe(100);
+  } finally { await module.close(); }
+});

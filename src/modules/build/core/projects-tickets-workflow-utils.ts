@@ -128,7 +128,13 @@ export async function assertTransitionAllowed(
         cycleId: tickets.cycleId,
       })
       .from(tickets)
-      .where(and(eq(tickets.id, context.ticketId), eq(tickets.orgId, orgId)))
+      .where(
+        and(
+          eq(tickets.id, context.ticketId),
+          eq(tickets.orgId, orgId),
+          eq(tickets.projectId, projectId),
+        ),
+      )
       .limit(1);
 
   let ticketRows: Awaited<ReturnType<typeof readTicketRequiredFields>> | undefined;
