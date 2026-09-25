@@ -51,7 +51,7 @@ function makeChain(
 ): Record<string, unknown> {
   const chain: Record<string, unknown> = {};
   chain.orderBy = jest.fn(() => chain);
-  chain.limit = jest.fn(() => Promise.resolve(rows));
+  chain.limit = jest.fn(() => Object.assign(Promise.resolve(rows), chain));
   chain.groupBy = jest.fn(() => Promise.resolve([]));
   chain.union = jest.fn(() => makeChain(rows, capture));
   return chain;

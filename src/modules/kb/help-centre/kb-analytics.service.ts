@@ -36,16 +36,6 @@ function staleCutoff(): Date {
   return new Date(Date.now() - STALE_PAGE_THRESHOLD_DAYS * MILLISECONDS_PER_DAY);
 }
 
-type TopArticle = {
-  id: number;
-  title: string;
-  slug: string;
-  spaceId: number | null;
-  viewCount: number;
-  helpfulCount: number;
-  notHelpfulCount: number;
-};
-
 type OverviewResult = {
   totalCount: number;
   publishedCount: number;
@@ -63,7 +53,6 @@ type OverviewResult = {
   ticketsDeflected: number;
   verifiedPublished: number;
   trustScore: number;
-  topArticles: TopArticle[];
 };
 
 type ContentGapRow = {
@@ -125,9 +114,7 @@ export class KbAnalyticsService {
     const pageConditions: SQL[] = [eq(kbPages.orgId, orgId), supportArticlePredicate()];
     if (range.spaceId !== undefined) pageConditions.push(eq(kbPages.spaceId, range.spaceId));
 
-    const topArticleConditions: SQL[] = [...pageConditions, eq(kbPages.status, "published")];
-
-    const [[articleStats], [eventStats], topArticles] = await Promise.all([
+    const [[articleStats], [eventStats]] = await Promise.all([
       this.db
         .select({
           totalCount: sql<number>`count(*)::int`,
@@ -151,20 +138,6 @@ export class KbAnalyticsService {
         })
         .from(kbEvents)
         .where(and(...eventConditions)),
-      this.db
-        .select({
-          id: kbPages.id,
-          title: kbPages.title,
-          slug: sql<string>`coalesce(${kbPages.slug}, '')`,
-          spaceId: kbPages.spaceId,
-          viewCount: sql<number>`coalesce(${kbPages.views}, 0)::int`,
-          helpfulCount: sql<number>`coalesce(${kbPages.helpfulCount}, 0)::int`,
-          notHelpfulCount: sql<number>`coalesce(${kbPages.notHelpfulCount}, 0)::int`,
-        })
-        .from(kbPages)
-        .where(and(...topArticleConditions))
-        .orderBy(desc(sql`coalesce(${kbPages.views}, 0)`))
-        .limit(10),
     ]);
 
     const totalCount = articleStats?.totalCount ?? 0;
@@ -203,7 +176,6 @@ export class KbAnalyticsService {
       ticketsDeflected,
       verifiedPublished,
       trustScore,
-      topArticles,
     };
   }
 

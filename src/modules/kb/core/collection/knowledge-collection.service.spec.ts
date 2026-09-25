@@ -8,6 +8,7 @@ import type { KnowledgeAuthorizationService } from "../authorization/knowledge-a
 import type { KbActorStanding } from "../authorization/knowledge-authorization.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { KbPageCollectionQuery } from "./knowledge-collection.types";
+import { kbPageCollectionPageSchema } from "../dto/kb-core-response.schemas";
 
 const ORG = "org-collection";
 const OTHER_ORG = "org-intruder";
@@ -374,6 +375,16 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
     expect(faceted.facets).not.toBeNull();
     expect(faceted.facets?.owner).toBeDefined();
     expect(withFacets.capture.groupBys).toBe(3);
+  });
+
+  it("declares the owner facet in the route's @ResponseSchema, because an undeclared key is stripped by the contract and openapi never learns the field exists", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+
+    const page = await h.svc.listPages(user(), query({ facets: true }));
+    const declared = kbPageCollectionPageSchema.parse(page);
+
+    expect(page.facets?.owner).toBeDefined();
+    expect(declared.facets?.owner).toBeDefined();
   });
 
   it("excludes the keyset bound from the facet filter, or facet counts would shrink on every page", async () => {

@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+} from "../../../../common/openapi/wire-types";
 import { KB_PAGE_GRANT_ACCESS } from "../../../../db/schema/kb/page-grants";
 import { KB_PAGE_STATUSES } from "../collection/knowledge-collection.types";
 
@@ -87,6 +90,12 @@ export const kbPageCollectionPageSchema = z.object({
       space: z.array(
         z.object({
           spaceId: z.number().int().nullable(),
+          count: z.number().int(),
+        }),
+      ),
+      owner: z.array(
+        z.object({
+          ownerMembershipId: z.number().int().nullable(),
           count: z.number().int(),
         }),
       ),

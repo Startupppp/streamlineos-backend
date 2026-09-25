@@ -208,6 +208,11 @@ export class KbPageTrashService {
         .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids)))
         .returning({ id: kbPages.id });
 
+      for (const id of ids)
+        await markStoreComplete(this.db, orgId, id, "page_rows").catch(
+          () => undefined,
+        );
+
       await attemptPageAttachmentPurge(
         this.db,
         this.storage,
@@ -215,6 +220,11 @@ export class KbPageTrashService {
         purgeKeys,
         this.config.R2_KB_BUCKET_NAME,
       );
+
+      for (const id of ids)
+        await markStoreComplete(this.db, orgId, id, "blobs").catch(
+          () => undefined,
+        );
 
       purgedCount += deleted.length;
       if (trashed.length < EXPIRED_PURGE_BATCH_SIZE) break;
@@ -264,6 +274,10 @@ export class KbPageTrashService {
           )}]::int[])`,
         ),
       );
+      for (const id of ids)
+        await markStoreComplete(this.db, orgId, id, "page_rows").catch(
+          () => undefined,
+        );
       await attemptPageAttachmentPurge(
         this.db,
         this.storage,
@@ -271,6 +285,10 @@ export class KbPageTrashService {
         purgeKeys,
         this.config.R2_KB_BUCKET_NAME,
       );
+      for (const id of ids)
+        await markStoreComplete(this.db, orgId, id, "blobs").catch(
+          () => undefined,
+        );
       purgedCount += ids.length;
     }
 

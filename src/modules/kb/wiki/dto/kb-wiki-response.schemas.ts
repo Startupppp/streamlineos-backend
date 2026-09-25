@@ -85,6 +85,9 @@ export const kbPageReviewSchema = z.object({
 
 export const kbPageReviewWithContextSchema = kbPageReviewSchema.extend({
   pageTitle: z.string().nullable(),
+  pageTrustState: z
+    .enum(["unverified", "verified", "verification_expired"])
+    .nullable(),
   requestedByName: z.string().nullable(),
   reviewerName: z.string().nullable(),
 });

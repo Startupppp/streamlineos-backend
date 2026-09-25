@@ -1,4 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
+import type { PgTable } from "drizzle-orm/pg-core";
+import { getTableName } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { kbArticleChunks, kbPages } from "../../../src/db/schema";
 
@@ -19,6 +21,11 @@ export interface ChunkFixture {
 }
 
 export type FakeTable = "kb_article_chunks" | "kb_pages" | "other";
+
+export interface InsertedRow {
+  table: string;
+  values: Record<string, unknown>;
+}
 
 export interface RecordedQuery {
   table: FakeTable;
@@ -83,6 +90,7 @@ export interface FakeDbFixtures {
 export function makeFakeKbDb(fixtures: FakeDbFixtures) {
   const recorded: RecordedQuery[] = [];
   const executed: string[] = [];
+  const inserted: InsertedRow[] = [];
 
   const articlesMatching = (query: RecordedQuery): ArticleFixture[] => {
     if (refusesEverything(query)) return [];
@@ -178,8 +186,17 @@ export function makeFakeKbDb(fixtures: FakeDbFixtures) {
     selectDistinct: () => unknown;
     execute: (statement: unknown) => Promise<unknown[]>;
     transaction: <T>(fn: (tx: typeof db) => Promise<T> | T) => Promise<T>;
+    insert: (table: PgTable) => {
+      values: (values: Record<string, unknown>) => Promise<unknown[]>;
+    };
   } = {
     transaction: async (fn) => fn(db),
+    insert: (table: PgTable) => ({
+      values: (values: Record<string, unknown>) => {
+        inserted.push({ table: getTableName(table), values });
+        return Promise.resolve([]);
+      },
+    }),
     select: () => chain(),
     selectDistinct: () => chain(),
     execute: (statement: unknown) => {
@@ -198,5 +215,5 @@ export function makeFakeKbDb(fixtures: FakeDbFixtures) {
     },
   };
 
-  return { db, recorded, executed };
+  return { db, recorded, executed, inserted };
 }

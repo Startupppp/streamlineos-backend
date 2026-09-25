@@ -174,10 +174,25 @@ function correlationIdOf(host: ArgumentsHost): string | undefined {
  * content, so they are kept: which filters were in play is usually the whole
  * diagnostic value, and the values almost never are.
  */
+const BEARER_PATH_PREFIXES = ["/public/wiki/"];
+
+function redactBearerPathSegment(path: string): string {
+  const prefix = BEARER_PATH_PREFIXES.find((candidate) =>
+    path.startsWith(candidate),
+  );
+  if (prefix === undefined) return path;
+  const rest = path.slice(prefix.length);
+  if (rest === "") return path;
+  const separator = rest.indexOf("/");
+  const tail = separator === -1 ? "" : rest.slice(separator);
+  return `${prefix.slice(0, -1)}/[redacted]${tail}`;
+}
+
 function describeRequest(host: ArgumentsHost): Record<string, unknown> {
   try {
     const req = host.switchToHttp().getRequest<Request>();
-    const [path = "", queryString] = req.url.split("?", 2);
+    const [rawPath = "", queryString] = req.url.split("?", 2);
+    const path = redactBearerPathSegment(rawPath);
     const queryKeys =
       queryString === undefined || queryString === ""
         ? []

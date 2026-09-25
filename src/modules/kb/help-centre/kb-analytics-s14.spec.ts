@@ -105,14 +105,14 @@ function overviewHarness() {
 }
 
 describe("KbAnalyticsService.overview — space filter and public deflection", () => {
-  it("scopes both kb_pages statistics queries to a given space", async () => {
+  it("scopes the kb_pages statistics query to a given space", async () => {
     const { db, wheres } = overviewHarness();
     const svc = new KbAnalyticsService(db, auth);
 
     await svc.overview("org-1", { spaceId: 42 });
 
     const pageWheres = wheres.filter((w) => w.sql.includes(`"kb_pages"`));
-    expect(pageWheres.length).toBeGreaterThanOrEqual(2);
+    expect(pageWheres).toHaveLength(1);
     for (const w of pageWheres) {
       expect(w.sql).toContain(`"kb_pages"."space_id"`);
       expect(w.params).toContain(42);
@@ -126,7 +126,7 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
     await svc.overview("org-1", {});
 
     const pageWheres = wheres.filter((w) => w.sql.includes(`"kb_pages"`));
-    expect(pageWheres.length).toBeGreaterThanOrEqual(2);
+    expect(pageWheres).toHaveLength(1);
     for (const w of pageWheres) {
       expect(w.sql).not.toContain(`"kb_pages"."space_id"`);
     }
@@ -142,6 +142,29 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
     expect(eventProjection).toBeDefined();
     const rendered = render(eventProjection?.ticketsDeflected);
     expect(rendered.sql.toLowerCase()).toContain("ticket_deflected");
+  });
+});
+
+describe("KbAnalyticsService.overview — an aggregate must not label a page the caller cannot open", () => {
+  it("projects no page title, because overview is org-scoped and never consults visiblePagePredicate", async () => {
+    const { db, projections } = overviewHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.overview("org-1", {});
+
+    for (const projection of projections) {
+      expect(Object.keys(projection)).not.toContain("title");
+      expect(Object.keys(projection)).not.toContain("slug");
+    }
+  });
+
+  it("returns no topArticles list, so no org-wide title reaches a caller holding only kb:analytics:view", async () => {
+    const { db } = overviewHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    const result = await svc.overview("org-1", {});
+
+    expect(result).not.toHaveProperty("topArticles");
   });
 });
 

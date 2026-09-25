@@ -59,6 +59,7 @@ export interface ReviewListItem {
   createdAt: Date;
   updatedAt: Date;
   pageTitle: string | null;
+  pageTrustState: "unverified" | "verified" | "verification_expired" | null;
   requestedByName: string | null;
   reviewerName: string | null;
 }
@@ -209,6 +210,7 @@ export class KbPageReviewsQueryService {
       .select({
         ...REVIEW_LIST_COLUMNS,
         pageTitle: kbPages.title,
+        pageTrustState: kbPages.trustState,
         requestedByName: requester.name,
         reviewerName: reviewer.name,
       })
