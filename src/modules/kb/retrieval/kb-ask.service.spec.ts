@@ -1,4 +1,6 @@
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
+import { setSpanExporter, resetSpanExporter, type FinishedSpan } from "../../../common/observability";
+import { KB_ASK_SPAN_NAME } from "../core/telemetry/kb-ask-metrics";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbAskService } from "./kb-ask.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -380,5 +382,64 @@ describe("KbAskService", () => {
         typeof r === "object" && r !== null && "resultState" in r,
     );
     expect(interactionRow?.resultState).toBe("provider_unavailable");
+  });
+
+  async function captureAskSpan(run: () => Promise<unknown>): Promise<FinishedSpan> {
+    const exported: FinishedSpan[] = [];
+    setSpanExporter({ export: (span) => exported.push(span) });
+    try {
+      await run();
+    } finally {
+      resetSpanExporter();
+    }
+    const span = exported.find((candidate) => candidate.name === KB_ASK_SPAN_NAME);
+    if (span === undefined) throw new Error("no kb.ask.operation span was exported");
+    return span;
+  }
+
+  it("records outcome degraded and kb.ask.degraded true when retrieval fell back to lexical ranking", async () => {
+    mockSearch.retrieveTopSources.mockResolvedValueOnce([
+      {
+        sourceId: 1,
+        title: "Uploaded runbook",
+        spaceId: 1,
+        updatedAt: new Date("2024-01-01"),
+        passages: [
+          { documentKey: "source-1", documentTitle: "Uploaded runbook", passageIndex: 0, text: "Restart the service." },
+        ],
+        degraded: true as const,
+      },
+    ]);
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Restart the service."));
+
+    const span = await captureAskSpan(() => service.ask(user, input));
+
+    expect(span.attributes["kb.ask.outcome"]).toBe("degraded");
+    expect(span.attributes["kb.ask.degraded"]).toBe(true);
+  });
+
+  it("records outcome answered and kb.ask.degraded false when retrieval used no lexical fallback (positive pair)", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Reset via the login page."));
+
+    const span = await captureAskSpan(() => service.ask(user, input));
+
+    expect(span.attributes["kb.ask.outcome"]).toBe("answered");
+    expect(span.attributes["kb.ask.degraded"]).toBe(false);
+  });
+
+  it("reportKnowledgeGap records a search_no_results event carrying the reported question, so the existing detection sweep can surface it", async () => {
+    await service.reportKnowledgeGap(user, "Where is the expense policy?");
+
+    expect(mockEvents.record).toHaveBeenCalledWith(
+      "org1",
+      "search_no_results",
+      expect.objectContaining({ actorMembershipId: 1, query: "Where is the expense policy?" }),
+    );
+  });
+
+  it("reportKnowledgeGap never touches the gateway or charges a credit — it is a free, non-AI action", async () => {
+    await service.reportKnowledgeGap(user, "Where is the expense policy?");
+
+    expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
   });
 });

@@ -158,6 +158,7 @@ export const kbPageCollectionQuerySchema = z
     spaceId: z.coerce.number().int().positive().optional(),
     projectId: z.coerce.number().int().positive().optional(),
     owner: z.literal("me").optional(),
+    ownerMembershipId: z.coerce.number().int().positive().optional(),
     sharedWithMe: kbFlag.optional(),
     status: z
       .string()

@@ -46,6 +46,7 @@ function makeDb() {
     innerJoin: self,
     where: self,
     groupBy: self,
+    having: self,
     orderBy: self,
     limit: jest.fn().mockResolvedValue([]),
     then: (resolve: (rows: unknown[]) => unknown) => resolve([]),

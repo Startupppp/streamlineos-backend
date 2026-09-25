@@ -3,6 +3,8 @@ import { z } from "zod";
 export const createPageCommentSchema = z.object({
   content: z.string().min(1).max(5000),
   parentId: z.number().int().positive().nullable().optional(),
+  anchorBlockIndex: z.number().int().min(0).nullable().optional(),
+  anchorQuote: z.string().min(1).max(280).nullable().optional(),
 }).strict();
 export type CreatePageCommentInput = z.infer<typeof createPageCommentSchema>;
 

@@ -50,6 +50,14 @@ function makeService(spaceRows: unknown[]) {
       offset: jest.fn(() => chain(rows)),
     });
 
+  const joinableChain = (rows: unknown[]): Record<string, unknown> => {
+    const self: Record<string, unknown> = {
+      where: jest.fn(() => chain(rows)),
+    };
+    self.leftJoin = jest.fn(() => self);
+    return self;
+  };
+
   let call = 0;
   const db = {
     select: jest.fn().mockImplementation((projection: unknown) => {
@@ -57,10 +65,7 @@ function makeService(spaceRows: unknown[]) {
       const rows = call === 0 ? spaceRows : [];
       call += 1;
       return {
-        from: jest.fn().mockReturnValue({
-          where: jest.fn(() => chain(rows)),
-          leftJoin: jest.fn().mockReturnValue({ where: jest.fn(() => chain(rows)) }),
-        }),
+        from: jest.fn().mockReturnValue(joinableChain(rows)),
       };
     }),
   } as unknown as Db;

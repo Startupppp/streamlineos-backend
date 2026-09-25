@@ -1,10 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, max, or, sql, type SQL } from "drizzle-orm";
-import { kbPages, kbImportJobs, kbExportJobs } from "../../../db/schema";
+import { kbPages, kbSpaces, kbImportJobs, kbExportJobs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ExportPageInput, ImportPagesInput } from "./dto/kb-import-export.schemas";
 import { toMarkdown, toHtml } from "./kb-export-serializer";
@@ -35,6 +37,7 @@ type ImportResult = {
   jobId: number;
   succeeded: number;
   failed: number;
+  duplicates: number;
   total: number;
 };
 
@@ -132,6 +135,18 @@ export class KbImportExportService {
 
     await this.planLimits.assertWithinLimit(orgId, "kbPages", items.length);
 
+    if (input.spaceId !== undefined) {
+      const space = await this.db.query.kbSpaces.findFirst({
+        where: and(
+          eq(kbSpaces.id, input.spaceId),
+          eq(kbSpaces.orgId, orgId),
+          isNull(kbSpaces.deletedAt),
+        ),
+        columns: { id: true },
+      });
+      if (!space) throw new NotFoundException("Space not found");
+    }
+
     const parentIds = [
       ...new Set(items.map(function getParent(i) {
         return i.parentPageId ?? null;
@@ -182,6 +197,8 @@ export class KbImportExportService {
 
     let succeeded = 0;
     let failed = 0;
+    let duplicates = 0;
+    const failedTitles: string[] = [];
 
     const counters = new Map<number | null, number>(
       parentIds.map(function initCounter(pid) {
@@ -197,6 +214,8 @@ export class KbImportExportService {
       return {
         orgId,
         parentPageId: item.parentPageId ?? null,
+        spaceId: input.spaceId ?? null,
+        visibility: input.visibility,
         title: item.title,
         contentText: item.contentText ?? null,
         sortOrder,
@@ -207,38 +226,121 @@ export class KbImportExportService {
       };
     });
 
-    const withRef = pageValues.filter((v) => v.externalId !== null);
-    const withoutRef = pageValues.filter((v) => v.externalId === null);
-
-    if (withRef.length > 0) {
-      try {
-        await this.db
-          .insert(kbPages)
-          .values(withRef)
-          .onConflictDoUpdate({
-            target: [kbPages.orgId, kbPages.externalSource, kbPages.externalId],
-            targetWhere: sql`${kbPages.externalId} IS NOT NULL`,
-            set: {
-              title: sql`excluded.title`,
-              contentText: sql`excluded.content_text`,
-              updatedAt: sql`now()`,
-              lastEditedById: sql`excluded.last_edited_by_id`,
-            },
-          });
-        succeeded += withRef.length;
-      } catch {
-        failed += withRef.length;
-      }
+    type PageInsertRow = (typeof pageValues)[number];
+    function hasExternalRef(
+      row: PageInsertRow,
+    ): row is PageInsertRow & { externalId: string; externalSource: string } {
+      return row.externalId !== null && row.externalSource !== null;
     }
 
-    if (withoutRef.length > 0) {
-      try {
-        await this.db.insert(kbPages).values(withoutRef).onConflictDoNothing();
-        succeeded += withoutRef.length;
-      } catch {
-        failed += withoutRef.length;
+    const withRef = pageValues.filter(hasExternalRef);
+    const withoutRef = pageValues.filter((v) => !hasExternalRef(v));
+
+    const indexTargets: Array<{
+      id: number;
+      contentRevision: number;
+      aclRevision: number;
+    }> = [];
+
+    await this.db.transaction(async (tx) => {
+      if (withRef.length > 0) {
+        const existing = await tx
+          .select({
+            externalSource: kbPages.externalSource,
+            externalId: kbPages.externalId,
+          })
+          .from(kbPages)
+          .where(
+            and(
+              eq(kbPages.orgId, orgId),
+              or(
+                ...withRef.map((v) =>
+                  and(
+                    eq(kbPages.externalSource, v.externalSource),
+                    eq(kbPages.externalId, v.externalId),
+                  ),
+                ),
+              ),
+            ),
+          );
+        const existingKeys = new Set(
+          existing.map((e) => `${e.externalSource}::${e.externalId}`),
+        );
+
+        const toUpsert =
+          input.duplicatePolicy === "skip"
+            ? withRef.filter(
+                (v) => !existingKeys.has(`${v.externalSource}::${v.externalId}`),
+              )
+            : withRef;
+        duplicates += withRef.length - toUpsert.length;
+
+        if (toUpsert.length > 0) {
+          try {
+            const inserted = await tx
+              .insert(kbPages)
+              .values(toUpsert)
+              .onConflictDoUpdate({
+                target: [kbPages.orgId, kbPages.externalSource, kbPages.externalId],
+                targetWhere: sql`${kbPages.externalId} IS NOT NULL`,
+                set: {
+                  title: sql`excluded.title`,
+                  contentText: sql`excluded.content_text`,
+                  updatedAt: sql`now()`,
+                  lastEditedById: sql`excluded.last_edited_by_id`,
+                },
+              })
+              .returning({
+                id: kbPages.id,
+                contentRevision: kbPages.contentRevision,
+                aclRevision: kbPages.aclRevision,
+              });
+            succeeded += inserted.length;
+            indexTargets.push(...inserted);
+          } catch {
+            failed += toUpsert.length;
+            failedTitles.push(...toUpsert.map((v) => v.title));
+          }
+        }
       }
-    }
+
+      if (withoutRef.length > 0) {
+        try {
+          const inserted = await tx
+            .insert(kbPages)
+            .values(withoutRef)
+            .onConflictDoNothing()
+            .returning({
+              id: kbPages.id,
+              contentRevision: kbPages.contentRevision,
+              aclRevision: kbPages.aclRevision,
+            });
+          succeeded += inserted.length;
+          indexTargets.push(...inserted);
+        } catch {
+          failed += withoutRef.length;
+          failedTitles.push(...withoutRef.map((v) => v.title));
+        }
+      }
+
+      for (const target of indexTargets) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "kb_page",
+          aggregateId: String(target.id),
+          aggregateVersion: Date.now(),
+          eventType: "kb.content.index",
+          payload: {
+            contentType: "page",
+            contentId: target.id,
+            contentRevision: target.contentRevision,
+            aclRevision: target.aclRevision,
+          },
+          occurredAt: new Date(),
+        });
+      }
+    });
 
     const [job] = await this.db
       .insert(kbImportJobs)
@@ -250,9 +352,8 @@ export class KbImportExportService {
         processedItems: items.length,
         succeededItems: succeeded,
         failedItems: failed,
-        errorReport: {
-          itemTitles: items.map((item) => item.title),
-        },
+        duplicateItems: duplicates,
+        errorReport: failedTitles.length > 0 ? { failedTitles } : null,
         createdById: user.userId,
       })
       .returning();
@@ -262,10 +363,10 @@ export class KbImportExportService {
       action: "kb.pages.imported",
       userId: user.userId,
       orgId,
-      metadata: { jobId: job.id, total: items.length, succeeded, failed },
+      metadata: { jobId: job.id, total: items.length, succeeded, failed, duplicates },
     });
 
-    return { jobId: job.id, succeeded, failed, total: items.length };
+    return { jobId: job.id, succeeded, failed, duplicates, total: items.length };
   }
 
   async listImportJobs(orgId: string, cursor?: string): Promise<ImportJobPage> {

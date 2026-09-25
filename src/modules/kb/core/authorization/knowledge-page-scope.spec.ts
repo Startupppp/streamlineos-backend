@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { kbPages } from "../../../../db/schema";
 import {
   buildArticleRestrictionBranch,
+  buildSharedWithMeScope,
   buildVisiblePageScope,
   permissionFingerprintOf,
 } from "./knowledge-page-scope";
@@ -167,6 +168,48 @@ describe("the legacy visibility predicate these branches replace", () => {
     expect(legacy).not.toContain("kb_page_grants");
     expect(legacy).not.toContain("space_id");
     expect(legacy).toContain("project_id");
+  });
+});
+
+describe("buildSharedWithMeScope", () => {
+  it("offers no scope at all to an actor with neither a membership nor a role, failing closed", () => {
+    expect(
+      buildSharedWithMeScope(makeStanding({ membershipId: null, roleSlugs: [] })),
+    ).toBeNull();
+  });
+
+  it("requires a live grant scoped to the exact page, so visibility alone never satisfies it", () => {
+    const scope = buildSharedWithMeScope(makeStanding());
+    expect(scope).not.toBeNull();
+    const rendered = text(scope?.predicate);
+    expect(rendered.toLowerCase()).toContain("exists");
+    expect(rendered).toContain("kb_page_grants");
+    expect(rendered).not.toContain("visibility");
+  });
+
+  it("an org-visible page the actor can merely view, with no grant naming them, does not satisfy the predicate structure", () => {
+    const scope = buildSharedWithMeScope(makeStanding());
+    const rendered = text(scope?.predicate);
+    expect(rendered.toLowerCase()).toContain("revoked_at");
+    expect(rendered.toLowerCase()).toContain("is null");
+  });
+
+  it("excludes a page the actor owns from sharedWithMe even when a role grant would otherwise match", () => {
+    const scope = buildSharedWithMeScope(makeStanding({ membershipId: 9 }));
+    const rendered = text(scope?.predicate);
+    expect(rendered).toContain("owner_membership_id");
+    expect(rendered).toContain("created_by_membership_id");
+  });
+
+  it("excludes a page the actor created, identified by user id rather than membership", () => {
+    const scope = buildSharedWithMeScope(makeStanding());
+    const rendered = text(scope?.predicate);
+    expect(rendered).toContain("created_by_id");
+  });
+
+  it("binds the actor's own org so a shared page from another tenant can never match", () => {
+    const scope = buildSharedWithMeScope(makeStanding({ orgId: "org-9" }));
+    expect(text(scope?.predicate)).toContain("org-9");
   });
 });
 

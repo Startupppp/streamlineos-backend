@@ -27,6 +27,39 @@ const TEMPLATE_ROW = {
   updatedAt: new Date(),
 };
 
+function makeSelectSequence(
+  resultsByCall: unknown[][],
+  capture?: { conditions: unknown[] },
+): { select: jest.Mock; limits: jest.Mock[] } {
+  let call = 0;
+  const limits: jest.Mock[] = [];
+  const select = jest.fn().mockImplementation(() => {
+    const rows = resultsByCall[call] ?? [];
+    call += 1;
+    return {
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockImplementation((cond: unknown) => {
+          capture?.conditions.push(cond);
+          const limitMock = jest.fn().mockResolvedValue(rows);
+          limits.push(limitMock);
+          return Object.assign(Promise.resolve(rows), {
+            orderBy: jest.fn().mockReturnValue({ limit: limitMock }),
+          });
+        }),
+      }),
+    };
+  });
+  return { select, limits };
+}
+
+function makeSelectOwnerChain(row: (Record<string, unknown> & { createdById?: string | null }) | null) {
+  const ownerRows =
+    row && row.createdById
+      ? [{ id: row.createdById, name: "Owner Name" }]
+      : [];
+  return makeSelectSequence([row ? [row] : [], ownerRows]).select;
+}
+
 function makeInsertChain(result: unknown[] = [TEMPLATE_ROW]): {
   db: Db;
   returning: jest.Mock;
@@ -39,6 +72,7 @@ function makeInsertChain(result: unknown[] = [TEMPLATE_ROW]): {
   const db = {
     query: { kbPages: { findFirst } },
     insert: jest.fn().mockReturnValue({ values }),
+    select: makeSelectOwnerChain(result[0] ? (result[0] as Record<string, unknown>) : null),
   } as unknown as Db;
   return { db, returning, values, findFirst };
 }
@@ -132,18 +166,10 @@ describe("KbPageTemplatesService.remove", () => {
 });
 
 describe("KbPageTemplatesService.list — paging", () => {
-  function makeListDb(rows: unknown[]) {
-    const limit = jest.fn().mockResolvedValue(rows);
-    const db = {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockReturnValue({ limit }),
-          }),
-        }),
-      }),
-    } as unknown as Db;
-    return { db, limit };
+  function makeListDb(rows: unknown[], ownerRows: unknown[] = []) {
+    const { select, limits } = makeSelectSequence([rows, ownerRows]);
+    const db = { select } as unknown as Db;
+    return { db, limits };
   }
 
   function templateNamed(id: number, name: string) {
@@ -151,11 +177,11 @@ describe("KbPageTemplatesService.list — paging", () => {
   }
 
   it("asks for one row beyond the page so it can tell whether another page exists without counting", async () => {
-    const { db, limit } = makeListDb([]);
+    const { db, limits } = makeListDb([]);
 
     await new KbPageTemplatesService(db).list("org-1", { limit: 50 });
 
-    expect(limit).toHaveBeenCalledWith(51);
+    expect(limits[0]).toHaveBeenCalledWith(51);
   });
 
   it("reports hasMore and a cursor when a further page exists, so templates past the first page stay reachable", async () => {
@@ -180,11 +206,96 @@ describe("KbPageTemplatesService.list — paging", () => {
   });
 
   it("never exceeds the shared page-size cap, so no caller can invent a larger read", async () => {
-    const { db, limit } = makeListDb([]);
+    const { db, limits } = makeListDb([]);
 
     await new KbPageTemplatesService(db).list("org-1", { limit: PAGE_SIZE_CAP });
 
-    expect(limit).toHaveBeenCalledWith(PAGE_SIZE_CAP + 1);
+    expect(limits[0]).toHaveBeenCalledWith(PAGE_SIZE_CAP + 1);
     expect(PAGE_SIZE_CAP).toBe(100);
+  });
+
+  it("returns the creator's display name alongside each template", async () => {
+    const { db } = makeListDb(
+      [templateNamed(1, "Alpha")],
+      [{ id: TEMPLATE_ROW.createdById, name: "Jamie Doe" }],
+    );
+
+    const page = await new KbPageTemplatesService(db).list("org-1", { limit: 50 });
+
+    expect(page.data[0]).toMatchObject({ createdByName: "Jamie Doe" });
+  });
+});
+
+function sqlStringValues(v: unknown, seen = new Set<object>()): string[] {
+  if (typeof v === "string") return [v];
+  if (v === null || v === undefined || typeof v !== "object") return [];
+  if (seen.has(v)) return [];
+  seen.add(v);
+  if (Array.isArray(v)) return v.flatMap((i) => sqlStringValues(i, seen));
+  const r = v as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(r.queryChunks ? sqlStringValues(r.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlStringValues(r.value, seen) : []),
+  ];
+}
+
+describe("KbPageTemplatesService.list — q search", () => {
+  it("passes a trailing-wildcard ilike condition into the where clause when q is provided, never a leading wildcard", async () => {
+    const capture = { conditions: [] as unknown[] };
+    const { select } = makeSelectSequence([[], []], capture);
+    const db = { select } as unknown as Db;
+
+    await new KbPageTemplatesService(db).list("org-1", { limit: 50, q: "meeting" });
+
+    const values = sqlStringValues(capture.conditions);
+    expect(values).toContain("meeting%");
+    expect(values).not.toContain("%meeting%");
+    expect(values).not.toContain("%meeting");
+  });
+});
+
+describe("KbPageTemplatesService.update", () => {
+  it("throws NotFoundException when no row matches the org+id pair", async () => {
+    const returning = jest.fn().mockResolvedValue([]);
+    const where = jest.fn().mockReturnValue({ returning });
+    const set = jest.fn().mockReturnValue({ where });
+    const db = { update: jest.fn().mockReturnValue({ set }) } as unknown as Db;
+    const svc = new KbPageTemplatesService(db);
+
+    await expect(svc.update("org-1", 99, { name: "New name" })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it("renames the template and returns the refreshed row with its owner", async () => {
+    const returning = jest.fn().mockResolvedValue([{ id: 1 }]);
+    const where = jest.fn().mockReturnValue({ returning });
+    const set = jest.fn().mockReturnValue({ where });
+    const db = {
+      update: jest.fn().mockReturnValue({ set }),
+      select: makeSelectOwnerChain({
+        ...TEMPLATE_ROW,
+        name: "Renamed",
+        createdByName: "Owner Name",
+      }),
+    } as unknown as Db;
+    const svc = new KbPageTemplatesService(db);
+
+    const result = await svc.update("org-1", 1, { name: "Renamed" });
+
+    expect(set).toHaveBeenCalledWith({ name: "Renamed" });
+    expect(result).toMatchObject({ name: "Renamed", createdByName: "Owner Name" });
+  });
+
+  it("throws ConflictException when the rename collides with an existing template name", async () => {
+    const returning = jest.fn().mockRejectedValue(UNIQUE_VIOLATION);
+    const where = jest.fn().mockReturnValue({ returning });
+    const set = jest.fn().mockReturnValue({ where });
+    const db = { update: jest.fn().mockReturnValue({ set }) } as unknown as Db;
+    const svc = new KbPageTemplatesService(db);
+
+    await expect(svc.update("org-1", 1, { name: "Duplicate" })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 });

@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { kbResearchBriefs, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -42,6 +42,18 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
       .where(and(eq(kbResearchBriefs.id, briefId), eq(kbResearchBriefs.orgId, job.orgId)));
 
     try {
+      const hasContent = await this.orgHasIndexedContent(job.orgId);
+      if (!hasContent) {
+        await this.db
+          .update(kbResearchBriefs)
+          .set({
+            status: "failed",
+            errorMessage: "The knowledge base has no indexed content yet — nothing to research.",
+          })
+          .where(and(eq(kbResearchBriefs.id, briefId), eq(kbResearchBriefs.orgId, job.orgId)));
+        return { briefId, status: "failed" };
+      }
+
       const userCtx = await this.buildUserContext(job);
       const actor = { orgId: job.orgId, userId: job.userId ?? "system" };
 
@@ -73,6 +85,13 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
         .where(eq(kbResearchBriefs.id, briefId));
       return { briefId, status: "failed" };
     }
+  }
+
+  private async orgHasIndexedContent(orgId: string): Promise<boolean> {
+    const rows = await this.db.execute(
+      sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
+    );
+    return rows.length > 0;
   }
 
   private async buildUserContext(job: AiJobContext): Promise<CurrentUserContext> {

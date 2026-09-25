@@ -52,7 +52,7 @@ function makeDb(existingPublicToken: string | null) {
 }
 
 function makeService(db: Db) {
-  return new KbPagesService(db, {} as never, {} as never, {} as never, {} as never);
+  return new KbPagesService(db, {} as never, {} as never, {} as never, {} as never, {} as never);
 }
 
 describe("KbPagesService.setVisibility — public share tokens", () => {

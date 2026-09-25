@@ -65,7 +65,7 @@ function makeDb(row: unknown) {
 }
 
 function makeService(db: never) {
-  return new KbPagesService(db, {} as never, {} as never, {} as never, {} as never);
+  return new KbPagesService(db, {} as never, {} as never, {} as never, {} as never, {} as never);
 }
 
 describe("KbPagesService.getPublicPage — share links resolve by hash, never by plaintext", () => {

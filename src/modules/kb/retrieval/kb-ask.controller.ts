@@ -36,7 +36,9 @@ import { KbChatHistoryService } from "./kb-chat-history.service";
 import {
   askSchema,
   chatHistoryQuerySchema,
+  kbCreateKnowledgeGapSchema,
   type AskInput,
+  type KbCreateKnowledgeGapInput,
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
@@ -237,6 +239,21 @@ export class KbAskController {
   @ResponseSchema(kbChatSuccessSchema)
   async clearHistory(@CurrentUser() u: CurrentUserContext): Promise<{ success: boolean }> {
     await this.history.clear(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0);
+    return { success: true };
+  }
+
+  @Post("ask/knowledge-gap")
+  @HttpCode(200)
+  @RequirePermission("kb:pages:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("kb:ask")
+  @Validate({ body: kbCreateKnowledgeGapSchema })
+  @ResponseSchema(kbChatSuccessSchema)
+  async createKnowledgeGap(
+    @Body() body: KbCreateKnowledgeGapInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<{ success: boolean }> {
+    await this.ask.reportKnowledgeGap(u, body.question);
     return { success: true };
   }
 

@@ -16,6 +16,7 @@ function makeDb(pageRow: unknown) {
 
 const audit = { log: jest.fn() } as never;
 const access = { holds: jest.fn().mockResolvedValue(false) } as never;
+const kbAccess = { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never;
 
 function makeAuth() {
   return {
@@ -29,7 +30,7 @@ describe("KbPageTreeService.restore — enumeration guard", () => {
 
   it("throws NotFoundException when the page does not exist", async () => {
     const auth = makeAuth();
-    const svc = new KbPageTreeService(makeDb(null), audit, auth as never, access);
+    const svc = new KbPageTreeService(makeDb(null), audit, auth as never, access, kbAccess);
 
     await expect(svc.restore(makeUser(), PAGE_ID)).rejects.toThrow(NotFoundException);
     await expect(svc.restore(makeUser(), PAGE_ID)).rejects.toThrow("Page not found");
@@ -38,7 +39,7 @@ describe("KbPageTreeService.restore — enumeration guard", () => {
   it("throws NotFoundException when the page exists but is restricted", async () => {
     const auth = makeAuth();
     const db = makeDb(null);
-    const svc = new KbPageTreeService(db, audit, auth as never, access);
+    const svc = new KbPageTreeService(db, audit, auth as never, access, kbAccess);
 
     const error = await svc.restore(makeUser(), PAGE_ID).catch((e: unknown) => e);
 
@@ -53,6 +54,7 @@ describe("KbPageTreeService.restore — enumeration guard", () => {
       audit,
       makeAuth() as never,
       access,
+      kbAccess,
     ).restore(makeUser(), PAGE_ID).catch((e: unknown) => e);
 
     const errorB = await new KbPageTreeService(
@@ -60,6 +62,7 @@ describe("KbPageTreeService.restore — enumeration guard", () => {
       audit,
       makeAuth() as never,
       access,
+      kbAccess,
     ).restore(makeUser(), PAGE_ID).catch((e: unknown) => e);
 
     expect((errorA as NotFoundException).message).toBe((errorB as NotFoundException).message);

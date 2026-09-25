@@ -129,6 +129,7 @@ export class KbAskService {
         sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>;
         linked: LinkedDocumentItem[];
         citations: AskCitation[];
+        degraded: boolean;
       }
   > {
     return runInTenantTransaction(
@@ -196,6 +197,10 @@ export class KbAskService {
         );
         if (fullContext.length === 0) return { kind: "no-context" as const };
 
+        const degraded =
+          sources.some((source) => source.degraded === true) ||
+          documentPassages.some((passage) => passage.degraded === true);
+
         return {
           kind: "context" as const,
           fullContext,
@@ -203,6 +208,7 @@ export class KbAskService {
           sources,
           linked,
           citations,
+          degraded,
         };
       },
       { orgId: user.orgId },
@@ -271,7 +277,7 @@ export class KbAskService {
         void this.writeNoContextInteraction(user, correlationId);
         return this.noContextAnswer(user, input.question, correlationId);
       }
-      const { fullContext, top, sources, linked, citations } = gathered;
+      const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
 
@@ -376,7 +382,11 @@ export class KbAskService {
         { orgId: user.orgId },
       );
 
-      metrics.finish("answered", { citations: citations.length, candidates });
+      metrics.finish(degraded ? "degraded" : "answered", {
+        citations: citations.length,
+        candidates,
+        degraded,
+      });
       return { answer, citations, hasContext: true, aiUsage };
     } catch (error) {
       metrics.finish("error");
@@ -408,7 +418,7 @@ export class KbAskService {
         metrics.finish("no_context");
         return { hasContext: false };
       }
-      const { fullContext, top, sources, linked, citations } = gathered;
+      const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
 
@@ -450,7 +460,11 @@ export class KbAskService {
         signal,
       });
 
-      metrics.finish("answered", { citations: citations.length, candidates });
+      metrics.finish(degraded ? "degraded" : "answered", {
+        citations: citations.length,
+        candidates,
+        degraded,
+      });
       return {
         hasContext: true,
         aiStream,
@@ -476,6 +490,17 @@ export class KbAskService {
       sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
     );
     return rows.length > 0;
+  }
+
+  async reportKnowledgeGap(
+    user: CurrentUserContext,
+    question: string,
+  ): Promise<void> {
+    await this.events.record(user.orgId, "search_no_results", {
+      actorMembershipId: actingMembershipId(user.principal) ?? null,
+      query: question,
+      metadata: { reportedFromAsk: true },
+    });
   }
 
   async assertReplayCitations(

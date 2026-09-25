@@ -33,6 +33,8 @@ export const kbPageCommentSchema = z.object({
   authorId: z.string().nullable(),
   parentId: z.number().int().nullable(),
   content: z.string(),
+  anchorBlockIndex: z.number().int().nullable(),
+  anchorQuote: z.string().nullable(),
   resolvedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
@@ -108,6 +110,7 @@ export const kbPageTemplateSchema = z.object({
   description: z.string().nullable(),
   content: z.record(z.string(), z.unknown()).nullable(),
   createdById: z.string().nullable(),
+  createdByName: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
@@ -261,3 +264,8 @@ export const kbBulkPageResultSchema = z.object({
 });
 
 export const kbTrashPageListSchema = cursorPageSchema(kbPageListItemSchema);
+
+export const kbPageTrashPurgeImpactSchema = z.object({
+  pageCount: z.number().int(),
+  descendantCount: z.number().int(),
+});

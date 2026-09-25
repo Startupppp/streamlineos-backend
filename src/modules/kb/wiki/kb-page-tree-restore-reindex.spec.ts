@@ -89,6 +89,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
+      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -110,6 +111,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
+      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -129,6 +131,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
+      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -149,6 +152,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
+      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await svc.restore(makeUser(), 10);

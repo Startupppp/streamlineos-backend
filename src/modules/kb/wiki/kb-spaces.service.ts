@@ -13,10 +13,19 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   ne,
   sql,
 } from "drizzle-orm";
-import { kbSpaces, kbSpaceMembers, kbPages, kbPageLinks, kbSources } from "../../../db/schema";
+import {
+  kbSpaces,
+  kbSpaceMembers,
+  kbPages,
+  kbPageLinks,
+  kbSources,
+  organizationMembers,
+  users,
+} from "../../../db/schema";
 import {
   supportArticlePredicate,
   wikiContentTypeOnly,
@@ -67,7 +76,13 @@ type SpaceListItem = Pick<
   | "createdAt"
   | "updatedAt"
   | "archivedAt"
-> & { articleCount: number; pageCount: number; memberCount: number };
+> & {
+  articleCount: number;
+  pageCount: number;
+  memberCount: number;
+  ownerName: string | null;
+  pagesOverdueForReview: number;
+};
 
 export interface SpaceArchiveImpact {
   pageCount: number;
@@ -151,8 +166,17 @@ export class KbSpacesService {
         updatedAt: kbSpaces.updatedAt,
         archivedAt: kbSpaces.archivedAt,
         updatedAtMicros: microsecondCursorValue(kbSpaces.updatedAt),
+        ownerName: users.name,
       })
       .from(kbSpaces)
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, kbSpaces.orgId),
+          eq(organizationMembers.id, kbSpaces.createdByMembershipId),
+        ),
+      )
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(where)
       .orderBy(desc(kbSpaces.updatedAt), desc(kbSpaces.id))
       .limit(query.limit + 1);
@@ -167,7 +191,7 @@ export class KbSpacesService {
 
     const visiblePagePredicate = await this.authz.visiblePagePredicate(user);
 
-    const [articleCounts, pageCounts, memberCounts] = await Promise.all([
+    const [articleCounts, pageCounts, memberCounts, overdueReviewCounts] = await Promise.all([
       this.db
         .select({
           spaceId: kbPages.spaceId,
@@ -210,6 +234,22 @@ export class KbSpacesService {
           ),
         )
         .groupBy(kbSpaceMembers.spaceId),
+      this.db
+        .select({
+          spaceId: kbPages.spaceId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, user.orgId),
+            inArray(kbPages.spaceId, spaceIds),
+            isNull(kbPages.deletedAt),
+            isNotNull(kbPages.nextReviewAt),
+            lt(kbPages.nextReviewAt, new Date()),
+          ),
+        )
+        .groupBy(kbPages.spaceId),
     ]);
 
     const articleCountMap = new Map(
@@ -218,6 +258,9 @@ export class KbSpacesService {
     const pageCountMap = new Map(pageCounts.map((c) => [c.spaceId, c.count]));
     const memberCountMap = new Map(
       memberCounts.map((c) => [c.spaceId, c.count]),
+    );
+    const overdueReviewCountMap = new Map(
+      overdueReviewCounts.map((c) => [c.spaceId, c.count]),
     );
 
     const cursorValues = new Map(spaces.map((s) => [s.id, s.updatedAtMicros]));
@@ -236,6 +279,8 @@ export class KbSpacesService {
       articleCount: articleCountMap.get(s.id) ?? 0,
       pageCount: pageCountMap.get(s.id) ?? 0,
       memberCount: memberCountMap.get(s.id) ?? 0,
+      ownerName: s.ownerName ?? null,
+      pagesOverdueForReview: overdueReviewCountMap.get(s.id) ?? 0,
     }));
 
     return buildCursorPage(items, query.limit, (row) => ({
@@ -283,7 +328,12 @@ export class KbSpacesService {
     return created;
   }
 
-  async get(user: CurrentUserContext, spaceId: number): Promise<SpaceRow> {
+  async get(
+    user: CurrentUserContext,
+    spaceId: number,
+  ): Promise<
+    SpaceRow & { pagesOverdueForReview: number; pagesWithReviewPolicy: number }
+  > {
     const space = await this.db.query.kbSpaces.findFirst({
       where: and(
         eq(kbSpaces.id, spaceId),
@@ -293,7 +343,38 @@ export class KbSpacesService {
     });
     if (!space) throw new NotFoundException("Space not found");
     await this.access.assertSpaceAccessible(user, spaceId);
-    return space;
+
+    const [overdueResult, policyResult] = await Promise.all([
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, user.orgId),
+            eq(kbPages.spaceId, spaceId),
+            isNull(kbPages.deletedAt),
+            isNotNull(kbPages.nextReviewAt),
+            lt(kbPages.nextReviewAt, new Date()),
+          ),
+        ),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, user.orgId),
+            eq(kbPages.spaceId, spaceId),
+            isNull(kbPages.deletedAt),
+            isNotNull(kbPages.nextReviewAt),
+          ),
+        ),
+    ]);
+
+    return {
+      ...space,
+      pagesOverdueForReview: overdueResult[0]?.count ?? 0,
+      pagesWithReviewPolicy: policyResult[0]?.count ?? 0,
+    };
   }
 
   async update(

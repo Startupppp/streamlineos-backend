@@ -17,7 +17,7 @@ jest.mock("../core/kb-scope", () => ({
 function makeChain() {
   let promise: unknown;
   const chain: Record<string, jest.Mock> = {};
-  for (const m of ["from", "innerJoin", "leftJoin", "where", "orderBy", "groupBy", "limit"]) {
+  for (const m of ["from", "innerJoin", "leftJoin", "where", "orderBy", "groupBy", "having", "limit"]) {
     chain[m] = jest.fn().mockImplementation(() => promise);
   }
   promise = Object.assign(Promise.resolve([]), chain);

@@ -43,6 +43,7 @@ export const kbImportResultSchema = z.object({
   jobId: z.number().int(),
   succeeded: z.number().int(),
   failed: z.number().int(),
+  duplicates: z.number().int(),
   total: z.number().int(),
 });
 
@@ -98,6 +99,8 @@ const kbSpaceRowSchema = z.object({
   defaultVisibility: z.string(),
   owningTeamId: z.string().nullable(),
   archivedAt: nullableWireDate(),
+  pagesOverdueForReview: z.number().int().optional(),
+  pagesWithReviewPolicy: z.number().int().optional(),
 });
 
 export const kbSpaceListItemSchema = z.object({
@@ -114,6 +117,8 @@ export const kbSpaceListItemSchema = z.object({
   articleCount: z.number().int(),
   pageCount: z.number().int(),
   memberCount: z.number().int(),
+  ownerName: z.string().nullable(),
+  pagesOverdueForReview: z.number().int(),
 });
 
 export const kbSpaceListSchema = z.array(kbSpaceListItemSchema);

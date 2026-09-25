@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -19,8 +20,10 @@ import { KbPageTemplatesService } from "./kb-page-templates.service";
 import {
   createPageTemplateSchema,
   listPageTemplatesQuerySchema,
+  updatePageTemplateSchema,
   type CreatePageTemplateInput,
   type ListPageTemplatesQuery,
+  type UpdatePageTemplateInput,
 } from "./dto/kb-page-templates.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
@@ -57,6 +60,18 @@ export class KbPageTemplatesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.templates.create(u, body);
+  }
+
+  @Patch("page-templates/:templateId")
+  @RequirePermission("kb:templates:manage")
+  @Validate({ params: templateIdParams, body: updatePageTemplateSchema })
+  @ResponseSchema(kbPageTemplateSchema)
+  async update(
+    @Param("templateId", ParseIntPipe) templateId: number,
+    @Body() body: UpdatePageTemplateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.templates.update(u.orgId, templateId, body);
   }
 
   @Delete("page-templates/:templateId")

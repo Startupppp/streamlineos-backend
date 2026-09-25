@@ -18,6 +18,7 @@ import type { MovePageInput } from "./dto/kb-pages.schemas";
 import type { ListPageTreeChildrenInput } from "./dto/kb-page-tree.dto";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { KbAccessService } from "../core/kb-access.service";
 import { collectSubtreeIds } from "./kb-page-subtree.util";
 import { resolveProjectAccess } from "../../build/core/project-access";
 import {
@@ -71,6 +72,7 @@ export class KbPageTreeService {
     private readonly audit: AuditService,
     private readonly auth: KnowledgeAuthorizationService,
     private readonly access: AccessService,
+    private readonly kbAccess: KbAccessService,
   ) {}
 
   async getTreeLevel(
@@ -332,16 +334,29 @@ export class KbPageTreeService {
         eq(kbPages.orgId, orgId),
         isNull(kbPages.deletedAt),
       ),
-      columns: { id: true, parentPageId: true },
+      columns: { id: true, parentPageId: true, spaceId: true },
     });
     if (!page) throw new NotFoundException("Page not found");
 
     const targetParentId = input.parentPageId;
+    let targetSpaceId = page.spaceId;
 
     if (targetParentId !== null) {
       if (targetParentId === pageId)
         throw new BadRequestException("A page cannot be its own parent");
       await this.auth.assertPageAccess(user, targetParentId, "edit");
+
+      const targetParent = await this.db.query.kbPages.findFirst({
+        where: and(
+          eq(kbPages.id, targetParentId),
+          eq(kbPages.orgId, orgId),
+          isNull(kbPages.deletedAt),
+        ),
+        columns: { spaceId: true },
+      });
+      if (!targetParent)
+        throw new NotFoundException("Target parent page not found");
+      targetSpaceId = targetParent.spaceId;
 
       const allPages = await this.db
         .select({ id: kbPages.id, parentPageId: kbPages.parentPageId })
@@ -353,6 +368,10 @@ export class KbPageTreeService {
           "Cannot move a page into one of its own descendants",
         );
       }
+    }
+
+    if (targetSpaceId !== page.spaceId && targetSpaceId !== null) {
+      await this.kbAccess.assertSpaceAccessible(user, targetSpaceId);
     }
 
     return this.db.transaction(async (tx) => {
@@ -388,7 +407,11 @@ export class KbPageTreeService {
 
       const [updated] = await tx
         .update(kbPages)
-        .set({ parentPageId: targetParentId, sortOrder: newSortOrder })
+        .set({
+          parentPageId: targetParentId,
+          sortOrder: newSortOrder,
+          spaceId: targetSpaceId,
+        })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");

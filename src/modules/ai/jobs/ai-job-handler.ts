@@ -25,4 +25,8 @@ export class AiJobHandlerRegistry {
   resolve(type: string): AiJobHandler | undefined {
     return this.map.get(type);
   }
+
+  types(): string[] {
+    return [...this.map.keys()].sort();
+  }
 }

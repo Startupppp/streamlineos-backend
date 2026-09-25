@@ -352,6 +352,36 @@ export class KbPageTrashService {
     }));
   }
 
+  async purgeImpact(
+    user: CurrentUserContext,
+    input: BulkPageIdsInput,
+  ): Promise<{ pageCount: number; descendantCount: number }> {
+    const orgId = user.orgId;
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
+    const found = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          inArray(kbPages.id, input.pageIds),
+          predicate,
+        ),
+      );
+    const visibleIds = found.map((p) => p.id);
+    const affected = new Set<number>();
+    for (const id of visibleIds) {
+      const subtreeIds = await this.db.transaction((tx) =>
+        collectSubtreeIds(tx, orgId, id),
+      );
+      for (const subId of subtreeIds) affected.add(subId);
+    }
+    return {
+      pageCount: visibleIds.length,
+      descendantCount: Math.max(0, affected.size - visibleIds.length),
+    };
+  }
+
   async bulkRestore(
     user: CurrentUserContext,
     input: BulkPageIdsInput,
