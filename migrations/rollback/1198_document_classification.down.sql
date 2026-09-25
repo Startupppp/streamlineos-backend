@@ -1,5 +1,5 @@
 -- Rollback for 1198_document_classification. Destructive: the classification a person chose is lost.
--- Run 1200's rollback first: its trigger and function read these columns.
+-- Run the rollbacks of 1202, then 1201 first (the trigger and function that read these columns are 1201's), then 1200's.
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

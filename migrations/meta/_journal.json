@@ -6707,6 +6707,13 @@
       "when": 1803000010716,
       "tag": "1201_kb_linked_document_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 1086,
+      "version": "7",
+      "when": 1803000010717,
+      "tag": "1202_hr_document_publishable_excludes_self_uploads",
+      "breakpoints": true
     }
   ]
 }

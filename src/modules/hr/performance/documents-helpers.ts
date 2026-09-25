@@ -50,6 +50,16 @@ export function isPublishableClassification(classification: string): boolean {
   return PUBLISHABLE_CLASSIFICATIONS.some((publishable) => publishable === classification);
 }
 
+/**
+ * The employee self-service upload (`POST /onboarding/documents`, open to every signed-in member) files a person's own
+ * document with them as both owner and uploader, exactly the shape an HR-filed company document has, and lets them pick
+ * POLICY or OTHER as the type. What tells the two apart is where the file is stored: that route, and only that route,
+ * writes under `<org>/onboarding/`. Such a document is the employee's own, whatever else it says.
+ */
+export function isEmployeeSelfUpload(row: { orgId: string; fileUrl: string | null }): boolean {
+  return row.fileUrl !== null && `/${row.fileUrl}`.includes(`/${row.orgId}/onboarding/`);
+}
+
 // Recruitment hand-off stamps these on the row it creates; a document carrying either is a hiring artefact whatever else it says.
 const HIRING_ARTEFACT_METADATA_KEYS = ["candidateId", "offerId"] as const;
 
@@ -63,6 +73,8 @@ type PublishBlockerCode =
 export type PublishBlocker = { code: PublishBlockerCode; message: string };
 
 export type PublishabilityRow = {
+  orgId: string;
+  fileUrl: string | null;
   type: string;
   userId: string | null;
   uploadedBy: string | null;
@@ -96,6 +108,11 @@ export function publishBlockers(row: PublishabilityRow): PublishBlocker[] {
     blockers.push({
       code: "BELONGS_TO_AN_EMPLOYEE",
       message: "The document belongs to an employee, so it is theirs and cannot be shared with the company.",
+    });
+  if (isEmployeeSelfUpload(row) && !blockers.some((blocker) => blocker.code === "BELONGS_TO_AN_EMPLOYEE"))
+    blockers.push({
+      code: "BELONGS_TO_AN_EMPLOYEE",
+      message: "An employee uploaded this document for themselves, so it is theirs and cannot be shared with the company.",
     });
   const metadata = row.metadata;
   if (HIRING_ARTEFACT_METADATA_KEYS.some((key) => metadata !== null && Object.hasOwn(metadata, key)))

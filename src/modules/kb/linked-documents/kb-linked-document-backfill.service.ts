@@ -52,6 +52,8 @@ export class KbLinkedDocumentBackfillService {
         const page = await tx
           .select({
             id: documents.id,
+            orgId: documents.orgId,
+            fileUrl: documents.fileUrl,
             name: documents.name,
             type: documents.type,
             userId: documents.userId,
@@ -62,6 +64,8 @@ export class KbLinkedDocumentBackfillService {
             metadata: documents.metadata,
             // Written out: in a single-table select drizzle renders columns unqualified, so `${documents.orgId}` inside the subquery would resolve to the INNER table and the test would always be false.
             hasAudience: sql<boolean>`EXISTS (SELECT 1 FROM document_audiences da WHERE da.org_id = "documents"."org_id" AND da.document_id = "documents"."id")`,
+            // A person once classified it, even if the answer was "Personal" (that also clears the audience, so the two tests above cannot see it). Written out for the same reason as above.
+            wasClassifiedByAPerson: sql<boolean>`EXISTS (SELECT 1 FROM audit_logs al WHERE al.org_id = "documents"."org_id" AND al.target_id = "documents"."id"::text AND al.target_type = 'document' AND al.action = 'hr.document.classified')`,
           })
           .from(documents)
           .where(and(eq(documents.orgId, orgId), gt(documents.id, input.cursor)))
@@ -72,7 +76,7 @@ export class KbLinkedDocumentBackfillService {
         const proposals: Array<{ id: number; name: string; audience: "ALL_EMPLOYEES" | "HR_ONLY" }> = [];
         for (const row of page) {
           // HR's own choice, however partial, is never overwritten.
-          if (row.classification !== "PERSONAL" || row.hasAudience) {
+          if (row.classification !== "PERSONAL" || row.hasAudience || row.wasClassifiedByAPerson) {
             skipped.alreadyClassified += 1;
             continue;
           }

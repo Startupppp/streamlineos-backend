@@ -56,19 +56,19 @@ describeDb("backfilling classifications — real database", () => {
     if (!sql) return;
     await seed.dispose();
     await sql.end({ timeout: 5 });
-  });
+  }, 120_000);
 
   async function doc(
     org: SeededOrg,
-    over: Partial<{ type: string; classification: string; owner: "none" | "uploader" | "employee"; isActive: boolean; isPublic: boolean; metadata: string | null; audience: boolean }> = {},
+    over: Partial<{ type: string; classification: string; owner: "none" | "uploader" | "employee"; isActive: boolean; isPublic: boolean; metadata: string | null; audience: boolean; folder: string }> = {},
   ): Promise<number> {
-    const o = { type: "POLICY", classification: "PERSONAL", owner: "none", isActive: true, isPublic: false, metadata: null, audience: false, ...over };
+    const o = { type: "POLICY", classification: "PERSONAL", owner: "none", isActive: true, isPublic: false, metadata: null, audience: false, folder: "hr-documents", ...over };
     const uploader = member(org, "hr").id;
     const owner = o.owner === "none" ? null : o.owner === "uploader" ? uploader : (org.members.employee?.id ?? uploader);
     const [row] = await sql`
       insert into documents (org_id, user_id, uploaded_by, name, type, classification, is_active, is_public, metadata, file_url)
       values (${org.orgId}, ${owner}, ${uploader}, ${`doc-${randomUUID().slice(0, 8)}`}, ${o.type}, ${o.classification}, ${o.isActive}, ${o.isPublic},
-              ${o.metadata}::text::jsonb, ${`${org.orgId}/hr-documents/${randomUUID()}.pdf`})
+              ${o.metadata}::text::jsonb, ${`${org.orgId}/${o.folder}/${randomUUID()}.pdf`})
       returning id`;
     const documentId = Number(row?.id);
     if (o.audience) await sql`insert into document_audiences (org_id, document_id, kind) values (${org.orgId}, ${documentId}, 'ALL_EMPLOYEES')`;
@@ -119,17 +119,35 @@ describeDb("backfilling classifications — real database", () => {
       const removed = await doc(a, { isActive: false });
       const classified = await doc(a, { classification: "RESTRICTED" });
       const withAudience = await doc(a, { audience: true });
+      // An employee's own file, typed OTHER and filed under their own name through the self-service upload: owner and uploader are one person, the shape of a company handbook, and only the storage folder tells them apart.
+      const selfUpload = await doc(a, { type: "OTHER", owner: "uploader", folder: "onboarding" });
 
       const pages = await runAll(a, true);
 
       const sampled = new Set(pages.flatMap((page) => page.sample.map((entry) => entry.documentId)));
-      const named = { payslip, employees, hiring, removed, classified, withAudience };
+      const named = { payslip, employees, hiring, removed, classified, withAudience, selfUpload };
       for (const [label, skippedId] of Object.entries(named)) expect([label, sampled.has(skippedId)]).toEqual([label, false]);
       expect(total(pages, (page) => page.skipped.typeNotAllowed)).toBeGreaterThanOrEqual(1);
       expect(total(pages, (page) => page.skipped.belongsToAnEmployee)).toBeGreaterThanOrEqual(1);
       expect(total(pages, (page) => page.skipped.hiringArtefact)).toBeGreaterThanOrEqual(1);
       expect(total(pages, (page) => page.skipped.inactive)).toBeGreaterThanOrEqual(1);
       expect(total(pages, (page) => page.skipped.alreadyClassified)).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("what a person already decided", () => {
+    it("leaves a document HR classified and later put back to Personal, even though that cleared its audience and left it looking untouched", async () => {
+      const resetByHr = await doc(a, { isPublic: true });
+      await sql`
+        insert into audit_logs (org_id, user_id, action, target_id, target_type)
+        values (${a.orgId}, ${member(a, "hr").id}, 'hr.document.classified', ${String(resetByHr)}, 'document')`;
+      const untouched = await doc(a, { isPublic: true });
+
+      const pages = await runAll(a, true);
+
+      const sampled = new Set(pages.flatMap((page) => page.sample.map((entry) => entry.documentId)));
+      expect(sampled.has(resetByHr)).toBe(false);
+      expect(sampled.has(untouched)).toBe(true);
     });
   });
 

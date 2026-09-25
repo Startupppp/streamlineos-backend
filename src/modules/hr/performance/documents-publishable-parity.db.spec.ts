@@ -33,6 +33,15 @@ const METADATA: ReadonlyArray<Record<string, unknown> | null> = [
   { source: "upload", unrelated: true },
 ];
 
+// Where the file is stored. The self-service onboarding upload writes under <org>/onboarding/ (optionally behind a region prefix); anything that merely looks similar must not be mistaken for it.
+const PLACES: ReadonlyArray<(orgId: string, unique: string) => string> = [
+  (orgId, unique) => `${orgId}/hr-documents/${unique}.pdf`,
+  (orgId, unique) => `${orgId}/onboarding/${unique}-passport.pdf`,
+  (orgId, unique) => `eu-west/${orgId}/onboarding/${unique}-passport.pdf`,
+  (orgId, unique) => `${orgId}/onboarding-policies/${unique}.pdf`,
+  (orgId, unique) => `another-org/onboarding/${unique}.pdf`,
+];
+
 describeDb("publishability: TypeScript and database agree — real database", () => {
   const raw = process.env.DATABASE_URL
     ? requireApprovedDatabaseUrl({ spec: "documents-publishable-parity.db.spec.ts", vars: ["DATABASE_URL", "APP_DATABASE_URL"] })
@@ -43,6 +52,8 @@ describeDb("publishability: TypeScript and database agree — real database", ()
   let org: SeededOrg;
   let rows: Array<{
     id: number;
+    orgId: string;
+    fileUrl: string;
     type: string;
     classification: string;
     userId: string | null;
@@ -72,6 +83,7 @@ describeDb("publishability: TypeScript and database agree — real database", ()
         for (const owner of owners)
           for (const isActive of [true, false])
             for (const metadata of METADATA)
+              for (const place of PLACES)
               inserts.push({
                 org_id: org.orgId,
                 user_id: owner.userId,
@@ -82,9 +94,9 @@ describeDb("publishability: TypeScript and database agree — real database", ()
                 is_active: isActive,
                 // Omitted, not null: jsonb_to_recordset reads a JSON null as the jsonb value `null`, not SQL NULL.
                 ...(metadata === null ? {} : { metadata }),
-                file_url: `${org.orgId}/hr-documents/${randomUUID()}.pdf`,
+                file_url: place(org.orgId, randomUUID()),
               });
-    expect(inserts).toHaveLength(TYPES.length * CLASSIFICATIONS.length * owners.length * 2 * METADATA.length);
+    expect(inserts).toHaveLength(TYPES.length * CLASSIFICATIONS.length * owners.length * 2 * METADATA.length * PLACES.length);
     // One JSON document, expanded server-side. Passing each row's metadata as a bind parameter stores a JSON
     // STRING (postgres-js encodes the text once more), which no key test can ever match — an earlier draft of this
     // spec passed for exactly that reason. The self-check below fails if metadata is not a real object.
@@ -96,11 +108,13 @@ describeDb("publishability: TypeScript and database agree — real database", ()
         org_id text, user_id text, uploaded_by text, name text, type text, classification text,
         is_active boolean, metadata jsonb, file_url text)`;
     rows = (
-      await sql<Array<{ id: number; type: string; classification: string; user_id: string | null; uploaded_by: string | null; is_active: boolean; metadata: Record<string, unknown> | null }>>`
-        select id, type::text as type, classification::text as classification, user_id, uploaded_by, is_active, metadata
+      await sql<Array<{ id: number; file_url: string; type: string; classification: string; user_id: string | null; uploaded_by: string | null; is_active: boolean; metadata: Record<string, unknown> | null }>>`
+        select id, file_url, type::text as type, classification::text as classification, user_id, uploaded_by, is_active, metadata
         from documents where org_id = ${org.orgId}`
     ).map((r) => ({
       id: r.id,
+      orgId: org.orgId,
+      fileUrl: r.file_url,
       type: r.type,
       classification: r.classification,
       userId: r.user_id,
@@ -114,7 +128,7 @@ describeDb("publishability: TypeScript and database agree — real database", ()
     if (!sql) return;
     await seed.dispose();
     await sql.end({ timeout: 5 });
-  });
+  }, 120_000);
 
   it("self-check: every non-null metadata value in the grid is a JSON object, so the key rule is actually exercised", async () => {
     const [bad] = await sql`
@@ -180,5 +194,15 @@ describeDb("publishability: TypeScript and database agree — real database", ()
       (row) => row.userId !== null && row.userId !== row.uploadedBy && isPublishableDocument(row),
     );
     expect(wrong).toEqual([]);
+  });
+
+  it("no document an employee filed for themselves through onboarding is ever publishable, and a lookalike path is not mistaken for it", () => {
+    const own = rows.filter((row) => `/${row.fileUrl}`.includes(`/${row.orgId}/onboarding/`));
+    expect(own.length).toBeGreaterThan(0);
+    expect(own.filter((row) => isPublishableDocument(row))).toEqual([]);
+
+    const lookalike = rows.filter((row) => /onboarding/.test(row.fileUrl) && !own.includes(row));
+    expect(lookalike.length).toBeGreaterThan(0);
+    expect(lookalike.filter((row) => isPublishableDocument(row)).length).toBeGreaterThan(0);
   });
 });

@@ -10,6 +10,8 @@ type Reader = Pick<TenantTx, "select">;
 
 export const JUDGED_DOCUMENT_COLUMNS = {
   id: documents.id,
+  orgId: documents.orgId,
+  fileUrl: documents.fileUrl,
   type: documents.type,
   userId: documents.userId,
   uploadedBy: documents.uploadedBy,

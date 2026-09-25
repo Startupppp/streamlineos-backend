@@ -26,10 +26,22 @@ import {
 
 export type ClassificationActor = { userId: string; orgId: string; membershipId: number | null };
 
+function publishPermissionRequired(): HttpException {
+  return new HttpException(
+    {
+      code: "PUBLISH_PERMISSION_REQUIRED",
+      message: "Sharing a document with the company needs the permission to publish documents.",
+    },
+    HttpStatus.FORBIDDEN,
+  );
+}
+
 type Reader = Pick<TenantTx, "select">;
 
 const DOCUMENT_COLUMNS = {
   id: documents.id,
+  orgId: documents.orgId,
+  fileUrl: documents.fileUrl,
   type: documents.type,
   userId: documents.userId,
   uploadedBy: documents.uploadedBy,
@@ -41,6 +53,8 @@ const DOCUMENT_COLUMNS = {
 
 type DocumentRow = {
   id: number;
+  orgId: string;
+  fileUrl: string | null;
   type: string;
   userId: string | null;
   uploadedBy: string | null;
@@ -88,13 +102,7 @@ export class DocumentClassificationService {
     const intoShareable = isPublishableClassification(target) && target !== current.classification;
     if (intoShareable && !canPublish) {
       await this.refuse(actor, documentId, target, [], "PUBLISH_PERMISSION_REQUIRED");
-      throw new HttpException(
-        {
-          code: "PUBLISH_PERMISSION_REQUIRED",
-          message: "Sharing a document with the company needs the permission to publish documents.",
-        },
-        HttpStatus.FORBIDDEN,
-      );
+      throw publishPermissionRequired();
     }
     if (isPublishableClassification(target)) {
       const blockers = publishBlockers({ ...current, classification: target });
@@ -109,6 +117,8 @@ export class DocumentClassificationService {
       async (tx) => {
         // Re-read under a lock: the checks above were made on an unlocked row, and the document may have been edited since.
         const locked = await this.loadRow(tx, orgId, documentId, true);
+        // Whether this is a move INTO the shareable set was judged on the unlocked row too. Someone with the publish permission may have demoted the document in between, which turns "Internal to Internal" into a real promotion.
+        if (isPublishableClassification(target) && target !== locked.classification && !canPublish) throw publishPermissionRequired();
         if (isPublishableClassification(target)) {
           const blockers = publishBlockers({ ...locked, classification: target });
           if (blockers.length > 0) throw notPublishableError(blockers);
