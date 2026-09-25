@@ -14,10 +14,10 @@ import {
   withMembershipMutations,
 } from "../membership-mutations";
 import {
+  bustMembershipAfterIdentityErasure,
   bustMembershipAfterOwnershipChange,
+  bustMembershipsAfterOrgTeardown,
   revokeMembershipAccessCaches,
-  scheduleMembershipBust,
-  scheduleMembershipBustMany,
 } from "../membership-bust";
 import {
   bustMembershipStatusCache,
@@ -346,7 +346,7 @@ describe("bulk operations are bounded", () => {
     const cache = makeCache();
     const userIds = Array.from({ length: 5000 }, (_, index) => `member-${index}`);
 
-    await scheduleMembershipBustMany(cache, userIds);
+    await bustMembershipsAfterOrgTeardown(cache, userIds);
 
     expect(bustMembershipStatusCacheMany).toHaveBeenCalledTimes(1);
     expect(bustMembershipStatusCache).not.toHaveBeenCalled();
@@ -425,7 +425,7 @@ describe("invalidation-only entry points", () => {
   it("identity erasure busts every organisation the subject belongs to", async () => {
     const cache = makeCache();
 
-    await scheduleMembershipBust(cache, USER);
+    await bustMembershipAfterIdentityErasure(cache, USER);
 
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });

@@ -10,7 +10,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { scheduleMembershipBust } from "../../common/org/membership-bust";
+import { bustMembershipAfterIdentityErasure } from "../../common/org/membership-bust";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { SessionsService } from "../sessions/sessions.service";
@@ -242,7 +242,7 @@ export class GdprSubjectErasureService {
       await bumpPermissionsVersion(tx, orgId);
     });
 
-    await scheduleMembershipBust(this.cache, subjectUserId);
+    await bustMembershipAfterIdentityErasure(this.cache, subjectUserId);
     await this.sessionsService.revokeAllForUser(subjectUserId);
 
     let purgeDeleted = 0;
