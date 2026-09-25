@@ -69,6 +69,7 @@ export async function commitDocumentRow(tx: Tx, orgId: string, row: DocumentMeta
       category: documents.category,
       fileUrl: documents.fileUrl,
       expiryDate: documents.expiryDate,
+      classification: documents.classification,
     })
     .from(documents)
     .where(
@@ -93,6 +94,10 @@ export async function commitDocumentRow(tx: Tx, orgId: string, row: DocumentMeta
       existing.fileUrl === incoming.fileUrl &&
       (incoming.expiryDate === null || existing.expiryDate === incoming.expiryDate);
     if (same) return { table: "documents", id: existing.id, outcome: "unchanged" };
+    // Someone classified this document (it may be in the knowledge base), and a sheet has no say over that: rewriting its file
+    // or type here would change what readers get without the publish permission, a new version, or an audit row of the change.
+    if (existing.classification !== "PERSONAL")
+      throw new Error(`"${incoming.name}" has been classified for the Knowledge Base, so an import will not change it. Change it in the Document Library instead. This row was not imported.`);
 
     await tx
       .update(documents)

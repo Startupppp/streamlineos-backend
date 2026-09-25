@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { drainPages } from "./drain";
 import type { TenantTx } from "../../common/tenant";
-import { documents, onboardingDocuments, documentAuditLogs } from "../../db/schema";
+import { documents, documentVersions, onboardingDocuments, documentAuditLogs } from "../../db/schema";
 
 const NON_OBJECT_FILE_REFERENCES = new Set(["retention://redacted", ""]);
 
@@ -39,6 +39,18 @@ function collectRetiredKeys(
   }
 }
 
+/**
+ * A document's other files. A version keeps its own copy of the file, so a document retired without them would leave
+ * every superseded or pending version in storage for ever, and, on anonymise, still readable: a knowledge-base entry
+ * pinned to a version resolves against this table, not the document row.
+ */
+async function versionFiles(tx: TenantTx, orgId: string, ids: ReturnType<typeof sql.join>): Promise<DocumentRow[]> {
+  return tx
+    .select({ id: documentVersions.documentId, fileUrl: documentVersions.fileUrl })
+    .from(documentVersions)
+    .where(sql`${documentVersions.orgId} = ${orgId} AND ${documentVersions.documentId} IN (${ids})`);
+}
+
 function selectGenericDocuments(
   tx: TenantTx,
   orgId: string,
@@ -73,20 +85,30 @@ async function processGenericDocuments(
     sql`, `,
   );
   if (action === "delete") {
+    const versions = await versionFiles(tx, orgId, ids);
     const rows = await tx
       .delete(documents)
       .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${ids})`)
       .returning({ id: documents.id });
     collectRetiredKeys(retiredKeys, genericRows, rows.map((row) => row.id));
+    collectRetiredKeys(retiredKeys, versions, rows.map((row) => row.id));
     return { deleted: rows.length, redacted: 0 };
   }
   if (action === "anonymize") {
+    const versions = await versionFiles(tx, orgId, ids);
     const rows = await tx
       .update(documents)
       .set({ fileUrl: "retention://redacted", fileName: "redacted", description: null, metadata: null })
       .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${ids})`)
       .returning({ id: documents.id });
+    const redactedIds = sql.join(rows.map((row) => sql`${row.id}`), sql`, `);
+    if (rows.length > 0)
+      await tx
+        .update(documentVersions)
+        .set({ fileUrl: "retention://redacted", fileName: "redacted" })
+        .where(sql`${documentVersions.orgId} = ${orgId} AND ${documentVersions.documentId} IN (${redactedIds})`);
     collectRetiredKeys(retiredKeys, genericRows, rows.map((row) => row.id));
+    collectRetiredKeys(retiredKeys, versions, rows.map((row) => row.id));
     return { deleted: 0, redacted: rows.length };
   }
   return { deleted: 0, redacted: 0 };

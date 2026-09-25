@@ -56,7 +56,7 @@ describeDb("HR document import — real database", () => {
     for (const orgId of [orgA, orgB]) await sql`delete from organizations where id = ${orgId}`;
     for (const id of [...owners, ...users]) await sql`delete from users where id = ${id}`;
     await sql.end({ timeout: 5 });
-  });
+  }, 120_000);
 
   /** An employee with a work email; with an account by default. Returns the user id. */
   async function employee(orgId: string, workEmail: string, withAccount = true): Promise<string | null> {
@@ -164,6 +164,23 @@ describeDb("HR document import — real database", () => {
       expect(second).toMatchObject({ id: first?.id, outcome: "updated" });
       const [stored] = await sql`select file_url from documents where id = ${first?.id ?? 0}`;
       expect(stored?.file_url).toBe("https://example.com/v2.pdf");
+    });
+
+    it("refuses to change a document someone classified for the Knowledge Base, leaves it exactly as it was, and still calls an exact repeat unchanged", async () => {
+      await employee(orgA, "classified@example.com");
+      const first = await commit(orgA, { employeeEmail: "classified@example.com", name: "Classified", type: "POLICY", fileUrl: "https://example.com/v1.pdf" });
+      await sql`update documents set classification = 'INTERNAL' where id = ${first?.id ?? 0}`;
+      const [before] = await sql`select file_url, type::text as type, updated_at from documents where id = ${first?.id ?? 0}`;
+
+      await expect(commit(orgA, { employeeEmail: "classified@example.com", name: "Classified", type: "POLICY", fileUrl: "https://example.com/v2.pdf" })).rejects.toThrow(
+        /classified for the Knowledge Base/,
+      );
+      const repeat = await commit(orgA, { employeeEmail: "classified@example.com", name: "Classified", type: "POLICY", fileUrl: "https://example.com/v1.pdf" });
+
+      const [after] = await sql`select file_url, type::text as type, classification::text as classification, updated_at from documents where id = ${first?.id ?? 0}`;
+      expect(after).toMatchObject({ file_url: before?.file_url, type: before?.type, classification: "INTERNAL" });
+      expect(new Date(after?.updated_at).getTime()).toBe(new Date(before?.updated_at).getTime());
+      expect(repeat).toMatchObject({ id: first?.id, outcome: "unchanged" });
     });
 
     it.each([

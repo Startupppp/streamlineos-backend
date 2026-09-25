@@ -42,7 +42,7 @@ describeDb("purging removed-source entries — real database", () => {
     if (!sql) return;
     await seed.dispose();
     await sql.end({ timeout: 5 });
-  });
+  }, 60_000);
 
   /** An entry over a fresh company document, put into the given state the way the database's own triggers leave it. */
   async function entry(org: SeededOrg, status: "active" | "unpublished" | "source_removed", removedDaysAgo?: number): Promise<number> {
@@ -72,6 +72,21 @@ describeDb("purging removed-source entries — real database", () => {
     expect(outcome.purged).toBeGreaterThanOrEqual(1);
     expect(await exists(due)).toBe(false);
     expect(await audienceRows(due)).toBe(0);
+  });
+
+  it("deletes an entry whose document was deleted outright, which the foreign key leaves active with no document, and does not wait out the grace period", async () => {
+    const orphaned = await entry(a, "active");
+    const [link] = await sql`select document_id from kb_linked_documents where id = ${orphaned}`;
+    await sql`delete from documents where id = ${link?.document_id}`;
+    const [after] = await sql`select document_id, status from kb_linked_documents where id = ${orphaned}`;
+    expect(after?.document_id).toBeNull();
+    expect(after?.status).toBe("active");
+
+    const outcome = await purgeSourceRemovedLinks(tx, a.orgId, new Date(), 200);
+
+    expect(outcome.linkedDocumentIds).toContain(orphaned);
+    expect(await exists(orphaned)).toBe(false);
+    expect(await audienceRows(orphaned)).toBe(0);
   });
 
   it("keeps one removed inside the grace period, one still live, and one withdrawn on purpose", async () => {
