@@ -1,11 +1,6 @@
 import { drizzle } from "drizzle-orm/pg-proxy";
-import {
-  syncCanonicalReportingLine,
-  syncCanonicalReportingLines,
-  writePrimaryLines,
-  writeSecondaryLines,
-  type ReportingLineOutcome,
-} from "./sync-canonical-reporting-line";
+import { writePrimaryLines, writeSecondaryLines } from "./sync-canonical-reporting-line";
+import { syncCanonicalReportingLine, syncCanonicalReportingLines, type ReportingLineOutcome } from "../../test/reporting-line-seed";
 import type { DbOrTx } from "../rbac/access-invalidate";
 
 const ORG = "org-1";

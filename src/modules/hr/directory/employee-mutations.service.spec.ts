@@ -9,9 +9,6 @@ jest.mock("../../../common/org/sync-org-unit-placement", () => ({
 jest.mock("../../../common/hr/sync-canonical-employment-fields", () => ({
   syncCanonicalEmploymentFields: jest.fn().mockResolvedValue(true),
 }));
-jest.mock("../../../common/hr/sync-canonical-reporting-line", () => ({
-  syncCanonicalReportingLine: jest.fn().mockResolvedValue({ status: "written" }),
-}));
 jest.mock("../../../common/date", () => {
   const actual = jest.requireActual<typeof import("../../../common/date")>(
     "../../../common/date",

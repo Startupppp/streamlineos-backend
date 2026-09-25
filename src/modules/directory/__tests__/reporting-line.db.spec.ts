@@ -8,7 +8,7 @@ import { ReportingLineService } from "../reporting-line.service";
 import { ScopedRead } from "../../access/scoped-read";
 import { SPAN_OF_CONTROL_LIMIT } from "../reporting-line.types";
 import { hasCurrentDirectReport } from "../employment-query";
-import { syncCanonicalReportingLine } from "../../../common/hr/sync-canonical-reporting-line";
+import { syncCanonicalReportingLine } from "../../../test/reporting-line-seed";
 
 jest.setTimeout(120_000);
 
