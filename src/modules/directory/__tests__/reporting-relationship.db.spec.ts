@@ -459,7 +459,8 @@ describe("ReportingRelationshipService against a real schema", () => {
       ]);
 
       expect(results[0]).toMatchObject({ ok: false, code: "MANAGER_NOT_ELIGIBLE" });
-      expect(results[1]).toMatchObject({ ok: true, managerUserId: named.userId, resolution: "IN_FILE" });
+      // An existing member named by email is SELECTED; IN_FILE is only a manager who is a new row.
+      expect(results[1]).toMatchObject({ ok: true, managerUserId: named.userId, resolution: "SELECTED" });
       expect(results[3]).toMatchObject({ ok: true, managerUserId: null, resolution: "IN_FILE", dependsOnRow: 3 });
       expect(results[4]).toMatchObject({ ok: false, code: "MANAGER_NOT_FOUND" });
     });

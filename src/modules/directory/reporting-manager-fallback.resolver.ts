@@ -122,7 +122,8 @@ export class ReportingManagerFallbackResolver {
       }
       if (email) {
         const member = byEmail.get(email);
-        if (member) return chosen(row, member, "IN_FILE");
+        // An existing member named in the file was selected; IN_FILE is a manager who is a new row.
+        if (member) return chosen(row, member, "SELECTED");
         if (email === normalEmail(row.employeeEmail))
           return { key: row.key, ok: false, code: CODES.SELF_REFERENCE, message: "An employee cannot report to themselves." };
         const dependsOnRow = rowByEmployeeEmail.get(email);

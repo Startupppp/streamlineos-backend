@@ -637,7 +637,7 @@ describe("[seeded-e2e] HRM-15 reporting managers — policy, lines, requests, bu
       const preview = await send("post", "/hr/employees/onboard/bulk/preview", "orgAdmin", { employees: file });
       expect(preview.status).toBe(200);
       expect(preview.body.rows.map((row: { status: string }) => row.status)).toEqual(["WARNING", "WARNING", "ERROR"]);
-      expect(preview.body.rows[0].primaryManager).toMatchObject({ userId: id("bossB"), resolution: "IN_FILE" });
+      expect(preview.body.rows[0].primaryManager).toMatchObject({ userId: id("bossB"), resolution: "SELECTED" });
       expect(preview.body.rows[1].primaryManager).toMatchObject({ userId: id("bossA"), resolution: "FALLBACK_CONFIGURED" });
       expect(preview.body.rows[2].codes).toEqual(["MANAGER_NOT_FOUND"]);
       const [nothing] = await rows<{ n: number }>(sql`select count(*)::int as n from users where email = ${file[0]?.email ?? ""}`);
