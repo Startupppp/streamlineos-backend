@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { ScopedRead } from "../../access/scoped-read";
 import {
   backgroundVerifications,
@@ -50,14 +50,42 @@ export class ComplianceService {
     });
     if (!doc) throw new NotFoundException("Document not found.");
 
-    const values = input.userIds.map((userId) => ({
-      orgId,
-      documentId: input.documentId,
-      userId,
-      status: "PENDING" as const,
-    }));
+    // A recipient id is client text. Without this check a row could name a user of another organisation, and the list below would then join that user's name into this tenant's answer.
+    const recipientIds = [...new Set(input.userIds)];
+    const members = await this.db
+      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, recipientIds)))
+      .limit(recipientIds.length);
+    if (members.length !== recipientIds.length)
+      throw new NotFoundException("One or more recipients are not members of your organization.");
 
-    await this.db.insert(policyAcknowledgments).values(values);
+    // Sending twice must not stack two pending requests on one person.
+    const pending = await this.db
+      .select({ userId: policyAcknowledgments.userId })
+      .from(policyAcknowledgments)
+      .where(
+        and(
+          eq(policyAcknowledgments.orgId, orgId),
+          eq(policyAcknowledgments.documentId, input.documentId),
+          eq(policyAcknowledgments.status, "PENDING"),
+          inArray(policyAcknowledgments.userId, recipientIds),
+        ),
+      )
+      .limit(recipientIds.length);
+    const alreadyPending = new Set(pending.map((row) => row.userId));
+
+    const values = members
+      .filter((member) => !alreadyPending.has(member.userId))
+      .map((member) => ({
+        orgId,
+        documentId: input.documentId,
+        userId: member.userId,
+        userMembershipId: member.id,
+        status: "PENDING" as const,
+      }));
+
+    if (values.length > 0) await this.db.insert(policyAcknowledgments).values(values);
     return { success: true, sent: values.length };
   }
 

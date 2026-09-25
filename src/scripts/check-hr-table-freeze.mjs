@@ -279,6 +279,16 @@ const APPROVED_EXCEPTIONS = new Set([
   // employee support with HR/IT/Finance/Admin/Legal queues), branch
   // feat/employee-support-queues, commits c2ce98cfc / 08d8f886f, migration 1135.
   "helpdesk_queues",
+  // document_audiences — the set of (kind, ref) pairs a document may be shown to: all employees, one
+  // department, one location. Many rows per document, so neither a lifecycle column on `documents` nor a
+  // custom field; it is the ceiling a knowledge-base link's own audience must stay inside, read by the audience
+  // predicate for every employee. document_versions — the file history of a document (`documents.version` has
+  // been 1 on every row and `parent_document_id` has never been written): many rows per document, holding the
+  // pending upload and what a pinned link resolves against, while `documents` keeps the current approved file so
+  // every existing reader is unchanged. Approved with the HRMS-KB project (docs/hrms-kb/PLAN.md §3.1), branch
+  // hrms-kb/pr-2-schema-and-flags, migration 1199.
+  "document_audiences",
+  "document_versions",
 ]);
 
 function extractTableNames(src) {

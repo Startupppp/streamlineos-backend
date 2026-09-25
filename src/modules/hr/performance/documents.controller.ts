@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -79,6 +80,17 @@ export class DocumentsController {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
   ) {}
+
+  // Rich documents and letters have no owner column, so there is nothing to narrow them by below `all`. They used to answer any holder of the key with the whole organisation's rows, personal letters included.
+  private async requireOrgWideView(currentUser: CurrentUserContext): Promise<void> {
+    const scope = await resolveDocumentsScope(this.access, currentUser);
+    if (!scope.unrestricted) throw new ForbiddenException("Organization-wide document access is required.");
+  }
+
+  private async requireOrgWideManage(currentUser: CurrentUserContext): Promise<void> {
+    const scope = await resolveDocumentsManageScope(this.access, currentUser);
+    if (!scope.unrestricted) throw new ForbiddenException("Organization-wide document access is required.");
+  }
 
   @ResponseSchema(listDocumentsResponseSchema)
   @Get("documents")
@@ -237,10 +249,11 @@ export class DocumentsController {
   @Get("rich-documents")
   @RequirePermission("hr:documents:view")
   @Validate({ query: listRichDocumentsSchema })
-  listRichDocuments(
+  async listRichDocuments(
     @Query() query: ListRichDocumentsInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideView(currentUser);
     return this.richDocuments.list(currentUser.orgId, query);
   }
 
@@ -249,10 +262,11 @@ export class DocumentsController {
   @HttpCode(201)
   @RequirePermission("hr:documents:manage")
   @Validate({ body: createRichDocumentSchema })
-  createRichDocument(
+  async createRichDocument(
     @Body() body: CreateRichDocumentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideManage(currentUser);
     return this.richDocuments.create(currentUser.orgId, currentUser.userId, body);
   }
 
@@ -260,10 +274,11 @@ export class DocumentsController {
   @Get("rich-documents/:documentId")
   @RequirePermission("hr:documents:view")
   @Validate({ params: documentIdParams })
-  getRichDocument(
+  async getRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideView(currentUser);
     return this.richDocuments.get(currentUser.orgId, documentId);
   }
 
@@ -273,10 +288,11 @@ export class DocumentsController {
   @Idempotent("hr.performance-document.publish")
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentIdParams })
-  publishRichDocument(
+  async publishRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideManage(currentUser);
     return this.richDocuments.togglePublish(currentUser.orgId, documentId);
   }
 
@@ -284,11 +300,12 @@ export class DocumentsController {
   @Patch("rich-documents/:documentId")
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentIdParams, body: updateRichDocumentSchema })
-  updateRichDocument(
+  async updateRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @Body() body: UpdateRichDocumentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideManage(currentUser);
     return this.richDocuments.update(currentUser.orgId, currentUser.userId, documentId, body);
   }
 
@@ -301,16 +318,18 @@ export class DocumentsController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideManage(currentUser);
     await this.richDocuments.remove(currentUser.orgId, documentId);
   }
 
   @ResponseSchema(listLettersResponseSchema)
   @Get("documents/letters")
   @RequirePermission("hr:documents:view")
-  listLetters(
+  async listLetters(
     @Query("employmentId") employmentId: string | undefined,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideView(currentUser);
     return this.letters.listLetters(currentUser.orgId, employmentId);
   }
 
@@ -319,10 +338,11 @@ export class DocumentsController {
   @RequirePermission("hr:documents:manage")
   @HttpCode(200)
   @Validate({ body: renderLetterSchema })
-  renderLetter(
+  async renderLetter(
     @Body() body: RenderLetterInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideManage(currentUser);
     return this.letters.renderLetter(currentUser.orgId, body);
   }
 
@@ -331,10 +351,11 @@ export class DocumentsController {
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
   @Validate({ body: saveLetterSchema })
-  saveLetter(
+  async saveLetter(
     @Body() body: SaveLetterInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
+    await this.requireOrgWideManage(currentUser);
     return this.letters.saveLetter(currentUser.orgId, currentUser.userId, body);
   }
 

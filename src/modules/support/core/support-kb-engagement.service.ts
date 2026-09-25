@@ -11,7 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
 import { supportArticlePredicate } from "../../kb/help-centre/kb-article-page-scope";
-import { isOwnOrgStorageKey } from "../../storage/storage-key";
+import { isOwnOrgStorageKey, isSensitiveStorageKey } from "../../storage/storage-key";
 import { StorageService } from "../../storage/storage.service";
 import type {
   CreateKbAttachmentInput,
@@ -149,9 +149,13 @@ export class SupportKbEngagementService {
 
     /**
      * The bytes never pass through this route, so the only thing standing
-     * between a client string and a stored pointer is this assertion.
+     * between a client string and a stored pointer is this assertion. It has to
+     * refuse the sensitive folders (`hr-documents`, `documents`, `payroll`, ...) as
+     * well as foreign organisations: this row is later read, text-extracted and
+     * embedded by the KB indexer, so a personal file's key accepted here would
+     * become searchable KB text.
      */
-    if (!isOwnOrgStorageKey(input.fileKey, orgId))
+    if (!isOwnOrgStorageKey(input.fileKey, orgId) || isSensitiveStorageKey(input.fileKey, orgId))
       throw new BadRequestException("Invalid file reference");
 
     const [inserted] = await this.db

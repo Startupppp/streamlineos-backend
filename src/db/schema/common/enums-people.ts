@@ -13,6 +13,8 @@ export const leaveStatusEnum = pgEnum("leave_status", ["PENDING", "APPROVED", "R
 export const expenseStatusEnum = pgEnum("expense_status", ["DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID"]);
 export const assetStatusEnum = pgEnum("asset_status", ["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]);
 export const documentTypeEnum = pgEnum("document_type", ["CONTRACT", "CERTIFICATE", "ID_PROOF", "PAYSLIP", "POLICY", "OFFER_LETTER", "RESUME", "OTHER"]);
+// What a document IS, as a person decided it. Every row starts PERSONAL (migration 1198), so nothing is publishable until someone with `hr:documents:publish` says otherwise.
+export const documentClassificationEnum = pgEnum("document_classification", ["PERSONAL", "CONFIDENTIAL", "RESTRICTED", "INTERNAL"]);
 export const reviewStatusEnum = pgEnum("review_status", ["DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED"]);
 export const onboardingStatusEnum = pgEnum("onboarding_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "REJECTED"]);
 export const genderEnum = pgEnum("gender", ["MALE", "FEMALE", "OTHER"]);

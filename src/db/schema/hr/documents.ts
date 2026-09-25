@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, date, index, foreignKey, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import { documentTypeEnum, ackStatusEnum } from "../common/enums";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, date, index, foreignKey, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import { documentTypeEnum, documentClassificationEnum, ackStatusEnum } from "../common/enums";
 import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
@@ -29,6 +29,8 @@ export const documents = pgTable("documents", {
   name: text("name").notNull(),
   description: text("description"),
   type: documentTypeEnum("type").notNull(),
+  classification: documentClassificationEnum("classification").notNull().default("PERSONAL"),
+  effectiveDate: date("effective_date"),
   category: text("category"),
   fileUrl: text("file_url").notNull(),
   fileName: text("file_name"),
@@ -59,6 +61,56 @@ export const documents = pgTable("documents", {
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_documents_user_actor",
   }).onDelete("set null"),
+]);
+
+// The ceiling on who may be shown a document: all employees, one department, or one location. No rows = HR-only.
+export const documentAudiences = pgTable("document_audiences", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  documentId: integer("document_id").notNull(),
+  kind: text("kind").$type<"ALL_EMPLOYEES" | "DEPARTMENT" | "LOCATION">().notNull(),
+  refId: text("ref_id"),
+  createdByMembershipId: integer("created_by_membership_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("uniq_document_audiences_org_id").on(table.orgId, table.id),
+  uniqueIndex("uniq_document_audiences_member").on(table.orgId, table.documentId, table.kind, sql`(coalesce(${table.refId}, ''))`),
+  index("idx_document_audiences_org_kind_ref").on(table.orgId, table.kind, table.refId),
+  index("idx_document_audiences_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
+  check("chk_document_audiences_kind", sql`${table.kind} IN ('ALL_EMPLOYEES', 'DEPARTMENT', 'LOCATION')`),
+  check("chk_document_audiences_ref", sql`(${table.kind} = 'ALL_EMPLOYEES') = (${table.refId} IS NULL)`),
+  foreignKey({ columns: [table.orgId, table.documentId], foreignColumns: [documents.orgId, documents.id], name: "fk_document_audiences_document_id_org" }).onDelete("cascade"),
+  // Live constraint is `ON DELETE SET NULL (created_by_membership_id)`; drizzle-orm 0.45 cannot express the column list (see kb/pages.ts).
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_document_audiences_created_by_actor" }).onDelete("set null"),
+]);
+
+// File history. `documents` keeps the CURRENT APPROVED file, so every existing reader is unchanged; a pinned knowledge-base link resolves against this table.
+export const documentVersions = pgTable("document_versions", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  documentId: integer("document_id").notNull(),
+  version: integer("version").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileName: text("file_name"),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
+  effectiveDate: date("effective_date"),
+  uploadedByMembershipId: integer("uploaded_by_membership_id"),
+  approvedByMembershipId: integer("approved_by_membership_id"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("uniq_document_versions_org_id").on(table.orgId, table.id),
+  unique("uniq_document_versions_doc_version").on(table.orgId, table.documentId, table.version),
+  index("idx_document_versions_org_uploaded_by_membership").on(table.orgId, table.uploadedByMembershipId),
+  index("idx_document_versions_org_approved_by_membership").on(table.orgId, table.approvedByMembershipId),
+  check("chk_document_versions_version_positive", sql`${table.version} >= 1`),
+  check("chk_document_versions_status", sql`${table.status} IN ('pending', 'approved', 'rejected')`),
+  check("chk_document_versions_approved_stamped", sql`${table.status} <> 'approved' OR ${table.approvedAt} IS NOT NULL`),
+  foreignKey({ columns: [table.orgId, table.documentId], foreignColumns: [documents.orgId, documents.id], name: "fk_document_versions_document_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.uploadedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_document_versions_uploaded_by_actor" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.approvedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_document_versions_approved_by_actor" }).onDelete("set null"),
 ]);
 
 export const handbookVersions = pgTable("handbook_versions", {

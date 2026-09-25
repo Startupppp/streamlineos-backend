@@ -114,7 +114,7 @@ export class WorkspaceInlineTools implements AskOsToolProvider {
         run: async ({ query }, ctx) => {
           try {
             const kbAsk = this.moduleRef.get(KbAskService, { strict: false });
-            const result = await kbAsk.ask(ctx.caller, { question: query });
+            const result = await kbAsk.ask(ctx.caller, { question: query }, { companyDocuments: true });
             return data({ answer: result.answer, hasContext: result.hasContext });
           } catch {
             return failed("Knowledge base search is unavailable right now.");

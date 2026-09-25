@@ -10,7 +10,7 @@
  * Mocks cannot show this. The defect is that the SQL issued was an INSERT with
  * nothing to conflict against, so the evidence has to be row counts in a real
  * table. These assertions fail if the identity lookups in `commitAsset` and
- * `commitDocument` are removed.
+ * `commitDocumentRow` are removed.
  *
  * Run with:
  *   DATABASE_URL=postgres://…/streamline_hrms_e2e ALLOW_DESTRUCTIVE_DB_TESTS=1 \
@@ -62,6 +62,7 @@ describeDb("HR import re-import idempotency — real database", () => {
   const orgId = `qa-import-${randomUUID()}`;
 
   const ownerId = `qa-owner-${randomUUID()}`;
+  const employeeId = `qa-employee-${randomUUID()}`;
 
   beforeAll(async () => {
     sql = dbSpecClient(raw, { max: 4 });
@@ -84,6 +85,12 @@ describeDb("HR import re-import idempotency — real database", () => {
         insert into organization_members (id, org_id, user_id, role, status, is_owner)
         values (${membershipId}, ${orgId}, ${ownerId}, ${"ORG_ADMIN"}, ${"ACTIVE"}, true)
       `;
+      // The document sheet names an employee by work email. That employee has to exist: a row that names nobody is
+      // an error, not an organisation-wide document.
+      await tx`insert into users (id, email, name) values (${employeeId}, ${`${employeeId}@example.com`}, ${"QA Employee"})`;
+      const personId = randomUUID();
+      await tx`insert into organization_people (organization_person_id, organization_id, user_id, first_name, last_name, work_email) values (${personId}, ${orgId}, ${employeeId}, ${"QA"}, ${"Employee"}, ${"qa-doc@example.com"})`;
+      await tx`insert into hr_people (org_id, user_id, organization_person_id) values (${orgId}, ${employeeId}, ${personId})`;
     });
   });
 
@@ -91,6 +98,7 @@ describeDb("HR import re-import idempotency — real database", () => {
     if (!sql) return;
     await sql`delete from organizations where id = ${orgId}`;
     await sql`delete from users where id = ${ownerId}`;
+    await sql`delete from users where id = ${employeeId}`;
     await sql.end({ timeout: 5 });
   });
 
@@ -166,7 +174,7 @@ describeDb("HR import re-import idempotency — real database", () => {
     expect(await documentCount()).toBe(2);
 
     const second = await importSheet("document_metadata", DOCUMENT_SHEET);
-    expect(second).toEqual(["updated", "updated"]);
+    expect(second).toEqual(["unchanged", "unchanged"]);
     expect(await documentCount()).toBe(2);
   });
 

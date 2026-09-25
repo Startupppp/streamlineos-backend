@@ -11,6 +11,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { sql } from "drizzle-orm";
 import { ASK_SYSTEM_PROMPT } from "./kb-ask-context";
+import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
+import { KbLinkedDocumentAskSource } from "../linked-documents/kb-linked-document-ask-source";
 
 const makeGatewayOk = (text: string) => ({
   ok: true as const,
@@ -110,6 +112,7 @@ describe("KbAskService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         KbAskService,
+        { provide: KbLinkedDocumentAskSource, useValue: NO_LINKED_DOCUMENTS },
         { provide: AiGatewayService, useValue: mockGateway },
         { provide: KbEventsService, useValue: mockEvents },
         { provide: KbSearchService, useValue: mockSearch },

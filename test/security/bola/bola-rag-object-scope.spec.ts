@@ -9,6 +9,8 @@ import { KbSearchService } from "../../../src/modules/kb/retrieval/kb-search.ser
 import { KbCandidateService } from "../../../src/modules/kb/retrieval/kb-candidate.service";
 import { KbAskService } from "../../../src/modules/kb/retrieval/kb-ask.service";
 import { KbCitationVisibilityService } from "../../../src/modules/kb/retrieval/kb-citation-visibility.service";
+import { KbLinkedDocumentAskSource } from "../../../src/modules/kb/linked-documents/kb-linked-document-ask-source";
+import { NO_LINKED_DOCUMENTS } from "../../../src/test/kb-linked-document-ask-source.spec-fixtures";
 import { KbAccessService } from "../../../src/modules/kb/core/kb-access.service";
 import { KbEventsService } from "../../../src/modules/kb/core/kb-events.service";
 import { KnowledgeAuthorizationService } from "../../../src/modules/kb/core/authorization/knowledge-authorization.service";
@@ -305,6 +307,7 @@ describe("BOLA sweep — POST /kb/ask context window", () => {
     const built = buildSearch(scope);
     const module = await Test.createTestingModule({ providers: [
       KbAskService, KbCitationVisibilityService,
+      { provide: KbLinkedDocumentAskSource, useValue: NO_LINKED_DOCUMENTS },
       { provide: DRIZZLE, useValue: built.db },
       { provide: AiGatewayService, useValue: built.gateway },
       { provide: KbEventsService, useValue: built.events },

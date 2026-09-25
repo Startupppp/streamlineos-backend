@@ -6679,6 +6679,34 @@
       "when": 1803000010712,
       "tag": "1197_build_cycle_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 1082,
+      "version": "7",
+      "when": 1803000010713,
+      "tag": "1198_document_classification",
+      "breakpoints": true
+    },
+    {
+      "idx": 1083,
+      "version": "7",
+      "when": 1803000010714,
+      "tag": "1199_document_audiences_and_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1084,
+      "version": "7",
+      "when": 1803000010715,
+      "tag": "1200_kb_linked_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 1085,
+      "version": "7",
+      "when": 1803000010716,
+      "tag": "1201_kb_linked_document_guard",
+      "breakpoints": true
     }
   ]
 }

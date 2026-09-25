@@ -25,6 +25,7 @@ export const HR_ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "hr:attendance:manage",
       "hr:documents:view",
       "hr:documents:manage",
+      "hr:documents:publish",
       "hr:assets:view",
       "hr:assets:manage",
       "hr:performance:view",

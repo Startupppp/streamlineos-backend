@@ -2,11 +2,16 @@ import { Module } from "@nestjs/common";
 import { AutomationModule } from "../../automation/automation.module";
 import { HrAutomationsModule } from "../automations/hr-automations.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { KbCoreModule } from "../../kb/core/kb-core.module";
+import { KbLinkedDocumentsModule } from "../../kb/linked-documents/kb-linked-documents.module";
 import { PerformanceController } from "./performance.controller";
 import { EngagementController } from "./engagement.controller";
 import { EngagementExtrasController } from "./engagement-extras.controller";
 import { EngagementBadgesController } from "./engagement-badges.controller";
 import { DocumentsController } from "./documents.controller";
+import { DocumentClassificationController } from "./document-classification.controller";
+import { DocumentKbLinkController } from "./document-kb-link.controller";
+import { DocumentVersionsController } from "./document-versions.controller";
 import { KpisController } from "./kpis.controller";
 import { FeedbackController } from "./feedback.controller";
 import { CalibrationController } from "./calibration.controller";
@@ -21,6 +26,8 @@ import { EngagementMoodPollsService } from "./engagement-mood-polls.service";
 import { EngagementBadgesService } from "./engagement-badges.service";
 import { EngagementCommunitiesCampaignsService } from "./engagement-communities-campaigns.service";
 import { DocumentsService } from "./documents.service";
+import { DocumentClassificationService } from "./document-classification.service";
+import { DocumentVersionsService } from "./document-versions.service";
 import { ComplianceService } from "./compliance.service";
 import { RichDocumentsService } from "./rich-documents.service";
 import { LettersService } from "./letters.service";
@@ -30,13 +37,16 @@ import { CalibrationService } from "./calibration.service";
 import { SuccessionService } from "./succession.service";
 
 @Module({
-  imports: [AutomationModule, HrAutomationsModule, NotificationsModule],
+  imports: [AutomationModule, HrAutomationsModule, NotificationsModule, KbCoreModule, KbLinkedDocumentsModule],
   controllers: [
     PerformanceController,
     EngagementController,
     EngagementExtrasController,
     EngagementBadgesController,
     DocumentsController,
+    DocumentClassificationController,
+    DocumentKbLinkController,
+    DocumentVersionsController,
     KpisController,
     FeedbackController,
     CalibrationController,
@@ -53,6 +63,8 @@ import { SuccessionService } from "./succession.service";
     EngagementBadgesService,
     EngagementCommunitiesCampaignsService,
     DocumentsService,
+    DocumentClassificationService,
+    DocumentVersionsService,
     ComplianceService,
     RichDocumentsService,
     LettersService,

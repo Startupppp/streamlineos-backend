@@ -12,6 +12,7 @@ export const kbAskResultSchema = z.object({
     z.object({ ...citationFields, kind: z.literal("article"), articleId: z.number().int().positive(), slug: z.string() }).strict(),
     z.object({ ...citationFields, kind: z.literal("page"), pageId: z.number().int().positive() }).strict(),
     z.object({ ...citationFields, kind: z.literal("source"), sourceId: z.number().int().positive() }).strict(),
+    z.object({ ...citationFields, spaceId: z.null(), kind: z.literal("document"), linkedDocumentId: z.number().int().positive() }).strict(),
   ])),
   aiUsage: z.object({
     model: z.string(), promptTokens: z.number(), completionTokens: z.number(), totalTokens: z.number(), credits: z.number(), costUsd: z.number(),

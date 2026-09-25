@@ -1,9 +1,11 @@
-export type KbDocumentKind = "article" | "page" | "source";
+export type KbDocumentKind = "article" | "page" | "source" | "document";
 
 export interface KbContextPassage {
   documentKey: string;
   documentTitle: string;
   passageIndex: number | null;
+  /** How the label describes a passage that has no index. Defaults to "opening extract". */
+  position?: string;
   text: string;
 }
 
@@ -52,6 +54,7 @@ export function assemblePassages<
   top: ReadonlyArray<TTop>,
   sources: ReadonlyArray<TSource>,
   documentPassages: ReadonlyArray<KbContextPassage>,
+  linkedDocumentPassages: ReadonlyArray<KbContextPassage> = [],
 ): KbContextPassage[] {
   const matched = new Map<string, KbContextPassage[]>();
   for (const passage of documentPassages) {
@@ -74,6 +77,7 @@ export function assemblePassages<
       });
   }
   for (const source of sources) passages.push(...source.passages);
+  passages.push(...linkedDocumentPassages);
   return passages;
 }
 
@@ -123,7 +127,7 @@ function renderDocument(ordinal: number, passages: KbContextPassage[]): string {
 
   for (const passage of ordered) {
     if (passage.passageIndex === null) {
-      parts.push(`${documentLabel(ordinal, title, "opening extract")}\n${passage.text}`);
+      parts.push(`${documentLabel(ordinal, title, passage.position ?? "opening extract")}\n${passage.text}`);
       continue;
     }
     if (previousIndex !== null && passage.passageIndex > previousIndex + 1)

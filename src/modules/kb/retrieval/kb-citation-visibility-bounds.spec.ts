@@ -10,6 +10,8 @@ import { KbAskService } from "./kb-ask.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CitedRef } from "./kb-citation-visibility.service";
+import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
+import { KbLinkedDocumentAskSource } from "../linked-documents/kb-linked-document-ask-source";
 
 const user = {
   userId: "user1",
@@ -157,6 +159,7 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         KbAskService,
+        { provide: KbLinkedDocumentAskSource, useValue: NO_LINKED_DOCUMENTS },
         { provide: AiGatewayService, useValue: { invokeTextWithUsage: jest.fn() } },
         { provide: KbEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         { provide: KbSearchService, useValue: search },

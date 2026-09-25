@@ -9,6 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { StorageService } from "../../storage/storage.service";
+import { isSensitiveStorageKey } from "../../storage/storage-key";
 import {
   KbIndexingMetrics,
   kbIndexingOutcomeForError,
@@ -164,6 +165,15 @@ export class KbAttachmentIndexingService {
       await this.removeAttachmentChunks(orgId, attachmentId);
       metrics.finish("skipped_no_content");
       return { chunks: 0, warning: null };
+    }
+
+    // `getFileStream` below applies no sensitive-folder check of its own, so a row whose key points into HR, payroll or onboarding storage would be read, extracted and embedded as KB text. Refuse to touch it. Chunks that already exist are deliberately left alone here: removing them is a data change for the operator to approve after reading the report, not a side effect of a reindex.
+    if (isSensitiveStorageKey(attachment.fileKey, orgId)) {
+      metrics.finish("skipped_no_content");
+      return {
+        chunks: 0,
+        warning: `${attachment.fileName}: file is in a protected folder and is not indexed`,
+      };
     }
 
     if (!this.aiGateway.isEmbeddingConfigured()) {

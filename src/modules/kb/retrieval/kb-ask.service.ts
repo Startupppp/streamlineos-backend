@@ -6,6 +6,11 @@ import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import {
+  KbLinkedDocumentAskSource,
+  type LinkedDocumentCitation,
+} from "../linked-documents/kb-linked-document-ask-source";
+import type { LinkedDocumentItem } from "../linked-documents/dto/kb-linked-documents-response.schemas";
+import {
   AiGatewayService,
   type AiTextStream,
 } from "../../ai/core/gateway/ai-gateway.service";
@@ -45,7 +50,8 @@ export type AskCitation =
       title: string;
       spaceId: number | null;
       updatedAt: Date;
-    };
+    }
+  | LinkedDocumentCitation;
 
 export function restrictToCited<
   TTop extends { kind: "article" | "page"; id: number },
@@ -61,7 +67,7 @@ export function restrictToCited<
   for (const citation of citations) {
     if (citation.kind === "article") citedArticles.add(citation.articleId);
     else if (citation.kind === "page") citedPages.add(citation.pageId);
-    else citedSources.add(citation.sourceId);
+    else if (citation.kind === "source") citedSources.add(citation.sourceId);
   }
   return {
     top: top.filter((item) =>
@@ -71,6 +77,15 @@ export function restrictToCited<
     ),
     sources: sources.filter((item) => citedSources.has(item.sourceId)),
   };
+}
+
+export interface KbAskOptions {
+  /**
+   * Let the answer draw on, and cite, HR documents shared into the knowledge base, when the tenant has opted in.
+   * Off unless the caller can show such a citation: a surface that has not been built for one (support) never
+   * gets one, whatever the tenant's switch says.
+   */
+  companyDocuments?: boolean;
 }
 
 @Injectable()
@@ -83,11 +98,13 @@ export class KbAskService {
     private readonly events: KbEventsService,
     private readonly search: KbSearchService,
     private readonly citationVisibility: KbCitationVisibilityService,
+    private readonly linkedDocuments: KbLinkedDocumentAskSource,
   ) {}
 
   private async gatherContext(
     user: CurrentUserContext,
     input: AskInput,
+    options: KbAskOptions,
   ): Promise<
     | { kind: "no-context" }
     | {
@@ -95,34 +112,44 @@ export class KbAskService {
         fullContext: string;
         top: Awaited<ReturnType<KbSearchService["retrieveTopArticles"]>>;
         sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>;
+        linked: LinkedDocumentItem[];
         citations: AskCitation[];
       }
   > {
     return runInTenantTransaction(
       this.db,
       async () => {
+        // Company documents shared from HR: none unless the tenant opted in, and never one the asker could not open.
+        const linked =
+          options.companyDocuments === true
+            ? await this.linkedDocuments.retrieve(user, input.question)
+            : [];
         const hasContent = await this.orgHasIndexedContent(user.orgId);
-        if (!hasContent) return { kind: "no-context" as const };
+        if (!hasContent && linked.length === 0) return { kind: "no-context" as const };
 
-        const retrievedTop = await this.search.retrieveTopArticles(
-          user,
-          input.question,
-          KB_ASK_MAX_CONTEXT_DOCUMENTS,
-          input.spaceId,
-        );
-        const retrievedSources = await this.search.retrieveTopSources(
-          user,
-          input.question,
-          4,
-        );
-        if (retrievedTop.length === 0 && retrievedSources.length === 0)
+        // An organisation with no indexed content is not worth an embedding call: only its company documents can answer.
+        const retrievedTop = hasContent
+          ? await this.search.retrieveTopArticles(
+              user,
+              input.question,
+              KB_ASK_MAX_CONTEXT_DOCUMENTS,
+              input.spaceId,
+            )
+          : [];
+        const retrievedSources = hasContent
+          ? await this.search.retrieveTopSources(user, input.question, 4)
+          : [];
+        if (
+          retrievedTop.length === 0 &&
+          retrievedSources.length === 0 &&
+          linked.length === 0
+        )
           return { kind: "no-context" as const };
 
-        const citations = await this.resolveCitations(
-          user,
-          retrievedTop,
-          retrievedSources,
-        );
+        const citations = [
+          ...(await this.resolveCitations(user, retrievedTop, retrievedSources)),
+          ...linked.map((document) => this.linkedDocuments.citationOf(document)),
+        ];
         if (citations.length === 0) return { kind: "no-context" as const };
 
         const { top, sources } = restrictToCited(
@@ -137,15 +164,22 @@ export class KbAskService {
         const pageIds = top
           .filter((source) => source.kind === "page")
           .map((source) => source.id);
-        const documentPassages = await this.search.retrieveDocumentPassages(
-          user,
-          input.question,
-          articleIds,
-          pageIds,
-        );
+        const documentPassages = hasContent
+          ? await this.search.retrieveDocumentPassages(
+              user,
+              input.question,
+              articleIds,
+              pageIds,
+            )
+          : [];
 
         const fullContext = buildKbContext(
-          assemblePassages(top, sources, documentPassages),
+          assemblePassages(
+            top,
+            sources,
+            documentPassages,
+            linked.map((document) => this.linkedDocuments.passageOf(document)),
+          ),
         );
         if (fullContext.length === 0) return { kind: "no-context" as const };
 
@@ -154,6 +188,7 @@ export class KbAskService {
           fullContext,
           top,
           sources,
+          linked,
           citations,
         };
       },
@@ -184,6 +219,7 @@ export class KbAskService {
   async ask(
     user: CurrentUserContext,
     input: AskInput,
+    options: KbAskOptions = {},
   ): Promise<{
     answer: string;
     citations: AskCitation[];
@@ -192,13 +228,13 @@ export class KbAskService {
   }> {
     const metrics = KbAskMetrics.begin({ orgId: user.orgId });
     try {
-      const gathered = await this.gatherContext(user, input);
+      const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
         metrics.finish("no_context");
         return this.noContextAnswer(user, input.question);
       }
-      const { fullContext, top, sources, citations } = gathered;
-      const candidates = top.length + sources.length;
+      const { fullContext, top, sources, linked, citations } = gathered;
+      const candidates = top.length + sources.length + linked.length;
 
       const gatewayResult = await this.aiGateway.invokeTextWithUsage({
         actor: { orgId: user.orgId, userId: user.userId },
@@ -243,7 +279,12 @@ export class KbAskService {
           this.events.record(user.orgId, "ai_answer", {
             actorMembershipId: actingMembershipId(user.principal) ?? null,
             query: input.question,
-            metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
+            metadata: {
+              sourceIds: [
+                ...top.map((s) => `${s.kind}:${s.id}`),
+                ...linked.map((document) => `document:${document.id}`),
+              ],
+            },
           }),
         { orgId: user.orgId },
       );
@@ -260,6 +301,7 @@ export class KbAskService {
     user: CurrentUserContext,
     input: AskInput,
     signal: AbortSignal,
+    options: KbAskOptions = {},
   ): Promise<
     | { hasContext: false }
     | {
@@ -271,14 +313,14 @@ export class KbAskService {
   > {
     const metrics = KbAskMetrics.begin({ orgId: user.orgId });
     try {
-      const gathered = await this.gatherContext(user, input);
+      const gathered = await this.gatherContext(user, input, options);
       if (gathered.kind === "no-context") {
         this.noContextAnswer(user, input.question);
         metrics.finish("no_context");
         return { hasContext: false };
       }
-      const { fullContext, top, sources, citations } = gathered;
-      const candidates = top.length + sources.length;
+      const { fullContext, top, sources, linked, citations } = gathered;
+      const candidates = top.length + sources.length + linked.length;
 
       await runInTenantTransaction(
         this.db,
@@ -286,7 +328,12 @@ export class KbAskService {
           this.events.record(user.orgId, "ai_answer", {
             actorMembershipId: actingMembershipId(user.principal) ?? null,
             query: input.question,
-            metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
+            metadata: {
+              sourceIds: [
+                ...top.map((s) => `${s.kind}:${s.id}`),
+                ...linked.map((document) => `document:${document.id}`),
+              ],
+            },
           }),
         { orgId: user.orgId },
       );
@@ -312,7 +359,10 @@ export class KbAskService {
         verifyCitations: () =>
           runInTenantTransaction(
             this.db,
-            () => this.resolveCitations(user, top, sources),
+            async () => [
+              ...(await this.resolveCitations(user, top, sources)),
+              ...(await this.stillCitableDocuments(user, linked)),
+            ],
             { orgId: user.orgId },
           ),
       };
@@ -345,7 +395,10 @@ export class KbAskService {
         const sourceIds = citations.flatMap((citation) =>
           citation.kind === "source" ? [citation.sourceId] : [],
         );
-        const [articles, pages, sources] = await Promise.all([
+        const linkedDocumentIds = citations.flatMap((citation) =>
+          citation.kind === "document" ? [citation.linkedDocumentId] : [],
+        );
+        const [articles, pages, sources, documents] = await Promise.all([
           articleIds.length
             ? this.citationVisibility.visibleArticles(user, articleIds)
             : Promise.resolve(new Set<number>()),
@@ -355,11 +408,13 @@ export class KbAskService {
           sourceIds.length
             ? this.citationVisibility.visibleSources(user, sourceIds)
             : Promise.resolve(new Set<number>()),
+          this.linkedDocuments.stillCitable(user, linkedDocumentIds),
         ]);
         if (
           articleIds.some((id) => !articles.has(id)) ||
           pageIds.some((id) => !pages.has(id)) ||
-          sourceIds.some((id) => !sources.has(id))
+          sourceIds.some((id) => !sources.has(id)) ||
+          linkedDocumentIds.some((id) => !documents.has(id))
         )
           throw new NotFoundException(
             "The saved answer is no longer accessible",
@@ -367,6 +422,19 @@ export class KbAskService {
       },
       { orgId: user.orgId },
     );
+  }
+
+  private async stillCitableDocuments(
+    user: CurrentUserContext,
+    linked: LinkedDocumentItem[],
+  ): Promise<AskCitation[]> {
+    const citable = await this.linkedDocuments.stillCitable(
+      user,
+      linked.map((document) => document.id),
+    );
+    return linked
+      .filter((document) => citable.has(document.id))
+      .map((document) => this.linkedDocuments.citationOf(document));
   }
 
   private async resolveCitations(

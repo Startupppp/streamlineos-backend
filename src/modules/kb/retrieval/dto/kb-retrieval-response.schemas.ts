@@ -24,6 +24,13 @@ const kbAskCitationSchema = z.discriminatedUnion("kind", [
     spaceId: z.number().int().nullable(),
     updatedAt: wireDate(),
   }),
+  z.object({
+    kind: z.literal("document"),
+    linkedDocumentId: z.number().int(),
+    title: z.string(),
+    spaceId: z.null(),
+    updatedAt: wireDate(),
+  }),
 ]);
 
 export const kbAskAnswerSchema = z.object({

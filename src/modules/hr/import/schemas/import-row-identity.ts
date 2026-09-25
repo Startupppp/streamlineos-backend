@@ -85,7 +85,7 @@ export function identityKeysOf(
     // PROVISIONAL — open product decision #2. The identity a document is
     // re-imported under is (employee, category, name); an exact repeat of the
     // same row is the duplicate this catches. Changing the key later is a code
-    // change here and in `commitDocument`, not a data migration, because no
+    // change here and in `commitDocumentRow`, not a data migration, because no
     // unique index is built on it.
     return [
       {

@@ -22,6 +22,11 @@ export const hrImportJobRowSchema = z.object({
   totalRows: z.number().int(),
   validRows: z.number().int(),
   errorRows: z.number().int(),
+  // What a committed job did with its valid rows. `validRows` is how many were written; these split it, so "6 written"
+  // can be read as 2 new, 1 changed and 3 already there. Zero before a commit.
+  createdRows: z.number().int(),
+  updatedRows: z.number().int(),
+  unchangedRows: z.number().int(),
   errors: z.array(importErrorSchema).nullable(),
   createdBy: z.string().nullable(),
   committedAt: nullableWireDate(),

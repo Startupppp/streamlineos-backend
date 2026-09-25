@@ -270,6 +270,8 @@
     "check:public-object-urls:self-test": "node src/scripts/check-public-object-urls.mjs --self-test",
     "check:hr-table-freeze": "node src/scripts/check-hr-table-freeze.mjs",
     "check:hr-table-freeze:self-test": "node src/scripts/check-hr-table-freeze.mjs --self-test",
+    "check:hr-kb-invariants": "node src/scripts/check-hr-kb-invariants.mjs",
+    "check:hr-kb-invariants:self-test": "node src/scripts/check-hr-kb-invariants.mjs --self-test",
     "compliance:drill": "node --env-file-if-exists=.env src/scripts/compliance-drill.mjs",
     "scan:legacy-actors": "node src/scripts/scan-legacy-org-actors.mjs",
     "scan:legacy-actors:check": "node src/scripts/scan-legacy-org-actors.mjs --check",
