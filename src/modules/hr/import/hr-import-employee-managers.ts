@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { hrImportRows } from "../../../db/schema/hr/import-jobs";
 import type { ReportingActor } from "../../directory/reporting-line.types";
@@ -109,21 +109,26 @@ async function fallbackFailures(
  */
 export async function importCommitOrder(tx: DbOrTx, jobId: string, entity: HrImportEntity): Promise<string[]> {
   const rows = await tx
-    .select({ id: hrImportRows.id, rowNumber: hrImportRows.rowNumber, payload: hrImportRows.payload })
+    .select({
+      id: hrImportRows.id,
+      rowNumber: hrImportRows.rowNumber,
+      email: sql<string | null>`${hrImportRows.payload} ->> 'email'`,
+      managerEmail: sql<string | null>`${hrImportRows.payload} ->> 'primaryManagerEmail'`,
+    })
     .from(hrImportRows)
     .where(and(eq(hrImportRows.jobId, jobId), eq(hrImportRows.status, "valid")))
     .orderBy(asc(hrImportRows.rowNumber))
     .limit(IMPORT_ROW_CAP);
   if (entity !== "employees") return rows.map((row) => row.id);
 
-  const idByEmail = new Map(rows.map((row) => [text(row.payload.email), row.id]));
+  const idByEmail = new Map(rows.map((row) => [text(row.email), row.id]));
   const edges = rows.flatMap((row) => {
-    const managerEmail = text(row.payload.primaryManagerEmail);
+    const managerEmail = text(row.managerEmail);
     return managerEmail !== "" && idByEmail.has(managerEmail)
-      ? [{ row: row.rowNumber, email: text(row.payload.email), managerEmail }]
+      ? [{ row: row.rowNumber, email: text(row.email), managerEmail }]
       : [];
   });
-  return managersFirst(rows.map((row) => text(row.payload.email)), edges).flatMap((email) => {
+  return managersFirst(rows.map((row) => text(row.email)), edges).flatMap((email) => {
     const id = idByEmail.get(email);
     return id ? [id] : [];
   });
