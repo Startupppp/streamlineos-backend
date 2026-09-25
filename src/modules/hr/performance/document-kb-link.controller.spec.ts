@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DocumentKbLinkController } from "./document-kb-link.controller";
 import { DocumentAccessService } from "./document-access.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -55,6 +55,32 @@ describe("document knowledge-base link controller", () => {
       const { controller, links } = build(scope);
 
       await expect(controller.state(DOCUMENT_ID, makeUser())).rejects.toBeInstanceOf(NotFoundException);
+      expect(links.getState).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * V-146: whether an HR document is in the knowledge base is a fact about the document. A caller who cannot see
+   * the document must not learn its id exists from the shape of the refusal.
+   */
+  describe("another employee's document", () => {
+    const SOMEONE_ELSES = 99;
+
+    it("answers 404, not 403, and the message names neither the document nor the missing authority", async () => {
+      const { controller, links } = build("own", [DOCUMENT_ID]);
+
+      const error = await controller.state(SOMEONE_ELSES, makeUser()).catch((thrown: unknown) => thrown);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as Error).message).toBe("Document not found.");
+      expect((error as Error).message).not.toMatch(/99|permission|scope|forbidden|knowledge|publish/i);
+      expect(links.getState).not.toHaveBeenCalled();
+    });
+
+    it("keeps 403 for the caller who CAN see the document but holds no organisation-wide access", async () => {
+      const { controller, links } = build("own", [DOCUMENT_ID]);
+
+      await expect(controller.state(DOCUMENT_ID, makeUser())).rejects.toBeInstanceOf(ForbiddenException);
       expect(links.getState).not.toHaveBeenCalled();
     });
   });

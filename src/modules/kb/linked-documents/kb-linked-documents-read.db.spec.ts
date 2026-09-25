@@ -11,7 +11,7 @@
  *     npx jest --config ./jest-db.json --runInBand --testPathPattern=kb-linked-documents-read
  */
 import { randomUUID } from "node:crypto";
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
 import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
@@ -193,7 +193,11 @@ describeDb("linked documents: what a reader can see — real database", () => {
       expect(await ids(reader(a, "onedept"))).not.toContain(removed.linkId);
       const listed = await service.list(reader(a, "hr", true), { limit: 100, status: "source_removed" });
       expect(listed.data.map((item) => item.id)).toContain(removed.linkId);
-      await expect(service.list(reader(a, "onedept"), { limit: 100, status: "source_removed" })).rejects.toBeInstanceOf(ForbiddenException);
+      // A non-publisher asking for entries that are not live gets an empty page, not a refusal: a 403 would
+      // confirm the archive exists and that they are not allowed near it (V-146).
+      const refused = await service.list(reader(a, "onedept"), { limit: 100, status: "source_removed" });
+      expect(refused.data).toEqual([]);
+      expect(refused.pagination.hasMore).toBe(false);
     });
   });
 

@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DocumentClassificationController } from "./document-classification.controller";
 import { DocumentAccessService } from "./document-access.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -73,6 +73,41 @@ describe("document classification controller", () => {
       const { controller, service } = build("all", scope, "all");
 
       await expect(controller.classify(DOCUMENT_ID, { classification: "INTERNAL" }, makeUser())).rejects.toBeInstanceOf(NotFoundException);
+      expect(service.classify).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * V-146: a refusal is itself an answer. A caller scoped to their own documents who names a colleague's
+   * document must be told what an id that was never issued is worth, or the 403 confirms the id exists.
+   */
+  describe("another employee's document", () => {
+    const SOMEONE_ELSES = 99;
+
+    it("answers 404, not 403, and the message names neither the document nor the missing authority", async () => {
+      const { controller, service } = build("own", "own", "none", [DOCUMENT_ID]);
+
+      const get = await controller.get(SOMEONE_ELSES, makeUser()).catch((error: unknown) => error);
+      const patch = await controller
+        .classify(SOMEONE_ELSES, { classification: "INTERNAL" }, makeUser())
+        .catch((error: unknown) => error);
+
+      for (const error of [get, patch]) {
+        expect(error).toBeInstanceOf(NotFoundException);
+        const message = (error as Error).message;
+        expect(message).toBe("Document not found.");
+        expect(message).not.toMatch(/99|permission|scope|forbidden|classif|personal|confidential/i);
+      }
+      expect(service.get).not.toHaveBeenCalled();
+      expect(service.classify).not.toHaveBeenCalled();
+    });
+
+    it("keeps 403 for the caller who CAN see the document but may not act on it", async () => {
+      const { controller, service } = build("all", "own", "none", [DOCUMENT_ID]);
+
+      await expect(controller.classify(DOCUMENT_ID, { classification: "INTERNAL" }, makeUser())).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
       expect(service.classify).not.toHaveBeenCalled();
     });
   });
