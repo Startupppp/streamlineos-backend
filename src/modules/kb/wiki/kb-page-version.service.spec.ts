@@ -50,7 +50,6 @@ const BASE_PAGE = {
   verifiedById: null,
   verifiedUntil: null,
   nextReviewAt: null,
-  sourceArticleId: null,
 };
 
 const VERSION_ROW = {

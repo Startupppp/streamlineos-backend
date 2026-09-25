@@ -127,6 +127,7 @@ export class KbCandidateService {
     query: string,
     pool: number,
     pageVisibility: SQL,
+    verifiedOnly?: boolean,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
     const keywordCond = await this.resolveArticleKeywordCondition(
@@ -134,17 +135,17 @@ export class KbCandidateService {
       tsquery,
       pool,
     );
+    const conditions: (SQL | undefined)[] = [
+      eq(kbPages.orgId, orgId),
+      wikiPagePredicate(),
+      pageVisibility,
+      keywordCond,
+    ];
+    if (verifiedOnly) conditions.push(eq(kbPages.trustState, "verified"));
     const rows = await this.db
       .select({ id: kbPages.id })
       .from(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          wikiPagePredicate(),
-          pageVisibility,
-          keywordCond,
-        ),
-      )
+      .where(and(...conditions))
       .orderBy(desc(sql`ts_rank(fts, ${tsquery})`), desc(kbPages.updatedAt))
       .limit(pool);
     return rows.map((row) => row.id);
@@ -155,12 +156,15 @@ export class KbCandidateService {
     vector: string,
     pool: number,
     chunkVisibility: SQL,
+    verifiedOnly?: boolean,
   ): Promise<number[]> {
+    const extra: SQL[] = [wikiPagePredicate(), chunkVisibility];
+    if (verifiedOnly) extra.push(eq(kbPages.trustState, "verified"));
     return this.pageIdsNearest(
       orgId,
       vector,
       pool,
-      [wikiPagePredicate(), chunkVisibility],
+      extra,
       "KB page",
     );
   }

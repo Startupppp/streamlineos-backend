@@ -139,6 +139,7 @@ export interface PoolAdmissionTuning {
   queueDepth: number;
   acquireTimeoutMs: number;
   backgroundLaneMax: number;
+  primaryLaneMax: number;
 }
 
 export function normalizeDatabaseUrl(url: string): string {
@@ -339,6 +340,7 @@ export function resolvePoolConfig(
       acquireTimeoutMs:
         tuning.DB_POOL_ACQUIRE_TIMEOUT_MS ?? DEFAULT_ACQUIRE_TIMEOUT_MS,
       backgroundLaneMax: Math.max(1, Math.floor(max * 0.25)),
+      primaryLaneMax: max - Math.max(1, Math.floor(max * 0.25)),
     },
     role: env.APP_DATABASE_URL ? "application" : "owner",
     slowAcquireMs: tuning.DB_SLOW_ACQUIRE_MS ?? DEFAULT_SLOW_ACQUIRE_MS,

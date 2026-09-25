@@ -45,7 +45,6 @@ const UPDATED_PAGE = {
   nextReviewAt: null,
   aclRevision: 1,
   contentRevision: 4,
-  sourceArticleId: null,
 };
 
 function staleRevision(subject: string): HttpException {

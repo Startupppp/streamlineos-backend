@@ -133,6 +133,8 @@ describe("the KB Search span carries no tenant content and survives redaction", 
     );
     const allowed = new Set([
       "org.id",
+      "actor.standing",
+      "org.cell",
       "kb.search.outcome",
       "kb.search.duration_ms",
       "kb.search.results",

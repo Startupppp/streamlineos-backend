@@ -45,6 +45,7 @@ export const kbImportResultSchema = z.object({
   failed: z.number().int(),
   duplicates: z.number().int(),
   total: z.number().int(),
+  failedTitles: z.array(z.string()),
 });
 
 export const kbExportResultSchema = z.object({

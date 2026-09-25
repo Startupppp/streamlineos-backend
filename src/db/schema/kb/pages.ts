@@ -104,7 +104,6 @@ export const kbPages = pgTable(
     verifiedUntil: timestamp("verified_until", { withTimezone: true }),
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),
-    sourceArticleId: integer("source_article_id"),
     projectId: integer("project_id"),
     externalId: text("external_id"),
     externalSource: text("external_source"),
@@ -143,9 +142,6 @@ export const kbPages = pgTable(
     uniqueIndex("uniq_kb_pages_org_public_slug")
       .on(table.orgId, table.publicSlug)
       .where(sql`${table.publicSlug} IS NOT NULL`),
-    uniqueIndex("uniq_kb_pages_org_source_article")
-      .on(table.orgId, table.sourceArticleId)
-      .where(sql`${table.sourceArticleId} IS NOT NULL`),
     uniqueIndex("uniq_kb_pages_external_ref")
       .on(table.orgId, table.externalSource, table.externalId)
       .where(sql`${table.externalId} IS NOT NULL`),

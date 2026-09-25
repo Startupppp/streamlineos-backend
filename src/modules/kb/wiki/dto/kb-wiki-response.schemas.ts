@@ -163,7 +163,6 @@ export const kbPageSchema = z.object({
   nextReviewAt: nullableWireDate(),
   aclRevision: z.number().int(),
   contentRevision: z.number().int(),
-  sourceArticleId: z.number().int().nullable(),
 });
 
 export const kbPageWithAncestorsSchema = kbPageSchema.extend({

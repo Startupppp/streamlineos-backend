@@ -137,7 +137,6 @@ function makeRow(
     nextReviewAt: null,
     aclRevision: 0,
     contentRevision: 1,
-    sourceArticleId: null,
     createdByMembershipId: null,
     lastEditedByMembershipId: null,
     deletedByMembershipId: null,

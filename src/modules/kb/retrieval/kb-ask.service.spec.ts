@@ -1,8 +1,10 @@
+import { HttpException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
+import { REDIS } from "../../../common/cache/cache.service";
 import { setSpanExporter, resetSpanExporter, type FinishedSpan } from "../../../common/observability";
 import { KB_ASK_SPAN_NAME } from "../core/telemetry/kb-ask-metrics";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { KbAskService } from "./kb-ask.service";
+import { KbAskService, KB_ASK_ORG_LIMIT } from "./kb-ask.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
@@ -138,6 +140,7 @@ describe("KbAskService", () => {
           },
         },
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: REDIS, useValue: null },
       ],
     }).compile();
     service = module.get(KbAskService);
@@ -440,6 +443,41 @@ describe("KbAskService", () => {
   it("reportKnowledgeGap never touches the gateway or charges a credit — it is a free, non-AI action", async () => {
     await service.reportKnowledgeGap(user, "Where is the expense policy?");
 
+    expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
+  });
+
+  it("throws 429 when the org has exhausted its per-minute Ask cap", async () => {
+    const saturatedRedis = {
+      incr: jest.fn().mockResolvedValue(KB_ASK_ORG_LIMIT + 1),
+      expire: jest.fn().mockResolvedValue(undefined),
+      ttl: jest.fn().mockResolvedValue(45),
+    };
+    const module2: TestingModule = await Test.createTestingModule({
+      providers: [
+        KbAskService,
+        { provide: KbLinkedDocumentAskSource, useValue: NO_LINKED_DOCUMENTS },
+        { provide: AiGatewayService, useValue: mockGateway },
+        { provide: KbEventsService, useValue: mockEvents },
+        { provide: KbSearchService, useValue: mockSearch },
+        { provide: KbAccessService, useValue: mockAccess },
+        KbCitationVisibilityService,
+        {
+          provide: KnowledgeAuthorizationService,
+          useValue: {
+            visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+            assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org1", pageId: 1, action: "view", via: "admin" }),
+          },
+        },
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: REDIS, useValue: saturatedRedis },
+      ],
+    }).compile();
+    const svc = module2.get(KbAskService);
+
+    await expect(svc.ask(user, input)).rejects.toThrow(HttpException);
+    const err = await svc.ask(user, input).catch((e: unknown) => e);
+    expect((err as HttpException).getStatus()).toBe(429);
+    expect(saturatedRedis.incr).toHaveBeenCalled();
     expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
   });
 });

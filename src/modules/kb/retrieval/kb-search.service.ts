@@ -303,6 +303,7 @@ export class KbSearchService {
     query: string,
     limit: number,
     spaceId?: number,
+    verifiedOnly?: boolean,
   ): Promise<RetrievedSource[]> {
     const ids = await this.access.getAccessibleSpaceIds(user);
     const q = query.trim();
@@ -355,6 +356,7 @@ export class KbSearchService {
           q,
           pool,
           pageVisibility,
+          verifiedOnly,
         ),
         vectorLiteral
           ? this.candidates.pageVectorCandidates(
@@ -362,6 +364,7 @@ export class KbSearchService {
               vectorLiteral,
               pool,
               chunkVisibleTo(user, projectIds),
+              verifiedOnly,
             )
           : Promise.resolve<number[]>([]),
       ]);

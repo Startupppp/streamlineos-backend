@@ -9,8 +9,16 @@ import {
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { createTenantAwareDb, type DbWithClient } from "../common/tenant/tenant-db";
-import { DB_POOL_CONFIG, DRIZZLE, DRIZZLE_REPLICA, REPLICA_ROUTER } from "./drizzle.constants";
+import {
+  createTenantAwareDb,
+  type DbWithClient,
+} from "../common/tenant/tenant-db";
+import {
+  DB_POOL_CONFIG,
+  DRIZZLE,
+  DRIZZLE_REPLICA,
+  REPLICA_ROUTER,
+} from "./drizzle.constants";
 import { poolTelemetry } from "./pool-telemetry";
 import { configurePoolAdmission, poolAdmission } from "./pool-admission";
 import { instrumentPostgresClient } from "./query-telemetry";
@@ -31,16 +39,26 @@ export type { Db } from "./drizzle.types";
       provide: DRIZZLE,
       inject: [DB_POOL_CONFIG],
       useFactory: (config: ResolvedPoolConfig): DbWithClient => {
-        poolTelemetry.configure({ max: config.max, slowAcquireMs: config.slowAcquireMs });
+        poolTelemetry.configure({
+          max: config.max,
+          slowAcquireMs: config.slowAcquireMs,
+        });
         if (config.admission.enabled)
           configurePoolAdmission({
             maxConcurrent: config.max,
             maxQueueDepth: config.admission.queueDepth,
             acquireTimeoutMs: config.admission.acquireTimeoutMs,
-            laneCapOverrides: { background: config.admission.backgroundLaneMax },
+            laneCapOverrides: {
+              background: config.admission.backgroundLaneMax,
+              primary: config.admission.primaryLaneMax,
+            },
           });
-        const client = instrumentPostgresClient(postgres(config.connectionString, config.options));
-        return createTenantAwareDb(Object.assign(drizzle(client, { schema }), { __client: client }));
+        const client = instrumentPostgresClient(
+          postgres(config.connectionString, config.options),
+        );
+        return createTenantAwareDb(
+          Object.assign(drizzle(client, { schema }), { __client: client }),
+        );
       },
     },
     {
@@ -48,7 +66,8 @@ export type { Db } from "./drizzle.types";
       inject: [DB_POOL_CONFIG],
       useFactory: (config: ResolvedPoolConfig): DbWithClient => {
         const isReplica = !!config.replicaConnectionString;
-        const connectionString = config.replicaConnectionString ?? config.connectionString;
+        const connectionString =
+          config.replicaConnectionString ?? config.connectionString;
         if (!isReplica)
           new Logger("Drizzle").log(
             "DB_REPLICA_URL is unset — replica reads fall through to primary connection string",
@@ -57,7 +76,9 @@ export type { Db } from "./drizzle.types";
           ...config.options,
           max: isReplica ? Math.max(2, Math.floor(config.max / 2)) : 2,
         };
-        const client = instrumentPostgresClient(postgres(connectionString, options));
+        const client = instrumentPostgresClient(
+          postgres(connectionString, options),
+        );
         return Object.assign(drizzle(client, { schema }), { __client: client });
       },
     },
@@ -65,7 +86,10 @@ export type { Db } from "./drizzle.types";
       provide: REPLICA_ROUTER,
       inject: [DB_POOL_CONFIG],
       useFactory: (config: ResolvedPoolConfig): ReplicaRouter => {
-        const primary: PoolHandle = { id: "primary", connectionString: config.connectionString };
+        const primary: PoolHandle = {
+          id: "primary",
+          connectionString: config.connectionString,
+        };
         const replica: PoolHandle | null = config.replicaConnectionString
           ? { id: "replica", connectionString: config.replicaConnectionString }
           : null;
@@ -75,7 +99,9 @@ export type { Db } from "./drizzle.types";
   ],
   exports: [DRIZZLE, DB_POOL_CONFIG, DRIZZLE_REPLICA, REPLICA_ROUTER],
 })
-export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutdown {
+export class DrizzleModule
+  implements OnApplicationBootstrap, OnApplicationShutdown
+{
   private readonly logger = new Logger("Drizzle");
 
   constructor(
@@ -116,14 +142,6 @@ export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutd
     for (const warning of config.warnings) this.logger.warn(warning);
   }
 
-  /**
-   * Refuses to serve traffic with RLS silently disabled.
-   *
-   * Policies are enforced against the connecting role, and BYPASSRLS is checked
-   * before ownership — so a typo in APP_DATABASE_URL falls back to the owner and
-   * every policy stops applying, with nothing in the logs to say so. That is the
-   * one failure mode of this design that is invisible, so it fails loudly.
-   */
   private async assertRlsIsEnforced(): Promise<void> {
     const rows = await this.db.execute(sql`
       SELECT current_user AS role_name,
@@ -143,7 +161,9 @@ export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutd
     const policiesExist = row.policies_exist === true;
 
     if (!policiesExist) {
-      this.logger.warn(`No RLS policies found; tenant isolation rests on application code alone`);
+      this.logger.warn(
+        `No RLS policies found; tenant isolation rests on application code alone`,
+      );
       return;
     }
 
@@ -163,8 +183,12 @@ export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutd
   async onApplicationShutdown(): Promise<void> {
     const { inFlight, waiting } = poolTelemetry.snapshot();
     if (inFlight > 0 || waiting > 0)
-      this.logger.log(`Draining pool — ${inFlight} in flight, ${waiting} queued`);
+      this.logger.log(
+        `Draining pool — ${inFlight} in flight, ${waiting} queued`,
+      );
     await this.db.__client.end({ timeout: this.config.shutdownTimeoutSeconds });
-    await this.replicaDb.__client.end({ timeout: this.config.shutdownTimeoutSeconds });
+    await this.replicaDb.__client.end({
+      timeout: this.config.shutdownTimeoutSeconds,
+    });
   }
 }

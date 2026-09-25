@@ -39,6 +39,7 @@ type ImportResult = {
   failed: number;
   duplicates: number;
   total: number;
+  failedTitles: string[];
 };
 
 @Injectable()
@@ -132,6 +133,13 @@ export class KbImportExportService {
   ): Promise<ImportResult> {
     const orgId = user.orgId;
     const items = input.items;
+
+    const binaryItems = items.filter((i) => i.contentText?.includes("\0") ?? false);
+    if (binaryItems.length > 0) {
+      throw new BadRequestException(
+        `Items contain binary content: ${binaryItems.map((i) => i.title).join(", ")}`,
+      );
+    }
 
     await this.planLimits.assertWithinLimit(orgId, "kbPages", items.length);
 
@@ -242,40 +250,40 @@ export class KbImportExportService {
       aclRevision: number;
     }> = [];
 
-    await this.db.transaction(async (tx) => {
-      if (withRef.length > 0) {
-        const existing = await tx
-          .select({
-            externalSource: kbPages.externalSource,
-            externalId: kbPages.externalId,
-          })
-          .from(kbPages)
-          .where(
-            and(
-              eq(kbPages.orgId, orgId),
-              or(
-                ...withRef.map((v) =>
-                  and(
-                    eq(kbPages.externalSource, v.externalSource),
-                    eq(kbPages.externalId, v.externalId),
-                  ),
+    if (withRef.length > 0) {
+      const existing = await this.db
+        .select({
+          externalSource: kbPages.externalSource,
+          externalId: kbPages.externalId,
+        })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            or(
+              ...withRef.map((v) =>
+                and(
+                  eq(kbPages.externalSource, v.externalSource),
+                  eq(kbPages.externalId, v.externalId),
                 ),
               ),
             ),
-          );
-        const existingKeys = new Set(
-          existing.map((e) => `${e.externalSource}::${e.externalId}`),
+          ),
         );
+      const existingKeys = new Set(
+        existing.map((e) => `${e.externalSource}::${e.externalId}`),
+      );
 
-        const toUpsert =
-          input.duplicatePolicy === "skip"
-            ? withRef.filter(
-                (v) => !existingKeys.has(`${v.externalSource}::${v.externalId}`),
-              )
-            : withRef;
-        duplicates += withRef.length - toUpsert.length;
+      const toUpsert =
+        input.duplicatePolicy === "skip"
+          ? withRef.filter(
+              (v) => !existingKeys.has(`${v.externalSource}::${v.externalId}`),
+            )
+          : withRef;
+      duplicates += withRef.length - toUpsert.length;
 
-        if (toUpsert.length > 0) {
+      if (toUpsert.length > 0) {
+        await this.db.transaction(async (tx) => {
           try {
             const inserted = await tx
               .insert(kbPages)
@@ -297,50 +305,89 @@ export class KbImportExportService {
               });
             succeeded += inserted.length;
             indexTargets.push(...inserted);
+            for (const target of inserted) {
+              await OutboxWriter.emit(tx, {
+                eventId: randomUUID(),
+                organizationId: orgId,
+                aggregateType: "kb_page",
+                aggregateId: String(target.id),
+                aggregateVersion: Date.now(),
+                eventType: "kb.content.index",
+                payload: {
+                  contentType: "page",
+                  contentId: target.id,
+                  contentRevision: target.contentRevision,
+                  aclRevision: target.aclRevision,
+                },
+                occurredAt: new Date(),
+              });
+            }
           } catch {
             failed += toUpsert.length;
             failedTitles.push(...toUpsert.map((v) => v.title));
           }
-        }
-      }
-
-      if (withoutRef.length > 0) {
-        try {
-          const inserted = await tx
-            .insert(kbPages)
-            .values(withoutRef)
-            .onConflictDoNothing()
-            .returning({
-              id: kbPages.id,
-              contentRevision: kbPages.contentRevision,
-              aclRevision: kbPages.aclRevision,
-            });
-          succeeded += inserted.length;
-          indexTargets.push(...inserted);
-        } catch {
-          failed += withoutRef.length;
-          failedTitles.push(...withoutRef.map((v) => v.title));
-        }
-      }
-
-      for (const target of indexTargets) {
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "kb_page",
-          aggregateId: String(target.id),
-          aggregateVersion: Date.now(),
-          eventType: "kb.content.index",
-          payload: {
-            contentType: "page",
-            contentId: target.id,
-            contentRevision: target.contentRevision,
-            aclRevision: target.aclRevision,
-          },
-          occurredAt: new Date(),
         });
       }
-    });
+    }
+
+    if (withoutRef.length > 0) {
+      const plainTitles = withoutRef.map((v) => v.title);
+      let toInsert = withoutRef;
+
+      if (input.duplicatePolicy === "skip") {
+        const existingPlain = await this.db
+          .select({ title: kbPages.title })
+          .from(kbPages)
+          .where(
+            and(
+              eq(kbPages.orgId, orgId),
+              inArray(kbPages.title, plainTitles),
+              isNull(kbPages.deletedAt),
+            ),
+          );
+        const existingTitles = new Set(existingPlain.map((r) => r.title));
+        toInsert = withoutRef.filter((v) => !existingTitles.has(v.title));
+        duplicates += withoutRef.length - toInsert.length;
+      }
+
+      if (toInsert.length > 0) {
+        await this.db.transaction(async (tx) => {
+          try {
+            const inserted = await tx
+              .insert(kbPages)
+              .values(toInsert)
+              .onConflictDoNothing()
+              .returning({
+                id: kbPages.id,
+                contentRevision: kbPages.contentRevision,
+                aclRevision: kbPages.aclRevision,
+              });
+            succeeded += inserted.length;
+            indexTargets.push(...inserted);
+            for (const target of inserted) {
+              await OutboxWriter.emit(tx, {
+                eventId: randomUUID(),
+                organizationId: orgId,
+                aggregateType: "kb_page",
+                aggregateId: String(target.id),
+                aggregateVersion: Date.now(),
+                eventType: "kb.content.index",
+                payload: {
+                  contentType: "page",
+                  contentId: target.id,
+                  contentRevision: target.contentRevision,
+                  aclRevision: target.aclRevision,
+                },
+                occurredAt: new Date(),
+              });
+            }
+          } catch {
+            failed += toInsert.length;
+            failedTitles.push(...toInsert.map((v) => v.title));
+          }
+        });
+      }
+    }
 
     const [job] = await this.db
       .insert(kbImportJobs)
@@ -366,7 +413,7 @@ export class KbImportExportService {
       metadata: { jobId: job.id, total: items.length, succeeded, failed, duplicates },
     });
 
-    return { jobId: job.id, succeeded, failed, duplicates, total: items.length };
+    return { jobId: job.id, succeeded, failed, duplicates, total: items.length, failedTitles };
   }
 
   async listImportJobs(orgId: string, cursor?: string): Promise<ImportJobPage> {
