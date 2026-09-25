@@ -1,4 +1,4 @@
--- 1227 — Knowledge base: kb_health_items, the Content Health persistence layer.
+-- 1228 — Knowledge base: kb_health_items, the Content Health persistence layer.
 --
 -- S15 (REQUIREMENT-LEDGER, "Content Health"): every content-health signal is
 -- recomputed from kb_pages on every request
@@ -46,20 +46,20 @@
 -- "pending-migration-plus-live-call-site-is-a-deploy-landmine". The same
 -- precedent lane L5 set for 1217 and lane L6 set for 1218.
 --
--- Rollback: migrations/rollback/1227_kb_health_items.down.sql
+-- Rollback: migrations/rollback/1228_kb_health_items.down.sql
 SET lock_timeout = '5s';
 --> statement-breakpoint
 
 DO $$
 BEGIN
   IF to_regclass('public.kb_pages') IS NULL THEN
-    RAISE EXCEPTION '1227 precondition: public.kb_pages is absent — this is not a Knowledge database';
+    RAISE EXCEPTION '1228 precondition: public.kb_pages is absent — this is not a Knowledge database';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_kb_pages_org_id') THEN
-    RAISE EXCEPTION '1227 precondition: uniq_kb_pages_org_id is absent — the tenant-safe composite foreign key cannot be declared';
+    RAISE EXCEPTION '1228 precondition: uniq_kb_pages_org_id is absent — the tenant-safe composite foreign key cannot be declared';
   END IF;
   IF to_regclass('public.organization_members') IS NULL THEN
-    RAISE EXCEPTION '1227 precondition: public.organization_members is absent — the assignee foreign key cannot be declared';
+    RAISE EXCEPTION '1228 precondition: public.organization_members is absent — the assignee foreign key cannot be declared';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -175,20 +175,20 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON "public"."kb_health_items" TO streamline
 DO $$
 BEGIN
   IF to_regclass('public.kb_health_items') IS NULL THEN
-    RAISE EXCEPTION '1227 postcondition: kb_health_items was not created';
+    RAISE EXCEPTION '1228 postcondition: kb_health_items was not created';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'uniq_kb_health_items_active') THEN
-    RAISE EXCEPTION '1227 postcondition: uniq_kb_health_items_active was not created — the active-uniqueness the box requires is absent';
+    RAISE EXCEPTION '1228 postcondition: uniq_kb_health_items_active was not created — the active-uniqueness the box requires is absent';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'kb_health_items' AND policyname = 'tenant_isolation') THEN
-    RAISE EXCEPTION '1227 postcondition: tenant_isolation policy is absent — kb_health_items would read cross-tenant';
+    RAISE EXCEPTION '1228 postcondition: tenant_isolation policy is absent — kb_health_items would read cross-tenant';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.role_table_grants
     WHERE table_schema = 'public' AND table_name = 'kb_health_items'
       AND grantee = 'streamline_app' AND privilege_type = 'SELECT'
   ) THEN
-    RAISE EXCEPTION '1227 postcondition: streamline_app holds no SELECT on kb_health_items — every read would fail 42501';
+    RAISE EXCEPTION '1228 postcondition: streamline_app holds no SELECT on kb_health_items — every read would fail 42501';
   END IF;
 END $$;
 --> statement-breakpoint

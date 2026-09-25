@@ -1,7 +1,7 @@
--- Rollback for 1227_kb_health_items
--- Drops the table 1227 created, with its policy, indexes and constraints.
+-- Rollback for 1228_kb_health_items
+-- Drops the table 1228 created, with its policy, indexes and constraints.
 -- Safe in both directions only while nothing writes kb_health_items — which is
--- the state 1227 was authored in (no Drizzle table, no call site). Once a
+-- the state 1228 was authored in (no Drizzle table, no call site). Once a
 -- workflow writes assignments and dismissal reasons here, this rollback
 -- destroys them: re-detection can recreate an item, but not who it was
 -- assigned to or why a human dismissed it. Take a backup of the table before

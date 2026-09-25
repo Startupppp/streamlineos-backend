@@ -262,6 +262,15 @@ describe("AllExceptionsFilter", () => {
       expect(JSON.stringify(reports[0].extra)).not.toContain(token);
     });
 
+    it("keeps a public share token out of the error report on the /v1 alias, which a client that pinned the version prefix still sends", () => {
+      const token = "Qw1eRt2yUi3oPa4sDf5gHj6k";
+
+      filter.catch(new Error("boom"), hostFor(`/v1/public/wiki/${token}`));
+
+      expect(reports).toHaveLength(1);
+      expect(JSON.stringify(reports[0].extra)).not.toContain(token);
+    });
+
     it("keeps a public share token out of the log line for a server-side HttpException", () => {
       const token = "Zz9yXw8vUt7sRq6pOn5mLk4j";
       const stderr = jest.spyOn(process.stderr, "write").mockReturnValue(true);

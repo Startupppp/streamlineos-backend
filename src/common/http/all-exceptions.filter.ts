@@ -110,19 +110,12 @@ function describeUnhandled(exception: unknown): Record<string, unknown> {
   const query = record["query"];
   const column = record["column_name"];
   const table = record["table_name"];
-  // `detail`, `hint` and `query` quote the offending row — a unique violation sets
-  // detail to `Key (email)=(ada@example.com) already exists.` — so they are grouped
-  // under one key the redactor withholds. Table, column and SQLSTATE carry no row
-  // data and stay readable, which is what makes the redaction survivable.
   const driverDetail: Record<string, unknown> = {
     ...(typeof detail === "string" ? { detail } : {}),
     ...(typeof hint === "string" ? { hint } : {}),
     ...(typeof query === "string" ? { query } : {}),
   };
 
-  // The SQLSTATE is on `code`, usually one or two `cause` links down under
-  // Drizzle's wrapper, and never in the message — so without lifting it here a
-  // missing tenant GUC (42501) is indistinguishable from any other 500.
   const sqlstate = sqlstateOf(exception);
 
   return {
@@ -164,28 +157,21 @@ function correlationIdOf(host: ArgumentsHost): string | undefined {
   }
 }
 
-/**
- * The path, never the query string.
- *
- * A query string is caller-supplied tenant content — a search term, a filter on
- * an email address, a date range someone chose — and putting it on every 500 log
- * line and error report carries tenant DATA where only tenant CONTEXT belongs.
- * The parameter *names* are the route's own contract rather than the tenant's
- * content, so they are kept: which filters were in play is usually the whole
- * diagnostic value, and the values almost never are.
- */
 const BEARER_PATH_PREFIXES = ["/public/wiki/"];
+const VERSION_PREFIX = /^\/v\d+(?=\/)/;
 
 function redactBearerPathSegment(path: string): string {
+  const version = VERSION_PREFIX.exec(path)?.[0] ?? "";
+  const unversioned = path.slice(version.length);
   const prefix = BEARER_PATH_PREFIXES.find((candidate) =>
-    path.startsWith(candidate),
+    unversioned.startsWith(candidate),
   );
   if (prefix === undefined) return path;
-  const rest = path.slice(prefix.length);
+  const rest = unversioned.slice(prefix.length);
   if (rest === "") return path;
   const separator = rest.indexOf("/");
   const tail = separator === -1 ? "" : rest.slice(separator);
-  return `${prefix.slice(0, -1)}/[redacted]${tail}`;
+  return `${version}${prefix.slice(0, -1)}/[redacted]${tail}`;
 }
 
 function describeRequest(host: ArgumentsHost): Record<string, unknown> {

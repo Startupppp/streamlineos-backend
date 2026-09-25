@@ -344,3 +344,70 @@ describe("KbPageSearchQueryService — no embedding calls", () => {
     expect(embedSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("KbPageSearchQueryService — stale, deleted and archived exclusion", () => {
+  it("excludes soft-deleted pages from the item query, so a trashed page never appears as a search hit", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const svc = makeService(db, makeAuth());
+
+    await svc.search(makeUser(), { ...baseQuery });
+
+    expect(serialize(whereClauses[0])).toContain("deleted_at is null");
+  });
+
+  it("excludes archived pages when no status filter is given, rather than ranking a retired page beside live ones", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const svc = makeService(db, makeAuth());
+
+    await svc.search(makeUser(), { ...baseQuery });
+
+    const rendered = serialize(whereClauses[0]);
+    expect(rendered).toContain("status");
+    expect(rendered).toContain("archived");
+  });
+
+  it("includes archived pages only when the caller asks for them by name, so the exclusion is a default and not a ceiling", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const svc = makeService(db, makeAuth());
+
+    await svc.search(makeUser(), { ...baseQuery, status: "archived" });
+
+    expect(serialize(whereClauses[0])).toContain("archived");
+  });
+
+  it("carries the deleted_at fence into the facet query too, or facet counts would report pages the list cannot show", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const svc = makeService(db, makeAuth());
+
+    await svc.search(makeUser(), { ...baseQuery, facets: true });
+
+    expect(whereClauses.length).toBeGreaterThan(1);
+    for (const clause of whereClauses) {
+      expect(serialize(clause)).toContain("deleted_at is null");
+    }
+  });
+});
+
+describe("KbPageSearchQueryService — exact identifier queries", () => {
+  it("sends the untouched query to the parser alongside the prefix terms, because stripping the hyphen turns ERR-500 into err500 and no document produces that lexeme", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const svc = makeService(db, makeAuth());
+
+    await svc.search(makeUser(), { ...baseQuery, q: "ERR-500" });
+
+    const rendered = serialize(whereClauses[0]);
+    expect(rendered).toContain("plainto_tsquery");
+    expect(rendered).toContain("ERR-500");
+  });
+
+  it("still builds prefix terms for an ordinary word, so the exact-identifier arm did not replace type-ahead matching", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const svc = makeService(db, makeAuth());
+
+    await svc.search(makeUser(), { ...baseQuery, q: "onbo" });
+
+    const rendered = serialize(whereClauses[0]);
+    expect(rendered).toContain("to_tsquery");
+    expect(rendered).toContain("onbo:*");
+  });
+});
