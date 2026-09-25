@@ -2,8 +2,8 @@
 
 Written 2026-09-25 at the end of PR 8. The plan is [`PLAN.md`](./PLAN.md); the Phase 0 evidence is
 [`PHASE0-FINDINGS.md`](./PHASE0-FINDINGS.md). Every number below was measured in this project's own runs and says where;
-anything not measured says so under **BLOCKED / not verified**. **Nothing has been merged to `main`.** All PRs are open,
-stacked, and waiting for a decision (see §1).
+anything not measured says so under **BLOCKED / not verified**. **Everything is merged to `main` in both repos** (see §1),
+and both feature flags stay OFF for every organisation until someone turns them on.
 
 The brief received to me covered the acceptance criteria, this report's format, the QA checklist and §14. Its §§1–13 (goals,
 phase list, PR breakdown, the listed audited actions) were never received, so the PR breakdown and the audit-action names
@@ -15,39 +15,47 @@ are my proposals (PLAN §0, §5).
 
 CI: **no run link exists for any of them.** On 2026-09-25 the latest runs of `ci.yml`, *Database gates* and *Legacy Actor
 Ratchet* on `main` conclude `failure` with **zero jobs** ("likely a workflow file issue"), so no PR can show a green run.
-Local gate output is cited instead. "Merge commit" is empty because nothing is merged.
+Local gate output is cited instead.
 
 Backend — `Startupppp/streamlineos-backend`
 
 | PR | Title | Base | State |
 |---|---|---|---|
-| [#46](https://github.com/Startupppp/streamlineos-backend/pull/46) | docs(hrms-kb): Phase 0 plan, findings and read-only duplicate census | `main` | open |
-| [#45](https://github.com/Startupppp/streamlineos-backend/pull/45) | fix(hr,kb): close five HR-document exposure paths (PR 1) | `main` | open |
-| [#48](https://github.com/Startupppp/streamlineos-backend/pull/48) | feat(hrms-kb): classification, audiences, linked-document tables, publish permission and switches (PR 2) | #45 | open |
-| [#49](https://github.com/Startupppp/streamlineos-backend/pull/49) | feat(hr): classify HR documents and set who they are for (PR 3) | #48 | open |
-| [#50](https://github.com/Startupppp/streamlineos-backend/pull/50) | feat(kb,hr): publish HR documents to the knowledge base and read them there (PR 4) | #49 | open |
-| [#51](https://github.com/Startupppp/streamlineos-backend/pull/51) | feat(kb): find linked HR documents by their words, and let the assistants cite them (PR 5) | #50 | open |
-| [#52](https://github.com/Startupppp/streamlineos-backend/pull/52) | fix(hr-import): a document row that names nobody is an error, not a company document (PR 6, SEC-06) | #51 | open |
-| [#53](https://github.com/Startupppp/streamlineos-backend/pull/53) | feat(kb): backfill classifications for existing HR documents, and purge removed-source entries (PR 7) | #52 | open |
-| [#54](https://github.com/Startupppp/streamlineos-backend/pull/54) | test(kb): prove no personal document reaches the knowledge base; reconciliation gate; withdraw with a reason (PR 8) | #53 | open |
+| [#46](https://github.com/Startupppp/streamlineos-backend/pull/46) | docs(hrms-kb): Phase 0 plan, findings and read-only duplicate census | `main` | merged |
+| [#45](https://github.com/Startupppp/streamlineos-backend/pull/45) | fix(hr,kb): close five HR-document exposure paths (PR 1) | `main` | merged |
+| [#48](https://github.com/Startupppp/streamlineos-backend/pull/48) | feat(hrms-kb): classification, audiences, linked-document tables, publish permission and switches (PR 2) | #45 | merged via integration (closed) |
+| [#49](https://github.com/Startupppp/streamlineos-backend/pull/49) | feat(hr): classify HR documents and set who they are for (PR 3) | #48 | merged via integration (closed) |
+| [#50](https://github.com/Startupppp/streamlineos-backend/pull/50) | feat(kb,hr): publish HR documents to the knowledge base and read them there (PR 4) | #49 | merged via integration (closed) |
+| [#51](https://github.com/Startupppp/streamlineos-backend/pull/51) | feat(kb): find linked HR documents by their words, and let the assistants cite them (PR 5) | #50 | merged via integration (closed) |
+| [#52](https://github.com/Startupppp/streamlineos-backend/pull/52) | fix(hr-import): a document row that names nobody is an error, not a company document (PR 6, SEC-06) | #51 | merged via integration (closed) |
+| [#53](https://github.com/Startupppp/streamlineos-backend/pull/53) | feat(kb): backfill classifications for existing HR documents, and purge removed-source entries (PR 7) | #52 | merged via integration (closed) |
+| [#54](https://github.com/Startupppp/streamlineos-backend/pull/54) | test(kb): prove no personal document reaches the knowledge base; reconciliation gate; withdraw with a reason (PR 8) | #53 | merged via integration (closed) |
 
 Frontend — `Startupppp/streamlineos-frontend`
 
 | PR | Title | Base | State |
 |---|---|---|---|
-| [#194](https://github.com/Startupppp/streamlineos-frontend/pull/194) | feat(rbac): `hr:documents:publish` in the frontend catalog + re-vendored contracts (FE PR 2) | `main` | open |
-| [#195](https://github.com/Startupppp/streamlineos-frontend/pull/195) | feat(hr): classify documents and choose who may see them (FE PR 3) | #194 | open |
-| [#196](https://github.com/Startupppp/streamlineos-frontend/pull/196) | feat(kb): company documents in the Knowledge Base, and the HR side that feeds them (FE PR 4) | #195 | open |
-| [#197](https://github.com/Startupppp/streamlineos-frontend/pull/197) | feat(kb): search company documents, and let the assistants cite them (FE PR 5) | #196 | open |
-| [#198](https://github.com/Startupppp/streamlineos-frontend/pull/198) | feat(hr): say what an import did, and why a row failed (FE PR 6) | #197 | open |
-| [#199](https://github.com/Startupppp/streamlineos-frontend/pull/199) | feat(hr): classify the documents you already have, from the Document Library (FE PR 7) | #198 | open |
-| [#200](https://github.com/Startupppp/streamlineos-frontend/pull/200) | feat(kb): say why a withdrawn company document shows no details (FE PR 8) | #199 | open |
-| [#201](https://github.com/Startupppp/streamlineos-frontend/pull/201) | feat(hr): take a document out of the Knowledge Base with a reason (FE PR 9) | #200 | open |
+| [#194](https://github.com/Startupppp/streamlineos-frontend/pull/194) | feat(rbac): `hr:documents:publish` in the frontend catalog + re-vendored contracts (FE PR 2) | `main` | merged |
+| [#195](https://github.com/Startupppp/streamlineos-frontend/pull/195) | feat(hr): classify documents and choose who may see them (FE PR 3) | #194 | merged via integration (closed) |
+| [#196](https://github.com/Startupppp/streamlineos-frontend/pull/196) | feat(kb): company documents in the Knowledge Base, and the HR side that feeds them (FE PR 4) | #195 | merged via integration (closed) |
+| [#197](https://github.com/Startupppp/streamlineos-frontend/pull/197) | feat(kb): search company documents, and let the assistants cite them (FE PR 5) | #196 | merged via integration (closed) |
+| [#198](https://github.com/Startupppp/streamlineos-frontend/pull/198) | feat(hr): say what an import did, and why a row failed (FE PR 6) | #197 | merged via integration (closed) |
+| [#199](https://github.com/Startupppp/streamlineos-frontend/pull/199) | feat(hr): classify the documents you already have, from the Document Library (FE PR 7) | #198 | merged via integration (closed) |
+| [#200](https://github.com/Startupppp/streamlineos-frontend/pull/200) | feat(kb): say why a withdrawn company document shows no details (FE PR 8) | #199 | merged via integration (closed) |
+| [#201](https://github.com/Startupppp/streamlineos-frontend/pull/201) | feat(hr): take a document out of the Knowledge Base with a reason (FE PR 9) | #200 | merged via integration (closed) |
 
 Two chains, each stacked on its own first PR, and the two repos pair by capability (backend #49–#54 ↔ frontend #195–#201).
-**Merge order:** #46 and #45 (independent, both onto `main`), then #48 → #54 in order; frontend #194 → #201 in order. A stacked
-PR must be retargeted to `main` after its base merges. Backend PR 1 (#45) is security-only and needs no migration; it is the
-one that can and probably should go first on its own.
+
+**How it was merged.** #45, #46 and #194 were based on `main`, so GitHub marked them merged when their commits reached it.
+The other fourteen were stacked on each other, so each chain was integrated once instead: an integration branch off the
+then-latest `main` took the chain tip (and the Phase 0 branch), resolved the conflicts, regenerated the API contract,
+and was pushed to `main` as a fast-forward. Every one of those fourteen head commits is an ancestor of `main`; the PRs were
+closed with a comment saying so. Backend `main` at `9e3a8b86c`, frontend `main` at `295cb3a34`.
+
+**Migration numbers changed on the way in.** `main` took migration 1197 while this work was in flight, so the four new
+migrations are **1198–1201** (journal idx 1082–1085). The PR descriptions and commit messages still say 1197–1200; this
+report and `PLAN.md` use the merged numbers. Nothing had been applied to a shared database, so no applied migration was
+edited (BE-60).
 
 ---
 
