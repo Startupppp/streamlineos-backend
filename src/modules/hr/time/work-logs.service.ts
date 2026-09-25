@@ -8,15 +8,17 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { formatDateOnly, getTodayString } from "../../../common/date";
+import { formatDateOnly, getTodayString, subDays } from "../../../common/date";
 import type {
   ExportWorkLogsQuery,
   ListWorkLogsQuery,
   PatchWorkLogStatusInput,
   PostWorkLogInput,
 } from "./dto/work-logs.schemas";
-import { resolveWorkLogsScope, WORKLOGS_PERMISSION } from "./worklogs-scope";
+import { resolveWorkLogsScope } from "./worklogs-scope";
 import { exportWorkLogsCsv } from "./work-logs-export";
+
+export const WORK_LOG_BACKDATE_DAYS = 7;
 
 @Injectable()
 export class WorkLogsService {
@@ -100,7 +102,15 @@ export class WorkLogsService {
       });
   }
 
-  async create(orgId: string, userId: string, body: PostWorkLogInput, actor?: CurrentUserContext) {
+  async create(actor: CurrentUserContext, body: PostWorkLogInput) {
+    const orgId = actor.orgId;
+    const scope = await resolveWorkLogsScope(this.access, actor);
+    const userId = body.userId ?? actor.userId;
+
+    if (userId !== actor.userId && !scope.unrestricted) {
+      throw new ForbiddenException("Not authorized to record work logs for other users.");
+    }
+
     const [member] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -110,8 +120,13 @@ export class WorkLogsService {
 
     const dateStr = formatDateOnly(body.date);
     const todayStr = getTodayString();
-    if (dateStr !== todayStr) {
-      throw new ForbiddenException("Work logs can only be created or updated for today.");
+    if (dateStr > todayStr) {
+      throw new ForbiddenException("Work logs cannot be recorded for a future date.");
+    }
+    if (!scope.unrestricted && dateStr < formatDateOnly(subDays(new Date(), WORK_LOG_BACKDATE_DAYS))) {
+      throw new ForbiddenException(
+        `Work logs can only be created or updated within the last ${WORK_LOG_BACKDATE_DAYS} days.`,
+      );
     }
 
     const existing = await this.db.query.timesheets.findFirst({
@@ -128,13 +143,7 @@ export class WorkLogsService {
     );
 
     if (alreadySaved) {
-      const canManage =
-        actor?.isOrgOwner ||
-        (actor
-          ? ((await this.access.resolveUserPermissions(orgId, actor.userId)).get(
-              WORKLOGS_PERMISSION,
-            ) ?? "none") !== "none"
-          : false);
+      const canManage = !scope.denied;
       if (!canManage) {
         throw new ForbiddenException(
           "Saved work logs are locked. Ask HR or a manager with attendance access to edit.",
@@ -175,7 +184,7 @@ export class WorkLogsService {
 
       await this.audit.logCritical({
         action: "hr.worklog.saved",
-        userId: actor?.userId ?? userId,
+        userId: actor.userId,
         orgId,
         targetId: upserted ? String(upserted.id) : null,
         targetType: "work_log",
