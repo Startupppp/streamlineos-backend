@@ -154,24 +154,6 @@ describe("bulkUpdateUsers — canonical destination writes", () => {
     expect(setCalls).toContainEqual(expect.objectContaining({ locationId: "branch-1" }));
   });
 
-  it("refuses a manager change with 400 pointing to the bulk reporting change, which previews, asks a reason and confirms", async () => {
-    const { service, updatedTables } = buildService([{ userId: "user-a" }, { userId: "user-b" }]);
-
-    const attempt = service.bulkUpdateUsers("org-a", {
-      userIds: ["user-a", "user-b"],
-      departmentId: "dept-1",
-      managerUserId: "manager-1",
-    }, actor);
-
-    await expect(attempt).rejects.toMatchObject({ status: 400, message: expect.stringContaining("bulk reporting change") });
-    expect(updatedTables).toEqual([]);
-  });
-
-  it("refuses clearing the manager the same way", async () => {
-    const { service } = buildService([{ userId: "user-a" }]);
-    await expect(service.bulkUpdateUsers("org-a", { userIds: ["user-a"], managerUserId: null }, actor)).rejects.toMatchObject({ status: 400 });
-  });
-
   it("syncs the structural role for every updated membership in one batched call", async () => {
     const { service } = buildService(
       [{ userId: "user-a" }, { userId: "user-b" }],

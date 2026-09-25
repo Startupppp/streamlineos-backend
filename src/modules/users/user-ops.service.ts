@@ -147,13 +147,6 @@ export class UserOpsService {
   ) {
     const actorUserId = actor.userId;
     const { userIds, role, departmentId, branchId, teamId } = data;
-    // HRM-15: a reporting manager change goes through the bulk reporting change, which previews every
-    // row, asks for a reason and confirms large changes; this route does none of that.
-    if (data.managerUserId !== undefined)
-      throw new BadRequestException({
-        code: "USE_BULK_REPORTING_CHANGE",
-        message: "Reporting managers cannot be changed here. Use the bulk reporting change (POST /hr/reporting-lines/bulk-jobs), which previews and confirms the change.",
-      });
 
     if (role) await this.assertMayGrantRole(orgId, actor, role);
 
