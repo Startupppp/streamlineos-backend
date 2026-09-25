@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { formSubmissions, projectForms, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -10,11 +10,26 @@ import { assertProjectAccess } from "../core/project-access";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
 import type { CreateSubmissionInput, ListSubmissionsQuery, UpdateSubmissionInput } from "./dto/forms.schemas";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 
 type FormRow = typeof projectForms.$inferSelect;
 type SubmissionRow = typeof formSubmissions.$inferSelect;
+const SUBMISSION_PAGE_SIZE = 100;
+
+function decodeSubmissionCursor(cursor: string | undefined) {
+  if (!cursor) return undefined;
+  const parts = decodeTupleCursor(cursor, 2);
+  if (!parts) throw new BadRequestException("Invalid pagination cursor");
+  const [createdAtValue, idValue] = parts;
+  const id = Number(idValue);
+  const createdAt = new Date(createdAtValue);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2_147_483_647 || Number.isNaN(createdAt.getTime()) || createdAt.toISOString() !== createdAtValue) {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+  return { createdAt, id };
+}
 
 type SubmissionRunResult = {
   submission: SubmissionRow;
@@ -153,8 +168,8 @@ export class SubmissionsService {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadForm(orgId, projectId, formId);
-    const cursorDate = query.cursor ? new Date(query.cursor) : undefined;
-    return this.db
+    const cursor = decodeSubmissionCursor(query.cursor);
+    const rows = await this.db
       .select({
         id: formSubmissions.id,
         orgId: formSubmissions.orgId,
@@ -172,10 +187,19 @@ export class SubmissionsService {
         eq(formSubmissions.orgId, orgId),
         eq(formSubmissions.formId, formId),
         query.status ? eq(formSubmissions.status, query.status) : undefined,
-        cursorDate ? lt(formSubmissions.createdAt, cursorDate) : undefined,
+        cursor
+          ? or(
+              lt(formSubmissions.createdAt, cursor.createdAt),
+              and(eq(formSubmissions.createdAt, cursor.createdAt), lt(formSubmissions.id, cursor.id)),
+            )
+          : undefined,
       ))
-      .orderBy(desc(formSubmissions.createdAt))
-      .limit(100);
+      .orderBy(desc(formSubmissions.createdAt), desc(formSubmissions.id))
+      .limit(SUBMISSION_PAGE_SIZE + 1);
+    return buildTupleCursorPage(rows, SUBMISSION_PAGE_SIZE, (row) => [
+      row.createdAt.toISOString(),
+      String(row.id),
+    ]);
   }
 
   async createSubmission(

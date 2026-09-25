@@ -35,6 +35,7 @@ import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
 import {
   publicSubmissionResultSchema,
   submissionCreateResultSchema,
+  submissionPageSchema,
   submissionRowSchema,
 } from "./dto/forms-response.schemas";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
@@ -56,7 +57,7 @@ export class SubmissionsController {
 
   @Get()
   @RequirePermission("build:forms:manage")
-  @ResponseSchema(z.array(submissionRowSchema))
+  @ResponseSchema(submissionPageSchema)
   @Validate({ query: listSubmissionsQuerySchema })
   listSubmissions(
     @Param("projectId", ParseIntPipe) projectId: number,

@@ -45,6 +45,15 @@ export const submissionRowSchema = z.object({
   createdAt: wireDate(),
 });
 
+export const submissionPageSchema = z.object({
+  data: z.array(submissionRowSchema),
+  pagination: z.object({
+    limit: z.number().int().positive(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+});
+
 export const submissionCreateResultSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
