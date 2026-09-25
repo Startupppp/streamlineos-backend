@@ -8,6 +8,7 @@ import { ReportingLineService } from "../reporting-line.service";
 import { ScopedRead } from "../../access/scoped-read";
 import { SPAN_OF_CONTROL_LIMIT } from "../reporting-line.types";
 import { hasCurrentDirectReport } from "../employment-query";
+import { syncCanonicalReportingLine } from "../../../common/hr/sync-canonical-reporting-line";
 
 jest.setTimeout(120_000);
 
@@ -115,13 +116,13 @@ describe("ReportingLineService against a real schema", () => {
     await expect(service.checkManagerAssignment(org.orgId, lead.userId, ceo.userId)).resolves.toMatchObject({ ok: true, managerEmploymentId: ceo.employmentId });
   });
 
-  it("assign writes an effective-dated line and getLine reports current, upcoming and history", async () => {
+  it("the canonical writer records an effective-dated line and getLine reports current, upcoming and history", async () => {
     const boss = await addPerson("boss");
     const newBoss = await addPerson("new-boss");
     const report = await addPerson("report");
 
-    await service.assign(org.orgId, report.userId, boss.userId, "2026-02-01", org.userId);
-    await service.assign(org.orgId, report.userId, newBoss.userId, "2099-01-01", org.userId);
+    await syncCanonicalReportingLine(db, org.orgId, report.userId, boss.userId, "2026-02-01", org.userId);
+    await syncCanonicalReportingLine(db, org.orgId, report.userId, newBoss.userId, "2099-01-01", org.userId);
 
     const view = await service.getLine(ScopedRead.of(org.orgId, org.userId, "all"), report.userId);
     expect(view?.current?.managerUserId).toBe(boss.userId);
@@ -147,7 +148,7 @@ describe("ReportingLineService against a real schema", () => {
     await expect(hasCurrentDirectReport(db, org.orgId, bystander.userId)).resolves.toBe(false);
     await expect(hasCurrentDirectReport(db, org.orgId, report.userId)).resolves.toBe(false);
 
-    await service.assign(org.orgId, report.userId, null, "2026-06-01", org.userId);
+    await syncCanonicalReportingLine(db, org.orgId, report.userId, null, "2026-06-01", org.userId);
     await expect(hasCurrentDirectReport(db, org.orgId, manager.userId)).resolves.toBe(false);
   });
 

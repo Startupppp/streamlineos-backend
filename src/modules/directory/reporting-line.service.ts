@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -12,12 +12,6 @@ import {
   organizationMembers,
   users,
 } from "../../db/schema";
-import {
-  syncCanonicalReportingLine,
-  syncCanonicalReportingLines,
-  type LineProvenance,
-  type ReportingLineOutcome,
-} from "../../common/hr/sync-canonical-reporting-line";
 import { orgBusinessDate } from "../hr/time/attendance-business-date";
 import { liveEmployment, livePersonOfEmployment } from "./employment-query";
 import type { ScopedRead } from "../access/scoped-read";
@@ -175,43 +169,6 @@ export class ReportingLineService {
       .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, candidateUserId)))
       .limit(1);
     return this.eligibilityOf(candidate, { requireAccepted: true });
-  }
-
-  async assign(
-    orgId: string,
-    subjectUserId: string,
-    managerUserId: string | null,
-    effectiveFrom: string,
-    actorUserId: string,
-    db: DbOrTx = this.db,
-    provenance?: Omit<LineProvenance, "createdBy">,
-  ): Promise<ReportingLineOutcome> {
-    if (managerUserId !== null) {
-      const check = await this.checkManagerAssignment(orgId, subjectUserId, managerUserId, db);
-      if (!check.ok) throw new BadRequestException(check.message);
-    }
-    const outcome = await syncCanonicalReportingLine(db, orgId, subjectUserId, managerUserId, effectiveFrom, actorUserId, provenance);
-    if (outcome.status === "unmappable") throw new BadRequestException(this.unmappableMessage(outcome.reason));
-    return outcome;
-  }
-
-  async assignMany(
-    orgId: string,
-    subjectUserIds: readonly string[],
-    managerUserId: string | null,
-    effectiveFrom: string,
-    actorUserId: string,
-    db: DbOrTx = this.db,
-    provenance?: Omit<LineProvenance, "createdBy">,
-  ): Promise<Map<string, ReportingLineOutcome>> {
-    if (managerUserId !== null) {
-      const check = await this.checkManagerAssignments(orgId, subjectUserIds, managerUserId, db);
-      if (!check.ok) throw new BadRequestException(check.message);
-    }
-    const outcomes = await syncCanonicalReportingLines(db, orgId, subjectUserIds, managerUserId, effectiveFrom, actorUserId, provenance);
-    for (const outcome of outcomes.values())
-      if (outcome.status === "unmappable") throw new BadRequestException(this.unmappableMessage(outcome.reason));
-    return outcomes;
   }
 
   /**
@@ -456,18 +413,5 @@ export class ReportingLineService {
       reason,
       message: REFUSAL_MESSAGES[reason].replace(WHO, who?.trim() || DEFAULT_WHO),
     };
-  }
-
-  private unmappableMessage(reason: Exclude<ReportingLineOutcome, { status: "written" | "unchanged" | "cleared" }>["reason"]): string {
-    switch (reason) {
-      case "employment-missing":
-        return "The employee has no employment record yet, so a reporting manager cannot be recorded.";
-      case "manager-not-in-organization":
-        return REFUSAL_MESSAGES["manager-not-in-organization"];
-      case "manager-has-no-employment":
-        return REFUSAL_MESSAGES["manager-has-no-employment"].replace(WHO, DEFAULT_WHO);
-      case "self-reference":
-        return REFUSAL_MESSAGES["self-reference"];
-    }
   }
 }
