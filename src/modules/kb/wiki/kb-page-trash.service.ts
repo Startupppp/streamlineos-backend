@@ -71,8 +71,9 @@ export class KbPageTrashService {
 
   async hardDelete(user: CurrentUserContext, pageId: number): Promise<void> {
     const orgId = user.orgId;
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), predicate),
       columns: { id: true, title: true },
     });
     if (!page) throw new NotFoundException("Page not found");

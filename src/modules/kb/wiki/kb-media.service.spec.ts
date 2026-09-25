@@ -15,7 +15,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { validateEnv } from "../../../config/env.validation";
 import type { AvScanner } from "../../../common/security/av-scan";
 import type { Db } from "../../../db/drizzle.module";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 const dialect = new PgDialect();
@@ -162,6 +162,7 @@ describe("KbMediaService", () => {
       mockAttachmentIndexing as unknown as KbAttachmentIndexingService,
       kbConfig,
       mockScanner as unknown as AvScanner,
+      { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never,
     );
   });
 

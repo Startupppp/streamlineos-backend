@@ -88,7 +88,12 @@ export class KbCommentsService {
   async update(user: CurrentUserContext, commentId: number, input: UpdateCommentInput): Promise<CommentWithAuthor> {
     const existing = await this.loadArticleComment(user.orgId, commentId);
 
-    await this.kbAccess.assertArticleViewable(user, existing.articleId);
+    try {
+      await this.kbAccess.assertArticleViewable(user, existing.articleId);
+    } catch (e) {
+      if (e instanceof NotFoundException) throw new NotFoundException("Comment not found");
+      throw e;
+    }
     await this.assertMayModerate(user, existing);
 
     const [updated] = await this.db
@@ -103,7 +108,12 @@ export class KbCommentsService {
   async remove(user: CurrentUserContext, commentId: number): Promise<void> {
     const existing = await this.loadArticleComment(user.orgId, commentId);
 
-    await this.kbAccess.assertArticleViewable(user, existing.articleId);
+    try {
+      await this.kbAccess.assertArticleViewable(user, existing.articleId);
+    } catch (e) {
+      if (e instanceof NotFoundException) throw new NotFoundException("Comment not found");
+      throw e;
+    }
     await this.assertMayModerate(user, existing);
 
     await this.db
@@ -114,7 +124,12 @@ export class KbCommentsService {
   async resolve(user: CurrentUserContext, commentId: number): Promise<CommentWithAuthor> {
     const existing = await this.loadArticleComment(user.orgId, commentId);
 
-    await this.kbAccess.assertArticleEditable(user, existing.articleId);
+    try {
+      await this.kbAccess.assertArticleEditable(user, existing.articleId);
+    } catch (e) {
+      if (e instanceof NotFoundException) throw new NotFoundException("Comment not found");
+      throw e;
+    }
 
     const [updated] = await this.db
       .update(kbPageComments)

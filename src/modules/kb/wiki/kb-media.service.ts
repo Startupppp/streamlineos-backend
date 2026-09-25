@@ -14,6 +14,7 @@ import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-tra
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import { AvScanner } from "../../../common/security/av-scan";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 export interface KbMediaUploadResult extends UploadResult {
   name: string;
@@ -84,6 +85,7 @@ export class KbMediaService {
     private readonly attachmentIndexing: KbAttachmentIndexingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly avScanner: AvScanner,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async upload(
@@ -98,7 +100,7 @@ export class KbMediaService {
     if (pageId != null) {
       await runInTenantTransaction(
         this.db,
-        async () => { await this.assertPageInOrg(u.orgId, pageId); },
+        async () => { await this.assertPageVisible(u, pageId); },
         { orgId: u.orgId },
       );
     }
@@ -255,16 +257,10 @@ export class KbMediaService {
     }
   }
 
-  /**
-   * A page id arrives from the request body and nothing checked it. With the
-   * attachment row's composite (org_id, page_id) foreign key another tenant's
-   * page id would raise 23503 after the bytes were already in the bucket, so it
-   * is resolved first -- and resolved to 404, never 403, because a 403 on
-   * another org's id confirms the page exists.
-   */
-  private async assertPageInOrg(orgId: string, pageId: number): Promise<void> {
+  private async assertPageVisible(user: CurrentUserContext, pageId: number): Promise<void> {
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, user.orgId), isNull(kbPages.deletedAt), predicate),
       columns: { id: true },
     });
     if (!page) throw new NotFoundException("Page not found");

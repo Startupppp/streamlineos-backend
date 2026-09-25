@@ -112,7 +112,7 @@ export class KbPageCommentsService {
     });
     if (!existing) throw new NotFoundException("Comment not found");
 
-    await this.auth.assertPageAccess(user, existing.pageId, "comment");
+    await this.assertCommentPageVisible(user, existing.pageId);
 
     const isAdmin = await this.access.holds(user, "kb:pages:manage");
     if (existing.authorId !== user.userId && !isAdmin) throw new ForbiddenException("Not your comment");
@@ -134,7 +134,7 @@ export class KbPageCommentsService {
     });
     if (!existing) throw new NotFoundException("Comment not found");
 
-    await this.auth.assertPageAccess(user, existing.pageId, "comment");
+    await this.assertCommentPageVisible(user, existing.pageId);
 
     const isAdmin = await this.access.holds(user, "kb:pages:manage");
     if (existing.authorId !== user.userId && !isAdmin) throw new ForbiddenException("Not your comment");
@@ -152,7 +152,7 @@ export class KbPageCommentsService {
     });
     if (!existing) throw new NotFoundException("Comment not found");
 
-    await this.auth.assertPageAccess(user, existing.pageId, "comment");
+    await this.assertCommentPageVisible(user, existing.pageId);
 
     const [updated] = await this.db
       .update(kbPageComments)
@@ -185,5 +185,19 @@ export class KbPageCommentsService {
       columns: { id: true },
     });
     if (!page) throw new NotFoundException("Page not found");
+  }
+
+  private async assertCommentPageVisible(user: CurrentUserContext, pageId: number): Promise<void> {
+    const predicate = await this.auth.visiblePagePredicate(user, "comment");
+    const page = await this.db.query.kbPages.findFirst({
+      where: and(
+        eq(kbPages.id, pageId),
+        eq(kbPages.orgId, user.orgId),
+        isNull(kbPages.deletedAt),
+        predicate,
+      ),
+      columns: { id: true },
+    });
+    if (!page) throw new NotFoundException("Comment not found");
   }
 }

@@ -89,6 +89,7 @@ export class KbPageReviewsService {
     pageId: number,
     input: CreatePageReviewInput,
   ): Promise<ReviewWithContext> {
+    await this.auth.assertPageAccess(user, pageId, "view");
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),

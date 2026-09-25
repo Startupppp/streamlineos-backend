@@ -15,6 +15,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { validateEnv } from "../../../config/env.validation";
 import type { AvScanner } from "../../../common/security/av-scan";
 import type { Db } from "../../../db/drizzle.module";
+import { sql } from "drizzle-orm";
 
 const KB_BUCKET = "kb-files";
 const ORG = "org-42";
@@ -117,6 +118,7 @@ function harness(kbBucket: string | undefined): Harness {
     {} as unknown as KbAttachmentIndexingService,
     { ...baseConfig, R2_KB_BUCKET_NAME: kbBucket },
     scanner as unknown as AvScanner,
+    { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never,
   );
 
   return { service, storage, scanner, onConflictDoNothing, findPage, loggedErrors };

@@ -227,8 +227,9 @@ export class KbPageTreeService {
 
   async restore(user: CurrentUserContext, pageId: number): Promise<PageRow> {
     const orgId = user.orgId;
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), predicate),
       columns: { id: true, parentPageId: true, deletedAt: true, title: true },
     });
     if (!page) throw new NotFoundException("Page not found");

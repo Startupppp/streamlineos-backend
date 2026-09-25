@@ -14,6 +14,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { validateEnv } from "../../../config/env.validation";
 import type { AvScanner } from "../../../common/security/av-scan";
 import type { Db } from "../../../db/drizzle.module";
+import { sql } from "drizzle-orm";
 
 const ORG = "org-release";
 const COMPRESSED = Buffer.from([0x01, 0x02, 0x03]);
@@ -132,6 +133,7 @@ function traceDepth(): DepthTrace {
     {} as unknown as KbAttachmentIndexingService,
     { ...baseConfig, R2_KB_BUCKET_NAME: "kb-files" },
     scanner as unknown as AvScanner,
+    { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never,
   );
 
   return { service, depthAt, runInTenantTransaction };

@@ -105,6 +105,7 @@ async function uploadKbAttachment(store: StorageService): Promise<void> {
     { indexPageDocument: jest.fn().mockResolvedValue(undefined) } as never,
     config as never,
     { scan: jest.fn().mockResolvedValue({ status: "clean" }) } as never,
+    { visiblePagePredicate: jest.fn() } as never,
   );
   await media.upload(
     {

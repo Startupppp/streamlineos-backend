@@ -235,6 +235,7 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
       indexing() as never,
       config as never,
       avScanner() as never,
+      { visiblePagePredicate: jest.fn() } as never,
     );
     await media.upload(textFile as never, USER);
   }
