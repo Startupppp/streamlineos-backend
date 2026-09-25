@@ -63,14 +63,17 @@ export class HrImportCommitService {
     ctx: ImportCommitContext,
     entity: HrImportEntity,
     payload: Record<string, unknown>,
-  ): Promise<CommitRef | null> {
+  ): Promise<CommitRef> {
     const orgId = ctx.orgId;
     if (entity === "employees") return this.commitEmployee(tx, ctx, employeeRowSchema.parse(payload));
     if (entity === "leave_balances") return this.commitLeaveBalance(tx, orgId, leaveBalanceRowSchema.parse(payload));
     if (entity === "attendance") return this.commitAttendance(tx, orgId, attendanceRowSchema.parse(payload));
     if (entity === "assets") return this.commitAsset(tx, orgId, assetRowSchema.parse(payload));
     if (entity === "document_metadata") return commitDocumentRow(tx, orgId, documentMetadataRowSchema.parse(payload));
-    return null;
+    // This used to `return null`, which the caller read as "nothing to do": the
+    // row was counted in no bucket, kept `status='valid'` and the job still
+    // reported success over it. A row that writes nothing is a row error.
+    throw new Error(`No importer is wired for entity '${String(entity)}'`);
   }
 
   /**
@@ -219,30 +222,40 @@ export class HrImportCommitService {
   }
 
   private async commitLeaveBalance(tx: Tx, orgId: string, row: LeaveBalanceRow): Promise<CommitRef> {
-    const person = await tx
-      .select({ userId: hrPeople.userId })
-      .from(hrPeople)
-      .innerJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
-        ),
-      )
-      .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
-      .limit(1);
+    // Both references were resolved by the preflight, which is what makes the
+    // preview's verdict and the commit's agree (V-011). The queries below are
+    // the fallback for a job previewed before the preflight existed; they throw
+    // the same messages the preflight reports as row errors.
+    let userId = row.resolvedUserId;
+    if (!userId) {
+      const person = await tx
+        .select({ userId: hrPeople.userId })
+        .from(hrPeople)
+        .innerJoin(
+          organizationPeople,
+          and(
+            eq(organizationPeople.organizationId, hrPeople.orgId),
+            eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          ),
+        )
+        .where(and(eq(hrPeople.orgId, orgId), isNull(hrPeople.deletedAt), eq(organizationPeople.workEmail, row.employeeEmail)))
+        .limit(1);
 
-    const userId = person[0]?.userId;
-    if (!userId) throw new Error(`No user found for email ${row.employeeEmail}`);
+      userId = person[0]?.userId ?? undefined;
+      if (!userId) throw new Error(`No user found for email ${row.employeeEmail}`);
+    }
 
-    const leaveType = await tx
-      .select({ id: leaveTypes.id })
-      .from(leaveTypes)
-      .where(and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, row.leaveTypeName)))
-      .limit(1);
+    let leaveTypeId = row.resolvedLeaveTypeId;
+    if (leaveTypeId === undefined) {
+      const leaveType = await tx
+        .select({ id: leaveTypes.id })
+        .from(leaveTypes)
+        .where(and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, row.leaveTypeName)))
+        .limit(1);
 
-    const leaveTypeId = leaveType[0]?.id;
-    if (!leaveTypeId) throw new Error(`Leave type '${row.leaveTypeName}' not found`);
+      leaveTypeId = leaveType[0]?.id;
+      if (!leaveTypeId) throw new Error(`Leave type '${row.leaveTypeName}' not found`);
+    }
 
     const balance = String(typeof row.balance === "number" ? row.balance : parseFloat(String(row.balance)));
     const year = typeof row.year === "number" ? row.year : parseInt(String(row.year));
