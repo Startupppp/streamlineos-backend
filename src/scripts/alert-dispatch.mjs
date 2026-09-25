@@ -16,7 +16,7 @@ const OBSERVABILITY_RUNBOOK =
   "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
 
 const KB_OBS_RUNBOOK =
-  "docs/specs/knowledge-base/sessions/LEDGER-PATCH-M6.md";
+  "docs/specs/knowledge-base/KB-OBSERVABILITY-RUNBOOK.md";
 
 const REGISTRY = {
   "dead-outbox": { owner: "platform-reliability", runbookAnchor: "#dead-outbox", severity: "critical" },
@@ -57,6 +57,7 @@ const REGISTRY = {
   },
   "response-contract-violations": {
     owner: "platform-reliability",
+    runbookFile: KB_OBS_RUNBOOK,
     runbookAnchor: "#response-contract-violations",
     severity: "high",
   },
