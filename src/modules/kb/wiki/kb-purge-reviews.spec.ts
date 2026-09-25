@@ -1,11 +1,10 @@
-import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { purgeReviewsForPages } from "./kb-purge-reviews";
+const mockRunInNewTenantTransaction = jest.fn();
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
-  runInNewTenantTransaction: jest.fn(),
+  runInNewTenantTransaction: (...args: unknown[]) => mockRunInNewTenantTransaction(...args),
 }));
 
-const mockRunInNewTenantTransaction = jest.mocked(runInNewTenantTransaction);
+import { purgeReviewsForPages } from "./kb-purge-reviews";
 
 describe("purgeReviewsForPages — explicit deletion of review history before page row destruction", () => {
   beforeEach(() => {

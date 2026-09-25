@@ -87,14 +87,22 @@ function makeService(): KbPageTrashService {
     then: (resolve: (rows: { id: number }[]) => unknown) =>
       Promise.resolve(PAGE_IDS.map((id) => ({ id }))).then(resolve),
   };
-  const db = {
+  const db: {
+    select(): typeof selectChain;
+    delete(): { where(): typeof deleteResult };
+    query: {
+      kbPages: { findFirst: jest.Mock };
+      kbPagePurgeLedger: { findFirst: jest.Mock };
+    };
+    transaction: jest.Mock;
+  } = {
     select: () => selectChain,
     delete: () => ({ where: () => deleteResult }),
     query: {
       kbPages: { findFirst: jest.fn().mockResolvedValue(undefined) },
       kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
     },
-    transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(db)),
+    transaction: jest.fn(async (fn: (t: unknown) => unknown): Promise<unknown> => fn(db)),
   };
   return new KbPageTrashService(
     db as never,
