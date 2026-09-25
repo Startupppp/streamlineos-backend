@@ -70,6 +70,7 @@ const mockSearch = {
   retrieveTopSources: jest.fn().mockResolvedValue([]),
   retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
   articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
+  aclCacheOutcome: jest.fn().mockResolvedValue("miss"),
 };
 
 const user = {

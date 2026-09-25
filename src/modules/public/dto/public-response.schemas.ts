@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../common/openapi/response-envelopes";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 
 export { successSchema as contactSubmitSchema };
 
@@ -10,16 +10,15 @@ export const waitlistJoinSchema = z.object({
   alreadyJoined: z.boolean(),
 });
 
-/**
- * The candidate-facing view of an application.
- *
- * Six coarse statuses, a first name, the job, and the two links a candidate can
- * act on. No email, no notes, no scores — the token that reaches this endpoint
- * travels in a URL, and a URL ends up in mail archives, browser history and
- * referrer headers.
- */
 export const applicationStatusSchema = z.object({
-  status: z.enum(["received", "in_review", "interview", "offer", "hired", "rejected"]),
+  status: z.enum([
+    "received",
+    "in_review",
+    "interview",
+    "offer",
+    "hired",
+    "rejected",
+  ]),
   statusText: z.string(),
   appliedAt: nullableWireDate(),
   updatedAt: wireDate(),
@@ -57,13 +56,6 @@ export const jobListSchema = z.object({
   jobs: z.array(jobSummarySchema),
 });
 
-/**
- * The questions the careers form renders. They are part of the job's public
- * contract: the apply endpoint refuses a missing required answer and knocks out
- * a disqualifying one, so a form that cannot see them cannot be filled in
- * correctly. `knockoutAnswer` is deliberately absent — publishing the passing
- * answer would tell every applicant what to say.
- */
 const publicScreeningQuestionSchema = z.object({
   id: z.string(),
   question: z.string(),
@@ -90,12 +82,6 @@ export const jobApplicationSchema = z.object({
   resumeReason: z.string().nullable(),
 });
 
-/**
- * The compensation breakdown as a candidate reads it: already summed, already
- * divided into months, by the backend. `monthly` is null on a line that has no
- * monthly form — a joining bonus is paid once, and a ₹/month figure against it
- * would state a recurring payment nobody offered.
- */
 const ctcPreviewSchema = z.object({
   lines: z.array(
     z.object({
@@ -164,13 +150,16 @@ export const referrerPortalSchema = z.object({
   ),
 });
 
-export const externalReferralSubmitSchema = z.discriminatedUnion("alreadyReferred", [
-  z.object({ alreadyReferred: z.literal(true) }),
-  z.object({
-    alreadyReferred: z.literal(false),
-    referral: z.record(z.string(), z.unknown()),
-  }),
-]);
+export const externalReferralSubmitSchema = z.discriminatedUnion(
+  "alreadyReferred",
+  [
+    z.object({ alreadyReferred: z.literal(true) }),
+    z.object({
+      alreadyReferred: z.literal(false),
+      referral: z.record(z.string(), z.unknown()),
+    }),
+  ],
+);
 
 export const vendorPortalSchema = z.object({
   vendorName: z.string().nullable(),
@@ -279,7 +268,10 @@ export const roadmapFeedbackSchema = z.object({
   message: z.string(),
 });
 
-export const orgNameSchema = z.object({ name: z.string() });
+export const orgNameSchema = z.object({
+  name: z.string(),
+  logo: z.string().nullable(),
+});
 
 const kbArticleSummarySchema = z.object({
   id: z.number().int(),
@@ -317,6 +309,7 @@ export const kbArticleSchema = z.object({
   tags: z.array(z.string()),
   views: z.number().int(),
   publishedAt: nullableWireDate(),
+  updatedAt: nullableWireDate(),
 });
 
 export const kbFeedbackSchema = z.object({
@@ -324,66 +317,55 @@ export const kbFeedbackSchema = z.object({
   recorded: z.boolean(),
 });
 
-/**
- * `GET /public/pricing`. Money is minor units, as everywhere else in billing,
- * and `seatLimit` is null for unlimited — zero would read as "no seats".
- *
- * `isRequestedCurrency` is on the contract rather than implied because a
- * prospect shown a number without being told which currency it is in finds out
- * at checkout, which is the worst possible moment.
- */
 export const publicPricingSchema = z.object({
   currency: z.string(),
   isRequestedCurrency: z.boolean(),
   annualDiscountPct: z.number().int(),
   trialDays: z.number().int(),
-  plans: z.array(z.object({
-    plan: z.enum(["STARTER", "PROFESSIONAL", "ENTERPRISE"]),
-    monthlyMinor: z.number().int(),
-    annualMinor: z.number().int(),
-    seatLimit: z.number().int().nullable(),
-  })),
+  plans: z.array(
+    z.object({
+      plan: z.enum(["STARTER", "PROFESSIONAL", "ENTERPRISE"]),
+      monthlyMinor: z.number().int(),
+      annualMinor: z.number().int(),
+      seatLimit: z.number().int().nullable(),
+    }),
+  ),
 });
 
-/**
- * `GET /public/data-residency`. `likely` is present only when the caller named a
- * country, and `isMapped` says whether that country was actually mapped or fell
- * to the default — a default presented as a determination is how somebody
- * discovers after migrating that it was a guess.
- */
 export const dataResidencySchema = z.object({
-  options: z.array(z.object({
-    region: z.enum(["eu", "us", "india"]),
-    description: z.string(),
-    examples: z.array(z.string()),
-  })),
-  likely: z.object({
-    region: z.enum(["eu", "us", "india"]),
-    description: z.string(),
-    isMapped: z.boolean(),
-  }).optional(),
+  options: z.array(
+    z.object({
+      region: z.enum(["eu", "us", "india"]),
+      description: z.string(),
+      examples: z.array(z.string()),
+    }),
+  ),
+  likely: z
+    .object({
+      region: z.enum(["eu", "us", "india"]),
+      description: z.string(),
+      isMapped: z.boolean(),
+    })
+    .optional(),
 });
 
 /** The operator's view of the waitlist. Never the token digest. */
-export const waitlistEntryListSchema = z.array(z.object({
-  id: z.number().int(),
-  reference: z.string(),
-  name: z.string(),
-  email: z.string(),
-  organization: z.string().nullable(),
-  role: z.string().nullable(),
-  teamSize: z.string().nullable(),
-  status: z.string(),
-  admittedAt: nullableWireDate(),
-  claimedAt: nullableWireDate(),
-  createdAt: wireDate(),
-}));
+export const waitlistEntryListSchema = z.array(
+  z.object({
+    id: z.number().int(),
+    reference: z.string(),
+    name: z.string(),
+    email: z.string(),
+    organization: z.string().nullable(),
+    role: z.string().nullable(),
+    teamSize: z.string().nullable(),
+    status: z.string(),
+    admittedAt: nullableWireDate(),
+    claimedAt: nullableWireDate(),
+    createdAt: wireDate(),
+  }),
+);
 
-/**
- * The raw claim token is handed to the operator once, inside `claimPath` — it is
- * stored only as a digest and is never readable again. When an admission email
- * template exists this stops being returned at all.
- */
 export const waitlistAdmitSchema = z.object({
   reference: z.string(),
   email: z.string(),

@@ -198,7 +198,8 @@ export class KbSearchService {
     const queueLane = KB_SEARCH_QUEUE_LANE;
     const emptyKind = "none";
     if (scope.denied) {
-      metrics.finish("denied", { sourceKind: emptyKind, cacheOutcome: "bypass", queueLane, dbRole });
+      const scopeDeniedOutcome = "bypass";
+      metrics.finish("denied", { sourceKind: emptyKind, cacheOutcome: scopeDeniedOutcome, queueLane, dbRole });
       return empty;
     }
 

@@ -153,6 +153,7 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
   it("retrieves at most 6 articles and 4 sources per question", async () => {
     const search = {
       ...mockSearch,
+      aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
       retrieveTopSources: jest.fn().mockResolvedValue([]),
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
@@ -175,8 +176,8 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
     try {
       await module.get(KbAskService).ask(user, { question: "how do I reset my password?" });
 
-      expect(search.retrieveTopArticles).toHaveBeenCalledWith(user, "how do I reset my password?", 6, undefined);
-      expect(search.retrieveTopSources).toHaveBeenCalledWith(user, "how do I reset my password?", 4);
+      expect(search.retrieveTopArticles).toHaveBeenCalledWith(user, "how do I reset my password?", 6, undefined, undefined);
+      expect(search.retrieveTopSources).toHaveBeenCalledWith(user, "how do I reset my password?", 4, undefined);
     } finally {
       await module.close();
     }
