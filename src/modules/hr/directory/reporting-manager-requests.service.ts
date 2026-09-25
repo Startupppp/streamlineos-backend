@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -13,20 +13,25 @@ import { ReportingLineService } from "../../directory/reporting-line.service";
 import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 import { ReportingLineException, rethrowReportingLineWriteError } from "../../directory/reporting-line-errors";
 import { relationshipsBetween, subjectEmployments } from "../../directory/reporting-line-queries";
-import { REPORTING_LINE_ERROR_CODES as CODES, REPORTING_LINE_PERMISSIONS } from "../../directory/reporting-line.types";
+import { REPORTING_LINE_ERROR_CODES as CODES } from "../../directory/reporting-line.types";
 import { orgBusinessDate } from "../time/attendance-business-date";
-import { EMPLOYEES_VIEW_PERMISSION, resolveEmployeesScope } from "./employees-scope";
-import { peopleByEmploymentIds, peopleByUserIds, searchManagerCandidates } from "./reporting-manager-people";
+import { resolveEmployeesScope } from "./employees-scope";
+import { searchManagerCandidates } from "./reporting-manager-people";
 import {
   liveRequest,
+  myRequest,
+  ownRequestRow,
   requestCursorBefore,
   requestPage,
   requestsFrom,
   scopedRequests,
+  suggestedManagerUserId,
   toHrRequests,
   toMyRequests,
   type RequestRow,
 } from "./reporting-manager-requests-read";
+import { notifyDecision, notifyReviewers } from "./reporting-manager-requests-notify";
+import { transitionRequest } from "./reporting-manager-requests-transition";
 import type {
   CreateReportingManagerRequestInput,
   HrReportingManagerRequest,
@@ -55,17 +60,11 @@ const DECISION_STATUS = {
   REQUEST_INFO: "MORE_INFO_REQUIRED",
 } as const;
 
-const REVIEW_LINK = (requestId: string) => `/hr/employees/reporting-requests?request=${requestId}`;
-const MY_LINK = "/settings";
-
 /**
  * HRM-15 §7.5: an employee's request to correct their own reporting manager, and HR's decision on
  * it. A request never changes a line by itself; only an approval does, through the canonical
  * relationship service, so every PRD §6 rule and the D4 guard are re-run at decision time.
  */
-/** Reviewers notified of one request; the review queue itself shows everyone past it. */
-const REVIEWER_NOTIFICATION_CAP = 100;
-
 @Injectable()
 export class ReportingManagerRequestsService {
   constructor(
@@ -117,8 +116,8 @@ export class ReportingManagerRequestsService {
           targetId: inserted.id,
           metadata: { employmentId: subject.employmentId, currentPrimaryLineId: current?.lineId ?? null, suggestedManagerEmploymentId },
         });
-        await this.notifyReviewers(tx, actor, inserted.id, "created");
-        return this.mine(tx, actor, inserted.id);
+        await notifyReviewers(this.access, this.dispatch, tx, actor, inserted.id, "created");
+        return myRequest(tx, actor, inserted.id);
       },
       { orgId },
     );
@@ -143,8 +142,8 @@ export class ReportingManagerRequestsService {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const row = await this.ownRow(tx, actor, requestId);
-        await this.transition(tx, actor.orgId, row, OPEN, { status: "CANCELLED", resolvedAt: new Date() });
+        const row = await ownRequestRow(tx, actor, requestId);
+        await transitionRequest(tx, actor.orgId, row, OPEN, { status: "CANCELLED", resolvedAt: new Date() });
         await this.audit.logCritical({
           action: AUDIT.CANCELLED,
           userId: actor.userId,
@@ -153,7 +152,7 @@ export class ReportingManagerRequestsService {
           targetId: requestId,
           metadata: { from: row.status },
         });
-        return this.mine(tx, actor, requestId);
+        return myRequest(tx, actor, requestId);
       },
       { orgId: actor.orgId },
     );
@@ -163,8 +162,8 @@ export class ReportingManagerRequestsService {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const row = await this.ownRow(tx, actor, requestId);
-        await this.transition(tx, actor.orgId, row, ["MORE_INFO_REQUIRED"], { status: "PENDING", employeeReason: body.reason });
+        const row = await ownRequestRow(tx, actor, requestId);
+        await transitionRequest(tx, actor.orgId, row, ["MORE_INFO_REQUIRED"], { status: "PENDING", employeeReason: body.reason });
         await this.audit.logCritical({
           action: AUDIT.RESPONDED,
           userId: actor.userId,
@@ -174,8 +173,8 @@ export class ReportingManagerRequestsService {
           before: { employeeReason: row.employeeReason },
           after: { employeeReason: body.reason },
         });
-        await this.notifyReviewers(tx, actor, requestId, "responded");
-        return this.mine(tx, actor, requestId);
+        await notifyReviewers(this.access, this.dispatch, tx, actor, requestId, "responded");
+        return myRequest(tx, actor, requestId);
       },
       { orgId: actor.orgId },
     );
@@ -224,7 +223,7 @@ export class ReportingManagerRequestsService {
         let resolvedLineId: number | null = null;
         let managers: { incoming: string | null; outgoing: string | null } = { incoming: null, outgoing: null };
         if (body.decision === "APPROVE") {
-          const managerUserId = body.managerUserId ?? (await this.suggestedManagerUserId(tx, orgId, row));
+          const managerUserId = body.managerUserId ?? (await suggestedManagerUserId(tx, orgId, row));
           if (!managerUserId)
             throw new ReportingLineException(CODES.MANAGER_NOT_FOUND, "Choose the manager this employee should report to.", { field: "managerUserId" });
           if (managerUserId === actor.userId)
@@ -245,7 +244,7 @@ export class ReportingManagerRequestsService {
           managers = { incoming: result.after.primary?.managerUserId ?? null, outgoing: result.before.primary?.managerUserId ?? null };
         }
 
-        await this.transition(tx, orgId, row, from, {
+        await transitionRequest(tx, orgId, row, from, {
           status,
           reviewerUserId: actor.userId,
           reviewReason: body.reviewReason,
@@ -259,7 +258,7 @@ export class ReportingManagerRequestsService {
           targetId: requestId,
           metadata: { decision: body.decision, from: row.status, to: status, resolvedLineId, warnings },
         });
-        await this.notifyDecision(tx, actor, row, body.decision, managers);
+        await notifyDecision(this.dispatch, tx, actor, row, body.decision, managers);
         return { warnings };
       },
       { orgId },
@@ -279,133 +278,10 @@ export class ReportingManagerRequestsService {
     return check.managerEmploymentId;
   }
 
-  private async suggestedManagerUserId(tx: DbOrTx, orgId: string, row: RequestRow): Promise<string | null> {
-    if (row.suggestedManagerEmploymentId === null) return null;
-    const person = (await peopleByEmploymentIds(tx, orgId, [row.suggestedManagerEmploymentId])).get(row.suggestedManagerEmploymentId);
-    return person?.userId || null;
-  }
-
-  private async ownRow(tx: DbOrTx, actor: CurrentUserContext, requestId: string): Promise<RequestRow> {
-    const [row] = await requestsFrom(
-      tx,
-      actor.orgId,
-      and(
-        eq(hrReportingManagerRequests.orgId, actor.orgId),
-        eq(hrReportingManagerRequests.id, requestId),
-        eq(hrReportingManagerRequests.requestedByUserId, actor.userId),
-        liveRequest,
-      ),
-      1,
-    );
-    if (!row) throw new NotFoundException("Request not found.");
-    return row;
-  }
-
   private async reviewRow(db: DbOrTx, actor: CurrentUserContext, requestId: string): Promise<RequestRow> {
     const read = await resolveEmployeesScope(this.access, actor);
     const [row] = await scopedRequests(read, db, [eq(hrReportingManagerRequests.id, requestId)], 1);
     if (!row) throw new NotFoundException("Request not found.");
     return row;
-  }
-
-  private async mine(tx: DbOrTx, actor: CurrentUserContext, requestId: string): Promise<MyReportingManagerRequest> {
-    const [mapped] = await toMyRequests(tx, actor.orgId, [await this.ownRow(tx, actor, requestId)]);
-    if (!mapped) throw new NotFoundException("Request not found.");
-    return mapped;
-  }
-
-  /** Compare-and-set on status, so two reviewers deciding at once cannot both win. */
-  private async transition(
-    tx: DbOrTx,
-    orgId: string,
-    row: RequestRow,
-    from: readonly ReportingManagerRequestStatus[],
-    set: Partial<typeof hrReportingManagerRequests.$inferInsert>,
-  ): Promise<void> {
-    if (!from.includes(row.status))
-      throw new ReportingLineException(CODES.REQUEST_INVALID_TRANSITION, `A ${row.status.toLowerCase()} request cannot be changed this way.`);
-    const [updated] = await tx
-      .update(hrReportingManagerRequests)
-      .set({ ...set, updatedAt: new Date() })
-      .where(
-        and(
-          eq(hrReportingManagerRequests.orgId, orgId),
-          eq(hrReportingManagerRequests.id, row.id),
-          inArray(hrReportingManagerRequests.status, [...from]),
-        ),
-      )
-      .returning({ id: hrReportingManagerRequests.id });
-    if (!updated) throw new ReportingLineException(CODES.REQUEST_INVALID_TRANSITION, "This request changed while you were looking at it. Reload it.");
-  }
-
-  /** One actionable notification per reviewer; the employee's free text never leaves the request. */
-  private async notifyReviewers(tx: DbOrTx, actor: CurrentUserContext, requestId: string, kind: "created" | "responded"): Promise<void> {
-    const reviewers = await this.access.membersWithPermission(actor.orgId, REPORTING_LINE_PERMISSIONS.REVIEW, { limit: REVIEWER_NOTIFICATION_CAP });
-    const candidates = reviewers.map((member) => member.userId).filter((userId) => userId !== actor.userId);
-    // Only a reviewer whose employees scope reaches this employee can open the request; an own-scoped
-    // reviewer would be sent a link to a 404. The requester is never the reviewer, so "covers" is
-    // "org-wide". ponytail: one cached permission resolve per reviewer, bounded by the cap; a batch
-    // scope query belongs in AccessService if reviewer counts grow past it.
-    const scopes = await Promise.all(candidates.map((userId) => this.access.resolveUserPermissions(actor.orgId, userId)));
-    const targetUserIds = candidates.filter((_userId, index) => scopes[index]?.get(EMPLOYEES_VIEW_PERMISSION) === "all");
-    if (targetUserIds.length === 0) return;
-    const name = (await peopleByUserIds(tx, actor.orgId, [actor.userId])).get(actor.userId)?.name ?? "An employee";
-    await this.dispatch.emit({
-      eventKey: "hr.reporting_manager_request.created",
-      orgId: actor.orgId,
-      actorUserId: actor.userId,
-      targetUserIds,
-      entityType: "reporting_manager_request",
-      entityId: requestId,
-      title: kind === "created" ? "Reporting manager review requested" : "More information provided",
-      message:
-        kind === "created"
-          ? `${name} asked HR to review their reporting manager.`
-          : `${name} replied to your request for more information about their reporting manager.`,
-      link: REVIEW_LINK(requestId),
-      ...(kind === "created" ? { dedupeKey: `hr-rm-request:created:${requestId}` } : {}),
-    });
-  }
-
-  private async notifyDecision(
-    tx: DbOrTx,
-    actor: CurrentUserContext,
-    row: RequestRow,
-    decision: ReviewReportingManagerRequestInput["decision"],
-    managers: { incoming: string | null; outgoing: string | null },
-  ): Promise<void> {
-    const employeeUserId = row.employeeUserId;
-    if (employeeUserId) {
-      const verb = { APPROVE: "approved", REJECT: "declined", CANCEL_DUPLICATE: "closed as a duplicate", REQUEST_INFO: "needs more information" }[decision];
-      await this.dispatch.emit({
-        eventKey: "hr.reporting_manager_request.decided",
-        orgId: actor.orgId,
-        actorUserId: actor.userId,
-        targetUserIds: [employeeUserId],
-        entityType: "reporting_manager_request",
-        entityId: row.id,
-        title: "Reporting manager request updated",
-        message: `Your reporting manager request was ${verb}.`,
-        link: MY_LINK,
-      });
-    }
-    if (decision !== "APPROVE") return;
-    const recipients = [managers.incoming, managers.outgoing].filter(
-      (userId): userId is string => userId !== null && userId !== "" && userId !== employeeUserId,
-    );
-    if (recipients.length === 0 || !employeeUserId) return;
-    const name = (await peopleByUserIds(tx, actor.orgId, [employeeUserId])).get(employeeUserId)?.name ?? "An employee";
-    await this.dispatch.emit({
-      eventKey: "hr.reporting_line.changed_by_request",
-      orgId: actor.orgId,
-      actorUserId: actor.userId,
-      targetUserIds: [...new Set(recipients)],
-      entityType: "employee",
-      entityId: employeeUserId,
-      title: "Reporting line changed",
-      message: `${name}'s reporting manager was changed by HR.`,
-      link: `/hr/employees/${employeeUserId}`,
-      dedupeKey: `hr-rm-request:line-changed:${row.id}`,
-    });
   }
 }

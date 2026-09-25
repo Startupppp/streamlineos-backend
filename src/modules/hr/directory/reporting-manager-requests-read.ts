@@ -1,5 +1,7 @@
 import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { NotFoundException } from "@nestjs/common";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { decodeTupleCursor, encodeTupleCursor } from "../../../common/pagination/cursor";
 import { hrEmployments, hrPeople, hrReportingManagerRequests } from "../../../db/schema";
 import type { ScopedRead } from "../../access/scoped-read";
@@ -150,4 +152,32 @@ export function scopedRequests(read: ScopedRead, db: DbOrTx, where: SQL[], limit
     ({ sql: scoped }) => requestsFrom(db, read.orgId, scoped, limit),
     () => [],
   );
+}
+
+export async function suggestedManagerUserId(tx: DbOrTx, orgId: string, row: RequestRow): Promise<string | null> {
+  if (row.suggestedManagerEmploymentId === null) return null;
+  const person = (await peopleByEmploymentIds(tx, orgId, [row.suggestedManagerEmploymentId])).get(row.suggestedManagerEmploymentId);
+  return person?.userId || null;
+}
+
+export async function ownRequestRow(tx: DbOrTx, actor: CurrentUserContext, requestId: string): Promise<RequestRow> {
+  const [row] = await requestsFrom(
+    tx,
+    actor.orgId,
+    and(
+      eq(hrReportingManagerRequests.orgId, actor.orgId),
+      eq(hrReportingManagerRequests.id, requestId),
+      eq(hrReportingManagerRequests.requestedByUserId, actor.userId),
+      liveRequest,
+    ),
+    1,
+  );
+  if (!row) throw new NotFoundException("Request not found.");
+  return row;
+}
+
+export async function myRequest(tx: DbOrTx, actor: CurrentUserContext, requestId: string): Promise<MyReportingManagerRequest> {
+  const [mapped] = await toMyRequests(tx, actor.orgId, [await ownRequestRow(tx, actor, requestId)]);
+  if (!mapped) throw new NotFoundException("Request not found.");
+  return mapped;
 }
