@@ -1,4 +1,5 @@
 SET lock_timeout = '5s';
+--> statement-breakpoint
 
 DO $$
 BEGIN
@@ -7,13 +8,16 @@ BEGIN
     WHERE table_name = 'kb_page_purge_ledger'
   ), 'kb_page_purge_ledger table must exist before this migration';
 END $$;
+--> statement-breakpoint
 
 ALTER TABLE "kb_page_purge_ledger"
   DROP CONSTRAINT IF EXISTS "chk_kb_purge_ledger_store";
+--> statement-breakpoint
 
 ALTER TABLE "kb_page_purge_ledger"
   ADD CONSTRAINT "chk_kb_purge_ledger_store"
   CHECK (store IN ('visits', 'favorites', 'source_links', 'page_rows', 'blobs', 'reviews'));
+--> statement-breakpoint
 
 DO $$
 BEGIN

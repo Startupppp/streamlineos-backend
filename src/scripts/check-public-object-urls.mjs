@@ -90,6 +90,10 @@ export const MINT_ALLOWLIST = new Map([
     "src/scripts/legal-hold-drill-observations.ts",
     "INERT_STORAGE_CONFIG pins every storage field to an unreachable placeholder (endpoint and public base are both http://127.0.0.1:1, a closed port) so the legal-hold drill cannot reach an object store at all; the field is a constant, never concatenated with a key",
   ],
+  [
+    "src/modules/kb/wiki/kb-public-pages.controller.ts",
+    "getPublicMedia builds a per-request 302 redirect target after validatePublicAttachment has confirmed the file belongs to the token's page; no URL is persisted to any table and the key is never returned to the client",
+  ],
 ]);
 
 const UPLOAD_RESULT_TYPE_RE =

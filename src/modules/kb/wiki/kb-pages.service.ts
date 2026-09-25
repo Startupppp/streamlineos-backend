@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   kbPages,
+  kbPageAttachments,
   kbPageFavorites,
   kbPageTemplates,
   kbSpaces,
@@ -20,6 +21,7 @@ import type { KbPageContent } from "../../../db/schema/kb/pages";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
@@ -557,5 +559,34 @@ export class KbPagesService {
     );
     if (!page) throw new NotFoundException("Page not found");
     return page;
+  }
+
+  async validatePublicAttachment(token: string, fileKey: string): Promise<string> {
+    const tokenHash = hashPublicToken(token);
+    const page = await withPublicToken(this.db, tokenHash, (tx) =>
+      tx.query.kbPages.findFirst({
+        where: and(
+          eq(kbPages.publicTokenHash, tokenHash),
+          eq(kbPages.visibility, "public"),
+          eq(kbPages.status, "published"),
+          isNull(kbPages.deletedAt),
+        ),
+        columns: { orgId: true, id: true },
+      }),
+    );
+    if (!page) throw new NotFoundException("Page not found");
+    const attachment = await runInNewTenantTransaction(this.db, page.orgId, (tx) =>
+      tx.query.kbPageAttachments.findFirst({
+        where: and(
+          eq(kbPageAttachments.orgId, page.orgId),
+          eq(kbPageAttachments.pageId, page.id),
+          eq(kbPageAttachments.fileKey, fileKey),
+          isNull(kbPageAttachments.deletedAt),
+        ),
+        columns: { fileKey: true },
+      }),
+    );
+    if (!attachment) throw new NotFoundException("Attachment not found");
+    return attachment.fileKey;
   }
 }
