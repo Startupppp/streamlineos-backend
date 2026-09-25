@@ -102,6 +102,77 @@ function bodyParserFailure(
   };
 }
 
+/**
+ * A constraint the database refused, answered as the client error it is.
+ *
+ * Nothing mapped SQLSTATEs here, so an uncaught unique violation fell through to
+ * the final branch and the caller got a 500 INTERNAL_ERROR for a duplicate they
+ * could have fixed themselves. The 400 arm reuses validation's own
+ * `VALIDATION_FAILED` / `details: [{path, message}]` shape so a form can point at
+ * the field whether the rejection came from Zod or from Postgres.
+ */
+const CONSTRAINT_FAILURE: Partial<
+  Record<string, { status: number; code: string; message: string }>
+> = {
+  // unique_violation
+  "23505": {
+    status: HttpStatus.CONFLICT,
+    code: "CONFLICT",
+    message: "That record already exists.",
+  },
+  // foreign_key_violation
+  "23503": {
+    status: HttpStatus.BAD_REQUEST,
+    code: "VALIDATION_FAILED",
+    message: "Validation failed.",
+  },
+  // not_null_violation
+  "23502": {
+    status: HttpStatus.BAD_REQUEST,
+    code: "VALIDATION_FAILED",
+    message: "Validation failed.",
+  },
+};
+
+const CONSTRAINT_DETAIL_MESSAGE: Partial<Record<string, string>> = {
+  "23503": "References a record that does not exist.",
+  "23502": "Required.",
+};
+
+/**
+ * Reads a postgres-js diagnostic field through Drizzle's wrapper — the driver
+ * error is one or two `cause` links down, and the wrapper carries none of them.
+ */
+function driverFieldOf(exception: unknown, field: string): string | undefined {
+  let current: unknown = exception;
+  for (let depth = 0; current != null && depth < 6; depth += 1) {
+    const value = (current as Record<string, unknown>)[field];
+    if (typeof value === "string" && value.length > 0) return value;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+function constraintFailure(
+  exception: unknown,
+): (ApiErrorEnvelope & { status: number }) | null {
+  const sqlstate = sqlstateOf(exception);
+  if (sqlstate === undefined) return null;
+  const mapped = CONSTRAINT_FAILURE[sqlstate];
+  if (mapped === undefined) return null;
+
+  const detailMessage = CONSTRAINT_DETAIL_MESSAGE[sqlstate];
+  if (detailMessage === undefined) return { ...mapped };
+
+  // 23502 names the column; 23503 names only the constraint, whose name is the
+  // route's own contract rather than tenant data.
+  const path =
+    driverFieldOf(exception, "column_name") ??
+    driverFieldOf(exception, "constraint_name") ??
+    "body";
+  return { ...mapped, details: [{ path, message: detailMessage }] };
+}
+
 function describeUnhandled(exception: unknown): Record<string, unknown> {
   if (!(exception instanceof Error)) return { message: String(exception) };
   const record = exception as Error & Record<string, unknown>;
@@ -262,6 +333,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message: "The service is temporarily unavailable. Please try again.",
         ...cid,
       });
+      return;
+    }
+
+    const constraint = constraintFailure(exception);
+    if (constraint) {
+      const { status, ...envelope } = constraint;
+      // Logged, not reported: the caller can fix it, but a constraint reaching
+      // the filter still means a service skipped a check it should have made.
+      logger.warn("Database rejected a write on a constraint", {
+        code: envelope.code,
+        ...describeUnhandled(exception),
+        request: describeRequest(host),
+      });
+      writeEnvelope(res, status, { ...envelope, ...cid });
       return;
     }
 
