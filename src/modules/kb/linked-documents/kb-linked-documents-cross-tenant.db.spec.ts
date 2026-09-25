@@ -51,7 +51,7 @@ describeDb("linked documents: another tenant's id, however it arrives — real d
   let theirs: { documentId: number; linkId: number };
   let foreignKeyed: { documentId: number; linkId: number };
 
-  const signed = jest.fn(async () => "https://signed.example.test/x.pdf");
+  const signed = jest.fn(async (..._args: unknown[]) => "https://signed.example.test/x.pdf");
 
   const caller = (org: SeededOrg, name: string, canPublish = true): LinkedDocumentCaller => ({
     orgId: org.orgId,
