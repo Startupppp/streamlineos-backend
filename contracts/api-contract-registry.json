@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-24T22:10:36.181Z",
+  "generatedAt": "2026-09-25T04:33:45.894Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -46505,13 +46505,6 @@
       "consumers": [
         "outbox-relay"
       ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "build.incident.status_changed": {
-      "classification": "internal",
-      "owner": null,
-      "consumers": [],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
