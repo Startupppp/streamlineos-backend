@@ -10,61 +10,54 @@ import {
   pageSizeField,
 } from "../../../../common/pagination/list-query.schema";
 
-const csvToStringArray = z
-  .string()
-  .optional()
-  .transform((v) =>
-    v
-      ? v
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : undefined,
-  );
+function normalizeCsv(value: unknown) {
+  if (value === undefined || value === "") return undefined;
+  if (typeof value !== "string") return value;
+  return value.split(",").map((item) => item.trim());
+}
 
-const csvToIntArray = z
-  .string()
-  .optional()
-  .transform((v) =>
-    v
-      ? v
-          .split(",")
-          .map((s) => parseInt(s.trim(), 10))
-          .filter((n) => !isNaN(n))
-      : undefined,
-  );
+const csvToStringArray = z.preprocess(
+  normalizeCsv,
+  z.array(z.string().min(1)).max(100).optional(),
+);
+
+const csvToIntArray = z.preprocess(
+  normalizeCsv,
+  z
+    .array(
+      z
+        .string()
+        .regex(/^[1-9]\d*$/)
+        .transform(Number)
+        .pipe(z.number().int().positive().max(2_147_483_647)),
+    )
+    .max(100)
+    .optional(),
+);
+
+const csvToTicketPriorityArray = z.preprocess(
+  normalizeCsv,
+  z
+    .array(z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]))
+    .max(100)
+    .optional(),
+);
+
+const csvToTicketTypeArray = z.preprocess(
+  normalizeCsv,
+  z
+    .array(z.enum(["TASK", "BUG", "STORY", "EPIC", "SUBTASK"]))
+    .max(100)
+    .optional(),
+);
 
 export const ticketsListQuerySchema = baseListQuerySchema
   .omit({ page: true, sortDir: true })
   .extend({
     search: z.string().optional(),
     status: csvToStringArray,
-    priority: z
-      .string()
-      .optional()
-      .transform((v) =>
-        v
-          ? v
-              .split(",")
-              .map((s) => s.trim())
-              .filter((s): s is "LOW" | "MEDIUM" | "HIGH" | "URGENT" =>
-                ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(s),
-              )
-          : undefined,
-      ),
-    type: z
-      .string()
-      .optional()
-      .transform((v) =>
-        v
-          ? v
-              .split(",")
-              .map((s) => s.trim())
-              .filter((s): s is "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK" =>
-                ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"].includes(s),
-              )
-          : undefined,
-      ),
+    priority: csvToTicketPriorityArray,
+    type: csvToTicketTypeArray,
     assigneeId: csvToStringArray,
     labelIds: csvToIntArray,
     cycleId: csvToIntArray,
@@ -85,32 +78,8 @@ export const allWorkQuerySchema = baseListQuerySchema
   .extend({
     search: z.string().optional(),
     status: csvToStringArray,
-    priority: z
-      .string()
-      .optional()
-      .transform((v) =>
-        v
-          ? v
-              .split(",")
-              .map((s) => s.trim())
-              .filter((s): s is "LOW" | "MEDIUM" | "HIGH" | "URGENT" =>
-                ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(s),
-              )
-          : undefined,
-      ),
-    type: z
-      .string()
-      .optional()
-      .transform((v) =>
-        v
-          ? v
-              .split(",")
-              .map((s) => s.trim())
-              .filter((s): s is "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK" =>
-                ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"].includes(s),
-              )
-          : undefined,
-      ),
+    priority: csvToTicketPriorityArray,
+    type: csvToTicketTypeArray,
     assigneeId: csvToStringArray,
     labelIds: csvToIntArray,
     cycleId: csvToIntArray,
