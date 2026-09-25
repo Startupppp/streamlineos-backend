@@ -4,6 +4,7 @@ import { documentTypeEnum, genderEnum } from "../../../../db/schema/common/enums
 import { fromWallClockUtc } from "../../../../common/date/zoned-wall-clock";
 import type { HrImportEntity } from "../dto/import-job.dto";
 import { findInFileDuplicates } from "./import-row-identity";
+import { employeeManagerRowFields, refineEmployeeManagerColumns } from "./employee-manager-row-fields";
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -89,21 +90,9 @@ const emailSchema = z.string().email({ message: "Invalid email address" });
  */
 const resolvedUserId = z.string().optional();
 
-const optionalEmail = z.string().trim().email("Invalid manager email").optional().or(z.literal(""));
-
-/** A spreadsheet boolean: true/yes/1 are true, blank or false/no/0 are false. */
-const cellBoolean = z
-  .union([z.boolean(), z.string(), z.number()])
-  .optional()
-  .transform((value) => value === true || value === 1 || (typeof value === "string" && ["true", "yes", "1", "y"].includes(value.trim().toLowerCase())));
-
 export const employeeRowSchema = z.object({
   email: emailSchema,
   resolvedDepartmentId: z.string().optional(),
-  // HRM-15: written by the preflight from org-scoped queries, never read from a cell.
-  resolvedPrimaryManagerUserId: z.string().optional(),
-  primaryManagerResolution: z.enum(["SELECTED", "IN_FILE", "FALLBACK_CONFIGURED", "FALLBACK_UPLOADER"]).optional(),
-  resolvedExistingEmployee: z.boolean().optional(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   joiningDate: isoDateOrBlank,
@@ -122,28 +111,9 @@ export const employeeRowSchema = z.object({
     })
     .optional()
     .or(z.literal("").transform(() => undefined)),
-  // HRM-15 §4.22: the canonical manager columns. Legacy `managerEmail` / `reportingManagerEmail`
-  // / `reportsTo` headers are rewritten to `primaryManagerEmail` before this schema runs
-  // (`normaliseManagerColumns`); a row whose headers disagree carries `managerColumnConflict`.
-  primaryManagerEmail: optionalEmail,
-  secondaryManagerEmail1: optionalEmail,
-  secondaryManagerEmail2: optionalEmail,
-  secondaryManagerEmail3: optionalEmail,
-  topLevelRoleReason: z.string().trim().max(500, "Top-level reason must be at most 500 characters").optional(),
+  ...employeeManagerRowFields,
   effectiveFrom: isoDateOrBlank.optional(),
-  clearPrimaryManager: cellBoolean,
-  managerColumnConflict: z.undefined({ message: "The manager columns name different people. Keep only primaryManagerEmail." }).optional(),
-}).superRefine((row, ctx) => {
-  const topLevel = Boolean(row.topLevelRoleReason?.trim());
-  if (topLevel && (row.primaryManagerEmail || row.secondaryManagerEmail1 || row.secondaryManagerEmail2 || row.secondaryManagerEmail3))
-    ctx.addIssue({ code: "custom", message: "A top-level row cannot also name a manager.", path: ["topLevelRoleReason"] });
-  if (row.clearPrimaryManager && !topLevel)
-    ctx.addIssue({
-      code: "custom",
-      message: "clearPrimaryManager is only allowed on a top-level row that gives a topLevelRoleReason.",
-      path: ["clearPrimaryManager"],
-    });
-});
+}).superRefine(refineEmployeeManagerColumns);
 
 export const leaveBalanceRowSchema = z.object({
   employeeEmail: emailSchema,
