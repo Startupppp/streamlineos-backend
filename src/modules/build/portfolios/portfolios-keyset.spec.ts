@@ -54,10 +54,10 @@ function buildDbCapturingSelect(captured: SelectCaptured) {
   } as unknown as Db;
 }
 
-async function capture(cursor: string | undefined): Promise<Captured> {
+async function capture(cursor: string | undefined, q?: string): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
   const svc = new PortfoliosService(buildDb(captured), {} as AuditService);
-  await svc.listPortfolios("org-1", { cursor, limit: 20 });
+  await svc.listPortfolios("org-1", { cursor, limit: 20, q });
   return captured;
 }
 
@@ -88,6 +88,11 @@ describe("PortfoliosService.listPortfolios — keyset matches the sort", () => {
     const wrongSort = ['"project_portfolios"."created_at" asc'];
     expect(wrongSort[0]).toContain("asc");
     expect(wrongSort[0]).not.toContain("desc");
+  });
+
+  it("evaluates the search term in the SQL predicate", async () => {
+    const { where } = await capture(undefined, "platform");
+    expect(render(where).toLowerCase()).toContain("ilike");
   });
 });
 

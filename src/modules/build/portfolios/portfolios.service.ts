@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   portfolioProjects,
@@ -76,11 +76,12 @@ export class PortfoliosService {
 
   async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
     const portfolio = alias(projectPortfolios, "portfolio");
-    const { cursor, limit, status } = query;
+    const { cursor, limit, q, status } = query;
     const pos = decodeCursor(cursor);
     const conds = [
       eq(portfolio.orgId, orgId),
       isNull(portfolio.deletedAt),
+      q ? ilike(portfolio.name, `%${q}%`) : undefined,
       status ? eq(portfolio.status, status) : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(portfolio.createdAt, portfolio.id, pos));

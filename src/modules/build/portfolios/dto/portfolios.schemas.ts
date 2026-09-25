@@ -5,6 +5,7 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 export const listPortfoliosQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
+  q: z.string().trim().min(1).max(120).optional(),
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
 }).strict();
 
