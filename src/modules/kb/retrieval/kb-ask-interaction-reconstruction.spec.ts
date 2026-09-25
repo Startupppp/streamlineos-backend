@@ -102,7 +102,7 @@ describe("Ask observability — interaction row reconstruction", () => {
       events as never,
       buildSearch() as never,
       buildCitationVisibility([42]) as never,
-      NO_LINKED_DOCUMENTS,
+      NO_LINKED_DOCUMENTS, null,
     );
 
     await svc.ask(user, { question: "What is the acme doc?" });
@@ -149,7 +149,7 @@ describe("Ask observability — interaction row reconstruction", () => {
       events as never,
       buildSearch() as never,
       buildCitationVisibility([42]) as never,
-      NO_LINKED_DOCUMENTS,
+      NO_LINKED_DOCUMENTS, null,
     );
 
     const result = await svc.ask(user, { question: "What is this?" });
@@ -180,7 +180,7 @@ describe("Ask observability — interaction row reconstruction", () => {
       events as never,
       buildSearch() as never,
       buildCitationVisibility([42]) as never,
-      NO_LINKED_DOCUMENTS,
+      NO_LINKED_DOCUMENTS, null,
     );
 
     await expect(svc.ask(user, { question: "test?" })).rejects.toThrow(InsufficientAiCreditsException);
@@ -209,7 +209,7 @@ describe("Ask observability — interaction row reconstruction", () => {
       events as never,
       buildSearch() as never,
       buildCitationVisibility([42]) as never,
-      NO_LINKED_DOCUMENTS,
+      NO_LINKED_DOCUMENTS, null,
     );
 
     await Promise.all([

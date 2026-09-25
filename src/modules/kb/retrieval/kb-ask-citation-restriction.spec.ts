@@ -189,7 +189,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       gateway as never,
       events as never,
       search as never,
-      new KbCitationVisibilityService(db as never, access as never, search as never, auth as never), NO_LINKED_DOCUMENTS,
+      new KbCitationVisibilityService(db as never, access as never, search as never, auth as never), NO_LINKED_DOCUMENTS, null,
     );
     return { ask, access, db };
   };
@@ -311,7 +311,7 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     const svc = new KbAskService(
       db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
-      new KbCitationVisibilityService(db as never, {} as never, {} as never, authRevoked as never), NO_LINKED_DOCUMENTS,
+      new KbCitationVisibilityService(db as never, {} as never, {} as never, authRevoked as never), NO_LINKED_DOCUMENTS, null,
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).rejects.toThrow(NotFoundException);
@@ -330,7 +330,7 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     const svc = new KbAskService(
       db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
-      new KbCitationVisibilityService(db as never, {} as never, {} as never, authGrants as never), NO_LINKED_DOCUMENTS,
+      new KbCitationVisibilityService(db as never, {} as never, {} as never, authGrants as never), NO_LINKED_DOCUMENTS, null,
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).resolves.not.toThrow();

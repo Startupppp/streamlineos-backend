@@ -3,16 +3,18 @@ import { KbAnalyticsService } from "./kb-analytics.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-function makeUser(orgId = "org-1") {
+function makeUser(orgId = "org-1"): CurrentUserContext {
   return {
     orgId,
     userId: "user-1",
-    role: "admin" as const,
+    role: "admin",
     isOrgOwner: false,
-    tokenScopes: null as null,
+    tokenScopes: null,
     sessionId: "s1",
-    principal: { kind: "user" as const, userId: "user-1" },
+    principal: humanSessionPrincipal(1, false),
   };
 }
 

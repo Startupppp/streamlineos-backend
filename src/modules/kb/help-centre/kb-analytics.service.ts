@@ -618,10 +618,9 @@ export class KbAnalyticsService {
         title: body.query,
         slug: `${slug}-${Date.now()}`,
         status: "draft",
-        visibility: "internal",
-        content: "",
+        visibility: "org",
         contentText: "",
-        authorId: user.userId,
+        createdById: user.userId,
       })
       .returning({ id: kbPages.id });
 

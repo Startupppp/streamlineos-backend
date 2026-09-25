@@ -52,7 +52,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   it("scopes indexed-content check to the requesting org (cross-tenant isolation)", async () => {
     const { db, executeArgs } = makeDb(false);
-    const svc = new KbAskService(db, aiGateway, events, search, new KbCitationVisibilityService(db, access, search, auth as never), NO_LINKED_DOCUMENTS);
+    const svc = new KbAskService(db, aiGateway, events, search, new KbCitationVisibilityService(db, access, search, auth as never), NO_LINKED_DOCUMENTS, null);
 
     await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
 
@@ -64,7 +64,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   it("returns no-context answer for the owning org when no content exists (same-tenant control)", async () => {
     const { db } = makeDb(false);
-    const svc = new KbAskService(db, aiGateway, events, search, new KbCitationVisibilityService(db, access, search, auth as never), NO_LINKED_DOCUMENTS);
+    const svc = new KbAskService(db, aiGateway, events, search, new KbCitationVisibilityService(db, access, search, auth as never), NO_LINKED_DOCUMENTS, null);
 
     const result = await svc.ask(makeUser(OWNER), { question: "test?" } as never);
 
@@ -135,7 +135,7 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
     const { db, pageWheres } = makeDbForPageTest([]);
     const svc = new KbAskService(
       db, {} as never, events, pageSearchMock as never,
-      new KbCitationVisibilityService(db, access, pageSearchMock as never, auth as never), NO_LINKED_DOCUMENTS,
+      new KbCitationVisibilityService(db, access, pageSearchMock as never, auth as never), NO_LINKED_DOCUMENTS, null,
     );
 
     await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
@@ -157,7 +157,7 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
     const { db, insertedRows } = makeDbForPageTest([PAGE_ID]);
     const svc = new KbAskService(
       db, gatewayOk as never, events, pageSearchMock as never,
-      new KbCitationVisibilityService(db, access, pageSearchMock as never, auth as never), NO_LINKED_DOCUMENTS,
+      new KbCitationVisibilityService(db, access, pageSearchMock as never, auth as never), NO_LINKED_DOCUMENTS, null,
     );
 
     const result = await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);

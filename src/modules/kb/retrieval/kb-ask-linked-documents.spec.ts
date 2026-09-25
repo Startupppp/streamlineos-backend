@@ -76,7 +76,7 @@ function build(opts: { ai: boolean; hasChunks?: boolean; hits?: LinkedDocumentIt
     visibleIds: jest.fn().mockResolvedValue(new Set(opts.visible ?? [31])),
   };
   const source = new KbLinkedDocumentAskSource(flags as never, access as never, query as never, { logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined) } as never);
-  const service = new KbAskService(db as never, gateway as never, events as never, search as never, citationVisibility as never, source);
+  const service = new KbAskService(db as never, gateway as never, events as never, search as never, citationVisibility as never, source, null);
   return { service, gateway, events, search, flags, query, db, insertedRows };
 }
 

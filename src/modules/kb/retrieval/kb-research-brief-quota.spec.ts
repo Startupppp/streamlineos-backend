@@ -21,23 +21,25 @@ function makeUser(orgId = "org-1") {
 }
 
 function makeDb(activeCount: number) {
-  return {
+  const insertMock = jest.fn().mockReturnValue({
+    values: jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: 99 }]),
+    }),
+  });
+  const db = {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue([{ count: activeCount }]),
       }),
     }),
-    insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([{ id: 99 }]),
-      }),
-    }),
+    insert: insertMock,
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue([]),
       }),
     }),
   } as unknown as Db;
+  return { db, insertMock };
 }
 
 describe("KbResearchBriefService — research job quota", () => {
@@ -46,7 +48,7 @@ describe("KbResearchBriefService — research job quota", () => {
   });
 
   it("allows enqueue when the org has fewer active jobs than the limit", async () => {
-    const db = makeDb(KB_RESEARCH_BRIEF_CONCURRENT_LIMIT - 1);
+    const { db } = makeDb(KB_RESEARCH_BRIEF_CONCURRENT_LIMIT - 1);
     const svc = new KbResearchBriefService(db, aiJobs, citationVisibility);
 
     await expect(svc.enqueue(makeUser(), { topic: "Onboarding guide" })).resolves.toEqual(
@@ -55,7 +57,7 @@ describe("KbResearchBriefService — research job quota", () => {
   });
 
   it("throws 429 when the org is at the research job concurrent limit", async () => {
-    const db = makeDb(KB_RESEARCH_BRIEF_CONCURRENT_LIMIT);
+    const { db } = makeDb(KB_RESEARCH_BRIEF_CONCURRENT_LIMIT);
     const svc = new KbResearchBriefService(db, aiJobs, citationVisibility);
 
     const error = await svc.enqueue(makeUser(), { topic: "Security audit" }).catch((e: unknown) => e);
@@ -64,7 +66,7 @@ describe("KbResearchBriefService — research job quota", () => {
   });
 
   it("the 429 body carries KB_RESEARCH_JOB_QUOTA_EXCEEDED so callers can distinguish it from request-rate-limit 429s", async () => {
-    const db = makeDb(KB_RESEARCH_BRIEF_CONCURRENT_LIMIT);
+    const { db } = makeDb(KB_RESEARCH_BRIEF_CONCURRENT_LIMIT);
     const svc = new KbResearchBriefService(db, aiJobs, citationVisibility);
 
     const error = await svc.enqueue(makeUser(), { topic: "Security audit" }).catch((e: unknown) => e);
@@ -76,16 +78,16 @@ describe("KbResearchBriefService — research job quota", () => {
   });
 
   it("does not insert a brief row when the quota check denies", async () => {
-    const db = makeDb(KB_RESEARCH_BRIEF_CONCURRENT_LIMIT);
+    const { db, insertMock } = makeDb(KB_RESEARCH_BRIEF_CONCURRENT_LIMIT);
     const svc = new KbResearchBriefService(db, aiJobs, citationVisibility);
 
     await svc.enqueue(makeUser(), { topic: "Security audit" }).catch(() => undefined);
 
-    expect((db as { insert: jest.Mock }).insert).not.toHaveBeenCalled();
+    expect(insertMock).not.toHaveBeenCalled();
   });
 
   it("counts only queued and running briefs so completed jobs do not erode the quota", async () => {
-    const db = makeDb(0);
+    const { db } = makeDb(0);
     const selectMock = db.select as jest.Mock;
 
     const svc = new KbResearchBriefService(db, aiJobs, citationVisibility);

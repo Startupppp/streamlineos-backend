@@ -64,7 +64,7 @@ describe("KbAiInteractions — cross-tenant write isolation", () => {
       events as never,
       search as never,
       citationVisibility as never,
-      NO_LINKED_DOCUMENTS,
+      NO_LINKED_DOCUMENTS, null,
     );
 
     return { svc, db, events, allInsertValues };

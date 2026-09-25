@@ -75,8 +75,8 @@ export const dismissHealthItemBodySchema = z
     dismissalExpiresAt: z
       .string()
       .datetime({ offset: true })
-      .optional()
-      .transform((v) => (v !== undefined ? new Date(v) : undefined)),
+      .transform((v) => new Date(v))
+      .optional(),
   })
   .strict();
 
@@ -110,7 +110,7 @@ export const assignHealthItemBodySchema = z
     pageId: z.number().int().positive(),
     kind: contentHealthSignalTypeEnum,
     assigneeMembershipId: z.number().int().positive(),
-    dueAt: z.string().datetime({ offset: true }).optional().transform((v) => (v !== undefined ? new Date(v) : undefined)),
+    dueAt: z.string().datetime({ offset: true }).transform((v) => new Date(v)).optional(),
   })
   .strict();
 
@@ -154,7 +154,7 @@ export const evidenceResponseSchema = z.object({
   pageId: z.number().int(),
   kind: contentHealthSignalTypeEnum,
   ruleVersion: z.number().int(),
-  evidence: z.record(z.unknown()),
+  evidence: z.record(z.string(), z.unknown()),
   detectedAt: wireDate(),
 });
 
