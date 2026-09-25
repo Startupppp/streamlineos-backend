@@ -30,7 +30,8 @@ import {
   readConflictingTitleKeys,
   readProjectStatusNames,
 } from "./ticket-import-reads";
-import { chunkRows, insertTicketBatch, type ImportActor } from "./ticket-import-batches";
+import { insertTicketBatch, type ImportActor } from "./ticket-import-batches";
+import { IMPORT_BATCH_SIZE } from "./import-export.constants";
 import {
   skippedRows,
   summarize,
@@ -170,11 +171,10 @@ export class TicketImportService {
       userId: u.userId,
       membershipId: actingMembershipId(u.principal),
     };
-    const batches = chunkRows(preview.rows);
     const results =
       mode === "atomic"
-        ? await this.runAtomic(actor, projectId, preview.rows, batches)
-        : await this.runPartial(actor, projectId, batches);
+        ? await this.runAtomic(actor, projectId, preview.rows)
+        : await this.runPartial(actor, projectId, preview.rows);
 
     const rows = [...results, ...skippedRows(preview)].sort(
       (a, b) => a.rowNumber - b.rowNumber,
@@ -197,14 +197,14 @@ export class TicketImportService {
     actor: ImportActor,
     projectId: number,
     all: readonly ImportPreviewRow[],
-    batches: readonly ImportPreviewRow[][],
   ): Promise<ImportRowResult[]> {
     try {
       return await this.db.transaction(async (tx) => {
         await lockProjectTicketMutation(tx as Db, actor.orgId, projectId);
         let number = await nextTicketNumber(tx, actor.orgId, projectId);
         const written: ImportRowResult[] = [];
-        for (const batch of batches) {
+        for (let offset = 0; offset < all.length; offset += IMPORT_BATCH_SIZE) {
+          const batch = all.slice(offset, offset + IMPORT_BATCH_SIZE);
           const inserted = await insertTicketBatch(tx, actor, projectId, number, batch);
           number += batch.length;
           for (const row of inserted)
@@ -231,10 +231,11 @@ export class TicketImportService {
   private async runPartial(
     actor: ImportActor,
     projectId: number,
-    batches: readonly ImportPreviewRow[][],
+    all: readonly ImportPreviewRow[],
   ): Promise<ImportRowResult[]> {
     const written: ImportRowResult[] = [];
-    for (const batch of batches) {
+    for (let offset = 0; offset < all.length; offset += IMPORT_BATCH_SIZE) {
+      const batch = all.slice(offset, offset + IMPORT_BATCH_SIZE);
       try {
         const inserted = await this.db.transaction(async (tx) => {
           await lockProjectTicketMutation(tx as Db, actor.orgId, projectId);
