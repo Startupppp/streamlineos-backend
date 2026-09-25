@@ -1,5 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
-import { GoneException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, GoneException, NotFoundException } from "@nestjs/common";
 import { ModulesService } from "./modules.service";
 import { SprintsService } from "./sprints.service";
 
@@ -52,7 +52,19 @@ describe("ModulesService — cross-tenant isolation", () => {
     const svc = new ModulesService(db);
 
     const result = await svc.listModules(OWNER_ORG, 1);
-    expect(result).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
+    expect(result.pagination).toEqual({ limit: 100, hasMore: false, nextCursor: null });
+  });
+
+  it("rejects a malformed cursor instead of silently changing the result window", async () => {
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+      select: jest.fn(),
+    } as unknown as Db;
+    const svc = new ModulesService(db);
+
+    await expect(svc.listModules(OWNER_ORG, 1, { cursor: "not-a-cursor" })).rejects.toThrow(BadRequestException);
+    expect(db.select).not.toHaveBeenCalled();
   });
 });
 

@@ -1,25 +1,40 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, ilike, isNull, or, sql } from "drizzle-orm";
 import { modules, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
   CreateModuleInput,
+  ModuleListQuery,
   UpdateModuleInput,
 } from "./dto/iterations.schemas";
 import { assertProjectInOrg } from "../core/project-access";
+import {
+  buildTupleCursorPage,
+  decodeTupleCursor,
+} from "../../../common/pagination/cursor";
 
 @Injectable()
 export class ModulesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listModules(orgId: string, projectId: number) {
+  async listModules(
+    orgId: string,
+    projectId: number,
+    query: ModuleListQuery = {},
+  ) {
     await assertProjectInOrg(this.db, orgId, projectId);
+    const limit = query.pageSize ?? 100;
+    const cursor = query.cursor ? decodeTupleCursor(query.cursor, 2) : null;
+    if (query.cursor && (!cursor || !/^\d+$/.test(cursor[1]))) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
     const moduleList = await this.db
       .select({
         id: modules.id,
@@ -36,11 +51,26 @@ export class ModulesService {
         description: modules.description,
       })
       .from(modules)
-      .where(and(eq(modules.projectId, projectId), eq(modules.orgId, orgId)))
-      .orderBy(asc(modules.name))
-      .limit(100);
+      .where(
+        and(
+          eq(modules.projectId, projectId),
+          eq(modules.orgId, orgId),
+          cursor
+            ? or(
+                gt(modules.name, cursor[0]),
+                and(
+                  eq(modules.name, cursor[0]),
+                  gt(modules.id, Number(cursor[1])),
+                ),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(asc(modules.name), asc(modules.id))
+      .limit(limit + 1);
 
-    if (moduleList.length === 0) return [];
+    if (moduleList.length === 0)
+      return buildTupleCursorPage([], limit, () => []);
 
     const moduleIds = moduleList.map((m) => m.id);
     const statsRows = await this.db
@@ -64,7 +94,7 @@ export class ModulesService {
 
     const statsMap = new Map(statsRows.map((s) => [s.moduleId, s]));
 
-    return moduleList.map((mod) => {
+    const rows = moduleList.map((mod) => {
       const stats = statsMap.get(mod.id);
       const total = Number(stats?.total ?? 0);
       const completed = Number(stats?.completed ?? 0);
@@ -75,6 +105,10 @@ export class ModulesService {
         progress: total > 0 ? Math.round((completed / total) * 100) : 0,
       };
     });
+    return buildTupleCursorPage(rows, limit, (row) => [
+      row.name,
+      String(row.id),
+    ]);
   }
 
   async createModule(
@@ -130,7 +164,13 @@ export class ModulesService {
     const [updated] = await this.db
       .update(modules)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(modules.id, moduleId), eq(modules.projectId, projectId), eq(modules.orgId, orgId)))
+      .where(
+        and(
+          eq(modules.id, moduleId),
+          eq(modules.projectId, projectId),
+          eq(modules.orgId, orgId),
+        ),
+      )
       .returning();
 
     if (!updated) throw new NotFoundException("Module not found");
@@ -142,10 +182,22 @@ export class ModulesService {
       await tx
         .update(tickets)
         .set({ moduleId: null })
-        .where(and(eq(tickets.moduleId, moduleId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+        .where(
+          and(
+            eq(tickets.moduleId, moduleId),
+            eq(tickets.projectId, projectId),
+            eq(tickets.orgId, orgId),
+          ),
+        );
       const removed = await tx
         .delete(modules)
-        .where(and(eq(modules.id, moduleId), eq(modules.projectId, projectId), eq(modules.orgId, orgId)))
+        .where(
+          and(
+            eq(modules.id, moduleId),
+            eq(modules.projectId, projectId),
+            eq(modules.orgId, orgId),
+          ),
+        )
         .returning({ id: modules.id });
       if (removed.length === 0) throw new NotFoundException("Module not found");
     });

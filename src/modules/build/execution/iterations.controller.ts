@@ -28,6 +28,7 @@ import {
   createModuleSchema,
   createSprintSchema,
   cycleListQuerySchema,
+  moduleListQuerySchema,
   updateCycleSchema,
   updateEpicSchema,
   updateModuleSchema,
@@ -37,15 +38,25 @@ import {
   type CreateModuleInput,
   type CreateSprintInput,
   type CycleListQuery,
+  type ModuleListQuery,
   type UpdateCycleInput,
   type UpdateEpicInput,
   type UpdateModuleInput,
   type UpdateSprintInput,
 } from "./dto/iterations.schemas";
-import { projectIdParams, projectAndSprintIdParams, projectAndCycleIdParams, projectAndModuleIdParams, projectAndEpicIdParams } from "./dto/iterations.schemas";
+import {
+  projectIdParams,
+  projectAndSprintIdParams,
+  projectAndCycleIdParams,
+  projectAndModuleIdParams,
+  projectAndEpicIdParams,
+} from "./dto/iterations.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 import {
   sprintListItemSchema,
@@ -54,6 +65,7 @@ import {
   cycleListItemSchema,
   cycleRowSchema,
   moduleListItemSchema,
+  modulePageSchema,
   moduleRowSchema,
   epicRowSchema,
 } from "./dto/execution-response.schemas";
@@ -111,7 +123,13 @@ export class SprintsController {
     @Body() body: UpdateSprintInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sprints.updateSprint(u.orgId, projectId, sprintId, body, u.userId);
+    return this.sprints.updateSprint(
+      u.orgId,
+      projectId,
+      sprintId,
+      body,
+      u.userId,
+    );
   }
 
   @Delete(":sprintId")
@@ -195,13 +213,14 @@ export class ModulesController {
 
   @Get()
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(moduleListItemSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(modulePageSchema)
+  @Validate({ params: projectIdParams, query: moduleListQuerySchema })
   listModules(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ModuleListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.modules.listModules(u.orgId, projectId);
+    return this.modules.listModules(u.orgId, projectId, query);
   }
 
   @Post()
