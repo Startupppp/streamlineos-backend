@@ -44,6 +44,9 @@ function makeMockDb(overrides: Partial<{ queryResult: unknown; transactionRows: 
       deals: {
         findFirst: jest.fn().mockResolvedValue(queryResult),
       },
+      projects: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
     },
     transaction: transactionMock,
     select: selectMock,
@@ -115,6 +118,41 @@ describe("ProjectsProvisionService — cross-tenant isolation", () => {
 
       expect(result.orgId).toBe(OWNER_ORG);
       expect(db.transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns the existing project for the deal instead of creating a duplicate", async () => {
+      const dealRow = {
+        id: DEAL_ID,
+        name: "My Deal",
+        orgId: OWNER_ORG,
+        notes: null,
+        expectedCloseDate: null,
+        assignedToId: null,
+        value: null,
+        deletedAt: null,
+      };
+      const existingProject = {
+        id: 11,
+        orgId: OWNER_ORG,
+        dealId: DEAL_ID,
+        key: "MYD-001",
+        name: "Existing Deal Project",
+      };
+      const db = makeMockDb({ queryResult: dealRow });
+      db.query.projects.findFirst.mockResolvedValue(existingProject);
+      const { audit, planLimits, dispatch } = makeServices();
+      const svc = new ProjectsProvisionService(
+        db as never,
+        audit as never,
+        planLimits as never,
+        dispatch as never,
+      );
+
+      await expect(
+        svc.createFromDeal(OWNER_ORG, USER_ID, { dealId: DEAL_ID, name: "Retry" }),
+      ).resolves.toEqual(existingProject);
+      expect(db.transaction).not.toHaveBeenCalled();
+      expect(audit.log).not.toHaveBeenCalled();
     });
   });
 

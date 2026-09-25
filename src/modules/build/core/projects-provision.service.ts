@@ -171,6 +171,15 @@ export class ProjectsProvisionService {
     });
     if (!deal) throw new NotFoundException("Deal not found");
 
+    const existingProject = await this.db.query.projects.findFirst({
+      where: and(
+        eq(projects.orgId, orgId),
+        eq(projects.dealId, input.dealId),
+        isNull(projects.deletedAt),
+      ),
+    });
+    if (existingProject) return existingProject;
+
     const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [userId, ...(deal.assignedToId ? [deal.assignedToId] : [])]);
     const creator = actors.get(userId);
     const manager = actors.get(deal.assignedToId ?? userId);
