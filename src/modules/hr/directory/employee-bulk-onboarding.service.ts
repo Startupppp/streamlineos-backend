@@ -38,37 +38,16 @@ import {
   rejectCyclesAndOrphans,
 } from "./bulk-onboarding/bulk-onboarding-plan";
 import { writeBulkOnboarding } from "./bulk-onboarding/bulk-onboarding-writes";
-import type {
-  BulkOnboardPlan,
-  BulkOnboardWriteOutcome,
-  PlannedEmployee,
-  PlannedSecondaryManager,
-} from "./bulk-onboarding/bulk-onboarding.types";
+import type { BulkOnboardWriteOutcome } from "./bulk-onboarding/bulk-onboarding.types";
+import { assignBulkManagers } from "./bulk-onboarding/bulk-onboarding-managers";
+import { buildOnboardingPreview, onboardingWarnings, primaryManagerOf } from "./bulk-onboarding/bulk-onboarding-results";
 import { ReportingLineService } from "../../directory/reporting-line.service";
 import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 import { ReportingManagerFallbackResolver } from "../../directory/reporting-manager-fallback.resolver";
-import { readReportingManagerPolicy, subjectEmployments } from "../../directory/reporting-line-queries";
-import { checkHireSecondaries } from "./bulk-onboarding/bulk-onboarding-secondaries";
-import {
-  REPORTING_LINE_ERROR_CODES,
-  REPORTING_LINE_WARNINGS,
-} from "../../directory/reporting-line.types";
 import { orgBusinessDate } from "../time/attendance-business-date";
-import { normaliseManagerColumns, type ManagerColumnsResult } from "./reporting-manager-columns";
-import { peopleByEmails } from "./reporting-manager-people";
+import { normaliseManagerColumns } from "./reporting-manager-columns";
 import { invalidateReportingReads } from "../../directory/reporting-line-cache";
 import type { BulkOnboardCommitResult, BulkOnboardPreview } from "./dto/reporting-lines-bulk.schemas";
-
-
-function secondaryEmailsOf(columns: ManagerColumnsResult | undefined): string[] {
-  return columns?.ok ? columns.secondaryManagerEmails.flatMap((email) => (email ? [email] : [])) : [];
-}
-
-function primaryManagerOf(employee: PlannedEmployee): BulkOnboardPreview["rows"][number]["primaryManager"] {
-  const manager = employee.primaryManager;
-  if (!manager) return null;
-  return { userId: manager.userId, name: manager.name ?? manager.email ?? "", email: manager.email ?? "", resolution: manager.resolution };
-}
 
 @Injectable()
 export class EmployeeBulkOnboardingService {
@@ -90,43 +69,7 @@ export class EmployeeBulkOnboardingService {
 
   /** HRM-15 §4.20: the same plan the commit runs, returned per row, with nothing written. */
   async previewEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]): Promise<BulkOnboardPreview> {
-    const planned = await this.planRows(actor, rows, "preview");
-    const accepted = new Map(planned.plan.accepted.map((employee) => [employee.row, employee]));
-    const rejected = new Map(planned.plan.rejected.map((entry) => [entry.row, entry]));
-    const counts = { ready: 0, warning: 0, error: 0, skipped: 0 };
-    const previewRows = rows.map((source, index) => {
-      const row = index + 1;
-      const employee = accepted.get(row);
-      const refusal = rejected.get(row);
-      const email = canonicalAdmissionEmail(source.email);
-      if (!employee) {
-        const skipped = refusal?.skipped === true;
-        counts[skipped ? "skipped" : "error"] += 1;
-        return {
-          row,
-          email,
-          status: skipped ? ("SKIPPED" as const) : ("ERROR" as const),
-          codes: refusal?.code ? [refusal.code] : [],
-          messages: refusal?.error ? [refusal.error] : [],
-          primaryManager: null,
-          secondaryManagers: [],
-          dependsOnRow: refusal?.dependsOnRow ?? null,
-        };
-      }
-      const warnings = this.warningsFor(employee, planned.departmentsToCreate);
-      counts[warnings.codes.length > 0 ? "warning" : "ready"] += 1;
-      return {
-        row,
-        email,
-        status: warnings.codes.length > 0 ? ("WARNING" as const) : ("READY" as const),
-        codes: warnings.codes,
-        messages: warnings.messages,
-        primaryManager: primaryManagerOf(employee),
-        secondaryManagers: employee.secondaryManagers.map((manager) => ({ name: manager.name ?? manager.email, email: manager.email })),
-        dependsOnRow: employee.primaryManager?.dependsOnRow ?? null,
-      };
-    });
-    return { rows: previewRows, counts };
+    return buildOnboardingPreview(rows, await this.planRows(actor, rows, "preview"));
   }
 
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]): Promise<BulkOnboardCommitResult> {
@@ -166,7 +109,7 @@ export class EmployeeBulkOnboardingService {
           success: true,
           userId: employee.userId,
           status: "CREATED",
-          codes: this.warningsFor(employee, planned.departmentsToCreate).codes,
+          codes: onboardingWarnings(employee, planned.departmentsToCreate).codes,
           primaryManager: primaryManagerOf(employee),
         });
       for (const entry of outcome.rejected)
@@ -199,25 +142,6 @@ export class EmployeeBulkOnboardingService {
     return { total: rows.length, created: outcome.admitted.length, failed, skipped, results };
   }
 
-  private warningsFor(employee: PlannedEmployee, departmentsToCreate: readonly string[]): { codes: string[]; messages: string[] } {
-    const codes: string[] = [];
-    const messages: string[] = [];
-    const manager = employee.primaryManager;
-    if (manager && (manager.resolution === "FALLBACK_CONFIGURED" || manager.resolution === "FALLBACK_UPLOADER")) {
-      codes.push(REPORTING_LINE_WARNINGS.FALLBACK_ASSIGNED);
-      messages.push(
-        manager.resolution === "FALLBACK_CONFIGURED"
-          ? `No manager given: ${manager.name ?? manager.email ?? "the default manager"} is assigned as the organization's default reporting manager.`
-          : `No manager given: ${manager.name ?? manager.email ?? "you"} (the uploader) is assigned by the fallback policy.`,
-      );
-    }
-    const department = employee.source.department?.trim();
-    if (department && departmentsToCreate.some((name) => name.toLowerCase() === department.toLowerCase())) {
-      codes.push("DEPARTMENT_WILL_BE_CREATED");
-      messages.push(`Department "${department}" does not exist yet and will be created.`);
-    }
-    return { codes, messages };
-  }
 
   /**
    * One plan for preview and commit: headers normalised, admission screened, the primary manager
@@ -273,103 +197,10 @@ export class EmployeeBulkOnboardingService {
     }
 
     const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors, globallyInactiveUserIds);
-    await this.assignManagers(actor, rows, normalised, plan);
+    await assignBulkManagers(this.db, this.fallback, this.reportingLines, actor, rows, normalised, plan);
     return { plan: rejectCyclesAndOrphans(plan), catalog, departmentsToCreate, legacyHeaderRows };
   }
 
-  /** Fills each accepted row's primary (D2) and secondary managers, moving refused rows to `rejected`. */
-  private async assignManagers(
-    actor: CurrentUserContext,
-    rows: readonly BulkOnboardEmployeeRow[],
-    normalised: ReadonlyArray<ReturnType<typeof normaliseManagerColumns>>,
-    plan: BulkOnboardPlan,
-  ): Promise<void> {
-    const orgId = actor.orgId;
-    if (plan.accepted.length === 0) return;
-    // The whole file is the roster (a manager row may itself have failed, which the orphan sweep
-    // then reports), so every row is passed even though only accepted rows are read back.
-    const resolved = await this.fallback.resolveMany(
-      orgId,
-      actor,
-      rows.map((row, index) => ({
-        key: index + 1,
-        employeeEmail: canonicalAdmissionEmail(row.email),
-        primaryManagerUserId: row.reportingManagerUserId ?? null,
-        primaryManagerEmail: row.primaryManagerEmail ?? null,
-      })),
-    );
-    const roster = new Set(plan.accepted.map((employee) => employee.email));
-    const withSecondaries = plan.accepted.filter((employee) => secondaryEmailsOf(normalised[employee.row - 1]).length > 0);
-    const secondaryEmails = withSecondaries.flatMap((employee) => secondaryEmailsOf(normalised[employee.row - 1]));
-    const people = await peopleByEmails(this.db, orgId, secondaryEmails);
-    const rules = withSecondaries.length > 0 ? await this.secondaryRuleInputs(orgId, [...people.values()].map((person) => person.userId), resolved) : null;
-    const kept: PlannedEmployee[] = [];
-    for (const employee of plan.accepted) {
-      const refuse = (code: string, error: string) => plan.rejected.push({ row: employee.row, email: employee.email, success: false, error, code });
-      const columns = normalised[employee.row - 1];
-      if (!columns?.ok) {
-        refuse(REPORTING_LINE_ERROR_CODES.MANAGER_COLUMN_CONFLICT, `The manager columns disagree: ${columns?.ok === false ? columns.conflictingColumns.join(", ") : ""}.`);
-        continue;
-      }
-      if (!employee.source.topLevelRole) {
-        const result = resolved[employee.row - 1];
-        if (!result?.ok) {
-          refuse(result?.code ?? REPORTING_LINE_ERROR_CODES.MANAGER_NOT_FOUND, result && !result.ok ? result.message : "The reporting manager could not be resolved.");
-          continue;
-        }
-        employee.primaryManager = {
-          userId: result.managerUserId,
-          name: result.name,
-          email: result.email,
-          resolution: result.resolution,
-          dependsOnRow: result.dependsOnRow,
-        };
-        employee.reportingManagerUserId = result.managerUserId;
-        employee.reportingManagerEmail = result.managerUserId === null ? result.email : null;
-      }
-      const emails = secondaryEmailsOf(columns);
-      let secondaries: PlannedSecondaryManager[] = [];
-      if (emails.length > 0 && rules) {
-        const checked = checkHireSecondaries({
-          hire: {
-            email: employee.email,
-            userId: null,
-            topLevelReason: employee.source.topLevelRole ? employee.source.topLevelRoleReason ?? null : null,
-            effectiveFrom: employee.effectiveFrom ?? employee.joiningDate ?? rules.today,
-          },
-          primary: employee.source.topLevelRole ? null : { userId: employee.primaryManager?.userId ?? null, email: employee.primaryManager?.email ?? null },
-          secondaryEmails: emails,
-          people,
-          roster,
-          policy: rules.policy,
-          managerChecks: rules.checks,
-          managerEmployments: rules.employments,
-        });
-        if (!checked.ok) {
-          refuse(checked.code, checked.error);
-          continue;
-        }
-        secondaries = checked.secondaries;
-      }
-      employee.secondaryManagers = secondaries;
-      kept.push(employee);
-    }
-    plan.accepted = kept;
-    plan.rejected.sort((left, right) => left.row - right.row);
-  }
-
-  /** One policy read, one eligibility check and one employment-window read for every secondary of the file. */
-  private async secondaryRuleInputs(orgId: string, secondaryUserIds: string[], resolved: Awaited<ReturnType<ReportingManagerFallbackResolver["resolveMany"]>>) {
-    const primaryUserIds = resolved.flatMap((result) => (result.ok && result.managerUserId ? [result.managerUserId] : []));
-    const [policy, checks, today] = await Promise.all([
-      readReportingManagerPolicy(this.db, orgId),
-      this.reportingLines.checkManagers(orgId, [...new Set([...secondaryUserIds, ...primaryUserIds])]),
-      orgBusinessDate(this.db, orgId),
-    ]);
-    const employmentIds = [...checks.values()].flatMap((check) => (check.ok ? [check.managerEmploymentId] : []));
-    const employments = new Map((await subjectEmployments(this.db, orgId, { employmentIds })).map((row) => [row.employmentId, row]));
-    return { policy, checks, today, employments };
-  }
 
   private deferDelivery(
     actor: CurrentUserContext,
