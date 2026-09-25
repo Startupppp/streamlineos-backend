@@ -105,6 +105,27 @@ describe("ProjectsFeedbackService.createFeedback — the account link reaches th
     );
   });
 
+  it("captures the CRM tier and lifetime value at attribution time", async () => {
+    const { insert, values } = insertCapture(
+      feedbackRow({ accountTierSnapshot: "enterprise", accountValueSnapshot: "1250.00" }),
+    );
+    const { service } = makeService({
+      insert,
+      referenceRows: [{ accountTierSnapshot: "enterprise", accountValueSnapshot: "1250.00" }],
+    });
+    await service.createFeedback(ORG, "user-1", {
+      title: "Bulk export",
+      status: "open",
+      crmOrganizationId: 42,
+    });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountTierSnapshot: "enterprise",
+        accountValueSnapshot: "1250.00",
+      }),
+    );
+  });
+
   it("writes null rather than undefined when no company is named", async () => {
     const { insert, values } = insertCapture(feedbackRow());
     const { service } = makeService({ insert });
