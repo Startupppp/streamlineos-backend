@@ -12,13 +12,15 @@ import {
   assets,
   leaveBalances,
   documents,
+  organizations,
 } from "../../../db/schema";
 import { hrImportJobs, hrImportRows } from "../../../db/schema/hr/import-jobs";
 import { HrAuditService } from "../core/hr-audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { HrImportCommitService, type CommitOutcome } from "./hr-import-commit.service";
-import { validateRows } from "./schemas/entity-row-schemas";
+import { DEFAULT_IMPORT_TIME_ZONE, validateRows } from "./schemas/entity-row-schemas";
+import { resolveRowReferences, stripResolvedKeys } from "./hr-import-preflight";
 import type {
   CreateImportJobInput,
   ExportQueryInput,
@@ -33,6 +35,9 @@ import {
 
 const IMPORT_ROW_BATCH_SIZE = 500;
 
+/** Thrown when the committed buckets do not add up to what the preview promised. */
+export class ImportAccountingError extends Error {}
+
 @Injectable()
 export class HrImportService {
   constructor(
@@ -42,9 +47,44 @@ export class HrImportService {
     private readonly cache: CacheService,
   ) {}
 
+  /**
+   * The organisation's own calendar. Every date question an import asks — most
+   * visibly "is this attendance row in the future?" — is asked in this zone, not
+   * the server's and not a hardcoded one (V-012b).
+   */
+  private async orgTimeZone(orgId: string): Promise<string> {
+    const [org] = await this.db
+      .select({ timezone: organizations.timezone })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    return org?.timezone || DEFAULT_IMPORT_TIME_ZONE;
+  }
+
   async createJob(orgId: string, actorId: string, input: CreateImportJobInput) {
     const { entity, fileName, rows } = input;
-    const { validRows, errorRows, topErrors } = validateRows(entity, rows);
+    const timeZone = await this.orgTimeZone(orgId);
+    const { validRows: schemaValid, errorRows: schemaErrors } = validateRows(
+      entity,
+      rows.map(stripResolvedKeys),
+      timeZone,
+    );
+
+    // The preview used to be database-blind, so a row naming a leave type, a
+    // department, a manager or an employee that does not exist was reported
+    // VALID and only failed at commit — the operator was shown "3 valid, 1
+    // error" about a file that was about to write one row (V-010e, V-011c/e,
+    // V-012c). One batched resolution pass per distinct reference per file now
+    // runs here, before `hr_import_rows` is written, and stores the resolved ids
+    // on the payload so the commit does not read them again.
+    const preflight = await resolveRowReferences(this.db, orgId, entity, schemaValid);
+    const validRows = preflight.valid;
+    const errorRows = [...schemaErrors, ...preflight.errors].sort(
+      (a, b) => a.rowNumber - b.rowNumber,
+    );
+    const topErrors = errorRows
+      .slice(0, 100)
+      .map((row) => ({ row: row.rowNumber, message: row.error ?? "Invalid row" }));
 
     const [job] = await this.db
       .insert(hrImportJobs)
@@ -184,15 +224,23 @@ export class HrImportService {
     const outcomes: Record<CommitOutcome, number> = { created: 0, updated: 0, unchanged: 0 };
     let failed = 0;
     let committed = 0;
+    // What the preview promised, read before the commit overwrites it. This is
+    // the only number the accounting check below can be compared against: the
+    // old check compared the buckets to `committed`, which the same `if (ref)`
+    // block incremented, so it reduced to `x === x` and could never fire.
+    const previewedValid = job.validRows;
+    const previewedErrors = job.errorRows;
+    const timeZone = await this.orgTimeZone(orgId);
 
     // The employees entity admits people to the organisation, so its writes go
     // through the one owner of organization_members writes. The wrapper drains
     // the permission-version and membership-cache invalidations after the
     // transaction resolves — draining inside it would publish a membership the
     // commit could still roll back.
-    await withMembershipMutations(this.cache, (membership) =>
+    try {
+      await withMembershipMutations(this.cache, (membership) =>
       this.db.transaction(async (tx) => {
-      const ctx = { orgId, actorId, membership };
+      const ctx = { orgId, actorId, membership, timeZone };
       let afterId: string | undefined;
       while (true) {
         const rows = await tx
@@ -226,13 +274,19 @@ export class HrImportService {
                 job.entity,
                 row.payload,
               );
-              if (rowRef) await this.commitService.markRowCommitted(rowTx, row.id, rowRef);
+              await this.commitService.markRowCommitted(rowTx, row.id, rowRef);
               return rowRef;
             });
-            if (ref) {
-              committed++;
-              outcomes[ref.outcome] += 1;
-            }
+            // A commit that returns nothing is a row that wrote nothing. It used
+            // to fall through `if (ref)` into no bucket at all, keep
+            // `status='valid'`, and leave the job reporting a committed count
+            // over it. Now it is a row error with a message an operator can act on.
+            if (!ref || !(ref.outcome in outcomes))
+              throw new Error(
+                "The importer wrote nothing for this row and reported no outcome.",
+              );
+            committed++;
+            outcomes[ref.outcome] += 1;
           } catch (err) {
             const message = err instanceof Error ? err.message : "Commit failed";
             failed++;
@@ -247,11 +301,17 @@ export class HrImportService {
         if (rows.length < IMPORT_ROW_BATCH_SIZE) break;
       }
 
-      // The invariant the tickets asked for: every previewed-valid row ends up in
-      // exactly one bucket. If it does not, something wrote outside the accounting
-      // and the job must not claim success over it.
-      if (outcomes.created + outcomes.updated + outcomes.unchanged + failed !== committed + failed)
-        throw new Error("Import accounting did not reconcile — no row was committed twice, but the counts disagree");
+      // The invariant the tickets asked for: every row the PREVIEW called valid
+      // ends up in exactly one bucket. Compared against `job.validRows` this can
+      // actually fail — which is the point. The hazard is a row that wrote
+      // nothing: it landed in no bucket, kept `status='valid'` forever, and the
+      // job still reported a committed count over it.
+      const accountedFor = outcomes.created + outcomes.updated + outcomes.unchanged + failed;
+      if (accountedFor !== previewedValid)
+        throw new ImportAccountingError(
+          `Import accounting did not reconcile: the preview found ${previewedValid} valid row(s) ` +
+            `but only ${accountedFor} were written, failed or skipped. No row is reported as committed.`,
+        );
 
       await tx
         .update(hrImportJobs)
@@ -261,14 +321,37 @@ export class HrImportService {
           status: committed === 0 && failed > 0 ? "failed" : "committed",
           committedAt: new Date(),
           validRows: committed,
-          errorRows: failed,
+          // The preview's own validation errors used to be discarded here, so a
+          // five-row file with three bad rows recorded `errorRows: 0` and the
+          // server's counters no longer added up to `totalRows`.
+          errorRows: previewedErrors + failed,
           createdRows: outcomes.created,
           updatedRows: outcomes.updated,
           unchangedRows: outcomes.unchanged,
         })
         .where(eq(hrImportJobs.id, jobId));
       }),
-    );
+      );
+    } catch (err) {
+      // The transaction has rolled back, so nothing the job wrote survives. The
+      // job row must not be left in `committing` claiming a commit that did not
+      // happen — mark it failed on a fresh connection and let the error out.
+      await this.db
+        .update(hrImportJobs)
+        .set({
+          status: "failed",
+          errors: [
+            {
+              row: 0,
+              message: err instanceof Error ? err.message : "Import commit failed",
+            },
+          ],
+        })
+        .where(and(eq(hrImportJobs.id, jobId), eq(hrImportJobs.orgId, orgId)));
+      throw err instanceof ImportAccountingError
+        ? new BadRequestException(err.message)
+        : err;
+    }
 
     await this.audit.log({
       orgId,
