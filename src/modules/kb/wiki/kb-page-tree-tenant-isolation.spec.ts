@@ -60,7 +60,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("scopes page tree query to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     await svc.getTreeLevel(makeUser(ATTACKER), { limit: 50 });
 
@@ -94,7 +94,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
         }),
       })),
     } as unknown as Db;
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     await svc.getTreeLevel(makeUser(ATTACKER), { limit: 50 });
 
@@ -105,7 +105,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("returns cursor-page structure for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     const result = await svc.getTreeLevel(makeUser(OWNER), { limit: 50 });
 
@@ -130,7 +130,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
         }),
       }),
     } as unknown as Db;
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     await svc.getTreeLevel(makeUser("org-root"), { limit: 50 });
 
@@ -156,7 +156,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     } as unknown as Db;
     const auth = makeAuth();
     const auditWithLog = { log: jest.fn() } as never;
-    const svc = new KbPageTreeService(db, auditWithLog, auth as never, {} as never);
+    const svc = new KbPageTreeService(db, auditWithLog, auth as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     await svc.softDelete(makeUser(orgId), PAGE_ID);
 
@@ -179,7 +179,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
       transaction: jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx)),
     } as unknown as Db;
     const auth = makeAuth();
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     await svc.move(makeUser(orgId), PAGE_ID, { parentPageId: null, index: 0 });
 
@@ -204,7 +204,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     const TARGET_ID = 99;
     const { db } = makeMoveDb(PAGE_ID);
     const auth = makeAuth();
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     await svc.move(makeUser("org-move-target"), PAGE_ID, { parentPageId: TARGET_ID, index: 0 });
 
@@ -221,7 +221,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
       if (id === TARGET_ID) throw new NotFoundException("Page not found");
       return { orgId: "o1", pageId: id, action: "edit", via: "admin" };
     });
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     await expect(
       svc.move(makeUser("org-move-denied"), PAGE_ID, { parentPageId: TARGET_ID, index: 0 }),

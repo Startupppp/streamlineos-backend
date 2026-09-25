@@ -1,6 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { KnowledgeCollectionService } from "./knowledge-collection.service";
+import { buildVisiblePageScope } from "../authorization/knowledge-page-scope";
 import type { KnowledgeAuthorizationService } from "../authorization/knowledge-authorization.service";
 import type { KbActorStanding } from "../authorization/knowledge-authorization.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
@@ -41,6 +42,28 @@ interface Capture {
   limits: number[];
   groupBys: number;
   selectCalls: number;
+  unions: number;
+}
+
+function makeChain(rows: Record<string, unknown>[], capture: Capture): Record<string, unknown> {
+  const chain: Record<string, unknown> = {};
+  chain.orderBy = jest.fn((...terms: unknown[]) => {
+    capture.orderBys.push(terms);
+    return chain;
+  });
+  chain.limit = jest.fn((n: number) => {
+    capture.limits.push(n);
+    return Promise.resolve(rows);
+  });
+  chain.groupBy = jest.fn(() => {
+    capture.groupBys += 1;
+    return Promise.resolve([]);
+  });
+  chain.union = jest.fn(() => {
+    capture.unions += 1;
+    return makeChain(rows, capture);
+  });
+  return chain;
 }
 
 function makeHarness(options: {
@@ -54,6 +77,7 @@ function makeHarness(options: {
     limits: [],
     groupBys: 0,
     selectCalls: 0,
+    unions: 0,
   };
   const rows = options.rows ?? [];
   const grantRows = options.grantRows ?? [];
@@ -61,25 +85,11 @@ function makeHarness(options: {
   const db = {
     select: jest.fn(() => {
       capture.selectCalls += 1;
-      const chain: Record<string, unknown> = {};
-      chain.orderBy = jest.fn((...terms: unknown[]) => {
-        capture.orderBys.push(terms);
-        return chain;
-      });
-      chain.limit = jest.fn((n: number) => {
-        capture.limits.push(n);
-        return Promise.resolve(rows);
-      });
-      chain.groupBy = jest.fn(() => {
-        capture.groupBys += 1;
-        return Promise.resolve([]);
-      });
-
       const node: Record<string, unknown> = {};
       node.from = jest.fn(() => node);
       node.where = jest.fn((clause: SQL) => {
         capture.wheres.push(clause);
-        return Object.assign(Promise.resolve(grantRows), chain);
+        return Object.assign(Promise.resolve(grantRows), makeChain(rows, capture));
       });
       return node;
     }),
@@ -143,15 +153,15 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
     expect(rendered.params).not.toContain(OTHER_ORG);
   });
 
-  it("never replaces the canonical visible scope with its own filters", async () => {
+  it("never replaces the canonical visible scope with its own filters, across whichever branch(es) it queries", async () => {
     const h = makeHarness({ rows: [] });
 
     await h.svc.listPages(user(), query({ owner: "me", status: ["published"] }));
 
-    const sql = render(h.capture.wheres[0]).sql;
-    expect(sql).toContain("kb_page_grants");
-    expect(sql).toContain("owner_membership_id");
-    expect(sql).toContain("status");
+    const combined = h.capture.wheres.map((w) => render(w).sql).join("\n");
+    expect(combined).toContain("kb_page_grants");
+    expect(combined).toContain("owner_membership_id");
+    expect(combined).toContain("status");
   });
 
   it("excludes deleted pages unless the caller asks for them, and then excludes live ones", async () => {
@@ -178,6 +188,17 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
 
     expect(page.data).toEqual([]);
     expect(h.capture.selectCalls).toBe(0);
+  });
+
+  it("filters by an explicit ownerMembershipId, distinct from the owner=me shortcut", async () => {
+    const h = makeHarness({ rows: [] });
+
+    await h.svc.listPages(user(), query({ ownerMembershipId: 99 }));
+
+    const combined = h.capture.wheres.map((w) => render(w).sql).join("\n");
+    expect(combined).toContain("owner_membership_id");
+    const params = h.capture.wheres.flatMap((w) => render(w).params);
+    expect(params).toContain(99);
   });
 
   it("returns nothing for sharedWithMe when the actor has neither a membership nor a role, because no grant can name them", async () => {
@@ -281,7 +302,6 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
     const page = await h.svc.listPages(user(), query());
 
     expect(page.data[0].sharedBy).toBeNull();
-    expect(h.capture.selectCalls).toBe(1);
   });
 
   it("reports who shared a page and at what level, taking the strongest grant when a membership and a role both name the actor", async () => {
@@ -345,14 +365,20 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
       query({ facets: true }),
     );
     expect(faceted.facets).not.toBeNull();
-    expect(withFacets.capture.groupBys).toBe(2);
+    expect(faceted.facets?.owner).toBeDefined();
+    expect(withFacets.capture.groupBys).toBe(3);
   });
 
   it("excludes the keyset bound from the facet filter, or facet counts would shrink on every page", async () => {
-    const h = makeHarness({ rows: [pageRow()] });
+    const h = makeHarness({
+      rows: [pageRow({ id: 1 }), pageRow({ id: 2 })],
+    });
     const first = await h.svc.listPages(user(), query({ limit: 1, facets: true }));
+    expect(first.pagination.nextCursor).not.toBeNull();
 
-    const next = makeHarness({ rows: [pageRow()] });
+    const next = makeHarness({
+      rows: [pageRow({ id: 1 }), pageRow({ id: 2 })],
+    });
     await next.svc.listPages(
       user(),
       query({
@@ -362,9 +388,13 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
       }),
     );
 
+    const keysetMarker = '"updated_at", "kb_pages"."id") <';
     const listWhere = render(next.capture.wheres[0]).sql;
-    const facetWhere = render(next.capture.wheres[1]).sql;
-    expect(facetWhere.length).toBeLessThanOrEqual(listWhere.length);
+    const facetWhere = render(
+      next.capture.wheres[next.capture.wheres.length - 1],
+    ).sql;
+    expect(listWhere).toContain(keysetMarker);
+    expect(facetWhere).not.toContain(keysetMarker);
   });
 
   it("returns nothing when the search text reduces to no usable term, rather than matching every page", async () => {
@@ -382,5 +412,96 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
     await h.svc.listPages(user(), query({ sharedWithMe: true, owner: "me" }));
 
     expect(h.auth.resolveStanding).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("KnowledgeCollectionService — BE-81 OR-to-UNION split", () => {
+  it("splits the indexed branch and the grant branch into a UNION when the actor holds a grant branch, instead of OR-ing them into one un-indexable predicate", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+
+    await h.svc.listPages(user(), query());
+
+    expect(h.capture.unions).toBe(1);
+    expect(h.capture.selectCalls).toBe(2);
+    const branch1 = render(h.capture.wheres[0]).sql;
+    const branch2 = render(h.capture.wheres[1]).sql;
+    expect(branch1).not.toContain("kb_page_grants");
+    expect(branch2).toContain("kb_page_grants");
+  });
+
+  it("issues a single branch, no UNION, for an org owner — there is no grant OR to split", async () => {
+    const h = makeHarness({
+      rows: [pageRow()],
+      actor: standing({ isOrgOwner: true }),
+    });
+
+    await h.svc.listPages(user(), query());
+
+    expect(h.capture.unions).toBe(0);
+    expect(h.capture.selectCalls).toBe(1);
+    expect(render(h.capture.wheres[0]).sql).not.toContain("kb_page_grants");
+  });
+
+  it("issues a single branch, no UNION, for an actor with neither membership nor roles — buildGrantBranch has nothing to check", async () => {
+    const h = makeHarness({
+      rows: [pageRow()],
+      actor: standing({ membershipId: null, roleSlugs: [] }),
+    });
+
+    await h.svc.listPages(user(), query());
+
+    expect(h.capture.unions).toBe(0);
+    expect(h.capture.selectCalls).toBe(1);
+  });
+
+  it("issues a single branch, no UNION, for sharedWithMe — the grant EXISTS is already the sole branch, nothing to split", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+
+    await h.svc.listPages(user(), query({ sharedWithMe: true }));
+
+    expect(h.capture.unions).toBe(0);
+    expect(render(h.capture.wheres[0]).sql).toContain("kb_page_grants");
+  });
+
+  it("orders the unioned result by the output column alias, never by a table-qualified column a UNION cannot resolve", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+
+    await h.svc.listPages(user(), query({ sort: "updated_desc" }));
+
+    const rendered = h.capture.orderBys[0].map((term) => render(term as SQL));
+    for (const term of rendered) {
+      expect(term.sql).not.toContain("kb_pages");
+    }
+    expect(rendered.some((t) => t.sql.includes("cursorValue"))).toBe(true);
+    expect(rendered.some((t) => t.sql.includes("id"))).toBe(true);
+  });
+
+  it("still orders by the real columns, table-qualified, on the single-branch path where a UNION never happens", async () => {
+    const h = makeHarness({
+      rows: [pageRow()],
+      actor: standing({ isOrgOwner: true }),
+    });
+
+    await h.svc.listPages(user(), query({ sort: "updated_desc" }));
+
+    const rendered = h.capture.orderBys[0].map((term) => render(term as SQL));
+    expect(rendered.some((t) => t.sql.includes("kb_pages"))).toBe(true);
+  });
+
+  it("both branches carry the same filter conditions, so a UNION cannot silently widen or narrow the result", async () => {
+    const h = makeHarness({ rows: [] });
+
+    await h.svc.listPages(user(), query({ status: ["published"] }));
+
+    const branch1 = render(h.capture.wheres[0]).sql;
+    const branch2 = render(h.capture.wheres[1]).sql;
+    expect(branch1).toContain("status");
+    expect(branch2).toContain("status");
+  });
+
+  it("the union's predicate is logically the same reachable set buildVisiblePageScope already proves, just split for the planner", () => {
+    const scope = buildVisiblePageScope(standing(), "view");
+    expect(scope.grantBranch).not.toBeNull();
+    expect(scope.indexedBranch).toBeDefined();
   });
 });

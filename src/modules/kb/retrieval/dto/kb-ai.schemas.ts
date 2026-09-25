@@ -90,6 +90,13 @@ export const kbAiFeedbackSchema = z
   .strict();
 export type KbAiFeedbackInput = z.infer<typeof kbAiFeedbackSchema>;
 
+export const kbCreateKnowledgeGapSchema = z
+  .object({
+    question: z.string().trim().min(3).max(1000),
+  })
+  .strict();
+export type KbCreateKnowledgeGapInput = z.infer<typeof kbCreateKnowledgeGapSchema>;
+
 export const kbResearchBriefCreateSchema = z
   .object({
     topic: z.string().trim().min(3).max(300),

@@ -29,6 +29,7 @@ function canonicalFilters(query: KbPageCollectionQuery): string {
     query.spaceId ?? "",
     query.projectId ?? "",
     query.owner ?? "",
+    query.ownerMembershipId ?? "",
     query.sharedWithMe === true ? "1" : "",
     query.status === undefined ? "" : [...query.status].sort().join("."),
     query.verified === undefined ? "" : query.verified ? "1" : "0",

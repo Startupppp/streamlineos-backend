@@ -25,5 +25,8 @@ export const importItemSchema = z
 export const importPagesSchema = z.object({
   sourceType: z.enum(["markdown", "html", "zip"]),
   items: z.array(importItemSchema).min(1).max(100),
+  spaceId: z.coerce.number().int().positive().optional(),
+  visibility: z.enum(["private", "org", "public"]).default("org"),
+  duplicatePolicy: z.enum(["skip", "update"]).default("skip"),
 }).strict();
 export type ImportPagesInput = z.infer<typeof importPagesSchema>;

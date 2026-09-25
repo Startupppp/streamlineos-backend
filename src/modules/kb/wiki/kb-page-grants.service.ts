@@ -193,8 +193,12 @@ export class KbPageGrantsService {
 
     const deferred = registerAfterCommit(async () => {
       await this.auth.invalidateSpaceScope(user.orgId);
+      await this.syncChunkAclRevision(user.orgId, pageId);
     });
-    if (!deferred) await this.auth.invalidateSpaceScope(user.orgId);
+    if (!deferred) {
+      await this.auth.invalidateSpaceScope(user.orgId);
+      await this.syncChunkAclRevision(user.orgId, pageId);
+    }
 
     return grant;
   }
@@ -240,8 +244,24 @@ export class KbPageGrantsService {
 
     const deferred = registerAfterCommit(async () => {
       await this.auth.invalidateSpaceScope(user.orgId);
+      await this.syncChunkAclRevision(user.orgId, pageId);
     });
-    if (!deferred) await this.auth.invalidateSpaceScope(user.orgId);
+    if (!deferred) {
+      await this.auth.invalidateSpaceScope(user.orgId);
+      await this.syncChunkAclRevision(user.orgId, pageId);
+    }
+  }
+
+  private async syncChunkAclRevision(orgId: string, pageId: number): Promise<void> {
+    await this.db.execute(sql`
+      UPDATE kb_article_chunks c
+      SET acl_revision = p.acl_revision
+      FROM kb_pages p
+      WHERE c.page_id = p.id
+        AND c.org_id = ${orgId}
+        AND c.page_id = ${pageId}
+        AND c.acl_revision != p.acl_revision
+    `);
   }
 
   private async findLiveGrant(

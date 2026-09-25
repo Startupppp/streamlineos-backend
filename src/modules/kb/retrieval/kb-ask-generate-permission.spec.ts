@@ -19,4 +19,8 @@ describe("KbAskController — spending AI credit is its own permission", () => {
     expect(keyOf("getHistory")).toBe("kb:pages:view");
     expect(keyOf("clearHistory")).toBe("kb:pages:view");
   });
+
+  it("gates create-knowledge-gap on kb:pages:view, the same standing the sibling feedback action requires — not on kb:ai:generate, since flagging a gap spends no AI credit", () => {
+    expect(keyOf("createKnowledgeGap")).toBe("kb:pages:view");
+  });
 });

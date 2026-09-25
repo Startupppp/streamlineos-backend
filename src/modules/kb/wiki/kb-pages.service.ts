@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
@@ -23,6 +24,7 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { AccessService } from "../../access/access.service";
+import { AuditService } from "../../../common/audit/audit.service";
 import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KB_PAGE_SEARCH_MAX_LIMIT } from "./dto/kb-pages.schemas";
@@ -66,6 +68,7 @@ export class KbPagesService {
     private readonly planLimits: PlanLimitsService,
     private readonly auth: KnowledgeAuthorizationService,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   private membershipId(user: CurrentUserContext): number | null {
@@ -117,6 +120,16 @@ export class KbPagesService {
         columns: { id: true },
       });
       if (!space) throw new NotFoundException("Space not found");
+    }
+
+    if (input.projectId != null) {
+      const { hasAccess } = await resolveProjectAccess(
+        this.db,
+        this.access,
+        user,
+        input.projectId,
+      );
+      if (!hasAccess) throw new NotFoundException("Project not found");
     }
 
     const siblings = await this.db
@@ -231,6 +244,12 @@ export class KbPagesService {
       );
     }
 
+    if (input.ownerUserId !== undefined && !canManage) {
+      throw new ForbiddenException(
+        "Only a manager can change the page owner",
+      );
+    }
+
     const values: Partial<typeof kbPages.$inferInsert> = {
       lastEditedById: user.userId,
       lastEditedByMembershipId: this.membershipId(user),
@@ -274,7 +293,8 @@ export class KbPagesService {
     }
 
     const contentChanged = input.content !== undefined;
-    const aclChanged = input.spaceId !== undefined;
+    const ownerChanged = input.ownerUserId !== undefined;
+    const aclChanged = input.spaceId !== undefined || ownerChanged;
     const needsReindex = contentChanged || aclChanged;
     if (shouldResetTrust(current.trustState, contentChanged)) {
       values.trustState = "unverified";
@@ -360,6 +380,17 @@ export class KbPagesService {
 
       return updated;
     });
+
+    if (ownerChanged) {
+      this.audit.log({
+        action: "kb.page.owner_changed",
+        userId: user.userId,
+        orgId,
+        resourceType: "kb_page",
+        resourceId: String(pageId),
+        metadata: { pageId, ownerUserId: input.ownerUserId },
+      });
+    }
 
     return withoutUnsharedToken(
       user,

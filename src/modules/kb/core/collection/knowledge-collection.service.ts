@@ -28,6 +28,7 @@ import {
 import {
   accessLevelsSatisfying,
   type KbActorStanding,
+  type KbSharedWithMeScope,
 } from "../authorization/knowledge-authorization.types";
 import {
   collectionScopeTag,
@@ -102,17 +103,19 @@ export class KnowledgeCollectionService {
     const scope = buildVisiblePageScope(standing, "view");
     const scopeTag = collectionScopeTag(query, scope.fingerprint);
 
-    const conditions: SQL<unknown>[] = [scope.predicate];
-
+    let shared: KbSharedWithMeScope | null = null;
     if (query.sharedWithMe === true) {
-      const shared = buildSharedWithMeScope(standing);
+      shared = buildSharedWithMeScope(standing);
       if (shared === null) return emptyPage(query.limit);
-      conditions.push(shared.predicate);
     }
+
+    const conditions: SQL<unknown>[] = [];
 
     if (query.owner === "me") {
       if (standing.membershipId === null) return emptyPage(query.limit);
       conditions.push(eq(kbPages.ownerMembershipId, standing.membershipId));
+    } else if (query.ownerMembershipId !== undefined) {
+      conditions.push(eq(kbPages.ownerMembershipId, query.ownerMembershipId));
     }
 
     conditions.push(
@@ -151,21 +154,32 @@ export class KnowledgeCollectionService {
     }
 
     const column = sortColumn(query.sort);
-    const rows = await this.db
-      .select({
-        ...COLLECTION_PROJECTION,
-        cursorValue: sortUsesTimestamp(query.sort)
-          ? microsecondCursorValue(column)
-          : sql<string>`${kbPages.title}`,
-      })
-      .from(kbPages)
-      .where(and(...conditions))
-      .orderBy(
-        ...(query.sort === "title_asc"
-          ? [asc(kbPages.title), asc(kbPages.id)]
-          : [desc(column), desc(kbPages.id)]),
-      )
-      .limit(query.limit + 1);
+    const selection = {
+      ...COLLECTION_PROJECTION,
+      cursorValue: sortUsesTimestamp(query.sort)
+        ? microsecondCursorValue(column)
+        : sql<string>`${kbPages.title}`,
+    };
+
+    const branchSelect = (branch: SQL<unknown>) =>
+      this.db
+        .select(selection)
+        .from(kbPages)
+        .where(and(branch, ...conditions));
+
+    const rows =
+      shared === null && scope.grantBranch !== null
+        ? await branchSelect(scope.indexedBranch)
+            .union(branchSelect(scope.grantBranch))
+            .orderBy(...this.unionOrderTerms(query.sort))
+            .limit(query.limit + 1)
+        : await branchSelect(shared !== null ? shared.predicate : scope.predicate)
+            .orderBy(
+              ...(query.sort === "title_asc"
+                ? [asc(kbPages.title), asc(kbPages.id)]
+                : [desc(column), desc(kbPages.id)]),
+            )
+            .limit(query.limit + 1);
 
     const hasMore = rows.length > query.limit;
     const kept = hasMore ? rows.slice(0, query.limit) : rows;
@@ -199,9 +213,22 @@ export class KnowledgeCollectionService {
       },
       facets:
         query.facets === true
-          ? await this.loadFacets(and(...filterConditions))
+          ? await this.loadFacets(
+              and(
+                shared !== null ? shared.predicate : scope.predicate,
+                ...filterConditions,
+              ),
+            )
           : null,
     };
+  }
+
+  private unionOrderTerms(sort: KbPageCollectionSort): SQL<unknown>[] {
+    const direction = sort === "title_asc" ? sql`asc` : sql`desc`;
+    return [
+      sql`${sql.identifier("cursorValue")} ${direction}`,
+      sql`${sql.identifier("id")} ${direction}`,
+    ];
   }
 
   private keysetBound(
@@ -267,7 +294,7 @@ export class KnowledgeCollectionService {
   private async loadFacets(
     filter: SQL<unknown> | undefined,
   ): Promise<KbPageCollectionFacets> {
-    const [byStatus, bySpace] = await Promise.all([
+    const [byStatus, bySpace, byOwner] = await Promise.all([
       this.db
         .select({ value: kbPages.status, count: sql<number>`count(*)::int` })
         .from(kbPages)
@@ -278,6 +305,14 @@ export class KnowledgeCollectionService {
         .from(kbPages)
         .where(filter)
         .groupBy(kbPages.spaceId),
+      this.db
+        .select({
+          ownerMembershipId: kbPages.ownerMembershipId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(kbPages)
+        .where(filter)
+        .groupBy(kbPages.ownerMembershipId),
     ]);
 
     return {
@@ -285,6 +320,7 @@ export class KnowledgeCollectionService {
         return { value: row.value as KbPageStatus, count: row.count };
       }),
       space: bySpace,
+      owner: byOwner,
     };
   }
 }

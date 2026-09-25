@@ -47,6 +47,8 @@ export const kbPageComments = pgTable(
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
     parentId: integer("parent_id"),
     content: text("content").notNull(),
+    anchorBlockIndex: integer("anchor_block_index"),
+    anchorQuote: text("anchor_quote"),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

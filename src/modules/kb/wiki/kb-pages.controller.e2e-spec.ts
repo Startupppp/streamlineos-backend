@@ -32,6 +32,7 @@ describe("KB Pages auth/RBAC (e2e)", () => {
     ["get", "/kb/pages/recent"],
     ["get", "/kb/pages/favorites"],
     ["get", "/kb/pages/trash"],
+    ["post", "/kb/pages/trash/purge-impact"],
     ["get", "/kb/pages/search"],
     ["post", "/kb/pages"],
     ["get", "/kb/pages/1"],

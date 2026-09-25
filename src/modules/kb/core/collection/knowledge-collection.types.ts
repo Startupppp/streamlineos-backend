@@ -19,11 +19,28 @@ export type KbPageStatus = (typeof KB_PAGE_STATUSES)[number];
 
 export const KB_PAGE_COLLECTION_DEFAULT_LIMIT = 50;
 
+export const KB_PAGE_COLLECTION_QUERY_FIELDS = [
+  "q",
+  "spaceId",
+  "projectId",
+  "owner",
+  "ownerMembershipId",
+  "sharedWithMe",
+  "status",
+  "verified",
+  "deleted",
+  "sort",
+  "cursor",
+  "limit",
+  "facets",
+] as const;
+
 export interface KbPageCollectionQuery {
   readonly q?: string;
   readonly spaceId?: number;
   readonly projectId?: number;
   readonly owner?: "me";
+  readonly ownerMembershipId?: number;
   readonly sharedWithMe?: boolean;
   readonly status?: readonly KbPageStatus[];
   readonly verified?: boolean;
@@ -71,6 +88,7 @@ export interface KbPageCollectionItem {
 export interface KbPageCollectionFacets {
   readonly status: readonly { value: KbPageStatus; count: number }[];
   readonly space: readonly { spaceId: number | null; count: number }[];
+  readonly owner: readonly { ownerMembershipId: number | null; count: number }[];
 }
 
 export interface KbPageCollectionPage {

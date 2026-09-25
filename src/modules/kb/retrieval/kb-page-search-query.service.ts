@@ -6,7 +6,13 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
 import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
+import {
+  decodeSearchCursor,
+  encodeSearchCursor,
+  searchScopeTag,
+} from "./kb-page-search-cursor";
 import type { PageFullSearchQuery, KbPageFullSearchResponse } from "./dto/kb-page-search-query.schemas";
 
 @Injectable()
@@ -24,11 +30,28 @@ export class KbPageSearchQueryService {
   ): Promise<KbPageFullSearchResponse> {
     const tsquery = kbPagePrefixTsQuery(input.q);
     if (tsquery === null) {
-      return { items: [], hasMore: false, limit: input.limit, facets: null };
+      return {
+        items: [],
+        hasMore: false,
+        nextCursor: null,
+        limit: input.limit,
+        facets: null,
+      };
     }
 
-    const visibility = await this.auth.visiblePagePredicate(user, "view");
-    const baseConditions = this.buildBaseConditions(user.orgId, visibility, tsquery, input);
+    const standing = await this.auth.resolveStanding(user);
+    const scope = buildVisiblePageScope(standing, "view");
+    const scopeTag = searchScopeTag(input, scope.fingerprint);
+    const position = decodeSearchCursor(input.cursor, scopeTag);
+
+    const baseConditions = this.buildBaseConditions(user.orgId, scope.predicate, tsquery, input);
+    const rankExpr = sql`ts_rank(${kbPages}.fts, ${tsquery})`;
+    const conditions = [...baseConditions];
+    if (position !== null) {
+      conditions.push(
+        sql`(${rankExpr}, ${kbPages.updatedAt}, ${kbPages.id}) < (${sql.param(Number(position.rank))}::real, ${sql.param(position.updatedAt)}::timestamp, ${sql.param(position.id, kbPages.id)})`,
+      );
+    }
 
     const rows = await this.db
       .select({
@@ -42,31 +65,47 @@ export class KbPageSearchQueryService {
         contentType: kbPages.contentType,
         updatedAt: kbPages.updatedAt,
         snippet: sql<string>`ts_headline('english', coalesce(${kbPages.contentText},''), ${tsquery}, 'MaxWords=20, MinWords=5')`,
+        rankValue: sql<string>`${rankExpr}::text`,
+        updatedAtValue: sql<string>`to_char(${kbPages.updatedAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`,
       })
       .from(kbPages)
-      .where(and(...baseConditions))
-      .orderBy(
-        desc(sql`ts_rank(${kbPages}.fts, ${tsquery})`),
-        desc(kbPages.updatedAt),
-        desc(kbPages.id),
-      )
+      .where(and(...conditions))
+      .orderBy(desc(rankExpr), desc(kbPages.updatedAt), desc(kbPages.id))
       .limit(input.limit + 1);
 
     const hasMore = rows.length > input.limit;
-    const items = hasMore ? rows.slice(0, input.limit) : rows;
+    const kept = hasMore ? rows.slice(0, input.limit) : rows;
+    const last = kept[kept.length - 1];
+
+    const items = kept.map(function toItem({ rankValue: _rankValue, updatedAtValue: _updatedAtValue, ...item }) {
+      return item;
+    });
 
     const facets = input.facets
       ? await this.loadFacets(user.orgId, and(...baseConditions))
       : null;
 
-    return { items, hasMore, limit: input.limit, facets };
+    return {
+      items,
+      hasMore,
+      nextCursor:
+        hasMore && last !== undefined
+          ? encodeSearchCursor(scopeTag, {
+              rank: last.rankValue,
+              updatedAt: last.updatedAtValue,
+              id: last.id,
+            })
+          : null,
+      limit: input.limit,
+      facets,
+    };
   }
 
   private buildBaseConditions(
     orgId: string,
     visibility: SQL<unknown>,
     tsquery: SQL<unknown>,
-    input: Pick<PageFullSearchQuery, "spaceId" | "status" | "verified">,
+    input: Pick<PageFullSearchQuery, "spaceId" | "status" | "type" | "verified">,
   ): SQL<unknown>[] {
     const conditions: SQL<unknown>[] = [
       eq(kbPages.orgId, orgId),
@@ -82,6 +121,9 @@ export class KbPageSearchQueryService {
       conditions.push(eq(kbPages.status, input.status));
     } else {
       conditions.push(ne(kbPages.status, "archived"));
+    }
+    if (input.type !== undefined) {
+      conditions.push(eq(kbPages.contentType, input.type));
     }
     if (input.verified !== undefined) {
       conditions.push(
@@ -99,7 +141,7 @@ export class KbPageSearchQueryService {
     filter: SQL<unknown> | undefined,
   ): Promise<KbPageFullSearchResponse["facets"]> {
     try {
-      const [byStatus, bySpace] = await Promise.all([
+      const [byStatus, bySpace, byType, byVerified] = await Promise.all([
         this.db
           .select({ value: kbPages.status, count: sql<number>`count(*)::int` })
           .from(kbPages)
@@ -110,10 +152,22 @@ export class KbPageSearchQueryService {
           .from(kbPages)
           .where(filter)
           .groupBy(kbPages.spaceId),
+        this.db
+          .select({ value: kbPages.contentType, count: sql<number>`count(*)::int` })
+          .from(kbPages)
+          .where(filter)
+          .groupBy(kbPages.contentType),
+        this.db
+          .select({ value: kbPages.trustState, count: sql<number>`count(*)::int` })
+          .from(kbPages)
+          .where(filter)
+          .groupBy(kbPages.trustState),
       ]);
       return {
         status: byStatus.map((row) => ({ value: row.value, count: row.count })),
         space: bySpace.map((row) => ({ spaceId: row.spaceId, count: row.count })),
+        type: byType.map((row) => ({ value: row.value, count: row.count })),
+        verified: byVerified.map((row) => ({ value: row.value, count: row.count })),
       };
     } catch (err) {
       this.logger.warn("KB page full-search facet load failed", {

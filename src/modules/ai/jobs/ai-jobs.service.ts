@@ -12,6 +12,7 @@ import { aiJobs } from "../../../db/schema";
 import type { AiJob } from "../../../db/schema";
 import { isRecord } from "../../../common/types/is-record";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { getObservabilityContext } from "../../../common/observability/observability-context";
 
 export interface EnqueueInput {
   orgId: string;
@@ -81,7 +82,8 @@ export class AiJobsService {
           runAt: input.runAt ?? new Date(),
           maxAttempts: input.maxAttempts ?? 3,
           idempotencyKey: input.idempotencyKey ?? null,
-          correlationId: input.correlationId ?? null,
+          correlationId:
+            input.correlationId ?? getObservabilityContext()?.correlationId ?? null,
         })
         .returning({ id: aiJobs.id });
 

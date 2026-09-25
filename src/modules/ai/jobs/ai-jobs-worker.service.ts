@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { aiJobs } from "../../../db/schema";
+import type { AiJob } from "../../../db/schema";
 import { and, eq } from "drizzle-orm";
 import { AiJobsService } from "./ai-jobs.service";
 import { AiJobHandlerRegistry, AI_JOB_HANDLERS, type AiJobHandler } from "./ai-job-handler";
@@ -46,11 +47,7 @@ export class AiJobsWorkerService {
     if (reclaimed > 0) {
       this.logger.warn("Reclaimed AI jobs from expired leases", { reclaimed });
     }
-    const batch = await this.claimer.claim(
-      workerId,
-      limit,
-      FAIR_CLAIM_DEFAULT_PER_ORG_LIMIT,
-    );
+    const batch = await this.claimLaneBalanced(workerId, limit);
     const result: FlushResult = { claimed: batch.length, completed: 0, failed: 0 };
 
     for (const job of batch) {
@@ -84,5 +81,39 @@ export class AiJobsWorkerService {
     }
 
     return result;
+  }
+
+  private async claimLaneBalanced(workerId: string, limit: number): Promise<AiJob[]> {
+    const lanes = this.registry.types();
+    if (lanes.length < 2) {
+      return this.claimer.claim(workerId, limit, FAIR_CLAIM_DEFAULT_PER_ORG_LIMIT);
+    }
+
+    const claimed: AiJob[] = [];
+    const perLane = Math.max(1, Math.floor(limit / lanes.length));
+
+    for (const type of lanes) {
+      if (claimed.length >= limit) break;
+      const laneLimit = Math.min(perLane, limit - claimed.length);
+      const rows = await this.claimer.claim(
+        workerId,
+        laneLimit,
+        FAIR_CLAIM_DEFAULT_PER_ORG_LIMIT,
+        [type],
+      );
+      claimed.push(...rows);
+    }
+
+    const remaining = limit - claimed.length;
+    if (remaining > 0) {
+      const rows = await this.claimer.claim(
+        workerId,
+        remaining,
+        FAIR_CLAIM_DEFAULT_PER_ORG_LIMIT,
+      );
+      claimed.push(...rows);
+    }
+
+    return claimed;
   }
 }

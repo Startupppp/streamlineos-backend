@@ -72,6 +72,7 @@ import {
   kbPageSearchResponseSchema,
   kbPageSoftDeleteSchema,
   kbPageEmptyTrashSchema,
+  kbPageTrashPurgeImpactSchema,
   kbPageSuccessSchema,
   kbPageBacklinkSchema,
   kbPageVersionListSchema,
@@ -166,6 +167,18 @@ export class KbPagesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.trash.bulkPurge(u, body);
+  }
+
+  @Post("pages/trash/purge-impact")
+  @HttpCode(200)
+  @RequirePermission("kb:pages:purge")
+  @Validate({ body: bulkPageIdsSchema })
+  @ResponseSchema(kbPageTrashPurgeImpactSchema)
+  async purgeImpact(
+    @Body() body: BulkPageIdsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.trash.purgeImpact(u, body);
   }
 
   @Get("pages/search")
