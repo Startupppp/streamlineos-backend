@@ -12,6 +12,10 @@ import {
 import type { HrImportEntity } from "./dto/import-job.dto";
 import type { RowValidationResult } from "./schemas/entity-row-schemas";
 
+/** An existing employee loses their manager only when the sheet says so twice: the flag and a reason. */
+export const EXISTING_TOP_LEVEL_NEEDS_CLEAR =
+  "set clearPrimaryManager to true to remove this employee's manager; a topLevelRoleReason alone does not.";
+
 /** The create cap on `hr_import_rows` per job (`createImportJobSchema`). */
 const IMPORT_ROW_CAP = 5000;
 
@@ -53,6 +57,10 @@ export async function resolveImportFallbacks(
   rows: readonly RowValidationResult[],
 ): Promise<{ valid: RowValidationResult[]; errors: RowValidationResult[] }> {
   const failures = entity === "employees" ? await fallbackFailures(resolver, actor, rows) : new Map<number, string>();
+  if (entity === "employees")
+    for (const row of rows)
+      if (row.payload.resolvedExistingEmployee === true && text(row.payload.topLevelRoleReason) !== "" && row.payload.clearPrimaryManager !== true)
+        failures.set(row.rowNumber, EXISTING_TOP_LEVEL_NEEDS_CLEAR);
   return {
     valid: rows.filter((row) => !failures.has(row.rowNumber)),
     errors: rows.flatMap((row) => {

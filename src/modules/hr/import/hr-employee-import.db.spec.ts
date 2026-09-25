@@ -377,6 +377,45 @@ describeDb("employee import reaches the directory — real database", () => {
     expect(self?.id).toBeDefined();
   });
 
+  describe("an existing employee's manager columns (PRD §11)", () => {
+    const primaryLinesOf = (email: string) => sql<{ id: number }[]>`
+      select l.id
+      from hr_reporting_lines l
+      join hr_employments e on e.id = l.employment_id and e.org_id = l.org_id
+      join hr_people p on p.id = e.person_id and p.org_id = e.org_id
+      join organization_people op on op.organization_id = p.org_id and op.organization_person_id = p.organization_person_id
+      where l.org_id = ${orgId} and op.work_email = ${email} and l.line_type = 'primary'
+        and l.effective_from <= current_date and l.effective_to >= current_date`;
+    const topLevelRolesOf = (email: string) => sql<{ id: number }[]>`
+      select t.id
+      from hr_top_level_roles t
+      join hr_employments e on e.id = t.employment_id and e.org_id = t.org_id
+      join hr_people p on p.id = e.person_id and p.org_id = e.org_id
+      join organization_people op on op.organization_id = p.org_id and op.organization_person_id = p.organization_person_id
+      where t.org_id = ${orgId} and op.work_email = ${email} and t.effective_to >= current_date`;
+
+    it("leaves the line untouched when every manager column is blank", async () => {
+      const before = await primaryLinesOf(SHEET[0].email);
+      expect(before).toHaveLength(1);
+      await importSheet([{ ...SHEET[0], resolvedExistingEmployee: true }]);
+      expect(await primaryLinesOf(SHEET[0].email)).toEqual(before);
+    });
+
+    it("refuses a top-level reason alone, which would silently remove the manager", async () => {
+      const before = await primaryLinesOf(SHEET[0].email);
+      await expect(
+        importSheet([{ ...SHEET[0], resolvedExistingEmployee: true, topLevelRoleReason: "Reports to the board" }]),
+      ).rejects.toThrow(/clearPrimaryManager/);
+      expect(await primaryLinesOf(SHEET[0].email)).toEqual(before);
+    });
+
+    it("clears the manager to a top-level role only with clearPrimaryManager and a reason", async () => {
+      await importSheet([{ ...SHEET[0], resolvedExistingEmployee: true, clearPrimaryManager: true, topLevelRoleReason: "Reports to the board" }]);
+      expect(await primaryLinesOf(SHEET[0].email)).toEqual([]);
+      expect(await topLevelRolesOf(SHEET[0].email)).toHaveLength(1);
+    });
+  });
+
   /**
    * HRM-15 addendum 2. A job rollback deleted `hr_people` alone, and every imported person has an
    * employment behind `fk_hr_employments_org_person ON DELETE RESTRICT`, so the rollback failed with

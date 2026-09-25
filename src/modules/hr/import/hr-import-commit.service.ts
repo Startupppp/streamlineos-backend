@@ -42,6 +42,7 @@ import { relationshipsBetween, subjectEmployments } from "../../directory/report
 import type { ReportingActor } from "../../directory/reporting-line.types";
 import { peopleByEmails } from "../directory/reporting-manager-people";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
+import { EXISTING_TOP_LEVEL_NEEDS_CLEAR } from "./hr-import-employee-managers";
 
 export type { CommitOutcome, CommitRef } from "./hr-import-commit.types";
 
@@ -262,6 +263,7 @@ export class HrImportCommitService {
     );
     const fallbackUserId = existing ? null : row.resolvedPrimaryManagerUserId ?? null;
     if (!topLevelReason && !primaryEmail && secondaryEmails.length === 0 && !fallbackUserId) return;
+    if (existing && topLevelReason && row.clearPrimaryManager !== true) throw new Error(`${row.email}: ${EXISTING_TOP_LEVEL_NEEDS_CLEAR}`);
 
     const people = await peopleByEmails(tx, ctx.orgId, [...(primaryEmail ? [primaryEmail] : []), ...secondaryEmails]);
     const secondary = secondaryEmails.length > 0 ? secondaryEmails.flatMap((email) => {
@@ -271,7 +273,7 @@ export class HrImportCommitService {
     }) : undefined;
     const effectiveFrom = row.effectiveFrom || row.joiningDate || todayInTimeZone(ctx.timeZone);
 
-    let primaryManagerUserId: string | null = null;
+    let primaryManagerUserId: string | null;
     if (topLevelReason) primaryManagerUserId = null;
     else if (primaryEmail) {
       const person = people.get(primaryEmail);
@@ -300,7 +302,7 @@ export class HrImportCommitService {
         source: fallback ? "ONBOARDING_FALLBACK" : "STAGED_IMPORT",
       });
     } catch (error) {
-      if (error instanceof ReportingLineException) throw new Error(`${row.email}: ${error.code}: ${error.message}`);
+      if (error instanceof ReportingLineException) throw new Error(`${row.email}: ${error.code}: ${error.message}`, { cause: error });
       throw error;
     }
   }
