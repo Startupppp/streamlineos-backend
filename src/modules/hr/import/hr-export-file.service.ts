@@ -28,6 +28,7 @@ import {
   isEphemeralFileKey,
 } from "./hr-export-ephemeral-store";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 interface EmployeeExportCursor {
   name: string;
@@ -248,9 +249,14 @@ export class HrExportFileService {
         return {
           rows: rows.map((row) => ({
             name:
-              row.firstName && row.lastName
-                ? `${row.firstName} ${row.lastName}`
-                : (row.name ?? row.email),
+              resolvePersonDisplayName({
+                firstName: row.firstName,
+                lastName: row.lastName,
+                accountName: row.name,
+                email: row.email,
+              }) ?? row.email,
+            firstName: row.firstName ?? "",
+            lastName: row.lastName ?? "",
             email: row.email,
             employeeId: row.employeeId ?? "",
             designation: row.designation ?? "",
