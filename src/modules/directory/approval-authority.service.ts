@@ -52,7 +52,12 @@ const SKIP_EXPLANATIONS: Record<ApprovalRungSkipReason, string> = {
   "manager-not-in-organization": "the manager is no longer a member",
   "manager-inactive": "the manager's account is deactivated",
   "manager-never-accepted": "the manager has not accepted their invitation yet",
-  "manager-has-no-employment": "the manager has no employment record",
+  // V-021. "has no employment record" named a table, not a next step. This
+  // text is read by whoever is waiting on the approval, so it has to say what
+  // unblocks it — most often for a founder, who is a member of their own
+  // company but was never hired into it.
+  "manager-has-no-employment":
+    "the manager is not set up as an employee yet — add them under People > Employees to let them approve",
   "manager-exited": "the manager has exited",
   circular: "the reporting chain loops back on itself",
 };
