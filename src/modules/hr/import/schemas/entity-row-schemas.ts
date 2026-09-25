@@ -80,8 +80,19 @@ const isoDateOrBlank = z
 
 const emailSchema = z.string().email({ message: "Invalid email address" });
 
+/**
+ * Ids the preflight pass resolved and wrote onto the stored payload
+ * (`hr-import-preflight.ts`). They are org-scoped query results, never CSV
+ * cells — `stripResolvedKeys` removes them from every raw row before validation
+ * so a file cannot name a column `resolvedUserId` and hand the commit a user id
+ * from another tenant.
+ */
+const resolvedUserId = z.string().optional();
+
 export const employeeRowSchema = z.object({
   email: emailSchema,
+  resolvedDepartmentId: z.string().optional(),
+  resolvedManagerEmploymentId: z.number().int().optional(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   joiningDate: isoDateOrBlank,
@@ -105,6 +116,8 @@ export const employeeRowSchema = z.object({
 
 export const leaveBalanceRowSchema = z.object({
   employeeEmail: emailSchema,
+  resolvedUserId,
+  resolvedLeaveTypeId: z.number().int().optional(),
   leaveTypeName: z.string().min(1, "Leave type name is required"),
   balance: z
     .union([z.string(), z.number()])
@@ -135,6 +148,7 @@ export const leaveBalanceRowSchema = z.object({
 export const attendanceRowSchemaFor = (timeZone: string = DEFAULT_IMPORT_TIME_ZONE) => z
   .object({
     employeeEmail: emailSchema,
+    resolvedUserId,
     date: z.string().refine((v) => dateRegex.test(v), { message: "Invalid date (YYYY-MM-DD)" }),
     checkIn: z.string().optional(),
     checkOut: z.string().optional(),
@@ -168,6 +182,7 @@ export const attendanceRowSchemaFor = (timeZone: string = DEFAULT_IMPORT_TIME_ZO
 export const attendanceRowSchema = attendanceRowSchemaFor();
 
 export const assetRowSchema = z.object({
+  resolvedUserId,
   name: z.string().min(1, "Asset name is required"),
   type: z.string().min(1, "Asset type is required"),
   brand: z.string().optional(),
