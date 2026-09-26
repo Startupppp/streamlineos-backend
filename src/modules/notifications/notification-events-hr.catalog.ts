@@ -31,6 +31,18 @@ export const HR_NOTIFICATION_EVENTS = [
   e("hr.helpdesk.ticket_escalated", "hr", "WORKFLOW", "Employee support request escalated", {
     defaultChannels: IA_EMAIL,
   }),
+  e("hr.reporting_manager_request.created", "hr", "WORKFLOW", "Reporting manager correction requested", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.reporting_manager_request.decided", "hr", "HRMS", "Reporting manager request decided", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.reporting_line.changed_by_request", "hr", "HRMS", "Reporting line changed", {
+    defaultChannels: IA,
+  }),
+  e("hr.reporting_line_bulk_job.committed", "hr", "HRMS", "Bulk reporting change applied", {
+    defaultChannels: IA,
+  }),
   e("hr.resignation.submitted", "hr", "WORKFLOW", "Resignation submitted", {
     defaultChannels: IA_EMAIL,
   }),

@@ -9,6 +9,7 @@ import { createEmployeeExportJobSchema } from "./dto/export-job.dto";
 import { HrExportController } from "./hr-export.controller";
 import { HrExportJobsService } from "./hr-export-jobs.service";
 import {
+  EMPLOYEE_EXPORT_CSV_HEADER,
   serializeEmployeeExportHeader,
   serializeEmployeeExportRow,
 } from "./hr-export-csv";
@@ -47,6 +48,8 @@ describe("HR employee export", () => {
     expect(serializeEmployeeExportHeader().startsWith("\uFEFF\"Name\"")).toBe(true);
     const row = serializeEmployeeExportRow({
       name: '=HYPERLINK("https://invalid.example")',
+      firstName: "Ada",
+      lastName: "Lovelace",
       email: "ada@example.com",
       employeeId: "EMP,1",
       designation: 'Engineer "II"',
@@ -57,6 +60,32 @@ describe("HR employee export", () => {
     expect(row).toContain("\"'=HYPERLINK(\"\"https://invalid.example\"\")\"");
     expect(row).toContain("\"EMP,1\"");
     expect(row).toContain("\"Engineer \"\"II\"\"\"");
+  });
+
+  it("gives first and last name their own columns, so the export is not the one surface that cannot tell them apart", () => {
+    expect(EMPLOYEE_EXPORT_CSV_HEADER).toEqual([
+      "Name",
+      "First name",
+      "Last name",
+      "Email",
+      "Employee ID",
+      "Designation",
+      "Role",
+      "Department",
+      "Status",
+    ]);
+    const row = serializeEmployeeExportRow({
+      name: "van der Berg de Souza",
+      firstName: "van der Berg",
+      lastName: "de Souza",
+      email: "vdb@example.com",
+      employeeId: "EMP-2",
+      designation: "Engineer",
+      role: "MEMBER",
+      department: "R&D",
+      status: "Active",
+    });
+    expect(row).toContain('"van der Berg","de Souza"');
   });
 
   it("never widens the employee scope captured at request time", () => {

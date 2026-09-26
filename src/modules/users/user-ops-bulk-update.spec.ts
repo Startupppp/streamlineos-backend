@@ -7,13 +7,10 @@ import { users, hrEmployments } from "../../db/schema";
 import { syncStructuralRoleAssignments } from "../../common/rbac/sync-structural-role";
 import { UserOpsService } from "./user-ops.service";
 
-const assignMany = jest.fn().mockResolvedValue(new Map());
-
 function buildService(
   scopedMembers: Array<{ userId: string }> = [{ userId: "user-a" }],
   membershipRows: Array<{ id: number }> = [],
 ) {
-  assignMany.mockClear();
   const updatedTables: unknown[] = [];
   const setCalls: unknown[] = [];
 
@@ -61,8 +58,12 @@ function buildService(
     select: txSelect,
   };
 
+  const organizationTimezone = {
+    from: () => ({ where: () => ({ limit: () => Promise.resolve([{ timezone: "UTC" }]) }) }),
+  };
   const db = {
     transaction: jest.fn((callback: (handle: typeof tx) => unknown) => callback(tx)),
+    select: jest.fn(() => organizationTimezone),
   };
 
   const service = new UserOpsService(
@@ -80,10 +81,6 @@ function buildService(
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) } as never,
     {} as never,
     { getFacts: jest.fn(), getFactsBatch: jest.fn() } as never,
-    {
-      checkManager: jest.fn().mockResolvedValue({ ok: true, managerEmploymentId: 1 }),
-      assignMany,
-    } as never,
   );
 
   return { db, tx, service, updatedTables, setCalls };
@@ -106,14 +103,13 @@ describe("bulkUpdateUsers — removed-column regression", () => {
 });
 
 describe("bulkUpdateUsers — no users table write", () => {
-  it("does not write to the global users table when department, branch, and manager are all supplied", async () => {
+  it("does not write to the global users table when department and branch are both supplied", async () => {
     const { service, updatedTables } = buildService([{ userId: "user-a" }]);
 
     await service.bulkUpdateUsers("org-a", {
       userIds: ["user-a"],
       departmentId: "dept-1",
       branchId: "branch-1",
-      managerUserId: "manager-1",
     }, actor);
 
     expect(updatedTables).not.toContain(users);
@@ -126,19 +122,10 @@ describe("bulkUpdateUsers — cross-org isolation", () => {
 
     const result = await service.bulkUpdateUsers("org-a", {
       userIds: ["user-a", "user-b"],
-      managerUserId: "manager-1",
+      departmentId: "dept-1",
     }, actor);
 
     expect(result.updated).toBe(1);
-    expect(assignMany).toHaveBeenCalledTimes(1);
-    expect(assignMany).toHaveBeenCalledWith(
-      "org-a",
-      ["user-a"],
-      "manager-1",
-      expect.any(String),
-      "actor-1",
-      expect.anything(),
-    );
   });
 });
 
@@ -165,25 +152,6 @@ describe("bulkUpdateUsers — canonical destination writes", () => {
 
     expect(updatedTables).toContain(hrEmployments);
     expect(setCalls).toContainEqual(expect.objectContaining({ locationId: "branch-1" }));
-  });
-
-  it("syncs every reportee's manager in one batched call, not one call per user", async () => {
-    const { service } = buildService([{ userId: "user-a" }, { userId: "user-b" }]);
-
-    await service.bulkUpdateUsers("org-a", {
-      userIds: ["user-a", "user-b"],
-      managerUserId: "manager-1",
-    }, actor);
-
-    expect(assignMany).toHaveBeenCalledTimes(1);
-    expect(assignMany).toHaveBeenCalledWith(
-      "org-a",
-      ["user-a", "user-b"],
-      "manager-1",
-      expect.any(String),
-      "actor-1",
-      expect.anything(),
-    );
   });
 
   it("syncs the structural role for every updated membership in one batched call", async () => {

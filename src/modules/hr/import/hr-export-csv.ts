@@ -1,5 +1,7 @@
 export interface EmployeeExportCsvRow {
   name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   employeeId: string;
   designation: string;
@@ -8,8 +10,18 @@ export interface EmployeeExportCsvRow {
   status: string;
 }
 
+/**
+ * Ticket 07. First and last name are their own columns. Collapsing them into one
+ * "Name" cell made the export the one surface where the two could not be told
+ * apart, so a downstream mail merge or payroll import had to guess where the
+ * given name ended — which is wrong for every multi-word and particled surname.
+ * "Name" stays as the display name the product shows, so existing consumers of
+ * the file keep working.
+ */
 export const EMPLOYEE_EXPORT_CSV_HEADER = [
   "Name",
+  "First name",
+  "Last name",
   "Email",
   "Employee ID",
   "Designation",
@@ -34,6 +46,8 @@ export function serializeEmployeeExportHeader(): string {
 export function serializeEmployeeExportRow(row: EmployeeExportCsvRow): string {
   return `${[
     row.name,
+    row.firstName,
+    row.lastName,
     row.email,
     row.employeeId,
     row.designation,

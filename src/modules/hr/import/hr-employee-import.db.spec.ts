@@ -24,6 +24,9 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
 import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import * as schema from "../../../db/schema";
+import { ReportingLineService } from "../../directory/reporting-line.service";
+import { ReportingManagerPolicyService } from "../../directory/reporting-manager-policy.service";
+import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 import { HrImportCommitService } from "./hr-import-commit.service";
 import type { CommitOutcome } from "./hr-import-commit.service";
 import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
@@ -50,6 +53,16 @@ const SHEET = [
     employeeNumber: "EMP-QS02",
   },
 ];
+
+const ROLLBACK_ROW = {
+  email: "qa-rollback-0926@example.com",
+  firstName: "QA",
+  lastName: "Rollback",
+  joiningDate: "2026-09-02",
+  designation: "QA Analyst",
+  employeeNumber: "EMP-QRB1",
+  topLevelRoleReason: "Rollback probe",
+};
 
 describeDb("employee import reaches the directory — real database", () => {
   const raw = process.env.DATABASE_URL
@@ -82,7 +95,24 @@ describeDb("employee import reaches the directory — real database", () => {
       { assertWithinLimit: async () => undefined } as never,
       { recordSeatEvents: async (...args: unknown[]) => void seatEvents.push(args) } as never,
     );
-    service = new HrImportCommitService(admission, personEmployment);
+    const access = {
+      holds: async () => true,
+      resolveUserPermissions: async () => new Map(),
+    };
+    const reportingLines = new ReportingLineService(db);
+    const policies = new ReportingManagerPolicyService(db, access as never, reportingLines, { logCritical: async () => undefined } as never);
+    service = new HrImportCommitService(
+      admission,
+      personEmployment,
+      new ReportingRelationshipService(
+        db,
+        reportingLines,
+        policies,
+        { logCritical: async () => undefined } as never,
+        { invalidateAfterMutation: async () => undefined } as never,
+        { invalidateNamespace: async () => undefined } as never,
+      ),
+    );
 
     await sql.begin(async (tx) => {
       await tx`insert into users (id, email, name) values (${ownerId}, ${`${ownerId}@example.com`}, ${"QA Owner"})`;
@@ -101,7 +131,7 @@ describeDb("employee import reaches the directory — real database", () => {
 
   afterAll(async () => {
     if (!sql) return;
-    const emails = SHEET.map((row) => row.email);
+    const emails = [...SHEET.map((row) => row.email), ROLLBACK_ROW.email];
     await sql`delete from organizations where id = ${orgId}`;
     await sql`delete from users where email = any(${emails}) or id = ${ownerId}`;
     await sql.end({ timeout: 5 });
@@ -125,7 +155,12 @@ describeDb("employee import reaches the directory — real database", () => {
       db.transaction(async (tx) => {
         const outcomes: CommitOutcome[] = [];
         for (const row of rows) {
-          const ref = await service.commitRow(tx, { orgId, actorId: ownerId, membership }, "employees", row);
+          const ref = await service.commitRow(
+            tx,
+            { orgId, actorId: ownerId, membership, actor: { orgId, userId: ownerId, isOrgOwner: true } },
+            "employees",
+            row,
+          );
           if (ref) outcomes.push(ref.outcome);
         }
         return outcomes;
@@ -262,11 +297,15 @@ describeDb("employee import reaches the directory — real database", () => {
 
   /**
    * V-010, second half. `managerEmail` had the same fate as `departmentName`.
-   * The id comes from the preflight (which is what turns an unknown manager
-   * into a row error at PREVIEW); the assertion here is that the commit turns
-   * it into an effective-dated reporting line rather than dropping it.
+   * HRM-15: the column is now `primaryManagerEmail` and the line is written by
+   * the canonical relationship service, which only accepts a manager who has
+   * accepted their invitation — so the manager is marked accepted first.
    */
   it("opens a reporting line for the manager the sheet names", async () => {
+    await sql`
+      update users set email_verified = now()
+      where id in (select user_id from organization_members where org_id = ${orgId})
+    `;
     const [manager] = await sql`
       select e.id
       from hr_employments e
@@ -281,8 +320,7 @@ describeDb("employee import reaches the directory — real database", () => {
     await importSheet([
       {
         ...SHEET[0],
-        managerEmail: SHEET[1].email,
-        resolvedManagerEmploymentId: managerEmploymentId,
+        primaryManagerEmail: SHEET[1].email,
       },
     ]);
 
@@ -307,8 +345,7 @@ describeDb("employee import reaches the directory — real database", () => {
     await importSheet([
       {
         ...SHEET[0],
-        managerEmail: SHEET[1].email,
-        resolvedManagerEmploymentId: managerEmploymentId,
+        primaryManagerEmail: SHEET[1].email,
       },
     ]);
     const [again] = await sql`
@@ -333,10 +370,74 @@ describeDb("employee import reaches the directory — real database", () => {
       importSheet([
         {
           ...SHEET[1],
-          managerEmail: SHEET[0].email,
-          resolvedManagerEmploymentId: Number(self?.id),
+          primaryManagerEmail: SHEET[0].email,
         },
       ]),
-    ).rejects.toThrow(/circular reporting chain/i);
+    ).rejects.toThrow(/PRIMARY_CYCLE/);
+    expect(self?.id).toBeDefined();
+  });
+
+  describe("an existing employee's manager columns (PRD §11)", () => {
+    const primaryLinesOf = (email: string) => sql<{ id: number }[]>`
+      select l.id
+      from hr_reporting_lines l
+      join hr_employments e on e.id = l.employment_id and e.org_id = l.org_id
+      join hr_people p on p.id = e.person_id and p.org_id = e.org_id
+      join organization_people op on op.organization_id = p.org_id and op.organization_person_id = p.organization_person_id
+      where l.org_id = ${orgId} and op.work_email = ${email} and l.line_type = 'primary'
+        and l.effective_from <= current_date and l.effective_to >= current_date`;
+    const topLevelRolesOf = (email: string) => sql<{ id: number }[]>`
+      select t.id
+      from hr_top_level_roles t
+      join hr_employments e on e.id = t.employment_id and e.org_id = t.org_id
+      join hr_people p on p.id = e.person_id and p.org_id = e.org_id
+      join organization_people op on op.organization_id = p.org_id and op.organization_person_id = p.organization_person_id
+      where t.org_id = ${orgId} and op.work_email = ${email} and t.effective_to >= current_date`;
+
+    it("leaves the line untouched when every manager column is blank", async () => {
+      const before = await primaryLinesOf(SHEET[0].email);
+      expect(before).toHaveLength(1);
+      await importSheet([{ ...SHEET[0], resolvedExistingEmployee: true }]);
+      expect(await primaryLinesOf(SHEET[0].email)).toEqual(before);
+    });
+
+    it("refuses a top-level reason alone, which would silently remove the manager", async () => {
+      const before = await primaryLinesOf(SHEET[0].email);
+      await expect(
+        importSheet([{ ...SHEET[0], resolvedExistingEmployee: true, topLevelRoleReason: "Reports to the board" }]),
+      ).rejects.toThrow(/clearPrimaryManager/);
+      expect(await primaryLinesOf(SHEET[0].email)).toEqual(before);
+    });
+
+    it("clears the manager to a top-level role only with clearPrimaryManager and a reason", async () => {
+      await importSheet([{ ...SHEET[0], resolvedExistingEmployee: true, clearPrimaryManager: true, topLevelRoleReason: "Reports to the board" }]);
+      expect(await primaryLinesOf(SHEET[0].email)).toEqual([]);
+      expect(await topLevelRolesOf(SHEET[0].email)).toHaveLength(1);
+    });
+  });
+
+  /**
+   * HRM-15 addendum 2. A job rollback deleted `hr_people` alone, and every imported person has an
+   * employment behind `fk_hr_employments_org_person ON DELETE RESTRICT`, so the rollback failed with
+   * 23503 and the whole job 500'd. The employment goes first now; its lines and top-level role cascade.
+   */
+  it("rolls back an employee the job created, employment and top-level role included", async () => {
+    const noop = async (): Promise<undefined> => undefined;
+    const cache = { invalidate: noop, invalidateMany: noop, invalidateNamespaceMany: noop, invalidateNamespace: noop, invalidateNamespaceForOrg: noop, del: noop };
+    const ref = await withMembershipMutations(cache as never, (membership) =>
+      db.transaction((tx) =>
+        service.commitRow(tx, { orgId, actorId: ownerId, membership, actor: { orgId, userId: ownerId, isOrgOwner: true } }, "employees", ROLLBACK_ROW),
+      ),
+    );
+    expect(ref?.outcome).toBe("created");
+    const [before] = await sql`select count(*)::int as n from hr_top_level_roles where org_id = ${orgId}`;
+    expect(Number(before?.n)).toBeGreaterThan(0);
+
+    await db.transaction((tx) => service.rollbackRef(tx, { table: "hr_people", id: Number(ref?.id), outcome: "created" }));
+
+    const [people] = await sql`select count(*)::int as n from hr_people where org_id = ${orgId} and id = ${Number(ref?.id)}`;
+    const [employments] = await sql`select count(*)::int as n from hr_employments where org_id = ${orgId} and person_id = ${Number(ref?.id)}`;
+    expect(Number(people?.n)).toBe(0);
+    expect(Number(employments?.n)).toBe(0);
   });
 });

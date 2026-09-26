@@ -22,7 +22,7 @@ import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
 import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import * as schema from "../../../db/schema";
 import { HrImportCommitService } from "./hr-import-commit.service";
-import { importContext, stubAdmission, stubPersonEmployment } from "./import-commit-test-harness";
+import { importContext, stubAdmission, stubPersonEmployment, stubRelationships } from "./import-commit-test-harness";
 import type { CommitOutcome } from "./hr-import-commit.service";
 
 const describeDb = dbSpecSuite();
@@ -58,7 +58,7 @@ describeDb("HR import re-import idempotency — real database", () => {
     : "";
   let sql: ReturnType<typeof dbSpecClient>;
   let db: ReturnType<typeof drizzle<typeof schema>>;
-  const service = new HrImportCommitService(stubAdmission(), stubPersonEmployment());
+  const service = new HrImportCommitService(stubAdmission(), stubPersonEmployment(), stubRelationships());
   const orgId = `qa-import-${randomUUID()}`;
 
   const ownerId = `qa-owner-${randomUUID()}`;

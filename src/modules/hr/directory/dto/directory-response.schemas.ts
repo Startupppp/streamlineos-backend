@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { onboardPrimaryManagerSchema } from "./reporting-lines-bulk.schemas";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { successSchema } from "../../../../common/openapi/response-envelopes";
 import { EMPLOYEE_ADMISSION_STATUSES } from "../employee-admission-status";
@@ -314,18 +315,12 @@ export const onboardResponseSchema = z.object({
   success: z.boolean(),
   userId: z.string(),
   invite: inviteDeliverySchema,
+  primaryManager: onboardPrimaryManagerSchema.nullable(),
 });
 
 export const resendInviteResponseSchema = z.object({
   success: z.boolean(),
   invite: inviteDeliverySchema,
-});
-
-export const bulkOnboardResultSchema = z.object({
-  total: z.number().int(),
-  created: z.number().int(),
-  failed: z.number().int(),
-  results: z.array(z.record(z.string(), z.unknown())),
 });
 
 export const checkEmailSchema = z.object({

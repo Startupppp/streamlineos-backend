@@ -7,6 +7,27 @@ export interface BulkOnboardRowResult {
   success: boolean;
   userId?: string;
   error?: string;
+  /** HRM-15: the contract error code behind `error`, when there is one. */
+  code?: string;
+  /** Not created because the manager it names (another row) was not. */
+  skipped?: boolean;
+  dependsOnRow?: number | null;
+}
+
+/** HRM-15: who a planned row reports to, as the fallback resolver decided it. */
+export interface PlannedPrimaryManager {
+  userId: string | null;
+  name: string | null;
+  email: string | null;
+  resolution: "SELECTED" | "IN_FILE" | "FALLBACK_CONFIGURED" | "FALLBACK_UPLOADER";
+  dependsOnRow: number | null;
+}
+
+export interface PlannedSecondaryManager {
+  email: string;
+  /** Null when the manager is another row of this file, resolved after admission. */
+  userId: string | null;
+  name: string | null;
 }
 
 export interface PlannedEmployee {
@@ -29,6 +50,10 @@ export interface PlannedEmployee {
    * resolves it once everyone has been admitted.
    */
   reportingManagerEmail: string | null;
+  /** Null for a top-level row. */
+  primaryManager: PlannedPrimaryManager | null;
+  secondaryManagers: PlannedSecondaryManager[];
+  effectiveFrom: string | null;
 }
 
 export interface AdmittedEmployee extends PlannedEmployee {

@@ -10,7 +10,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
-  hrEmployeeSensitiveFields,
   hrEmployments,
   hrPeople,
   magicLinkTokens,
@@ -30,11 +29,7 @@ import { appUrl } from "../../email/app-url";
 import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
-import { toBankDetails } from "./bulk-onboarding/bulk-onboarding-bank-details";
 import { syncCanonicalEmploymentFields } from "../../../common/hr/sync-canonical-employment-fields";
-import { sealSensitive } from "../../../common/security/sensitive-field";
-import { sealBankDetails } from "../../../common/hr/canonical-bank-details";
-import { monthlyAmountToCents } from "../../../common/hr/sync-canonical-sensitive-fields";
 import { formatDateOnly } from "../../../common/date";
 import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type { OnboardEmployeeInput } from "./dto/hr-directory.schemas";
@@ -61,7 +56,13 @@ import {
 import { resolveOrgSalaryCurrency } from "./employment-salary-currency";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { ReportingLineService } from "../../directory/reporting-line.service";
+import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
+import { ReportingManagerFallbackResolver } from "../../directory/reporting-manager-fallback.resolver";
+import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
+import { assignOnboardingManager, writeOnboardingSensitiveFields } from "./employee-onboarding-relationships";
+import { EMPLOYEES_VIEW_PERMISSION } from "./employees-scope";
+import { invalidateReportingReads } from "../../directory/reporting-line-cache";
+import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -97,21 +98,25 @@ export class EmployeeOnboardingService {
     private readonly personEmploymentSync: PersonEmploymentSyncService,
     private readonly access: AccessService,
     private readonly admission: MembershipAdmissionService,
-    private readonly reportingLines: ReportingLineService,
+    private readonly relationships: ReportingRelationshipService,
+    private readonly fallback: ReportingManagerFallbackResolver,
+    private readonly hierarchyCache: OrgHierarchyCacheService,
   ) {}
 
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
     const resolvedEmployeeId = body.employeeId?.trim() || `EMP-${randomEmployeeCode(6)}`;
     const role = body.role || ORG_MEMBER_ROLES.MEMBER;
     await assertMayGrantRole(this.access, actor.orgId, actor, role);
-    if (body.reportingManagerUserId) {
-      const managerCheck = await this.reportingLines.checkManager(actor.orgId, body.reportingManagerUserId);
-      if (!managerCheck.ok) throw new BadRequestException(managerCheck.message);
-    }
-
     const dateOfBirth = body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined;
     const joiningDate = body.joiningDate ? formatDateOnly(body.joiningDate) : null;
-    const fullName = `${body.firstName} ${body.lastName}`;
+    // Ticket 07: one policy composes the account name, the same one the
+    // directory, the CSV export and the profile PDF display.
+    const fullName =
+      resolvePersonDisplayName({
+        firstName: body.firstName,
+        lastName: body.lastName,
+        email: body.email,
+      }) ?? body.email;
 
     const salaryCurrency =
       body.monthlySalary === undefined
@@ -188,22 +193,53 @@ export class EmployeeOnboardingService {
               salaryStructureTemplateId: body.salaryStructureTemplateId,
             });
 
-          return outcome;
+          // HRM-15: the employment, its fields and its reporting relationships are written in the
+          // same transaction as the admission, so a refused manager or a missing fallback leaves no
+          // half-onboarded employee behind.
+          const ensured = await this.personEmploymentSync.ensureFromUser(
+            actor.orgId,
+            actor.userId,
+            {
+              userId: outcome.userId,
+              firstName: body.firstName,
+              lastName: body.lastName,
+              workEmail: body.email,
+              employeeNumber: resolvedEmployeeId,
+              joiningDate,
+              designation: body.designation ?? null,
+              phone: body.phone ?? null,
+              lifecycleStatus: "ONBOARDING",
+            },
+            tx,
+          );
+          if (body.departmentId)
+            await syncCanonicalEmploymentFields(tx, actor.orgId, outcome.userId, { departmentId: body.departmentId });
+          await writeOnboardingSensitiveFields(tx, actor.orgId, ensured.employmentId, body, salaryCurrency);
+          const primaryManager = await assignOnboardingManager(
+            { db: this.db, relationships: this.relationships, fallback: this.fallback },
+            tx,
+            actor,
+            { employeeUserId: outcome.userId, body, joiningDate },
+          );
+
+          return { ...outcome, primaryManager };
         },
         { orgId: actor.orgId },
       ),
     );
 
-    void this.automation
-      .runAutomationsForEvent(actor.orgId, "onboarding.started", {
+    // BE-82: automations run in their own transaction once this one has committed, never on a
+    // request transaction that may be closed by the time they query.
+    const startAutomations = async (): Promise<void> =>
+      this.automation.runAutomationsForEventDetached(actor.orgId, "onboarding.started", {
         userId: admitted.userId,
         employeeName: fullName.trim(),
         employeeEmail: body.email,
         departmentId: body.departmentId ?? null,
         joiningDate: body.joiningDate ?? null,
         startedAt: new Date().toISOString(),
-      })
-      .catch(() => undefined);
+      });
+    if (!registerAfterCommit(startAutomations)) await startAutomations();
 
     if (admitted.createdUser)
       this.webhooks.dispatch(actor.orgId, "employee.hired", {
@@ -242,62 +278,24 @@ export class EmployeeOnboardingService {
         ...(admitted.attached ? { attachedToExistingMember: true } : {}),
         ...(body.reportingManagerUserId ? { reportingManagerUserId: body.reportingManagerUserId } : {}),
         ...(body.topLevelRole ? { topLevelRole: true, topLevelRoleReason: body.topLevelRoleReason ?? null } : {}),
+        primaryManagerResolution: admitted.primaryManager?.resolution ?? null,
       },
     });
 
-    const ensured = await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
-      userId: admitted.userId,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      workEmail: body.email,
-      employeeNumber: resolvedEmployeeId,
-      joiningDate,
-      designation: body.designation ?? null,
-      phone: body.phone ?? null,
-      lifecycleStatus: "ONBOARDING",
-    });
-
-    if (body.departmentId) {
-      await syncCanonicalEmploymentFields(this.db, actor.orgId, admitted.userId, {
-        departmentId: body.departmentId,
-      });
-    }
-
-    if (body.reportingManagerUserId) {
-      await this.reportingLines.assign(
-        actor.orgId,
-        admitted.userId,
-        body.reportingManagerUserId,
-        joiningDate ?? formatDateOnly(new Date()),
-        actor.userId,
-      );
-    }
-
-    if (body.taxId || body.bankDetails?.accountNumber || body.monthlySalary !== undefined) {
-      const sensitiveSet: Partial<typeof hrEmployeeSensitiveFields.$inferInsert> = {};
-      if (body.monthlySalary !== undefined && salaryCurrency) {
-        sensitiveSet.salaryAmountCents = monthlyAmountToCents(body.monthlySalary);
-        sensitiveSet.salaryCurrency = salaryCurrency;
-        sensitiveSet.salaryFrequency = "MONTHLY";
-      }
-      if (body.taxId) sensitiveSet.taxId = sealSensitive(body.taxId);
-      if (body.bankDetails?.accountNumber)
-        sensitiveSet.bankDetails = sealBankDetails(toBankDetails(body.bankDetails));
-
-      await this.db
-        .insert(hrEmployeeSensitiveFields)
-        .values({ orgId: actor.orgId, employmentId: ensured.employmentId, ...sensitiveSet })
-        .onConflictDoUpdate({
-          target: hrEmployeeSensitiveFields.employmentId,
-          set: { ...sensitiveSet, updatedAt: new Date() },
-        });
-    }
-
     const orgId = actor.orgId;
     const afterCommitWork = (): Promise<void> => this.invalidateHrDashboardCache(orgId);
-    if (!registerAfterCommit(afterCommitWork)) void afterCommitWork();
+    if (!registerAfterCommit(afterCommitWork)) await afterCommitWork();
+    await invalidateReportingReads(this.hierarchyCache, this.cache, orgId);
 
-    return { success: true, userId: admitted.userId, invite };
+    const showResolution = await this.access.holds(actor, EMPLOYEES_VIEW_PERMISSION);
+    const primaryManager = admitted.primaryManager
+      ? {
+          userId: admitted.primaryManager.userId,
+          name: admitted.primaryManager.name,
+          ...(showResolution ? { resolution: admitted.primaryManager.resolution } : {}),
+        }
+      : null;
+    return { success: true, userId: admitted.userId, invite, primaryManager };
   }
 
   async resendInvite(
@@ -328,9 +326,12 @@ export class EmployeeOnboardingService {
     if (!target.isActive) throw new BadRequestException(SUSPENDED_ACCOUNT_MESSAGE);
 
     const name =
-      target.firstName && target.lastName
-        ? `${target.firstName} ${target.lastName}`
-        : (target.name ?? target.email);
+      resolvePersonDisplayName({
+        firstName: target.firstName,
+        lastName: target.lastName,
+        accountName: target.name,
+        email: target.email,
+      }) ?? target.email;
     const invite = await this.queueInvite({
       orgId: actor.orgId,
       organizationName: await this.organizationName(actor.orgId),

@@ -28,6 +28,9 @@ import { EmailProviderService } from "../../../email/email.provider";
 import type { EmailDispatcher, Provider } from "../../../email/email-provider-selection";
 import { validateEnv } from "../../../../config/env.validation";
 import { ReportingLineService } from "../../../directory/reporting-line.service";
+import { ReportingManagerPolicyService } from "../../../directory/reporting-manager-policy.service";
+import { ReportingManagerFallbackResolver } from "../../../directory/reporting-manager-fallback.resolver";
+import { ReportingRelationshipService } from "../../../directory/reporting-relationship.service";
 import { HrAuditService } from "../../core/hr-audit.service";
 import { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
 import {
@@ -113,6 +116,10 @@ describe("POST /hr/employees/onboard against a real schema", () => {
       monthlySalary: 123000,
       taxId: "CPEPC8823M",
       bankDetails: { accountNumber: "0011223344", bankName: "Probe Bank", ifsc: "PROB0000001" },
+      // HRM-15: a manager-less hire now needs a D2 fallback or an explicit top-level exception;
+      // these probes are about admission, so they take the exception.
+      topLevelRole: true,
+      topLevelRoleReason: "Admission probe",
       ...overrides,
     };
   }
@@ -150,17 +157,27 @@ describe("POST /hr/employees/onboard against a real schema", () => {
       new EmailOutboxService(db, new EmailSuppressionService(db), dispatcher),
       providerService,
     );
+    const access = {
+      canManageOrganizationMembership: jest.fn().mockResolvedValue(true),
+      holds: jest.fn().mockResolvedValue(true),
+      resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
+    };
+    const reportingLines = new ReportingLineService(db);
+    const policies = new ReportingManagerPolicyService(db, access as never, reportingLines, { logCritical } as never);
+    const relationships = new ReportingRelationshipService(db, reportingLines, policies, { logCritical } as never, { invalidateAfterMutation: async () => undefined } as never, { invalidateNamespace: async () => undefined } as never);
     service = new EmployeeOnboardingService(
       db,
       cache,
       { logCritical } as never,
       email,
-      { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
+      { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined), runAutomationsForEventDetached: jest.fn() } as never,
       new WebhooksDispatchService(db),
       new PersonEmploymentSyncService(db, new HrAuditService(db)),
-      { canManageOrganizationMembership: jest.fn().mockResolvedValue(true) } as never,
+      access as never,
       admission,
-      new ReportingLineService(db),
+      relationships,
+      new ReportingManagerFallbackResolver(db, reportingLines, policies),
+      { invalidateAfterMutation: jest.fn().mockResolvedValue(undefined) } as never,
     );
   });
 
@@ -214,7 +231,7 @@ describe("POST /hr/employees/onboard against a real schema", () => {
 
     const result = await service.onboardEmployee(actorFor(org), body(email));
 
-    expect(result).toEqual({ success: true, userId, invite: { sent: true, reason: null } });
+    expect(result).toEqual({ success: true, userId, invite: { sent: true, reason: null }, primaryManager: null });
     expect(await outboxRowsFor(email)).toEqual([
       { status: "PENDING", subject: `You've been added to Probe ${org.orgId.replace("probe-org-", "")}`, recipientUserId: userId },
     ]);
@@ -375,6 +392,7 @@ describe("POST /hr/employees/onboard against a real schema", () => {
       success: true,
       userId,
       invite: { sent: false, reason: alreadyMemberInviteReason(organisation.name) },
+      primaryManager: null,
     });
     expect(await outboxRowsFor(email)).toEqual([]);
     expect(await tokensFor(userId)).toEqual([]);

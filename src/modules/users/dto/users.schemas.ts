@@ -123,7 +123,6 @@ export const bulkUpdateUsersSchema = z.object({
   departmentId: z.string().optional().nullable(),
   branchId: z.string().optional().nullable(),
   teamId: z.string().optional().nullable(),
-  managerUserId: z.string().optional().nullable(),
 }).strict();
 export type BulkUpdateUsersInput = z.infer<typeof bulkUpdateUsersSchema>;
 

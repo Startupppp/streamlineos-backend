@@ -222,3 +222,35 @@ export const teamAvailabilityItemSchema = z.object({
   userImage: z.string().nullable(),
 });
 
+
+export const leavePolicyTemplateSchema = z.object({
+  key: z.enum(["casual", "sick", "comp_off"]),
+  leaveTypeName: z.string(),
+  policyName: z.string(),
+  description: z.string(),
+  daysPerYear: z.number().int(),
+  carryForward: z.boolean(),
+  accrualType: z.enum(["ANNUAL", "MONTHLY"]),
+  accrualRate: z.string(),
+  maxBalance: z.string().nullable(),
+  carryForwardDays: z.string(),
+  encashable: z.boolean(),
+  probationRestricted: z.boolean(),
+});
+
+export const leavePolicyTemplateOfferSchema = z.object({
+  templates: z.array(leavePolicyTemplateSchema),
+  alreadyPresent: z.array(z.enum(["casual", "sick", "comp_off"])),
+  dismissedAt: z.string().nullable(),
+  policyCount: z.number().int(),
+  shouldOffer: z.boolean(),
+});
+
+export const leavePolicyTemplateDismissSchema = z.object({
+  dismissedAt: z.string(),
+});
+
+export const leavePolicyTemplateImportSchema = z.object({
+  created: z.number().int(),
+  skipped: z.array(z.enum(["casual", "sick", "comp_off"])),
+});

@@ -29,21 +29,25 @@ import type { BulkOnboardEmployeeRow } from "./dto/hr-directory.schemas";
 import {
   ensureDepartments,
   loadDepartmentCatalog,
+  previewDepartments,
 } from "./bulk-onboarding/bulk-onboarding-departments";
 import {
   distinctRoles,
   planBulkOnboarding,
   preloadEmployeeNumbers,
-  preloadManagerUserIdsByEmail,
+  rejectCyclesAndOrphans,
 } from "./bulk-onboarding/bulk-onboarding-plan";
 import { writeBulkOnboarding } from "./bulk-onboarding/bulk-onboarding-writes";
-import type {
-  BulkOnboardPlan,
-  BulkOnboardRowResult,
-  BulkOnboardWriteOutcome,
-  PlannedEmployee,
-} from "./bulk-onboarding/bulk-onboarding.types";
+import type { BulkOnboardWriteOutcome } from "./bulk-onboarding/bulk-onboarding.types";
+import { assignBulkManagers } from "./bulk-onboarding/bulk-onboarding-managers";
+import { buildOnboardingPreview, onboardingWarnings, primaryManagerOf } from "./bulk-onboarding/bulk-onboarding-results";
 import { ReportingLineService } from "../../directory/reporting-line.service";
+import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
+import { ReportingManagerFallbackResolver } from "../../directory/reporting-manager-fallback.resolver";
+import { orgBusinessDate } from "../time/attendance-business-date";
+import { normaliseManagerColumns } from "./reporting-manager-columns";
+import { invalidateReportingReads } from "../../directory/reporting-line-cache";
+import type { BulkOnboardCommitResult, BulkOnboardPreview } from "./dto/reporting-lines-bulk.schemas";
 
 @Injectable()
 export class EmployeeBulkOnboardingService {
@@ -59,69 +63,31 @@ export class EmployeeBulkOnboardingService {
     private readonly webhooks: WebhooksDispatchService,
     private readonly personEmploymentSync: PersonEmploymentSyncService,
     private readonly reportingLines: ReportingLineService,
+    private readonly fallback: ReportingManagerFallbackResolver,
+    private readonly relationships: ReportingRelationshipService,
   ) {}
 
-  async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
-    const catalog = await loadDepartmentCatalog(this.db, actor.orgId);
+  /** HRM-15 §4.20: the same plan the commit runs, returned per row, with nothing written. */
+  async previewEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]): Promise<BulkOnboardPreview> {
+    return buildOnboardingPreview(rows, await this.planRows(actor, rows, "preview"));
+  }
 
-    const roleErrors = new Map<string, string>();
-    for (const role of distinctRoles(rows)) {
-      try {
-        await assertMayGrantRole(this.access, actor.orgId, actor, role);
-      } catch (err) {
-        roleErrors.set(role, err instanceof Error ? err.message : "Role cannot be granted");
-      }
-    }
-
-    await ensureDepartments(
-      this.db,
-      actor.orgId,
-      catalog,
-      rows.flatMap((row) => (row.departmentId == null && row.department ? [row.department] : [])),
-    );
-
-    const employeeNumberOwner = await preloadEmployeeNumbers(
-      this.db,
-      actor.orgId,
-      [
-        ...new Set(
-          rows.flatMap((row) => (row.employeeId?.trim() ? [row.employeeId.trim()] : [])),
-        ),
-      ],
-    );
-
-    const screens = await this.admission.screenMany(this.db, {
-      orgId: actor.orgId,
-      emails: [...new Set(rows.map((row) => canonicalAdmissionEmail(row.email)))],
-    });
-
-    const existingUserIds: string[] = [];
-    for (const screen of screens.values()) {
-      if (screen.kind === "clear" && screen.userId !== null)
-        existingUserIds.push(screen.userId);
-    }
-
-    const globallyInactiveUserIds = new Set<string>();
-    if (existingUserIds.length > 0) {
-      const inactive = await this.db
-        .select({ id: users.id })
-        .from(users)
-        .where(and(inArray(users.id, existingUserIds), eq(users.isActive, false)));
-      for (const row of inactive) globallyInactiveUserIds.add(row.id);
-    }
-
-    const managerByEmail = await preloadManagerUserIdsByEmail(
-      this.db,
-      actor.orgId,
-      [...new Set(rows.flatMap((row) => (row.reportingManagerEmail ? [row.reportingManagerEmail] : [])))],
-    );
-
-    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors, globallyInactiveUserIds, managerByEmail);
-    await this.rejectRowsWithUnassignableManagers(actor.orgId, plan);
+  async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]): Promise<BulkOnboardCommitResult> {
+    const planned = await this.planRows(actor, rows, "commit");
+    const { plan, catalog } = planned;
 
     let outcome: BulkOnboardWriteOutcome = { admitted: [], rejected: [], welcomeEmails: [] };
-    const results: BulkOnboardRowResult[] = [...plan.rejected];
+    const results: BulkOnboardCommitResult["results"] = plan.rejected.map((entry) => ({
+      row: entry.row,
+      email: entry.email,
+      success: false,
+      error: entry.error,
+      status: entry.skipped ? ("SKIPPED" as const) : ("FAILED" as const),
+      codes: entry.code ? [entry.code] : [],
+      primaryManager: null,
+    }));
     if (plan.accepted.length > 0) {
+      const today = await orgBusinessDate(this.db, actor.orgId);
       outcome = await withMembershipMutations(this.cache, (membership) =>
         runInTenantTransaction(
           this.db,
@@ -130,7 +96,8 @@ export class EmployeeBulkOnboardingService {
               admission: this.admission,
               personEmploymentSync: this.personEmploymentSync,
               membership,
-              reportingLines: this.reportingLines,
+              relationships: this.relationships,
+              today,
             }),
           { orgId: actor.orgId },
         ),
@@ -141,12 +108,21 @@ export class EmployeeBulkOnboardingService {
           email: employee.email,
           success: true,
           userId: employee.userId,
+          status: "CREATED",
+          codes: onboardingWarnings(employee, planned.departmentsToCreate).codes,
+          primaryManager: primaryManagerOf(employee),
         });
-      results.push(...outcome.rejected);
+      for (const entry of outcome.rejected)
+        results.push({ row: entry.row, email: entry.email, success: false, error: entry.error, status: "FAILED", codes: entry.code ? [entry.code] : [], primaryManager: null });
     }
 
     this.deferDelivery(actor, outcome, catalog.created);
+    if (outcome.admitted.length > 0) await invalidateReportingReads(this.hierarchyCache, this.cache, actor.orgId);
 
+    const skipped = results.filter((result) => result.status === "SKIPPED").length;
+    const failed = results.filter((result) => result.status === "FAILED").length;
+    results.sort((left, right) => left.row - right.row);
+    // Addendum 2: the audit event IS the bulk-onboarding job record — no PII beyond the email.
     await this.audit.logCritical({
       action: "hr.employees_bulk_onboarded",
       userId: actor.userId,
@@ -155,35 +131,76 @@ export class EmployeeBulkOnboardingService {
       metadata: {
         total: rows.length,
         created: outcome.admitted.length,
-        failed: plan.rejected.length + outcome.rejected.length,
+        failed,
+        skipped,
+        legacyManagerHeader: planned.legacyHeaderRows > 0,
+        legacyManagerHeaderRows: planned.legacyHeaderRows,
+        rows: results.map((result) => ({ row: result.row, email: result.email, status: result.status, codes: result.codes })),
       },
     });
 
-    results.sort((left, right) => left.row - right.row);
-    return {
-      total: rows.length,
-      created: outcome.admitted.length,
-      failed: plan.rejected.length + outcome.rejected.length,
-      results,
-    };
+    return { total: rows.length, created: outcome.admitted.length, failed, skipped, results };
   }
 
-  private async rejectRowsWithUnassignableManagers(orgId: string, plan: BulkOnboardPlan): Promise<void> {
-    const managerIds = [...new Set(plan.accepted.flatMap((e) => (e.reportingManagerUserId ? [e.reportingManagerUserId] : [])))];
-    const refusals = new Map<string, string>();
-    for (const managerUserId of managerIds) {
-      const check = await this.reportingLines.checkManager(orgId, managerUserId);
-      if (!check.ok) refusals.set(managerUserId, check.message);
+
+  /**
+   * One plan for preview and commit: headers normalised, admission screened, the primary manager
+   * resolved by D2 (in-file managers included), secondaries checked, and dependants of a failed
+   * manager row skipped. Every lookup is one statement for the whole file.
+   */
+  private async planRows(actor: CurrentUserContext, input: readonly BulkOnboardEmployeeRow[], mode: "preview" | "commit") {
+    const normalised = input.map((row) =>
+      normaliseManagerColumns({
+        reportingManagerEmail: row.reportingManagerEmail,
+        primaryManagerEmail: row.primaryManagerEmail,
+        secondaryManagerEmail1: row.secondaryManagerEmail1,
+        secondaryManagerEmail2: row.secondaryManagerEmail2,
+        secondaryManagerEmail3: row.secondaryManagerEmail3,
+      }),
+    );
+    const rows = input.map((row, index) => {
+      const columns = normalised[index];
+      return columns?.ok ? { ...row, reportingManagerEmail: undefined, primaryManagerEmail: columns.primaryManagerEmail ?? undefined } : row;
+    });
+    const legacyHeaderRows = normalised.filter((columns) => columns.ok && columns.legacyHeader !== null).length;
+
+    const catalog = await loadDepartmentCatalog(this.db, actor.orgId);
+    const departmentNames = rows.flatMap((row) => (row.departmentId == null && row.department ? [row.department] : []));
+    const departmentsToCreate = mode === "preview" ? previewDepartments(catalog, departmentNames) : [];
+    if (mode === "commit") await ensureDepartments(this.db, actor.orgId, catalog, departmentNames);
+
+    const roleErrors = new Map<string, string>();
+    for (const role of distinctRoles(rows)) {
+      try {
+        await assertMayGrantRole(this.access, actor.orgId, actor, role);
+      } catch (err) {
+        roleErrors.set(role, err instanceof Error ? err.message : "Role cannot be granted");
+      }
     }
-    if (refusals.size === 0) return;
-    const stillAccepted: PlannedEmployee[] = [];
-    for (const employee of plan.accepted) {
-      const refusal = employee.reportingManagerUserId ? refusals.get(employee.reportingManagerUserId) : undefined;
-      if (refusal) plan.rejected.push({ row: employee.row, email: employee.email, success: false, error: refusal });
-      else stillAccepted.push(employee);
+    const employeeNumberOwner = await preloadEmployeeNumbers(this.db, actor.orgId, [
+      ...new Set(rows.flatMap((row) => (row.employeeId?.trim() ? [row.employeeId.trim()] : []))),
+    ]);
+    const screens = await this.admission.screenMany(this.db, {
+      orgId: actor.orgId,
+      emails: [...new Set(rows.map((row) => canonicalAdmissionEmail(row.email)))],
+    });
+    const existingUserIds: string[] = [];
+    for (const screen of screens.values()) if (screen.kind === "clear" && screen.userId !== null) existingUserIds.push(screen.userId);
+    const globallyInactiveUserIds = new Set<string>();
+    if (existingUserIds.length > 0) {
+      const inactive = await this.db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(inArray(users.id, existingUserIds), eq(users.isActive, false)))
+        .limit(existingUserIds.length);
+      for (const row of inactive) globallyInactiveUserIds.add(row.id);
     }
-    plan.accepted = stillAccepted;
+
+    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors, globallyInactiveUserIds);
+    await assignBulkManagers(this.db, this.fallback, this.reportingLines, actor, rows, normalised, plan);
+    return { plan: rejectCyclesAndOrphans(plan), catalog, departmentsToCreate, legacyHeaderRows };
   }
+
 
   private deferDelivery(
     actor: CurrentUserContext,

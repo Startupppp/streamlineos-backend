@@ -4,6 +4,7 @@ import { documentTypeEnum, genderEnum } from "../../../../db/schema/common/enums
 import { fromWallClockUtc } from "../../../../common/date/zoned-wall-clock";
 import type { HrImportEntity } from "../dto/import-job.dto";
 import { findInFileDuplicates } from "./import-row-identity";
+import { employeeManagerRowFields, refineEmployeeManagerColumns } from "./employee-manager-row-fields";
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -92,7 +93,6 @@ const resolvedUserId = z.string().optional();
 export const employeeRowSchema = z.object({
   email: emailSchema,
   resolvedDepartmentId: z.string().optional(),
-  resolvedManagerEmploymentId: z.number().int().optional(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   joiningDate: isoDateOrBlank,
@@ -111,8 +111,9 @@ export const employeeRowSchema = z.object({
     })
     .optional()
     .or(z.literal("").transform(() => undefined)),
-  managerEmail: z.string().email().optional().or(z.literal("")),
-});
+  ...employeeManagerRowFields,
+  effectiveFrom: isoDateOrBlank.optional(),
+}).superRefine(refineEmployeeManagerColumns);
 
 export const leaveBalanceRowSchema = z.object({
   employeeEmail: emailSchema,

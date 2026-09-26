@@ -51,3 +51,4 @@ export * from "./taxonomy";
 export * from "./enterprise-comp";
 export * from "./enterprise-ops";
 export * from "./gdpr-export-jobs";
+export * from "./reporting-manager";

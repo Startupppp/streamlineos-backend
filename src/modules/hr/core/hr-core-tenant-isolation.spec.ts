@@ -91,7 +91,7 @@ describe("HrEffectiveChangeApplierService — cross-tenant isolation", () => {
   it("scopes effective change lookup to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn(), logMany: jest.fn() };
-    const svc = new HrEffectiveChangeApplierService(db, mockAudit as never);
+    const svc = new HrEffectiveChangeApplierService(db, mockAudit as never, { setRelationships: jest.fn() } as never);
     await svc.applyDue(ATTACKER, null, new Date().toISOString().slice(0, 10), 100);
     const arg = isolationArg(where, findMany);
     expect(sqlValues(arg).includes(ATTACKER) || where.mock.calls.length === 0).toBe(true);
@@ -100,7 +100,7 @@ describe("HrEffectiveChangeApplierService — cross-tenant isolation", () => {
   it("processes effective changes for owning org (control)", async () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn(), logMany: jest.fn() };
-    const svc = new HrEffectiveChangeApplierService(db, mockAudit as never);
+    const svc = new HrEffectiveChangeApplierService(db, mockAudit as never, { setRelationships: jest.fn() } as never);
     await svc.applyDue(OWNER, null, new Date().toISOString().slice(0, 10), 100);
     expect(db).toBeDefined();
     const arg = isolationArg(where, findMany);

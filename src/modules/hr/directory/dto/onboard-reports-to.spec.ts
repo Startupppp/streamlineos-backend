@@ -11,12 +11,9 @@ function issuesOf(result: { success: boolean; error?: { issues: { path: Property
   return (result.error?.issues ?? []).map((issue) => `${issue.path.join(".")}: ${issue.message}`);
 }
 
-describe("Reports to is required at the onboarding boundary", () => {
-  it("rejects an employee with neither a reporting manager nor a top-level exception", () => {
-    const result = onboardEmployeeSchema.safeParse(BASE);
-
-    expect(result.success).toBe(false);
-    expect(issuesOf(result)).toEqual([expect.stringMatching(/^reportingManagerUserId: Reports to is required/)]);
+describe("HRM-15: the reporting manager is optional at the onboarding boundary; the server resolves the fallback", () => {
+  it("accepts an employee with no manager and no top-level exception, leaving D2 fallback to the service", () => {
+    expect(onboardEmployeeSchema.safeParse(BASE).success).toBe(true);
   });
 
   it("accepts a reporting manager", () => {
@@ -52,9 +49,25 @@ describe("Reports to is required at the onboarding boundary", () => {
     expect(result.success && result.data.reportingManagerEmail).toBe("boss@example.com");
   });
 
-  it("holds spreadsheet rows to the same requirement", () => {
-    const result = bulkOnboardEmployeeRowSchema.safeParse({ ...BASE, department: "Engineering" });
+  it("accepts a spreadsheet row with a blank manager, which the fallback policy resolves", () => {
+    expect(bulkOnboardEmployeeRowSchema.safeParse({ ...BASE, department: "Engineering" }).success).toBe(true);
+  });
 
-    expect(issuesOf(result)).toEqual([expect.stringMatching(/^reportingManagerUserId: Reports to is required/)]);
+  it("refuses a spreadsheet top-level row that also names a primary manager by the canonical column", () => {
+    const result = bulkOnboardEmployeeRowSchema.safeParse({
+      ...BASE,
+      department: "Engineering",
+      topLevelRole: true,
+      topLevelRoleReason: "CEO",
+      primaryManagerEmail: "boss@example.com",
+    });
+
+    expect(issuesOf(result)).toEqual([expect.stringMatching(/^topLevelRole: A top-level role cannot also/)]);
+  });
+
+  it("caps secondary managers on a single onboarding at three", () => {
+    const four = ["a", "b", "c", "d"].map((managerUserId) => ({ managerUserId }));
+    expect(onboardEmployeeSchema.safeParse({ ...BASE, secondaryManagers: four.slice(0, 3) }).success).toBe(true);
+    expect(onboardEmployeeSchema.safeParse({ ...BASE, secondaryManagers: four }).success).toBe(false);
   });
 });

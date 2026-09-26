@@ -75,7 +75,7 @@ describe("ApprovalAuthorityService against a real schema", () => {
     counter += 1;
     const userId = `${org.userId}-${label}-${counter}`;
     extraUserIds.push(userId);
-    await sql`INSERT INTO users (id, email, name, is_active) VALUES (${userId}, ${`${userId}@synthetic.invalid`}, ${label}, true)`;
+    await sql`INSERT INTO users (id, email, name, is_active, email_verified) VALUES (${userId}, ${`${userId}@synthetic.invalid`}, ${label}, true, now())`;
     const [member] = await sql<{ id: number }[]>`
       INSERT INTO organization_members (user_id, org_id, role, is_owner, status, joined_at)
       VALUES (${userId}, ${org.orgId}, 'MEMBER', false, 'ACTIVE', now())
