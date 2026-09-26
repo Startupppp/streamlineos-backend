@@ -1,10 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
-  kbArticleChunks,
-  kbPageRestrictions,
-  kbPages,
-  kbSpaces,
   supportAiSuggestions,
   supportTickets,
 } from "../../../db/schema";
@@ -13,7 +9,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
 import { KbAccessService } from "../../kb/core/kb-access.service";
-import { supportArticlePredicate } from "../../kb/help-centre/kb-article-page-scope";
+import { searchSupportDocuments } from "../../kb/core/kb-support-documents";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
@@ -137,58 +133,15 @@ export class SupportAiTriageDataService {
     const vector = embedResult.vectorLiteral;
     const results = await runInTenantTransaction(
       this.db,
-      async () => {
-        const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
-        const kpr = kbPageRestrictions;
-        const restrictionFilter = sql`(
-          NOT EXISTS (
-            SELECT 1 FROM ${kpr}
-            WHERE ${kpr.pageId} = ${kbPages.id}
-              AND ${kpr.orgId} = ${user.orgId}
-              AND ${kpr.level} = 'view'
-          )
-          OR EXISTS (
-            SELECT 1 FROM ${kpr}
-            WHERE ${kpr.pageId} = ${kbPages.id}
-              AND ${kpr.orgId} = ${user.orgId}
-              AND ${kpr.level} = 'view'
-              AND (${scope.principal.membershipId !== null ? sql`${kpr.membershipId} = ${scope.principal.membershipId} OR ` : sql``}${
-                scope.principal.roleSlugs.length > 0
-                  ? sql`${kpr.role} = ANY(${scope.principal.roleSlugs})`
-                  : sql`false`
-              })
-          )
-        )`;
-        return this.db
-          .select({
-            articleId: kbPages.id,
-            title: kbPages.title,
-            slug: kbPages.slug,
-            similarity: sql<number>`(1 - (${distance}))::float8`,
-          })
-          .from(kbArticleChunks)
-          .innerJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
-          .innerJoin(
-            kbSpaces,
-            and(
-              eq(kbSpaces.id, kbPages.spaceId),
-              isNull(kbSpaces.deletedAt),
-            ),
-          )
-          .where(
-            and(
-              eq(kbArticleChunks.orgId, user.orgId),
-              eq(kbPages.orgId, user.orgId),
-              eq(kbSpaces.orgId, user.orgId),
-              supportArticlePredicate(),
-              eq(kbPages.status, "published"),
-              inArray(kbPages.spaceId, scope.accessibleSpaceIds),
-              restrictionFilter,
-            ),
-          )
-          .orderBy(distance)
-          .limit(12);
-      },
+      async () =>
+        searchSupportDocuments(
+          this.db,
+          user.orgId,
+          scope.principal,
+          scope.accessibleSpaceIds,
+          vector,
+          12,
+        ),
       { orgId: user.orgId },
     );
     const seen = new Set<number>();

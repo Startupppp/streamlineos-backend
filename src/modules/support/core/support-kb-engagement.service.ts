@@ -4,13 +4,12 @@ import {
   kbPageAttachments,
   kbPageComments,
   kbPageFeedback,
-  kbPages,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
-import { supportArticlePredicate } from "../../kb/help-centre/kb-article-page-scope";
+import { verifySupportArticle } from "../../kb/core/kb-support-documents";
 import { isOwnOrgStorageKey, isSensitiveStorageKey } from "../../storage/storage-key";
 import { StorageService } from "../../storage/storage.service";
 import type {
@@ -27,21 +26,8 @@ export class SupportKbEngagementService {
     private readonly storage: StorageService,
   ) {}
 
-  private async ensureArticle(orgId: string, articleId: number) {
-    const article = await this.db.query.kbPages.findFirst({
-      where: and(
-        eq(kbPages.id, articleId),
-        eq(kbPages.orgId, orgId),
-        supportArticlePredicate(),
-        isNull(kbPages.archivedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!article) throw new NotFoundException("Article not found");
-  }
-
   async listFeedback(orgId: string, articleId: number) {
-    await this.ensureArticle(orgId, articleId);
+    await verifySupportArticle(this.db, orgId, articleId);
     return this.db
       .select({
         id: kbPageFeedback.id,
@@ -58,7 +44,7 @@ export class SupportKbEngagementService {
   }
 
   async listComments(orgId: string, articleId: number) {
-    await this.ensureArticle(orgId, articleId);
+    await verifySupportArticle(this.db, orgId, articleId);
     return this.db
       .select({
         id: kbPageComments.id,
@@ -78,7 +64,7 @@ export class SupportKbEngagementService {
   }
 
   async createComment(orgId: string, articleId: number, userId: string, input: CreateKbCommentInput) {
-    await this.ensureArticle(orgId, articleId);
+    await verifySupportArticle(this.db, orgId, articleId);
 
     const [inserted] = await this.db
       .insert(kbPageComments)
@@ -121,7 +107,7 @@ export class SupportKbEngagementService {
   }
 
   async listAttachments(orgId: string, articleId: number) {
-    await this.ensureArticle(orgId, articleId);
+    await verifySupportArticle(this.db, orgId, articleId);
     return this.db
       .select({
         id: kbPageAttachments.id,
@@ -145,7 +131,7 @@ export class SupportKbEngagementService {
   }
 
   async createAttachment(orgId: string, articleId: number, userId: string, input: CreateKbAttachmentInput) {
-    await this.ensureArticle(orgId, articleId);
+    await verifySupportArticle(this.db, orgId, articleId);
 
     /**
      * The bytes never pass through this route, so the only thing standing
