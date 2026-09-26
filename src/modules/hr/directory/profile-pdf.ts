@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { formatDayMonthYear, formatDayMonthYearTime } from "../../../common/date";
+import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 export interface ProfileEmployee {
   id: string;
@@ -131,9 +132,14 @@ export async function buildEmployeeProfilePdf(
   const contentW = PAGE_W - MARGIN * 2;
   let y = PAGE_H - MARGIN;
 
+  // Ticket 07: the same policy the directory and the CSV use, so the letter and
+  // the screen cannot disagree about a person's name.
   const name = pdfSafe(
-    employee.name ??
-      (`${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim() || null),
+    resolvePersonDisplayName({
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      accountName: employee.name,
+    }),
     "Employee",
   );
   const joinDate = employee.joiningDate

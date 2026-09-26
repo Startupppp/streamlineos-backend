@@ -62,6 +62,7 @@ import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-ca
 import { assignOnboardingManager, writeOnboardingSensitiveFields } from "./employee-onboarding-relationships";
 import { EMPLOYEES_VIEW_PERMISSION } from "./employees-scope";
 import { invalidateReportingReads } from "../../directory/reporting-line-cache";
+import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -108,7 +109,14 @@ export class EmployeeOnboardingService {
     await assertMayGrantRole(this.access, actor.orgId, actor, role);
     const dateOfBirth = body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined;
     const joiningDate = body.joiningDate ? formatDateOnly(body.joiningDate) : null;
-    const fullName = `${body.firstName} ${body.lastName}`;
+    // Ticket 07: one policy composes the account name, the same one the
+    // directory, the CSV export and the profile PDF display.
+    const fullName =
+      resolvePersonDisplayName({
+        firstName: body.firstName,
+        lastName: body.lastName,
+        email: body.email,
+      }) ?? body.email;
 
     const salaryCurrency =
       body.monthlySalary === undefined
@@ -318,9 +326,12 @@ export class EmployeeOnboardingService {
     if (!target.isActive) throw new BadRequestException(SUSPENDED_ACCOUNT_MESSAGE);
 
     const name =
-      target.firstName && target.lastName
-        ? `${target.firstName} ${target.lastName}`
-        : (target.name ?? target.email);
+      resolvePersonDisplayName({
+        firstName: target.firstName,
+        lastName: target.lastName,
+        accountName: target.name,
+        email: target.email,
+      }) ?? target.email;
     const invite = await this.queueInvite({
       orgId: actor.orgId,
       organizationName: await this.organizationName(actor.orgId),

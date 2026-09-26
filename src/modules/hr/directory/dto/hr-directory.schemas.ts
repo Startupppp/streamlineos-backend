@@ -2,7 +2,21 @@ import { z } from "zod";
 import { genderEnum } from "../../../../db/schema";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { canonicalEmailSchema } from "../../../users/dto/users.schemas";
+import { normalizePersonNamePart } from "../../../../common/organization/person-display-name";
 import { secondaryManagerInputSchema } from "./reporting-lines-shared.schemas";
+
+/**
+ * Ticket 07. Whitespace is normalised; letters, case and punctuation are not.
+ * "QA", "van der Berg" and "O'Brien" reach storage exactly as typed.
+ */
+function personNameField(label: string) {
+  return z
+    .string()
+    .trim()
+    .min(1, `${label} is required`)
+    .max(100, `${label} must be at most 100 characters`)
+    .transform((value) => normalizePersonNamePart(value) ?? value);
+}
 
 function isSuppliedOrParseableDate(value: string | undefined): boolean {
   if (!value) return true;
@@ -240,9 +254,9 @@ export function dateOfBirthProblem(value: string | undefined | null): string | n
 
 export const updateEmployeeSchema = z
   .object({
-    name: z.string().trim().min(1).max(100).optional(),
-    firstName: z.string().trim().min(1).max(100).optional(),
-    lastName: z.string().trim().min(1).max(100).optional(),
+    name: personNameField("Name").optional(),
+    firstName: personNameField("First name").optional(),
+    lastName: personNameField("Last name").optional(),
     /**
      * V-020. There was no way to change an employee's address at all: this
      * schema is `.strict()` and had no `email` key, so an administrator who
@@ -306,16 +320,8 @@ export const onboardEmployeeFieldsSchema = z.object({
   secondaryManagers: z.array(secondaryManagerInputSchema).max(3).optional(),
   topLevelRole: z.boolean().optional(),
   topLevelRoleReason: z.string().trim().max(500).optional(),
-  firstName: z
-    .string()
-    .trim()
-    .min(1, "First name is required")
-    .max(100, "First name must be at most 100 characters"),
-  lastName: z
-    .string()
-    .trim()
-    .min(1, "Last name is required")
-    .max(100, "Last name must be at most 100 characters"),
+  firstName: personNameField("First name"),
+  lastName: personNameField("Last name"),
   email: canonicalEmailSchema,
   phone: z.string().optional(),
   whatsappSameAsPhone: z.boolean().optional(),
