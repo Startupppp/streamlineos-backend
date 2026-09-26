@@ -6,7 +6,10 @@ import { type Db } from "../../../db/drizzle.module";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 import { StorageService } from "../../storage/storage.service";
-import { extractAttachmentText, isExtractableMime } from "./kb-attachment-extract.util";
+import {
+  extractDocumentText,
+  isExtractableMime,
+} from "../../../common/documents/extract-document-text.util";
 import { streamToBuffer } from "./kb-chunk-utils";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
@@ -86,7 +89,7 @@ export class KbSourceAdapter implements KbContentAdapter {
       this.config.R2_KB_BUCKET_NAME,
     );
     const buffer = await streamToBuffer(body);
-    return extractAttachmentText(buffer, source.mimeType);
+    return extractDocumentText(buffer, source.mimeType);
   }
 
   private async settle(

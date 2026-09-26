@@ -6,7 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { StorageService } from "../storage/storage.service";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { unwrapAiResult } from "../ai/core/services/gateway-result.util";
-import { extractAttachmentText } from "../kb/retrieval/kb-attachment-extract.util";
+import { extractDocumentText } from "../../common/documents/extract-document-text.util";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { mustGetVisibleEnvelope } from "./sign-envelope-scope";
 import type { ScopedRead } from "../access/scoped-read";
@@ -75,7 +75,7 @@ export class SignAiService {
       }
 
       const buffer = Buffer.concat(chunks);
-      const text = await extractAttachmentText(buffer, doc.mimeType);
+      const text = await extractDocumentText(buffer, doc.mimeType);
 
       if (text.trim().length > 0) {
         textParts.push(text);

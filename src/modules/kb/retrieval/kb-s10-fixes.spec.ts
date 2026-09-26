@@ -20,14 +20,14 @@ const makeCheckpointStub = () =>
     clearCheckpoints: jest.fn().mockResolvedValue(undefined),
   }) as never;
 
-jest.mock("./kb-attachment-extract.util", () => ({
+jest.mock("../../../common/documents/extract-document-text.util", () => ({
   isExtractableMime: jest.fn().mockReturnValue(true),
-  extractAttachmentText: jest.fn().mockResolvedValue(""),
+  extractDocumentText: jest.fn().mockResolvedValue(""),
 }));
 
-const extractMocks = jest.requireMock("./kb-attachment-extract.util") as {
+const extractMocks = jest.requireMock("../../../common/documents/extract-document-text.util") as {
   isExtractableMime: jest.Mock;
-  extractAttachmentText: jest.Mock;
+  extractDocumentText: jest.Mock;
 };
 
 function collectStrings(root: unknown, seen = new WeakSet<object>()): string[] {
@@ -226,7 +226,7 @@ describe("Fix 3 — embedInBatches: batched calls, order preserved across bounda
       },
     } as unknown as Db;
 
-    extractMocks.extractAttachmentText.mockResolvedValue(text);
+    extractMocks.extractDocumentText.mockResolvedValue(text);
     extractMocks.isExtractableMime.mockReturnValue(true);
 
     const storage = { getFileStream: jest.fn().mockResolvedValue({ body: {} }) } as never;
@@ -293,7 +293,7 @@ describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL 
     } as unknown as Db;
 
     const shortText = "hello world sentence";
-    extractMocks.extractAttachmentText.mockResolvedValue(shortText);
+    extractMocks.extractDocumentText.mockResolvedValue(shortText);
     extractMocks.isExtractableMime.mockReturnValue(true);
 
     const embedBatchWithCredit = jest.fn().mockImplementation(({ texts }: { texts: string[] }) =>

@@ -18,8 +18,8 @@ import { validateMagicBytes } from "../../storage/file-signatures";
 import { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
 import {
   isExtractableMime,
-  extractAttachmentText,
-} from "../retrieval/kb-attachment-extract.util";
+  extractDocumentText,
+} from "../../../common/documents/extract-document-text.util";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -470,7 +470,7 @@ export class KbSourcesService {
       return;
     }
     try {
-      const text = await extractAttachmentText(buffer, mimeType);
+      const text = await extractDocumentText(buffer, mimeType);
       await this.processText(orgId, sourceId, text, bytes);
     } catch (err) {
       this.logger.error(

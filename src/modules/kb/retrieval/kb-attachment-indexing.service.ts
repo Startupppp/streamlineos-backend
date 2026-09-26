@@ -17,9 +17,9 @@ import {
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 import { embedChunksWithResumption } from "./kb-embedding-resumption";
 import {
-  extractAttachmentText,
+  extractDocumentText,
   isExtractableMime,
-} from "./kb-attachment-extract.util";
+} from "../../../common/documents/extract-document-text.util";
 import { chunkText, sha256, streamToBuffer } from "./kb-chunk-utils";
 import {
   attachmentChunks,
@@ -194,7 +194,7 @@ export class KbAttachmentIndexingService {
     try {
       const { body } = await this.storage.getFileStream(orgId, attachment.fileKey);
       const buffer = await streamToBuffer(body);
-      text = await extractAttachmentText(buffer, attachment.mimeType);
+      text = await extractDocumentText(buffer, attachment.mimeType);
     } catch (err) {
       this.logger.error(`Attachment extract failed (${attachmentId}): ${err}`);
       metrics.finish("error");
@@ -320,7 +320,7 @@ export class KbAttachmentIndexingService {
 
     let text: string;
     try {
-      text = await extractAttachmentText(buffer, mimeType);
+      text = await extractDocumentText(buffer, mimeType);
     } catch (err) {
       this.logger.error("Page document extract failed", {
         orgId,
