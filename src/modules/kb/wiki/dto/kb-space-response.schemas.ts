@@ -39,15 +39,6 @@ export const kbExportJobSchema = z.object({
 export const kbImportJobListSchema = cursorPageSchema(kbImportJobSchema);
 export const kbExportJobListSchema = cursorPageSchema(kbExportJobSchema);
 
-export const kbImportResultSchema = z.object({
-  jobId: z.number().int(),
-  succeeded: z.number().int(),
-  failed: z.number().int(),
-  duplicates: z.number().int(),
-  total: z.number().int(),
-  failedTitles: z.array(z.string()),
-});
-
 export const kbImportAcceptedSchema = z.object({
   jobId: z.number().int(),
   status: z.literal("pending"),
@@ -140,7 +131,6 @@ export const kbSpaceListItemSchema = z.object({
   pagesOverdueForReview: z.number().int(),
 });
 
-export const kbSpaceListSchema = z.array(kbSpaceListItemSchema);
 export const kbSpaceListPageSchema = cursorPageSchema(kbSpaceListItemSchema);
 
 export const kbSpaceFullSchema = kbSpaceRowSchema;

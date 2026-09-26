@@ -95,8 +95,6 @@ export const kbPageReviewWithContextSchema = kbPageReviewSchema.extend({
 export const kbPageReviewListPageSchema = cursorPageSchema(
   kbPageReviewWithContextSchema,
 );
-export const kbPageReviewListSchema = z.array(kbPageReviewWithContextSchema);
-
 export const bulkDecideResultItemSchema = z.object({
   id: z.number().int(),
   outcome: z.enum(["succeeded", "denied", "conflict", "notFound"]),
@@ -119,8 +117,6 @@ export const kbPageTemplateSchema = z.object({
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
-
-export const kbPageTemplateListSchema = z.array(kbPageTemplateSchema);
 
 export const kbPageTemplateListPageSchema =
   cursorPageSchema(kbPageTemplateSchema);
@@ -208,8 +204,6 @@ export const kbPageTreeItemSchema = z.object({
   updatedAt: wireDate(),
   hasChildren: z.boolean(),
 });
-
-export const kbPageTreeSchema = z.array(kbPageTreeItemSchema);
 
 export const kbPageTreeLevelSchema = cursorPageSchema(kbPageTreeItemSchema);
 

@@ -7,9 +7,9 @@ import { KbIndexingService } from "./kb-indexing.service";
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 import { StorageService } from "../../storage/storage.service";
 import { extractAttachmentText, isExtractableMime } from "./kb-attachment-extract.util";
+import { streamToBuffer } from "./kb-chunk-utils";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
-import { Readable } from "stream";
 
 export interface KbContentAdapter {
   readonly contentType: string;
@@ -128,15 +128,4 @@ export class KbContentAdapterRegistry {
   get(contentType: string): KbContentAdapter | undefined {
     return this.adapters.get(contentType);
   }
-}
-
-function streamToBuffer(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  return new Promise((resolve, reject) => {
-    stream.on("data", (chunk: Buffer | string) => {
-      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-    });
-    stream.on("end", () => resolve(Buffer.concat(chunks)));
-    stream.on("error", reject);
-  });
 }
