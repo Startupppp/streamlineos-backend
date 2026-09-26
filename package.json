@@ -397,6 +397,8 @@
     "check:unjoined-table-refs": "node src/scripts/check-unjoined-table-refs.mjs",
     "check:unjoined-table-refs:self-test": "node src/scripts/check-unjoined-table-refs.mjs --self-test",
     "check:kebab-case": "node src/scripts/check-kebab-case.mjs",
+    "check:kb-pages-direct-readers": "node src/scripts/check-kb-pages-direct-readers.mjs",
+    "check:kb-pages-direct-readers:self-test": "node src/scripts/check-kb-pages-direct-readers.mjs --self-test",
     "check:kebab-case:self-test": "node src/scripts/check-kebab-case.mjs --self-test",
     "check:import-direction": "node src/scripts/check-import-direction.mjs",
     "check:import-direction:self-test": "node src/scripts/check-import-direction.mjs --self-test",

@@ -1,0 +1,19 @@
+{
+  "why": "Files outside src/modules/kb/ that read the kb_pages table directly. This list may only SHRINK. Each entry re-derives the Document visibility rule for itself, which is how six independent ACL implementations came to exist. Port a caller onto the canonical scope in kb/core/authorization/knowledge-page-scope.ts and delete its line.",
+  "permanentlyExempt": {
+    "src/modules/billing/core/plan-limits.service.ts": "Plan-limit counting is tenant-wide by design: COUNT(*) FROM kb_pages WHERE org_id AND deleted_at IS NULL. Applying a visibility predicate would make the limit depend on who asked, so two admins would see different usage for one org and a low-visibility actor could evade the cap. Do not 'fix' this into using the port. It does re-derive the soft-delete predicate by hand, which is the one real cost of the exemption."
+  },
+  "allowed": [
+    "src/modules/ai/core/services/kb-rag-retrieval.service.ts",
+    "src/modules/billing/core/plan-limits.service.ts",
+    "src/modules/cron/cron-kb-chunk-retention.service.ts",
+    "src/modules/gdpr/gdpr-subject-erasure-authored-content.ts",
+    "src/modules/hr/helpdesk/hr-helpdesk.service.ts",
+    "src/modules/public/kb.service.ts",
+    "src/modules/storage/storage-kb.controller.ts",
+    "src/modules/support/core/lib/support-kb-articles.ts",
+    "src/modules/support/core/support-ai-triage-data.service.ts",
+    "src/modules/support/core/support-kb-engagement.service.ts",
+    "src/modules/support/kb-gap/support-kb-gap.service.ts"
+  ]
+}
