@@ -565,7 +565,7 @@ describe("KbAskService", () => {
     await expect(svc.ask(user, input)).rejects.toThrow(HttpException);
     const err = await svc.ask(user, input).catch((e: unknown) => e);
     expect((err as HttpException).getStatus()).toBe(429);
-    expect(saturatedRedis.incr).toHaveBeenCalled();
+    expect(saturatedRedis.eval).toHaveBeenCalled();
     expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
   });
 });

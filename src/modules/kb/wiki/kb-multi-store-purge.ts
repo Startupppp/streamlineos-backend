@@ -398,3 +398,11 @@ export async function purgePublicCdnForPages(
     { orgId },
   );
 }
+
+export async function purgeConnectorProjectionsForPages(
+  _db: Db,
+  _orgId: string,
+  _pageIds: number[],
+): Promise<void> {
+  return;
+}
