@@ -10,8 +10,8 @@ import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { kbPageAttachments, kbPages } from "../../db/schema";
-import { supportArticlePredicate } from "../kb/help-centre/kb-article-page-scope";
+import { kbPageAttachments } from "../../db/schema";
+import { findPublicDeliverableDocument } from "../kb/core/kb-document-delivery-access";
 import { StorageService } from "./storage.service";
 import {
   kbAttachmentsQuerySchema,
@@ -59,18 +59,7 @@ export class StorageKbController {
       this.db,
       org,
       async (tx) => {
-        const [article] = await tx
-          .select({ id: kbPages.id })
-          .from(kbPages)
-          .where(
-            and(
-              eq(kbPages.orgId, org),
-              eq(kbPages.slug, slug),
-              eq(kbPages.status, "published"),
-              eq(kbPages.visibility, "public"),
-              supportArticlePredicate(),
-            ),
-          );
+        const article = await findPublicDeliverableDocument(tx, org, slug);
 
         if (!article) throw new NotFoundException("Article not found");
 
@@ -80,8 +69,6 @@ export class StorageKbController {
           isNull(kbPageAttachments.deletedAt),
         );
 
-        // The count is what makes the envelope worth having: a `page` query param with no total
-        // leaves the caller guessing whether a short page is the last one.
         const [pageRows, [total]] = await Promise.all([
           tx
             .select({

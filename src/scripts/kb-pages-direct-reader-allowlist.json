@@ -8,7 +8,6 @@
     "src/modules/billing/core/plan-limits.service.ts",
     "src/modules/hr/helpdesk/hr-helpdesk.service.ts",
     "src/modules/public/kb.service.ts",
-    "src/modules/storage/storage-kb.controller.ts",
     "src/modules/support/core/lib/support-kb-articles.ts",
     "src/modules/support/core/support-ai-triage-data.service.ts",
     "src/modules/support/core/support-kb-engagement.service.ts",
