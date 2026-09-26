@@ -69,14 +69,14 @@ export class PublicFormsService {
           where: and(
             eq(projectForms.projectId, projectId),
             eq(projectForms.orgId, orgId),
+            eq(projectForms.isPublic, true),
+            eq(projectForms.isActive, true),
+            isNull(projectForms.deletedAt),
           ),
           columns: FORM_LIFECYCLE_COLUMNS,
           orderBy: [desc(projectForms.createdAt)],
         });
         if (!raw) throw new NotFoundException("No active public form for this project");
-        if (raw.deletedAt !== null) throw new NotFoundException("No active public form for this project");
-        if (!raw.isPublic) throw new NotFoundException("No active public form for this project");
-        if (!raw.isActive) throw new NotFoundException("No active public form for this project");
         return {
           id: raw.id,
           name: raw.name,

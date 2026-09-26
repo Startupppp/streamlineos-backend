@@ -106,6 +106,9 @@ describe("PublicFormsService — C4 server-enforce: six access conditions", () =
       const db = makeFormDb(BASE_FORM);
       const svc = new PublicFormsService(db, makeSubmissions());
       const result = await svc.getFormByToken(TOKEN) as Record<string, unknown>;
+      expect(result).toHaveProperty("id");
+      expect(result).toHaveProperty("name");
+      expect(result).toHaveProperty("publicToken");
       expect(result).not.toHaveProperty("isPublic");
       expect(result).not.toHaveProperty("isActive");
       expect(result).not.toHaveProperty("deletedAt");
@@ -122,13 +125,38 @@ describe("PublicFormsService — C4 server-enforce: six access conditions", () =
   });
 
   describe("getIntakeFormByProject — project lifecycle enforced before form lookup", () => {
-    function makeIntakeDb(projectRow: unknown, formRow: unknown): Db {
+    function whereColumns(node: unknown, seen = new Set<object>(), out: string[] = []): string[] {
+      if (node === null || typeof node !== "object" || seen.has(node)) return out;
+      seen.add(node);
+      const rec = node as Record<string, unknown>;
+      if (typeof rec["name"] === "string" && rec["table"] !== undefined) out.push(rec["name"]);
+      const chunks = rec["queryChunks"];
+      if (Array.isArray(chunks)) for (const chunk of chunks) whereColumns(chunk, seen, out);
+      return out;
+    }
+
+    function makeIntakeDb(projectRow: unknown, forms: readonly unknown[]): Db {
+      function findFirstResult(args: { where?: unknown }) {
+        const filtered = new Set(whereColumns(args.where));
+        for (const row of forms) {
+          const f = row as Record<string, unknown>;
+          if (filtered.has("is_public") && f["isPublic"] === false) continue;
+          if (filtered.has("is_active") && f["isActive"] === false) continue;
+          if (filtered.has("deleted_at") && f["deletedAt"] !== null && f["deletedAt"] !== undefined) continue;
+          return row;
+        }
+        return null;
+      }
       return {
-        query: { projectForms: { findFirst: jest.fn().mockResolvedValue(formRow) } },
+        query: { projectForms: { findFirst: jest.fn().mockResolvedValue(forms[0] ?? null) } },
         execute: jest.fn().mockResolvedValue([{ org_id: ORG_ID }]),
         transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
           fn({
-            query: { projectForms: { findFirst: jest.fn().mockResolvedValue(formRow) } },
+            query: {
+              projectForms: {
+                findFirst: jest.fn().mockImplementation(async (args: { where?: unknown }) => findFirstResult(args)),
+              },
+            },
             execute: jest.fn().mockResolvedValue([]),
             select: jest.fn().mockReturnValue({
               from: jest.fn().mockReturnValue({
@@ -160,35 +188,47 @@ describe("PublicFormsService — C4 server-enforce: six access conditions", () =
     });
 
     it("throws NotFoundException when project has deletedAt set — project lifecycle is enforced", async () => {
-      const db = makeIntakeDb(null, BASE_FORM);
+      const db = makeIntakeDb(null, [BASE_FORM]);
       const svc = new PublicFormsService(db, makeSubmissions());
       await expect(svc.getIntakeFormByProject(PROJECT_ID)).rejects.toThrow(NotFoundException);
     });
 
     it("throws NotFoundException when no active public form exists for the project", async () => {
-      const db = makeIntakeDb({ id: PROJECT_ID }, null);
+      const db = makeIntakeDb({ id: PROJECT_ID }, []);
       const svc = new PublicFormsService(db, makeSubmissions());
       await expect(svc.getIntakeFormByProject(PROJECT_ID)).rejects.toThrow(NotFoundException);
     });
 
     it("throws NotFoundException when intake form is soft-deleted", async () => {
-      const db = makeIntakeDb({ id: PROJECT_ID }, { ...BASE_FORM, deletedAt: new Date("2026-01-01") });
+      const db = makeIntakeDb({ id: PROJECT_ID }, [{ ...BASE_FORM, deletedAt: new Date("2026-01-01") }]);
       const svc = new PublicFormsService(db, makeSubmissions());
       await expect(svc.getIntakeFormByProject(PROJECT_ID)).rejects.toThrow(NotFoundException);
     });
 
     it("throws NotFoundException when intake form is unpublished (isPublic: false)", async () => {
-      const db = makeIntakeDb({ id: PROJECT_ID }, { ...BASE_FORM, isPublic: false });
+      const db = makeIntakeDb({ id: PROJECT_ID }, [{ ...BASE_FORM, isPublic: false }]);
       const svc = new PublicFormsService(db, makeSubmissions());
       await expect(svc.getIntakeFormByProject(PROJECT_ID)).rejects.toThrow(NotFoundException);
     });
 
     it("returns the form when project is live and form is active and public — control", async () => {
-      const db = makeIntakeDb({ id: PROJECT_ID }, BASE_FORM);
+      const db = makeIntakeDb({ id: PROJECT_ID }, [BASE_FORM]);
       const svc = new PublicFormsService(db, makeSubmissions());
       const result = await svc.getIntakeFormByProject(PROJECT_ID);
       expect(result).toHaveProperty("id");
       expect(result).toHaveProperty("name", "Probe form");
+    });
+
+    it("serves the older live form when the newest one is unpublished, because the lifecycle test belongs in the query and a project with a retired draft still has a working intake link", async () => {
+      const db = makeIntakeDb({ id: PROJECT_ID }, [
+        { ...BASE_FORM, id: 2, name: "Retired draft", isActive: false },
+        { ...BASE_FORM, id: 1, name: "Live intake" },
+      ]);
+      const svc = new PublicFormsService(db, makeSubmissions());
+
+      const result = await svc.getIntakeFormByProject(PROJECT_ID);
+
+      expect(result).toHaveProperty("name", "Live intake");
     });
   });
 });
