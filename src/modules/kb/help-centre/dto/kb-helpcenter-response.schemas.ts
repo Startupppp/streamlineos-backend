@@ -1,6 +1,20 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { itemsPagedSchema, cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { SUPPORT_KNOWLEDGE_GAP_STATUSES } from "../../../../db/schema/support/support-kb-gap";
+
+export const KB_PAGE_STATUSES = [
+  "draft",
+  "in_review",
+  "published",
+  "archived",
+] as const;
+
+export const KB_PAGE_TRUST_STATES = [
+  "unverified",
+  "verified",
+  "verification_expired",
+] as const;
 
 const aiUsageMetaSchema = z.object({
   model: z.string(),
@@ -42,8 +56,8 @@ export const kbAnalyticsNoResultsSchema = z.array(
 const kbAnalyticsPageItemSchema = z.object({
   id: z.number().int(),
   title: z.string(),
-  status: z.string(),
-  trustState: z.string(),
+  status: z.enum(KB_PAGE_STATUSES),
+  trustState: z.enum(KB_PAGE_TRUST_STATES),
   updatedAt: wireDate(),
   uniqueViewers: z.number().int(),
   commentCount: z.number().int(),
@@ -79,7 +93,7 @@ export const kbAnalyticsGapsSchema = cursorPageSchema(kbAnalyticsGapItemSchema);
 export const kbAnalyticsGapRelatedPageItemSchema = z.object({
   id: z.number().int(),
   title: z.string(),
-  status: z.string(),
+  status: z.enum(KB_PAGE_STATUSES),
   updatedAt: wireDate(),
 });
 
@@ -88,7 +102,7 @@ export const kbAnalyticsGapRelatedPagesSchema = cursorPageSchema(kbAnalyticsGapR
 export const kbAnalyticsGapActionSchema = z.object({
   id: z.number().int(),
   clusterKey: z.string(),
-  status: z.string(),
+  status: z.enum(SUPPORT_KNOWLEDGE_GAP_STATUSES),
   proposedArticleId: z.number().int().nullable(),
   draftedBy: z.string().nullable(),
   updatedAt: wireDate(),
@@ -114,7 +128,7 @@ export const kbArticleSchema = z.object({
   excerpt: z.string().nullable(),
   content: z.string(),
   contentText: z.string(),
-  status: z.enum(["draft", "in_review", "published", "archived"]),
+  status: z.enum(KB_PAGE_STATUSES),
   visibility: z.enum(["public", "internal"]),
   authorId: z.string().nullable(),
   views: z.number().int(),
@@ -149,7 +163,7 @@ export const kbArticleListItemSchema = z.object({
   title: z.string(),
   slug: z.string(),
   excerpt: z.string().nullable(),
-  status: z.enum(["draft", "in_review", "published", "archived"]),
+  status: z.enum(KB_PAGE_STATUSES),
   visibility: z.enum(["public", "internal"]),
   ownerMembershipId: z.number().int().nullable(),
   helpfulCount: z.number().int(),
