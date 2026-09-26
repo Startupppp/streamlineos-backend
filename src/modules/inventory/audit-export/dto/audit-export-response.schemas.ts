@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { itemsPagedSchema } from "../../../../common/openapi/response-envelopes";
+import { invJobStatusEnum } from "../../../../db/schema/common/enums-inventory-fulfilment";
 
 /**
  * `toAuditExportJobDto` (`audit-export-job.ts`) — the projection, not the row.
@@ -16,7 +17,7 @@ import { itemsPagedSchema } from "../../../../common/openapi/response-envelopes"
  */
 const auditExportJobSchema = z.object({
   id: z.number().int(),
-  status: z.string(),
+  status: z.enum(invJobStatusEnum.enumValues),
   schemaVersion: z.number().int(),
   evidenceVersion: z.string(),
   sections: z.array(z.enum(["ledger", "audit_events"])),

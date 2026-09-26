@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
 import { itemsPagedSchema } from "../../../../common/openapi/response-envelopes";
+import { invVendorReturnReasonEnum } from "../../../../db/schema/common/enums-inventory";
 
 const userRefSchema = z.object({ id: z.string(), name: z.string().nullable() });
+const vendorRefSchema = z.object({ id: z.number().int(), name: z.string() });
 
 const vendorReturnLineSchema = z.object({
   id: z.number().int(),
@@ -11,6 +13,7 @@ const vendorReturnLineSchema = z.object({
   lotId: z.number().int().nullable(),
   serialId: z.number().int().nullable(),
   quantity: z.string(),
+  reason: z.enum(invVendorReturnReasonEnum.enumValues),
   status: z.string().optional(),
   unitCost: z.string().nullable().optional(),
 });
@@ -28,12 +31,15 @@ const vendorReturnSchema = z.object({
   createdByMembershipId: z.number().int().nullable(),
   approvedBy: z.string().nullable(),
   approvedByMembershipId: z.number().int().nullable(),
+  approvedAt: wireDate().nullable(),
+  creditReference: z.string().nullable(),
   postedAt: wireDate().nullable(),
   cancelledAt: wireDate().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
   creator: userRefSchema.optional(),
   approver: userRefSchema.nullable().optional(),
+  vendor: vendorRefSchema.nullable(),
   lines: z.array(vendorReturnLineSchema).optional(),
 });
 
