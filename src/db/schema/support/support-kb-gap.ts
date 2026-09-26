@@ -23,6 +23,7 @@ export const supportKnowledgeGaps = pgTable(
     sampleTicketIds: jsonb("sample_ticket_ids").$type<number[]>().default([]).notNull(),
     status: text("status").default("OPEN").notNull(),
     proposedArticleId: integer("proposed_article_id"),
+    dismissalReason: text("dismissal_reason"),
     draftedBy: text("drafted_by").references(() => users.id, { onDelete: "set null" }),
     reviewedBy: text("reviewed_by").references(() => users.id, { onDelete: "set null" }),
     evidence: jsonb("evidence")
