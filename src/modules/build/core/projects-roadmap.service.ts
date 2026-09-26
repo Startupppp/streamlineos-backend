@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { projects, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -113,9 +113,17 @@ export class ProjectsRoadmapService {
       );
     }
     const where = and(...conditions);
+    const sortOrderBy =
+      query.sort === "updated_at"
+        ? [desc(roadmapItems.updatedAt), asc(roadmapItems.sortOrder), asc(roadmapItems.id)]
+        : query.sort === "created_at"
+          ? [desc(roadmapItems.createdAt), asc(roadmapItems.sortOrder), asc(roadmapItems.id)]
+          : query.sort === "title"
+            ? [asc(roadmapItems.title), asc(roadmapItems.id)]
+            : [asc(roadmapItems.sortOrder), asc(roadmapItems.id)];
     const rows = await this.db.query.roadmapItems.findMany({
       where,
-      orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
+      orderBy: sortOrderBy,
       limit: limit + 1,
     });
     const page = buildCursorPage(rows, limit, (row) => ({

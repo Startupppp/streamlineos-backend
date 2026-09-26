@@ -42,6 +42,10 @@ function productionSources(dir: string): string[] {
   return results;
 }
 
+function allKbSources(): string[] {
+  return productionSources(KB_SRC);
+}
+
 function readSrc(file: string): string {
   return fs.readFileSync(file, "utf8");
 }
@@ -66,58 +70,49 @@ function makeStanding(over: Partial<KbActorStanding> = {}): KbActorStanding {
 }
 
 describe("Box 1 — canonical KnowledgeAuthorization is the only access decision", () => {
-  it("no wiki production file imports pageVisibleTo from kb-page-visibility — deferred callers in retrieval/ are enumerated and pinned", () => {
-    const wikiDir = path.join(KB_SRC, "wiki");
-    const violations: string[] = [];
+  it("the retired page-bound visibility predicate no longer exists, so no file can reach for a second page ACL rule", () => {
+    const legacy = readSrc(path.join(KB_SRC, "retrieval/kb-page-visibility.ts"));
 
-    for (const file of productionSources(wikiDir)) {
-      const content = readSrc(file);
-      if (content.includes("kb-page-visibility") && content.includes("pageVisibleTo")) {
-        violations.push(path.relative(KB_SRC, file));
-      }
-    }
+    expect(legacy).not.toContain("pageVisibleTo");
+    expect(legacy).not.toContain("kbPages");
+    expect(legacy).toContain("export function visibleTo");
+  });
+
+  it("kb-page-visibility survives for exactly one production caller, the chunk predicate, and for no page query", () => {
+    const importers = allKbSources()
+      .filter((file) => path.basename(file) !== "kb-page-visibility.ts")
+      .filter((file) => readSrc(file).includes("kb-page-visibility"))
+      .map((file) => path.relative(KB_SRC, file).split(path.sep).join("/"));
+
+    expect(importers).toEqual(["retrieval/kb-chunk-visibility.ts"]);
+  });
+
+  it("no production file builds a kbPages visibility predicate outside the canonical scope module", () => {
+    const violations = allKbSources()
+      .filter((file) => path.relative(KB_SRC, file) !== path.join("core", "authorization", "knowledge-page-scope.ts"))
+      .filter((file) => {
+        const content = readSrc(file);
+        return content.includes("visibleTo(") && content.includes("kbPages.visibility");
+      })
+      .map((file) => path.relative(KB_SRC, file).split(path.sep).join("/"));
 
     expect(violations).toHaveLength(0);
   });
 
-  it("no core production file imports pageVisibleTo from kb-page-visibility", () => {
-    const coreDir = path.join(KB_SRC, "core");
-    const violations: string[] = [];
-
-    for (const file of productionSources(coreDir)) {
-      const content = readSrc(file);
-      if (content.includes("kb-page-visibility") && content.includes("pageVisibleTo")) {
-        violations.push(path.relative(KB_SRC, file));
-      }
-    }
-
-    expect(violations).toHaveLength(0);
-  });
-
-  it("deferred callers in retrieval/ that still use the legacy predicate are bounded and enumerated — adding a new one here is the fix", () => {
-    const KNOWN_DEFERRED = [
-      "retrieval/kb-page-visibility.ts",
-      "retrieval/kb-page-visibility.spec.ts",
-      "retrieval/kb-chunk-visibility.spec.ts",
-      "retrieval/kb-departed-actor.spec.ts",
-      "retrieval/kb-read-search-parity.spec.ts",
-      "retrieval/kb-revocation-after-indexing.spec.ts",
-      "retrieval/kb-surface-predicate.spec.ts",
-      "retrieval/kb-vector-tenant-binding.spec.ts",
+  it("direct callers of buildVisiblePageScope are bounded — every other surface must go through the authorization seam", () => {
+    const KNOWN_DIRECT_CALLERS = [
+      "core/authorization/knowledge-authorization.service.ts",
+      "core/authorization/knowledge-page-scope.ts",
+      "core/collection/knowledge-collection.service.ts",
+      "retrieval/kb-page-search-query.service.ts",
     ];
 
-    const retrievalDir = path.join(KB_SRC, "retrieval");
-    const actual: string[] = [];
-    for (const file of fs.readdirSync(retrievalDir).map((f) => path.join(retrievalDir, f))) {
-      if (!fs.statSync(file).isFile()) continue;
-      const content = readSrc(file);
-      if (content.includes("pageVisibleTo")) {
-        actual.push(`retrieval/${path.basename(file)}`);
-      }
-    }
+    const callers = allKbSources()
+      .filter((file) => /\bbuildVisiblePageScope\b/.test(readSrc(file)))
+      .map((file) => path.relative(KB_SRC, file).split(path.sep).join("/"));
 
-    const unexpected = actual.filter((f) => !KNOWN_DEFERRED.includes(f));
-    expect(unexpected).toHaveLength(0);
+    expect(callers.filter((f) => !KNOWN_DIRECT_CALLERS.includes(f))).toHaveLength(0);
+    expect(callers).toEqual(expect.arrayContaining(KNOWN_DIRECT_CALLERS));
   });
 
   it("document-query callers of buildArticleRestrictionBranch are bounded — adding a new one must be deliberate", () => {

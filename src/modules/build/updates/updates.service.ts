@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import { projectUpdates } from "../../../db/schema/build/project-updates";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -60,6 +60,8 @@ export class UpdatesService {
         projectId: projectUpdates.projectId,
         authorMembershipId: projectUpdates.authorMembershipId,
         body: projectUpdates.body,
+        status: projectUpdates.status,
+        audience: projectUpdates.audience,
         createdAt: microsecondCursorValue(projectUpdates.createdAt),
         updatedAt: projectUpdates.updatedAt,
         deletedAt: projectUpdates.deletedAt,
@@ -72,6 +74,18 @@ export class UpdatesService {
           isNull(projectUpdates.deletedAt),
           position
             ? keysetBeforeMicros(projectUpdates.createdAt, projectUpdates.id, position)
+            : undefined,
+          query.authorId !== undefined
+            ? eq(projectUpdates.authorMembershipId, query.authorId)
+            : undefined,
+          query.status !== undefined
+            ? eq(projectUpdates.status, query.status)
+            : undefined,
+          query.from !== undefined
+            ? gte(projectUpdates.createdAt, new Date(query.from))
+            : undefined,
+          query.to !== undefined
+            ? lte(projectUpdates.createdAt, new Date(query.to))
             : undefined,
         ),
       )

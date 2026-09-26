@@ -228,5 +228,145 @@ describe("ChatNotificationsService", () => {
       expect(mockEffects.executeBatch).not.toHaveBeenCalled();
       expect(mockAbly.publishToUser).toHaveBeenCalledTimes(2);
     });
+
+    it("calls dispatch.emitNow with chat.message.mention and IN_APP channel so mentions are persisted to the inbox", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "user2", notificationPreference: "ALL" },
+      ]);
+
+      await service.publishMentionNotification("org1", 1, baseMessage, ["user2"]);
+
+      expect(mockDispatch.emitNow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventKey: "chat.message.mention",
+          orgId: "org1",
+          channels: ["IN_APP"],
+          targetUserIds: ["user2"],
+        }),
+      );
+    });
+
+    it("excludes the sender from inbox recipients so the author does not see a mention notification for their own message", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "sender1", notificationPreference: "ALL" },
+        { userId: "user2", notificationPreference: "ALL" },
+      ]);
+
+      await service.publishMentionNotification("org1", 1, baseMessage, ["sender1", "user2"]);
+
+      expect(mockDispatch.emitNow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          targetUserIds: ["user2"],
+        }),
+      );
+    });
+
+    it("skips dispatch.emitNow when all recipients are the sender", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "sender1", notificationPreference: "ALL" },
+      ]);
+
+      await service.publishMentionNotification("org1", 1, baseMessage, ["sender1"]);
+
+      expect(mockDispatch.emitNow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("publishNewMessageNotification — inbox persistence for DIRECT channels", () => {
+    it("calls dispatch.emitNow with chat.message.direct for a DIRECT channel message so DMs are persisted to the inbox", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "user2", mutedUntil: null, notificationPreference: "ALL" },
+      ]);
+
+      await service.publishNewMessageNotification("org1", 1, baseMessage, "DIRECT");
+
+      expect(mockDispatch.emitNow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventKey: "chat.message.direct",
+          orgId: "org1",
+          channels: ["IN_APP"],
+          targetUserIds: ["user2"],
+        }),
+      );
+    });
+
+    it("does not call dispatch.emitNow for GROUP channel messages because only DMs and mentions go to the unified inbox", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "user2", mutedUntil: null, notificationPreference: "ALL" },
+      ]);
+
+      await service.publishNewMessageNotification("org1", 1, baseMessage, "GROUP");
+
+      expect(mockDispatch.emitNow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("publishThreadReplyInboxNotification", () => {
+    function mockParentRow(
+      row: { userId: string; notificationPreference: string; mutedUntil: Date | null } | null,
+    ) {
+      const mockLimit = jest.fn().mockResolvedValueOnce(row ? [row] : []);
+      mockDb.where.mockReturnValueOnce({ limit: mockLimit });
+    }
+
+    it("calls dispatch.emitNow with chat.thread.reply so thread replies reach the unified inbox", async () => {
+      mockParentRow({ userId: "parent-author", notificationPreference: "ALL", mutedUntil: null });
+
+      await service.publishThreadReplyInboxNotification(
+        "org1",
+        1,
+        { id: 2, replyToId: 1, senderUserId: "replier" },
+        "key:thread",
+      );
+
+      expect(mockDispatch.emitNow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventKey: "chat.thread.reply",
+          orgId: "org1",
+          channels: ["IN_APP"],
+          targetUserIds: ["parent-author"],
+        }),
+      );
+    });
+
+    it("does not call dispatch.emitNow when the sender is replying to their own message", async () => {
+      mockParentRow({ userId: "sender1", notificationPreference: "ALL", mutedUntil: null });
+
+      await service.publishThreadReplyInboxNotification(
+        "org1",
+        1,
+        { id: 2, replyToId: 1, senderUserId: "sender1" },
+      );
+
+      expect(mockDispatch.emitNow).not.toHaveBeenCalled();
+    });
+
+    it("does not call dispatch.emitNow when the parent message author has muted the channel", async () => {
+      mockParentRow({
+        userId: "parent-author",
+        notificationPreference: "ALL",
+        mutedUntil: new Date(Date.now() + 3_600_000),
+      });
+
+      await service.publishThreadReplyInboxNotification(
+        "org1",
+        1,
+        { id: 2, replyToId: 1, senderUserId: "replier" },
+      );
+
+      expect(mockDispatch.emitNow).not.toHaveBeenCalled();
+    });
+
+    it("does not call dispatch.emitNow when no parent message is found (parent row was deleted or cross-channel)", async () => {
+      mockParentRow(null);
+
+      await service.publishThreadReplyInboxNotification(
+        "org1",
+        1,
+        { id: 2, replyToId: 99, senderUserId: "replier" },
+      );
+
+      expect(mockDispatch.emitNow).not.toHaveBeenCalled();
+    });
   });
 });

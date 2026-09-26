@@ -1,5 +1,6 @@
 import {
   bigint,
+  boolean,
   text,
   timestamp,
   jsonb,
@@ -57,6 +58,10 @@ export const projects = build.table(
       projectType?: string;
       workflow?: string;
       features?: Record<string, boolean>;
+      iterations?: {
+        defaultDurationWeeks: number;
+        namingPrefix: string;
+      };
     }>(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     reportRevision: bigint("report_revision", { mode: "number" }).default(0).notNull(),
@@ -229,5 +234,35 @@ export const projectTemplateTickets = build.table(
     index("idx_project_template_tickets_template").on(table.templateId),
     index("idx_project_template_tickets_org_template").on(table.orgId, table.templateId),
     unique("uniq_project_template_tickets_org_id").on(table.orgId, table.id),
+  ],
+);
+
+export const projectRetentionSettings = build.table(
+  "project_retention_settings",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    projectId: integer("project_id").notNull(),
+    inheritOrgPolicy: boolean("inherit_org_policy").notNull().default(true),
+    closedTicketRetentionDays: integer("closed_ticket_retention_days"),
+    attachmentRetentionDays: integer("attachment_retention_days"),
+    auditLogRetentionDays: integer("audit_log_retention_days"),
+    legalHold: boolean("legal_hold").notNull().default(false),
+    legalHoldReason: text("legal_hold_reason"),
+    legalHoldSetAt: timestamp("legal_hold_set_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId, table.projectId],
+      foreignColumns: [projects.orgId, projects.id],
+      name: "fk_project_retention_settings_org_project",
+    }).onDelete("cascade"),
+    index("idx_project_retention_settings_org_project").on(table.orgId, table.projectId),
+    unique("uniq_project_retention_settings_org_project").on(table.orgId, table.projectId),
+    unique("uniq_project_retention_settings_org_id").on(table.orgId, table.id),
   ],
 );

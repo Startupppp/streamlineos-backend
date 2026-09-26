@@ -12,8 +12,10 @@ import {
 import { ApiOkResponse } from "@nestjs/swagger";
 import type { Response } from "express";
 import {
+  projectAnalyticsQuerySchema,
   resourceAllocationQuerySchema,
   velocityQuerySchema,
+  type ProjectAnalyticsQuery,
   type ResourceAllocationQuery,
   type VelocityQuery,
 } from "./dto/analytics.schemas";
@@ -72,13 +74,14 @@ export class ProjectsReportsController {
   @Get(":projectId/analytics")
   @RequirePermission("build:view")
   @ResponseSchema(analyticsSchema)
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: projectAnalyticsQuerySchema })
   async getAnalytics(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ProjectAnalyticsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.reports.authorizeProject(u, projectId);
-    return this.analytics.getProjectAnalytics(u.orgId, projectId);
+    return this.analytics.getProjectAnalytics(u.orgId, projectId, query);
   }
 
   @Get(":projectId/reports/burnup")

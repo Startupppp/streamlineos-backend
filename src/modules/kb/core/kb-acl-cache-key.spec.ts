@@ -11,6 +11,7 @@ import {
   type KbAclDimension,
 } from "./kb-acl-cache-key";
 import { resolvePrincipalScope } from "../../access/access-principal-scope";
+import type { DataScope } from "../../../common/rbac/data-scope";
 import {
   ACCOUNT_ONLY_PRINCIPAL,
   agentTokenPrincipal,
@@ -71,7 +72,11 @@ function makeCache(): CacheHarness {
 }
 
 interface DbHarness {
-  db: unknown;
+  db: {
+    select: jest.Mock;
+    selectDistinct: jest.Mock;
+    query: Record<string, unknown>;
+  };
   selectDistinctCalls: () => number;
 }
 
@@ -117,16 +122,18 @@ function makeAccess(permissionsVersion = 1): AccessService {
     holds: jest
       .fn()
       .mockImplementation(async (user: CurrentUserContext, permissionKey: string) => {
-        const scope = await resolvePrincipalScope(user.principal, permissionKey, async () => "none");
+        const membershipGrants = (): Promise<DataScope> => Promise.resolve("none");
+        const scope = await resolvePrincipalScope(
+          user.principal,
+          permissionKey,
+          membershipGrants,
+        );
         return scope !== "none";
       }),
   } as unknown as AccessService;
 }
 
-function userWith(
-  principal: CurrentUserContext["principal"],
-  isOrgOwner = false,
-): CurrentUserContext {
+function userWith(principal: Principal | undefined, isOrgOwner = false): CurrentUserContext {
   return {
     orgId: ORG,
     userId: USER,
@@ -189,7 +196,7 @@ describe("kbAclCacheKey — the ACL dimension is a required field, not an option
       ACCOUNT_ONLY_PRINCIPAL,
       personalTokenPrincipal(MEMBERSHIP, false, "pat-1", VIEW_ONLY_CEILING),
       agentTokenPrincipal(MEMBERSHIP, 3, VIEW_ONLY_CEILING),
-      systemJobPrincipal("build-ticket-automation"),
+      systemJobPrincipal("build.daily-snapshots"),
     ];
 
     for (const principal of principals) {

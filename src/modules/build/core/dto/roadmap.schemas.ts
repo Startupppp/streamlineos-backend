@@ -25,6 +25,7 @@ export const roadmapListQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(50),
   managedProductId: z.coerce.number().int().positive().optional(),
+  sort: z.enum(["updated_at", "created_at", "title"]).optional(),
 }).strict();
 
 export const createRoadmapSchema = z.object({

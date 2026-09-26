@@ -7,6 +7,8 @@ export const updateRowSchema = z.object({
   projectId: z.number().int(),
   authorMembershipId: z.number().int(),
   body: z.string(),
+  status: z.enum(["draft", "published"]),
+  audience: z.enum(["internal", "client"]),
   createdAt: wireDate(),
   updatedAt: wireDate(),
   deletedAt: nullableWireDate(),

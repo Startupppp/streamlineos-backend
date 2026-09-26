@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
-import { cycles, projectStatuses, tickets, timesheets, users } from "../../../db/schema";
+import { and, count, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { cycles, organizationMembers, projectStatuses, projectTeamMembers, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -9,6 +9,7 @@ import { assertProjectInOrg } from "./project-access";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
   resourceAllocationCursorPositionSchema,
+  type ProjectAnalyticsQuery,
   type ResourceAllocationQuery,
 } from "./dto/analytics.schemas";
 
@@ -19,22 +20,56 @@ export class ProjectsAnalyticsService {
     private readonly cache: CacheService,
   ) {}
 
-  async getProjectAnalytics(orgId: string, projectId: number) {
+  async getProjectAnalytics(orgId: string, projectId: number, query?: ProjectAnalyticsQuery) {
     await assertProjectInOrg(this.db, orgId, projectId);
+    const cacheKey = `${String(projectId)}:r${query?.range ?? "all"}:o${query?.ownerId ?? ""}:t${query?.teamId ?? ""}`;
     return this.cache.cachedVersioned(
       `build:analytics:${orgId}`,
-      String(projectId),
-      () => this.computeProjectAnalytics(orgId, projectId),
+      cacheKey,
+      () => this.computeProjectAnalytics(orgId, projectId, query),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async computeProjectAnalytics(orgId: string, projectId: number) {
-    const orgFilter = and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt));
+  private async resolveMembershipIds(orgId: string, query?: ProjectAnalyticsQuery): Promise<number[] | null> {
+    if (query?.ownerId) {
+      const member = await this.db.query.organizationMembers.findFirst({
+        where: and(eq(organizationMembers.userId, query.ownerId), eq(organizationMembers.orgId, orgId)),
+        columns: { id: true },
+      });
+      return member ? [member.id] : [];
+    }
+    if (query?.teamId) {
+      const teamMembers = await this.db
+        .select({ membershipId: projectTeamMembers.membershipId })
+        .from(projectTeamMembers)
+        .where(and(eq(projectTeamMembers.orgId, orgId), eq(projectTeamMembers.teamId, query.teamId)));
+      return teamMembers.map((m) => m.membershipId);
+    }
+    return null;
+  }
+
+  private async computeProjectAnalytics(orgId: string, projectId: number, query?: ProjectAnalyticsQuery) {
+    const rangeDays = query?.range === "7d" ? 7 : query?.range === "30d" ? 30 : query?.range === "90d" ? 90 : 84;
+    const rangeStart = new Date();
+    rangeStart.setDate(rangeStart.getDate() - rangeDays);
+
+    const membershipIds = await this.resolveMembershipIds(orgId, query);
+    const assigneeFilter: SQL | undefined =
+      membershipIds === null
+        ? undefined
+        : membershipIds.length === 0
+          ? sql`1 = 0`
+          : inArray(tickets.assigneeMembershipId, membershipIds);
+
+    const orgFilter = and(
+      eq(tickets.projectId, projectId),
+      eq(tickets.orgId, orgId),
+      isNull(tickets.deletedAt),
+      ...(assigneeFilter ? [assigneeFilter] : []),
+    );
 
     const today = new Date();
-    const twelveWeeksAgo = new Date();
-    twelveWeeksAgo.setDate(twelveWeeksAgo.getDate() - 84);
     const todayStr = today.toISOString().slice(0, 10);
 
     const [
@@ -77,6 +112,7 @@ export class ProjectsAnalyticsService {
             AND ps.project_id = t.project_id AND ps.name = t.status
           WHERE t.project_id = ${projectId} AND t.org_id = ${orgId} AND t.deleted_at IS NULL
             AND t.assignee_membership_id IS NOT NULL
+            ${membershipIds !== null ? sql`AND t.assignee_membership_id = ANY(${membershipIds.length > 0 ? membershipIds : [-1]})` : sql``}
           UNION
           SELECT ta.membership_id, ta.ticket_id, ps2.type AS status_group
           FROM build.ticket_assignees ta
@@ -85,6 +121,7 @@ export class ProjectsAnalyticsService {
           LEFT JOIN build.project_statuses ps2 ON ps2.org_id = t2.org_id
             AND ps2.project_id = t2.project_id AND ps2.name = t2.status
           WHERE ta.org_id = ${orgId}
+            ${membershipIds !== null ? sql`AND ta.membership_id = ANY(${membershipIds.length > 0 ? membershipIds : [-1]})` : sql``}
         ) combined
         JOIN organization_members om ON om.id = combined.membership_id AND om.org_id = ${orgId}
         JOIN users u ON u.id = om.user_id
@@ -109,7 +146,7 @@ export class ProjectsAnalyticsService {
           count: count(),
         })
         .from(tickets)
-        .where(and(orgFilter, gte(tickets.createdAt, twelveWeeksAgo)))
+        .where(and(orgFilter, gte(tickets.createdAt, rangeStart)))
         .groupBy(sql`DATE_TRUNC('week', ${tickets.createdAt})`)
         .orderBy(sql`DATE_TRUNC('week', ${tickets.createdAt})`),
       this.db

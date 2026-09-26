@@ -95,6 +95,47 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
 
     await expect(svc.listUpdates(makeUser("org-attacker"), 1, {})).rejects.toThrow(NotFoundException);
   });
+
+  it("includes status and audience in the projected row so the frontend can filter by publication state without an extra round-trip", async () => {
+    const db = makeMockDb();
+    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    const row = {
+      id: 1,
+      orgId: "org-1",
+      projectId: 1,
+      authorMembershipId: 7,
+      body: "Sprint update",
+      status: "published",
+      audience: "internal",
+      createdAt: "2026-09-01T12:00:00.000000Z",
+      updatedAt: new Date("2026-09-01"),
+      deletedAt: null,
+    };
+    db.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([row]));
+    const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
+
+    const result = await svc.listUpdates(makeUser("org-1"), 1, {});
+    expect(result.data[0]).toMatchObject({ status: "published", audience: "internal" });
+  });
+
+  it("accepts authorId, from, to, and status filter params so the strict query schema does not 400 a filtered request", async () => {
+    const db = makeMockDb();
+    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    db.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
+
+    const result = await svc.listUpdates(makeUser("org-1"), 1, {
+      authorId: 7,
+      from: "2026-01-01",
+      to: "2026-12-31",
+      status: "published",
+    });
+    expect(result).toMatchObject({ data: [], pagination: { hasMore: false } });
+  });
 });
 
 describe("UpdatesService.createUpdate — tenant isolation and membershipId binding", () => {

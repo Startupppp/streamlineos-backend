@@ -19,11 +19,13 @@ import { BuildUpdatesModule } from "./updates/build-updates.module";
 import { BuildWorkflowModule } from "./workflow/build-workflow.module";
 import { BuildCalendarModule } from "./build-calendar.module";
 import { ScopeDirectoryModule } from "./scope-directory/scope-directory.module";
+import { ProjectsRetentionSettingsModule } from "./core/projects-retention-settings.module";
 
 export const BUILD_MODULES = [
   BuildCalendarModule,
   ProjectsModule,
   ScopeDirectoryModule,
+  ProjectsRetentionSettingsModule,
   BuildApprovalsModule,
   BuildClientPortalModule,
   BuildCommentDraftsModule,
@@ -40,16 +42,9 @@ export const BUILD_MODULES = [
   BuildTeamsModule,
   BuildUpdatesModule,
   BuildWorkflowModule,
-  // Must stay last: its bare `build/:projectId` route shadows every literal
-  // sibling registered after it. Guarded by build-route-order.spec.ts.
   ProjectsByIdModule,
 ];
 
-/**
- * Aggregates every Build sub-domain so the root module imports one feature
- * module instead of sixteen. Re-exported so a consumer that imports BuildModule
- * also gets the sub-modules' exported providers.
- */
 @Module({
   imports: BUILD_MODULES,
   exports: BUILD_MODULES,

@@ -6882,6 +6882,13 @@
       "when": 1803057610725,
       "tag": "1277_kb_and_gap_status_vocabularies",
       "breakpoints": true
+    },
+    {
+      "idx": 1111,
+      "version": "7",
+      "when": 1803061210725,
+      "tag": "1295_build_project_retention_settings",
+      "breakpoints": true
     }
   ]
 }

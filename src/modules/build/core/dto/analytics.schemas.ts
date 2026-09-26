@@ -30,7 +30,14 @@ export const resourceAllocationCursorPositionSchema = z.object({
   id: z.string().min(1),
 }).transform((position) => ({ totalOpen: position.sortValue, id: position.id }));
 
+export const projectAnalyticsQuerySchema = z.object({
+  range: z.enum(["7d", "30d", "90d"]).optional(),
+  teamId: z.coerce.number().int().positive().optional(),
+  ownerId: z.string().optional(),
+}).strict();
+
 export type ResourceAllocationQuery = z.infer<typeof resourceAllocationQuerySchema>;
 export type BurnupQuery = z.infer<typeof burnupQuerySchema>;
 export type CfdQuery = z.infer<typeof cfdQuerySchema>;
 export type VelocityQuery = z.infer<typeof velocityQuerySchema>;
+export type ProjectAnalyticsQuery = z.infer<typeof projectAnalyticsQuerySchema>;

@@ -19,8 +19,7 @@ import {
 } from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
-const projectIdwebhookIdParams = z.object({ projectId: z.string().min(1), webhookId: z.coerce.number().int().positive() }).strict();
-const projectIdwebhookIdParams_ = z.object({ projectId: z.coerce.number().int().positive(), webhookId: z.coerce.number().int().positive() }).strict();
+const projectIdwebhookIdParams = z.object({ projectId: z.coerce.number().int().positive(), webhookId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -72,7 +71,7 @@ export class ProjectsWebhooksController {
   @Get(":projectId/webhooks/:webhookId/deliveries")
   @RequirePermission("build:manage")
   @ResponseSchema(z.array(webhookDeliverySchema))
-  @Validate({ params: projectIdwebhookIdParams_ })
+  @Validate({ params: projectIdwebhookIdParams })
   listDeliveries(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("webhookId", ParseIntPipe) webhookId: number,
@@ -86,7 +85,7 @@ export class ProjectsWebhooksController {
   @RequirePermission("build:manage")
   @HttpCode(200)
   @ResponseSchema(webhookTestResultSchema)
-  @Validate({ params: projectIdwebhookIdParams_ })
+  @Validate({ params: projectIdwebhookIdParams })
   async sendTest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("webhookId", ParseIntPipe) webhookId: number,

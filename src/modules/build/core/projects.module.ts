@@ -62,6 +62,8 @@ import { BuildAutomationRunHistoryService } from "./build-automation-run-history
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { BuildReleasePublishedConsumerService } from "./build-release-published-consumer.service";
 import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
+import { ProjectsSettingsIterationsController } from "./projects-settings-iterations.controller";
+import { ProjectsSettingsIterationsService } from "./projects-settings-iterations.service";
 
 @Module({
   imports: [BillingModule, NotificationsModule, UsersModule, OutboxModule],
@@ -80,6 +82,7 @@ import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-c
     ProjectsAutomationsController,
     BuildMembersController,
     ProjectsCustomersController,
+    ProjectsSettingsIterationsController,
     ProjectsController,
     ProjectResourcesController,
   ],
@@ -127,6 +130,7 @@ import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-c
     BuildAutomationRunnerService,
     BuildAutomationActionExecutor,
     BuildAutomationRunHistoryService,
+    ProjectsSettingsIterationsService,
   ],
   exports: [
     BuildDueSweepService,
