@@ -6938,6 +6938,13 @@
       "when": 1803086410725,
       "tag": "1346_drop_redundant_project_team_members_org_team_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 1119,
+      "version": "7",
+      "when": 1803090010725,
+      "tag": "1365_magic_link_tokens_org_id",
+      "breakpoints": true
     }
   ]
 }
