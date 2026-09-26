@@ -49,7 +49,7 @@ export class ProjectsTemplatesController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListTemplatesQuery,
   ) {
-    return this.templates.listTemplates(u.orgId, query.cursor);
+    return this.templates.listTemplates(u.orgId, query);
   }
 
   @Post("templates")

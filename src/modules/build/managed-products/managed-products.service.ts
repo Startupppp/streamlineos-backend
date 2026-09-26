@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, sql } from "drizzle-orm";
 import {
   feedbucketSubmissions,
   feedbucketWidgets,
@@ -26,8 +26,10 @@ import {
   keysetBeforeId,
 } from "../../../common/pagination/keyset";
 import type {
+  BulkManagedProductsInput,
   CreateManagedProductInput,
   ListManagedProductsQuery,
+  ProductInsightsQuery,
   UpdateManagedProductInput,
 } from "./dto/managed-products.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
@@ -204,8 +206,19 @@ export class ManagedProductsService {
     return updated;
   }
 
-  async getProductInsights(orgId: string, managedProductId: number) {
+  private computeRangeStart(range: string | undefined): Date | undefined {
+    if (!range) return undefined;
+    const now = new Date();
+    if (range === "7d") return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    if (range === "30d") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    if (range === "90d") return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    return undefined;
+  }
+
+  async getProductInsights(orgId: string, managedProductId: number, query: ProductInsightsQuery = {}) {
     await this.loadProduct(orgId, managedProductId);
+
+    const rangeStart = this.computeRangeStart(query.range);
 
     const [projectRows, submissionRows, roadmapRows, feedbackRows] =
       await Promise.all([
@@ -217,6 +230,7 @@ export class ManagedProductsService {
               eq(projects.orgId, orgId),
               eq(projects.managedProductId, managedProductId),
               isNull(projects.deletedAt),
+              rangeStart ? gte(projects.createdAt, rangeStart) : undefined,
             ),
           )
           .groupBy(projects.status),
@@ -237,6 +251,7 @@ export class ManagedProductsService {
               eq(feedbucketWidgets.managedProductId, managedProductId),
               isNull(feedbucketSubmissions.deletedAt),
               isNull(feedbucketWidgets.deletedAt),
+              rangeStart ? gte(feedbucketSubmissions.createdAt, rangeStart) : undefined,
             ),
           )
           .groupBy(feedbucketSubmissions.status),
@@ -254,7 +269,11 @@ export class ManagedProductsService {
             ),
           )
           .where(
-            and(eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
+            and(
+              eq(roadmapItems.orgId, orgId),
+              isNull(roadmapItems.deletedAt),
+              rangeStart ? gte(roadmapItems.createdAt, rangeStart) : undefined,
+            ),
           )
           .groupBy(roadmapItems.status),
 
@@ -290,6 +309,7 @@ export class ManagedProductsService {
               eq(feedbackPosts.orgId, orgId),
               isNull(feedbackPosts.deletedAt),
               isNull(feedbackPosts.duplicateOfId),
+              rangeStart ? gte(feedbackPosts.createdAt, rangeStart) : undefined,
             ),
           )
           .groupBy(feedbackPosts.status),
@@ -381,6 +401,49 @@ export class ManagedProductsService {
       resourceType: "managed_product",
       resourceId: String(managedProductId),
       metadata: { managedProductId },
+    });
+  }
+
+  async bulkUpdateManagedProducts(
+    orgId: string,
+    userId: string,
+    input: BulkManagedProductsInput,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const updated = await tx
+        .update(managedProducts)
+        .set({ status: input.status, updatedAt: new Date() })
+        .where(
+          and(
+            eq(managedProducts.orgId, orgId),
+            inArray(managedProducts.id, input.ids),
+            isNull(managedProducts.deletedAt),
+          ),
+        )
+        .returning({ id: managedProducts.id });
+
+      const updatedIds = new Set(updated.map((r) => r.id));
+      const results = input.ids.map((id) =>
+        updatedIds.has(id)
+          ? { id, outcome: "updated" as const, reason: null }
+          : { id, outcome: "skipped" as const, reason: "not_found_or_filtered" },
+      );
+
+      this.audit.log({
+        action: "managed_product.bulk_updated",
+        userId,
+        orgId,
+        resourceType: "managed_product",
+        resourceId: input.ids.join(","),
+        metadata: { ids: input.ids, action: input.action, status: input.status },
+      });
+
+      return {
+        requested: input.ids.length,
+        succeeded: updatedIds.size,
+        skipped: input.ids.length - updatedIds.size,
+        results,
+      };
     });
   }
 }

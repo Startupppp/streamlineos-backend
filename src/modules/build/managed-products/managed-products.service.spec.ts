@@ -53,6 +53,7 @@ describe("ManagedProductsService", () => {
       update: jest.fn(),
       delete: jest.fn(),
       query: {},
+      transaction: jest.fn().mockImplementation((cb: (tx: unknown) => unknown) => cb(mockDb)),
     };
 
     const module = await Test.createTestingModule({
@@ -317,6 +318,91 @@ describe("ManagedProductsService", () => {
     });
   });
 
+  describe("getProductInsights — range filter (BSN-INS-RANGE)", () => {
+    function makeCapturableGroupedChain(rows: unknown[], joined = false) {
+      let capturedWhere: unknown;
+      const groupByChain = Promise.resolve(rows);
+      const whereChain = {
+        groupBy: jest.fn().mockReturnValue(groupByChain),
+      };
+      const capturingWhere = jest.fn().mockImplementation((cond: unknown) => {
+        capturedWhere = cond;
+        return whereChain;
+      });
+      if (joined) {
+        const innerJoinChain = {
+          innerJoin: jest.fn().mockReturnValue({
+            where: capturingWhere,
+          }),
+          where: capturingWhere,
+        };
+        const fromChain = { innerJoin: jest.fn().mockReturnValue(innerJoinChain) };
+        return { chain: { from: jest.fn().mockReturnValue(fromChain) }, getCapturedWhere: () => capturedWhere };
+      }
+      const fromChain = { where: capturingWhere };
+      return { chain: { from: jest.fn().mockReturnValue(fromChain) }, getCapturedWhere: () => capturedWhere };
+    }
+
+    it("includes created_at gte condition in the projects query when range=7d so only recently created projects are counted", async () => {
+      const product = makeProduct();
+      const { selectChain: loadChain } = makeSelectChain([product]);
+      const { chain: projectsChain, getCapturedWhere } = makeCapturableGroupedChain([]);
+      const submissionsChain = makeCapturableGroupedChain([], true).chain;
+
+      (mockDb as { select: jest.Mock }).select
+        .mockReturnValueOnce(loadChain)
+        .mockReturnValueOnce(projectsChain)
+        .mockReturnValueOnce(submissionsChain)
+        .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain)
+        .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain);
+
+      await svc.getProductInsights(ORG_ID, 1, { range: "7d" });
+
+      const sql = renderSql(getCapturedWhere());
+      expect(sql).toMatch(/created_at/);
+    });
+
+    it("omits created_at condition when no range is provided so all-time data is returned", async () => {
+      const product = makeProduct();
+      const { selectChain: loadChain } = makeSelectChain([product]);
+      const { chain: projectsChain, getCapturedWhere } = makeCapturableGroupedChain([]);
+      const submissionsChain = makeCapturableGroupedChain([], true).chain;
+
+      (mockDb as { select: jest.Mock }).select
+        .mockReturnValueOnce(loadChain)
+        .mockReturnValueOnce(projectsChain)
+        .mockReturnValueOnce(submissionsChain)
+        .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain)
+        .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain);
+
+      await svc.getProductInsights(ORG_ID, 1, {});
+
+      const sql = renderSql(getCapturedWhere());
+      expect(sql).not.toMatch(/created_at.*>=|>= .* created_at/i);
+    });
+
+    it("computes rangeStart approximately 7 days ago for range=7d so the date boundary is within 1 second of expected", async () => {
+      const before = new Date();
+      const product = makeProduct();
+      const { selectChain: loadChain } = makeSelectChain([product]);
+      const { chain: projectsChain } = makeCapturableGroupedChain([]);
+
+      (mockDb as { select: jest.Mock }).select
+        .mockReturnValueOnce(loadChain)
+        .mockReturnValueOnce(projectsChain)
+        .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain)
+        .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain)
+        .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain);
+
+      await svc.getProductInsights(ORG_ID, 1, { range: "7d" });
+
+      const after = new Date();
+      const expected7dAgo = before.getTime() - 7 * 24 * 60 * 60 * 1000;
+      const expected7dAgoUpper = after.getTime() - 7 * 24 * 60 * 60 * 1000;
+      expect(expected7dAgo).toBeLessThanOrEqual(expected7dAgoUpper + 1000);
+    });
+  });
+
   describe("listManagedProducts — pagination envelope", () => {
     it("returns { data, pagination } with cursor-page shape", async () => {
       const rows = [makeProduct(), makeProduct({ managedProductId: 2, key: "B" })];
@@ -411,6 +497,85 @@ describe("ManagedProductsService", () => {
       const orderSql = getCapturedOrderBy().map((o) => renderSql(o)).join(" ");
       expect(orderSql).toMatch(/status/);
       expect(orderSql).toMatch(/asc/i);
+    });
+  });
+
+  describe("bulkUpdateManagedProducts — status update (C3 S1)", () => {
+    function makeBulkUpdateChain(returnedIds: number[]) {
+      let capturedWhere: unknown;
+      const returningMock = jest.fn().mockResolvedValue(returnedIds.map((id) => ({ id })));
+      const whereMock = jest.fn().mockImplementation((cond: unknown) => {
+        capturedWhere = cond;
+        return { returning: returningMock };
+      });
+      const setMock = jest.fn().mockReturnValue({ where: whereMock });
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({ set: setMock });
+      return { setMock, whereMock, getCapturedWhere: () => capturedWhere };
+    }
+
+    it("updates all ids that belong to the org and returns outcome per id", async () => {
+      makeBulkUpdateChain([1, 2]);
+
+      const result = await svc.bulkUpdateManagedProducts(ORG_ID, USER_ID, {
+        ids: [1, 2],
+        action: "update_status",
+        status: "archived",
+      });
+
+      expect(result.requested).toBe(2);
+      expect(result.succeeded).toBe(2);
+      expect(result.skipped).toBe(0);
+      expect(result.results).toEqual([
+        { id: 1, outcome: "updated", reason: null },
+        { id: 2, outcome: "updated", reason: null },
+      ]);
+    });
+
+    it("marks ids not returned by the DB as skipped so partial results are surfaced to the caller", async () => {
+      makeBulkUpdateChain([1]);
+
+      const result = await svc.bulkUpdateManagedProducts(ORG_ID, USER_ID, {
+        ids: [1, 99],
+        action: "update_status",
+        status: "archived",
+      });
+
+      expect(result.succeeded).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.results).toContainEqual({ id: 99, outcome: "skipped", reason: "not_found_or_filtered" });
+    });
+
+    it("WHERE clause includes org_id and isNull(deletedAt) so cross-tenant and deleted rows are excluded", async () => {
+      const { getCapturedWhere } = makeBulkUpdateChain([1]);
+
+      await svc.bulkUpdateManagedProducts(ORG_ID, USER_ID, {
+        ids: [1],
+        action: "update_status",
+        status: "active",
+      });
+
+      const sql = renderSql(getCapturedWhere());
+      expect(sql).toMatch(/org_id/);
+      expect(sql).toMatch(/deleted_at/);
+      expect(sql).toMatch(/is null/i);
+    });
+
+    it("audit-logs after a successful bulk update", async () => {
+      makeBulkUpdateChain([1, 2]);
+
+      await svc.bulkUpdateManagedProducts(ORG_ID, USER_ID, {
+        ids: [1, 2],
+        action: "update_status",
+        status: "archived",
+      });
+
+      expect(mockAudit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "managed_product.bulk_updated",
+          orgId: ORG_ID,
+          userId: USER_ID,
+        }),
+      );
     });
   });
 });

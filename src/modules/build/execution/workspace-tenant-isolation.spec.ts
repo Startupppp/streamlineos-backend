@@ -257,7 +257,8 @@ describe("ViewsService — cross-tenant isolation", () => {
     const svc = new ViewsService(db);
 
     const result = await svc.listViews(OWNER_ORG, "u1", 1);
-    expect(result).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.orgId).toBe(OWNER_ORG);
   });
 });
 

@@ -35,7 +35,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
-  meetingListItemSchema,
+  meetingListPageSchema,
   meetingDetailSchema,
   meetingSchema,
   addAttendeeResultSchema,
@@ -54,7 +54,7 @@ export class MeetingsController {
 
   @Get()
   @RequirePermission("build:meetings:view")
-  @ResponseSchema(z.array(meetingListItemSchema))
+  @ResponseSchema(meetingListPageSchema)
   @Validate({ params: projectIdParams, query: listMeetingsQuerySchema })
   listMeetings(
     @Param("projectId", ParseIntPipe) projectId: number,

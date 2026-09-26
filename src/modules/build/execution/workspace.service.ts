@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   intakeItems,
   projectMilestones,
@@ -14,14 +14,15 @@ import { assertProjectAccess } from "../core/project-access";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { escapeLike } from "../core/lib/escape-like";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
-import { buildCursorPage, decodeCursor, decodeIntegerCursor } from "../../../common/pagination/cursor";
-import { keysetAfterId, keysetBeforeId } from "../../../common/pagination/keyset";
+import { buildCursorPage, buildTupleCursorPage, decodeCursor, decodeIntegerCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
+import { keysetAfterId, keysetBeforeId, keysetBeforeTuple, keysetBoolean, keysetTimestamp, keysetInteger } from "../../../common/pagination/keyset";
 import type {
   CreateIntakeInput,
   CreateMilestoneInput,
   CreateViewInput,
   IntakeListQuery,
   ListMilestonesQuery,
+  ListViewsQuery,
   UpdateIntakeInput,
   UpdateMilestoneInput,
   UpdateViewInput,
@@ -38,7 +39,7 @@ export class MilestonesService {
   async listMilestones(u: CurrentUserContext, projectId: number, query: ListMilestonesQuery) {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
-    const { cursor, limit, status, q } = query;
+    const { cursor, limit, status, q, from, to } = query;
     const pos = decodeIntegerCursor(cursor ?? null);
     const rows = await this.db
       .select({
@@ -62,6 +63,8 @@ export class MilestonesService {
         isNull(projectMilestones.deletedAt),
         status ? eq(projectMilestones.status, status) : undefined,
         q ? sql`${projectMilestones.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
+        from ? gte(projectMilestones.targetDate, from) : undefined,
+        to ? lte(projectMilestones.targetDate, to) : undefined,
         pos ? keysetAfterId(projectMilestones.targetDate, projectMilestones.id, pos) : undefined,
       ))
       .orderBy(asc(projectMilestones.targetDate), asc(projectMilestones.id))
@@ -254,20 +257,40 @@ export class IntakeService {
 export class ViewsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listViews(orgId: string, userId: string, projectId: number) {
+  async listViews(orgId: string, userId: string, projectId: number, query: ListViewsQuery = { limit: 25 }) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    return this.db
+    const { limit, cursor } = query;
+    const pos = decodeTupleCursor(cursor, 3);
+
+    const conds: (SQL | undefined)[] = [
+      eq(projectViews.projectId, projectId),
+      eq(projectViews.orgId, orgId),
+      or(eq(projectViews.visibility, "shared"), eq(projectViews.createdBy, userId)),
+    ];
+
+    if (pos) {
+      const [pinnedStr, updatedStr, idStr] = pos;
+      conds.push(
+        keysetBeforeTuple([
+          { column: projectViews.isPinned, value: keysetBoolean(pinnedStr) },
+          { column: projectViews.updatedAt, value: keysetTimestamp(updatedStr) },
+          { column: projectViews.id, value: keysetInteger(idStr) },
+        ]),
+      );
+    }
+
+    const rows = await this.db
       .select()
       .from(projectViews)
-      .where(
-        and(
-          eq(projectViews.projectId, projectId),
-          eq(projectViews.orgId, orgId),
-          or(eq(projectViews.visibility, "shared"), eq(projectViews.createdBy, userId)),
-        ),
-      )
-      .orderBy(desc(projectViews.isPinned), desc(projectViews.updatedAt))
-      .limit(100);
+      .where(and(...conds))
+      .orderBy(desc(projectViews.isPinned), desc(projectViews.updatedAt), desc(projectViews.id))
+      .limit(limit + 1);
+
+    return buildTupleCursorPage(rows, limit, (row) => [
+      row.isPinned ? "1" : "0",
+      row.updatedAt.toISOString(),
+      String(row.id),
+    ]);
   }
 
   async createView(orgId: string, userId: string, projectId: number, input: CreateViewInput) {

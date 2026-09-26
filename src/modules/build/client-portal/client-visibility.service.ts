@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { projectMilestones, ticketAttachments, ticketComments, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -7,6 +7,9 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
+import { buildCursorPage, decodeIntegerCursor } from "../../../common/pagination/cursor";
+import { keysetAfterIntValue } from "../../../common/pagination/keyset";
+import type { VisibilitySummaryQuery } from "./dto/client-portal.schemas";
 
 @Injectable()
 export class ClientVisibilityService {
@@ -16,10 +19,33 @@ export class ClientVisibilityService {
     private readonly audit: AuditService,
   ) {}
 
-  async getVisibilitySummary(u: CurrentUserContext, projectId: number) {
+  async getVisibilitySummary(u: CurrentUserContext, projectId: number, query: VisibilitySummaryQuery = { limit: 50 }) {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
-    const [ticketList, milestoneList] = await Promise.all([
+    const { limit, ticketCursor, milestoneCursor } = query;
+
+    const ticketPos = decodeIntegerCursor(ticketCursor);
+    const milestonePos = decodeIntegerCursor(milestoneCursor);
+
+    const ticketConds = [
+      eq(tickets.orgId, orgId),
+      eq(tickets.projectId, projectId),
+      isNull(tickets.deletedAt),
+    ];
+    if (ticketPos) {
+      ticketConds.push(keysetAfterIntValue(tickets.ticketNumber, tickets.id, ticketPos));
+    }
+
+    const milestoneConds = [
+      eq(projectMilestones.orgId, orgId),
+      eq(projectMilestones.projectId, projectId),
+      isNull(projectMilestones.deletedAt),
+    ];
+    if (milestonePos) {
+      milestoneConds.push(gt(projectMilestones.id, milestonePos.id));
+    }
+
+    const [rawTickets, rawMilestones] = await Promise.all([
       this.db
         .select({
           id: tickets.id,
@@ -29,9 +55,9 @@ export class ClientVisibilityService {
           clientVisible: tickets.clientVisible,
         })
         .from(tickets)
-        .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)))
+        .where(and(...ticketConds))
         .orderBy(tickets.ticketNumber)
-        .limit(500),
+        .limit(limit + 1),
 
       this.db
         .select({
@@ -40,11 +66,21 @@ export class ClientVisibilityService {
           clientVisible: projectMilestones.clientVisible,
         })
         .from(projectMilestones)
-        .where(and(eq(projectMilestones.orgId, orgId), eq(projectMilestones.projectId, projectId), isNull(projectMilestones.deletedAt)))
+        .where(and(...milestoneConds))
         .orderBy(projectMilestones.id)
-        .limit(200),
+        .limit(limit + 1),
     ]);
-    return { tickets: ticketList, milestones: milestoneList };
+
+    return {
+      tickets: buildCursorPage(rawTickets, limit, (row) => ({
+        sortValue: String(row.ticketNumber),
+        id: String(row.id),
+      })),
+      milestones: buildCursorPage(rawMilestones, limit, (row) => ({
+        sortValue: String(row.id),
+        id: String(row.id),
+      })),
+    };
   }
 
   async toggleTicketVisibility(u: CurrentUserContext, projectId: number, ticketId: number, clientVisible: boolean) {

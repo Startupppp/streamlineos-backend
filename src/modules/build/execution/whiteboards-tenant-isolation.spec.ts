@@ -75,7 +75,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     expect(returning).toHaveBeenCalledTimes(1);
   });
 
-  it("listWhiteboards response is bounded at 100 items (D5)", async () => {
+  it("listWhiteboards queries limit + 1 rows to detect the next-page sentinel (D5)", async () => {
     const project = { id: 1 };
     const db = makeDb(project, []);
 
@@ -94,7 +94,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
 
     const svc = new WhiteboardsService(db, access);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
-    await svc.listWhiteboards(u, 1);
-    expect(capturedLimit).toBe(100);
+    await svc.listWhiteboards(u, 1, { limit: 20 });
+    expect(capturedLimit).toBe(21);
   });
 });

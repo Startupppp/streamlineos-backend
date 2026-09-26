@@ -1,10 +1,11 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, isNull, lt } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -21,10 +22,15 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type {
   ApplyTemplateInput,
   CreateTemplateInput,
+  ListTemplatesQuery,
 } from "./dto/projects.schemas";
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
-import { buildIdCursorPage } from "../../../common/pagination/cursor";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  keysetAfterValue,
+  keysetBeforeId,
+} from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 
@@ -49,7 +55,34 @@ export class ProjectsTemplatesService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  async listTemplates(orgId: string, cursor?: number) {
+  async listTemplates(orgId: string, query: ListTemplatesQuery) {
+    const { cursor, q, category, sort } = query;
+    const pos = decodeCursor(cursor);
+    if (cursor !== undefined && pos === null) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+
+    const conds = [
+      eq(projectTemplates.orgId, orgId),
+      isNull(projectTemplates.deletedAt),
+      category !== undefined ? eq(projectTemplates.category, category) : undefined,
+      q !== undefined
+        ? sql`to_tsvector('english', ${projectTemplates.name}) @@ plainto_tsquery('english', ${q})`
+        : undefined,
+    ];
+    if (pos) {
+      if (sort === "name") {
+        conds.push(keysetAfterValue(projectTemplates.name, projectTemplates.id, pos));
+      } else {
+        conds.push(keysetBeforeId(projectTemplates.createdAt, projectTemplates.id, pos));
+      }
+    }
+
+    const orderBy =
+      sort === "name"
+        ? [asc(projectTemplates.name), asc(projectTemplates.id)]
+        : [desc(projectTemplates.createdAt), desc(projectTemplates.id)];
+
     const rows = await this.db
       .select({
         id: projectTemplates.id,
@@ -62,16 +95,14 @@ export class ProjectsTemplatesService {
         createdAt: projectTemplates.createdAt,
       })
       .from(projectTemplates)
-      .where(
-        and(
-          eq(projectTemplates.orgId, orgId),
-          isNull(projectTemplates.deletedAt),
-          cursor !== undefined ? lt(projectTemplates.id, cursor) : undefined,
-        ),
-      )
-      .orderBy(desc(projectTemplates.id))
+      .where(and(...conds))
+      .orderBy(...orderBy)
       .limit(PAGE_SIZE_CAP + 1);
-    return buildIdCursorPage(rows, PAGE_SIZE_CAP, (r) => r.id);
+
+    return buildCursorPage(rows, PAGE_SIZE_CAP, (r) => {
+      if (sort === "name") return { sortValue: r.name, id: String(r.id) };
+      return { sortValue: (r.createdAt ?? new Date(0)).toISOString(), id: String(r.id) };
+    });
   }
 
   async createTemplate(

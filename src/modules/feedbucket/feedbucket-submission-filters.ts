@@ -44,7 +44,7 @@ export async function buildSubmissionFilterConditions(
   orgId: string,
   filters: SubmissionFilters,
 ): Promise<(SQL | undefined)[]> {
-  const { widgetId, managedProductId, type, status, assigneeId, search, linked, from, to } =
+  const { widgetId, managedProductId, type, status, assigneeId, search, linked, duplicate, from, to } =
     filters;
 
   const domain: (SQL | undefined)[] = [
@@ -68,6 +68,28 @@ export async function buildSubmissionFilterConditions(
     domain.push(isNotNull(feedbucketSubmissions.linkedTicketId));
   } else if (linked === "unlinked") {
     domain.push(isNull(feedbucketSubmissions.linkedTicketId));
+  }
+  if (duplicate === "true") {
+    domain.push(sql`EXISTS (
+      SELECT 1 FROM feedbucket_submissions fs2
+      WHERE fs2.widget_id = ${feedbucketSubmissions.widgetId}
+        AND fs2.id < ${feedbucketSubmissions.id}
+        AND fs2.created_at >= ${feedbucketSubmissions.createdAt} - INTERVAL '30 days'
+        AND lower(regexp_replace(left(fs2.message, 200), E'[^\\w\\s]', '', 'g'))
+            = lower(regexp_replace(left(${feedbucketSubmissions.message}, 200), E'[^\\w\\s]', '', 'g'))
+        AND fs2.deleted_at IS NULL
+    )`);
+  }
+  if (duplicate === "false") {
+    domain.push(sql`NOT EXISTS (
+      SELECT 1 FROM feedbucket_submissions fs2
+      WHERE fs2.widget_id = ${feedbucketSubmissions.widgetId}
+        AND fs2.id < ${feedbucketSubmissions.id}
+        AND fs2.created_at >= ${feedbucketSubmissions.createdAt} - INTERVAL '30 days'
+        AND lower(regexp_replace(left(fs2.message, 200), E'[^\\w\\s]', '', 'g'))
+            = lower(regexp_replace(left(${feedbucketSubmissions.message}, 200), E'[^\\w\\s]', '', 'g'))
+        AND fs2.deleted_at IS NULL
+    )`);
   }
   if (from !== undefined) {
     domain.push(gte(feedbucketSubmissions.createdAt, new Date(from)));

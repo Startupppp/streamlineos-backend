@@ -5,7 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterId } from "../../../common/pagination/keyset";
+import type { ListProjectMembersQuery } from "./dto/projects.schemas";
 import {
   projectMembers,
   projects,
@@ -153,9 +156,15 @@ export class ProjectsMembersService {
     throw new ForbiddenException("You do not have access to this project");
   }
 
-  async listMembers(u: CurrentUserContext, projectId: number) {
+  async listMembers(u: CurrentUserContext, projectId: number, query: ListProjectMembersQuery = { limit: 25 }) {
     await this.assertProjectAccess(u, projectId);
-    return this.db
+    const { limit, cursor } = query;
+    const pos = decodeCursor(cursor);
+    const conds: SQL[] = [eq(projectMembers.projectId, projectId)];
+    if (pos) {
+      conds.push(keysetAfterId(projectMembers.joinedAt, projectMembers.membershipId, pos));
+    }
+    const rows = await this.db
       .select({
         id: users.id,
         name: users.name,
@@ -165,6 +174,7 @@ export class ProjectsMembersService {
         email: users.email,
         role: projectMembers.role,
         joinedAt: projectMembers.joinedAt,
+        membershipId: projectMembers.membershipId,
       })
       .from(projectMembers)
       .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
@@ -176,9 +186,17 @@ export class ProjectsMembersService {
           eq(projects.orgId, u.orgId),
         ),
       )
-      .where(eq(projectMembers.projectId, projectId))
-      .orderBy(asc(projectMembers.joinedAt))
-      .limit(100);
+      .where(and(...conds))
+      .orderBy(asc(projectMembers.joinedAt), asc(projectMembers.membershipId))
+      .limit(limit + 1);
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.joinedAt.toISOString(),
+      id: String(row.membershipId),
+    }));
+    return {
+      ...page,
+      data: page.data.map(({ membershipId: _mid, ...rest }) => rest),
+    };
   }
 
   async getProjectRoster(u: CurrentUserContext, projectId: number) {

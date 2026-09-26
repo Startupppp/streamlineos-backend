@@ -59,6 +59,7 @@ export class DecisionsService {
           eq(projectDecisions.projectId, projectId),
           isNull(projectDecisions.deletedAt),
           query.status ? eq(projectDecisions.status, query.status) : undefined,
+          query.ownerId ? eq(projectDecisions.ownerId, query.ownerId) : undefined,
           query.cursor !== undefined ? lt(projectDecisions.id, query.cursor) : undefined,
         ),
       )

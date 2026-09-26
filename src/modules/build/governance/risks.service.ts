@@ -112,6 +112,9 @@ export class RisksService {
           eq(projectRisks.projectId, projectId),
           isNull(projectRisks.deletedAt),
           query.status ? eq(projectRisks.status, query.status) : undefined,
+          query.probability ? eq(projectRisks.probability, query.probability) : undefined,
+          query.impact ? eq(projectRisks.impact, query.impact) : undefined,
+          query.ownerId ? eq(projectRisks.ownerId, query.ownerId) : undefined,
           query.cursor !== undefined ? lt(projectRisks.id, query.cursor) : undefined,
         ),
       )

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 export const portalProjectItemSchema = z.object({
   id: z.number().int(),
@@ -60,19 +61,23 @@ export const portalChangeRequestItemSchema = z.object({
   createdAt: wireDate(),
 });
 
+const ticketVisibilityItemSchema = z.object({
+  id: z.number().int(),
+  ticketNumber: z.number().int(),
+  title: z.string(),
+  type: z.string(),
+  clientVisible: z.boolean(),
+});
+
+const milestoneVisibilityItemSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  clientVisible: z.boolean(),
+});
+
 export const visibilitySummarySchema = z.object({
-  tickets: z.array(z.object({
-    id: z.number().int(),
-    ticketNumber: z.number().int(),
-    title: z.string(),
-    type: z.string(),
-    clientVisible: z.boolean(),
-  })),
-  milestones: z.array(z.object({
-    id: z.number().int(),
-    name: z.string(),
-    clientVisible: z.boolean(),
-  })),
+  tickets: cursorPageSchema(ticketVisibilityItemSchema),
+  milestones: cursorPageSchema(milestoneVisibilityItemSchema),
 });
 
 export const toggleVisibilitySchema = z.object({

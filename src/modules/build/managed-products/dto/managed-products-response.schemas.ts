@@ -26,6 +26,19 @@ export const managedProductRowSchema = z.object({
 
 export const managedProductPageSchema = cursorPageSchema(managedProductRowSchema);
 
+export const bulkManagedProductsResultItemSchema = z.object({
+  id: z.number().int(),
+  outcome: z.enum(["updated", "skipped"]),
+  reason: z.string().nullable(),
+});
+
+export const bulkManagedProductsResultSchema = z.object({
+  requested: z.number().int(),
+  succeeded: z.number().int(),
+  skipped: z.number().int(),
+  results: z.array(bulkManagedProductsResultItemSchema),
+});
+
 export const managedProductInsightsSchema = z.object({
   linkedProjectCount: z.number().int(),
   projectsByStatus: z.object({

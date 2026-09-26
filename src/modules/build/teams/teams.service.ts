@@ -59,6 +59,23 @@ export class TeamsService {
       eq(projectTeams.orgId, orgId),
       isNull(projectTeams.deletedAt),
       query.search ? ilike(projectTeams.name, `%${query.search}%`) : undefined,
+      query.leadId !== undefined ? sql`EXISTS (
+        SELECT 1 FROM ${projectTeamMembers}
+        JOIN ${organizationMembers} ON ${projectTeamMembers.membershipId} = ${organizationMembers.id}
+          AND ${projectTeamMembers.orgId} = ${organizationMembers.orgId}
+        WHERE ${projectTeamMembers.teamId} = ${projectTeams.id}
+          AND ${projectTeamMembers.orgId} = ${orgId}
+          AND ${organizationMembers.userId} = ${query.leadId}
+          AND ${projectTeamMembers.role} = 'lead'
+      )` : undefined,
+      query.memberId !== undefined ? sql`EXISTS (
+        SELECT 1 FROM ${projectTeamMembers}
+        JOIN ${organizationMembers} ON ${projectTeamMembers.membershipId} = ${organizationMembers.id}
+          AND ${projectTeamMembers.orgId} = ${organizationMembers.orgId}
+        WHERE ${projectTeamMembers.teamId} = ${projectTeams.id}
+          AND ${projectTeamMembers.orgId} = ${orgId}
+          AND ${organizationMembers.userId} = ${query.memberId}
+      )` : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(projectTeams.createdAt, projectTeams.id, pos));
 

@@ -21,6 +21,8 @@ export const projectMemberSchema = z.object({
   joinedAt: wireDate(),
 });
 
+export const projectMemberPageSchema = cursorPageSchema(projectMemberSchema);
+
 export const projectRosterSchema = z.object({
   teams: z.array(z.object({
     id: z.number().int(),

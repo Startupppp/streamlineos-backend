@@ -87,13 +87,18 @@ describe("MeetingsService.addAttendee — member validation", () => {
   });
 });
 
-describe("MeetingsService.listMeetings — bounded reads", () => {
-  it("rejects overflow instead of silently truncating the meeting list", async () => {
-    const overflow = Array.from({ length: 101 }, (_, id) => ({ id: id + 1 }));
+describe("MeetingsService.listMeetings — cursor pagination", () => {
+  it("returns hasMore:true and a nextCursor when the page is full and more rows exist", async () => {
+    const overflow = Array.from({ length: 26 }, (_, i) => ({
+      id: i + 1,
+      orgId: "org-1",
+      scheduledAt: new Date(Date.UTC(2026, 0, 26 - i)),
+    }));
     const meetingQuery = {
       from: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockResolvedValue([]),
       limit: jest.fn().mockResolvedValue(overflow),
     };
     const mockDb = {
@@ -105,8 +110,11 @@ describe("MeetingsService.listMeetings — bounded reads", () => {
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
 
     const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
-    await expect(svc.listMeetings(makeU("org-1"), 1, {})).rejects.toThrow(BadRequestException);
-    expect(meetingQuery.limit).toHaveBeenCalledWith(101);
+    const result = await svc.listMeetings(makeU("org-1"), 1, { limit: 25 });
+    expect(result.pagination.hasMore).toBe(true);
+    expect(result.pagination.nextCursor).toBeTruthy();
+    expect(result.data).toHaveLength(25);
+    expect(meetingQuery.limit).toHaveBeenCalledWith(26);
   });
 });
 
@@ -312,13 +320,16 @@ describe("MeetingsService — project membership gate (assertProjectAccess)", ()
     const db = makeNonMemberDb();
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
     const svc = new MeetingsService(db, access, mockAudit);
-    await expect(svc.listMeetings(makeU("org-1"), 1, {})).rejects.toThrow(ForbiddenException);
+    await expect(svc.listMeetings(makeU("org-1"), 1, { limit: 25 })).rejects.toThrow(ForbiddenException);
   });
 
   it("allows a direct project member through the gate", async () => {
     const db = makeMemberDb();
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
     const svc = new MeetingsService(db, access, mockAudit);
-    await expect(svc.listMeetings(makeU("org-1"), 1, {})).resolves.toEqual([]);
+    await expect(svc.listMeetings(makeU("org-1"), 1, { limit: 25 })).resolves.toMatchObject({
+      data: [],
+      pagination: { hasMore: false, nextCursor: null },
+    });
   });
 });

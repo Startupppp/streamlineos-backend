@@ -2,6 +2,8 @@ import { z } from "zod";
 import { managedProductStatusEnum } from "../../../../db/schema";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
+export const MANAGED_PRODUCTS_BULK_MAX = 100;
+
 export const listManagedProductsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
@@ -29,6 +31,34 @@ export const updateManagedProductSchema = z.object({
   status: z.enum(managedProductStatusEnum.enumValues).optional(),
 }).strict();
 
+export const bulkManagedProductsSchema = z
+  .object({
+    ids: z
+      .array(z.number().int().positive())
+      .min(1)
+      .max(MANAGED_PRODUCTS_BULK_MAX),
+    action: z.enum(["update_status"]),
+    status: z.enum(managedProductStatusEnum.enumValues).optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.action === "update_status" && !val.status) {
+      ctx.addIssue({
+        code: "custom",
+        message: "status is required for update_status action",
+        path: ["status"],
+      });
+    }
+  });
+
+export const managedProductInsightsQuerySchema = z
+  .object({
+    range: z.enum(["7d", "30d", "90d"]).optional(),
+  })
+  .strict();
+
 export type ListManagedProductsQuery = z.infer<typeof listManagedProductsQuerySchema>;
 export type CreateManagedProductInput = z.infer<typeof createManagedProductSchema>;
 export type UpdateManagedProductInput = z.infer<typeof updateManagedProductSchema>;
+export type BulkManagedProductsInput = z.infer<typeof bulkManagedProductsSchema>;
+export type ProductInsightsQuery = z.infer<typeof managedProductInsightsQuerySchema>;

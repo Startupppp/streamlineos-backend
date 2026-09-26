@@ -31,6 +31,9 @@ export const updateRiskSchema = z.object({
 
 export const listRisksQuerySchema = z.object({
   status: z.enum(riskStatusEnum.enumValues).optional(),
+  probability: z.enum(riskProbabilityEnum.enumValues).optional(),
+  impact: z.enum(riskImpactEnum.enumValues).optional(),
+  ownerId: z.string().min(1).optional(),
   cursor: idCursorSchema,
 }).strict();
 
@@ -60,6 +63,7 @@ export const updateDecisionSchema = z.object({
 
 export const listDecisionsQuerySchema = z.object({
   status: z.enum(decisionStatusEnum.enumValues).optional(),
+  ownerId: z.string().min(1).optional(),
   cursor: idCursorSchema,
 }).strict();
 

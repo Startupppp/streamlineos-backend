@@ -1,10 +1,12 @@
 import { z } from "zod";
 
 import { refineEndAfterStart } from "./project-core.schemas";
-import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
 
 export const listTemplatesQuerySchema = z.object({
-  cursor: idCursorSchema,
+  cursor: z.string().optional(),
+  q: z.string().min(1).max(200).optional(),
+  category: z.string().min(1).max(50).optional(),
+  sort: z.enum(["name", "newest"]).optional(),
 }).strict();
 export type ListTemplatesQuery = z.infer<typeof listTemplatesQuerySchema>;
 

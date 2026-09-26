@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Patch,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -14,7 +15,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ClientVisibilityService } from "./client-visibility.service";
-import { toggleVisibilitySchema, type ToggleVisibilityInput } from "./dto/client-portal.schemas";
+import { toggleVisibilitySchema, visibilitySummaryQuerySchema, type ToggleVisibilityInput, type VisibilitySummaryQuery } from "./dto/client-portal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -38,12 +39,13 @@ export class ClientVisibilityController {
   @Get()
   @RequirePermission("build:clientvisibility:manage")
   @ResponseSchema(visibilitySummarySchema)
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: visibilitySummaryQuerySchema })
   getVisibilitySummary(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: VisibilitySummaryQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getVisibilitySummary(u, projectId);
+    return this.svc.getVisibilitySummary(u, projectId, query);
   }
 
   @Patch("tickets/:ticketId")

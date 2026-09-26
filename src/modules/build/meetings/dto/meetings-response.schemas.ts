@@ -29,6 +29,15 @@ export const meetingListItemSchema = meetingRowSchema.extend({
   unresolvedActionItemCount: z.number().int(),
 });
 
+export const meetingListPageSchema = z.object({
+  data: z.array(meetingListItemSchema),
+  pagination: z.object({
+    limit: z.number().int(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+});
+
 const meetingAttendeeSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

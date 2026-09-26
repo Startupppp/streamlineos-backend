@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { meetingTypeEnum, projectMeetingStatusEnum, actionItemStatusEnum } from "../../../../db/schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const SYMBOL_ONLY_RE = /^[^a-zA-Z0-9]+$/;
 
@@ -81,6 +82,8 @@ export const listMeetingsQuerySchema = z.object({
   attendeeId: z.string().optional(),
   hasActionItems: queryBoolean.optional(),
   hasUnresolvedActionItems: queryBoolean.optional(),
+  cursor: z.string().optional(),
+  limit: pageSizeField(25),
 }).strict();
 
 export const addAttendeeSchema = z.object({

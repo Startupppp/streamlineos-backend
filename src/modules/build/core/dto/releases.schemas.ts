@@ -47,6 +47,8 @@ export const listReleasesQuerySchema = z.object({
   limit: pageSizeField(25),
   status: z.enum(["draft", "released", "archived"]).optional(),
   q: z.string().max(200).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).strict();
 
 export type CreateReleaseInput = z.infer<typeof createReleaseSchema>;

@@ -103,6 +103,7 @@ export const submissionFiltersSchema = z.object({
   assigneeId: z.string().optional(),
   search: z.string().optional(),
   linked: z.enum(["linked", "unlinked"]).optional(),
+  duplicate: z.enum(["true", "false"]).optional(),
   from: z.string().datetime({ offset: true }).optional(),
   to: z.string().datetime({ offset: true }).optional(),
 });

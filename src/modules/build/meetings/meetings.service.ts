@@ -1,5 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
+import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
+import { keysetInteger, keysetTimestamp } from "../../../common/pagination/keyset";
 import {
   projectMeetings,
   meetingAttendees,
@@ -39,8 +41,6 @@ type MeetingPatch = Partial<
   >
 >;
 
-const MEETING_PAGE_SIZE = 100;
-
 @Injectable()
 export class MeetingsService {
   constructor(
@@ -65,6 +65,9 @@ export class MeetingsService {
   async listMeetings(u: CurrentUserContext, projectId: number, query: ListMeetingsQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
 
+    const { limit, cursor } = query;
+    const pos = decodeCursor(cursor);
+
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayEnd = new Date(todayStart.getTime() + 86400000);
@@ -78,7 +81,7 @@ export class MeetingsService {
       return undefined;
     })();
 
-    const meetings = await this.db
+    const rawMeetings = await this.db
       .select()
       .from(projectMeetings)
       .where(
@@ -109,16 +112,34 @@ export class MeetingsService {
           query.hasUnresolvedActionItems === true
             ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${u.orgId} AND ${meetingActionItems.deletedAt} IS NULL AND ${meetingActionItems.status} NOT IN ('done', 'converted', 'cancelled'))`
             : undefined,
+          pos
+            ? (() => {
+                const posId = keysetInteger(pos.id);
+                if (pos.sortValue === "NULL_BUCKET") {
+                  return and(isNull(projectMeetings.scheduledAt), sql`${projectMeetings.id} < ${sql.param(posId, projectMeetings.id)}`);
+                }
+                const posScheduledAt = keysetTimestamp(pos.sortValue);
+                return or(
+                  isNull(projectMeetings.scheduledAt),
+                  sql`${projectMeetings.scheduledAt} < ${sql.param(posScheduledAt, projectMeetings.scheduledAt)}`,
+                  and(
+                    sql`${projectMeetings.scheduledAt} = ${sql.param(posScheduledAt, projectMeetings.scheduledAt)}`,
+                    sql`${projectMeetings.id} < ${sql.param(posId, projectMeetings.id)}`,
+                  ),
+                );
+              })()
+            : undefined,
         ),
       )
-      .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`, desc(projectMeetings.id))
-      .limit(MEETING_PAGE_SIZE + 1);
+      .orderBy(
+        sql`${projectMeetings.scheduledAt} IS NULL ASC`,
+        sql`${projectMeetings.scheduledAt} DESC NULLS LAST`,
+        desc(projectMeetings.id),
+      )
+      .limit(limit + 1);
 
-    if (meetings.length > MEETING_PAGE_SIZE) {
-      throw new BadRequestException(
-        `This meeting list exceeds ${MEETING_PAGE_SIZE} records. Add a date, status, type, host, or attendee filter.`,
-      );
-    }
+    const hasMore = rawMeetings.length > limit;
+    const meetings = hasMore ? rawMeetings.slice(0, limit) : rawMeetings;
 
     const ids = meetings.map((m) => m.id);
     const emptyCounts: { meetingId: number; count: number }[] = [];
@@ -165,7 +186,18 @@ export class MeetingsService {
       unresolvedActionItemCount: unresolvedAiMap.get(m.id) ?? 0,
     }));
 
-    return result;
+    const last = meetings[meetings.length - 1];
+    const nextCursor = hasMore && last
+      ? encodeCursor({
+          sortValue: last.scheduledAt !== null ? last.scheduledAt.toISOString() : "NULL_BUCKET",
+          id: String(last.id),
+        })
+      : null;
+
+    return {
+      data: result,
+      pagination: { limit, hasMore, nextCursor },
+    };
   }
 
   async getMeeting(u: CurrentUserContext, projectId: number, meetingId: number) {

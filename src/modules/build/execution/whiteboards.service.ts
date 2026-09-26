@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import {
   projectWhiteboardShares,
   projectWhiteboards,
@@ -17,9 +17,12 @@ import { resolveWhiteboardAccess, type WhiteboardAccessLevel } from "./whiteboar
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   CreateWhiteboardInput,
+  ListWhiteboardsQuery,
   UpdateWhiteboardInput,
 } from "./dto/workspace.schemas";
 import { assertProject, loadShares, type BoardRow, type ShareEntry } from "./whiteboard-board-helpers";
+import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
+import { keysetInteger, keysetTimestamp } from "../../../common/pagination/keyset";
 
 @Injectable()
 export class WhiteboardsService {
@@ -103,8 +106,11 @@ export class WhiteboardsService {
     return { board: row.board, access };
   }
 
-  async listWhiteboards(u: CurrentUserContext, projectId: number) {
+  async listWhiteboards(u: CurrentUserContext, projectId: number, query: ListWhiteboardsQuery) {
     await assertProject(this.db, u.orgId, projectId);
+
+    const { limit, cursor } = query;
+    const pos = cursor ? decodeCursor(cursor) : null;
 
     const visibilityFilter =
       u.isOrgOwner
@@ -115,7 +121,21 @@ export class WhiteboardsService {
             isNotNull(projectWhiteboardShares.role),
           );
 
-    const boards = await this.db
+    const cursorPredicate = pos
+      ? (() => {
+          const posUpdatedAt = keysetTimestamp(pos.sortValue);
+          const posId = keysetInteger(pos.id);
+          return or(
+            lt(projectWhiteboards.updatedAt, sql.param(posUpdatedAt, projectWhiteboards.updatedAt)),
+            and(
+              sql`${projectWhiteboards.updatedAt} = ${sql.param(posUpdatedAt, projectWhiteboards.updatedAt)}`,
+              sql`${projectWhiteboards.id} < ${sql.param(posId, projectWhiteboards.id)}`,
+            ),
+          );
+        })()
+      : undefined;
+
+    const rawBoards = await this.db
       .select({
         id: projectWhiteboards.id,
         name: projectWhiteboards.name,
@@ -138,19 +158,32 @@ export class WhiteboardsService {
           eq(projectWhiteboards.projectId, projectId),
           isNull(projectWhiteboards.deletedAt),
           visibilityFilter,
+          cursorPredicate,
         ),
       )
-      .orderBy(desc(projectWhiteboards.updatedAt))
-      .limit(100);
+      .orderBy(desc(projectWhiteboards.updatedAt), desc(projectWhiteboards.id))
+      .limit(limit + 1);
 
-    return boards.map((board) => ({
-      id: board.id,
-      name: board.name,
-      elementCount: board.data.elements.length,
-      visibility: board.visibility,
-      createdBy: board.createdBy,
-      updatedAt: board.updatedAt,
-    }));
+    const hasMore = rawBoards.length > limit;
+    const boards = hasMore ? rawBoards.slice(0, limit) : rawBoards;
+
+    const last = boards[boards.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCursor({ sortValue: last.updatedAt.toISOString(), id: String(last.id) })
+        : null;
+
+    return {
+      data: boards.map((board) => ({
+        id: board.id,
+        name: board.name,
+        elementCount: board.data.elements.length,
+        visibility: board.visibility,
+        createdBy: board.createdBy,
+        updatedAt: board.updatedAt,
+      })),
+      pagination: { limit, hasMore, nextCursor },
+    };
   }
 
   async listAllWhiteboards(u: CurrentUserContext) {

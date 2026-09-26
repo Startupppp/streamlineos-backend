@@ -1,6 +1,7 @@
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { encodeCursor } from "../../../common/pagination/cursor";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -50,7 +51,7 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
     const { planLimits } = makeDeps();
     const svc = new ProjectsTemplatesService(db, planLimits);
 
-    const result = await svc.listTemplates(ATTACKER_ORG);
+    const result = await svc.listTemplates(ATTACKER_ORG, {});
 
     expect(where).toHaveBeenCalled();
     const condition = where.mock.calls[0]?.[0];
@@ -65,18 +66,19 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
     const { planLimits } = makeDeps();
     const svc = new ProjectsTemplatesService(db, planLimits);
 
-    const result = await svc.listTemplates(OWNER_ORG);
+    const result = await svc.listTemplates(OWNER_ORG, {});
 
     expect(result.data).toHaveLength(1);
-    expect(result.hasMore).toBe(false);
+    expect(result.pagination.hasMore).toBe(false);
   });
 
-  it("listTemplates carries the cursor into the WHERE so page two cannot silently restart at page one", async () => {
+  it("listTemplates carries the cursor id into the WHERE so page two cannot silently restart at page one", async () => {
     const { db, where } = makeSelectDb([]);
     const { planLimits } = makeDeps();
     const svc = new ProjectsTemplatesService(db, planLimits);
 
-    await svc.listTemplates(OWNER_ORG, 42);
+    const cursor = encodeCursor({ sortValue: new Date(0).toISOString(), id: "42" });
+    await svc.listTemplates(OWNER_ORG, { cursor });
 
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(42);
   });

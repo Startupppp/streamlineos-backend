@@ -2,11 +2,19 @@ import { z } from "zod";
 
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
+export const listViewsQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(25),
+}).strict();
+export type ListViewsQuery = z.infer<typeof listViewsQuerySchema>;
+
 export const listMilestonesQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
   status: z.enum(["PENDING", "ACHIEVED", "MISSED"]).optional(),
   q: z.string().max(200).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).strict();
 export type ListMilestonesQuery = z.infer<typeof listMilestonesQuerySchema>;
 
@@ -87,6 +95,12 @@ export const updateViewSchema = z.object({
       }
     }),
 }).strict();
+
+export const listWhiteboardsQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20),
+}).strict();
+export type ListWhiteboardsQuery = z.infer<typeof listWhiteboardsQuerySchema>;
 
 export const createWhiteboardSchema = z.object({
   name: z.string().min(1).max(200),

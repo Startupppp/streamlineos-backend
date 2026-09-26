@@ -20,17 +20,21 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { ManagedProductsService } from "./managed-products.service";
 import {
+  bulkManagedProductsSchema,
   createManagedProductSchema,
   listManagedProductsQuerySchema,
+  managedProductInsightsQuerySchema,
   updateManagedProductSchema,
+  type BulkManagedProductsInput,
   type CreateManagedProductInput,
   type ListManagedProductsQuery,
+  type ProductInsightsQuery,
   type UpdateManagedProductInput,
 } from "./dto/managed-products.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { managedProductInsightsSchema, managedProductRowSchema, managedProductPageSchema } from "./dto/managed-products-response.schemas";
+import { bulkManagedProductsResultSchema, managedProductInsightsSchema, managedProductRowSchema, managedProductPageSchema } from "./dto/managed-products-response.schemas";
 
 const managedProductIdParams = z.object({ managedProductId: z.coerce.number().int().positive() }).strict();
 
@@ -49,6 +53,18 @@ export class ManagedProductsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listManagedProducts(u.orgId, query, actingMembershipId(u.principal));
+  }
+
+  @Post("bulk")
+  @HttpCode(200)
+  @RequirePermission("build:managed-products:update")
+  @ResponseSchema(bulkManagedProductsResultSchema)
+  @Validate({ body: bulkManagedProductsSchema })
+  bulkUpdateManagedProducts(
+    @Body() body: BulkManagedProductsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.bulkUpdateManagedProducts(u.orgId, u.userId, body);
   }
 
   @Get(":managedProductId")
@@ -89,12 +105,13 @@ export class ManagedProductsController {
   @Get(":managedProductId/insights")
   @RequirePermission("build:managed-products:view")
   @ResponseSchema(managedProductInsightsSchema)
-  @Validate({ params: managedProductIdParams })
+  @Validate({ params: managedProductIdParams, query: managedProductInsightsQuerySchema })
   getProductInsights(
     @Param("managedProductId", ParseIntPipe) managedProductId: number,
+    @Query() query: ProductInsightsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getProductInsights(u.orgId, managedProductId);
+    return this.svc.getProductInsights(u.orgId, managedProductId, query);
   }
 
   @Delete(":managedProductId")

@@ -3,6 +3,12 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
 import { invoiceLineDetailEnum } from "../../../../db/schema";
 
+export const listProjectMembersQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(25),
+}).strict();
+export type ListProjectMembersQuery = z.infer<typeof listProjectMembersQuerySchema>;
+
 export const invoiceLineDetailSchema = z.enum(invoiceLineDetailEnum.enumValues);
 
 export const projectInvoiceLineDetailSchema = z.object({

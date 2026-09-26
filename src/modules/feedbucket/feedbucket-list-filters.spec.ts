@@ -106,10 +106,23 @@ describe("listSubmissionsQuerySchema — filter parameter coverage", () => {
     });
   });
 
-  describe("duplicate filter — unservable, strict schema rejects it", () => {
-    it("rejects a duplicate param because there is no duplicate column in feedbucket_submissions", () => {
+  describe("duplicate filter — computed predicate, no migration required", () => {
+    it("accepts duplicate=true so callers can filter to submissions that share a title", () => {
       const result = listSubmissionsQuerySchema.safeParse({ ...BASE, duplicate: "true" });
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.duplicate).toBe("true");
+    });
+
+    it("accepts duplicate=false so callers can filter out known-duplicate titles", () => {
+      const result = listSubmissionsQuerySchema.safeParse({ ...BASE, duplicate: "false" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.duplicate).toBe("false");
+    });
+
+    it("leaves duplicate undefined when absent so the first page is served without duplication filtering", () => {
+      const result = listSubmissionsQuerySchema.safeParse(BASE);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.duplicate).toBeUndefined();
     });
   });
 });
@@ -234,7 +247,7 @@ describe("bulkSubmissionsSchema — bounded, strict, and filter-aware", () => {
     const result = bulkSubmissionsSchema.safeParse({
       submissionIds: [1],
       action: STATUS_ACTION,
-      filters: { duplicate: "true" },
+      filters: { ownerId: "user-xyz" },
     });
     expect(result.success).toBe(false);
   });

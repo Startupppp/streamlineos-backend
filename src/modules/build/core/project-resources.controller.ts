@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -22,6 +23,7 @@ import {
   bulkReorderStatesSchema,
   createLabelSchema,
   createStateSchema,
+  listProjectMembersQuerySchema,
   removeMemberSchema,
   updateCustomStateSchema,
   updateProjectMemberRoleSchema,
@@ -29,6 +31,7 @@ import {
   type BulkReorderStatesInput,
   type CreateLabelInput,
   type CreateStateInput,
+  type ListProjectMembersQuery,
   type RemoveMemberInput,
   type UpdateCustomStateInput,
   type UpdateProjectMemberRoleInput,
@@ -39,6 +42,7 @@ import { z } from "zod";
 import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
 import {
   ticketLabelSchema,
+  projectMemberPageSchema,
   projectMemberSchema,
   projectRosterSchema,
   projectMemberRowSchema,
@@ -70,13 +74,14 @@ export class ProjectResourcesController {
 
   @Get(":projectId/members")
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(projectMemberSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(projectMemberPageSchema)
+  @Validate({ params: projectIdParams, query: listProjectMembersQuerySchema })
   listMembers(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ListProjectMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.listMembers(u, projectId);
+    return this.members.listMembers(u, projectId, query);
   }
 
   @Get(":projectId/roster")

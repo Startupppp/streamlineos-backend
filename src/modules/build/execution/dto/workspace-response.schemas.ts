@@ -64,6 +64,8 @@ export const viewRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
+export const viewPageSchema = cursorPageSchema(viewRowSchema);
+
 const whiteboardShareSchema = z.object({
   userId: z.string(),
   role: z.string(),
@@ -87,6 +89,8 @@ export const whiteboardListItemSchema = z.object({
   createdBy: z.string().nullable(),
   updatedAt: wireDate(),
 });
+
+export const whiteboardListPageSchema = cursorPageSchema(whiteboardListItemSchema);
 
 export const whiteboardHubItemSchema = whiteboardListItemSchema.extend({
   projectId: z.number().int().nullable(),

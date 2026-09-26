@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -32,7 +32,7 @@ export class ProjectsReleasesService {
   async listReleases(u: CurrentUserContext, projectId: number, query: ListReleasesQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
-    const { cursor, limit, status, q } = query;
+    const { cursor, limit, status, q, from, to } = query;
     const pos = decodeIntegerCursor(cursor ?? null);
     const rows = await this.db
       .select({
@@ -58,6 +58,8 @@ export class ProjectsReleasesService {
         isNull(projectReleases.deletedAt),
         status ? eq(projectReleases.status, status) : undefined,
         q ? sql`${projectReleases.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
+        from ? gte(projectReleases.releaseDate, from) : undefined,
+        to ? lte(projectReleases.releaseDate, to) : undefined,
         pos ? lt(projectReleases.id, pos.id) : undefined,
       ))
       .orderBy(desc(projectReleases.id))

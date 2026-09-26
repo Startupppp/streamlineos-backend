@@ -5,6 +5,8 @@ export const listTeamsQuerySchema = z.object({
   cursor: z.string().optional(),
   pageSize: pageSizeField(50),
   search: z.string().optional(),
+  leadId: z.string().uuid().optional(),
+  memberId: z.string().uuid().optional(),
 }).strict();
 
 export const createTeamSchema = z.object({

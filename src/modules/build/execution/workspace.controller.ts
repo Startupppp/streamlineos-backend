@@ -29,6 +29,8 @@ import {
   createWhiteboardSchema,
   intakeListQuerySchema,
   listMilestonesQuerySchema,
+  listViewsQuerySchema,
+  listWhiteboardsQuerySchema,
   updateIntakeSchema,
   updateMilestoneSchema,
   updateViewSchema,
@@ -39,6 +41,8 @@ import {
   type CreateWhiteboardInput,
   type IntakeListQuery,
   type ListMilestonesQuery,
+  type ListViewsQuery,
+  type ListWhiteboardsQuery,
   type UpdateIntakeInput,
   type UpdateMilestoneInput,
   type UpdateViewInput,
@@ -53,9 +57,11 @@ import {
   milestoneRowSchema,
   intakeItemSchema,
   intakeListSchema,
+  viewPageSchema,
   viewRowSchema,
   whiteboardHubItemSchema,
   whiteboardListItemSchema,
+  whiteboardListPageSchema,
   whiteboardDetailSchema,
 } from "./dto/workspace-response.schemas";
 
@@ -177,13 +183,14 @@ export class ViewsController {
 
   @Get()
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(viewRowSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(viewPageSchema)
+  @Validate({ params: projectIdParams, query: listViewsQuerySchema })
   listViews(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ListViewsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.listViews(u.orgId, u.userId, projectId);
+    return this.views.listViews(u.orgId, u.userId, projectId, query);
   }
 
   @Post()
@@ -298,13 +305,14 @@ export class WhiteboardsController {
 
   @Get()
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(whiteboardListItemSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(whiteboardListPageSchema)
+  @Validate({ params: projectIdParams, query: listWhiteboardsQuerySchema })
   listWhiteboards(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ListWhiteboardsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.listWhiteboards(u, projectId);
+    return this.whiteboards.listWhiteboards(u, projectId, query);
   }
 
   @Post()
