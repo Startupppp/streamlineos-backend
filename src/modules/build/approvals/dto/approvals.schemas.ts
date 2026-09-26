@@ -14,6 +14,7 @@ export const createApprovalSchema = z.object({
 export const listApprovalsQuerySchema = z.object({
   status: z.enum(approvalStatusEnum.enumValues).optional(),
   entityType: z.enum(approvalEntityTypeEnum.enumValues).optional(),
+  approverId: z.string().min(1).optional(),
   cursor: z.string().min(1).optional(),
 }).strict();
 
@@ -23,7 +24,7 @@ export const inboxQuerySchema = z.object({
   type: z.enum(approvalEntityTypeEnum.enumValues).optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-  q: z.string().optional(),
+  q: z.string().max(200).optional(),
 }).strict();
 
 export const decideApprovalSchema = z.object({

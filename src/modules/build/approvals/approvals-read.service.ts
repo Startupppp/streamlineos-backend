@@ -8,6 +8,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
 import { loadApproval } from "./approval-lookup";
+import { resolveOrganizationActor } from "../../../common/organization/organization-actor";
 import type { InboxQuery, ListApprovalsQuery } from "./dto/approvals.schemas";
 import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
 
@@ -90,10 +91,18 @@ export class ApprovalsReadService {
     ]);
   }
 
+  private async approverFilter(orgId: string, approverId: string | undefined): Promise<SQL | undefined> {
+    if (approverId === undefined) return undefined;
+    const resolution = await resolveOrganizationActor(this.db, orgId, { kind: "user", userId: approverId });
+    if (resolution.status !== "resolved") return sql`false`;
+    return eq(projectApprovals.approverMembershipId, resolution.actor.membershipId);
+  }
+
   async listApprovals(u: CurrentUserContext, projectId: number, query: ListApprovalsQuery) {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
     const cursor = decodeApprovalCursor(query.cursor);
+    const approver = await this.approverFilter(orgId, query.approverId);
     const rows = await this.db
       .select()
       .from(projectApprovals)
@@ -104,6 +113,7 @@ export class ApprovalsReadService {
           isNull(projectApprovals.deletedAt),
           query.status ? eq(projectApprovals.status, query.status) : undefined,
           query.entityType ? eq(projectApprovals.entityType, query.entityType) : undefined,
+          approver,
           listApprovalsKeyset(cursor),
         ),
       )
