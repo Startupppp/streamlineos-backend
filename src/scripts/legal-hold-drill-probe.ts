@@ -150,6 +150,7 @@ async function runDrill(email: string, orgId: string, url: string): Promise<Dril
         new SessionsService(db, null),
         storagePurge,
         new ExternalEffectLedger(db),
+        { commitManyPageChanges: () => Promise.resolve() },
       );
 
       const actor = subjectUserId;

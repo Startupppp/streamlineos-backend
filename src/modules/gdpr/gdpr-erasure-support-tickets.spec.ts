@@ -301,6 +301,7 @@ function buildService(db: unknown, purge: unknown) {
     sessions as never,
     purge as never,
     effectLedger as never,
+    { commitManyPageChanges: jest.fn() } as never,
   );
 }
 

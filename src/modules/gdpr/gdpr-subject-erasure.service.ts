@@ -15,6 +15,8 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { SessionsService } from "../sessions/sessions.service";
 import { anonymiseSubjectSupportTickets } from "../support/core/support-ticket-erasure";
+import { eraseSubjectDocumentDerivatives } from "../kb/core/kb-subject-erasure";
+import { KbPageWriterService } from "../kb/wiki/kb-page-writer.service";
 import {
   GdprStoragePurgeService,
   type PurgeManifest,
@@ -29,10 +31,7 @@ import {
   hashSubjectId,
   subjectHasSurvivingMembership,
 } from "./gdpr-subject-erasure-identity";
-import {
-  anonymiseSubjectConversations,
-  eraseSubjectKbContent,
-} from "./gdpr-subject-erasure-authored-content";
+import { anonymiseSubjectConversations } from "./gdpr-subject-erasure-authored-content";
 import { purgeSubjectChatAttachments } from "./gdpr-subject-erasure-chat-attachments";
 
 export interface SubjectErasureStorageResult {
@@ -84,6 +83,7 @@ export class GdprSubjectErasureService {
     private readonly sessionsService: SessionsService,
     private readonly storagePurge: GdprStoragePurgeService,
     private readonly effectLedger: ExternalEffectLedger,
+    private readonly documentWriter: KbPageWriterService,
   ) {}
 
   async eraseSubject(
@@ -191,7 +191,13 @@ export class GdprSubjectErasureService {
       });
       if (globalIdentityAnonymised) tablesAnonymised.push("users");
 
-      tablesAnonymised.push(...(await eraseSubjectKbContent(tx, scope)));
+      tablesAnonymised.push(
+        ...(await eraseSubjectDocumentDerivatives(
+          tx,
+          scope,
+          this.documentWriter,
+        )),
+      );
 
       const [dataReq] = await tx
         .insert(hrDataRequests)

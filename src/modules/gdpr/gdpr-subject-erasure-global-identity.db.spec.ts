@@ -209,6 +209,7 @@ describe("GDPR erasure — a multi-org subject keeps their global identity", () 
         }),
       } as unknown as GdprStoragePurgeService,
     effectLedger as never,
+    { commitManyPageChanges: jest.fn() } as never,
     );
   }, 180_000);
 

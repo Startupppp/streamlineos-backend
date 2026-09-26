@@ -5,7 +5,7 @@ import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 import { chatAttachments, gdprExportJobs, users } from "../../db/schema";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { supportArticlePredicate } from "../kb/help-centre/kb-article-page-scope";
-import { subjectAuthoredPage } from "./gdpr-subject-erasure-authored-content";
+import { subjectAuthoredDocument } from "../kb/core/kb-subject-erasure";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -196,6 +196,7 @@ function buildService(db: ReturnType<typeof makeKbDb>["db"]): GdprSubjectErasure
     sessions,
     storagePurge as never,
     effectLedger as never,
+    { commitManyPageChanges: jest.fn() } as never,
   );
 }
 
@@ -547,9 +548,9 @@ describe("GdprSubjectErasureService — kb_article_chunks from uploaded attachme
 
 // ─── Authorship predicate ─────────────────────────────────────
 
-describe("subjectAuthoredPage — which kb_pages rows erasure reaches", () => {
+describe("subjectAuthoredDocument — which kb_pages rows erasure reaches", () => {
   const dialect = new PgDialect();
-  const rendered = dialect.sqlToQuery(subjectAuthoredPage("user-kb-subject", 42)).sql;
+  const rendered = dialect.sqlToQuery(subjectAuthoredDocument("user-kb-subject", 42)).sql;
 
   it.each([
     "created_by_id",

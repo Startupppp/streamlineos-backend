@@ -9,9 +9,10 @@ import { GdprStoragePurgeService } from "./gdpr-storage-purge.service";
 import { GdprRectificationService } from "./gdpr-rectification.service";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 import { SessionsModule } from "../sessions/sessions.module";
+import { KbWikiModule } from "../kb/wiki/kb-wiki.module";
 
 @Module({
-  imports: [OutboxModule, SessionsModule],
+  imports: [OutboxModule, SessionsModule, KbWikiModule],
   controllers: [GdprController],
   providers: [
     GdprService,

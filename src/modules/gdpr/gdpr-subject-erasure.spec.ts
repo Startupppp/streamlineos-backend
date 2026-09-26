@@ -251,6 +251,7 @@ function buildService(
     sessions as never,
     (storagePurge ?? makeStoragePurge()) as never,
     effectLedger as never,
+    { commitManyPageChanges: jest.fn() } as never,
   );
 }
 
@@ -699,6 +700,7 @@ describe("GdprSubjectErasureService — the id scan drains instead of capping", 
       sessions,
       makeStoragePurge() as never,
       effectLedger,
+      { commitManyPageChanges: jest.fn() } as never,
     );
 
     await service.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });

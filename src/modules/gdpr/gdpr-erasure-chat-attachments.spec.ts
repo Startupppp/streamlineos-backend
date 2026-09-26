@@ -278,7 +278,7 @@ function buildService(db: unknown, purge: unknown) {
     }),
   };
   const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
-  return new GdprSubjectErasureService(db as never, cache, sessions as never, purge as never, effectLedger as never);
+  return new GdprSubjectErasureService(db as never, cache, sessions as never, purge as never, effectLedger as never, { commitManyPageChanges: jest.fn() } as never);
 }
 
 function manifestKeys(purge: ReturnType<typeof makePurgeDouble>): ManifestKey[] {
