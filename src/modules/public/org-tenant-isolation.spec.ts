@@ -20,10 +20,17 @@ describe("OrgService — cross-tenant isolation", () => {
     await expect(svc.getOrgName(ATTACKER)).rejects.toThrow(NotFoundException);
   });
 
-  it("returns the org name for an existing org (control — correct org)", async () => {
-    const db = makeDb([{ name: "Owner Corp" }]);
+  it("returns the org name and logo for an existing org (control — correct org)", async () => {
+    const db = makeDb([{ name: "Owner Corp", logo: "https://cdn/logo.png" }]);
     const svc = new OrgService(db);
     const result = await svc.getOrgName(OWNER);
-    expect(result).toEqual({ name: "Owner Corp" });
+    expect(result).toEqual({ name: "Owner Corp", logo: "https://cdn/logo.png" });
+  });
+
+  it("returns a null logo rather than omitting the key, because the public help centre header reads it and an absent key is not the same as no logo", async () => {
+    const db = makeDb([{ name: "Owner Corp", logo: null }]);
+    const svc = new OrgService(db);
+    const result = await svc.getOrgName(OWNER);
+    expect(result).toEqual({ name: "Owner Corp", logo: null });
   });
 });

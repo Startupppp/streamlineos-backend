@@ -275,9 +275,14 @@ export const orgNameSchema = z.object({
 
 const kbArticleSummarySchema = z.object({
   id: z.number().int(),
+  categoryId: z.number().int().nullable(),
   title: z.string(),
   slug: z.string(),
   excerpt: z.string().nullable(),
+  views: z.number().int().nullable(),
+  helpfulCount: z.number().int().nullable(),
+  notHelpfulCount: z.number().int().nullable(),
+  tags: z.array(z.string()),
   publishedAt: nullableWireDate(),
 });
 
@@ -285,6 +290,9 @@ const kbCategorySchema = z.object({
   id: z.number().int(),
   name: z.string(),
   slug: z.string(),
+  description: z.string().nullable(),
+  icon: z.string().nullable(),
+  sortOrder: z.number().int(),
 });
 
 export const kbListSchema = z.object({
@@ -305,9 +313,13 @@ export const kbArticleSchema = z.object({
   excerpt: z.string().nullable(),
   seoTitle: z.string().nullable(),
   seoDescription: z.string().nullable(),
+  categoryId: z.number().int().nullable(),
   categoryName: z.string().nullable(),
+  categorySlug: z.string().nullable(),
   tags: z.array(z.string()),
-  views: z.number().int(),
+  views: z.number().int().nullable(),
+  helpfulCount: z.number().int().nullable(),
+  notHelpfulCount: z.number().int().nullable(),
   publishedAt: nullableWireDate(),
   updatedAt: nullableWireDate(),
 });
