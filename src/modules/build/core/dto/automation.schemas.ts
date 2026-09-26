@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
+export const AUTOMATION_ACTION_TYPES = [
+  "set_status",
+  "set_assignee",
+  "set_priority",
+  "add_label",
+  "add_comment",
+] as const;
+
+export type AutomationActionType = (typeof AUTOMATION_ACTION_TYPES)[number];
+
 const conditionSchema = z.object({
   field: z.string().min(1).max(200),
   operator: z.enum(["equals", "not_equals", "contains", "is_empty", "is_not_empty"]),
@@ -37,3 +47,9 @@ export const listAutomationRunsQuerySchema = z.object({
   cursor: z.string().optional(),
 }).strict();
 export type ListAutomationRunsQuery = z.infer<typeof listAutomationRunsQuerySchema>;
+
+export const listAutomationsQuerySchema = z.object({
+  action: z.enum(AUTOMATION_ACTION_TYPES).optional(),
+  ownerId: z.string().optional(),
+}).strict();
+export type ListAutomationsQuery = z.infer<typeof listAutomationsQuerySchema>;

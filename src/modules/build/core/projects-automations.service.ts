@@ -1,12 +1,12 @@
 import { Injectable, Inject, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
-import { and, eq, desc, inArray } from "drizzle-orm";
+import { and, eq, desc, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { projectAutomations, projectStatuses } from "../../../db/schema";
+import { projectAutomations, projectStatuses, users } from "../../../db/schema";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { CreateAutomationInput, UpdateAutomationInput } from "./dto/automation.schemas";
+import type { CreateAutomationInput, UpdateAutomationInput, ListAutomationsQuery } from "./dto/automation.schemas";
 
 @Injectable()
 export class ProjectsAutomationsService {
@@ -45,8 +45,24 @@ export class ProjectsAutomationsService {
       );
   }
 
-  async listAutomations(u: CurrentUserContext, projectId: number) {
+  async listAutomations(u: CurrentUserContext, projectId: number, query: ListAutomationsQuery = {}) {
     await this.members.assertProjectAccess(u, projectId);
+
+    const conditions = [
+      eq(projectAutomations.orgId, u.orgId),
+      eq(projectAutomations.projectId, projectId),
+    ];
+
+    if (query.ownerId !== undefined) {
+      conditions.push(eq(projectAutomations.createdBy, query.ownerId));
+    }
+
+    if (query.action !== undefined) {
+      conditions.push(
+        sql`${projectAutomations.actions} @> ${JSON.stringify([{ type: query.action }])}::jsonb`,
+      );
+    }
+
     return this.db
       .select({
         id: projectAutomations.id,
@@ -56,11 +72,21 @@ export class ProjectsAutomationsService {
         isActive: projectAutomations.isActive,
         conditions: projectAutomations.conditions,
         actions: projectAutomations.actions,
+        createdBy: projectAutomations.createdBy,
+        lastRunAt: projectAutomations.lastRunAt,
+        lastFailureAt: projectAutomations.lastFailureAt,
         createdAt: projectAutomations.createdAt,
         updatedAt: projectAutomations.updatedAt,
+        createdByUser: {
+          name: users.name,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        },
       })
       .from(projectAutomations)
-      .where(and(eq(projectAutomations.orgId, u.orgId), eq(projectAutomations.projectId, projectId)))
+      .leftJoin(users, eq(users.id, projectAutomations.createdBy))
+      .where(and(...conditions))
       .orderBy(desc(projectAutomations.createdAt))
       .limit(100);
   }

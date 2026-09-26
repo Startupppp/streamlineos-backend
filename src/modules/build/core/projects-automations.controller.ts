@@ -11,9 +11,11 @@ import {
   createAutomationSchema,
   updateAutomationSchema,
   listAutomationRunsQuerySchema,
+  listAutomationsQuerySchema,
   type CreateAutomationInput,
   type UpdateAutomationInput,
   type ListAutomationRunsQuery,
+  type ListAutomationsQuery,
 } from "./dto/automation.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -39,12 +41,13 @@ export class ProjectsAutomationsController {
   @Get(":projectId/automations")
   @RequirePermission("build:view")
   @ResponseSchema(z.array(projectAutomationListItemSchema))
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: listAutomationsQuerySchema })
   list(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ListAutomationsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.listAutomations(u, projectId);
+    return this.automations.listAutomations(u, projectId, query);
   }
 
   /**

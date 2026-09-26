@@ -18,6 +18,7 @@ export const updateGitConnectionSchema = z.object({
 export const gitConnectionsListSchema = z.object({
   limit: pageSizeField(50),
   cursor: z.string().optional(),
+  search: z.string().optional(),
 }).strict();
 
 export type CreateGitConnectionInput = z.infer<typeof createGitConnectionSchema>;

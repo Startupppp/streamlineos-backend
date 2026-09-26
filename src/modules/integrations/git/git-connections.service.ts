@@ -4,11 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ilike, or } from "drizzle-orm";
 import { gitConnections } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import {
   generateWebhookSecret,
@@ -21,15 +24,6 @@ import type {
   UpdateGitConnectionInput,
 } from "./dto/git-connections.schemas";
 
-/**
- * Repository connections, owned by the module that consumes them.
- *
- * These lived on `SettingsService` behind `/settings/integrations/git`, which
- * put a module-owned integration surface on the global settings path (root
- * CLAUDE.md §8). The only other reader of `git_connections` is
- * `IntegrationsGitService`, which verifies the webhook signature — so this is
- * where the rows already belong.
- */
 @Injectable()
 export class GitConnectionsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -37,6 +31,13 @@ export class GitConnectionsService {
   async listConnections(orgId: string, params: GitConnectionsListInput) {
     const limit = params.limit;
     const position = decodeCursor(params.cursor);
+    const search = params.search?.trim();
+    const searchCond = search
+      ? or(
+          ilike(gitConnections.repoUrl, `%${search}%`),
+          ilike(gitConnections.repoName, `%${search}%`),
+        )
+      : undefined;
 
     const rows = await this.db
       .select({
@@ -54,8 +55,13 @@ export class GitConnectionsService {
       .where(
         and(
           eq(gitConnections.orgId, orgId),
+          searchCond,
           position
-            ? keysetBeforeId(gitConnections.createdAt, gitConnections.id, position)
+            ? keysetBeforeId(
+                gitConnections.createdAt,
+                gitConnections.id,
+                position,
+              )
             : undefined,
         ),
       )
@@ -138,10 +144,17 @@ export class GitConnectionsService {
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         ...(input.repoUrl !== undefined ? { repoUrl: input.repoUrl } : {}),
         ...(input.repoName !== undefined ? { repoName: input.repoName } : {}),
-        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+        ...(input.projectId !== undefined
+          ? { projectId: input.projectId }
+          : {}),
         updatedAt: new Date(),
       })
-      .where(and(eq(gitConnections.id, connectionId), eq(gitConnections.orgId, orgId)))
+      .where(
+        and(
+          eq(gitConnections.id, connectionId),
+          eq(gitConnections.orgId, orgId),
+        ),
+      )
       .returning();
 
     if (!updated) throw new NotFoundException("Connection not found");
@@ -161,7 +174,12 @@ export class GitConnectionsService {
   async deleteConnection(orgId: string, connectionId: number) {
     const [deleted] = await this.db
       .delete(gitConnections)
-      .where(and(eq(gitConnections.id, connectionId), eq(gitConnections.orgId, orgId)))
+      .where(
+        and(
+          eq(gitConnections.id, connectionId),
+          eq(gitConnections.orgId, orgId),
+        ),
+      )
       .returning({ id: gitConnections.id });
 
     if (!deleted) throw new NotFoundException("Connection not found");

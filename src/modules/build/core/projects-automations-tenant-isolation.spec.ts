@@ -20,8 +20,10 @@ describe("ProjectsAutomationsService — cross-tenant isolation", () => {
   const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never;
 
   function makeDb(autoRows: unknown[]) {
-    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(autoRows) }) });
-    const from = jest.fn().mockReturnValue({ where });
+    const orderByLimit = { orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(autoRows) }) };
+    const where = jest.fn().mockReturnValue(orderByLimit);
+    const leftJoin = jest.fn().mockReturnValue({ where });
+    const from = jest.fn().mockReturnValue({ leftJoin });
     const select = jest.fn().mockReturnValue({ from });
     return { db: { select } as unknown as Db, where };
   }

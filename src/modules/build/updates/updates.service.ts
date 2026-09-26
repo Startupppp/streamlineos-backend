@@ -1,6 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { projectUpdates } from "../../../db/schema/build/project-updates";
+import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -19,6 +20,8 @@ import {
 import type { CreateUpdateInput, EditUpdateInput, ListUpdatesQuery } from "./dto/updates.schemas";
 
 const DEFAULT_LIMIT = 25;
+
+const AUTHOR_NAME = sql<string>`COALESCE(${users.name}, ${users.email}, 'Unknown')`;
 
 @Injectable()
 export class UpdatesService {
@@ -48,6 +51,39 @@ export class UpdatesService {
     return row;
   }
 
+  private async selectFullRow(orgId: string, id: number) {
+    const [row] = await this.db
+      .select({
+        id: projectUpdates.id,
+        orgId: projectUpdates.orgId,
+        projectId: projectUpdates.projectId,
+        authorMembershipId: projectUpdates.authorMembershipId,
+        authorName: AUTHOR_NAME,
+        body: projectUpdates.body,
+        wins: projectUpdates.wins,
+        risks: projectUpdates.risks,
+        next: projectUpdates.next,
+        citations: projectUpdates.citations,
+        status: projectUpdates.status,
+        audience: projectUpdates.audience,
+        createdAt: projectUpdates.createdAt,
+        updatedAt: projectUpdates.updatedAt,
+        deletedAt: projectUpdates.deletedAt,
+      })
+      .from(projectUpdates)
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, projectUpdates.authorMembershipId),
+          eq(organizationMembers.orgId, projectUpdates.orgId),
+        ),
+      )
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
+      .where(and(eq(projectUpdates.orgId, orgId), eq(projectUpdates.id, id)));
+    if (!row) throw new NotFoundException("Update not found");
+    return row;
+  }
+
   async listUpdates(u: CurrentUserContext, projectId: number, query: ListUpdatesQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const limit = query.limit ?? DEFAULT_LIMIT;
@@ -59,7 +95,12 @@ export class UpdatesService {
         orgId: projectUpdates.orgId,
         projectId: projectUpdates.projectId,
         authorMembershipId: projectUpdates.authorMembershipId,
+        authorName: AUTHOR_NAME,
         body: projectUpdates.body,
+        wins: projectUpdates.wins,
+        risks: projectUpdates.risks,
+        next: projectUpdates.next,
+        citations: projectUpdates.citations,
         status: projectUpdates.status,
         audience: projectUpdates.audience,
         createdAt: microsecondCursorValue(projectUpdates.createdAt),
@@ -67,6 +108,14 @@ export class UpdatesService {
         deletedAt: projectUpdates.deletedAt,
       })
       .from(projectUpdates)
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, projectUpdates.authorMembershipId),
+          eq(organizationMembers.orgId, projectUpdates.orgId),
+        ),
+      )
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(projectUpdates.orgId, u.orgId),
@@ -104,26 +153,30 @@ export class UpdatesService {
     if (membershipId === null)
       throw new ForbiddenException("No active membership found");
 
-    const [update] = await this.db
+    const [inserted] = await this.db
       .insert(projectUpdates)
       .values({
         orgId: u.orgId,
         projectId,
         authorMembershipId: membershipId,
         body: input.body,
+        wins: input.wins ?? null,
+        risks: input.risks ?? null,
+        next: input.next ?? null,
+        citations: input.citations ?? null,
       })
-      .returning();
-    if (!update) throw new NotFoundException("Failed to create update");
+      .returning({ id: projectUpdates.id });
+    if (!inserted) throw new NotFoundException("Failed to create update");
 
     this.audit.log({
       action: "project_update.created",
       userId: u.userId,
       orgId: u.orgId,
       resourceType: "project_update",
-      resourceId: String(update.id),
-      metadata: { projectId, updateId: update.id },
+      resourceId: String(inserted.id),
+      metadata: { projectId, updateId: inserted.id },
     });
-    return update;
+    return this.selectFullRow(u.orgId, inserted.id);
   }
 
   async editUpdate(u: CurrentUserContext, projectId: number, updateId: number, input: EditUpdateInput) {
@@ -137,7 +190,13 @@ export class UpdatesService {
     }
     const [updated] = await this.db
       .update(projectUpdates)
-      .set({ body: input.body })
+      .set({
+        body: input.body,
+        ...(input.wins !== undefined ? { wins: input.wins } : {}),
+        ...(input.risks !== undefined ? { risks: input.risks } : {}),
+        ...(input.next !== undefined ? { next: input.next } : {}),
+        ...(input.citations !== undefined ? { citations: input.citations } : {}),
+      })
       .where(
         and(
           eq(projectUpdates.id, updateId),
@@ -146,7 +205,7 @@ export class UpdatesService {
           isNull(projectUpdates.deletedAt),
         ),
       )
-      .returning();
+      .returning({ id: projectUpdates.id });
     if (!updated) throw new NotFoundException("Update not found after edit");
     this.audit.log({
       action: "project_update.edited",
@@ -156,7 +215,7 @@ export class UpdatesService {
       resourceId: String(updateId),
       metadata: { projectId, updateId },
     });
-    return updated;
+    return this.selectFullRow(u.orgId, updated.id);
   }
 
   async softDeleteUpdate(u: CurrentUserContext, projectId: number, updateId: number) {

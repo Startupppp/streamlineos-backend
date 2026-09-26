@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { projectAutomationRuns, projectAutomationRunActions } from "../../../db/schema";
+import { projectAutomationRuns, projectAutomationRunActions, projectAutomations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
@@ -51,6 +51,16 @@ export class BuildAutomationRunHistoryService {
    * Best-effort: a failure recording history must never take down the
    * automation run itself, which has already (or is about to) commit real
    * ticket/label/comment writes.
+   *
+   * When the automation matched and ran (success, partial failure, or full
+   * failure), this also stamps `last_run_at` (always on a matched run) and
+   * `last_failure_at` (only when the outcome indicates a failure) on the parent
+   * `project_automations` row. Unmatched, loop-guard and rate-limit outcomes do
+   * not stamp either column — the automation did not execute.
+   *
+   * This runs inside the after-commit fresh tenant transaction the interceptor
+   * drains (see build-automation-runner.service.ts: `registerAfterCommit`), so
+   * the tenant GUC is set and the RLS UPDATE is safe.
    */
   async recordRun(params: {
     orgId: string;
@@ -76,6 +86,32 @@ export class BuildAutomationRunHistoryService {
           errorMessage: params.errorMessage,
         })
         .returning({ id: projectAutomationRuns.id });
+
+      if (
+        params.automationId !== null &&
+        (params.outcome === "matched_success" ||
+          params.outcome === "matched_partial_failure" ||
+          params.outcome === "matched_failed" ||
+          params.outcome === "error")
+      ) {
+        const now = new Date();
+        const stamp =
+          params.outcome === "matched_success" || params.outcome === "matched_partial_failure"
+            ? { lastRunAt: now }
+            : params.outcome === "matched_failed"
+              ? { lastRunAt: now, lastFailureAt: now }
+              : { lastFailureAt: now };
+        await this.db
+          .update(projectAutomations)
+          .set(stamp)
+          .where(
+            and(
+              eq(projectAutomations.id, params.automationId),
+              eq(projectAutomations.orgId, params.orgId),
+            ),
+          );
+      }
+
       return row?.id ?? null;
     } catch (error) {
       logger.error("BuildAutomationRunHistory: failed to record run history", {

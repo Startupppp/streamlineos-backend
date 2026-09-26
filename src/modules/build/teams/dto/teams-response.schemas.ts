@@ -10,6 +10,7 @@ export const teamRowSchema = z.object({
   icon: z.string().nullable(),
   color: z.string().nullable(),
   isPrivate: z.boolean(),
+  capacity: z.number().int().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
   deletedAt: nullableWireDate(),

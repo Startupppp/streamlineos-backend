@@ -6896,6 +6896,27 @@
       "when": 1803064810725,
       "tag": "1300_build_projects_intake_published_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 1113,
+      "version": "7",
+      "when": 1803068410725,
+      "tag": "1305_build_project_updates_content_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 1114,
+      "version": "7",
+      "when": 1803072010725,
+      "tag": "1310_build_project_automations_run_timestamps",
+      "breakpoints": true
+    },
+    {
+      "idx": 1115,
+      "version": "7",
+      "when": 1803075610725,
+      "tag": "1315_build_project_teams_capacity",
+      "breakpoints": true
     }
   ]
 }

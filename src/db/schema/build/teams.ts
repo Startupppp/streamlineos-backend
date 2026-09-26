@@ -16,6 +16,7 @@ export const projectTeams = build.table(
     icon: text("icon"),
     color: text("color"),
     isPrivate: boolean("is_private").notNull().default(false),
+    capacity: integer("capacity"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

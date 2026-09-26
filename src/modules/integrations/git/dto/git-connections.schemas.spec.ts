@@ -35,3 +35,20 @@ describe("the list query is bounded", () => {
     expect(gitConnectionsListSchema.parse({}).limit).toBe(50);
   });
 });
+
+describe("gitConnectionsListSchema search field", () => {
+  it("accepts a search string", () => {
+    expect(gitConnectionsListSchema.safeParse({ search: "acme" }).success).toBe(true);
+  });
+
+  it("treats the search field as optional — omitting it is valid", () => {
+    const result = gitConnectionsListSchema.parse({});
+    expect(result.search).toBeUndefined();
+  });
+
+  it("rejects unknown keys even when search is present", () => {
+    expect(
+      gitConnectionsListSchema.safeParse({ search: "acme", unknownKey: true }).success,
+    ).toBe(false);
+  });
+});

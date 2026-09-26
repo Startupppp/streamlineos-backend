@@ -20,6 +20,7 @@ export const createTeamSchema = z.object({
   icon: z.string().optional(),
   color: z.string().optional(),
   isPrivate: z.boolean().optional(),
+  capacity: z.number().int().positive().optional(),
 }).strict();
 
 export const updateTeamSchema = z.object({
@@ -27,6 +28,7 @@ export const updateTeamSchema = z.object({
   icon: z.string().nullish(),
   color: z.string().nullish(),
   isPrivate: z.boolean().optional(),
+  capacity: z.number().int().positive().nullable().optional(),
 }).strict();
 
 export const addTeamMemberSchema = z.object({
@@ -37,6 +39,9 @@ export const addTeamMemberSchema = z.object({
 export const listTeamMembersQuerySchema = z.object({
   cursor: z.string().optional(),
   pageSize: pageSizeField(50),
+  q: z.string().optional(),
+  leadId: z.string().uuid().optional(),
+  memberId: z.string().uuid().optional(),
 }).strict();
 
 export const updateTeamMemberRoleSchema = z.object({

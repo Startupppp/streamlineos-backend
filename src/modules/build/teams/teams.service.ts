@@ -88,6 +88,7 @@ export class TeamsService {
         icon: projectTeams.icon,
         color: projectTeams.color,
         isPrivate: projectTeams.isPrivate,
+        capacity: projectTeams.capacity,
         createdAt: projectTeams.createdAt,
         updatedAt: projectTeams.updatedAt,
         memberCount: sql<number>`(
@@ -155,6 +156,7 @@ export class TeamsService {
           icon: input.icon ?? null,
           color: input.color ?? null,
           isPrivate: input.isPrivate ?? false,
+          capacity: input.capacity ?? null,
         })
         .returning();
       if (!row) throw new NotFoundException("Failed to create team");
@@ -189,6 +191,7 @@ export class TeamsService {
     if (input.icon !== undefined) patch.icon = input.icon ?? null;
     if (input.color !== undefined) patch.color = input.color ?? null;
     if (input.isPrivate !== undefined) patch.isPrivate = input.isPrivate;
+    if (input.capacity !== undefined) patch.capacity = input.capacity;
     const [updated] = await this.db
       .update(projectTeams)
       .set(patch)

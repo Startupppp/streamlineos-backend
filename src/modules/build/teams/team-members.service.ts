@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ilike, or } from "drizzle-orm";
 import { projectTeamMembers } from "../../../db/schema/build/teams";
 import { buildMembers } from "../../../db/schema";
 import { organizationMembers, users } from "../../../db/schema/common/auth";
@@ -43,6 +43,23 @@ export class TeamMembersService {
       eq(projectTeamMembers.teamId, teamId),
       eq(projectTeamMembers.orgId, orgId),
     ];
+    if (query.q) {
+      const like = `%${query.q}%`;
+      conds.push(
+        or(
+          ilike(users.email, like),
+          ilike(users.firstName, like),
+          ilike(users.lastName, like),
+        )!,
+      );
+    }
+    if (query.leadId !== undefined) {
+      conds.push(eq(organizationMembers.userId, query.leadId));
+      conds.push(eq(projectTeamMembers.role, "lead"));
+    }
+    if (query.memberId !== undefined) {
+      conds.push(eq(organizationMembers.userId, query.memberId));
+    }
     if (pos) conds.push(keysetAfterId(projectTeamMembers.joinedAt, projectTeamMembers.id, pos));
 
     const rows = await this.db
