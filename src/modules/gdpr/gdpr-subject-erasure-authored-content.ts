@@ -81,18 +81,19 @@ export async function anonymiseSubjectConversations(
   return { tables, chatMessageIds: chatMsgResult.map((row) => row.id) };
 }
 
-async function clearPageCheckpoints(
+async function clearCheckpointsFor(
   tx: TenantTx,
   orgId: string,
-  pageIds: number[],
+  contentTypes: string[],
+  contentIds: number[],
 ): Promise<number> {
   const removed = await tx
     .delete(kbIngestionCheckpoints)
     .where(
       and(
         eq(kbIngestionCheckpoints.orgId, orgId),
-        eq(kbIngestionCheckpoints.contentType, "page"),
-        inArray(kbIngestionCheckpoints.contentId, pageIds),
+        inArray(kbIngestionCheckpoints.contentType, contentTypes),
+        inArray(kbIngestionCheckpoints.contentId, contentIds),
       ),
     )
     .returning({ id: kbIngestionCheckpoints.id });
@@ -191,7 +192,12 @@ export async function eraseSubjectKbContent(
             ),
           )
           .returning({ id: kbArticleChunks.id });
-        checkpointsRemoved += await clearPageCheckpoints(tx, orgId, ids);
+        checkpointsRemoved += await clearCheckpointsFor(
+          tx,
+          orgId,
+          ["page", "article"],
+          ids,
+        );
         return removed.length;
       },
     ),
@@ -254,6 +260,12 @@ export async function eraseSubjectKbContent(
             ),
           )
           .returning({ id: kbArticleChunks.id });
+        checkpointsRemoved += await clearCheckpointsFor(
+          tx,
+          orgId,
+          ["attachment"],
+          ids,
+        );
         return removed.length;
       },
     ),

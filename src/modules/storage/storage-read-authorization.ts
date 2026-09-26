@@ -116,7 +116,7 @@ async function resolveFileOwner(
     return attachment ? { orgId: attachment.orgId, access: "CHAT_ATTACHMENT" } : null;
   }
 
-  const like = `%${fileKey}%`;
+  const like = `%${fileKey.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
   const [doc, onboardingDoc, expense, reimbursement, handbookVersion, payslip, vaultDoc] =
     await Promise.all([
       db.query.documents.findFirst({ where: ilike(documents.fileUrl, like) }),

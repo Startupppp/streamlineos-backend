@@ -106,7 +106,7 @@ if (!url) {
   process.exit(2);
 }
 
-const sql = postgres(url, { max: 1 });
+const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {} });
 try {
   const rows = await sql`
     SELECT

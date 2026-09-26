@@ -303,14 +303,13 @@ describe("GdprSubjectErasureService — KB drains page past the page size", () =
 // deleting the chunks leaves the subject's text and vector behind.
 
 describe("GdprSubjectErasureService — kb_ingestion_checkpoints", () => {
-  it("clears the checkpoints for the subject's authored articles and pages", async () => {
+  it("clears the checkpoints for the subject's authored pages and for the attachments they uploaded, because indexing writes a checkpoint row under page, article and attachment content types and an unerased row keeps the subject's text and embedding", async () => {
     const { db, checkpointDeleteChains } = makeHarness({
       selectPages: [
         [], // hr_people
-        [{ id: 5 }], // authored articles
+        [{ id: 5 }], // authored pages, covering the article content type too
         [], // owned sources
-        [], // uploaded attachments
-        [{ id: 9 }], // authored pages
+        [{ id: 9 }], // uploaded attachments
       ],
     });
     const service = buildService(db, makePurgeDouble());

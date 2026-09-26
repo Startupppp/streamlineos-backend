@@ -497,7 +497,7 @@ describe("GdprSubjectErasureService — kb_article_chunks from uploaded attachme
     expect(result.tablesAnonymised).toContain("kb_article_chunks");
   });
 
-  it("calls tx.delete 4 times when the subject has uploaded attachments (msgs + convs + page-chunks + attachment-chunks)", async () => {
+  it("calls tx.delete 5 times when the subject has uploaded attachments (msgs + convs + page-chunks + attachment-chunks + attachment-checkpoints), because the attachment's checkpoint row holds the same text and embedding as the chunk it came from", async () => {
     const { db, tx } = makeKbDb({
       uploadedAttachmentIds: [{ id: 11 }],
       kbAttachmentChunkDeleted: [{ id: 500 }],
@@ -506,7 +506,7 @@ describe("GdprSubjectErasureService — kb_article_chunks from uploaded attachme
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(kbDeleteCalls(tx)).toBe(4);
+    expect(kbDeleteCalls(tx)).toBe(5);
   });
 
   it("skips the attachment chunk delete when the subject has uploaded no attachments", async () => {
