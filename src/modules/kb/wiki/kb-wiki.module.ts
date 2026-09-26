@@ -8,7 +8,6 @@ import { KbWikiAnalyticsController } from "../analytics/kb-wiki-analytics.contro
 import { KbWikiAnalyticsService } from "../analytics/kb-wiki-analytics.service";
 import { KbContentHealthController } from "../content-health/kb-content-health.controller";
 import { KbContentHealthService } from "../content-health/kb-content-health.service";
-import { KbContentHealthScannerService } from "../content-health/kb-content-health-scanner.service";
 import { KbRetrievalModule } from "../retrieval/kb-retrieval.module";
 import { KbSpacesService } from "./kb-spaces.service";
 import { KbMembersService } from "./kb-members.service";
@@ -92,7 +91,6 @@ import { KbBriefToPageService } from "./kb-brief-to-page.service";
     KbImportProcessConsumer,
     KbWikiAnalyticsService,
     KbContentHealthService,
-    KbContentHealthScannerService,
     KbPageRecordLinksService,
     KbPageReviewsQueryService,
     KbBriefToPageService,

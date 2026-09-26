@@ -1,14 +1,11 @@
-import { and, eq, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, isNull, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { kbPages } from "../../../db/schema";
-import { kbHealthItems } from "../../../db/schema/kb/health-items";
-import { matchesPredicate } from "../../../test/sql-predicate";
 import type { Db } from "../../../db/drizzle.module";
 import {
   KbContentHealthService,
   impactKeysetAfterAnchor,
 } from "./kb-content-health.service";
-import { KbContentHealthScannerService } from "./kb-content-health-scanner.service";
 import type { ContentHealthSignalsQuery } from "./dto/kb-content-health.schemas";
 
 const dialect = new PgDialect();
@@ -237,133 +234,5 @@ describe("KbContentHealthService.signals — keyset agrees with the impact sort"
     expect(rendered).toContain("select");
     expect(rendered).toContain('"kb_pages"."org_id"');
     expect(rendered).not.toContain("deleted_at");
-  });
-});
-
-interface ScannerCapture {
-  readonly db: Db;
-  readonly wheres: unknown[];
-  readonly updateWheres: unknown[];
-  readonly updatedValues: unknown[];
-}
-
-function makeScannerDb(): ScannerCapture {
-  const wheres: unknown[] = [];
-  const updateWheres: unknown[] = [];
-  const updatedValues: unknown[] = [];
-
-  const selectChain: Record<string, unknown> = {};
-  selectChain.from = () => selectChain;
-  selectChain.where = (clause: unknown) => {
-    wheres.push(clause);
-    return selectChain;
-  };
-  selectChain.limit = () => Promise.resolve([]);
-  selectChain.then = (resolve: (value: unknown[]) => unknown) =>
-    Promise.resolve([]).then(resolve);
-
-  const db = {
-    select: () => selectChain,
-    execute: () => Promise.resolve([]),
-    insert: () => ({
-      values: () => ({
-        onConflictDoNothing: () => Promise.resolve([]),
-        onConflictDoUpdate: () => Promise.resolve([]),
-      }),
-    }),
-    update: () => ({
-      set: (values: unknown) => {
-        updatedValues.push(values);
-        return {
-          where: (clause: unknown) => {
-            updateWheres.push(clause);
-            return Promise.resolve([]);
-          },
-        };
-      },
-    }),
-  } as unknown as Db;
-
-  return { db, wheres, updateWheres, updatedValues };
-}
-
-function unownedResolvePredicate(capture: ScannerCapture): SQL {
-  const found = capture.wheres.find((clause) => {
-    const text = render(clause);
-    return (
-      text.includes('"kb_health_items"."page_id"') &&
-      text.includes("owner_membership_id")
-    );
-  });
-  if (found === undefined) {
-    throw new Error("no resolve predicate captured for the unowned kind");
-  }
-  return found as SQL;
-}
-
-describe("KbContentHealthScannerService — the sweep cannot resolve what it never examined", () => {
-  it("re-evaluates the page predicate for every open item instead of resolving whatever the capped scan window left out", async () => {
-    const capture = makeScannerDb();
-    await new KbContentHealthScannerService(capture.db).scan("org-1");
-
-    const resolved = capture.updatedValues.filter(
-      (values) => (values as { state?: string }).state === "resolved",
-    );
-    expect(resolved.length).toBeGreaterThan(0);
-
-    const carriesAnIdList = capture.updateWheres.some((clause) =>
-      /"page_id" in /i.test(render(clause)),
-    );
-    expect(carriesAnIdList).toBe(false);
-    expect(capture.updateWheres.map((clause) => render(clause)).join(" ")).toContain(
-      "not exists",
-    );
-  });
-
-  it("leaves an item open when its page still matches the signal even though the page sits beyond the scan window, because falling outside a 500-row window is not evidence of a fix", async () => {
-    const capture = makeScannerDb();
-    await new KbContentHealthScannerService(capture.db).scan("org-1");
-
-    const stillUnowned = {
-      id: 900,
-      org_id: "org-1",
-      deleted_at: null,
-      owner_membership_id: null,
-    };
-
-    const pageStillMatches = matchesPredicate(unownedResolvePredicate(capture), {
-      kb_pages: [stillUnowned],
-      kb_health_items: [{ page_id: 900 }],
-    });
-
-    expect(pageStillMatches).toBe(true);
-  });
-
-  it("resolves an item whose page has actually been given an owner, so the not-exists guard above is not simply inert", async () => {
-    const capture = makeScannerDb();
-    await new KbContentHealthScannerService(capture.db).scan("org-1");
-
-    const nowOwned = {
-      id: 901,
-      org_id: "org-1",
-      deleted_at: null,
-      owner_membership_id: 5,
-    };
-
-    const pageStillMatches = matchesPredicate(unownedResolvePredicate(capture), {
-      kb_pages: [nowOwned],
-      kb_health_items: [{ page_id: 901 }],
-    });
-
-    expect(pageStillMatches).toBe(false);
-  });
-
-  it("control: the window-scoped resolve this replaced renders a page_id IN list, which the first assertion rejects", () => {
-    const windowScoped = and(
-      eq(kbHealthItems.orgId, "org-1"),
-      inArray(kbHealthItems.pageId, [1, 2]),
-      eq(kbHealthItems.state, "open"),
-    );
-    expect(render(windowScoped)).toMatch(/"page_id" in /i);
   });
 });
