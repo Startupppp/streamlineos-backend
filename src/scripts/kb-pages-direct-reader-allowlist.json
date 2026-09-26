@@ -9,7 +9,6 @@
     "src/modules/public/kb.service.ts",
     "src/modules/support/core/lib/support-kb-articles.ts",
     "src/modules/support/core/support-ai-triage-data.service.ts",
-    "src/modules/support/core/support-kb-engagement.service.ts",
-    "src/modules/support/kb-gap/support-kb-gap.service.ts"
+    "src/modules/support/core/support-kb-engagement.service.ts"
   ]
 }
