@@ -3,7 +3,6 @@ import { sql, type SQL } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
-import type { KbAccessService } from "../core/kb-access.service";
 import type { AccessService } from "../../access/access.service";
 import { KbDocumentQueryService } from "./kb-document-query.service";
 
@@ -57,10 +56,6 @@ function makeHarness() {
     }),
   } as unknown as Db;
 
-  const kbAccess = {
-    getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
-  } as unknown as KbAccessService;
-
   const access = {
     scopeFor: jest.fn().mockResolvedValue("all"),
   } as unknown as AccessService;
@@ -69,9 +64,10 @@ function makeHarness() {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
     articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
     assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+    resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [1] }),
   };
 
-  const service = new KbDocumentQueryService(db, kbAccess, access, auth as never);
+  const service = new KbDocumentQueryService(db, access, auth as never);
   return { service, articleWheres, pageWheres };
 }
 

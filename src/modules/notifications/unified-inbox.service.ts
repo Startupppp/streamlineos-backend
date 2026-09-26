@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lt } from "drizzle-orm";
 import { notifications } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -9,13 +9,23 @@ import { assertNever } from "../../common/types/assert-never";
 import { MailService } from "../mail/mail.service";
 import {
   deduplicate,
+  inboxCollapseKey,
   lastDeliveredAdapterPositions,
   lastDeliveredPosition,
   stableSortItems,
 } from "./unified-inbox-projections";
-import { notificationNotSnoozed } from "./notification-read-window";
+import {
+  notificationNotSnoozed,
+  notificationWindowEnd,
+  notificationWindowStart,
+} from "./notification-read-window";
+import {
+  notificationUnread,
+  readNotificationWatermark,
+} from "./notification-read-watermark";
 import { BroadcastsService } from "./broadcasts.service";
 import {
+  APPROVAL_COUNT_SCAN_LIMIT,
   SOURCE_TIMEOUT_MS,
   buildApprovalAdapter,
   fetchBroadcastItems,
@@ -348,6 +358,11 @@ export class UnifiedInboxService {
         ? legacyApprovalPosition
         : null);
 
+    const lastReadId =
+      wantsNotifications && membershipId !== null
+        ? await readNotificationWatermark(this.db, orgId, membershipId)
+        : 0;
+
     const [notifOutcome, broadcastOutcome, mailOutcome, adapterResult] =
       await Promise.all([
         wantsNotifications
@@ -360,6 +375,7 @@ export class UnifiedInboxService {
                 notifPosition,
                 unreadOnly,
                 filters,
+                lastReadId,
               ),
             )
           : null,
@@ -570,9 +586,10 @@ export class UnifiedInboxService {
     return {
       notification: notifCount,
       mail: mailCount.unread,
-      approval: approvalCount,
-      total: notifCount + mailCount.unread + approvalCount,
+      approval: approvalCount.pending,
+      total: notifCount + mailCount.unread + approvalCount.pending,
       mailExact: mailCount.exact,
+      approvalExact: approvalCount.exact,
     };
   }
 
@@ -581,6 +598,12 @@ export class UnifiedInboxService {
     membershipId: number | null,
   ): Promise<number> {
     if (membershipId === null) return 0;
+    const now = new Date();
+    const lastReadId = await readNotificationWatermark(
+      this.db,
+      orgId,
+      membershipId,
+    );
     const rows = await this.db
       .select({ cnt: count() })
       .from(notifications)
@@ -588,10 +611,12 @@ export class UnifiedInboxService {
         and(
           eq(notifications.orgId, orgId),
           eq(notifications.membershipId, membershipId),
-          eq(notifications.isRead, false),
+          gte(notifications.createdAt, notificationWindowStart(now)),
+          lt(notifications.createdAt, notificationWindowEnd(now)),
+          notificationUnread(lastReadId),
           isNull(notifications.deletedAt),
           isNull(notifications.archivedAt),
-          notificationNotSnoozed(new Date()),
+          notificationNotSnoozed(now),
         ),
       );
     return Number(rows[0]?.cnt ?? 0);
@@ -615,18 +640,32 @@ export class UnifiedInboxService {
     orgId: string,
     userId: string,
     user: CurrentUserContext,
-  ): Promise<number> {
+  ): Promise<{ pending: number; exact: boolean }> {
     const membershipId = actingMembershipId(user.principal);
-    if (membershipId === null) return 0;
-    const counts = await Promise.all(
+    if (membershipId === null) return { pending: 0, exact: true };
+    const scans = await Promise.all(
       this.buildApprovalAdapters().map(async (adapter) => {
-        if (!(await this.access.holds(user, adapter.permission))) return 0;
+        if (!(await this.access.holds(user, adapter.permission)))
+          return { items: [] as BuildApprovalInboxItem[], exact: true };
         const outcome = await readSource(() =>
-          adapter.countPending(orgId, userId, membershipId),
+          adapter.fetch(
+            orgId,
+            userId,
+            membershipId,
+            APPROVAL_COUNT_SCAN_LIMIT,
+            null,
+          ),
         );
-        return outcome.ok ? outcome.value : 0;
+        if (!outcome.ok) return { items: [], exact: false };
+        return {
+          items: outcome.value,
+          exact: outcome.value.length < APPROVAL_COUNT_SCAN_LIMIT,
+        };
       }),
     );
-    return counts.reduce((total, n) => total + n, 0);
+    const keys = new Set(
+      scans.flatMap((scan) => scan.items.map((item) => inboxCollapseKey(item))),
+    );
+    return { pending: keys.size, exact: scans.every((scan) => scan.exact) };
   }
 }

@@ -1,8 +1,15 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { kbCategories } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { KbPageWriterService } from "../../kb/wiki/kb-page-writer.service";
 import {
   createArticle,
   deleteArticle,
@@ -19,17 +26,11 @@ import type {
   UpdateKbCategoryInput,
 } from "./dto/support.schemas";
 
-/**
- * Support KB categories. The article record itself, its slug, its tags and its
- * version history live in `lib/support-kb-articles.ts`; the five members below
- * are thin delegates, kept because `SupportKbController` injects this service.
- * Feedback, comments and attachments hang off an article they do not own and
- * live in `SupportKbEngagementService`.
- */
 @Injectable()
 export class SupportKbService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly writer: KbPageWriterService,
   ) {}
 
   listCategories(orgId: string) {
@@ -48,27 +49,9 @@ export class SupportKbService {
       where: and(eq(kbCategories.orgId, orgId), eq(kbCategories.slug, slug)),
       columns: { id: true },
     });
-    if (existing) throw new ConflictException("A category with this name already exists");
+    if (existing)
+      throw new ConflictException("A category with this name already exists");
 
-    /**
-     * No conflict handler under the insert, deliberately.
-     *
-     * `uniq_kb_categories_org_space_slug` is (org_id, space_id, slug) and is
-     * NULLS DISTINCT — migration 0000 creates it with no `NULLS NOT DISTINCT`
-     * — while this path never sets `space_id`. Two rows with the same slug and
-     * a null space therefore do NOT collide, so the index cannot raise 23505
-     * here at all; the only other unique on the table is (org_id, id) over a
-     * serial nobody supplies. The handler that used to sit here was dead twice
-     * over: it read `e.code` off a value Drizzle keeps the SQLSTATE under, and
-     * there was no violation for it to read.
-     *
-     * The check above is therefore the whole guard, and it is a read followed
-     * by a write. Two concurrent creates of the same name both pass it and
-     * both land, which no index will refuse. Closing that needs a partial
-     * unique on (org_id, slug) WHERE space_id IS NULL, or NULLS NOT DISTINCT —
-     * a migration, not a catch block, and out of scope here. Recorded rather
-     * than papered over with a branch that cannot fire.
-     */
     const [category] = await this.db
       .insert(kbCategories)
       .values({
@@ -84,7 +67,11 @@ export class SupportKbService {
     return category;
   }
 
-  async updateCategory(orgId: string, categoryId: number, input: UpdateKbCategoryInput) {
+  async updateCategory(
+    orgId: string,
+    categoryId: number,
+    input: UpdateKbCategoryInput,
+  ) {
     const values: Partial<typeof kbCategories.$inferInsert> = {
       description: input.description,
       icon: input.icon,
@@ -102,7 +89,8 @@ export class SupportKbService {
         ),
         columns: { id: true },
       });
-      if (clash) throw new ConflictException("A category with this name already exists");
+      if (clash)
+        throw new ConflictException("A category with this name already exists");
       values.name = input.name;
       values.slug = slug;
     }
@@ -110,7 +98,9 @@ export class SupportKbService {
     const [updated] = await this.db
       .update(kbCategories)
       .set({ ...values, updatedAt: new Date() })
-      .where(and(eq(kbCategories.id, categoryId), eq(kbCategories.orgId, orgId)))
+      .where(
+        and(eq(kbCategories.id, categoryId), eq(kbCategories.orgId, orgId)),
+      )
       .returning();
 
     if (!updated) throw new NotFoundException("Category not found");
@@ -120,7 +110,9 @@ export class SupportKbService {
   async deleteCategory(orgId: string, categoryId: number) {
     const [deleted] = await this.db
       .delete(kbCategories)
-      .where(and(eq(kbCategories.id, categoryId), eq(kbCategories.orgId, orgId)))
+      .where(
+        and(eq(kbCategories.id, categoryId), eq(kbCategories.orgId, orgId)),
+      )
       .returning();
 
     if (!deleted) throw new NotFoundException("Category not found");
@@ -139,8 +131,20 @@ export class SupportKbService {
     return getArticle(this.db, orgId, articleId);
   }
 
-  updateArticle(orgId: string, articleId: number, input: UpdateKbArticleInput, authorId: string | null = null) {
-    return updateArticle(this.db, orgId, articleId, input, authorId);
+  updateArticle(
+    orgId: string,
+    articleId: number,
+    input: UpdateKbArticleInput,
+    authorId: string | null = null,
+  ) {
+    return updateArticle(
+      this.db,
+      this.writer,
+      orgId,
+      articleId,
+      input,
+      authorId,
+    );
   }
 
   deleteArticle(orgId: string, articleId: number) {

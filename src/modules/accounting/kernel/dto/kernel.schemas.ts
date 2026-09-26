@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 /**
  * Boundary validation for the ledger kernel.
@@ -41,22 +42,9 @@ export const accountTypeSchema = z.enum([
   "EXPENSE",
 ]);
 
-export const systemTagSchema = z.enum([
-  "cash", "bank", "undeposited", "ar_control", "ap_control", "sales", "other_income",
-  "cogs", "opex", "salary", "equity_capital", "retained_earnings", "current_year_earnings",
-  "fx_gain", "fx_loss", "rounding", "vat_input", "vat_output", "sales_tax_payable",
-  "wht_payable", "gst_input_cgst", "gst_input_sgst", "gst_input_igst", "gst_input_utgst",
-  "gst_input_cess", "gst_output_cgst", "gst_output_sgst", "gst_output_igst",
-  "gst_output_utgst", "gst_output_cess", "psp_clearing", "razorpay_clearing",
-  "stripe_clearing", "payment_fees", "net_pay_clearing", "statutory_payable",
-  "fixed_asset", "accum_depreciation", "depreciation_expense", "deferred_revenue", "inventory",
-]);
+export const systemTagSchema = z.enum(DB_ENUMS.gl_system_tag);
 
-export const journalSourceSchema = z.enum([
-  "manual", "opening_balance", "sales_invoice", "credit_note", "receipt", "purchase_bill",
-  "debit_note", "payment", "bank_fee", "bank_transfer", "payroll_run", "billing_invoice",
-  "withholding", "fx_reval", "depreciation", "stock_move", "period_close",
-]);
+export const journalSourceSchema = z.enum(DB_ENUMS.gl_journal_source);
 
 /* ------------------------------------------------------------------ books */
 

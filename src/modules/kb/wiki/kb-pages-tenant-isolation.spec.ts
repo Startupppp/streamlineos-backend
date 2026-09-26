@@ -2,6 +2,7 @@ import { NotFoundException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -71,7 +72,7 @@ describe("KbPagesService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a page in another org (cross-tenant deny)", async () => {
     const { db, wheres } = makeDb(null);
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     await expect(svc.get(makeUser(ATTACKER), PAGE_ID, false)).rejects.toThrow(NotFoundException);
 
@@ -93,7 +94,7 @@ describe("KbPagesService — cross-tenant isolation", () => {
       createdByMembershipId: 1,
     };
     const { db } = makeDb(pageRow);
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     const result = await svc.get(makeUser(OWNER), PAGE_ID, false);
 

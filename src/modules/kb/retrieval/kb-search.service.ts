@@ -17,7 +17,6 @@ import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 import { kbArticleChunks, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -97,7 +96,6 @@ export class KbSearchService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly access: KbAccessService,
     private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
     private readonly candidates: KbCandidateService,
@@ -190,7 +188,7 @@ export class KbSearchService {
   }
 
   async aclCacheOutcome(user: CurrentUserContext): Promise<"hit" | "miss" | "bypass"> {
-    const { cacheOutcome } = await this.access.getAccessibleSpaceIdsWithCacheOutcome(user);
+    const { cacheOutcome } = await this.auth.resolveAccessibleSpaces(user);
     return cacheOutcome;
   }
 
@@ -266,7 +264,7 @@ export class KbSearchService {
       return empty;
     }
 
-    const { spaceIds: ids, cacheOutcome } = await this.access.getAccessibleSpaceIdsWithCacheOutcome(user);
+    const { spaceIds: ids, cacheOutcome } = await this.auth.resolveAccessibleSpaces(user);
     if (ids.length === 0) {
       metrics.finish("not_found", { sourceKind: emptyKind, cacheOutcome, queueLane, dbRole });
       return empty;
@@ -363,11 +361,12 @@ export class KbSearchService {
     verifiedOnly?: boolean,
     embedding?: QueryEmbedding,
   ): Promise<RetrievedSource[]> {
-    const ids = await this.access.getAccessibleSpaceIds(user);
+    const standing = await this.auth.resolveStanding(user);
+    const ids = standing.accessibleSpaceIds;
     const q = query.trim();
     if (!q) return [];
 
-    const principal = await this.access.getPrincipalIds(user);
+    const principal = { userId: standing.userId, membershipId: standing.membershipId, roleSlugs: standing.roleSlugs };
     const ownerFilter = await this.articleOwnerFilterFor(user);
 
     const pool = Math.max(limit * 3, limit);
@@ -381,7 +380,6 @@ export class KbSearchService {
       vectorLiteral = await this.vectorFor(q, user.orgId, embedding);
     }
 
-    const standing = await this.auth.resolveStanding(user);
     const pageVisibility = buildVisiblePageScope(standing, "view").predicate;
 
     const [articleKeyword, articleVector, pageKeyword, pageVector] =
@@ -624,7 +622,7 @@ export class KbSearchService {
     if (!q) return [];
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
     try {
-      const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
+      const accessibleSpaceIds = (await this.auth.resolveStanding(user)).accessibleSpaceIds;
       const vector = await this.vectorFor(q, user.orgId, embedding);
 
       const cap = Math.min(limit * 4, PAGE_SIZE_CAP);

@@ -9,7 +9,6 @@ import {
   inArray,
   lt,
   lte,
-  gt,
   gte,
   ilike,
   or,
@@ -30,6 +29,10 @@ import {
   notificationWindowEnd,
   notificationWindowStart,
 } from "./notification-read-window";
+import {
+  notificationUnread,
+  readByWatermark,
+} from "./notification-read-watermark";
 
 function extractTicketId(row: {
   entityType: string | null;
@@ -167,11 +170,12 @@ export class NotificationsReadService {
     let suppressSnoozed = true;
 
     switch (filters.section) {
-      case "UNREAD":
+      case "UNREAD": {
         conditions.push(isNull(notifications.archivedAt));
-        conditions.push(eq(notifications.isRead, false));
-        if (lastReadId > 0) conditions.push(gt(notifications.id, lastReadId));
+        const unread = notificationUnread(lastReadId);
+        if (unread) conditions.push(unread);
         break;
+      }
       case "READ":
         conditions.push(isNull(notifications.archivedAt));
         if (lastReadId > 0) {
@@ -263,7 +267,7 @@ export class NotificationsReadService {
     const page = buildIdCursorPage(rows, filters.limit, (row) => row.id);
     const data = page.data.map((row) => ({
       ...row,
-      isRead: row.isRead || (lastReadId > 0 && row.id <= lastReadId),
+      isRead: row.isRead || readByWatermark(row.id, lastReadId),
     }));
 
     return { data, hasMore: page.hasMore, nextCursor: page.nextCursor };
@@ -313,13 +317,13 @@ export class NotificationsReadService {
       eq(notifications.membershipId, membershipId),
       gte(notifications.createdAt, window.start),
       lt(notifications.createdAt, window.end),
-      eq(notifications.isRead, false),
       isNull(notifications.deletedAt),
       isNull(notifications.archivedAt),
     ];
     const notSnoozed = notificationNotSnoozed(now);
     if (notSnoozed) conditions.push(notSnoozed);
-    if (lastReadId > 0) conditions.push(gt(notifications.id, lastReadId));
+    const unread = notificationUnread(lastReadId);
+    if (unread) conditions.push(unread);
     if (sourceModule) conditions.push(eq(notifications.sourceModule, sourceModule));
     const [result] = await this.db
       .select({ count: sql<number>`count(*)::int` })

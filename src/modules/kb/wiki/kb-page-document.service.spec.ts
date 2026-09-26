@@ -2,6 +2,7 @@ import { ForbiddenException, HttpException, NotFoundException } from "@nestjs/co
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { STALE_REVISION_CODE } from "./kb-page-edit.util";
 
 function makeUser(orgId = "org-a") {
@@ -123,11 +124,11 @@ function makeAuth(decision: "allowed" | "forbidden" | "notFound" = "allowed") {
 function makeService(db: Db, authDecision: "allowed" | "forbidden" | "notFound" = "allowed") {
   return new KbPagesService(
     db,
-    { create: jest.fn() } as never,
     { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
     makeAuth(authDecision) as never,
     {} as never,
     {} as never,
+    new KbPageWriterService({} as never),
   );
 }
 

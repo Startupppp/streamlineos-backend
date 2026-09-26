@@ -8,7 +8,7 @@ import {
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { kbPageGrants, kbPages, organizationMembers, users } from "../../../db/schema";
+import { kbPageGrants, kbPages, organizationMembers } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -65,22 +65,8 @@ export class KbPageGrantsService {
       : undefined;
 
     const rows = await this.db
-      .select({
-        ...GRANT_COLUMNS,
-        createdAtMicros: microsecondCursorValue(kbPageGrants.createdAt),
-        granteeName: users.name,
-        granteeEmail: users.email,
-        granteeImage: users.image,
-      })
+      .select({ ...GRANT_COLUMNS, createdAtMicros: microsecondCursorValue(kbPageGrants.createdAt) })
       .from(kbPageGrants)
-      .leftJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, kbPageGrants.orgId),
-          eq(organizationMembers.id, kbPageGrants.membershipId),
-        ),
-      )
-      .leftJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(kbPageGrants.orgId, user.orgId),
@@ -103,9 +89,6 @@ export class KbPageGrantsService {
       grantedByMembershipId: r.grantedByMembershipId,
       createdAt: r.createdAt,
       revokedAt: r.revokedAt,
-      granteeName: r.granteeName ?? null,
-      granteeEmail: r.granteeEmail ?? null,
-      granteeImage: r.granteeImage ?? null,
     }));
 
     return buildCursorPage(items, query.limit, (row) => ({
@@ -131,22 +114,10 @@ export class KbPageGrantsService {
       throw new BadRequestException("Cannot grant access to yourself");
     }
 
-    let granteeInfo: { granteeName: string | null; granteeEmail: string | null; granteeImage: string | null } = {
-      granteeName: null,
-      granteeEmail: null,
-      granteeImage: null,
-    };
-
     if (input.membershipId !== undefined) {
       const [member] = await this.db
-        .select({
-          id: organizationMembers.id,
-          granteeName: users.name,
-          granteeEmail: users.email,
-          granteeImage: users.image,
-        })
+        .select({ id: organizationMembers.id })
         .from(organizationMembers)
-        .leftJoin(users, eq(users.id, organizationMembers.userId))
         .where(
           and(
             eq(organizationMembers.id, input.membershipId),
@@ -155,11 +126,6 @@ export class KbPageGrantsService {
         )
         .limit(1);
       if (!member) throw new NotFoundException("Membership not found");
-      granteeInfo = {
-        granteeName: member.granteeName ?? null,
-        granteeEmail: member.granteeEmail ?? null,
-        granteeImage: member.granteeImage ?? null,
-      };
     }
 
     const existing = await this.findLiveGrant(
@@ -171,7 +137,9 @@ export class KbPageGrantsService {
 
     let grant: KbPageGrantItem;
     try {
-      const rawGrant = await this.db.transaction(async (tx) => {
+      grant = await this.db.transaction(async (tx) => {
+        let row: KbPageGrantItem;
+
         if (existing) {
           const [updated] = await tx
             .update(kbPageGrants)
@@ -184,31 +152,30 @@ export class KbPageGrantsService {
             )
             .returning(GRANT_COLUMNS);
           if (!updated) throw new NotFoundException("Grant not found");
-          await tx
-            .update(kbPages)
-            .set({ aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() })
-            .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, user.orgId)));
-          return updated;
+          row = updated;
+        } else {
+          const [inserted] = await tx
+            .insert(kbPageGrants)
+            .values({
+              orgId: user.orgId,
+              pageId,
+              membershipId: input.membershipId ?? null,
+              role: input.role ?? null,
+              access: input.access,
+              grantedByMembershipId: actorMembership,
+            })
+            .returning(GRANT_COLUMNS);
+          if (!inserted) throw new NotFoundException("Insert failed");
+          row = inserted;
         }
-        const [inserted] = await tx
-          .insert(kbPageGrants)
-          .values({
-            orgId: user.orgId,
-            pageId,
-            membershipId: input.membershipId ?? null,
-            role: input.role ?? null,
-            access: input.access,
-            grantedByMembershipId: actorMembership,
-          })
-          .returning(GRANT_COLUMNS);
-        if (!inserted) throw new NotFoundException("Insert failed");
+
         await tx
           .update(kbPages)
           .set({ aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() })
           .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, user.orgId)));
-        return inserted;
+
+        return row;
       });
-      grant = { ...rawGrant, ...granteeInfo };
     } catch (err) {
       if (isUniqueViolation(err))
         throw new ConflictException("Grant already exists");
@@ -224,8 +191,14 @@ export class KbPageGrantsService {
       metadata: { pageId, access: input.access },
     });
 
-    const deferred = registerAfterCommit(() => this.auth.invalidateSpaceScope(user.orgId));
-    if (!deferred) await this.auth.invalidateSpaceScope(user.orgId);
+    const deferred = registerAfterCommit(async () => {
+      await this.auth.invalidateSpaceScope(user.orgId);
+      await this.syncChunkAclRevision(user.orgId, pageId);
+    });
+    if (!deferred) {
+      await this.auth.invalidateSpaceScope(user.orgId);
+      await this.syncChunkAclRevision(user.orgId, pageId);
+    }
 
     return grant;
   }
@@ -269,8 +242,27 @@ export class KbPageGrantsService {
       metadata: { pageId },
     });
 
-    const deferred = registerAfterCommit(() => this.auth.invalidateSpaceScope(user.orgId));
-    if (!deferred) await this.auth.invalidateSpaceScope(user.orgId);
+    const deferred = registerAfterCommit(async () => {
+      await this.auth.invalidateSpaceScope(user.orgId);
+      await this.syncChunkAclRevision(user.orgId, pageId);
+    });
+    if (!deferred) {
+      await this.auth.invalidateSpaceScope(user.orgId);
+      await this.syncChunkAclRevision(user.orgId, pageId);
+    }
+  }
+
+  private async syncChunkAclRevision(orgId: string, pageId: number): Promise<void> {
+    await this.db.execute(sql`
+      UPDATE kb_article_chunks c
+      SET acl_revision = p.acl_revision,
+          acl_synced_at = NOW()
+      FROM kb_pages p
+      WHERE c.page_id = p.id
+        AND c.org_id = ${orgId}
+        AND c.page_id = ${pageId}
+        AND c.acl_revision != p.acl_revision
+    `);
   }
 
   private async findLiveGrant(

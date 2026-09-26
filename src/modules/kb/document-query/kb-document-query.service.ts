@@ -54,7 +54,7 @@ export class KbDocumentQueryService {
 
     const [articleRead, spaceIds, predicate, restrictionPredicate] = await Promise.all([
       resolveKbArticlesViewScope(this.access, user),
-      this.kbAccess.getAccessibleSpaceIds(user),
+      this.auth.resolveStanding(user).then((s) => s.accessibleSpaceIds),
       this.auth.visiblePagePredicate(user, "view"),
       this.auth.articleRestrictionPredicate(user),
     ]);

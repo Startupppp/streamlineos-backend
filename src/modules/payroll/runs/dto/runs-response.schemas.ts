@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const runListItemSchema = z.object({
   id: z.number().int(),
   month: z.string(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.payroll_run_status),
   runType: z.string(),
   entityId: z.number().int().nullable(),
   statutoryRuleVersion: z.string().nullable(),
@@ -29,11 +30,7 @@ export const payrollRunSchema = z.object({
   calculationVersion: z.string().nullable(),
   statutoryRuleVersion: z.string().nullable(),
   inputSnapshotHash: z.string().nullable(),
-  status: z.enum([
-    "PREPARING", "DRAFT", "PREVIEW_READY", "EXCEPTIONS_FOUND",
-    "PENDING_APPROVAL", "APPROVED", "LOCKED", "PAID",
-    "PAYSLIPS_PUBLISHED", "CLOSED", "REOPENED",
-  ]),
+  status: z.enum(DB_ENUMS.payroll_run_status),
   payDate: z.string().nullable(),
   grossTotal: z.string(),
   deductionTotal: z.string(),
@@ -113,7 +110,7 @@ export const generateResponseSchema = z.object({
 export const runEmployeeListItemSchema = z.object({
   id: z.number().int(),
   userId: z.string().nullable(),
-  workerType: z.string(),
+  workerType: z.enum(DB_ENUMS.payroll_worker_type),
   currency: z.string(),
   gross: z.string(),
   totalDeductions: z.string(),
@@ -127,7 +124,7 @@ export const runEmployeeListItemSchema = z.object({
 export const runEmployeeDetailSchema = z.object({
   id: z.number().int(),
   userId: z.string().nullable(),
-  workerType: z.string(),
+  workerType: z.enum(DB_ENUMS.payroll_worker_type),
   currency: z.string(),
   gross: z.string(),
   totalDeductions: z.string(),

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Injectable, Inject, type OnModuleInit } from "@nestjs/common";
 import { and, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -10,10 +9,10 @@ import {
   type OutboxEventConsumer,
   type OutboxEventRow,
 } from "../../../common/outbox/outbox-consumer.registry";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AuditService } from "../../../common/audit/audit.service";
 import { importPagesSchema } from "./dto/kb-import-export.schemas";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 const importEventPayloadSchema = z.object({
   jobId: z.number().int(),
@@ -30,6 +29,7 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly outboxRegistry: OutboxConsumerRegistry,
     private readonly audit: AuditService,
+    private readonly writer: KbPageWriterService,
   ) {}
 
   onModuleInit(): void {
@@ -178,25 +178,10 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
                   id: kbPages.id,
                   contentRevision: kbPages.contentRevision,
                   aclRevision: kbPages.aclRevision,
+                  contentText: kbPages.contentText,
                 });
               succeeded += inserted.length;
-              for (const target of inserted) {
-                await OutboxWriter.emit(tx, {
-                  eventId: randomUUID(),
-                  organizationId: orgId,
-                  aggregateType: "kb_page",
-                  aggregateId: String(target.id),
-                  aggregateVersion: Date.now(),
-                  eventType: "kb.content.index",
-                  payload: {
-                    contentType: "page",
-                    contentId: target.id,
-                    contentRevision: target.contentRevision,
-                    aclRevision: target.aclRevision,
-                  },
-                  occurredAt: new Date(),
-                });
-              }
+              await this.writer.commitManyPageChanges(tx, { orgId, pages: inserted });
             } catch {
               failed += toUpsert.length;
               failedTitles.push(...toUpsert.map((v) => v.title));
@@ -234,25 +219,10 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
                   id: kbPages.id,
                   contentRevision: kbPages.contentRevision,
                   aclRevision: kbPages.aclRevision,
+                  contentText: kbPages.contentText,
                 });
               succeeded += inserted.length;
-              for (const target of inserted) {
-                await OutboxWriter.emit(tx, {
-                  eventId: randomUUID(),
-                  organizationId: orgId,
-                  aggregateType: "kb_page",
-                  aggregateId: String(target.id),
-                  aggregateVersion: Date.now(),
-                  eventType: "kb.content.index",
-                  payload: {
-                    contentType: "page",
-                    contentId: target.id,
-                    contentRevision: target.contentRevision,
-                    aclRevision: target.aclRevision,
-                  },
-                  occurredAt: new Date(),
-                });
-              }
+              await this.writer.commitManyPageChanges(tx, { orgId, pages: inserted });
             } catch {
               failed += toInsert.length;
               failedTitles.push(...toInsert.map((v) => v.title));

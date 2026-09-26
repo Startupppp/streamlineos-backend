@@ -93,14 +93,16 @@ describe("KB vector candidate retrieval binds the tenant in the predicate", () =
   it("pageVectorCandidates binds the caller's org on the chunk AND the page side", async () => {
     const { service, wheres } = makeHarness();
 
-    await service.pageVectorCandidates(ORG, VECTOR, 4, chunkVisibleTo(makeUser(), []));
+    await service.pageVectorCandidates(ORG, VECTOR, 4, chunkVisibleTo(makeStanding()));
 
     expect(wheres).toHaveLength(1);
     const where = wheres[0];
     const chunkOrgs = boundOrgIds(where, "kb_article_chunks");
     expect(chunkOrgs.length).toBeGreaterThan(0);
     for (const bound of chunkOrgs) expect(bound).toBe(ORG);
-    expect(boundOrgIds(where, "kb_pages")).toEqual([ORG]);
+    const pageOrgs = boundOrgIds(where, "kb_pages");
+    expect(pageOrgs.length).toBeGreaterThan(0);
+    for (const bound of pageOrgs) expect(bound).toBe(ORG);
   });
 
   it("the bound value follows the argument, so the predicate is not a constant that happens to match", async () => {
@@ -126,12 +128,18 @@ describe("KB vector candidate retrieval binds the tenant in the predicate", () =
 });
 
 describe("the shared visibility predicate carries the tenant for every reader", () => {
-  it("chunkVisibleTo binds org_id for an ordinary member, not only for an org owner", () => {
-    expect(boundOrgIds(chunkVisibleTo(makeUser(), []), "kb_article_chunks")).toEqual([ORG]);
-    expect(boundOrgIds(chunkVisibleTo(makeUser(), [42]), "kb_article_chunks")).toEqual([ORG]);
-    expect(
-      boundOrgIds(chunkVisibleTo(makeUser({ isOrgOwner: true }), []), "kb_article_chunks"),
-    ).toEqual([ORG]);
+  it("chunkVisibleTo binds org_id through the page reference for an ordinary member and for an org owner", () => {
+    const pages0 = boundOrgIds(chunkVisibleTo(makeStanding()), "kb_pages");
+    expect(pages0.length).toBeGreaterThan(0);
+    for (const bound of pages0) expect(bound).toBe(ORG);
+
+    const pages1 = boundOrgIds(chunkVisibleTo(makeStanding({ accessibleProjectIds: [42] })), "kb_pages");
+    expect(pages1.length).toBeGreaterThan(0);
+    for (const bound of pages1) expect(bound).toBe(ORG);
+
+    const pages2 = boundOrgIds(chunkVisibleTo(makeStanding({ isOrgOwner: true })), "kb_pages");
+    expect(pages2.length).toBeGreaterThan(0);
+    for (const bound of pages2) expect(bound).toBe(ORG);
   });
 
   it("the canonical page scope does the same on kb_pages, on the narrow, the project-widened and the admin branch", () => {

@@ -1,13 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
-import {
-  commissionRules,
-  commissions,
-  deals,
-  users,
-  notifications,
-} from "../../../db/schema";
+import { commissionRules, commissions, deals, users } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type {
   CommissionRuleCreateInput,
@@ -18,20 +13,10 @@ export type CommissionConflict = { error: "conflict"; message: string };
 
 export type CommissionNotFound = { error: "not_found" };
 
-/**
- * Commission rules, and the commissions they produce.
- *
- * Split out of `sales.service.ts`, which held three unrelated subjects behind
- * one class: commissions, quotas and the sales playbook. They share a module
- * and a controller, not a model — nothing here reads a quota and nothing in the
- * playbook reads a commission.
- *
- * A deps bag and free functions rather than a second `@Injectable`, the
- * `so-ship.ts` shape: the DI graph and every caller stay unchanged.
- */
 export interface CommissionDeps {
   readonly db: Db;
   readonly cache: CacheService;
+  readonly dispatch: NotificationDispatchService;
 }
 
 export function listCommissionRules(deps: CommissionDeps, orgId: string) {
@@ -88,8 +73,10 @@ export function listCommissions(
     `${filters.userId ?? "*"}:${filters.status ?? "*"}:${filters.limit ?? 25}`,
     async () => {
       const conditions = [eq(commissions.orgId, orgId)];
-      if (filters.userId) conditions.push(eq(commissions.userId, filters.userId));
-      if (filters.status) conditions.push(eq(commissions.status, filters.status));
+      if (filters.userId)
+        conditions.push(eq(commissions.userId, filters.userId));
+      if (filters.status)
+        conditions.push(eq(commissions.status, filters.status));
 
       const results = await deps.db
         .select({
@@ -144,7 +131,10 @@ export async function updateCommission(
 
   if (!existing) return { error: "not_found" } as CommissionNotFound;
   if (existing.status !== "pending") {
-    return { error: "conflict", message: "Only pending commissions can be updated" } as CommissionConflict;
+    return {
+      error: "conflict",
+      message: "Only pending commissions can be updated",
+    } as CommissionConflict;
   }
 
   const [updated] = await deps.db
@@ -166,13 +156,21 @@ export async function updateCommission(
     .where(eq(deals.id, existing.dealId))
     .limit(1);
 
-  await deps.db.insert(notifications).values({
+  await deps.dispatch.emit({
+    eventKey:
+      status === "paid" ? "sales.commission.paid" : "sales.commission.approved",
     orgId,
-    userId: existing.userId,
-    type: "SUCCESS",
+    targetUserIds: [existing.userId],
+    entityType: "commission",
+    entityId: String(commissionId),
     title: status === "paid" ? "Commission paid" : "Commission approved",
     message: `Your commission${deal?.name ? ` for ${deal.name}` : ""} of ₹${Number(existing.commissionAmount).toLocaleString("en-IN")} was ${status}.`,
     link: "/sales/commissions",
+    variables: {
+      dealName: deal?.name ?? null,
+      commissionAmount: existing.commissionAmount,
+      status,
+    },
   });
 
   return updated;

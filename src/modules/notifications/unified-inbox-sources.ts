@@ -21,6 +21,10 @@ import {
   notificationWindowEnd,
   notificationWindowStart,
 } from "./notification-read-window";
+import {
+  notificationUnread,
+  readByWatermark,
+} from "./notification-read-watermark";
 import type { MailService } from "../mail/mail.service";
 import type { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type {
@@ -55,6 +59,8 @@ export const DEFAULT_INBOX_FILTERS: InboxFilters = {
 };
 
 export const SOURCE_TIMEOUT_MS = 5_000;
+
+export const APPROVAL_COUNT_SCAN_LIMIT = 50;
 
 export type SourceFailure = "timeout" | "source unavailable";
 
@@ -141,6 +147,7 @@ export async function fetchNotificationItems(
   cursor: InboxSourcePosition | null,
   unreadOnly: boolean,
   filters: InboxFilters = DEFAULT_INBOX_FILTERS,
+  lastReadId = 0,
 ): Promise<NotificationInboxItem[]> {
   if (membershipId === null) return [];
   const now = new Date();
@@ -157,7 +164,7 @@ export async function fetchNotificationItems(
         gte(notifications.createdAt, notificationWindowStart(now)),
         lt(notifications.createdAt, notificationWindowEnd(now)),
         notificationKeyset(cursor),
-        unreadOnly ? eq(notifications.isRead, false) : undefined,
+        unreadOnly ? notificationUnread(lastReadId) : undefined,
         filters.category
           ? sql`${notifications.category}::text = ${filters.category}`
           : undefined,
@@ -188,7 +195,7 @@ export async function fetchNotificationItems(
       subject: row.title,
       body: row.message,
       deepLink: row.link ?? null,
-      isRead: row.isRead,
+      isRead: row.isRead || readByWatermark(Number(row.id), lastReadId),
       pinned: row.pinned,
       timestamp: row.createdAt.toISOString(),
       dedupKey: `notification:${String(row.id)}`,
@@ -323,6 +330,8 @@ export async function nextMailPosition(
   return boundary.nextCursor ?? current;
 }
 
+export const BUILD_APPROVAL_OBJECT_TYPE = "project_approval";
+
 export async function fetchBuildApprovalItems(
   buildApprovals: BuildApprovalsInboxService,
   orgId: string,
@@ -353,6 +362,8 @@ export async function fetchBuildApprovalItems(
       actor: null,
       deepLink: buildApprovalDeepLink(row.projectId),
       isRead: false,
+      objectType: BUILD_APPROVAL_OBJECT_TYPE,
+      objectId: String(row.id),
       dedupKey: `approval:build:${String(row.id)}`,
       timestamp: row.createdAt.toISOString(),
       dueAt: row.dueAt ? row.dueAt.toISOString() : null,
@@ -383,7 +394,5 @@ export function buildApprovalAdapter(
         limit,
         cursor,
       ),
-    countPending: (orgId, _userId, membershipId) =>
-      buildApprovals.countPending(orgId, membershipId),
   };
 }

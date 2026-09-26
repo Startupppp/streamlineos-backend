@@ -3,6 +3,7 @@ import { kbPageVersions } from "../../../db/schema";
 import { outboxEvents } from "../../../db/schema/common/outbox";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageVersionsService } from "./kb-page-versions.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 function makeUser(orgId = "org-a") {
   return {
@@ -126,7 +127,7 @@ describe("KbPageVersionsService.restoreVersion — append-only semantics", () =>
   it("(a) restore inserts at least one row into kbPageVersions, not zero", async () => {
     const updatedPage = { ...BASE_PAGE, contentRevision: 4, content: VERSION_ROW.content };
     const { db, insertCaptures } = makeDb({ updatedPage });
-    const svc = new KbPageVersionsService(db, makeAuth() as never);
+    const svc = new KbPageVersionsService(db, makeAuth() as never, new KbPageWriterService({} as never));
 
     await svc.restoreVersion(makeUser(), 1, 2, false);
 
@@ -137,7 +138,7 @@ describe("KbPageVersionsService.restoreVersion — append-only semantics", () =>
   it("(b) no existing version rows are deleted during restore, and the delete capture is live so this is not vacuous", async () => {
     const updatedPage = { ...BASE_PAGE, contentRevision: 4, content: VERSION_ROW.content };
     const { db, deleteMock } = makeDb({ updatedPage });
-    const svc = new KbPageVersionsService(db, makeAuth() as never);
+    const svc = new KbPageVersionsService(db, makeAuth() as never, new KbPageWriterService({} as never));
 
     await svc.restoreVersion(makeUser(), 1, 2, false);
 
@@ -153,7 +154,7 @@ describe("KbPageVersionsService.restoreVersion — append-only semantics", () =>
     const updatedPage = { ...BASE_PAGE, contentRevision: 4, content: VERSION_ROW.content };
     const { db, insertCaptures } = makeDb({ updatedPage });
 
-    const svc = new KbPageVersionsService(db, makeAuth() as never);
+    const svc = new KbPageVersionsService(db, makeAuth() as never, new KbPageWriterService({} as never));
 
     await svc.restoreVersion(makeUser(), 1, 2, false);
     await svc.restoreVersion(makeUser(), 1, 2, false);
@@ -167,7 +168,7 @@ describe("KbPageVersionsService.restoreVersion — audit entry", () => {
   it("(a) calls tx.execute once to write the restore audit row inside the transaction", async () => {
     const updatedPage = { ...BASE_PAGE, contentRevision: 4, content: VERSION_ROW.content };
     const { db, executeMock } = makeDb({ updatedPage });
-    const svc = new KbPageVersionsService(db, makeAuth() as never);
+    const svc = new KbPageVersionsService(db, makeAuth() as never, new KbPageWriterService({} as never));
 
     await svc.restoreVersion(makeUser(), 1, 2, false);
 
@@ -177,7 +178,7 @@ describe("KbPageVersionsService.restoreVersion — audit entry", () => {
   it("(b) the audit execute call includes page_id, source_version_number and actor_user_id", async () => {
     const updatedPage = { ...BASE_PAGE, contentRevision: 4, content: VERSION_ROW.content };
     const { db, executeMock } = makeDb({ updatedPage });
-    const svc = new KbPageVersionsService(db, makeAuth() as never);
+    const svc = new KbPageVersionsService(db, makeAuth() as never, new KbPageWriterService({} as never));
 
     await svc.restoreVersion(makeUser("org-a"), 1, 2, false);
 
@@ -192,7 +193,7 @@ describe("KbPageVersionsService.restoreVersion — outbox-based reindex", () => 
   it("(a) emits exactly one outbox event with eventType kb.content.index inside the transaction", async () => {
     const updatedPage = { ...BASE_PAGE, contentRevision: 4, content: VERSION_ROW.content };
     const { db, insertCaptures } = makeDb({ updatedPage });
-    const svc = new KbPageVersionsService(db, makeAuth() as never);
+    const svc = new KbPageVersionsService(db, makeAuth() as never, new KbPageWriterService({} as never));
 
     await svc.restoreVersion(makeUser(), 1, 2, false);
 

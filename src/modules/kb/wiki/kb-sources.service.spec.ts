@@ -34,6 +34,12 @@ function makeAuthMock() {
   };
 }
 
+function makeAccessMock() {
+  return {
+    assertArticleViewable: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
 function makeQuota() {
   return {
     reserve: jest.fn<Promise<void>, [unknown, string, number]>().mockResolvedValue(undefined),
@@ -51,8 +57,8 @@ function makeService(
     makeStorage(deleteFileFn) as never,
     makeIndexing() as never,
     makeConfig() as never,
-    {} as never,
     makeAuthMock() as never,
+    makeAccessMock() as never,
     quota as never,
   );
 }

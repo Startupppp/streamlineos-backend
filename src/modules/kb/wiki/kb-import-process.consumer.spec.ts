@@ -1,4 +1,5 @@
 import { KbImportProcessConsumer } from "./kb-import-process.consumer";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { kbImportJobs } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -11,7 +12,10 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 jest.mock("../../../common/outbox/outbox-writer", () => ({
-  OutboxWriter: { emit: jest.fn().mockResolvedValue(undefined) },
+  OutboxWriter: {
+    emit: jest.fn().mockResolvedValue(undefined),
+    emitMany: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 const sharedAudit = { log: jest.fn() } as unknown as AuditService;
@@ -70,7 +74,7 @@ describe("KbImportProcessConsumer — job gate", () => {
       insert: jest.fn(),
     } as unknown as Db;
 
-    const consumer = new KbImportProcessConsumer(db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer(db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(makeEvent());
 
     expect((db.insert as jest.Mock)).not.toHaveBeenCalled();
@@ -83,7 +87,7 @@ describe("KbImportProcessConsumer — job gate", () => {
       insert: jest.fn(),
     } as unknown as Db;
 
-    const consumer = new KbImportProcessConsumer(db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer(db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(makeEvent());
 
     expect((db.insert as jest.Mock)).not.toHaveBeenCalled();
@@ -123,7 +127,7 @@ describe("KbImportProcessConsumer — successful processing", () => {
 
     rint().mockImplementation((_db: unknown, _orgId: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(makeEvent());
 
     expect(updateCalls[0]?.["status"]).toBe("processing");
@@ -168,7 +172,7 @@ describe("KbImportProcessConsumer — BE-88 failure handling", () => {
       return fn(updateTx);
     });
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await expect(consumer.handle(makeEvent())).rejects.toThrow("infra failure");
 
     const lastCall = updateCalls[updateCalls.length - 1];
@@ -242,7 +246,7 @@ describe("KbImportProcessConsumer — withoutRef TOCTOU invariant", () => {
       "skip",
     );
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(event);
 
     expect(selectsOnSharedTx.length).toBeGreaterThan(0);
@@ -302,7 +306,7 @@ describe("KbImportProcessConsumer — withoutRef TOCTOU invariant", () => {
       return fn(updateTx);
     });
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(makeEvent([{ title: "Only Doc", contentText: "body" }], "skip"));
 
     const lastCall = updateCalls[updateCalls.length - 1];
@@ -313,9 +317,9 @@ describe("KbImportProcessConsumer — withoutRef TOCTOU invariant", () => {
 
 function emitFn(): jest.Mock {
   const { OutboxWriter } = jest.requireMock("../../../common/outbox/outbox-writer") as {
-    OutboxWriter: { emit: jest.Mock };
+    OutboxWriter: { emitMany: jest.Mock };
   };
-  return OutboxWriter.emit;
+  return OutboxWriter.emitMany;
 }
 
 function makeRefEvent(duplicatePolicy = "skip"): OutboxEventRow {
@@ -361,7 +365,7 @@ describe("KbImportProcessConsumer — duplicate policy (withRef)", () => {
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(makeRefEvent("skip"));
 
     const last = updateCalls[updateCalls.length - 1];
@@ -393,7 +397,7 @@ describe("KbImportProcessConsumer — duplicate policy (withRef)", () => {
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(makeRefEvent("update"));
 
     const last = updateCalls[updateCalls.length - 1];
@@ -416,22 +420,24 @@ describe("KbImportProcessConsumer — kb.content.index emission", () => {
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
           onConflictDoNothing: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([{ id: 7, contentRevision: 1, aclRevision: 1 }]),
+            returning: jest.fn().mockResolvedValue([{ id: 7, contentRevision: 1, aclRevision: 1, contentText: "body" }]),
           }),
         }),
       }),
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(makeEvent([{ title: "New Page", contentText: "body" }]));
 
     expect(emitFn()).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({
-        eventType: "kb.content.index",
-        payload: expect.objectContaining({ contentType: "page", contentId: 7 }),
-      }),
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "kb.content.index",
+          payload: expect.objectContaining({ contentType: "page", contentId: 7 }),
+        }),
+      ]),
     );
   });
 
@@ -455,7 +461,7 @@ describe("KbImportProcessConsumer — kb.content.index emission", () => {
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, new KbPageWriterService({} as never));
     await consumer.handle(makeEvent([{ title: "New Page", contentText: "body" }]));
 
     expect(emitFn()).not.toHaveBeenCalled();

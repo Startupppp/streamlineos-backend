@@ -153,7 +153,7 @@ export async function eraseSubjectKbContent(
     .where(
       and(
         eq(kbArticleChunks.orgId, orgId),
-        sql`EXISTS (SELECT 1 FROM kb_pages p WHERE p.id = ${kbArticleChunks.pageId} AND p.org_id = ${kbArticleChunks.orgId} AND p.created_by_id = ${subjectUserId})`,
+        eq(kbArticleChunks.pageCreatedById, subjectUserId),
       ),
     )
     .returning({ id: kbArticleChunks.id });

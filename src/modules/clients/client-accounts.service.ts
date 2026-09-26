@@ -25,6 +25,7 @@ import {
   type ClientAccountBackfillDeps,
 } from "./lib/client-account-backfill";
 import { updateClientStatus, type ClientInvestmentDeps } from "./lib/client-investment";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 /**
  * Client accounts: reading them, and the small writes that change one row.
@@ -51,6 +52,7 @@ export class ClientAccountsService {
     private readonly audit: AuditService,
     private readonly clientsEmail: ClientsEmailService,
     private readonly access: AccessService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   private get backfillDeps(): ClientAccountBackfillDeps {
@@ -63,6 +65,7 @@ export class ClientAccountsService {
       audit: this.audit,
       clientsEmail: this.clientsEmail,
       access: this.access,
+      dispatch: this.dispatch,
     };
   }
 

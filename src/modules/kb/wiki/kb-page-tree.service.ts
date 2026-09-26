@@ -5,19 +5,20 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { kbPages, kbArticleChunks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 import type { ListPageTreeChildrenInput } from "./dto/kb-page-tree.dto";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { KbAccessService } from "../core/kb-access.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { collectSubtreeIds } from "./kb-page-subtree.util";
 import { resolveProjectAccess } from "../../build/core/project-access";
 import {
@@ -71,6 +72,8 @@ export class KbPageTreeService {
     private readonly audit: AuditService,
     private readonly auth: KnowledgeAuthorizationService,
     private readonly access: AccessService,
+    private readonly kbAccess: KbAccessService,
+    private readonly writer: KbPageWriterService,
   ) {}
 
   async getTreeLevel(
@@ -276,26 +279,7 @@ export class KbPageTreeService {
         })
         .from(kbPages)
         .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, subtreeIds)));
-      await OutboxWriter.emitMany(
-        tx,
-        pagesToIndex
-          .filter((p) => Boolean(p.contentText?.trim()))
-          .map((p) => ({
-            eventId: randomUUID(),
-            organizationId: orgId,
-            aggregateType: "kb_page",
-            aggregateId: String(p.id),
-            aggregateVersion: Date.now(),
-            eventType: "kb.content.index",
-            payload: {
-              contentType: "page",
-              contentId: p.id,
-              contentRevision: p.contentRevision,
-              aclRevision: p.aclRevision,
-            },
-            occurredAt: new Date(),
-          })),
-      );
+      await this.writer.commitManyPageChanges(tx, { orgId, pages: pagesToIndex });
 
       const [restoredPage] = await tx
         .select(KB_PAGE_COLUMNS)
@@ -369,7 +353,7 @@ export class KbPageTreeService {
     }
 
     if (targetSpaceId !== page.spaceId && targetSpaceId !== null) {
-      await this.auth.assertSpaceAccess(user, targetSpaceId, "view");
+      await this.kbAccess.assertSpaceAccessible(user, targetSpaceId);
     }
 
     return this.db.transaction(async (tx) => {
@@ -403,31 +387,27 @@ export class KbPageTreeService {
       }
       const newSortOrder = insertAt * 100 + 100;
 
+      const spaceChanged = targetSpaceId !== page.spaceId;
       const [updated] = await tx
         .update(kbPages)
         .set({
           parentPageId: targetParentId,
           sortOrder: newSortOrder,
           spaceId: targetSpaceId,
+          ...(spaceChanged ? { aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() } : {}),
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: {
-          contentType: "page",
-          contentId: pageId,
-          contentRevision: updated.contentRevision,
-          aclRevision: updated.aclRevision,
+      await this.writer.commitPageChange(tx, {
+        orgId,
+        actor: {
+          userId: user.userId,
+          membershipId: user.principal !== undefined ? actingMembershipId(user.principal) : null,
         },
-        occurredAt: new Date(),
+        page: updated,
+        changed: {},
       });
 
       return updated;

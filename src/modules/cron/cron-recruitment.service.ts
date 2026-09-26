@@ -4,7 +4,6 @@ import {
   candidateOffers,
   candidates,
   interviews,
-  notifications,
   organizations,
   tasks,
 } from "../../db/schema";
@@ -13,6 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
   getInterviewNoShowRescheduleEmail,
   getOfferDeadlineReminderEmail,
@@ -51,6 +51,7 @@ export class CronRecruitmentService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
     private readonly access: AccessService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async sendOfferDeadlineReminders(): Promise<{ remindedCount: number }> {
@@ -210,15 +211,17 @@ export class CronRecruitmentService {
     hrMembers: string[],
   ): Promise<void> {
     if (hrMembers.length === 0) return;
-    const rows: (typeof notifications.$inferInsert)[] = hrMembers.map((userId) => ({
+    await this.dispatch.emit({
+      eventKey: "recruitment.interview.no_show",
       orgId: interview.orgId,
-      userId,
-      type: "WARNING",
+      targetUserIds: hrMembers,
+      entityType: "interview",
+      entityId: String(interview.interviewId),
       title: "Interview No-Show",
       message: `${candidateName} did not show up for interview #${interview.interviewId}. A follow-up task has been created.`,
       link: `/hr/recruitment/candidates/${interview.candidateId}`,
-    }));
-    await this.db.insert(notifications).values(rows);
+      variables: { candidateName, interviewId: interview.interviewId },
+    });
   }
 
   private async sendNoShowEmail(interview: DueInterview, candidateName: string): Promise<void> {

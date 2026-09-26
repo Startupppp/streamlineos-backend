@@ -1,4 +1,4 @@
-import { HrWorkflowApprovalAdapter, WORKFLOW_PENDING_COUNT_CAP } from "./hr-workflow-approval.adapter";
+import { HrWorkflowApprovalAdapter } from "./hr-workflow-approval.adapter";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
 
 function makeWorkflowRow(overrides: Partial<{
@@ -165,67 +165,59 @@ describe("HrWorkflowApprovalAdapter — deepLink", () => {
   });
 });
 
-describe("HrWorkflowApprovalAdapter — countPending (at-most-cap approximation)", () => {
-  it("returns the number of rows pendingRoutedToPage resolves — fewer than cap", async () => {
+describe("HrWorkflowApprovalAdapter — the badge counts this adapter by scanning fetch, so no second predicate can disagree", () => {
+  it("registers no private count query, leaving fetch as the only definition of what is pending", () => {
     const registry = makeRegistry();
-    const adapter = new HrWorkflowApprovalAdapter(
-      makeWorkflows([makeWorkflowRow({ id: 1 }), makeWorkflowRow({ id: 2 }), makeWorkflowRow({ id: 3 })]),
-      registry,
-    );
-    adapter.onModuleInit();
-    const [wf] = registry.list();
-    const result = await wf!.countPending("org-1", "user-1", 5);
-    expect(result).toBe(3);
+    new HrWorkflowApprovalAdapter(makeWorkflows(), registry).onModuleInit();
+    expect(registry.list()[0]).not.toHaveProperty("countPending");
   });
 
-  it("returns WORKFLOW_PENDING_COUNT_CAP when the page is full — the cap is explicit in the test name", async () => {
-    const rows = Array.from({ length: WORKFLOW_PENDING_COUNT_CAP }, (_, i) =>
-      makeWorkflowRow({ id: i + 1 }),
-    );
-    const registry = makeRegistry();
-    const adapter = new HrWorkflowApprovalAdapter(makeWorkflows(rows), registry);
-    adapter.onModuleInit();
-    const [wf] = registry.list();
-    const result = await wf!.countPending("org-1", "user-1", 5);
-    expect(result).toBe(WORKFLOW_PENDING_COUNT_CAP);
-  });
-
-  it("returns 0 when membershipId is null — positive case above returns non-zero, satisfying BE-141", async () => {
+  it("scans nothing for a principal with no membership, so the badge counts nothing for one", async () => {
     const workflows = makeWorkflows([makeWorkflowRow()]);
     const registry = makeRegistry();
-    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
-    adapter.onModuleInit();
+    new HrWorkflowApprovalAdapter(workflows, registry).onModuleInit();
     const [wf] = registry.list();
-    const result = await wf!.countPending("org-1", "user-1", null);
-    expect(result).toBe(0);
+    await expect(wf!.fetch("org-1", "user-1", null, 50, null)).resolves.toEqual(
+      [],
+    );
     expect(workflows.pendingRoutedToPage).not.toHaveBeenCalled();
   });
 
-  it("calls pendingRoutedToPage with WORKFLOW_PENDING_COUNT_CAP so the bound is explicit", async () => {
-    const workflows = makeWorkflows([]);
+  it("CONTROL: the same scan returns one row per pending instance for a principal that has a membership", async () => {
+    const workflows = makeWorkflows([
+      makeWorkflowRow({ id: 1 }),
+      makeWorkflowRow({ id: 2 }),
+      makeWorkflowRow({ id: 3 }),
+    ]);
     const registry = makeRegistry();
-    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
-    adapter.onModuleInit();
+    new HrWorkflowApprovalAdapter(workflows, registry).onModuleInit();
     const [wf] = registry.list();
-    await wf!.countPending("org-1", "user-1", 5);
-    expect(workflows.pendingRoutedToPage).toHaveBeenCalledWith(
-      "org-1",
-      5,
-      WORKFLOW_PENDING_COUNT_CAP,
-      null,
-    );
+    await expect(
+      wf!.fetch("org-1", "user-1", 5, 50, null),
+    ).resolves.toHaveLength(3);
   });
 
-  it("passes orgId and membershipId, never userId, so another org's rows cannot be counted", async () => {
+  it("passes orgId and membershipId, never userId, so another org's rows cannot be scanned", async () => {
     const workflows = makeWorkflows([]);
     const registry = makeRegistry();
-    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
-    adapter.onModuleInit();
+    new HrWorkflowApprovalAdapter(workflows, registry).onModuleInit();
     const [wf] = registry.list();
-    await wf!.countPending("org-Z", "user-99", 8);
+    await wf!.fetch("org-Z", "user-99", 8, 50, null);
     const call = (workflows.pendingRoutedToPage as jest.Mock).mock.calls[0] as [string, number, number, unknown];
     expect(call[0]).toBe("org-Z");
     expect(call[1]).toBe(8);
     expect(call).not.toContain("user-99");
+  });
+
+  it("carries the workflow's own (objectType, objectId) so a leave request routed here collides with the leave adapter", async () => {
+    const workflows = makeWorkflows([
+      makeWorkflowRow({ id: 900, objectType: "leave_request", objectId: "77" }),
+    ]);
+    const registry = makeRegistry();
+    new HrWorkflowApprovalAdapter(workflows, registry).onModuleInit();
+    const [wf] = registry.list();
+    const [item] = await wf!.fetch("org-1", "user-1", 5, 50, null);
+    expect(item?.objectType).toBe("leave_request");
+    expect(item?.objectId).toBe("77");
   });
 });

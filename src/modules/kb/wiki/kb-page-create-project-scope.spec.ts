@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 jest.mock("../../build/core/project-access", () => ({
   resolveProjectAccess: jest.fn(),
@@ -65,7 +66,7 @@ describe("KbPagesService.create — project scoping", () => {
   it("rejects a projectId the caller is not a member of (cross-project write deny)", async () => {
     mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
     const db = makeDb(OUTSIDE_PROJECT_ID);
-    const svc = new KbPagesService(db, notifications, planLimits, auth, access, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth, access, {} as never, new KbPageWriterService({} as never));
 
     await expect(
       svc.create(makeUser(), { projectId: OUTSIDE_PROJECT_ID }),
@@ -77,7 +78,7 @@ describe("KbPagesService.create — project scoping", () => {
   it("creates the page when the caller is a member of the project (same-project control)", async () => {
     mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER" });
     const db = makeDb(MEMBER_PROJECT_ID);
-    const svc = new KbPagesService(db, notifications, planLimits, auth, access, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth, access, {} as never, new KbPageWriterService({} as never));
 
     const result = await svc.create(makeUser(), { projectId: MEMBER_PROJECT_ID });
 
@@ -87,7 +88,7 @@ describe("KbPagesService.create — project scoping", () => {
 
   it("skips the project access check when projectId is omitted (non-project page)", async () => {
     const db = makeDb(0);
-    const svc = new KbPagesService(db, notifications, planLimits, auth, access, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth, access, {} as never, new KbPageWriterService({} as never));
 
     await svc.create(makeUser(), {});
 

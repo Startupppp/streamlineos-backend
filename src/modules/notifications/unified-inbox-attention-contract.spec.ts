@@ -6,6 +6,7 @@ import type { ApprovalSourceAdapter } from "../attention/approval-adapter.regist
 import type { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type { AccessService } from "../access/access.service";
 import { UnifiedInboxService } from "./unified-inbox.service";
+import { APPROVAL_COUNT_SCAN_LIMIT } from "./unified-inbox-sources";
 import {
   makeBroadcasts,
   makeUser,
@@ -40,6 +41,8 @@ function item(
     projectId: null,
     ticketId: null,
     dueAt: null,
+    objectType: `${approvalKind}_request`,
+    objectId: String(id),
     dedupKey: `approval:${approvalKind}:${String(id)}`,
     sourceModule,
     subject: `${approvalKind} request`,
@@ -58,7 +61,6 @@ function stubAdapter(
     permission: `${overrides.module}:test:view`,
     supportsAfterCursor: true,
     fetch: () => Promise.resolve([]),
-    countPending: () => Promise.resolve(0),
     ...overrides,
   };
 }
@@ -66,8 +68,20 @@ function stubAdapter(
 function makeBuildApprovals(): BuildApprovalsInboxService {
   return {
     getInboxPage: jest.fn().mockResolvedValue([]),
-    countPending: jest.fn().mockResolvedValue(0),
   } as unknown as BuildApprovalsInboxService;
+}
+
+function buildRow(id: number) {
+  return {
+    id,
+    projectId: 1,
+    title: `Build approval ${String(id)}`,
+    status: "pending",
+    entityType: "task",
+    entityId: id,
+    dueAt: null,
+    createdAt: new Date("2026-09-20T00:00:00.000Z"),
+  };
 }
 
 function makeAccessHolding(granted: ReadonlySet<string>): AccessService {
@@ -235,15 +249,22 @@ describe("attention adapters carry their own destination", () => {
   });
 });
 
+function pendingItems(
+  approvalKind: string,
+  ids: readonly number[],
+): BuildApprovalInboxItem[] {
+  return ids.map((id) => item(id, approvalKind, "hr", "/hr/approvals"));
+}
+
 describe("the unread badge counts every attention source, not only Build", () => {
-  it("sums the pending count of every adapter the actor may see", async () => {
+  it("counts the distinct pending objects of every adapter the actor may see", async () => {
     const registry = new ApprovalAdapterRegistry();
     registry.register(
       stubAdapter({
         module: "hr",
         kindLabel: "leave",
         permission: "hr:leaves:approve",
-        countPending: () => Promise.resolve(4),
+        fetch: () => Promise.resolve(pendingItems("leave", [1, 2, 3, 4])),
       }),
     );
     registry.register(
@@ -251,11 +272,14 @@ describe("the unread badge counts every attention source, not only Build", () =>
         module: "timesheets",
         kindLabel: "timesheet",
         permission: "timesheets:approvals:view",
-        countPending: () => Promise.resolve(3),
+        fetch: () => Promise.resolve(pendingItems("timesheet", [5, 6, 7])),
       }),
     );
     const buildApprovals = makeBuildApprovals();
-    (buildApprovals.countPending as jest.Mock).mockResolvedValue(2);
+    (buildApprovals.getInboxPage as jest.Mock).mockResolvedValue([
+      buildRow(11),
+      buildRow(12),
+    ]);
 
     const svc = makeService(
       registry,
@@ -274,7 +298,7 @@ describe("the unread badge counts every attention source, not only Build", () =>
         module: "hr",
         kindLabel: "leave",
         permission: "hr:leaves:approve",
-        countPending: () => Promise.resolve(4),
+        fetch: () => Promise.resolve(pendingItems("leave", [1, 2, 3, 4])),
       }),
     );
     registry.register(
@@ -282,11 +306,14 @@ describe("the unread badge counts every attention source, not only Build", () =>
         module: "timesheets",
         kindLabel: "timesheet",
         permission: "timesheets:approvals:view",
-        countPending: () => Promise.resolve(3),
+        fetch: () => Promise.resolve(pendingItems("timesheet", [5, 6, 7])),
       }),
     );
     const buildApprovals = makeBuildApprovals();
-    (buildApprovals.countPending as jest.Mock).mockResolvedValue(2);
+    (buildApprovals.getInboxPage as jest.Mock).mockResolvedValue([
+      buildRow(11),
+      buildRow(12),
+    ]);
 
     const svc = makeService(
       registry,
@@ -298,15 +325,15 @@ describe("the unread badge counts every attention source, not only Build", () =>
     expect(count.approval).toBe(6);
   });
 
-  it("never asks an adapter to count for a principal with no membership", async () => {
-    const countPending = jest.fn().mockResolvedValue(5);
+  it("never asks an adapter to scan for a principal with no membership", async () => {
+    const fetch = jest.fn().mockResolvedValue(pendingItems("leave", [1, 2, 3]));
     const registry = new ApprovalAdapterRegistry();
     registry.register(
       stubAdapter({
         module: "hr",
         kindLabel: "leave",
         permission: "hr:leaves:approve",
-        countPending,
+        fetch,
       }),
     );
 
@@ -317,26 +344,32 @@ describe("the unread badge counts every attention source, not only Build", () =>
     };
     const count = await svc.unifiedUnreadCount(ORG, UID, tokenPrincipal);
 
-    expect(countPending).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
     expect(count.approval).toBe(0);
   });
 
   it("CONTROL: the same actor with a membership does reach the adapter", async () => {
-    const countPending = jest.fn().mockResolvedValue(5);
+    const fetch = jest.fn().mockResolvedValue(pendingItems("leave", [1, 2, 3]));
     const registry = new ApprovalAdapterRegistry();
     registry.register(
       stubAdapter({
         module: "hr",
         kindLabel: "leave",
         permission: "hr:leaves:approve",
-        countPending,
+        fetch,
       }),
     );
 
     const svc = makeService(registry, makeAccessHolding(ALL_APPROVAL_KEYS));
     const count = await svc.unifiedUnreadCount(ORG, UID, makeUser());
 
-    expect(countPending).toHaveBeenCalledWith(ORG, UID, MEMBERSHIP);
-    expect(count.approval).toBe(5);
+    expect(fetch).toHaveBeenCalledWith(
+      ORG,
+      UID,
+      MEMBERSHIP,
+      APPROVAL_COUNT_SCAN_LIMIT,
+      null,
+    );
+    expect(count.approval).toBe(3);
   });
 });

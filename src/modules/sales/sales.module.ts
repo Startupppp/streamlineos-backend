@@ -4,8 +4,10 @@ import { SalesService } from "./sales.service";
 import { SalesPlaybookService } from "./sales-playbook.service";
 import { SalesDashboardService } from "./sales-dashboard.service";
 import { SalesAnalyticsService } from "./sales-analytics.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [SalesController],
   providers: [SalesService, SalesPlaybookService, SalesDashboardService, SalesAnalyticsService],
 })

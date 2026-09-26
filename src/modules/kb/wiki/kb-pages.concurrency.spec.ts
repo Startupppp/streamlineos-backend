@@ -2,6 +2,7 @@ import { HttpStatus, NotFoundException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { updatePageSchema } from "./dto/kb-pages.schemas";
 
 jest.mock("./kb-page-edit.util", () => ({
@@ -127,7 +128,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1 };
     const { db } = makeDb(pageRow, [updatedRow]);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     const result = await svc.update(
       makeUser(),
@@ -143,7 +144,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const pageRow = makePageRow(3);
     const { db, capturedWheres } = makeDb(pageRow, []);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     let caught: unknown;
     try {
@@ -186,7 +187,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const updatedRow = { ...pageRow, title: "New title" };
     const { db, capturedWheres } = makeDb(pageRow, [updatedRow]);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     const result = await svc.update(makeUser(), PAGE_ID, { title: "New title" }, false);
 
@@ -199,7 +200,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const pageRow = makePageRow(1);
     const { db } = makeDb(pageRow, []);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     let caught: unknown;
     try {
@@ -225,7 +226,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const pageRow = makePageRow(1);
     const { db } = makeDb(pageRow, []);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     let caught: unknown;
     try {
@@ -254,7 +255,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const pageRow = makePageRow(1);
     const { db } = makeDb(pageRow, [], []);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     let caught: unknown;
     try {
@@ -281,7 +282,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1, publicToken: "tok_secret" };
     const { db } = makeDb(pageRow, [updatedRow]);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     const result = await svc.update(
       makeUser(),
@@ -300,7 +301,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1, publicToken: "tok_secret" };
     const { db } = makeDb(pageRow, [updatedRow]);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     const result = await svc.update(
       makeUser(),
@@ -318,7 +319,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1 };
     const { db } = makeDb(pageRow, [updatedRow]);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     await svc.update(
       makeUser(),
@@ -336,7 +337,7 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1 };
     const { db, capturedWheres } = makeDb(pageRow, [updatedRow]);
     const auth = makeAuth();
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
+    const svc = new KbPagesService(db, planLimits, auth as never, {} as never, {} as never, new KbPageWriterService({} as never));
 
     await svc.update(
       makeUser(),

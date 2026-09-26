@@ -7,7 +7,6 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   kbPages,
@@ -22,12 +21,9 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { NotificationsService } from "../../notifications/notifications.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { AccessService } from "../../access/access.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KB_PAGE_SEARCH_MAX_LIMIT } from "./dto/kb-pages.schemas";
 import type { CreatePageInput, UpdatePageInput } from "./dto/kb-pages.schemas";
@@ -35,15 +31,13 @@ import { shouldResetTrust } from "./kb-page-governance.util";
 import {
   buildPageAncestors,
   describeLatestPageEdit,
-  resyncPageLinks,
-  snapshotIfNeeded,
   staleRevisionConflict,
 } from "./kb-page-edit.util";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
-import { deferKbMentionNotifications } from "./kb-page-mention-notifications";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { hashPublicToken } from "./kb-public-token";
 import {
   publicTokenColumnsFor,
@@ -110,11 +104,11 @@ export class KbPagesService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly notifications: NotificationsService,
     private readonly planLimits: PlanLimitsService,
     private readonly auth: KnowledgeAuthorizationService,
     private readonly access: AccessService,
     private readonly audit: AuditService,
+    private readonly writer: KbPageWriterService,
   ) {}
 
   private membershipId(user: CurrentUserContext): number | null {
@@ -235,7 +229,12 @@ export class KbPagesService {
           );
       }
 
-      await emitPageIndexEvent(tx, orgId, page);
+      await this.writer.commitPageChange(tx, {
+        orgId,
+        actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        page,
+        changed: {},
+      });
 
       return page;
     });
@@ -408,33 +407,22 @@ export class KbPagesService {
         );
       }
 
-      if (contentChanged && input.content !== undefined) {
-        await snapshotIfNeeded(
-          tx,
+      if (needsReindex) {
+        await this.writer.commitPageChange(tx, {
           orgId,
-          updated,
-          user.userId,
-          input.changeSummary ?? null,
-          false,
-          this.membershipId(user),
-        );
-        await resyncPageLinks(tx, orgId, pageId, input.content);
-
-        const oldMentions = new Set(extractMentionUserIds(current.content));
-        const newMentions = extractMentionUserIds(input.content);
-        const addedMentions = newMentions.filter((id) => !oldMentions.has(id));
-        if (addedMentions.length > 0) {
-          await deferKbMentionNotifications(this.notifications, this.logger, {
-            orgId,
-            userIds: addedMentions,
-            pageId,
-            pageTitle: updated.title,
-            actorId: user.userId,
-          });
-        }
+          actor: { userId: user.userId, membershipId: this.membershipId(user) },
+          page: updated,
+          changed: contentChanged
+            ? {
+                content: {
+                  newContent: input.content!,
+                  previousContent: current.content ?? null,
+                  changeSummary: input.changeSummary ?? null,
+                },
+              }
+            : {},
+        });
       }
-
-      if (needsReindex) await emitPageIndexEvent(tx, orgId, updated);
 
       return updated;
     });
@@ -554,7 +542,12 @@ export class KbPagesService {
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
 
-      await emitPageIndexEvent(tx, orgId, updated);
+      await this.writer.commitPageChange(tx, {
+        orgId,
+        actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        page: updated,
+        changed: {},
+      });
 
       return updated;
     });

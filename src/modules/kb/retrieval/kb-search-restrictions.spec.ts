@@ -36,17 +36,21 @@ const makeDb = (searchIds: unknown[] = []) => {
   };
 };
 
-const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
-  getAccessibleSpaceIds: jest.fn().mockResolvedValue(spaceIds),
-  getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-  isAdmin: jest.fn().mockReturnValue(isAdminResult),
-  getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-1", roleSlugs: ["MEMBER"] }),
-});
-
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
-const makeAuth = () => ({
+const makeAuth = (spaceIds: number[] = [1]) => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  resolveStanding: jest.fn().mockResolvedValue({
+    orgId: "org-1",
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: spaceIds,
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+  }),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
   articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
 });
@@ -57,14 +61,12 @@ const makeEmbeddings = () => ({
 });
 
 describe("KbSearchService — restriction enforcement", () => {
-  it("resolves principal once and asks the restriction seam exactly once per retrieveTopArticles call, because the admin decision moved out of access.isAdmin and a second call would mean a per-row authorization query", async () => {
+  it("resolves standing once per retrieveTopArticles call so the authorization seam is not queried per row", async () => {
     const db = makeDb();
-    const access = makeAccess([1], false);
-    const auth = makeAuth();
+    const auth = makeAuth([1]);
 
     const svc = new KbSearchService(
       db as never,
-      access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -75,19 +77,16 @@ describe("KbSearchService — restriction enforcement", () => {
     const user = makeUser();
     await svc.retrieveTopArticles(user, "test query", 5);
 
-    expect(access.getPrincipalIds).toHaveBeenCalledWith(user);
-    expect(access.getPrincipalIds).toHaveBeenCalledTimes(1);
-    expect(auth.visiblePagePredicate).toHaveBeenCalledTimes(1);
+    expect(auth.resolveStanding).toHaveBeenCalledWith(user);
+    expect(auth.resolveStanding).toHaveBeenCalledTimes(1);
   });
 
-  it("asks the canonical authorization seam for the page visibility predicate", async () => {
+  it("asks the canonical authorization seam for the caller's standing to build the page visibility predicate", async () => {
     const db = makeDb();
-    const access = makeAccess([1], false);
-    const auth = makeAuth();
+    const auth = makeAuth([1]);
 
     const svc = new KbSearchService(
       db as never,
-      access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -98,16 +97,14 @@ describe("KbSearchService — restriction enforcement", () => {
     const user = makeUser();
     await svc.retrieveTopArticles(user, "test query", 5);
 
-    expect(auth.visiblePagePredicate).toHaveBeenCalledWith(expect.anything(), "view");
+    expect(auth.resolveStanding).toHaveBeenCalledWith(user);
   });
 
   it("asks the SECURITY DEFINER search function for ids before falling back to a scan", async () => {
     const db = makeDb([{ id: 7 }, { id: 9 }]);
-    const access = makeAccess([1], false);
 
     const svc = new KbSearchService(
       db as never,
-      access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -124,35 +121,31 @@ describe("KbSearchService — restriction enforcement", () => {
 
   it("returns empty array when query is blank", async () => {
     const db = makeDb();
-    const access = makeAccess([1], false);
+    const auth = makeAuth([1]);
 
     const svc = new KbSearchService(
       db as never,
-      access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
-      makeAuth() as never,
+      auth as never,
     );
 
     const result = await svc.retrieveTopArticles(makeUser(), "  ", 5);
     expect(result).toEqual([]);
-    expect(access.getPrincipalIds).not.toHaveBeenCalled();
   });
 
   it("skips article queries when space list is empty but still queries pages", async () => {
     const db = makeDb();
-    const access = makeAccess([], false);
 
     const svc = new KbSearchService(
       db as never,
-      access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
-      makeAuth() as never,
+      makeAuth([]) as never,
     );
 
     const result = await svc.retrieveTopArticles(makeUser(), "test", 5);

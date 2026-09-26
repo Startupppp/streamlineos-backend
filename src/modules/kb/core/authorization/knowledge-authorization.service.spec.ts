@@ -82,8 +82,36 @@ function makeHarness(over: { isAdmin?: boolean; spaceIds?: number[] } = {}): Har
   };
 }
 
-describe("KnowledgeAuthorizationService.resolvePageAccess — disagreement resolution", () => {
-  it("allows an org-visible page in a space the actor cannot reach, so list path and single-read path agree on org-visibility superseding space membership", async () => {
+describe("KnowledgeAuthorizationService.resolvePageAccess — space membership required for space-owned pages", () => {
+  it("passes a predicate that requires spaceId IS NULL or spaceId = ANY(accessible) for org-visible pages, so a page in an inaccessible space cannot match", async () => {
+    let capturedWhere: unknown;
+    const findPage = jest.fn().mockImplementation((opts: { where: unknown }) => {
+      capturedWhere = opts.where;
+      return Promise.resolve(undefined);
+    });
+    const db = { query: { kbPages: { findFirst: findPage }, kbSpaces: { findFirst: jest.fn() } } };
+    const access = {
+      holds: jest.fn().mockResolvedValue(false),
+      getPermissionsVersion: jest.fn().mockResolvedValue(3),
+    } as unknown as AccessService;
+    const cache = {
+      cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()),
+      invalidateNamespace: jest.fn(),
+    } as unknown as CacheService;
+    const service = new KnowledgeAuthorizationService(db as never, cache, access);
+
+    jest.mocked(computeAccessibleSpaceIds).mockResolvedValueOnce([1, 2]);
+    await inRequest(() => service.resolvePageAccess(makeUser(), 5, "view"));
+
+    const dialect = new PgDialect();
+    const { sql: querySql, params } = dialect.sqlToQuery(capturedWhere as Parameters<typeof dialect.sqlToQuery>[0]);
+    expect(querySql).toContain(`"space_id" IS NULL`);
+    expect(params).toContain(1);
+    expect(params).toContain(2);
+    expect(params).not.toContain(99);
+  });
+
+  it("POSITIVE CONTROL: allows an org-visible page whose spaceId is null — actor needs no space membership for unowned org-wide pages", async () => {
     const { service, findPage } = makeHarness({ spaceIds: [1, 2] });
     findPage.mockResolvedValue({
       id: 5,
@@ -91,7 +119,7 @@ describe("KnowledgeAuthorizationService.resolvePageAccess — disagreement resol
       createdById: "other-user",
       createdByMembershipId: null,
       visibility: "org",
-      spaceId: 99,
+      spaceId: null,
       projectId: null,
     });
 

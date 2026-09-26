@@ -113,7 +113,7 @@ function makeDb(opts: { pageFound: boolean; versionRows?: unknown[]; capturedWhe
 describe("KbPageVersionsService.listVersions — keyset pagination", () => {
   it("(d) with no cursor: WHERE has org and page predicates, no keyset expression", async () => {
     const { db, capturedWheres } = makeDb({ pageFound: true });
-    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never, {} as never);
 
     await svc.listVersions(makeUser(), 1);
 
@@ -124,7 +124,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("(d) with cursor: WHERE carries the (version_number, id) tuple predicate", async () => {
     const { db, capturedWheres } = makeDb({ pageFound: true });
-    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never, {} as never);
     const cursor = encodeCursor({ sortValue: "50", id: "99" });
 
     await svc.listVersions(makeUser(), 1, cursor);
@@ -139,7 +139,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("(d) cursor order matches ORDER BY: keyset uses version_number, not created_at", async () => {
     const { db, capturedWheres } = makeDb({ pageFound: true });
-    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never, {} as never);
     const cursor = encodeCursor({ sortValue: "7", id: "5" });
 
     await svc.listVersions(makeUser(), 1, cursor);
@@ -152,7 +152,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("queries PAGE_SIZE + 1 rows to detect the next page", async () => {
     const { db, versionsChain } = makeDb({ pageFound: true });
-    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never, {} as never);
 
     await svc.listVersions(makeUser(), 1);
 
@@ -161,7 +161,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("(a) no cursor: returns first page with nextCursor when rows exceed PAGE_SIZE", async () => {
     const { db } = makeDb({ pageFound: true, versionRows: makeVersionRows(51, 55) });
-    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never, {} as never);
 
     const page = await svc.listVersions(makeUser(), 1);
 
@@ -173,7 +173,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("(c) last page: reports hasMore false and nextCursor null", async () => {
     const { db } = makeDb({ pageFound: true, versionRows: makeVersionRows(5) });
-    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never, {} as never);
 
     const page = await svc.listVersions(makeUser(), 1);
 

@@ -57,6 +57,10 @@ export const HR_NOTIFICATION_EVENTS = [
     defaultType: "SUCCESS",
     defaultChannels: IA_EMAIL,
   }),
+  e("hr.onboarding.task_reminder", "hr", "WORKFLOW", "Onboarding tasks still pending", {
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+  }),
   e("hr.performance.review_assigned", "hr", "HRMS", "Performance review assigned", {
     defaultChannels: IA_EMAIL,
   }),
@@ -160,6 +164,13 @@ export const HR_NOTIFICATION_EVENTS = [
     "RECRUITMENT",
     "Interview feedback due",
     { defaultChannels: IA_EMAIL },
+  ),
+  e(
+    "recruitment.interview.no_show",
+    "recruitment",
+    "RECRUITMENT",
+    "Interview no-show",
+    { defaultType: "WARNING", defaultChannels: IA_EMAIL },
   ),
   e(
     "recruitment.offer.approval_requested",

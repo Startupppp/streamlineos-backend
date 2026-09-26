@@ -52,8 +52,8 @@ describe("KbSourcesService — cross-tenant isolation", () => {
       storage,
       indexing,
       config,
-      {} as never,
       authMock as never,
+      {} as never,
       {} as never,
     );
 
@@ -72,8 +72,8 @@ describe("KbSourcesService — cross-tenant isolation", () => {
       storage,
       indexing,
       config,
-      {} as never,
       authMock as never,
+      {} as never,
       {} as never,
     );
 

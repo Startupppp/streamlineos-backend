@@ -6,8 +6,10 @@ import { ClientsService } from "./clients.service";
 import { ClientTimelineService } from "./client-timeline.service";
 import { ClientOpportunitiesService } from "./client-opportunities.service";
 import { ClientOnboardingService } from "./client-onboarding.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [ClientsController],
   providers: [
     ClientAccountsService,

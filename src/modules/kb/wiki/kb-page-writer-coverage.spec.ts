@@ -22,12 +22,7 @@ function hasWriterInjected(ServiceClass: Function): boolean {
 // "must have writer injected" — the test goes red immediately if the injection
 // was not actually added, catching an incomplete migration.
 const NOT_YET_MIGRATED = new Set<Function>([
-  KbPagesService,
-  KbPageStatusService,
-  KbPageVersionsService,
-  KbPageTreeService,
   KbPageDuplicateService,
-  KbImportProcessConsumer,
 ]);
 
 // Full list of injectable services that own page mutations.

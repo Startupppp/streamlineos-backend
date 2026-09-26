@@ -1,3 +1,4 @@
+import { MembershipResolvingDispatchDouble } from "../../../notifications/notification-recipient-membership.spec-fixtures";
 import { OnboardingAdminService } from "./onboarding-admin.service";
 
 interface ReminderRecipientFixture {
@@ -57,13 +58,20 @@ function createService(reminderPages: ReminderRecipientFixture[][]) {
   const enqueueForDelivery = jest.fn(
     async (emailMessages: readonly unknown[]) => emailMessages.length,
   );
+  const dispatch = new MembershipResolvingDispatchDouble(
+    reminderPages
+      .flat()
+      .map((recipient, index) => ({ userId: recipient.userId, membershipId: 90000 + index })),
+  );
   const service = new OnboardingAdminService(
     database as never,
     { enqueueForDelivery } as never,
+    dispatch as never,
   );
 
   return {
     database,
+    dispatch,
     enqueueForDelivery,
     insertValues,
     pageQueries,
@@ -72,7 +80,7 @@ function createService(reminderPages: ReminderRecipientFixture[][]) {
 }
 
 describe("OnboardingAdminService.sendReminders", () => {
-  it("keyset-pages recipients and performs two writes per 100-recipient batch", async () => {
+  it("keyset-pages recipients and dispatches one notification per recipient alongside one email batch per page", async () => {
     const recipients = Array.from(
       { length: 101 },
       (_unusedValue, recipientIndex) =>
@@ -88,18 +96,15 @@ describe("OnboardingAdminService.sendReminders", () => {
     ).resolves.toEqual({ sent: 101, total: 101 });
 
     expect(testContext.database.select).toHaveBeenCalledTimes(2);
-    expect(testContext.database.insert).toHaveBeenCalledTimes(2);
+    expect(testContext.database.insert).not.toHaveBeenCalled();
     expect(testContext.enqueueForDelivery).toHaveBeenCalledTimes(2);
     expect(testContext.pageQueries[0]?.limit).toHaveBeenCalledWith(101);
     expect(testContext.pageQueries[1]?.limit).toHaveBeenCalledWith(101);
 
-    const notificationBatchSizes = testContext.insertValues.mock.calls.map(
-      ([notificationBatch]) => notificationBatch.length,
-    );
     const emailBatchSizes = testContext.enqueueForDelivery.mock.calls.map(
       ([emailBatch]) => emailBatch.length,
     );
-    expect(notificationBatchSizes).toEqual([100, 1]);
+    expect(testContext.dispatch.inputs).toHaveLength(101);
     expect(emailBatchSizes).toEqual([100, 1]);
   });
 
@@ -114,20 +119,10 @@ describe("OnboardingAdminService.sendReminders", () => {
       testContext.service.sendReminders("organization-two"),
     ).resolves.toEqual({ sent: 1, total: 2 });
 
-    const notificationBatch = testContext.insertValues.mock.calls[0]?.[0];
-    expect(notificationBatch).toHaveLength(2);
-    expect(notificationBatch).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          orgId: "organization-two",
-          userId: "employee-001",
-        }),
-        expect.objectContaining({
-          orgId: "organization-two",
-          userId: "employee-002",
-        }),
-      ]),
-    );
+    expect(testContext.dispatch.inputs).toEqual([
+      expect.objectContaining({ orgId: "organization-two", targetUserIds: ["employee-001"] }),
+      expect.objectContaining({ orgId: "organization-two", targetUserIds: ["employee-002"] }),
+    ]);
 
     const emailBatch = testContext.enqueueForDelivery.mock.calls[0]?.[0];
     expect(emailBatch).toEqual([
@@ -148,6 +143,7 @@ describe("OnboardingAdminService.sendReminders", () => {
 
     expect(testContext.database.select).toHaveBeenCalledTimes(1);
     expect(testContext.database.insert).not.toHaveBeenCalled();
+    expect(testContext.dispatch.inputs).toEqual([]);
     expect(testContext.enqueueForDelivery).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
+import { reimbursementAmountSchema } from "../../../../common/validation/reimbursement-amount.schema";
 
 export const createBonusSchema = z.object({
   userId: z.string().min(1),
@@ -90,11 +91,7 @@ export type ApproveIncentiveInput = z.infer<typeof approveIncentiveSchema>;
 
 export const createReimbursementSchema = z.object({
   category: z.string().min(1).max(100),
-  amount: z
-    .number()
-    .min(1, "Amount must be at least ₹1")
-    .max(999999, "Amount cannot exceed ₹9,99,999")
-    .multipleOf(0.01, "Amount must have at most 2 decimal places"),
+  amount: reimbursementAmountSchema,
   description: z.string().max(1000).optional(),
   receiptUrl: z.string().url("Enter a valid URL (e.g. https://example.com)").optional().or(z.literal("")),
   payrollMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use YYYY-MM").optional(),

@@ -71,14 +71,6 @@ function makeCapturingDb() {
   return { db, wheres };
 }
 
-function makeAccess(spaceIds: number[], projectIds: number[], roleSlugs: string[], membershipId: number | null) {
-  return {
-    getAccessibleSpaceIds: jest.fn().mockResolvedValue(spaceIds),
-    getAccessibleProjectIds: jest.fn().mockResolvedValue(projectIds),
-    isAdmin: jest.fn().mockResolvedValue(false),
-    getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-1", membershipId, roleSlugs }),
-  };
-}
 
 const makeEmbeddings = () => ({
   isEmbeddingConfigured: jest.fn().mockReturnValue(true),
@@ -90,19 +82,20 @@ const makeEmbeddings = () => ({
 const makeEvents = () => ({ recordDetached: jest.fn().mockResolvedValue(undefined) });
 const makeScopes = () => ({ scopeFor: jest.fn().mockResolvedValue("all") });
 
-function retrieve(access: ReturnType<typeof makeAccess>) {
+function retrieve(standing: KbActorStanding) {
   const { db, wheres } = makeCapturingDb();
+  const auth = makeKbAuth(standing);
   const service = new KbSearchService(
     db as never,
-    access as never,
     makeEmbeddings() as never,
     makeEvents() as never,
     new KbCandidateService(db as never),
     makeScopes() as never,
-    makeKbAuth() as never,
+    auth as never,
   );
   return {
     wheres,
+    auth,
     run: () => service.retrieveTopArticles(makeUser(), "deployment runbook", 4),
   };
 }
@@ -110,27 +103,26 @@ function retrieve(access: ReturnType<typeof makeAccess>) {
 const rendered = (wheres: SQL[]): string[] => wheres.map((w) => render(w).text);
 const boundValues = (wheres: SQL[]): unknown[] => wheres.flatMap((w) => render(w).params);
 
-const makeKbAuth = () => ({
+const makeKbAuth = (standing: KbActorStanding) => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  resolveStanding: jest.fn().mockResolvedValue(standing),
   assertPageAccess: jest
     .fn()
-    .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+    .mockResolvedValue({ orgId: ORG, pageId: 1, action: "view", via: "admin" }),
 });
 
 describe("Revocation dimension 1 — space membership is re-read per query, not captured at index time", () => {
-  it("asks the access service on every retrieval", async () => {
-    const access = makeAccess(GRANTED_SPACES, GRANTED_PROJECTS, ["SUPPORT"], 5);
-    const { run } = retrieve(access);
+  it("asks the authorization service for standing on every retrieval", async () => {
+    const { auth, run } = retrieve(makeStanding({ accessibleSpaceIds: GRANTED_SPACES, accessibleProjectIds: GRANTED_PROJECTS, roleSlugs: ["SUPPORT"], membershipId: 5 }));
 
     await run();
     await run();
 
-    expect(access.getAccessibleSpaceIds).toHaveBeenCalledTimes(2);
+    expect(auth.resolveStanding).toHaveBeenCalledTimes(2);
   });
 
   it("binds the granted spaces into the article predicate while access holds", async () => {
-    const access = makeAccess(GRANTED_SPACES, GRANTED_PROJECTS, ["SUPPORT"], 5);
-    const { wheres, run } = retrieve(access);
+    const { wheres, run } = retrieve(makeStanding({ accessibleSpaceIds: GRANTED_SPACES, accessibleProjectIds: GRANTED_PROJECTS, roleSlugs: ["SUPPORT"], membershipId: 5 }));
 
     await run();
 
@@ -140,8 +132,7 @@ describe("Revocation dimension 1 — space membership is re-read per query, not 
   });
 
   it("after revocation neither the keyword nor the vector article path runs at all", async () => {
-    const access = makeAccess([], GRANTED_PROJECTS, ["SUPPORT"], 5);
-    const { wheres, run } = retrieve(access);
+    const { wheres, run } = retrieve(makeStanding({ accessibleSpaceIds: [], accessibleProjectIds: GRANTED_PROJECTS, roleSlugs: ["SUPPORT"], membershipId: 5 }));
 
     const results = await run();
 
@@ -156,8 +147,7 @@ describe("Revocation dimension 1 — space membership is re-read per query, not 
 
 describe("Revocation dimension 2 — kb_page_restrictions is a live subquery on both paths", () => {
   it("reaches both the keyword and the vector article query", async () => {
-    const access = makeAccess(GRANTED_SPACES, GRANTED_PROJECTS, ["SUPPORT"], 5);
-    const { wheres, run } = retrieve(access);
+    const { wheres, run } = retrieve(makeStanding({ accessibleSpaceIds: GRANTED_SPACES, accessibleProjectIds: GRANTED_PROJECTS, roleSlugs: ["SUPPORT"], membershipId: 5 }));
 
     await run();
 
@@ -201,14 +191,13 @@ describe("Revocation dimension 2 — kb_page_restrictions is a live subquery on 
 describe("Revocation dimension 3 — project membership is re-read per query for pages and chunks", () => {
   const user = makeUser();
 
-  it("asks the access service on every retrieval", async () => {
-    const access = makeAccess(GRANTED_SPACES, GRANTED_PROJECTS, ["SUPPORT"], 5);
-    const { run } = retrieve(access);
+  it("asks the authorization service for standing on every retrieval", async () => {
+    const { auth, run } = retrieve(makeStanding({ accessibleSpaceIds: GRANTED_SPACES, accessibleProjectIds: GRANTED_PROJECTS, roleSlugs: ["SUPPORT"], membershipId: 5 }));
 
     await run();
     await run();
 
-    expect(access.getAccessibleProjectIds).toHaveBeenCalledTimes(2);
+    expect(auth.resolveStanding).toHaveBeenCalledTimes(2);
   });
 
   it("the keyword page predicate offers a project arm only while the project is granted", () => {
@@ -227,19 +216,19 @@ describe("Revocation dimension 3 — project membership is re-read per query for
   });
 
   it("the vector chunk predicate loses the same arm, so an already-indexed project chunk is unreachable", () => {
-    const granted = render(chunkVisibleTo(user, GRANTED_PROJECTS));
-    const revoked = render(chunkVisibleTo(user, []));
+    const granted = render(chunkVisibleTo(makeStanding({ accessibleProjectIds: GRANTED_PROJECTS })));
+    const revoked = render(chunkVisibleTo(makeStanding({ accessibleProjectIds: [] })));
 
-    expect(granted.text).toContain(`"kb_article_chunks"."page_project_id" = ANY`);
+    expect(granted.text).toContain(`"kb_pages"."project_id" = ANY`);
     expect(granted.params).toContain(7);
-    expect(revoked.text).not.toContain(`"kb_article_chunks"."page_project_id" = ANY`);
+    expect(revoked.text).not.toContain(`"kb_pages"."project_id" = ANY`);
     expect(revoked.params).not.toContain(7);
   });
 
   it("both revoked predicates still bind the tenant, so nothing widens as access narrows", () => {
     const predicates = [
       buildVisiblePageScope(makeStanding({ accessibleProjectIds: [] }), "view").predicate,
-      chunkVisibleTo(user, []),
+      chunkVisibleTo(makeStanding({ accessibleProjectIds: [] })),
     ];
     for (const predicate of predicates) expect(render(predicate).params).toContain(ORG);
   });

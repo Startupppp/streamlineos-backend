@@ -2,6 +2,7 @@ import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { outboxEvents } from "../../../db/schema/common/outbox";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { KbAccessService } from "../core/kb-access.service";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
@@ -62,7 +63,7 @@ describe("KbPageTreeService.move — space consistency between source and target
     const kbAccess = {
       assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
     } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess);
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
 
     await svc.move(makeUser("org-space-move"), PAGE_ID, {
       parentPageId: TARGET_ID,
@@ -86,7 +87,7 @@ describe("KbPageTreeService.move — space consistency between source and target
     const kbAccess = {
       assertSpaceAccessible: jest.fn().mockRejectedValue(new NotFoundException("Space not found")),
     } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess);
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
 
     await expect(
       svc.move(makeUser("org-space-move-denied"), PAGE_ID, {
@@ -110,7 +111,7 @@ describe("KbPageTreeService.move — space consistency between source and target
     const kbAccess = {
       assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
     } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess);
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
 
     await svc.move(makeUser("org-space-move-same"), PAGE_ID, {
       parentPageId: TARGET_ID,
@@ -134,7 +135,7 @@ describe("KbPageTreeService.move — the moved page is queued for reindexing", (
     const kbAccess = {
       assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
     } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, kbAccess);
+    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, kbAccess, new KbPageWriterService({} as never));
     await svc.move(makeUser(ORG), PAGE_ID, { parentPageId: TARGET_ID, index: 0 });
     return made;
   }
@@ -182,7 +183,7 @@ describe("KbPageTreeService.move — the moved page is queued for reindexing", (
     const kbAccess = {
       assertSpaceAccessible: jest.fn().mockRejectedValue(new NotFoundException("Space not found")),
     } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, kbAccess);
+    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, kbAccess, new KbPageWriterService({} as never));
 
     await expect(
       svc.move(makeUser(ORG), PAGE_ID, { parentPageId: TARGET_ID, index: 0 }),
@@ -247,7 +248,7 @@ describe("KbPageTreeService.move — the space check is a real authorization dec
       ],
       [1],
     );
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess);
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
 
     await expect(
       svc.move(makeMember("org-real-move", 42), PAGE_ID, {
@@ -274,7 +275,7 @@ describe("KbPageTreeService.move — the space check is a real authorization dec
       ],
       [1, 2],
     );
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess);
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
 
     await svc.move(makeMember("org-real-move-granted", 42), PAGE_ID, {
       parentPageId: TARGET_ID,

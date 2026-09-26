@@ -5,7 +5,11 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   ): Promise<unknown> => fn(_db),
 }));
 
-import { KbRetrievalService, type KbRetrievalResult } from "./kb-retrieval.service";
+import {
+  KbRetrievalService,
+  isAnyChannelDegraded,
+  type KbRetrievalResult,
+} from "./kb-retrieval.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { kbDocumentKey } from "./kb-ask-context";
@@ -142,42 +146,47 @@ describe("KbRetrievalService.retrieve — one embedding per call", () => {
 });
 
 describe("KbRetrievalService.retrieve — degraded flag distinguishes outage from empty corpus", () => {
-  it("returns degraded=false for an empty corpus, so an outage cannot be confused with no content", async () => {
+  it("returns all degraded=false for an empty corpus, so an outage cannot be confused with no content", async () => {
     const db = makeDb(false);
     const search = makeSearch();
     const service = new KbRetrievalService(db as never, search as never, null);
 
     const result = await service.retrieve(makeUser(), QUESTION);
 
-    expect(result.degraded).toBe(false);
+    expect(result.degraded).toEqual({ documents: false, sources: false, passages: false });
     expect(result.documents).toHaveLength(0);
     expect(result.sources).toHaveLength(0);
     expect(result.passages).toHaveLength(0);
   });
 
-  it("returns degraded=true when the embedding provider fails and the corpus is non-empty, so an outage is distinguishable from an empty corpus", async () => {
+  it("returns all channels degraded when the embedding provider fails and the corpus is non-empty, so an outage is distinguishable from an empty corpus", async () => {
     const db = makeDb(true);
     const search = makeSearch({ vectorLiteral: null });
     const service = new KbRetrievalService(db as never, search as never, null);
 
     const result = await service.retrieve(makeUser(), QUESTION);
 
-    expect(result.degraded).toBe(true);
+    expect(result.degraded.documents).toBe(true);
+    expect(result.degraded.sources).toBe(true);
+    expect(result.degraded.passages).toBe(true);
   });
 
-  it("BITE: a result with degraded forced to false would not satisfy the outage test above — confirming the flag is not dead code", async () => {
+  it("BITE: a result with all degraded forced to false would not satisfy the outage test above — confirming the flag is not dead code", async () => {
     const db = makeDb(true);
     const search = makeSearch({ vectorLiteral: null });
     const service = new KbRetrievalService(db as never, search as never, null);
 
     const result = await service.retrieve(makeUser(), QUESTION);
-    const withoutFlag: KbRetrievalResult = { ...result, degraded: false };
+    const withoutFlag: KbRetrievalResult = {
+      ...result,
+      degraded: { documents: false, sources: false, passages: false },
+    };
 
-    expect(result.degraded).toBe(true);
-    expect(withoutFlag.degraded).not.toBe(true);
+    expect(isAnyChannelDegraded(result.degraded)).toBe(true);
+    expect(isAnyChannelDegraded(withoutFlag.degraded)).toBe(false);
   });
 
-  it("returns degraded=true when individual source items carry the degraded flag even when embedding succeeds", async () => {
+  it("marks sources degraded when individual source items carry the degraded flag even when embedding succeeds — passages and documents remain non-degraded", async () => {
     const db = makeDb(true);
     const search = makeSearch();
     jest.spyOn(search, "retrieveTopSources").mockResolvedValue([
@@ -187,7 +196,8 @@ describe("KbRetrievalService.retrieve — degraded flag distinguishes outage fro
 
     const result = await service.retrieve(makeUser(), QUESTION);
 
-    expect(result.degraded).toBe(true);
+    expect(result.degraded.sources).toBe(true);
+    expect(result.degraded.documents).toBe(false);
   });
 });
 
@@ -225,7 +235,7 @@ describe("KbRetrievalService.retrieve — result shape", () => {
     expect(result.documents).toEqual([ARTICLE]);
     expect(result.sources).toEqual([SOURCE]);
     expect(result.passages).toEqual([PASSAGE]);
-    expect(result.degraded).toBe(false);
+    expect(result.degraded).toEqual({ documents: false, sources: false, passages: false });
     expect(result.strategy).toEqual({ kind: "exact" });
   });
 

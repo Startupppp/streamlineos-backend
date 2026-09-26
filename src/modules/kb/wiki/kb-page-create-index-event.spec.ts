@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Db } from "../../../db/drizzle.module";
 import { outboxEvents } from "../../../db/schema/common/outbox";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 jest.mock("../../build/core/project-access", () => ({
   resolveProjectAccess: jest
@@ -117,11 +118,11 @@ function makeHarness(
 function makeService(db: Db): KbPagesService {
   return new KbPagesService(
     db,
-    {} as never,
     { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
     {} as never,
     {} as never,
     {} as never,
+    new KbPageWriterService({} as never),
   );
 }
 

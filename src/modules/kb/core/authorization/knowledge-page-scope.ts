@@ -94,8 +94,12 @@ export function buildIndexedBranch(
   const clauses: SQL<unknown>[] = [];
 
   if (action === "view") {
+    const spaceGuard =
+      standing.accessibleSpaceIds.length > 0
+        ? sql`(${kbPages.spaceId} IS NULL OR ${kbPages.spaceId} = ANY(${intArray(standing.accessibleSpaceIds)}))`
+        : sql`${kbPages.spaceId} IS NULL`;
     clauses.push(
-      sql`(${kbPages.visibility} IN ('org', 'public') AND ${kbPages.projectId} IS NULL)`,
+      sql`(${kbPages.visibility} IN ('org', 'public') AND ${kbPages.projectId} IS NULL AND ${spaceGuard})`,
     );
   }
 

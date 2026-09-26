@@ -2,6 +2,7 @@ import { ForbiddenException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 jest.mock("./kb-page-edit.util", () => ({
   ...jest.requireActual("./kb-page-edit.util"),
@@ -96,11 +97,11 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
     const audit = { log: jest.fn() };
     const svc = new KbPagesService(
       db,
-      notifications,
       planLimits,
       auth as never,
       {} as never,
       audit as never,
+      new KbPageWriterService({} as never),
     );
 
     await expect(
@@ -124,11 +125,11 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
     const audit = { log: jest.fn() };
     const svc = new KbPagesService(
       db,
-      notifications,
       planLimits,
       auth as never,
       {} as never,
       audit as never,
+      new KbPageWriterService({} as never),
     );
 
     const result = await svc.update(
@@ -167,11 +168,11 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
     const audit = { log: jest.fn() };
     const svc = new KbPagesService(
       db,
-      notifications,
       planLimits,
       auth as never,
       {} as never,
       audit as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.update(makeUser(), PAGE_ID, { title: "New title" }, false);

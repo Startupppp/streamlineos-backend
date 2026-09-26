@@ -2,16 +2,14 @@ import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { ApprovalAdapterRegistry } from "../attention/approval-adapter.registry";
-import {
-  countPendingExpensesRoutedTo,
-  pendingExpensesRoutedToPage,
-} from "./expense-inbox-reads";
+import { pendingExpensesRoutedToPage } from "./expense-inbox-reads";
 import type {
   BuildApprovalInboxItem,
   InboxSourcePosition,
 } from "../notifications/dto/unified-inbox.schemas";
 
 export const EXPENSE_APPROVAL_DEEP_LINK = "/hr/expenses";
+export const EXPENSE_CLAIM_OBJECT_TYPE = "expense_claim";
 
 function claimantName(
   name: string | null,
@@ -38,8 +36,6 @@ export class ExpenseApprovalAdapter implements OnModuleInit {
       supportsAfterCursor: true,
       fetch: (orgId, _userId, membershipId, limit, cursor) =>
         this.fetchExpenses(orgId, membershipId, limit, cursor),
-      countPending: (orgId, _userId, membershipId) =>
-        this.countExpenses(orgId, membershipId),
     });
   }
 
@@ -66,6 +62,8 @@ export class ExpenseApprovalAdapter implements OnModuleInit {
         projectId: null,
         ticketId: null,
         dueAt: null,
+        objectType: EXPENSE_CLAIM_OBJECT_TYPE,
+        objectId: String(row.id),
         dedupKey: `approval:expense:${String(row.id)}`,
         sourceModule: "expenses",
         subject: `${row.category} · ${row.currency} ${row.amount}`,
@@ -85,13 +83,5 @@ export class ExpenseApprovalAdapter implements OnModuleInit {
           : null,
       }),
     );
-  }
-
-  private async countExpenses(
-    orgId: string,
-    membershipId: number | null,
-  ): Promise<number> {
-    if (membershipId === null) return 0;
-    return countPendingExpensesRoutedTo(this.db, orgId, membershipId);
   }
 }

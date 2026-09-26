@@ -5,7 +5,12 @@
  * 392 on 2026-09-03 and to 390 on 2026-09-08, each time by splitting files
  * along a responsibility seam. The baseline may only ever move DOWN.
  *
- * Scans: src/**\/*.ts excluding *.spec.ts, *.e2e-spec.ts, *.d.ts (same scope as check-file-sizes.mjs).
+ * Scans: src/**\/*.ts excluding *.spec.ts, *.e2e-spec.ts, *.d.ts, *.generated.ts
+ * (same scope as check-file-sizes.mjs). *.generated.ts joins the list for the
+ * reason .d.ts is already on it: the ratchet exists to push authored code
+ * towards a responsibility seam, and machine-written output has none to find.
+ * Splitting `src/db/enums.generated.ts` would mean teaching the generator to
+ * emit two files to satisfy a line count, which measures nothing.
  * Passes when actual count <= BASELINE. Fails when it increases.
  * To lower the baseline after a split, decrement BASELINE and commit.
  *
@@ -61,6 +66,7 @@ function collectFiles(dir, files = []) {
       stat.isFile() &&
       extname(entry) === ".ts" &&
       !entry.endsWith(".d.ts") &&
+      !entry.endsWith(".generated.ts") &&
       !entry.endsWith(".spec.ts") &&
       !entry.endsWith(".e2e-spec.ts")
     ) {
@@ -104,6 +110,7 @@ function runSelfTests() {
     writeFileSync(join(fixture, "over.spec.ts"), "x\n".repeat(400));
     writeFileSync(join(fixture, "over.e2e-spec.ts"), "x\n".repeat(400));
     writeFileSync(join(fixture, "over.d.ts"), "x\n".repeat(400));
+    writeFileSync(join(fixture, "over.generated.ts"), "x\n".repeat(400));
     writeFileSync(join(fixture, "over.js"), "x\n".repeat(400));
 
     const collected = collectFiles(fixture).map((f) => f.replace(/\\/g, "/"));
@@ -117,6 +124,10 @@ function runSelfTests() {
     assert("spec files are excluded from the scan", !collected.some((f) => f.endsWith(".spec.ts")));
     assert("e2e-spec files are excluded from the scan", !collected.some((f) => f.endsWith(".e2e-spec.ts")));
     assert("declaration files are excluded from the scan", !collected.some((f) => f.endsWith(".d.ts")));
+    assert(
+      "a .generated.ts file is excluded, because this ratchet measures authored complexity and a generated const table has no split worth making",
+      !collected.some((f) => f.endsWith(".generated.ts")),
+    );
     assert("non-TypeScript files are excluded from the scan", !collected.some((f) => f.endsWith(".js")));
     assert("the vacuity guard would fire on this fixture", collected.length < MIN_FILES);
   } finally {

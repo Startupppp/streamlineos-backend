@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageStatusService } from "./kb-page-status.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -59,7 +60,7 @@ describe("KbPageStatusService — cross-tenant isolation", () => {
         query: { kbPages: { findFirst } },
       } as unknown as Db;
 
-      const svc = new KbPageStatusService(db, null as never, makeAuth() as never);
+      const svc = new KbPageStatusService(db, null as never, makeAuth() as never, {} as never);
       await expect(svc.lock(makeUser(ATTACKER_ORG), PAGE_ID, true)).rejects.toThrow(NotFoundException);
     });
 
@@ -82,7 +83,7 @@ describe("KbPageStatusService — cross-tenant isolation", () => {
         update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
       } as unknown as Db;
 
-      const svc = new KbPageStatusService(db, null as never, makeAuth() as never);
+      const svc = new KbPageStatusService(db, null as never, makeAuth() as never, {} as never);
       await svc.lock(makeUser(OWNER_ORG), PAGE_ID, true);
 
       expect(updateWhere).toHaveBeenCalledTimes(1);
@@ -125,7 +126,7 @@ describe("KbPageStatusService — cross-tenant isolation", () => {
           }),
         ),
       } as unknown as Db;
-      return { svc: new KbPageStatusService(db, null as never, auth as never), auth };
+      return { svc: new KbPageStatusService(db, null as never, auth as never, new KbPageWriterService({} as never)), auth };
     }
 
     it("demands manage on the record before locking a page, not merely the ability to see it", async () => {

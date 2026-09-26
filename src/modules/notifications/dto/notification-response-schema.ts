@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DB_ENUMS } from "../../../db/enums.generated";
 import { wireDate } from "../../../common/openapi/wire-types";
 
 const timestamp = z.union([wireDate(), z.iso.datetime()]);
@@ -23,9 +24,9 @@ export const notificationListResponseSchema = z.object({
     id: z.number().int(),
     orgId: z.string(),
     userId: nullableText,
-    type: z.string(),
-    priority: z.string(),
-    category: z.string(),
+    type: z.enum(DB_ENUMS.notification_type),
+    priority: z.enum(DB_ENUMS.notification_priority),
+    category: z.enum(DB_ENUMS.notification_category),
     sourceModule: nullableText,
     eventKey: nullableText,
     entityType: nullableText,

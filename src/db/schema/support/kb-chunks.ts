@@ -10,6 +10,7 @@ import {
   unique,
   foreignKey,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { kbPageAttachments } from "../kb/attachments";
@@ -40,12 +41,27 @@ export const kbArticleChunks = pgTable(
       dimensions: KB_EMBEDDING_DIMENSIONS,
     }).notNull(),
     embeddingModel: text("embedding_model").notNull(),
+    pageVisibility: text("page_visibility"),
+    pageProjectId: integer("page_project_id"),
+    pageCreatedById: text("page_created_by_id"),
+    pageCreatedByMembershipId: integer("page_created_by_membership_id"),
+    aclRevision: integer("acl_revision").notNull().default(1),
     contentRevision: integer("content_revision"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    aclSyncedAt: timestamp("acl_synced_at", { withTimezone: true }),
   },
   (table) => [
     index("idx_kb_chunks_org_page").on(table.orgId, table.pageId),
     index("idx_kb_chunks_org_source").on(table.orgId, table.sourceId),
+    index("idx_kb_chunks_org_page_acl")
+      .on(
+        table.orgId,
+        table.pageVisibility,
+        table.pageProjectId,
+        table.pageCreatedById,
+        table.pageCreatedByMembershipId,
+      )
+      .where(sql`page_id IS NOT NULL`),
     index("idx_kb_chunks_embedding_hnsw").using(
       "hnsw",
       table.embedding.op("vector_cosine_ops"),

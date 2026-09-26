@@ -12,6 +12,7 @@ import { KbRetrievalModule } from "../retrieval/kb-retrieval.module";
 import { KbSpacesService } from "./kb-spaces.service";
 import { KbMembersService } from "./kb-members.service";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
@@ -94,7 +95,8 @@ import { KbBriefToPageService } from "./kb-brief-to-page.service";
     KbPageRecordLinksService,
     KbPageReviewsQueryService,
     KbBriefToPageService,
+    KbPageWriterService,
   ],
-  exports: [KbPageTreeService, KbPageTrashService],
+  exports: [KbPageTreeService, KbPageTrashService, KbPageWriterService],
 })
 export class KbWikiModule {}

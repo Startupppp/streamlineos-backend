@@ -98,7 +98,13 @@ describe("expense approvals reach the unified inbox", () => {
     expect(items.map((i) => i.id)).toEqual([1]);
   });
 
-  it("counts exactly the claims it would list", async () => {
+  it("registers no private count query, so the badge scan and the list cannot diverge", () => {
+    const adapter = makeAdapter([expenseRow(1)]);
+
+    expect(adapter).not.toHaveProperty("countPending");
+  });
+
+  it("scans exactly the claims it would list, ignoring other approvers, other orgs and settled claims", async () => {
     const adapter = makeAdapter([
       expenseRow(1),
       expenseRow(2),
@@ -108,15 +114,8 @@ describe("expense approvals reach the unified inbox", () => {
     ]);
 
     const items = await adapter.fetch(ORG, "u", APPROVER, 50, null);
-    await expect(adapter.countPending(ORG, "u", APPROVER)).resolves.toBe(2);
+
     expect(items).toHaveLength(2);
-  });
-
-  it("counts zero for a principal with no membership, while the same rows count for one that has", async () => {
-    const adapter = makeAdapter([expenseRow(1), expenseRow(2)]);
-
-    await expect(adapter.countPending(ORG, "u", null)).resolves.toBe(0);
-    await expect(adapter.countPending(ORG, "u", APPROVER)).resolves.toBe(2);
   });
 
   it("lists nothing for a principal with no membership, while the same rows list for one that has", async () => {

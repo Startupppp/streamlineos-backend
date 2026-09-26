@@ -47,8 +47,19 @@ function collectStrings(root: unknown): string[] {
   return found;
 }
 
-const makeKbAuth = () => ({
+const makeKbAuth = (spaceIds: number[] = [1]) => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  resolveStanding: jest.fn().mockResolvedValue({
+    orgId: "org-1",
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: spaceIds,
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+  }),
   assertPageAccess: jest
     .fn()
     .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
@@ -71,13 +82,6 @@ describe("KB cross-tenant isolation", () => {
       select: jest.fn().mockReturnValue(chain),
       execute: jest.fn().mockResolvedValue([]),
     };
-    const access = {
-      getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
-      getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-      isAdmin: jest.fn().mockReturnValue(false),
-      getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-1", roleSlugs: [] }),
-    };
-
     const embeddings = {
       isEmbeddingConfigured: jest.fn().mockReturnValue(true),
       embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
@@ -85,12 +89,11 @@ describe("KB cross-tenant isolation", () => {
 
     const svc = new KbSearchService(
       db as never,
-      access as never,
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
-      makeKbAuth() as never,
+      makeKbAuth([1]) as never,
     );
 
     await svc.retrieveTopSources(makeUser({ orgId: "org-a" }), "how do I reset my password", 4);
@@ -121,21 +124,13 @@ describe("KB cross-tenant isolation", () => {
       select: jest.fn().mockReturnValue(chain),
       execute: jest.fn().mockResolvedValue([]),
     };
-    const access = {
-      getAccessibleSpaceIds: jest.fn().mockResolvedValue([]),
-      getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-      isAdmin: jest.fn().mockReturnValue(false),
-      getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-b", roleSlugs: [] }),
-    };
-
     const svc = new KbSearchService(
       db as never,
-      access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
-      makeKbAuth() as never,
+      makeKbAuth([]) as never,
     );
 
     const orgBUser = makeUser({ orgId: "org-b", userId: "user-b" });

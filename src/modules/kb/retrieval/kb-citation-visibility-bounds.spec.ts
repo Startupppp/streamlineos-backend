@@ -55,6 +55,17 @@ const mockAuth = {
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
   articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
+  resolveStanding: jest.fn().mockResolvedValue({
+    accessibleSpaceIds: [1],
+    accessibleProjectIds: [],
+    orgId: "org1",
+    userId: "user1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    permissionsVersion: 1,
+  }),
 };
 
 async function makeVisibility(rows: { id: number }[]) {

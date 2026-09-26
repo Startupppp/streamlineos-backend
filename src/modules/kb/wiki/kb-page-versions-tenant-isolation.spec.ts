@@ -56,7 +56,7 @@ describe("KbPageVersionsService — cross-tenant isolation", () => {
   it("throws NotFoundException for a page belonging to another org (cross-tenant deny)", async () => {
     const { db } = makeDb();
     const authMock = makeAuthMock({ throws: new NotFoundException("Page not found") });
-    const svc = new KbPageVersionsService(db, authMock as never);
+    const svc = new KbPageVersionsService(db, authMock as never, {} as never);
 
     await expect(svc.listVersions(makeUser(ATTACKER), PAGE_ID)).rejects.toThrow(NotFoundException);
 
@@ -70,7 +70,7 @@ describe("KbPageVersionsService — cross-tenant isolation", () => {
   it("returns versions for a page in the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
     const authMock = makeAuthMock();
-    const svc = new KbPageVersionsService(db, authMock as never);
+    const svc = new KbPageVersionsService(db, authMock as never, {} as never);
 
     const result = await svc.listVersions(makeUser(OWNER), PAGE_ID);
 
@@ -84,7 +84,7 @@ describe("KbPageVersionsService — cross-tenant isolation", () => {
 
   it("still binds the caller's org into the version query itself, so isolation does not rest on the seam alone", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never, {} as never);
 
     await svc.listVersions(makeUser(OWNER), PAGE_ID);
 

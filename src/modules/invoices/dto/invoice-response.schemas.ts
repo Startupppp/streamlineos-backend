@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
 import { itemsPagedSchema } from "../../../common/openapi/response-envelopes";
+import { DB_ENUMS } from "../../../db/enums.generated";
 
 const invoiceBaseSchema = z.object({
   id: z.number().int(),
@@ -9,7 +10,7 @@ const invoiceBaseSchema = z.object({
   projectId: z.number().int().nullable(),
   dealId: z.number().int().nullable(),
   invoiceNumber: z.string(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.invoice_status),
   subtotal: z.string(),
   taxRate: z.string(),
   taxAmount: z.string(),
@@ -87,7 +88,7 @@ export const recurringInvoiceListResponseSchema = z.array(
     clientName: z.string().nullable(),
     total: z.string(),
     currency: z.string(),
-    status: z.string(),
+    status: z.enum(DB_ENUMS.invoice_status),
     recurringInterval: z.string().nullable(),
     nextRecurringDate: z.string().nullable(),
     overdue: z.boolean(),

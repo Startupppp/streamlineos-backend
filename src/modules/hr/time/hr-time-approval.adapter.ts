@@ -7,6 +7,9 @@ import type {
   InboxSourcePosition,
 } from "../../notifications/dto/unified-inbox.schemas";
 
+export const LEAVE_REQUEST_OBJECT_TYPE = "leave_request";
+export const WFH_REQUEST_OBJECT_TYPE = "wfh_request";
+
 function displayName(
   name: string | null | undefined,
   first: string | null | undefined,
@@ -33,10 +36,6 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
       supportsAfterCursor: true,
       fetch: (orgId, _userId, membershipId, limit, cursor) =>
         this.fetchLeaves(orgId, membershipId, limit, cursor),
-      countPending: (orgId, _userId, membershipId) => {
-        if (membershipId === null) return Promise.resolve(0);
-        return this.leaves.countPendingRoutedTo(orgId, membershipId);
-      },
     });
 
     this.registry.register({
@@ -46,10 +45,6 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
       supportsAfterCursor: true,
       fetch: (orgId, _userId, membershipId, limit, cursor) =>
         this.fetchWfh(orgId, membershipId, limit, cursor),
-      countPending: (orgId, _userId, membershipId) => {
-        if (membershipId === null) return Promise.resolve(0);
-        return this.wfh.countPendingRoutedTo(orgId, membershipId);
-      },
     });
   }
 
@@ -75,6 +70,8 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
         projectId: null,
         ticketId: null,
         dueAt: null,
+        objectType: LEAVE_REQUEST_OBJECT_TYPE,
+        objectId: String(row.id),
         dedupKey: `approval:leave:${String(row.id)}`,
         sourceModule: "hr",
         subject: `${row.leaveTypeName ?? "Leave"} · ${row.startDate} to ${row.endDate}`,
@@ -118,6 +115,8 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
         projectId: null,
         ticketId: null,
         dueAt: null,
+        objectType: WFH_REQUEST_OBJECT_TYPE,
+        objectId: String(row.id),
         dedupKey: `approval:wfh:${String(row.id)}`,
         sourceModule: "hr",
         subject: `Work from home · ${row.date}`,

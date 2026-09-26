@@ -5,16 +5,15 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { kbPages, kbPageVersions, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
-import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
+import { snapshotIfNeeded } from "./kb-page-edit.util";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
@@ -44,6 +43,7 @@ export class KbPageVersionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly auth: KnowledgeAuthorizationService,
+    private readonly writer: KbPageWriterService,
   ) {}
 
   async listVersions(user: CurrentUserContext, pageId: number, cursor?: string, pageSize = PAGE_SIZE) {
@@ -138,35 +138,26 @@ export class KbPageVersionsService {
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
 
-      await snapshotIfNeeded(
-        tx,
-        orgId,
-        updated,
-        user.userId,
-        `Restored from version ${versionNumber}`,
-        true,
-        membershipId,
-      );
-
-      if (version.content) {
-        await resyncPageLinks(tx, orgId, pageId, version.content);
-      }
-
       await tx.execute(
         sql`INSERT INTO "public"."kb_version_restore_audit"
           ("org_id", "page_id", "source_version_number", "actor_user_id", "actor_membership_id")
           VALUES (${orgId}, ${pageId}, ${versionNumber}, ${user.userId}, ${membershipId ?? null})`,
       );
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
-        occurredAt: new Date(),
+      await this.writer.commitPageChange(tx, {
+        orgId,
+        actor: { userId: user.userId, membershipId },
+        page: updated,
+        changed: version.content
+          ? {
+              content: {
+                newContent: version.content,
+                previousContent: current.content ?? null,
+                changeSummary: `Restored from version ${versionNumber}`,
+                forced: true,
+              },
+            }
+          : {},
       });
 
       return updated;

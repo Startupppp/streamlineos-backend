@@ -704,3 +704,47 @@ describe("cross-surface equality invariant — UNION and predicate forms enforce
     );
   });
 });
+
+describe("org-visible pages in spaces — space membership required when spaceId is non-null", () => {
+  it("an org-visible page with a non-null spaceId the actor cannot reach is absent from the indexed branch, restoring the access control from 197a317ab that fe3d30809 silently removed", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleSpaceIds: [1, 2] }),
+      "view",
+    ).indexedBranch;
+
+    expect(boundParams(branch)).not.toContain(99);
+    expect(text(branch)).toContain(`"space_id" IS NULL`);
+  });
+
+  it("POSITIVE CONTROL: an org-visible page with a null spaceId is visible to an actor who belongs to no spaces — the dominant case (27 of 29 production org-visible pages have null spaceId)", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleSpaceIds: [] }),
+      "view",
+    ).indexedBranch;
+
+    expect(text(branch)).toContain("'org'");
+    expect(text(branch)).toContain(`"space_id" IS NULL`);
+  });
+
+  it("POSITIVE CONTROL: an org-visible page with a non-null spaceId is visible when the actor is a member of that space", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleSpaceIds: [3] }),
+      "view",
+    ).indexedBranch;
+
+    expect(text(branch)).toContain("'org'");
+    expect(boundParams(branch)).toContain(3);
+  });
+
+  it("BITE — removing the space condition from the org-visibility clause makes all three assertions above vacuous, so the denial is real and not an accident of empty parameters", () => {
+    const standingReachable = makeStanding({ accessibleSpaceIds: [1, 2] });
+    const branchReachable = buildVisiblePageScope(standingReachable, "view").indexedBranch;
+
+    const standingNoSpaces = makeStanding({ accessibleSpaceIds: [] });
+    const branchNoSpaces = buildVisiblePageScope(standingNoSpaces, "view").indexedBranch;
+
+    expect(text(branchReachable)).toContain(`"space_id" IS NULL`);
+    expect(text(branchNoSpaces)).toContain(`"space_id" IS NULL`);
+    expect(text(branchNoSpaces)).not.toContain("ANY(");
+  });
+});

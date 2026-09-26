@@ -172,6 +172,31 @@ describe("createAuthContext — MFA", () => {
     expect(lookups.mfaState).toHaveBeenCalledWith("org-1", "user-1");
   });
 
+  it("reads no MFA policy for an actor with no organization, exactly as membership() reads no membership row", async () => {
+    const lookups = makeLookups();
+    const ctx = createAuthContext(makeActor({ orgId: "" }), lookups);
+
+    await ctx.mfa();
+
+    expect(lookups.mfaState).not.toHaveBeenCalled();
+  });
+
+  it("does not report an org-less actor as MFA-exempt, because an empty orgId asked of the policy answers enforced:false and silently waives the requirement", async () => {
+    const lookups = makeLookups();
+    const ctx = createAuthContext(makeActor({ orgId: "" }), lookups);
+
+    await expect(ctx.mfa()).resolves.toEqual({
+      enforced: true,
+      satisfied: false,
+    });
+  });
+
+  it("memoises the org-less answer as one promise rather than recomputing it per caller", async () => {
+    const ctx = createAuthContext(makeActor({ orgId: "" }), makeLookups());
+
+    expect(ctx.mfa()).toBe(ctx.mfa());
+  });
+
   it("propagates a rejecting policy rather than reporting MFA satisfied", async () => {
     const lookups = makeLookups({
       mfaState: jest.fn(() => Promise.reject(new Error("policy unavailable"))),

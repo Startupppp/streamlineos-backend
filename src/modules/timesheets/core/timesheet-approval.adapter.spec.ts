@@ -169,36 +169,45 @@ describe("TimesheetApprovalAdapter — deepLink", () => {
   });
 });
 
-describe("TimesheetApprovalAdapter — countPending", () => {
-  it("returns the count from ApprovalsService.countPendingRoutedTo", async () => {
-    const approvals = makeApprovals([makePeriodRow()], 5);
+describe("TimesheetApprovalAdapter — the badge counts this adapter by scanning fetch, so no second predicate can disagree", () => {
+  it("registers no private count query, leaving fetch as the only definition of what is pending", () => {
     const registry = makeRegistry();
-    const adapter = new TimesheetApprovalAdapter(approvals, registry);
-    adapter.onModuleInit();
-    const [ts] = registry.list();
-    const result = await ts!.countPending("org-1", "user-1", 9);
-    expect(result).toBe(5);
+    new TimesheetApprovalAdapter(makeApprovals(), registry).onModuleInit();
+    expect(registry.list()[0]).not.toHaveProperty("countPending");
   });
 
-  it("returns 0 when membershipId is null — positive case above returns non-zero, satisfying BE-141", async () => {
-    const approvals = makeApprovals([makePeriodRow()], 3);
+  it("scans nothing for a principal with no membership, so the badge counts nothing for one", async () => {
+    const approvals = makeApprovals([makePeriodRow()]);
     const registry = makeRegistry();
-    const adapter = new TimesheetApprovalAdapter(approvals, registry);
-    adapter.onModuleInit();
+    new TimesheetApprovalAdapter(approvals, registry).onModuleInit();
     const [ts] = registry.list();
-    const result = await ts!.countPending("org-1", "user-1", null);
-    expect(result).toBe(0);
-    expect(approvals.countPendingRoutedTo).not.toHaveBeenCalled();
+    await expect(ts!.fetch("org-1", "user-1", null, 50, null)).resolves.toEqual(
+      [],
+    );
+    expect(approvals.pendingRoutedToPage).not.toHaveBeenCalled();
   });
 
-  it("passes orgId and membershipId to countPendingRoutedTo (tenant and approver isolation)", async () => {
+  it("CONTROL: the same scan returns rows for a principal that does have a membership", async () => {
+    const approvals = makeApprovals([makePeriodRow()]);
+    const registry = makeRegistry();
+    new TimesheetApprovalAdapter(approvals, registry).onModuleInit();
+    const [ts] = registry.list();
+    await expect(
+      ts!.fetch("org-1", "user-1", 9, 50, null),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("passes orgId and membershipId to pendingRoutedToPage (tenant and approver isolation)", async () => {
     const approvals = makeApprovals();
     const registry = makeRegistry();
-    const adapter = new TimesheetApprovalAdapter(approvals, registry);
-    adapter.onModuleInit();
+    new TimesheetApprovalAdapter(approvals, registry).onModuleInit();
     const [ts] = registry.list();
-    await ts!.countPending("org-W", "user-5", 77);
-    expect(approvals.countPendingRoutedTo).toHaveBeenCalledWith("org-W", 77);
-    expect(approvals.countPendingRoutedTo).toHaveBeenCalledTimes(1);
+    await ts!.fetch("org-W", "user-5", 77, 50, null);
+    expect(approvals.pendingRoutedToPage).toHaveBeenCalledWith(
+      "org-W",
+      77,
+      50,
+      null,
+    );
   });
 });

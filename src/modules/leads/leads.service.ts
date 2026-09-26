@@ -1,7 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { eq, and, inArray } from "drizzle-orm";
 import {
-  notifications,
   organizationMembers,
   users,
 } from "../../db/schema";
@@ -154,17 +153,6 @@ export class LeadsService {
       assignedById: input.assignedToId ? userId : null,
       assignedAt: input.assignedToId ? new Date() : null,
     });
-
-    if (input.assignedToId) {
-      await this.db.insert(notifications).values({
-        orgId,
-        userId: input.assignedToId,
-        type: "INFO",
-        title: "New Lead Assigned",
-        message: `You have been assigned a new lead: ${input.name}`,
-        link: `/crm/leads`,
-      });
-    }
 
     if (!input.assignedToId) {
       try {

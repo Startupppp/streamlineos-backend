@@ -32,6 +32,16 @@ function makeCountChain(value: number): ChainMethods {
   return chain;
 }
 
+function makeWatermarkChain(lastReadId: number): ChainMethods {
+  const chain: ChainMethods = {};
+  for (const method of ["from", "innerJoin", "where"]) {
+    chain[method] = jest.fn().mockImplementation(
+      () => (method === "where" ? Promise.resolve([{ lastReadId }]) : chain),
+    );
+  }
+  return chain;
+}
+
 function makeDb(notifRows: unknown[] = [], countValue = 0): Db {
   let callCount = 0;
   return {
@@ -287,7 +297,10 @@ describe("UnifiedInboxService — four-property contract", () => {
   describe("Property 2: unified unread-count semantics", () => {
     it("total equals the sum of per-source authorized counts", async () => {
       const db: Db = {
-        select: jest.fn().mockReturnValueOnce(makeCountChain(3)),
+        select: jest
+          .fn()
+          .mockReturnValueOnce(makeWatermarkChain(0))
+          .mockReturnValueOnce(makeCountChain(3)),
       } as unknown as Db;
 
       const mailSvc = makeMailWithUnread([
@@ -296,8 +309,16 @@ describe("UnifiedInboxService — four-property contract", () => {
         mailMessage("m3", "2024-01-01T00:00:00Z", false),
       ]);
 
+      const t = new Date("2024-01-10T00:00:00Z");
       const access = makeAccess(true, true);
-      const svc = new UnifiedInboxService(db, access, mailSvc, makeBroadcasts(), makeBuildApprovals([], 2), makeRegistry());
+      const svc = new UnifiedInboxService(
+        db,
+        access,
+        mailSvc,
+        makeBroadcasts(),
+        makeBuildApprovals([approvalRow(1, t), approvalRow(2, t)]),
+        makeRegistry(),
+      );
 
       const counts = await svc.unifiedUnreadCount(ORG, UID, user);
 

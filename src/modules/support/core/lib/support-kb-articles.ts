@@ -1,5 +1,4 @@
 import { HttpException, HttpStatus, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
@@ -19,7 +18,7 @@ import {
   kbTags,
 } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
-import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
+import { KbPageWriterService } from "../../../kb/wiki/kb-page-writer.service";
 import {
   articleContentToPageContent,
   articleVisibilityToPage,
@@ -199,6 +198,7 @@ export async function getArticle(db: Db, orgId: string, articleId: number) {
 
 export async function updateArticle(
   db: Db,
+  writer: KbPageWriterService,
   orgId: string,
   articleId: number,
   input: UpdateKbArticleInput,
@@ -337,20 +337,17 @@ export async function updateArticle(
     }
 
     if (updated.status === "published" && (contentChanged || aclChanged)) {
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(articleId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: {
-          contentType: "page",
-          contentId: articleId,
+      await writer.commitPageChange(tx, {
+        orgId,
+        actor: { userId: authorId ?? "", membershipId: null },
+        page: {
+          id: updated.id,
+          title: updated.title,
           contentRevision: updated.contentRevision,
           aclRevision: updated.aclRevision,
+          contentText: null,
         },
-        occurredAt: new Date(),
+        changed: {},
       });
     }
 

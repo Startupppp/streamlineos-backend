@@ -73,11 +73,21 @@ describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () =
 
     const auth = {
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      resolveStanding: jest.fn().mockResolvedValue({
+        orgId: "org-fix1",
+        userId: "u1",
+        membershipId: 1,
+        roleSlugs: [],
+        isOrgOwner: false,
+        isKbAdmin: false,
+        accessibleSpaceIds: [1],
+        accessibleProjectIds: [],
+        permissionsVersion: 1,
+      }),
       assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
     };
     const svc = new KbSearchService(
       db as never,
-      access as never,
       embeddings as never,
       { record: jest.fn().mockResolvedValue(undefined) } as never,
       new KbCandidateService(db as never),

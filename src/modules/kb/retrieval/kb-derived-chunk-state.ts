@@ -8,6 +8,7 @@ type ChunkFamily = SQL | undefined;
 
 export interface KbDerivedChunkState {
   contentHash: string | null;
+  aclRevision: number | null;
   chunkCount: number;
 }
 
@@ -46,6 +47,7 @@ export async function loadDerivedChunkState(
   const [row] = await db
     .select({
       contentHash: sql<string | null>`min(${kbArticleChunks.contentHash})`,
+      aclRevision: sql<number | null>`min(${kbArticleChunks.aclRevision})`,
       chunkCount: sql<number>`count(*)::int`,
     })
     .from(kbArticleChunks)
@@ -53,8 +55,17 @@ export async function loadDerivedChunkState(
 
   return {
     contentHash: row?.contentHash ?? null,
+    aclRevision: row?.aclRevision ?? null,
     chunkCount: row?.chunkCount ?? 0,
   };
+}
+
+export async function updateDerivedChunkAcl(
+  db: Db,
+  where: ChunkFamily,
+  aclRevision: number,
+): Promise<void> {
+  await db.update(kbArticleChunks).set({ aclRevision, aclSyncedAt: new Date() }).where(where);
 }
 
 function derivedChunkRow(
@@ -104,7 +115,7 @@ export async function replaceAttachmentChunks(
   pageId: number | null,
   chunks: string[],
   embeddings: number[][],
-  contentHash: string,
+  meta: { contentHash: string; aclRevision: number },
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
@@ -115,7 +126,9 @@ export async function replaceAttachmentChunks(
         orgId,
         pageId,
         attachmentId,
-        ...derivedChunkRow(chunk, embeddings[index], index, contentHash),
+        ...derivedChunkRow(chunk, embeddings[index], index, meta.contentHash),
+        aclRevision: meta.aclRevision,
+        aclSyncedAt: new Date(),
       })),
     );
   });
@@ -127,7 +140,14 @@ export async function replacePageDocumentChunks(
   pageId: number,
   chunks: string[],
   embeddings: number[][],
-  contentHash: string,
+  meta: {
+    contentHash: string;
+    pageVisibility: string;
+    pageProjectId: number | null;
+    pageCreatedById: string | null;
+    pageCreatedByMembershipId: number | null;
+    aclRevision: number;
+  },
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(kbArticleChunks).where(pageDocumentChunks(orgId, pageId));
@@ -136,7 +156,13 @@ export async function replacePageDocumentChunks(
         orgId,
         pageId,
         attachmentId: null,
-        ...derivedChunkRow(chunk, embeddings[index], index, contentHash),
+        ...derivedChunkRow(chunk, embeddings[index], index, meta.contentHash),
+        pageVisibility: meta.pageVisibility,
+        pageProjectId: meta.pageProjectId,
+        pageCreatedById: meta.pageCreatedById,
+        pageCreatedByMembershipId: meta.pageCreatedByMembershipId,
+        aclRevision: meta.aclRevision,
+        aclSyncedAt: new Date(),
       })),
     );
   });

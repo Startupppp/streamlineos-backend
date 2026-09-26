@@ -16,6 +16,10 @@
  *
  * Excluded from scanning:
  *   *.spec.ts, *.e2e-spec.ts, *.d.ts — tests and declaration files are §7 exceptions by default.
+ *   *.generated.ts — machine-written output. The nine-column exception record asks a
+ *     human to justify a shape they chose; nobody chose the shape of a generated
+ *     const table, and the only way to shorten one is to make the generator emit
+ *     two files, which buys nothing. Same scope as check-over-300.mjs.
  *
  * Flags:
  *   --self-test   Run fixture-based assertions and exit (no real file scan).
@@ -197,6 +201,7 @@ function collectFiles(dir, files = [], readdir = readdirSync) {
       stat.isFile() &&
       extname(entry) === ".ts" &&
       !entry.endsWith(".d.ts") &&
+      !entry.endsWith(".generated.ts") &&
       !entry.endsWith(".spec.ts") &&
       !entry.endsWith(".e2e-spec.ts")
     ) {
@@ -458,6 +463,11 @@ function runSelfTests() {
     assert("a complete, accurate exception reports reason=ok", okRes.reason === "ok");
     assert("spec and declaration files are excluded from the scan", (() => {
       const d = build("excl", { "src/modules/x.spec.ts": 900, "src/modules/y.e2e-spec.ts": 900, "src/modules/z.d.ts": 900, "src/modules/a.ts": 12 }, []);
+      const r = runCheck(join(d, "src"), d, join(d, "exc.md"), { minFiles: 1, requiredSubtrees: [] });
+      return r.ok === true && r.fileCount === 1;
+    })());
+    assert("a .generated.ts file over the limit is excluded and does not demand a nine-column exception row nobody can honestly write", (() => {
+      const d = build("gen", { "src/db/enums.generated.ts": 900, "src/modules/a.ts": 12 }, []);
       const r = runCheck(join(d, "src"), d, join(d, "exc.md"), { minFiles: 1, requiredSubtrees: [] });
       return r.ok === true && r.fileCount === 1;
     })());

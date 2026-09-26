@@ -1,4 +1,5 @@
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import type { Db } from "../../../db/drizzle.module";
 
 jest.mock("../../build/core/project-access", () => ({
@@ -76,11 +77,11 @@ describe("KbPagesService.create — saved template usage stamp", () => {
     const { db, update, set } = makeDb({ content: { type: "doc" } });
     const svc = new KbPagesService(
       db,
-      notifications,
       planLimits,
       auth,
       access,
       {} as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.create(makeUser(), { templateId: TEMPLATE_ID });
@@ -106,11 +107,11 @@ describe("KbPagesService.create — saved template usage stamp", () => {
       });
     const svc = new KbPagesService(
       db,
-      notifications,
       planLimits,
       auth,
       access,
       {} as never,
+      new KbPageWriterService({} as never),
     );
 
     await expect(
@@ -124,11 +125,11 @@ describe("KbPagesService.create — saved template usage stamp", () => {
     const { db, update } = makeDb(undefined);
     const svc = new KbPagesService(
       db,
-      notifications,
       planLimits,
       auth,
       access,
       {} as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.create(makeUser(), { title: "Blank page" });
@@ -140,11 +141,11 @@ describe("KbPagesService.create — saved template usage stamp", () => {
     const { db, update } = makeDb(undefined);
     const svc = new KbPagesService(
       db,
-      notifications,
       planLimits,
       auth,
       access,
       {} as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.create(makeUser(), { templateId: TEMPLATE_ID });

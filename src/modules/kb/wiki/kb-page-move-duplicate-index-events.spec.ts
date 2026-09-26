@@ -3,6 +3,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { outboxEvents } from "../../../db/schema/common/outbox";
 import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 const ORG_ID = "org-index-events";
 const PAGE_ID = 42;
@@ -185,6 +186,7 @@ describe("KbPageTreeService.move — indexing the moved page", () => {
       makeAuth(),
       {} as never,
       { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.move(makeUser(), PAGE_ID, { parentPageId: null, index: 0 });
@@ -208,6 +210,7 @@ describe("KbPageTreeService.move — indexing the moved page", () => {
       makeAuth(),
       {} as never,
       { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
+      new KbPageWriterService({} as never),
     );
 
     await expect(

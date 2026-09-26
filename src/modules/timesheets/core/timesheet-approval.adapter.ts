@@ -6,6 +6,8 @@ import type {
   InboxSourcePosition,
 } from "../../notifications/dto/unified-inbox.schemas";
 
+export const TIMESHEET_OBJECT_TYPE = "timesheet";
+
 @Injectable()
 export class TimesheetApprovalAdapter implements OnModuleInit {
   constructor(
@@ -21,10 +23,6 @@ export class TimesheetApprovalAdapter implements OnModuleInit {
       supportsAfterCursor: true,
       fetch: (orgId, _userId, membershipId, limit, cursor) =>
         this.fetchTimesheets(orgId, membershipId, limit, cursor),
-      countPending: (orgId, _userId, membershipId) => {
-        if (membershipId === null) return Promise.resolve(0);
-        return this.approvals.countPendingRoutedTo(orgId, membershipId);
-      },
     });
   }
 
@@ -50,6 +48,8 @@ export class TimesheetApprovalAdapter implements OnModuleInit {
         projectId: null,
         ticketId: null,
         dueAt: row.approvalDueAt ? row.approvalDueAt.toISOString() : null,
+        objectType: TIMESHEET_OBJECT_TYPE,
+        objectId: String(row.id),
         dedupKey: `approval:timesheet:${String(row.id)}`,
         sourceModule: "timesheets",
         subject: `Timesheet · ${row.periodStart} to ${row.periodEnd}`,

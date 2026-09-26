@@ -36,7 +36,7 @@ import {
 } from "./kb-ask-context";
 import { kbAiInteractions, type KbAiInteractionState, type KbAiSourceRecord } from "../../../db/schema";
 import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
-import { KbRetrievalService } from "./kb-retrieval.service";
+import { KbRetrievalService, isAnyChannelDegraded } from "./kb-retrieval.service";
 
 export const KB_ASK_ORG_TIER = "kb:ask:org";
 
@@ -232,7 +232,7 @@ export class KbAskService {
           sources,
           linked,
           citations,
-          degraded: retrieved.degraded,
+          degraded: isAnyChannelDegraded(retrieved.degraded),
         };
       },
       { orgId: user.orgId },

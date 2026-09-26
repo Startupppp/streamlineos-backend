@@ -5,11 +5,27 @@ import { KbSearchService } from "./kb-search.service";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { KbActorStanding } from "../core/authorization/knowledge-authorization.types";
 
 const ORG = "org-split";
 const VECTOR = "[0.1,0.2]";
 const PRINCIPAL = { userId: "user-1", membershipId: 1, roleSlugs: ["MEMBER"] };
 const SHARED_ID = 77;
+
+function makeStanding(overrides: Partial<KbActorStanding> = {}): KbActorStanding {
+  return {
+    orgId: ORG,
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: ["MEMBER"],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: [1],
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+    ...overrides,
+  };
+}
 
 const dialect = new PgDialect();
 
@@ -49,6 +65,9 @@ function makeHarness(rows: unknown[] = []) {
   const db = {
     select: jest.fn(() => chain),
     execute: jest.fn().mockResolvedValue([{ id: SHARED_ID }]),
+    transaction: jest.fn((callback: (tx: { execute: jest.Mock }) => Promise<unknown>) =>
+      callback({ execute: jest.fn().mockResolvedValue([]) }),
+    ),
   };
   return { db, wheres, candidates: new KbCandidateService(db as never) };
 }
@@ -102,7 +121,7 @@ describe("kb_pages holds help-centre articles and wiki pages, and a read must sa
   it("the wiki vector surface excludes support_article too", async () => {
     const { wheres, candidates } = makeHarness();
 
-    await candidates.pageVectorCandidates(ORG, VECTOR, 4, chunkVisibleTo(makeUser(), []));
+    await candidates.pageVectorCandidates(ORG, VECTOR, 4, chunkVisibleTo(makeStanding({ accessibleSpaceIds: [] })));
 
     const { text } = render(wheres[0] as SQL);
     expect(text).toContain(WIKI_DENY_OF_ARTICLES);
@@ -123,22 +142,16 @@ describe("kb_pages holds help-centre articles and wiki pages, and a read must sa
 
 describe("KbSearchService.search is the help-centre surface, not the whole knowledge base", () => {
   function makeSearch(db: unknown, candidates: KbCandidateService): KbSearchService {
-    const access = {
-      getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
-      getAccessibleSpaceIdsWithCacheOutcome: jest.fn().mockResolvedValue({ spaceIds: [1], cacheOutcome: "miss" }),
-      getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-      isAdmin: jest.fn().mockResolvedValue(false),
-      getPrincipalIds: jest.fn().mockResolvedValue(PRINCIPAL),
-    };
     return new KbSearchService(
       db as never,
-      access as never,
       { isEmbeddingConfigured: jest.fn().mockReturnValue(false) } as never,
       { recordDetached: jest.fn().mockResolvedValue(undefined) } as never,
       candidates,
       { scopeFor: jest.fn().mockResolvedValue("all") } as never,
       {
         visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+        resolveStanding: jest.fn().mockResolvedValue(makeStanding()),
+        resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [1], cacheOutcome: "hit" }),
         articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
       } as never,
     );

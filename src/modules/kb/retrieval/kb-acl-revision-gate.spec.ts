@@ -43,11 +43,20 @@ function expectStrictFence(rendered: string): void {
       throw new Error(`acl_revision fence escaped by ${name} in: ${rendered}`);
 }
 
-const makeAccess = (spaceIds = [1]) => ({
-  getAccessibleSpaceIds: jest.fn().mockResolvedValue(spaceIds),
-  getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-  isAdmin: jest.fn().mockResolvedValue(false),
-  getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-1", membershipId: 1, roleSlugs: [] }),
+const makeKbAuth = (spaceIds = [1]) => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  resolveStanding: jest.fn().mockResolvedValue({
+    orgId: "org-1",
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: spaceIds,
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+  }),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
 });
 
 const makeEmbeddings = () => ({
@@ -94,21 +103,13 @@ function makeJoinCapturingDb() {
 function makeService(db: unknown, spaceIds: number[]): KbSearchService {
   return new KbSearchService(
     db as never,
-    makeAccess(spaceIds) as never,
     makeEmbeddings() as never,
     makeEvents() as never,
     new KbCandidateService(db as never),
     makeScopes() as never,
-    makeKbAuth() as never,
+    makeKbAuth(spaceIds) as never,
   );
 }
-
-const makeKbAuth = () => ({
-  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
-  assertPageAccess: jest
-    .fn()
-    .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
-});
 
 describe("KB ACL revision gate — stale chunks cannot surface in vector search", () => {
   it("articleVectorCandidates joins on a plain revision equality, with no arm that admits a NULL", async () => {

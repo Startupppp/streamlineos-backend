@@ -6,6 +6,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AccessService } from "../access/access.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -62,6 +63,7 @@ export class SalesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   /** @see lib/sales-commissions.ts */
@@ -85,7 +87,7 @@ export class SalesService {
   }
 
   private get commissionDeps(): CommissionDeps {
-    return { db: this.db, cache: this.cache };
+    return { db: this.db, cache: this.cache, dispatch: this.dispatch };
   }
 
   listQuotas(orgId: string, filters: QuotaListInput) {

@@ -45,6 +45,17 @@ const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
 const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  resolveStanding: jest.fn().mockResolvedValue({
+    orgId: "org-a",
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: [1],
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+  }),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
   articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
 });
@@ -62,7 +73,6 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
     const db = makeDb([]);
     const svc = new KbSearchService(
       db as never,
-      makeAccess() as never,
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -80,7 +90,6 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
     const db = makeDb([]);
     const svc = new KbSearchService(
       db as never,
-      makeAccess() as never,
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -99,7 +108,6 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
     const db = makeDb([{ id: 1 }]);
     const svc = new KbSearchService(
       db as never,
-      makeAccess() as never,
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -118,7 +126,6 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
     const auth = makeAuth();
     const svc = new KbSearchService(
       db as never,
-      makeAccess() as never,
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -128,6 +135,6 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);
 
-    expect(auth.visiblePagePredicate).toHaveBeenCalledWith(expect.anything(), "view");
+    expect(auth.resolveStanding).toHaveBeenCalledWith(expect.anything());
   });
 });

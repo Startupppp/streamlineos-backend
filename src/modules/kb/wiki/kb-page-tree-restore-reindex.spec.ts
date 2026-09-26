@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -90,6 +91,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAuth() as never,
       {} as never,
       { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.restore(makeUser(), 10);
@@ -111,6 +113,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAuth() as never,
       {} as never,
       { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.restore(makeUser(), 10);
@@ -129,6 +132,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAuth() as never,
       {} as never,
       { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.restore(makeUser(), 10);
@@ -149,6 +153,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAuth() as never,
       {} as never,
       { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
+      new KbPageWriterService({} as never),
     );
 
     await svc.restore(makeUser(), 10);

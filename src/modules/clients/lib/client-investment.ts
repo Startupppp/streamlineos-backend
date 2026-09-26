@@ -6,11 +6,11 @@ import {
   clientAccountActivities,
   incentives,
   incentiveConfig,
-  notifications,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ClientsEmailService } from "../clients-email.service";
 import type { UpdateClientStatusInput } from "../dto/clients.schemas";
 import type { ScopedRead } from "../../access/scoped-read";
@@ -31,8 +31,11 @@ import { clientAccountWhere } from "../client-accounts-scope";
  *   - the HR recipients are resolved BEFORE the transaction opens, because
  *     `membersWithPermission` is a separate read and the transaction should not
  *     be held open across it;
- *   - the incentive, the activity row and both notification inserts are INSIDE
- *     one transaction, so a rep is never told about money that was not booked;
+ *   - the incentive and the activity row are INSIDE one transaction, and both
+ *     notifications are dispatched after it returns, so a rep is never told
+ *     about money that was not booked: a transaction that throws never reaches
+ *     the dispatch, and `NotificationDispatchService.emit` records its intent in
+ *     the request's own transaction and drains it only once that commits;
  *   - the audit entry and the emails are outside it, the emails `void`-ed with
  *     `logSideEffectFailure`, because a bounced mail must not roll back an
  *     investment that really happened.
@@ -47,6 +50,7 @@ export interface ClientInvestmentDeps {
   readonly audit: AuditService;
   readonly clientsEmail: ClientsEmailService;
   readonly access: AccessService;
+  readonly dispatch: NotificationDispatchService;
 }
 
 export async function updateClientStatus(
@@ -129,32 +133,44 @@ export async function updateClientStatus(
         });
       }
 
-      await tx.insert(notifications).values({
-        orgId,
-        userId: account.salesRepId,
-        type: "SUCCESS",
-        title: "Client Invested!",
-        message: `${account.clientName} has invested ₹${formattedAmount}. Your incentive is being processed.`,
-        link: `/crm/clients/${account.id}`,
-      });
-
-      if (hrMemberRows.length > 0) {
-        const investmentMsg = `${account.clientName} has invested ₹${formattedAmount}. Sales rep: ${account.salesRepId ? "assigned" : "N/A"}.`;
-        await tx.insert(notifications).values(
-          hrMemberRows.map((hr) => ({
-            orgId,
-            userId: hr.userId,
-            type: "SUCCESS" as const,
-            title: "Client Invested!",
-            message: investmentMsg,
-            link: `/crm/clients/${account.id}`,
-          })),
-        );
-      }
     }
 
     return row;
   });
+
+  if (recordInvestment && investmentAmount) {
+    if (account.salesRepId) {
+      await deps.dispatch.emit({
+        eventKey: "crm.client.invested",
+        orgId,
+        actorUserId: userId,
+        notifySelf: true,
+        targetUserIds: [account.salesRepId],
+        entityType: "client_account",
+        entityId: String(account.id),
+        title: "Client Invested!",
+        message: `${account.clientName} has invested ₹${formattedAmount}. Your incentive is being processed.`,
+        link: `/crm/clients/${account.id}`,
+        variables: { clientName: account.clientName, investmentAmount: formattedAmount },
+      });
+    }
+
+    if (hrMemberRows.length > 0) {
+      await deps.dispatch.emit({
+        eventKey: "crm.client.invested",
+        orgId,
+        actorUserId: userId,
+        notifySelf: true,
+        targetUserIds: hrMemberRows.map((hr) => hr.userId),
+        entityType: "client_account",
+        entityId: String(account.id),
+        title: "Client Invested!",
+        message: `${account.clientName} has invested ₹${formattedAmount}. Sales rep: ${account.salesRepId ? "assigned" : "N/A"}.`,
+        link: `/crm/clients/${account.id}`,
+        variables: { clientName: account.clientName, investmentAmount: formattedAmount },
+      });
+    }
+  }
 
   deps.audit.log({
     action: "client.status_changed",

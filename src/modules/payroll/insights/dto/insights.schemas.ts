@@ -4,6 +4,7 @@ import {
   optionalPageSizeField,
 } from "../../../../common/pagination/list-query.schema";
 import { payrollCalendarEventTypeEnum, payrollWorkerTypeEnum } from "../../../../db/schema";
+import { reimbursementAmountSchema } from "../../../../common/validation/reimbursement-amount.schema";
 
 const workerTypeFilterSchema = z.enum(payrollWorkerTypeEnum.enumValues);
 
@@ -69,7 +70,7 @@ export const essBankSchema = z
 
 export const essCreateReimbursementSchema = z.object({
   category: z.string().min(1).max(100),
-  amount: z.number().positive("Amount must be greater than zero").max(999999),
+  amount: reimbursementAmountSchema,
   description: z.string().max(1000).optional(),
   receiptUrl: z.string().url().optional().or(z.literal("")).optional(),
   payrollMonth: z

@@ -1,9 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, count, eq, gt, sql } from "drizzle-orm";
-import { notifications, onboardingTasks, users } from "../../../../db/schema";
+import { onboardingTasks, users } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { EmailOutboxService } from "../../../email/email-outbox.service";
+import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { getOnboardingReminderEmailTemplate } from "../../../email/templates/notifications-misc";
 
 const ONBOARDING_REMINDER_BATCH_SIZE = 100;
@@ -21,6 +22,7 @@ export class OnboardingAdminService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly emailOutbox: EmailOutboxService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async getProgressSummary(organizationId: string) {
@@ -72,16 +74,22 @@ export class OnboardingAdminService {
 
       if (reminderRecipients.length === 0) break;
 
-      await this.db.insert(notifications).values(
-        reminderRecipients.map((recipient) => ({
+      for (const recipient of reminderRecipients) {
+        await this.dispatch.emit({
+          eventKey: "hr.onboarding.task_reminder",
           orgId: organizationId,
-          userId: recipient.userId,
-          type: "WARNING" as const,
+          targetUserIds: [recipient.userId],
+          entityType: "onboarding",
+          entityId: recipient.userId,
           title: "Onboarding Reminder",
           message: `You have ${recipient.pendingTasks} pending onboarding task(s). Please complete them at your earliest convenience.`,
           link: "/hr/onboarding/my-tasks",
-        })),
-      );
+          variables: {
+            pendingTasks: recipient.pendingTasks,
+            totalTasks: recipient.totalTasks,
+          },
+        });
+      }
 
       queuedEmailCount += await this.emailOutbox.enqueueForDelivery(
         reminderRecipients.flatMap((recipient) =>

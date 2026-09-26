@@ -8,7 +8,7 @@ function readMigration(name: string): string {
 
 const MIGRATION_TAG = "1347_kb_hr_documents_guard_scanned_fields";
 
-describe("migration 1347: the unlink trigger's OF column list covers every scanned document metadata field", () => {
+describe("migration 1347 (unapplied, unjournalled): the forward file's trigger OF clause covers every scanned document metadata field", () => {
   const migration = readMigration(`${MIGRATION_TAG}.sql`);
   const rollback = readMigration(`${MIGRATION_TAG}_rollback.sql`);
 

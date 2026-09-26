@@ -56,4 +56,16 @@ export const CRM_NOTIFICATION_EVENTS: NotificationEventDefinition[] = [
   e("crm.ai.score_ready", "crm", "AI", "AI lead score generated", {
     defaultChannels: IA,
   }),
+  e("crm.client.invested", "crm", "CRM", "Client invested", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("sales.commission.approved", "sales", "CRM", "Commission approved", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("sales.commission.paid", "sales", "CRM", "Commission paid", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
 ];

@@ -70,6 +70,17 @@ const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
 const makeKbAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  resolveStanding: jest.fn().mockResolvedValue({
+    orgId: "org-minority",
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: [1],
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+  }),
   assertPageAccess: jest
     .fn()
     .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
@@ -81,7 +92,6 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
     const { db } = makeDb({ hasChunks: true });
     const svc = new KbSearchService(
       db as never,
-      makeAccess() as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -106,7 +116,6 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
     const { db } = makeDb({ hasChunks: true });
     const svc = new KbSearchService(
       db as never,
-      makeAccess() as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
@@ -129,7 +138,6 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
     const { db } = makeDb({ hasChunks: true });
     const svc = new KbSearchService(
       db as never,
-      makeAccess() as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),

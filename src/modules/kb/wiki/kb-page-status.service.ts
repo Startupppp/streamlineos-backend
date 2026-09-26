@@ -1,10 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { VerifyPageInput } from "./dto/kb-pages.schemas";
 import { computeVerificationInterval } from "./kb-page-governance.util";
@@ -12,6 +10,7 @@ import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 type PageRow = KbPageRow;
 
@@ -21,6 +20,7 @@ export class KbPageStatusService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly reviews: KbPageReviewsService,
     private readonly auth: KnowledgeAuthorizationService,
+    private readonly writer: KbPageWriterService,
   ) {}
 
   private membershipId(user: CurrentUserContext): number | null {
@@ -75,15 +75,11 @@ export class KbPageStatusService {
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
-        occurredAt: new Date(),
+      await this.writer.commitPageChange(tx, {
+        orgId,
+        actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        page: updated,
+        changed: {},
       });
       return updated;
     });
@@ -104,15 +100,11 @@ export class KbPageStatusService {
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
-        occurredAt: new Date(),
+      await this.writer.commitPageChange(tx, {
+        orgId,
+        actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        page: updated,
+        changed: {},
       });
       return updated;
     });
@@ -133,15 +125,11 @@ export class KbPageStatusService {
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
-        occurredAt: new Date(),
+      await this.writer.commitPageChange(tx, {
+        orgId,
+        actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        page: updated,
+        changed: {},
       });
       return updated;
     });

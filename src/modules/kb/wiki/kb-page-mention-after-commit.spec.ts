@@ -1,6 +1,7 @@
 import type { Db } from "../../../db/drizzle.module";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 jest.mock("../../../common/tenant/tenant-context", () => ({
   ...jest.requireActual("../../../common/tenant/tenant-context"),
@@ -93,7 +94,6 @@ function makeHarness(notifications: { create: jest.Mock }): {
 function makeService(db: Db, notifications: { create: jest.Mock }): KbPagesService {
   return new KbPagesService(
     db,
-    notifications as never,
     {} as never,
     {
       assertPageAccess: jest.fn().mockResolvedValue({
@@ -105,6 +105,7 @@ function makeService(db: Db, notifications: { create: jest.Mock }): KbPagesServi
     } as never,
     {} as never,
     { log: jest.fn() } as never,
+    new KbPageWriterService(notifications as never),
   );
 }
 

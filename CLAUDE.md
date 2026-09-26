@@ -52,7 +52,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 **BE-32.** Read identity from `@CurrentUser()`. Never accept `userId`, `actorId` or `orgId` from the client.
 **BE-33.** Never write inside a GET. (gate: check:get-route-writes)
 **BE-34.** Accept `Idempotency-Key` on mutating endpoints via `@Idempotent()`; replay the first result, 409 while in flight. (gate: check:idempotent-commands)
-**BE-35.** Give every `@UseRateLimit("key")` a matching `TIERS` entry. An unknown tier denies and logs.
+**BE-35.** Give every `@UseRateLimit("key")` a matching `TIERS` entry. An unknown tier denies and logs. `RateLimitGuard` is **not** global (BE-28), so the same route also needs `@UseGuards(…, RateLimitGuard)` on the handler or its class, or the tier is metadata nobody reads. (gate: check:rate-limit-guards)
 **BE-36.** Versioning is URI-based with the current version aliased to the unversioned path (`common/openapi/configure-api-versioning.ts`).
 
 ## 5. Database & Schema

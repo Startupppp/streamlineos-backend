@@ -110,6 +110,8 @@ export const buildApprovalInboxItemSchema = z.object({
   approvalKind: z.string(),
   ticketId: z.number().int().nullable(),
   dueAt: z.string().nullable(),
+  objectType: z.string(),
+  objectId: z.string(),
   ...inboxItemBaseFields,
 });
 
@@ -154,6 +156,7 @@ export const unifiedCountResponseSchema = z.object({
   approval: z.number().int(),
   total: z.number().int(),
   mailExact: z.boolean(),
+  approvalExact: z.boolean(),
 });
 
 export type UnifiedUnreadCount = z.infer<typeof unifiedCountResponseSchema>;

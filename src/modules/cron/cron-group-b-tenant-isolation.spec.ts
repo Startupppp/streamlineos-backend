@@ -320,6 +320,7 @@ describe("CronRecruitmentService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: EmailService, useValue: { sendEmail: jest.fn() } },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronRecruitmentService));
 
@@ -338,6 +339,7 @@ describe("CronRecruitmentService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: EmailService, useValue: { sendEmail: jest.fn() } },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronRecruitmentService));
 

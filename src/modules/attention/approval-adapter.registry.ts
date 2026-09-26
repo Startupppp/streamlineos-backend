@@ -16,12 +16,14 @@ export type ApprovalSourceAdapter = {
     limit: number,
     cursor: InboxSourcePosition | null,
   ): Promise<BuildApprovalInboxItem[]>;
-  countPending(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
-  ): Promise<number>;
 };
+
+export function approvalObjectKey(
+  objectType: string,
+  objectId: string,
+): string {
+  return `approval:${objectType}:${objectId}`;
+}
 
 export function approvalAdapterKey(
   adapter: Pick<ApprovalSourceAdapter, "module" | "kindLabel">,

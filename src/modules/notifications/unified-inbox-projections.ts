@@ -10,6 +10,7 @@
  * that requirement checkable in one place.
  */
 import { notifications, users } from "../../db/schema";
+import { approvalObjectKey } from "../attention/approval-adapter.registry";
 import type {
   InboxKind,
   InboxSourcePosition,
@@ -62,12 +63,19 @@ export function lastDeliveredAdapterPositions(
   return next;
 }
 
+export function inboxCollapseKey(item: UnifiedInboxItem): string {
+  if (item.kind === "build_approval")
+    return approvalObjectKey(item.objectType, item.objectId);
+  return item.dedupKey;
+}
+
 export function deduplicate(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
   const seen = new Set<string>();
   const out: UnifiedInboxItem[] = [];
   for (const item of items) {
-    if (!seen.has(item.dedupKey)) {
-      seen.add(item.dedupKey);
+    const key = inboxCollapseKey(item);
+    if (!seen.has(key)) {
+      seen.add(key);
       out.push(item);
     }
   }

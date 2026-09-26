@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 jest.mock("../../build/core/project-access", () => ({
   resolveProjectAccess: jest.fn(),
@@ -70,7 +71,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
   it("throws NotFoundException when caller is not a project member (non-member denied)", async () => {
     mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
     const db = makeSearchDb([]);
-    const svc = new KbPagesService(db, {} as never, {} as never, stubAuth as never, STUB_ACCESS, {} as never);
+    const svc = new KbPagesService(db, {} as never, stubAuth as never, STUB_ACCESS, {} as never, new KbPageWriterService({} as never));
 
     await expect(svc.search(makeUser(), "test", 10, 99)).rejects.toThrow(NotFoundException);
   });
@@ -80,7 +81,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
     const db = makeSearchDb([
       { id: 1, title: "Page 1", icon: null, snippet: "match" },
     ]);
-    const svc = new KbPagesService(db, {} as never, {} as never, stubAuth as never, STUB_ACCESS, {} as never);
+    const svc = new KbPagesService(db, {} as never, stubAuth as never, STUB_ACCESS, {} as never, new KbPageWriterService({} as never));
 
     const result = await svc.search(makeUser(), "test", 10, 99);
 
@@ -90,7 +91,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
 
   it("does not call resolveProjectAccess when projectId is omitted (global search)", async () => {
     const db = makeSearchDb([]);
-    const svc = new KbPagesService(db, {} as never, {} as never, stubAuth as never, STUB_ACCESS, {} as never);
+    const svc = new KbPagesService(db, {} as never, stubAuth as never, STUB_ACCESS, {} as never, new KbPageWriterService({} as never));
 
     await svc.search(makeUser(), "test", 10);
 
@@ -101,7 +102,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
     const ATTACKER_ORG = "org-attacker";
     mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
     const db = makeSearchDb([]);
-    const svc = new KbPagesService(db, {} as never, {} as never, stubAuth as never, STUB_ACCESS, {} as never);
+    const svc = new KbPagesService(db, {} as never, stubAuth as never, STUB_ACCESS, {} as never, new KbPageWriterService({} as never));
 
     await expect(svc.search(makeUser(ATTACKER_ORG), "test", 10, 99)).rejects.toThrow(NotFoundException);
 
@@ -121,7 +122,7 @@ describe("KbPageTreeService.getTreeLevel — project-scoped membership enforceme
   it("throws NotFoundException when caller is not a project member (non-member denied)", async () => {
     mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
     const db = makeTreeDb([]);
-    const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS, STUB_KB_ACCESS);
+    const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS, STUB_KB_ACCESS, {} as never);
 
     await expect(svc.getTreeLevel(makeUser(), { projectId: 99, limit: 50 })).rejects.toThrow(NotFoundException);
   });
@@ -144,7 +145,7 @@ describe("KbPageTreeService.getTreeLevel — project-scoped membership enforceme
         updatedAt: new Date(),
       },
     ]);
-    const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS, STUB_KB_ACCESS);
+    const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS, STUB_KB_ACCESS, {} as never);
 
     const result = await svc.getTreeLevel(makeUser(), { projectId: 99, limit: 50 });
 
@@ -154,7 +155,7 @@ describe("KbPageTreeService.getTreeLevel — project-scoped membership enforceme
 
   it("skips project access check when projectId is omitted (global tree)", async () => {
     const db = makeTreeDb([]);
-    const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS, STUB_KB_ACCESS);
+    const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS, STUB_KB_ACCESS, {} as never);
 
     await svc.getTreeLevel(makeUser(), { limit: 50 });
 
@@ -170,7 +171,7 @@ describe("KbPageTreeService.getTreeLevel — project-scoped membership enforceme
       );
 
     const db = makeTreeDb([]);
-    const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS, STUB_KB_ACCESS);
+    const svc = new KbPageTreeService(db, audit, stubAuth as never, STUB_ACCESS, STUB_KB_ACCESS, {} as never);
 
     await expect(svc.getTreeLevel(makeUser(ATTACKER_ORG), { projectId: 99, limit: 50 })).rejects.toThrow(NotFoundException);
 

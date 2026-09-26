@@ -1,5 +1,5 @@
 import { testAuthContext } from "../../../test/helpers/module-guard-context";
-import { ExecutionContext } from "@nestjs/common";
+import { ExecutionContext, ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { ModuleGuard } from "./module.guard";
 import { REQUIRE_MODULE } from "./require-module.decorator";
@@ -63,6 +63,25 @@ function publicCtx(): ExecutionContext {
   } as Partial<ExecutionContext> as ExecutionContext;
 }
 
+function userWithoutAuthContextCtx(): ExecutionContext {
+  const req = {
+    user: {
+      userId: "user-1",
+      orgId: "org-1",
+      role: "MEMBER",
+      isOrgOwner: false,
+      sessionId: "session-1",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(1, false),
+    } satisfies CurrentUserContext,
+  };
+  return {
+    switchToHttp: () => ({ getRequest: () => req }),
+    getHandler: () => ({}),
+    getClass: () => ({}),
+  } as Partial<ExecutionContext> as ExecutionContext;
+}
+
 describe("ModuleGuard", () => {
   const reflector: jest.Mocked<Reflector> = {
     get: jest.fn(),
@@ -114,6 +133,20 @@ describe("ModuleGuard", () => {
   it("does not throw reading orgId when there is no authenticated user", async () => {
     setMetadata("support");
     await expect(guard.canActivate(publicCtx())).resolves.toBe(true);
+  });
+
+  describe("a missing authContext is only safe when nothing authenticated the request", () => {
+    it("denies a @RequireModule route whose request carries an authenticated user but no authContext, because no entitlement was resolved and the module gate would otherwise be nothing", async () => {
+      setMetadata("crm");
+      await expect(
+        guard.canActivate(userWithoutAuthContextCtx()),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("still admits a @RequireModule route whose request has neither user nor authContext, which is the portal principal guard's shape because route-level guards run after the global ones", async () => {
+      setMetadata("crm");
+      await expect(guard.canActivate(publicCtx())).resolves.toBe(true);
+    });
   });
 
   it("allows when the module is enabled", async () => {

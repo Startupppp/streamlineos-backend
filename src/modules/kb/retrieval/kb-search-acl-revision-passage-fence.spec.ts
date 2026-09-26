@@ -146,7 +146,6 @@ function makeEvents() {
 function makeSvc(db: Record<string, jest.Mock>): KbSearchService {
   return new KbSearchService(
     db as never,
-    {} as never,
     makeEmbeddings() as never,
     makeEvents() as never,
     new KbCandidateService(db as never),

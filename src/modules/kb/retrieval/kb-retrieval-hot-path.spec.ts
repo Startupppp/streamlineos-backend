@@ -106,12 +106,24 @@ const makeAccess = (spaceIds: number[] = [1]) => ({
     .mockResolvedValue({ userId: "user-1", membershipId: 1, roleSlugs: [] }),
 });
 
-const makeAuth = () => ({
+const makeAuth = (spaceIds: number[] = [1]) => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
   assertPageAccess: jest
     .fn()
     .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  resolveStanding: jest.fn().mockResolvedValue({
+    accessibleSpaceIds: spaceIds,
+    accessibleProjectIds: [],
+    orgId: "org-1",
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    permissionsVersion: 1,
+  }),
+  resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds, cacheOutcome: "hit" }),
 });
 
 const makeScopes = (scope = "all") => ({
@@ -153,7 +165,6 @@ function makeSearch(
 ): KbSearchService {
   return new KbSearchService(
     db as never,
-    makeAccess() as never,
     embeddings as never,
     makeEvents() as never,
     candidates,

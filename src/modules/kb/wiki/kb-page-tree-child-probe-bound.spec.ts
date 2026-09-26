@@ -78,6 +78,7 @@ describe("KbPageTreeService.getTreeLevel — the has-children probe is bounded b
       makeAuth() as never,
       access,
       kbAccess,
+      {} as never,
     );
 
     await svc.getTreeLevel(makeUser("org-large"), { limit: 2 });
@@ -95,6 +96,7 @@ describe("KbPageTreeService.getTreeLevel — the has-children probe is bounded b
       makeAuth() as never,
       access,
       kbAccess,
+      {} as never,
     );
 
     await svc.getTreeLevel(makeUser("org-large"), { limit: 2 });
@@ -112,6 +114,7 @@ describe("KbPageTreeService.getTreeLevel — the has-children probe is bounded b
       makeAuth() as never,
       access,
       kbAccess,
+      {} as never,
     );
 
     const page = await svc.getTreeLevel(makeUser("org-large"), { limit: 2 });
@@ -130,6 +133,7 @@ describe("KbPageTreeService.getTreeLevel — the has-children probe is bounded b
       makeAuth() as never,
       access,
       kbAccess,
+      {} as never,
     );
 
     const page = await svc.getTreeLevel(makeUser("org-large"), { limit: 2 });

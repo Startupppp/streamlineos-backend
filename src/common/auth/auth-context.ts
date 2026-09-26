@@ -30,6 +30,8 @@ const NO_MEMBERSHIP: MembershipState = {
   membershipId: null,
 };
 
+const NO_ORG_MFA: MfaState = { enforced: true, satisfied: false };
+
 export function createAuthContext(
   actor: CurrentUserContext,
   lookups: AuthContextLookups,
@@ -62,7 +64,9 @@ export function createAuthContext(
     },
     mfa(): Promise<MfaState> {
       if (mfa) return mfa;
-      mfa = lookups.mfaState(actor.orgId, actor.userId);
+      mfa = actor.orgId
+        ? lookups.mfaState(actor.orgId, actor.userId)
+        : Promise.resolve(NO_ORG_MFA);
       return mfa;
     },
   };
