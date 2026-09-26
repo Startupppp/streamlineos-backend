@@ -140,11 +140,27 @@ export class AuthMagicLinkService {
       .set({ emailVerified: new Date() })
       .where(and(eq(users.id, row.userId), isNull(users.emailVerified)));
 
-    const preferredOrgId = await this.membershipResolver
-      .resolvePreferredOrgId(row.userId)
-      .catch(() => null);
+    const preferredOrgId =
+      row.orgId ??
+      (await this.membershipResolver.resolvePreferredOrgId(row.userId).catch(() => null));
 
     const membership = await this.membershipResolver.resolveActiveMembership(row.userId, preferredOrgId ?? null);
+
+    if (row.orgId !== null && membership?.orgId !== row.orgId) {
+      await this.analytics.logLoginEvent(
+        row.userId,
+        row.orgId,
+        "magic_link.verify",
+        false,
+        "membership_not_in_minting_org",
+        context,
+      );
+      throw new UnauthorizedException({
+        code: "AUTH_TOKEN_INVALID",
+        message: "Invalid or expired credentials",
+      });
+    }
+
     const sessionId = await this.membershipResolver.createLoginSession(
       row.userId,
       context,

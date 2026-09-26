@@ -64,7 +64,7 @@ function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; al
   const indexing = new KbIndexingService(db, undefined as never, undefined as never);
   const authz = {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
-   resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
+   resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [1, 2, 3], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [1, 2, 3], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
   return { svc: new KbSpacesService(db, indexing, authz), allWhereArgs };
 }
 
