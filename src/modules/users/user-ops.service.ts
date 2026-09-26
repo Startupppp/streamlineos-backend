@@ -43,7 +43,6 @@ import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-o
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { ReportingLineService } from "../directory/reporting-line.service";
 
 @Injectable()
 export class UserOpsService {
@@ -58,7 +57,6 @@ export class UserOpsService {
     private readonly access: AccessService,
     private readonly email: EmailService,
     private readonly employment: EmploymentFactsService,
-    private readonly reportingLines: ReportingLineService,
   ) {
     this.reporter = new UserOperationsReporter(db, cache, employment);
   }
@@ -148,17 +146,11 @@ export class UserOpsService {
     actor: InviteActor,
   ) {
     const actorUserId = actor.userId;
-    const { userIds, role, departmentId, branchId, teamId, managerUserId } =
-      data;
+    const { userIds, role, departmentId, branchId, teamId } = data;
 
     if (role) await this.assertMayGrantRole(orgId, actor, role);
 
     const scopedIds = await withMembershipMutations(this.cache, (membership) => this.db.transaction(async (tx) => {
-      if (managerUserId) {
-        const manager = await this.reportingLines.checkManager(orgId, managerUserId, tx);
-        if (!manager.ok) throw new BadRequestException(manager.message);
-      }
-
       const memberRows = await tx
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
@@ -210,11 +202,6 @@ export class UserOpsService {
             )`,
           ),
         );
-      }
-
-      if (managerUserId !== undefined) {
-        const today = new Date().toISOString().slice(0, 10);
-        await this.reportingLines.assignMany(orgId, tenantUserIds, managerUserId, today, actorUserId, tx);
       }
 
       const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
@@ -290,7 +277,7 @@ export class UserOpsService {
       targetType: "user",
       metadata: {
         userIds: scopedIds,
-        changes: { role, departmentId, branchId, teamId, managerUserId },
+        changes: { role, departmentId, branchId, teamId },
       },
     });
 

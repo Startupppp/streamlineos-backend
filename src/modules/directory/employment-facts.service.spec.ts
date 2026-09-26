@@ -105,8 +105,8 @@ describe("EmploymentFactsService", () => {
       await service.getFactsBatch(ORG, ["u1"]);
       const sql = recorder.allSql();
 
-      expect(sql).toContain('"effective_from" <= CURRENT_DATE');
-      expect(sql).toContain('"effective_to" >= CURRENT_DATE');
+      expect(sql).toContain('"effective_from" <= (SELECT app.org_business_date(');
+      expect(sql).toContain('"effective_to" >= (SELECT app.org_business_date(');
     });
 
     it("bounds the reporting line on both sides when listing direct reports", async () => {
@@ -114,8 +114,8 @@ describe("EmploymentFactsService", () => {
       await service.getDirectReportUserIds(ORG, "manager-1");
       const sql = recorder.allSql();
 
-      expect(sql).toContain('"effective_from" <= CURRENT_DATE');
-      expect(sql).toContain('"effective_to" >= CURRENT_DATE');
+      expect(sql).toContain('"effective_from" <= (SELECT app.org_business_date(');
+      expect(sql).toContain('"effective_to" >= (SELECT app.org_business_date(');
     });
 
     it("scopes every join and filter to the requested organization", async () => {

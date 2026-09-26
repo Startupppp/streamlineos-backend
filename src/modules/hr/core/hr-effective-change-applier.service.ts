@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import { assertActiveOrgUnit, syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -14,11 +14,11 @@ import {
   hrEmployeeSensitiveFields,
   hrEmployments,
   hrPeople,
-  hrReportingLines,
   OPEN_ENDED_DATE,
 } from "../../../db/schema/hr/core-people";
 import { hrJobLevels } from "../../../db/schema/hr/core-org";
 import { HrAuditService } from "./hr-audit.service";
+import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -54,6 +54,7 @@ export class HrEffectiveChangeApplierService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: HrAuditService,
+    private readonly relationships: ReportingRelationshipService,
   ) {}
 
   async applyDue(
@@ -146,7 +147,7 @@ export class HrEffectiveChangeApplierService {
         }
 
         for (const change of due)
-          await this.applyOne(tx, orgId, change, employmentById, activeJobLevelIds);
+          await this.applyOne(tx, orgId, change, employmentById, activeJobLevelIds, actorId);
 
         const marked = await tx
           .update(hrEffectiveDatedChanges)
@@ -198,6 +199,7 @@ export class HrEffectiveChangeApplierService {
     },
     employmentById: Map<number, EmploymentRow>,
     activeJobLevelIds: Set<number>,
+    actorId: string | null,
   ): Promise<void> {
     const employment = employmentById.get(change.employmentId);
     if (!employment) throw new NotFoundException("Employment not found.");
@@ -252,7 +254,7 @@ export class HrEffectiveChangeApplierService {
 
     if (change.changeType === "manager") {
       const managerEmploymentId = numberValue(value, "managerEmploymentId");
-      await this.applyManager(orgId, change, tx, managerEmploymentId);
+      await this.applyManager(orgId, change, tx, managerEmploymentId, actorId);
       return;
     }
 
@@ -283,86 +285,38 @@ export class HrEffectiveChangeApplierService {
     if (!updated) throw new ConflictException("The employment changed before this update applied.");
   }
 
+  /**
+   * HRM-15: an approved manager change is applied through the canonical relationship service, the
+   * one writer of reporting lines, instead of a local close-and-insert with its own cycle walk. The
+   * change was approved when it was scheduled, so the D4 frequency guard does not apply again.
+   */
   private async applyManager(
     orgId: string,
     change: { employmentId: number; effectiveFrom: string; effectiveTo: string },
     tx: Db,
     managerEmploymentId: number,
+    actorId: string | null,
   ): Promise<void> {
     if (managerEmploymentId === change.employmentId) {
       throw new BadRequestException("An employee cannot report to themselves.");
     }
     const [manager] = await tx
-      .select({ id: hrEmployments.id })
+      .select({ userId: hrPeople.userId })
       .from(hrEmployments)
-      .where(
-        and(
-          eq(hrEmployments.id, managerEmploymentId),
-          eq(hrEmployments.orgId, orgId),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .innerJoin(hrPeople, and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, hrEmployments.personId), isNull(hrPeople.deletedAt)))
+      .where(and(eq(hrEmployments.id, managerEmploymentId), eq(hrEmployments.orgId, orgId), isNull(hrEmployments.deletedAt)))
       .limit(1);
-    if (!manager) throw new BadRequestException("Invalid manager selection.");
+    if (!manager?.userId) throw new BadRequestException("Invalid manager selection.");
 
-    const [cycle] = await tx.execute<{ creates_cycle: boolean }>(sql`
-      WITH RECURSIVE manager_chain AS (
-        SELECT ${managerEmploymentId}::integer AS employment_id,
-               ARRAY[${managerEmploymentId}::integer] AS path
-        UNION ALL
-        SELECT line.manager_employment_id, chain.path || line.manager_employment_id
-        FROM manager_chain chain
-        INNER JOIN hr_reporting_lines line
-          ON line.org_id = ${orgId}
-         AND line.employment_id = chain.employment_id
-         AND line.line_type = 'primary'
-         AND line.effective_from <= ${change.effectiveFrom}::date
-         AND line.effective_to > ${change.effectiveFrom}::date
-        WHERE NOT line.manager_employment_id = ANY(chain.path)
-          AND cardinality(chain.path) < 1000
-      )
-      SELECT EXISTS (
-        SELECT 1 FROM manager_chain WHERE employment_id = ${change.employmentId}
-      ) AS creates_cycle
-    `);
-    if (cycle?.creates_cycle) {
-      throw new BadRequestException("This reporting structure would create a circular chain.");
-    }
-
-    const [sameStart] = await tx
-      .select({ id: hrReportingLines.id })
-      .from(hrReportingLines)
-      .where(
-        and(
-          eq(hrReportingLines.orgId, orgId),
-          eq(hrReportingLines.employmentId, change.employmentId),
-          eq(hrReportingLines.lineType, "primary"),
-          eq(hrReportingLines.effectiveFrom, change.effectiveFrom),
-        ),
-      )
-      .limit(1);
-    if (sameStart) throw new ConflictException("A manager change already starts on this date.");
-
-    await tx
-      .update(hrReportingLines)
-      .set({ effectiveTo: change.effectiveFrom })
-      .where(
-        and(
-          eq(hrReportingLines.orgId, orgId),
-          eq(hrReportingLines.employmentId, change.employmentId),
-          eq(hrReportingLines.lineType, "primary"),
-          lt(hrReportingLines.effectiveFrom, change.effectiveFrom),
-          gt(hrReportingLines.effectiveTo, change.effectiveFrom),
-        ),
-      );
-
-    await tx.insert(hrReportingLines).values({
+    await this.relationships.setRelationships(tx, {
       orgId,
-      employmentId: change.employmentId,
-      managerEmploymentId,
-      lineType: "primary",
+      actor: actorId ? { orgId, userId: actorId, isOrgOwner: false } : { orgId, system: "hr-effective-change-applier" },
+      subjectEmploymentId: change.employmentId,
+      primaryManagerUserId: manager.userId,
       effectiveFrom: change.effectiveFrom,
-      effectiveTo: change.effectiveTo || OPEN_ENDED_DATE,
+      effectiveTo: !change.effectiveTo || change.effectiveTo === OPEN_ENDED_DATE ? null : change.effectiveTo,
+      source: "EFFECTIVE_CHANGE",
+      skipFrequencyGuard: true,
     });
   }
 }

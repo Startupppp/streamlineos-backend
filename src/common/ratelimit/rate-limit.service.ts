@@ -115,6 +115,12 @@ const TIERS: Record<string, Tier> = {
   "hr:attendance-report": { limit: 5, windowSecs: 3600 },
   "hr:employee-backfill": { limit: 3, windowSecs: 3600 },
   "hr:employee-bulk-onboard": { limit: 10, windowSecs: 3600 },
+  // HRM-15. A preview writes nothing but parses and validates up to 100 (onboarding) or 500
+  // (reassignment) rows in a constant number of queries; sharing the commit tier would spend the
+  // commit budget on dry runs, so previews get their own, looser tier.
+  "hr:employee-bulk-onboard-preview": { limit: 60, windowSecs: 3600 },
+  "hr:reporting-line-bulk-preview": { limit: 30, windowSecs: 3600 },
+  "hr:reporting-line-bulk-commit": { limit: 10, windowSecs: 3600 },
   "hr:employee-export": { limit: 5, windowSecs: 3600 },
   // Minting a join link hands out a working credential, so the limit is what an
   // administrator onboarding a batch by hand plausibly needs and no more —

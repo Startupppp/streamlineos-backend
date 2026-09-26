@@ -1,5 +1,3 @@
-import { canonicalAdmissionEmail } from "../../../organization/core/membership-admission.service";
-import type { BulkOnboardEmployeeRow } from "../dto/hr-directory.schemas";
 
 /**
  * The reporting graph a single upload describes.
@@ -17,11 +15,6 @@ import type { BulkOnboardEmployeeRow } from "../dto/hr-directory.schemas";
  * order to write the reporting lines in, and an answer for a file that points at
  * itself.
  */
-
-/** Emails of rows the file itself introduces, canonicalised for comparison. */
-export function rosterEmailsOf(rows: readonly BulkOnboardEmployeeRow[]): Set<string> {
-  return new Set(rows.map((row) => canonicalAdmissionEmail(row.email)));
-}
 
 export interface ManagerEdge {
   /** Row number (1-based, as the operator sees it) of the report. */

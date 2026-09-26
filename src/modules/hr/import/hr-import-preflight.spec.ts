@@ -114,11 +114,11 @@ describe("HR import preflight — reference resolution at preview", () => {
     );
 
     const result = await resolveRowReferences(db, ORG, "employees", [
-      row(1, { email: "new@example.test", managerEmail: "nobody@example.test" }),
+      row(1, { email: "new@example.test", primaryManagerEmail: "nobody@example.test" }),
     ]);
 
     expect(result.valid).toHaveLength(0);
-    expect(result.errors[0]?.error).toContain("is not an employee of this organization");
+    expect(result.errors[0]?.error).toContain("is neither an employee of this organization nor a row of this file");
   });
 
   it("strips resolved-id keys off a raw row so a CSV column cannot supply one", () => {

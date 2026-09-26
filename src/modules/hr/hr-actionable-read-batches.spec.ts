@@ -5,13 +5,22 @@ describe("HR actionable read batches", () => {
   const sourceRoot = resolve(__dirname);
   const read = (relativePath: string) => readFileSync(resolve(sourceRoot, relativePath), "utf8");
 
-  it("commits and rolls back import rows with a complete ascending cursor batch", () => {
+  it("rolls back import rows with a complete ascending cursor batch", () => {
     const source = read("import/hr-import.service.ts");
 
     expect(source).toMatch(/const IMPORT_ROW_BATCH_SIZE = 500/);
-    expect(source.match(/\.limit\(IMPORT_ROW_BATCH_SIZE\)/g)).toHaveLength(2);
-    expect(source.match(/orderBy\(asc\(hrImportRows\.id\)\)/g)).toHaveLength(2);
-    expect(source.match(/gt\(hrImportRows\.id, afterId\)/g)).toHaveLength(2);
+    expect(source.match(/\.limit\(IMPORT_ROW_BATCH_SIZE\)/g)).toHaveLength(1);
+    expect(source.match(/orderBy\(asc\(hrImportRows\.id\)\)/g)).toHaveLength(1);
+    expect(source.match(/gt\(hrImportRows\.id, afterId\)/g)).toHaveLength(1);
+  });
+
+  it("commits import rows manager-first in bounded batches of ids (HRM-15)", () => {
+    const service = read("import/hr-import.service.ts");
+    const order = read("import/hr-import-employee-managers.ts");
+
+    expect(service).toMatch(/readImportRowsInOrder\(tx, jobId, order\.slice\(start, start \+ IMPORT_ROW_BATCH_SIZE\)\)/);
+    expect(order).toMatch(/\.limit\(IMPORT_ROW_CAP\)/);
+    expect(order).toMatch(/\.limit\(ids\.length\)/);
   });
 
   it("keeps booking notification lookups explicitly single-row and tenant-scoped", () => {

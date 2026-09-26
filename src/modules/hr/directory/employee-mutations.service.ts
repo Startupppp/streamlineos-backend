@@ -33,7 +33,8 @@ import { ScopedRead } from "../../access/scoped-read";
 import { selfEmployeeRead } from "./employees-scope";
 import { resolveEmployeesManageScope } from "./employees-scope";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import { ReportingLineService } from "../../directory/reporting-line.service";
+import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
+import { orgBusinessDate } from "../time/attendance-business-date";
 import { emptyEmploymentFacts } from "../../directory/employment-facts.types";
 import {
   livePersonOfUser,
@@ -62,7 +63,7 @@ export class EmployeeMutationsService {
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly access: AccessService,
     private readonly employment: EmploymentFactsService,
-    private readonly reportingLines: ReportingLineService,
+    private readonly relationships: ReportingRelationshipService,
   ) {}
 
   private async degraded<T>(
@@ -381,16 +382,17 @@ export class EmployeeMutationsService {
           },
         );
       }
+      // Addendum 1 Q2: the legacy `reportingTo` field is kept for one release, routed through the
+      // canonical relationship service (source MANUAL), so every PRD §6 rule and D4 apply to it.
       if (body.reportingTo !== undefined) {
-        const today = new Date().toISOString().slice(0, 10);
-        await this.reportingLines.assign(
-          actor.orgId,
-          targetUserId,
-          body.reportingTo ?? null,
-          today,
-          actor.userId,
-          tx,
-        );
+        await this.relationships.setRelationships(tx, {
+          orgId: actor.orgId,
+          actor,
+          subjectUserId: targetUserId,
+          primaryManagerUserId: body.reportingTo ?? null,
+          effectiveFrom: await orgBusinessDate(this.db, actor.orgId),
+          source: "MANUAL",
+        });
       }
 
       if (body.skills !== undefined) {

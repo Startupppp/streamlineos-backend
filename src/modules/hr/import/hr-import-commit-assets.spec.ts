@@ -17,7 +17,7 @@
 import type { Db } from "../../../db/drizzle.module";
 import { assets } from "../../../db/schema";
 import { HrImportCommitService } from "./hr-import-commit.service";
-import { importContext, stubAdmission, stubPersonEmployment } from "./import-commit-test-harness";
+import { importContext, stubAdmission, stubPersonEmployment, stubRelationships } from "./import-commit-test-harness";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -59,7 +59,7 @@ function fakeTx(selectRows: unknown[]) {
 }
 
 function service() {
-  return new HrImportCommitService(stubAdmission(), stubPersonEmployment());
+  return new HrImportCommitService(stubAdmission(), stubPersonEmployment(), stubRelationships());
 }
 
 describe("HR asset import commit", () => {

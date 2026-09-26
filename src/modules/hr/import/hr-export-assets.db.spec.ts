@@ -60,6 +60,8 @@ describeDb("assets export — real database", () => {
       { log: async () => undefined } as never,
       {} as never,
       { invalidateNamespace: async () => undefined } as never,
+      {} as never,
+      {} as never,
     );
 
     await seedOrg(orgId, "QA Assets Export Co", `qa-owner-${orgId}`);

@@ -30,7 +30,9 @@ import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
 import { AccessService } from "../../access/access.service";
-import { ReportingLineService } from "../../directory/reporting-line.service";
+import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
+import { ReportingManagerFallbackResolver } from "../../directory/reporting-manager-fallback.resolver";
+import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
 
 const ORG_ID = "org-limit-test";
@@ -144,7 +146,7 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
         },
         {
           provide: AutomationService,
-          useValue: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) },
+          useValue: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined), runAutomationsForEventDetached: jest.fn() },
         },
         {
           provide: WebhooksDispatchService,
@@ -156,12 +158,28 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
         },
         {
           provide: AccessService,
-          useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
+          useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()), holds: jest.fn().mockResolvedValue(true) },
         },
         {
-          provide: ReportingLineService,
-          useValue: { checkManager: jest.fn(), assign: jest.fn() },
+          provide: ReportingRelationshipService,
+          useValue: { setRelationships: jest.fn().mockResolvedValue({ changed: true, warnings: [] }) },
         },
+        {
+          provide: ReportingManagerFallbackResolver,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({
+              key: 1,
+              ok: true,
+              managerUserId: "user-manager",
+              managerEmploymentId: 5,
+              name: "Manager",
+              email: "manager@example.com",
+              resolution: "SELECTED",
+              dependsOnRow: null,
+            }),
+          },
+        },
+        { provide: OrgHierarchyCacheService, useValue: { invalidateAfterMutation: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 

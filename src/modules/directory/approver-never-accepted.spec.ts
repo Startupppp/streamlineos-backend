@@ -154,3 +154,46 @@ describe("a manager who never accepted their invitation cannot own approvals", (
     });
   });
 });
+
+describe("an invitee who has not signed in yet can still be recorded as a reporting manager", () => {
+  // HRM-15 §7.3: a bulk file names a manager who is another new row of the same
+  // file, and every person that file creates is an unopened invitation at the
+  // moment the lines are written. Recording the line is not the same act as
+  // routing an approval to them — `checkApprover` keeps refusing, so a request
+  // still falls through to the next rung until they sign in.
+  function unopened() {
+    return serviceWith({
+      organization_members: [membership()],
+      users: [user({ email_verified: null })],
+      hr_people: [person()],
+      hr_employments: [employment()],
+    });
+  }
+
+  it("accepts the unopened invitee as a manager to assign", async () => {
+    await expect(unopened().checkManager(ORG, MANAGER)).resolves.toEqual({ ok: true, managerEmploymentId: 10 });
+  });
+
+  it("accepts the unopened invitee in the batched check too", async () => {
+    const checks = await unopened().checkManagers(ORG, [MANAGER]);
+    expect(checks.get(MANAGER)).toEqual({ ok: true, managerEmploymentId: 10 });
+  });
+
+  it("still refuses the same invitee as an approver", async () => {
+    const result = await unopened().checkApprover(ORG, MANAGER);
+    expect(result.ok).toBe(false);
+  });
+
+  it("still refuses a deactivated account as a manager to assign", async () => {
+    const service = serviceWith({
+      organization_members: [membership()],
+      users: [user({ is_active: false })],
+      hr_people: [person()],
+      hr_employments: [employment()],
+    });
+    const result = await service.checkManager(ORG, MANAGER);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.reason).toBe("manager-inactive");
+  });
+});

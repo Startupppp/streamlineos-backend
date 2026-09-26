@@ -122,6 +122,8 @@ export class SelfHrTools implements AskOsToolProvider {
                 eq(hrReportingLines.orgId, orgId),
                 eq(hrReportingLines.employmentId, emp.employmentId),
                 eq(hrReportingLines.lineType, "primary"),
+                // In force today, both ends inclusive, as in currentPrimaryReportingLine.
+                lte(hrReportingLines.effectiveFrom, today),
                 gte(hrReportingLines.effectiveTo, today),
               ),
             )

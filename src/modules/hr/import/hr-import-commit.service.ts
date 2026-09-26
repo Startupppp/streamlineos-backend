@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrPeople,
@@ -11,7 +11,6 @@ import {
   leaveTypes,
   documents,
   orgUnits,
-  hrReportingLines,
   users,
 } from "../../../db/schema";
 import { acceptedEmployee } from "../shared/employee-acceptance";
@@ -37,7 +36,13 @@ import { MembershipAdmissionService, admissionRefusalMessage, canonicalAdmission
 import type { AdmissionOutcome } from "../../organization/core/membership-admission.service";
 import type { MembershipMutations } from "../../../common/org/membership-mutations";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
+import { ReportingRelationshipService } from "../../directory/reporting-relationship.service";
+import { ReportingLineException } from "../../directory/reporting-line-errors";
+import { relationshipsBetween, subjectEmployments } from "../../directory/reporting-line-queries";
+import type { ReportingActor } from "../../directory/reporting-line.types";
+import { peopleByEmails } from "../directory/reporting-manager-people";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
+import { EXISTING_TOP_LEVEL_NEEDS_CLEAR } from "./hr-import-employee-managers";
 
 export type { CommitOutcome, CommitRef } from "./hr-import-commit.types";
 
@@ -56,6 +61,8 @@ export interface ImportCommitContext {
   membership: MembershipMutations;
   /** The organisation's calendar. Wall-clock cells are read in it (V-012b). */
   timeZone?: string;
+  /** Who is importing, for the relationship service's D4 elevation and audit (HRM-15). */
+  actor: ReportingActor;
 }
 
 @Injectable()
@@ -63,6 +70,7 @@ export class HrImportCommitService {
   constructor(
     private readonly admission: MembershipAdmissionService,
     private readonly personEmployment: PersonEmploymentSyncService,
+    private readonly relationships: ReportingRelationshipService,
   ) {}
 
   async commitRow(
@@ -152,7 +160,7 @@ export class HrImportCommitService {
         // headcount. Same rung the single-hire form uses.
         lifecycleStatus: "ONBOARDING",
       },
-      tx as unknown as Db,
+      tx,
     );
 
     // The columns an operator re-uploads to correct. `ensureFromUser` creates
@@ -175,10 +183,7 @@ export class HrImportCommitService {
       })
       .where(and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, ensured.employmentId)));
 
-    // `managerEmail` had the same fate as `departmentName` — parsed, then
-    // ignored. A reporting line is effective-dated, so the import closes the
-    // open primary line and opens a new one rather than overwriting history.
-    await this.applyImportedManager(tx, ctx, ensured.employmentId, row);
+    await this.applyImportedManagers(tx, ctx, admitted.userId, row.resolvedExistingEmployee === true, row);
 
     await tx
       .update(organizationPeople)
@@ -237,86 +242,70 @@ export class HrImportCommitService {
   }
 
   /**
-   * Writes the reporting line the sheet's `managerEmail` names.
+   * HRM-15 §4.22: the row's manager columns, applied through the canonical relationship service.
    *
-   * The manager employment id comes from the preflight, which resolved the email
-   * inside this org — a manager who is not an employee here is a row error at
-   * preview. A line is effective-dated, so an existing open primary line is
-   * closed rather than rewritten, and a re-import naming the same manager is a
-   * no-op. The cycle check is the same recursive walk the effective-change
-   * applier makes; without it an import could close a loop that every
-   * manager-chain read then walks.
+   * For an employee who already existed, blank manager columns mean "no change". A new employee
+   * with a blank primary gets the fallback the preview resolved. `clearPrimaryManager` with a
+   * top-level reason ends the primary line and records the exception. Managers named by email are
+   * resolved now, inside this transaction, so a manager created earlier in the same job is found.
    */
-  private async applyImportedManager(
+  private async applyImportedManagers(
     tx: Tx,
     ctx: ImportCommitContext,
-    employmentId: number,
+    employeeUserId: string,
+    existing: boolean,
     row: EmployeeRow,
   ): Promise<void> {
-    const managerEmploymentId = row.resolvedManagerEmploymentId;
-    if (managerEmploymentId === undefined) return;
-    if (managerEmploymentId === employmentId)
-      throw new Error(`${row.email}: an employee cannot report to themselves.`);
+    const topLevelReason = row.topLevelRoleReason?.trim() || null;
+    const primaryEmail = row.primaryManagerEmail?.trim().toLowerCase() || null;
+    const secondaryEmails = [row.secondaryManagerEmail1, row.secondaryManagerEmail2, row.secondaryManagerEmail3].flatMap((email) =>
+      email?.trim() ? [email.trim().toLowerCase()] : [],
+    );
+    const fallbackUserId = existing ? null : row.resolvedPrimaryManagerUserId ?? null;
+    if (!topLevelReason && !primaryEmail && secondaryEmails.length === 0 && !fallbackUserId) return;
+    if (existing && topLevelReason && row.clearPrimaryManager !== true) throw new Error(`${row.email}: ${EXISTING_TOP_LEVEL_NEEDS_CLEAR}`);
 
-    const orgId = ctx.orgId;
-    const effectiveFrom = row.joiningDate || todayInTimeZone(ctx.timeZone);
+    const people = await peopleByEmails(tx, ctx.orgId, [...(primaryEmail ? [primaryEmail] : []), ...secondaryEmails]);
+    const secondary = secondaryEmails.length > 0 ? secondaryEmails.flatMap((email) => {
+      const person = people.get(email);
+      if (!person) throw new Error(`${row.email}: secondary manager "${email}" is not a member of this organization.`);
+      return [{ managerUserId: person.userId }];
+    }) : undefined;
+    const effectiveFrom = row.effectiveFrom || row.joiningDate || todayInTimeZone(ctx.timeZone);
 
-    const [open] = await tx
-      .select({ id: hrReportingLines.id, managerEmploymentId: hrReportingLines.managerEmploymentId })
-      .from(hrReportingLines)
-      .where(
-        and(
-          eq(hrReportingLines.orgId, orgId),
-          eq(hrReportingLines.employmentId, employmentId),
-          eq(hrReportingLines.lineType, "primary"),
-          sql`${hrReportingLines.effectiveTo} > ${effectiveFrom}::date`,
-        ),
-      )
-      .orderBy(desc(hrReportingLines.effectiveFrom))
-      .limit(1);
-
-    if (open?.managerEmploymentId === managerEmploymentId) return;
-
-    const [cycle] = await tx.execute<{ creates_cycle: boolean }>(sql`
-      WITH RECURSIVE manager_chain AS (
-        SELECT ${managerEmploymentId}::integer AS employment_id,
-               ARRAY[${managerEmploymentId}::integer] AS path
-        UNION ALL
-        SELECT line.manager_employment_id, chain.path || line.manager_employment_id
-        FROM manager_chain chain
-        INNER JOIN hr_reporting_lines line
-          ON line.org_id = ${orgId}
-         AND line.employment_id = chain.employment_id
-         AND line.line_type = 'primary'
-         AND line.effective_from <= ${effectiveFrom}::date
-         AND line.effective_to > ${effectiveFrom}::date
-        WHERE NOT line.manager_employment_id = ANY(chain.path)
-          AND cardinality(chain.path) < 1000
-      )
-      SELECT EXISTS (
-        SELECT 1 FROM manager_chain WHERE employment_id = ${employmentId}
-      ) AS creates_cycle
-    `);
-    if (cycle?.creates_cycle)
-      throw new Error(
-        `${row.email}: manager "${row.managerEmail}" would create a circular reporting chain.`,
-      );
-
-    if (open) {
-      await tx
-        .update(hrReportingLines)
-        .set({ effectiveTo: effectiveFrom })
-        .where(and(eq(hrReportingLines.orgId, orgId), eq(hrReportingLines.id, open.id)));
+    let primaryManagerUserId: string | null;
+    if (topLevelReason) primaryManagerUserId = null;
+    else if (primaryEmail) {
+      const person = people.get(primaryEmail);
+      if (!person) throw new Error(`${row.email}: manager "${primaryEmail}" is not a member of this organization.`);
+      primaryManagerUserId = person.userId;
+    } else if (fallbackUserId) primaryManagerUserId = fallbackUserId;
+    else {
+      const [subject] = await subjectEmployments(tx, ctx.orgId, { userIds: [employeeUserId] });
+      const current = subject
+        ? (await relationshipsBetween(tx, ctx.orgId, [subject.employmentId], effectiveFrom, effectiveFrom)).find((line) => line.primary)
+        : undefined;
+      if (!current?.managerUserId) throw new Error(`${row.email}: give a primaryManagerEmail — this employee has no primary manager to keep.`);
+      primaryManagerUserId = current.managerUserId;
     }
 
-    await tx.insert(hrReportingLines).values({
-      orgId,
-      employmentId,
-      managerEmploymentId,
-      lineType: "primary",
-      effectiveFrom,
-      createdBy: ctx.actorId,
-    });
+    const fallback = !primaryEmail && !topLevelReason && fallbackUserId !== null;
+    try {
+      await this.relationships.setRelationships(tx, {
+        orgId: ctx.orgId,
+        actor: ctx.actor,
+        subjectUserId: employeeUserId,
+        primaryManagerUserId,
+        topLevelReason,
+        secondary,
+        effectiveFrom,
+        source: fallback ? "ONBOARDING_FALLBACK" : "STAGED_IMPORT",
+        secondarySource: "STAGED_IMPORT",
+      });
+    } catch (error) {
+      if (error instanceof ReportingLineException) throw new Error(`${row.email}: ${error.code}: ${error.message}`, { cause: error });
+      throw error;
+    }
   }
 
   /** Turns an admission refusal into the row error an operator can act on. */
@@ -627,6 +616,10 @@ export class HrImportCommitService {
   async rollbackRef(tx: Tx, ref: CommitRef): Promise<void> {
     const id = ref.id;
     if (ref.table === "hr_people") {
+      // `fk_hr_employments_org_person` is ON DELETE RESTRICT, and every imported person has an
+      // employment, so deleting the person alone failed 23503 and the whole rollback 500'd. The
+      // employment goes first; its reporting lines and top-level role cascade with it.
+      await tx.delete(hrEmployments).where(eq(hrEmployments.personId, id));
       await tx.delete(hrPeople).where(eq(hrPeople.id, id));
     } else if (ref.table === "attendance") {
       await tx.delete(attendance).where(eq(attendance.id, id));
