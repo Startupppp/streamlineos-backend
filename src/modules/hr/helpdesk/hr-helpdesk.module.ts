@@ -10,10 +10,11 @@ import { CelebrationsService } from "../directory/celebrations.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { HrCoreModule } from "../core/hr-core.module";
+import { KbCoreModule } from "../../kb/core/kb-core.module";
 import { HrHelpdeskEventsConsumer } from "./hr-helpdesk-events.consumer";
 
 @Module({
-  imports: [NotificationsModule, OutboxModule, HrCoreModule],
+  imports: [NotificationsModule, OutboxModule, HrCoreModule, KbCoreModule],
   controllers: [HrHelpdeskController, EmployeeSupportController, HrCalendarController],
   providers: [
     HrHelpdeskService,

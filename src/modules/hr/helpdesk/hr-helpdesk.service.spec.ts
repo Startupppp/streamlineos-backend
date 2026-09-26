@@ -5,7 +5,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { HrHelpdeskService } from "./hr-helpdesk.service";
 import { HrHelpdeskConfigService } from "./hr-helpdesk-config.service";
 import { HrAuditService } from "../core/hr-audit.service";
+import { KnowledgeAuthorizationService } from "../../kb/core/authorization/knowledge-authorization.service";
 import type { SupportActor } from "./lib/support-queues";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { KbActorStanding } from "../../kb/core/authorization/knowledge-authorization.types";
 
 jest.mock("../../../common/organization/organization-actor", () => ({
   assertOrganizationActor: jest.fn(async (_db: unknown, orgId: string, ref: { userId: string }) => ({
@@ -87,6 +90,32 @@ const mockConfig = {
 
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined) };
 
+const mockStanding: KbActorStanding = {
+  orgId: "org1",
+  userId: "agent1",
+  membershipId: 7,
+  roleSlugs: [],
+  isOrgOwner: false,
+  isKbAdmin: false,
+  accessibleSpaceIds: [],
+  accessibleProjectIds: [],
+  permissionsVersion: 1,
+};
+
+const mockAuth = {
+  resolveStanding: jest.fn().mockResolvedValue(mockStanding),
+};
+
+const testUser: CurrentUserContext = {
+  userId: "agent1",
+  orgId: "org1",
+  role: "member",
+  isOrgOwner: false,
+  sessionId: "sess1",
+  tokenScopes: null,
+  principal: { kind: "human-session", membershipId: 7, isOrgOwner: false },
+};
+
 const dialect = new PgDialect();
 
 function lastWhereSql() {
@@ -128,6 +157,7 @@ describe("HrHelpdeskService", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: HrHelpdeskConfigService, useValue: mockConfig },
         { provide: HrAuditService, useValue: mockAudit },
+        { provide: KnowledgeAuthorizationService, useValue: mockAuth },
       ],
     }).compile();
 
@@ -397,6 +427,53 @@ describe("HrHelpdeskService", () => {
       mockDb.query.helpdeskTickets.findFirst.mockResolvedValue(null);
 
       await expect(service.updateTicket(actor({ isAdmin: true }), 999, { status: "DONE" })).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe("suggest — canonical Document scope", () => {
+    beforeEach(() => {
+      mockAuth.resolveStanding.mockResolvedValue(mockStanding);
+    });
+
+    it("applies the restriction arm so an employee cannot see a Document restricted away from them", async () => {
+      mockDb.execute.mockResolvedValueOnce([{ id: 1 }]);
+      mockDb.limit.mockResolvedValueOnce([]);
+
+      await service.suggest(testUser, { query: "vacation" });
+
+      const built = lastWhereSql();
+      expect(built.sql).toContain("kb_page_restrictions");
+    });
+
+    it("results contain only slugged articles matched by the FTS probe", async () => {
+      mockDb.execute.mockResolvedValueOnce([{ id: 5 }]);
+      mockDb.limit.mockResolvedValueOnce([
+        { id: 5, title: "Leave Policy", slug: "leave-policy", excerpt: "About leave", source: "article" },
+      ]);
+
+      const result = await service.suggest(testUser, { query: "leave" });
+
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0]).toMatchObject({ id: 5, slug: "leave-policy", source: "article" });
+    });
+
+    it("returns no results when the FTS probe finds nothing", async () => {
+      mockDb.execute.mockResolvedValueOnce([]);
+      mockDb.limit.mockResolvedValueOnce([]);
+
+      const result = await service.suggest(testUser, { query: "xyz" });
+
+      expect(result.results).toHaveLength(0);
+    });
+
+    it("falls back to ILIKE when the FTS probe overflows the cap", async () => {
+      mockDb.execute.mockResolvedValueOnce(Array.from({ length: 22 }, (_, i) => ({ id: i + 1 })));
+      mockDb.limit.mockResolvedValueOnce([]);
+
+      await service.suggest(testUser, { query: "policy" });
+
+      const built = lastWhereSql();
+      expect(built.sql).toMatch(/ilike/i);
     });
   });
 

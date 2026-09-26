@@ -57,7 +57,7 @@ export class EmployeeSupportController {
   @RequirePermission("self:support")
   @Validate({ query: suggestSchema })
   suggest(@Query() input: SuggestInput, @CurrentUser() u: CurrentUserContext) {
-    return this.helpdesk.suggest(u.orgId, input);
+    return this.helpdesk.suggest(u, input);
   }
 
   @Get(":ticketId")

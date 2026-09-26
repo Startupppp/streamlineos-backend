@@ -6,16 +6,17 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   helpdeskTickets,
   hrHelpdeskComments,
-  kbPages,
   users,
 } from "../../../db/schema";
-import { supportArticlePredicate } from "../../kb/help-centre/kb-article-page-scope";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { KnowledgeAuthorizationService } from "../../kb/core/authorization/knowledge-authorization.service";
+import { suggestHelpdeskDocuments } from "../../kb/core/kb-helpdesk-documents";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
@@ -46,7 +47,6 @@ import {
 } from "./lib/support-queues";
 
 const HELPDESK_SEARCH_CAP = 500;
-const KB_SUGGEST_CAP = 20;
 
 const assigneeUsers = alias(users, "helpdesk_assignee_users");
 
@@ -84,6 +84,7 @@ export class HrHelpdeskService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly config: HrHelpdeskConfigService,
     private readonly audit: HrAuditService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   private visibleTo(actor: SupportActor): SQL {
@@ -544,46 +545,8 @@ export class HrHelpdeskService {
     return this.loadComment(actor.orgId, commentId);
   }
 
-  async suggest(orgId: string, input: SuggestInput) {
-    const term = input.query;
-    const like = `%${term}%`;
-
-    const inScope = and(
-      eq(kbPages.orgId, orgId),
-      eq(kbPages.status, "published"),
-      supportArticlePredicate(),
-      isNotNull(kbPages.slug),
-    );
-
-    const fallback = and(
-      inScope,
-      or(sql`${kbPages.title} ILIKE ${like}`, sql`${kbPages.excerpt} ILIKE ${like}`),
-    );
-
-    const rows = await this.db.execute(
-      sql`SELECT app.search_kb_page_ids(${term}, ${KB_SUGGEST_CAP + 1}) AS id`,
-    );
-
-    const articleWhere = rows.length === 0
-      ? sql`false`
-      : rows.length > KB_SUGGEST_CAP
-      ? fallback
-      : and(inScope, inArray(kbPages.id, rows.map((r) => Number(r["id"]))));
-
-    const articles = await this.db
-      .select({
-        id: kbPages.id,
-        title: kbPages.title,
-        slug: kbPages.slug,
-        excerpt: kbPages.excerpt,
-        source: sql<string>`'article'`,
-      })
-      .from(kbPages)
-      .where(articleWhere)
-      .orderBy(desc(kbPages.updatedAt))
-      .limit(5);
-
-    const slugged = articles.flatMap((r) => (r.slug === null ? [] : [{ ...r, slug: r.slug }]));
-    return { results: slugged };
+  async suggest(user: CurrentUserContext, input: SuggestInput) {
+    const standing = await this.auth.resolveStanding(user);
+    return suggestHelpdeskDocuments(this.db, standing, input.query);
   }
 }

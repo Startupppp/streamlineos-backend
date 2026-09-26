@@ -87,7 +87,7 @@ export class HrHelpdeskController {
     @Query() input: SuggestInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.suggest(u.orgId, input);
+    return this.helpdesk.suggest(u, input);
   }
 
   @Get("queues")

@@ -6,7 +6,6 @@
   "allowed": [
     "src/modules/ai/core/services/kb-rag-retrieval.service.ts",
     "src/modules/billing/core/plan-limits.service.ts",
-    "src/modules/hr/helpdesk/hr-helpdesk.service.ts",
     "src/modules/public/kb.service.ts",
     "src/modules/support/core/lib/support-kb-articles.ts",
     "src/modules/support/core/support-ai-triage-data.service.ts",
