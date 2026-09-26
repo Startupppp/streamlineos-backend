@@ -1,4 +1,4 @@
--- Rollback for 1217_hr_reporting_lines_provenance
+-- Rollback for 1234_hr_reporting_lines_provenance
 -- Roll back 1235 first. Drops the provenance columns with their constraints and indexes; the
 -- source, reason, label, fallback confirmation and job/request links recorded since are lost.
 SET lock_timeout = '5s';

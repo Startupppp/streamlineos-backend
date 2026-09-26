@@ -1,4 +1,4 @@
--- Rollback for 1218_hr_reporting_lines_one_current_primary
+-- Rollback for 1235_hr_reporting_lines_one_current_primary
 --
 -- Restores the half-open exclusion constraint and drops the inclusive constraints, the open-primary
 -- unique index and the superseded-line archive. Legacy empty-period lines are moved back into

@@ -8,7 +8,7 @@
 -- CHECKs and FKs are added NOT VALID and validated separately (BE-62/63). `relationship_label` is
 -- only meaningful on a secondary line, so the CHECK forbids it on a primary one.
 --
--- Rollback: migrations/rollback/1217_hr_reporting_lines_provenance.down.sql
+-- Rollback: migrations/rollback/1234_hr_reporting_lines_provenance.down.sql
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

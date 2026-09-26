@@ -13,7 +13,7 @@
 -- `users (id)`, so a default can never name a member of another tenant, and removing the member
 -- clears the default instead of leaving a dangling id.
 --
--- Rollback: migrations/rollback/1214_hr_reporting_manager_policies.down.sql
+-- Rollback: migrations/rollback/1231_hr_reporting_manager_policies.down.sql
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

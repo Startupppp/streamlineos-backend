@@ -10,7 +10,7 @@
 -- the same fallback `orgBusinessDate` takes in TypeScript. Callers wrap it in a scalar subquery
 -- so it is evaluated once per statement.
 --
--- Rollback: migrations/rollback/1220_app_org_business_date.down.sql
+-- Rollback: migrations/rollback/1237_app_org_business_date.down.sql
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

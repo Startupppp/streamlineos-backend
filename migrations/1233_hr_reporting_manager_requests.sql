@@ -8,7 +8,7 @@
 -- Line references are SET NULL on delete rather than CASCADE: a same-day correction moves the line
 -- it replaced into `hr_reporting_lines_superseded` (1235), and the request must outlive that.
 --
--- Rollback: migrations/rollback/1216_hr_reporting_manager_requests.down.sql
+-- Rollback: migrations/rollback/1233_hr_reporting_manager_requests.down.sql
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

@@ -1,4 +1,4 @@
--- Rollback for 1216_hr_reporting_manager_requests
+-- Rollback for 1233_hr_reporting_manager_requests
 -- Roll back 1234 first: hr_reporting_lines.request_id references this table.
 SET lock_timeout = '5s';
 

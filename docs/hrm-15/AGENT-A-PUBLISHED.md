@@ -6,12 +6,12 @@ Branch `hrms/hrm-15-reporting-managers`, worktree `hrm15-backend`. Commits `17c8
 
 | File | What it does | Rollback |
 |---|---|---|
-| `1214_hr_reporting_manager_policies` | `hr_reporting_manager_policies` (PK `org_id`). Default manager FK is **`(org_id, default_primary_manager_user_id) → organization_members(org_id, user_id)` ON DELETE SET NULL** (tenant-consistent; see §8). | drop table |
-| `1215_hr_reporting_line_bulk_jobs` | `hr_reporting_line_bulk_jobs` + `hr_reporting_line_bulk_job_rows` (normalised `secondary_manager_email_1..3`; `before_line_id`/`after_line_id` are trace ints, no FK). | drop tables |
-| `1216_hr_reporting_manager_requests` | `hr_reporting_manager_requests`, `uniq_hr_rm_requests_active`, list indexes, FKs to lines `SET NULL`. | drop table |
-| `1217_hr_reporting_lines_provenance` | `source` (default `MIGRATED`), `change_reason`, `relationship_label`, `fallback_confirmed_at/_by`, `bulk_job_id`, `request_id`, `updated_at`; CHECKs; FKs to jobs/requests; `idx_hr_reporting_lines_manager_type`; `idx_hr_reporting_lines_recent_primary` (D4 count). | drops columns |
-| `1218_hr_reporting_lines_one_current_primary` | **new table `hr_reporting_lines_superseded`** (§8); normalises legacy half-open ends (`effective_to - 1`), moves empty-period legacy rows to the archive (`LEGACY_EMPTY_PERIOD`); RAISES with counts on remaining overlap / inverted / self-managed rows; drops `excl_hr_reporting_lines_no_overlap`; adds `excl_hr_reporting_lines_primary_overlap`, `excl_hr_reporting_lines_secondary_overlap`, `uniq_hr_reporting_lines_open_primary`, `chk_hr_reporting_lines_dates`, `chk_hr_reporting_lines_not_self`. | restores old exclusion + legacy rows; refuses if the app has written `REPLACED` archive rows |
-| `1219_hr_top_level_roles` | `hr_top_level_roles` + `uniq_hr_top_level_roles_open`; backfill from `audit_logs` (`hr.employee_onboarded`, `metadata.topLevelRole = true`, no current primary). | drop table |
+| `1231_hr_reporting_manager_policies` | `hr_reporting_manager_policies` (PK `org_id`). Default manager FK is **`(org_id, default_primary_manager_user_id) → organization_members(org_id, user_id)` ON DELETE SET NULL** (tenant-consistent; see §8). | drop table |
+| `1232_hr_reporting_line_bulk_jobs` | `hr_reporting_line_bulk_jobs` + `hr_reporting_line_bulk_job_rows` (normalised `secondary_manager_email_1..3`; `before_line_id`/`after_line_id` are trace ints, no FK). | drop tables |
+| `1233_hr_reporting_manager_requests` | `hr_reporting_manager_requests`, `uniq_hr_rm_requests_active`, list indexes, FKs to lines `SET NULL`. | drop table |
+| `1234_hr_reporting_lines_provenance` | `source` (default `MIGRATED`), `change_reason`, `relationship_label`, `fallback_confirmed_at/_by`, `bulk_job_id`, `request_id`, `updated_at`; CHECKs; FKs to jobs/requests; `idx_hr_reporting_lines_manager_type`; `idx_hr_reporting_lines_recent_primary` (D4 count). | drops columns |
+| `1235_hr_reporting_lines_one_current_primary` | **new table `hr_reporting_lines_superseded`** (§8); normalises legacy half-open ends (`effective_to - 1`), moves empty-period legacy rows to the archive (`LEGACY_EMPTY_PERIOD`); RAISES with counts on remaining overlap / inverted / self-managed rows; drops `excl_hr_reporting_lines_no_overlap`; adds `excl_hr_reporting_lines_primary_overlap`, `excl_hr_reporting_lines_secondary_overlap`, `uniq_hr_reporting_lines_open_primary`, `chk_hr_reporting_lines_dates`, `chk_hr_reporting_lines_not_self`. | restores old exclusion + legacy rows; refuses if the app has written `REPLACED` archive rows |
+| `1236_hr_top_level_roles` | `hr_top_level_roles` + `uniq_hr_top_level_roles_open`; backfill from `audit_logs` (`hr.employee_onboarded`, `metadata.topLevelRole = true`, no current primary). | drop table |
 
 Every new table: `ENABLE ROW LEVEL SECURITY`, `tenant_isolation` policy (`org_id = app.current_org_id()` USING + WITH CHECK), explicit `GRANT … TO streamline_app`, `lock_timeout = 5s`, named constraints, FKs `NOT VALID` → `VALIDATE`, every FK indexed with `org_id` leading.
 
@@ -150,7 +150,7 @@ Migration proof: `scratch_hrm15` and `scratch_hrm15_replay` were cloned from `sc
 
 - `scratch_hrm15` (seeded org + shared scratch data, 1,100 primary lines, all finite `2036-09-22` ends, no successors): half-open rows normalised **0**, empty-period rows archived **0**, remaining overlapping primary pairs **0**, top-level backfill candidates **0** (no `topLevelRole` audit rows), rows now `source = MIGRATED` **1,100**. Active employees **5,102**, without a current primary line **4,002**, top-level **0**.
 - `scratch_hrm15_replay` with two planted legacy rows: **1** half-open close normalised (`2026-08-01 → 2026-07-31`), **1** empty-period row moved to `hr_reporting_lines_superseded` (`LEGACY_EMPTY_PERIOD`), 0 overlaps after.
-- Audit query for the rollout note is in the header of `1218_…sql`.
+- Audit query for the rollout note is in the header of `1235_…sql`.
 
 ## 9. Deviations from CONTRACT.md and open items
 

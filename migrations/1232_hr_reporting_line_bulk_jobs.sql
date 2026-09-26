@@ -9,7 +9,7 @@
 -- no foreign key: a later same-day correction moves the line it replaced into
 -- `hr_reporting_lines_superseded` (1235), and the job's record of what it wrote must survive that.
 --
--- Rollback: migrations/rollback/1215_hr_reporting_line_bulk_jobs.down.sql
+-- Rollback: migrations/rollback/1232_hr_reporting_line_bulk_jobs.down.sql
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

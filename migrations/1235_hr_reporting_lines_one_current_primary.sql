@@ -23,7 +23,7 @@
 --     AND b.id > a.id AND a.line_type = 'primary' AND b.line_type = 'primary'
 --     AND daterange(a.effective_from, a.effective_to, '[]') && daterange(b.effective_from, b.effective_to, '[]');
 --
--- Rollback: migrations/rollback/1218_hr_reporting_lines_one_current_primary.down.sql
+-- Rollback: migrations/rollback/1235_hr_reporting_lines_one_current_primary.down.sql
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

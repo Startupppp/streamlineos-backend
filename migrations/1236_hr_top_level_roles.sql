@@ -11,7 +11,7 @@
 -- (or the audit date), carrying the recorded reason. An employee who has since been given a manager
 -- is not backfilled — the later assignment is the truth.
 --
--- Rollback: migrations/rollback/1219_hr_top_level_roles.down.sql
+-- Rollback: migrations/rollback/1236_hr_top_level_roles.down.sql
 SET lock_timeout = '5s';
 --> statement-breakpoint
 
