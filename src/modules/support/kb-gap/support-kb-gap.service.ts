@@ -284,10 +284,14 @@ export class SupportKbGapService {
     return { gaps, nextCursor };
   }
 
-  async dismissGap(orgId: string, gapId: number): Promise<GapRow> {
+  async dismissGap(orgId: string, gapId: number, reason?: string): Promise<GapRow> {
     const [updated] = await this.db
       .update(supportKnowledgeGaps)
-      .set({ status: SupportKnowledgeGapStatus.DISMISSED, updatedAt: new Date() })
+      .set({
+        status: SupportKnowledgeGapStatus.DISMISSED,
+        ...(reason !== undefined ? { dismissalReason: reason } : {}),
+        updatedAt: new Date(),
+      })
       .where(and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)))
       .returning();
 

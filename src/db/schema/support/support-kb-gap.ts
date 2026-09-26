@@ -2,6 +2,14 @@ import { index, integer, jsonb, pgTable, serial, text, timestamp, unique, unique
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
+export const SUPPORT_KNOWLEDGE_GAP_STATUSES = [
+  "OPEN",
+  "DRAFTED",
+  "ROUTED",
+  "PUBLISHED",
+  "DISMISSED",
+] as const;
+
 export const SupportKnowledgeGapStatus = {
   OPEN: "OPEN",
   DRAFTED: "DRAFTED",

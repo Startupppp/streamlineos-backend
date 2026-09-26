@@ -102,8 +102,6 @@ export class SupportKbGapController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: DismissGapPatchInput,
   ) {
-    if (body.action === "dismiss") {
-      return this.service.dismissGap(u.orgId, gapId);
-    }
+    return this.service.dismissGap(u.orgId, gapId, body.reason);
   }
 }

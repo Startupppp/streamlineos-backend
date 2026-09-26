@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
+import { SUPPORT_KNOWLEDGE_GAP_STATUSES } from "../../../../db/schema/support/support-kb-gap";
 
 const aiUsageMetaSchema = z.object({
   model: z.string(),
@@ -16,8 +17,9 @@ export const supportKnowledgeGapRowSchema = z.object({
   representativeQuestion: z.string(),
   ticketCount: z.number().int(),
   sampleTicketIds: z.array(z.number().int()),
-  status: z.string(),
+  status: z.enum(SUPPORT_KNOWLEDGE_GAP_STATUSES),
   proposedArticleId: z.number().int().nullable(),
+  dismissalReason: z.string().nullable(),
   draftedBy: z.string().nullable(),
   reviewedBy: z.string().nullable(),
   evidence: z.unknown().nullable(),

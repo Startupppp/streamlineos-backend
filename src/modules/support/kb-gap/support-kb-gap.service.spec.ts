@@ -481,6 +481,30 @@ describe("SupportKbGapService", () => {
       const result = await service.dismissGap("org1", 1);
       expect(result.status).toBe(SupportKnowledgeGapStatus.DISMISSED);
     });
+
+    it("stores the reason the dismisser typed, because a gaps list that shows only DISMISSED cannot tell a reviewer why", async () => {
+      const db = makeDb();
+      db.returning.mockResolvedValue([{ ...baseGap, status: SupportKnowledgeGapStatus.DISMISSED }]);
+      const service = await makeService(db);
+
+      await service.dismissGap("org1", 1, "Covered by the refund policy article");
+
+      expect(db.set).toHaveBeenCalledWith(
+        expect.objectContaining({ dismissalReason: "Covered by the refund policy article" }),
+      );
+    });
+
+    it("leaves an existing reason alone when none is supplied, because omitting the field must not erase what a previous dismissal recorded", async () => {
+      const db = makeDb();
+      db.returning.mockResolvedValue([{ ...baseGap, status: SupportKnowledgeGapStatus.DISMISSED }]);
+      const service = await makeService(db);
+
+      await service.dismissGap("org1", 1);
+
+      expect(db.set).toHaveBeenCalledWith(
+        expect.not.objectContaining({ dismissalReason: expect.anything() }),
+      );
+    });
   });
 });
 
