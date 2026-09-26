@@ -15,21 +15,21 @@ Branches: `hrms/hrm-15-reporting-managers` in `streamlineos-backend` and `stream
 | Employee self-service | none | `/settings` → Reporting line: see managers, report an issue, history |
 | HR | coverage page only | policy page, line editor, review queue, bulk reporting change wizard, coverage fallback/pending/policy-missing states |
 
-Existing lines are **not** reassigned. Migration 1217 marks every existing line `source = MIGRATED`;
-1218 normalises legacy half-open ends to inclusive ends and archives zero-length legacy rows into
+Existing lines are **not** reassigned. Migration 1234 marks every existing line `source = MIGRATED`;
+1235 normalises legacy half-open ends to inclusive ends and archives zero-length legacy rows into
 `hr_reporting_lines_superseded` (never deletes). Employees without a manager stay in the Manager
 Coverage "without manager" queue for HR remediation (bulk wizard). No automatic historical assignment.
 
-## 2. Pre-deploy audit (run on each production database BEFORE applying 1214–1220)
+## 2. Pre-deploy audit (run on each production database BEFORE applying 1231–1237)
 
 ```sql
--- a) overlapping primary lines under inclusive semantics — 1218 RAISES if any remain after normalisation
+-- a) overlapping primary lines under inclusive semantics — 1235 RAISES if any remain after normalisation
 SELECT a.org_id, a.employment_id, a.id, b.id FROM hr_reporting_lines a
 JOIN hr_reporting_lines b ON b.org_id = a.org_id AND b.employment_id = a.employment_id
   AND b.id > a.id AND a.line_type = 'primary' AND b.line_type = 'primary'
   AND daterange(a.effective_from, a.effective_to, '[]') && daterange(b.effective_from, b.effective_to, '[]');
 
--- b) legacy half-open closes that 1218 will normalise (count only)
+-- b) legacy half-open closes that 1235 will normalise (count only)
 SELECT count(*) FROM hr_reporting_lines a JOIN hr_reporting_lines b
   ON b.org_id = a.org_id AND b.employment_id = a.employment_id AND b.line_type = a.line_type
  AND b.effective_from = a.effective_to AND b.id <> a.id WHERE a.line_type = 'primary';
@@ -61,8 +61,8 @@ backfill candidates. A planted legacy pair on the replay copy proved normalisati
   visible (badge "Temporarily assigned by onboarding policy", Coverage "fallback" state) and
   correctable in one click.
 
-**Gate instead on the pre-deploy audit:** if query (a) returns rows after 1218's normalisation on
-any production database, 1218 will refuse to apply. Fix those rows by hand (they are genuine
+**Gate instead on the pre-deploy audit:** if query (a) returns rows after 1235's normalisation on
+any production database, 1235 will refuse to apply. Fix those rows by hand (they are genuine
 conflicting history) before deploying — do not add a flag to work around them. If query (c) shows
 an org with a large remediation queue, tell that org's HR before release; nothing breaks, but
 Coverage will show the backlog.
@@ -72,19 +72,20 @@ and its owner, secondary cap (0–3), remediation list, fallback order, outgoing
 
 ## 4. Deploy order
 
-1. Backend migrations 1214–1220 (journal idx 1096–1102). 1220 adds `app.org_business_date(org)`,
+1. Backend migrations 1231–1237 (journal idx 1102–1108). 1237 adds `app.org_business_date(org)`,
    which every current-line reader now uses instead of the session's `CURRENT_DATE` (UTC for the
    app role) — before it, a line written on the org's "today" was invisible to approval routing,
-   /me/team and the org chart until UTC midnight. `1213` / idx `1095` is intentionally
-   skipped — it belongs to uncommitted work in another checkout (`1213_hr_employments_designation_provisional`);
-   whichever lands second must keep idx/when strictly increasing in array order.
+   /me/team and the org chart until UTC midnight. Numbered after main's
+   KB migrations (up to 1230, idx 1101). Uncommitted `1213_hr_employments_designation_provisional`
+   in another checkout has no journal slot yet; when it lands it needs idx > 1108 and a `when`
+   above 1803050410725, appended after these entries.
 2. Backend deploy (catalog sync adds `hr:reporting-lines:manage|review|override`; the role
    reconciler converges HR_ADMIN/BRANCH_HR at boot — no grant migration).
 3. Frontend deploy (vendored `contracts/openapi.json` and `contracts/permission-catalog.json`
    regenerated from this backend).
 
-Rollback: frontend first, then backend, then the `.down.sql` files 1220 → 1214 (1220's rollback
-requires the application build from before the org-business-date readers). 1218's rollback
+Rollback: frontend first, then backend, then the `.down.sql` files 1237 → 1231 (1237's rollback
+requires the application build from before the org-business-date readers). 1235's rollback
 refuses if the application has already archived `REPLACED` rows (restoring would recreate overlaps).
 
 ## 5. Monitoring — metrics, dashboards and alert thresholds

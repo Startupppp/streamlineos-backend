@@ -1,4 +1,4 @@
--- 1219 — HRM-15: `hr_top_level_roles`, the explicit "reports to nobody" exception
+-- 1236 — HRM-15: `hr_top_level_roles`, the explicit "reports to nobody" exception
 --
 -- A top-level employee has no primary manager only by an explicit, reasoned, effective-dated record
 -- (PRD D3). Until now that decision was stored nowhere but the metadata of the
@@ -18,7 +18,7 @@ SET lock_timeout = '5s';
 DO $$
 BEGIN
   IF to_regclass('public.audit_logs') IS NULL THEN
-    RAISE EXCEPTION '1219 precondition: public.audit_logs is absent';
+    RAISE EXCEPTION '1236 precondition: public.audit_logs is absent';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -115,7 +115,7 @@ BEGIN
   ON CONFLICT DO NOTHING;
   GET DIAGNOSTICS backfilled = ROW_COUNT;
 
-  RAISE NOTICE '1219: % top-level onboarding audit row(s) found; % open top-level role(s) backfilled', candidates, backfilled;
+  RAISE NOTICE '1236: % top-level onboarding audit row(s) found; % open top-level role(s) backfilled', candidates, backfilled;
 END $$;
 --> statement-breakpoint
 
@@ -125,6 +125,6 @@ BEGIN
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'hr_top_level_roles' AND policyname = 'tenant_isolation'
   ) THEN
-    RAISE EXCEPTION '1219 postcondition: RLS policy tenant_isolation is absent on hr_top_level_roles';
+    RAISE EXCEPTION '1236 postcondition: RLS policy tenant_isolation is absent on hr_top_level_roles';
   END IF;
 END $$;

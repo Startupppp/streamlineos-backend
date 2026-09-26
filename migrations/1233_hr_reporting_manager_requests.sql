@@ -1,4 +1,4 @@
--- 1216 — HRM-15: `hr_reporting_manager_requests`, employee-filed "my manager is wrong" requests
+-- 1233 — HRM-15: `hr_reporting_manager_requests`, employee-filed "my manager is wrong" requests
 --
 -- An employee's correction request (PRD §7.5, §8.3) is a lifecycle record, not an edit: HR reviews
 -- it and, on approval, ReportingRelationshipService writes the line and stamps `resolved_line_id`.
@@ -6,7 +6,7 @@
 -- double-submit is a 23505 the service turns into REQUEST_DUPLICATE_ACTIVE.
 --
 -- Line references are SET NULL on delete rather than CASCADE: a same-day correction moves the line
--- it replaced into `hr_reporting_lines_superseded` (1218), and the request must outlive that.
+-- it replaced into `hr_reporting_lines_superseded` (1235), and the request must outlive that.
 --
 -- Rollback: migrations/rollback/1216_hr_reporting_manager_requests.down.sql
 SET lock_timeout = '5s';
@@ -18,7 +18,7 @@ BEGIN
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'public.hr_reporting_lines'::regclass AND conname = 'uniq_hr_reporting_lines_org_id'
   ) THEN
-    RAISE EXCEPTION '1216 precondition: uniq_hr_reporting_lines_org_id is absent — the line FKs have no target';
+    RAISE EXCEPTION '1233 precondition: uniq_hr_reporting_lines_org_id is absent — the line FKs have no target';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -140,6 +140,6 @@ BEGIN
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'hr_reporting_manager_requests' AND policyname = 'tenant_isolation'
   ) THEN
-    RAISE EXCEPTION '1216 postcondition: RLS policy tenant_isolation is absent on hr_reporting_manager_requests';
+    RAISE EXCEPTION '1233 postcondition: RLS policy tenant_isolation is absent on hr_reporting_manager_requests';
   END IF;
 END $$;

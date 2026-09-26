@@ -2,7 +2,7 @@
 
 Branch `hrms/hrm-15-reporting-managers`, worktree `hrm15-backend`. Commits `17c8d3a07`…`147bc08cb`.
 
-## 1. Migrations (journal idx 1096–1101, `when` 1803000010727–…732)
+## 1. Migrations (journal idx 1102–1107, `when` 1803000010727–…732)
 
 | File | What it does | Rollback |
 |---|---|---|
@@ -154,7 +154,7 @@ Migration proof: `scratch_hrm15` and `scratch_hrm15_replay` were cloned from `sc
 
 ## 9. Deviations from CONTRACT.md and open items
 
-1. **New table `hr_reporting_lines_superseded`** (1218). Required by "never produce `effective_to < effective_from`", "supersede future-dated rows correctly" and "never hard-delete history" together: a line replaced on or before its start date cannot be closed without inverting its range and cannot stay without overlapping its replacement, so it moves to the archive with full provenance. The D4 24h count includes archived primary rows. No existing reader needs to change. Requests/bulk rows that pointed at an archived line keep a `SET NULL` FK / plain trace id.
+1. **New table `hr_reporting_lines_superseded`** (1235). Required by "never produce `effective_to < effective_from`", "supersede future-dated rows correctly" and "never hard-delete history" together: a line replaced on or before its start date cannot be closed without inverting its range and cannot stay without overlapping its replacement, so it moves to the archive with full provenance. The D4 24h count includes archived primary rows. No existing reader needs to change. Requests/bulk rows that pointed at an archived line keep a `SET NULL` FK / plain trace id.
 2. **Policy default-manager FK** targets `organization_members(org_id, user_id)` instead of `users(id)` — same column, tenant-consistent, cleared when the member is removed.
 3. **Top-level role ended before it began** is closed on its own first day (`effective_to = effective_from`, `ended_at` set) rather than inverted; readers only treat a top-level role as in force when there is no current primary line.
 4. **`policyMissing`** = no default primary manager configured (row absent or `default_primary_manager_user_id` null).

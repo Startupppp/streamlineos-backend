@@ -12,7 +12,7 @@ async function sqlState(run: () => Promise<unknown>): Promise<string | null> {
   }
 }
 
-describe("hr_reporting_lines constraints (migrations 1214-1219)", () => {
+describe("hr_reporting_lines constraints (migrations 1231-1236)", () => {
   let sql: ReturnType<typeof connectProbe>;
   let a: ReportingProbe;
   let b: ReportingProbe;

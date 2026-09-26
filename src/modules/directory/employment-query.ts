@@ -114,7 +114,7 @@ export function liveEmployment(
 
 /**
  * Today in the organization's timezone, evaluated once per statement (`app.org_business_date`,
- * migration 1220). Lines are written from `orgBusinessDate`; reading them against the session's
+ * migration 1237). Lines are written from `orgBusinessDate`; reading them against the session's
  * CURRENT_DATE hid a line written "today" until UTC caught up.
  */
 export function orgBusinessDateSql(orgId: string): SQL {

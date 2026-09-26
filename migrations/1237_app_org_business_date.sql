@@ -1,4 +1,4 @@
--- 1220 — HRM-15: the organization's business date, in SQL
+-- 1237 — HRM-15: the organization's business date, in SQL
 --
 -- Reporting lines start on the organization's business date (`orgBusinessDate`, the org's
 -- timezone), but every current-line reader compared them with CURRENT_DATE — the session date,

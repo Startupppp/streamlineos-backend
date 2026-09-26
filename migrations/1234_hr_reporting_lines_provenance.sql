@@ -1,4 +1,4 @@
--- 1217 — HRM-15: provenance columns on `hr_reporting_lines`
+-- 1234 — HRM-15: provenance columns on `hr_reporting_lines`
 --
 -- Every reporting line now records how it came to exist (`source`), why (`change_reason`), the
 -- label of a secondary relationship, HR's confirmation of a fallback primary, and the bulk job or
@@ -15,10 +15,10 @@ SET lock_timeout = '5s';
 DO $$
 BEGIN
   IF to_regclass('public.hr_reporting_line_bulk_jobs') IS NULL THEN
-    RAISE EXCEPTION '1217 precondition: hr_reporting_line_bulk_jobs (1215) is absent';
+    RAISE EXCEPTION '1234 precondition: hr_reporting_line_bulk_jobs (1232) is absent';
   END IF;
   IF to_regclass('public.hr_reporting_manager_requests') IS NULL THEN
-    RAISE EXCEPTION '1217 precondition: hr_reporting_manager_requests (1216) is absent';
+    RAISE EXCEPTION '1234 precondition: hr_reporting_manager_requests (1233) is absent';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -103,5 +103,5 @@ DECLARE
   migrated integer;
 BEGIN
   SELECT count(*) INTO migrated FROM "public"."hr_reporting_lines" WHERE "source" = 'MIGRATED';
-  RAISE NOTICE '1217: % existing reporting line(s) carry source = MIGRATED', migrated;
+  RAISE NOTICE '1234: % existing reporting line(s) carry source = MIGRATED', migrated;
 END $$;

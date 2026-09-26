@@ -1,4 +1,4 @@
--- 1214 — HRM-15: `hr_reporting_manager_policies`, one row per organisation
+-- 1231 — HRM-15: `hr_reporting_manager_policies`, one row per organisation
 --
 -- The organisation's Reporting Manager Policy (PRD D2): how many secondary managers an employee
 -- may have (0–3), which member is the default primary manager when onboarding omits one, the
@@ -20,13 +20,13 @@ SET lock_timeout = '5s';
 DO $$
 BEGIN
   IF to_regclass('public.organizations') IS NULL THEN
-    RAISE EXCEPTION '1214 precondition: public.organizations is absent';
+    RAISE EXCEPTION '1231 precondition: public.organizations is absent';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'public.organization_members'::regclass AND conname = 'uniq_org_members_org_user'
   ) THEN
-    RAISE EXCEPTION '1214 precondition: uniq_org_members_org_user is absent — the default-manager FK has no target';
+    RAISE EXCEPTION '1231 precondition: uniq_org_members_org_user is absent — the default-manager FK has no target';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -93,6 +93,6 @@ BEGIN
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'hr_reporting_manager_policies' AND policyname = 'tenant_isolation'
   ) THEN
-    RAISE EXCEPTION '1214 postcondition: RLS policy tenant_isolation is absent on hr_reporting_manager_policies';
+    RAISE EXCEPTION '1231 postcondition: RLS policy tenant_isolation is absent on hr_reporting_manager_policies';
   END IF;
 END $$;

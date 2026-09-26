@@ -1,4 +1,4 @@
--- 1215 — HRM-15: `hr_reporting_line_bulk_jobs` and `hr_reporting_line_bulk_job_rows`
+-- 1232 — HRM-15: `hr_reporting_line_bulk_jobs` and `hr_reporting_line_bulk_job_rows`
 --
 -- A bulk reporting change (PRD D4, §7.6) is previewed, persisted, then committed. The job row holds
 -- the job-level reason and the counts; each employee in the upload is one normalised row, never a
@@ -7,7 +7,7 @@
 --
 -- `before_line_id` / `after_line_id` are trace ids into `hr_reporting_lines` and deliberately carry
 -- no foreign key: a later same-day correction moves the line it replaced into
--- `hr_reporting_lines_superseded` (1218), and the job's record of what it wrote must survive that.
+-- `hr_reporting_lines_superseded` (1235), and the job's record of what it wrote must survive that.
 --
 -- Rollback: migrations/rollback/1215_hr_reporting_line_bulk_jobs.down.sql
 SET lock_timeout = '5s';
@@ -20,7 +20,7 @@ BEGIN
     WHERE conrelid = 'public.hr_employments'::regclass AND contype IN ('u', 'p')
       AND pg_get_constraintdef(oid) = 'UNIQUE (org_id, id)'
   ) THEN
-    RAISE EXCEPTION '1215 precondition: hr_employments has no UNIQUE (org_id, id) for the org-composite FKs';
+    RAISE EXCEPTION '1232 precondition: hr_employments has no UNIQUE (org_id, id) for the org-composite FKs';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -186,6 +186,6 @@ BEGIN
     WHERE schemaname = 'public' AND policyname = 'tenant_isolation'
       AND tablename IN ('hr_reporting_line_bulk_jobs', 'hr_reporting_line_bulk_job_rows')
   ) <> 2 THEN
-    RAISE EXCEPTION '1215 postcondition: tenant_isolation is missing on a bulk job table';
+    RAISE EXCEPTION '1232 postcondition: tenant_isolation is missing on a bulk job table';
   END IF;
 END $$;

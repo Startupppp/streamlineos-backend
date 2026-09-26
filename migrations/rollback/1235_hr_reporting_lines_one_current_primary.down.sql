@@ -17,7 +17,7 @@ DECLARE
 BEGIN
   SELECT count(*) INTO replaced FROM "public"."hr_reporting_lines_superseded" WHERE "superseded_reason" = 'REPLACED';
   IF replaced > 0 THEN
-    RAISE EXCEPTION 'rollback 1218: % superseded line(s) were written by the application; export hr_reporting_lines_superseded before rolling back', replaced;
+    RAISE EXCEPTION 'rollback 1235: % superseded line(s) were written by the application; export hr_reporting_lines_superseded before rolling back', replaced;
   END IF;
 END $$;
 
