@@ -194,6 +194,7 @@ export class SupportKbEngagementController {
   }
 
   @Post("articles/:articleId/reindex")
+  @NoTenantTransaction()
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
@@ -208,6 +209,7 @@ export class SupportKbEngagementController {
   }
 
   @Post("reindex-all")
+  @NoTenantTransaction()
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")

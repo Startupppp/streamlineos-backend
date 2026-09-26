@@ -8,6 +8,7 @@ import { sql } from "drizzle-orm";
 import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const REINDEX_BATCH_SIZE = 100;
 const REINDEX_CONCURRENCY = 4;
@@ -27,19 +28,24 @@ export class KbArticleReindexService {
     failures: { articleId: number; error: string }[];
     nextArticleId: number | null;
   }> {
-    const articles = await this.db
-      .select({ id: kbPages.id })
-      .from(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          supportArticlePredicate(),
-          eq(kbPages.status, "published"),
-          gt(kbPages.id, afterArticleId),
-        ),
-      )
-      .orderBy(asc(kbPages.id))
-      .limit(REINDEX_BATCH_SIZE + 1);
+    const articles = await runInTenantTransaction(
+      this.db,
+      async () =>
+        this.db
+          .select({ id: kbPages.id })
+          .from(kbPages)
+          .where(
+            and(
+              eq(kbPages.orgId, orgId),
+              supportArticlePredicate(),
+              eq(kbPages.status, "published"),
+              gt(kbPages.id, afterArticleId),
+            ),
+          )
+          .orderBy(asc(kbPages.id))
+          .limit(REINDEX_BATCH_SIZE + 1),
+      { orgId },
+    );
 
     const batch = articles.slice(0, REINDEX_BATCH_SIZE);
     const nextArticleId = articles.length > REINDEX_BATCH_SIZE ? (batch.at(-1)?.id ?? null) : null;
@@ -68,10 +74,15 @@ export class KbArticleReindexService {
       }
     }
 
-    const [row] = await this.db
-      .select({ chunks: count() })
-      .from(kbArticleChunks)
-      .where(eq(kbArticleChunks.orgId, orgId));
+    const [row] = await runInTenantTransaction(
+      this.db,
+      async () =>
+        this.db
+          .select({ chunks: count() })
+          .from(kbArticleChunks)
+          .where(eq(kbArticleChunks.orgId, orgId)),
+      { orgId },
+    );
 
     return { total: batch.length, indexed, totalChunks: row?.chunks ?? 0, failures, nextArticleId };
   }
@@ -80,18 +91,27 @@ export class KbArticleReindexService {
     orgId: string,
     articleId: number,
   ): Promise<{ chunks: number; warnings: string[] }> {
-    await this.assertArticleExists(orgId, articleId);
+    await runInTenantTransaction(
+      this.db,
+      async () => { await this.assertArticleExists(orgId, articleId); },
+      { orgId },
+    );
 
     await this.indexing.indexArticle(orgId, articleId);
 
-    const attachments = await this.db.query.kbPageAttachments.findMany({
-      where: and(
-        eq(kbPageAttachments.pageId, articleId),
-        eq(kbPageAttachments.orgId, orgId),
-        isNull(kbPageAttachments.deletedAt),
-      ),
-      columns: { id: true },
-    });
+    const attachments = await runInTenantTransaction(
+      this.db,
+      async () =>
+        this.db.query.kbPageAttachments.findMany({
+          where: and(
+            eq(kbPageAttachments.pageId, articleId),
+            eq(kbPageAttachments.orgId, orgId),
+            isNull(kbPageAttachments.deletedAt),
+          ),
+          columns: { id: true },
+        }),
+      { orgId },
+    );
 
     const warnings: string[] = [];
     for (const attachment of attachments) {
@@ -99,7 +119,13 @@ export class KbArticleReindexService {
       if (result.warning) warnings.push(result.warning);
     }
 
-    return { chunks: await this.countChunks(orgId, articleId), warnings };
+    const chunks = await runInTenantTransaction(
+      this.db,
+      async () => this.countChunks(orgId, articleId),
+      { orgId },
+    );
+
+    return { chunks, warnings };
   }
 
   async getArticleIndexStatus(

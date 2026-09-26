@@ -1,3 +1,9 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn(
+    (_db: unknown, fn: () => unknown) => fn(),
+  ),
+}));
+
 import { and, eq, gt } from "drizzle-orm";
 import { kbPages } from "../../../db/schema";
 import { KbArticleReindexService } from "../../kb/retrieval/kb-article-reindex.service";

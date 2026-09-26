@@ -1,7 +1,5 @@
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { Test } from "@nestjs/testing";
 
 const DUMMY_PROJECT = { id: 7, orgId: "org-1" };
 
@@ -18,166 +16,113 @@ function makeChain(result: unknown[]): Record<string, unknown> {
   return chain;
 }
 
-interface MockDb {
-  projects: { findFirst: jest.Mock };
-  organizationMembers: { findFirst: jest.Mock };
-  projectTeamMembersSelect: jest.Mock;
-  execute: jest.Mock;
-  select: jest.Mock;
-  query: {
-    projects: { findFirst: jest.Mock };
-    organizationMembers: { findFirst: jest.Mock };
-    cycles: { findMany: jest.Mock };
-  };
+function makeCachePassThrough(): CacheService {
+  return {
+    cachedVersioned: jest
+      .fn()
+      .mockImplementation(
+        (_ns: string, _key: string, fetcher: () => Promise<unknown>) => fetcher(),
+      ),
+  } as unknown as CacheService;
 }
 
-function makeDb(): MockDb {
+function makeCacheCapturing(keys: string[]): CacheService {
+  return {
+    cachedVersioned: jest.fn().mockImplementation(
+      (_ns: string, key: string, fetcher: () => Promise<unknown>) => {
+        keys.push(key);
+        return fetcher();
+      },
+    ),
+  } as unknown as CacheService;
+}
+
+function makeDb(opts: { memberRow?: { id: number } } = {}) {
   const projectFindFirst = jest.fn().mockResolvedValue(DUMMY_PROJECT);
-  const memberFindFirst = jest.fn().mockResolvedValue(undefined);
-  const projectTeamMembersSelect = jest.fn().mockReturnValue(makeChain([]));
+  const memberFindFirst = jest
+    .fn()
+    .mockResolvedValue(opts.memberRow ?? undefined);
   const execute = jest.fn().mockResolvedValue([]);
   const select = jest.fn().mockReturnValue(makeChain([]));
 
-  return {
-    projects: { findFirst: projectFindFirst },
-    organizationMembers: { findFirst: memberFindFirst },
-    projectTeamMembersSelect,
-    execute,
-    select,
+  const rawDb = {
     query: {
       projects: { findFirst: projectFindFirst },
       organizationMembers: { findFirst: memberFindFirst },
-      cycles: { findMany: jest.fn().mockResolvedValue([]) },
     },
-  };
-}
-
-function buildService(db: MockDb): ProjectsAnalyticsService {
-  const rawDb = {
-    query: {
-      projects: { findFirst: db.query.projects.findFirst },
-      organizationMembers: { findFirst: db.query.organizationMembers.findFirst },
-      cycles: { findMany: db.query.cycles.findMany },
-    },
-    select: db.select,
-    execute: db.execute,
+    select,
+    execute,
   };
 
-  const cache: Partial<CacheService> = {
-    cachedVersioned: (_ns: string, _key: string, fetcher: () => Promise<unknown>) => fetcher(),
-  };
-
-  return new ProjectsAnalyticsService(rawDb as never, cache as CacheService);
+  return { rawDb, projectFindFirst, memberFindFirst, execute, select };
 }
 
 describe("ProjectsAnalyticsService — filter propagation (C5)", () => {
   it("does not query organizationMembers when no ownerId filter is supplied so unfiltered analytics are returned", async () => {
-    const db = makeDb();
-    const service = buildService(db);
+    const { rawDb, memberFindFirst } = makeDb();
+    const service = new ProjectsAnalyticsService(
+      rawDb as never,
+      makeCachePassThrough(),
+    );
 
     await service.getProjectAnalytics("org-1", 7, {});
 
-    expect(db.query.organizationMembers.findFirst).not.toHaveBeenCalled();
+    expect(memberFindFirst).not.toHaveBeenCalled();
   });
 
   it("looks up the organization member when ownerId is supplied so the assignee filter targets that user's membership", async () => {
-    const db = makeDb();
-    db.query.organizationMembers.findFirst.mockResolvedValue({ id: 42 });
-    const service = buildService(db);
+    const { rawDb, memberFindFirst } = makeDb({ memberRow: { id: 42 } });
+    const service = new ProjectsAnalyticsService(
+      rawDb as never,
+      makeCachePassThrough(),
+    );
 
     await service.getProjectAnalytics("org-1", 7, { ownerId: "user-abc" });
 
-    expect(db.query.organizationMembers.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.anything(),
-        columns: { id: true },
-      }),
+    expect(memberFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ columns: { id: true } }),
     );
   });
 
   it("uses a different cache key for ownerId vs unfiltered so filtered and unfiltered results never share a cached value", async () => {
-    const cacheKeys: string[] = [];
-    const rawDb = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(DUMMY_PROJECT) },
-        organizationMembers: {
-          findFirst: jest.fn().mockResolvedValue({ id: 42 }),
-        },
-        cycles: { findMany: jest.fn().mockResolvedValue([]) },
-      },
-      select: jest.fn().mockReturnValue(makeChain([])),
-      execute: jest.fn().mockResolvedValue([]),
-    };
-
-    const cache: Partial<CacheService> = {
-      cachedVersioned: (_ns: string, key: string, fetcher: () => Promise<unknown>) => {
-        cacheKeys.push(key);
-        return fetcher();
-      },
-    };
-
-    const service = new ProjectsAnalyticsService(rawDb as never, cache as CacheService);
+    const keys: string[] = [];
+    const { rawDb: db1 } = makeDb({ memberRow: { id: 42 } });
+    const cache = makeCacheCapturing(keys);
+    const service = new ProjectsAnalyticsService(db1 as never, cache);
 
     await service.getProjectAnalytics("org-1", 7, {});
     await service.getProjectAnalytics("org-1", 7, { ownerId: "user-abc" });
 
-    expect(cacheKeys[0]).not.toBe(cacheKeys[1]);
+    expect(keys.length).toBe(2);
+    expect(keys[0]).not.toBe(keys[1]);
   });
 
   it("uses a different cache key for teamId vs unfiltered so team-scoped results never collide with org-wide results", async () => {
-    const cacheKeys: string[] = [];
-    const rawDb = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(DUMMY_PROJECT) },
-        organizationMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
-        cycles: { findMany: jest.fn().mockResolvedValue([]) },
-      },
-      select: jest.fn().mockReturnValue(makeChain([])),
-      execute: jest.fn().mockResolvedValue([]),
-    };
-
-    const cache: Partial<CacheService> = {
-      cachedVersioned: (_ns: string, key: string, fetcher: () => Promise<unknown>) => {
-        cacheKeys.push(key);
-        return fetcher();
-      },
-    };
-
-    const service = new ProjectsAnalyticsService(rawDb as never, cache as CacheService);
+    const keys: string[] = [];
+    const { rawDb } = makeDb();
+    const cache = makeCacheCapturing(keys);
+    const service = new ProjectsAnalyticsService(rawDb as never, cache);
 
     await service.getProjectAnalytics("org-1", 7, {});
     await service.getProjectAnalytics("org-1", 7, { teamId: 5 });
 
-    expect(cacheKeys[0]).not.toBe(cacheKeys[1]);
+    expect(keys.length).toBe(2);
+    expect(keys[0]).not.toBe(keys[1]);
   });
 
   it("uses a different cache key for each range value so 7d and 30d results never alias each other", async () => {
-    const cacheKeys: string[] = [];
-    const rawDb = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(DUMMY_PROJECT) },
-        organizationMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
-        cycles: { findMany: jest.fn().mockResolvedValue([]) },
-      },
-      select: jest.fn().mockReturnValue(makeChain([])),
-      execute: jest.fn().mockResolvedValue([]),
-    };
-
-    const cache: Partial<CacheService> = {
-      cachedVersioned: (_ns: string, key: string, fetcher: () => Promise<unknown>) => {
-        cacheKeys.push(key);
-        return fetcher();
-      },
-    };
-
-    const service = new ProjectsAnalyticsService(rawDb as never, cache as CacheService);
+    const keys: string[] = [];
+    const { rawDb } = makeDb();
+    const cache = makeCacheCapturing(keys);
+    const service = new ProjectsAnalyticsService(rawDb as never, cache);
 
     await service.getProjectAnalytics("org-1", 7, { range: "7d" });
     await service.getProjectAnalytics("org-1", 7, { range: "30d" });
     await service.getProjectAnalytics("org-1", 7, { range: "90d" });
 
-    expect(cacheKeys[0]).not.toBe(cacheKeys[1]);
-    expect(cacheKeys[1]).not.toBe(cacheKeys[2]);
-    expect(cacheKeys[0]).not.toBe(cacheKeys[2]);
+    expect(keys.length).toBe(3);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[1]).not.toBe(keys[2]);
+    expect(keys[0]).not.toBe(keys[2]);
   });
 });

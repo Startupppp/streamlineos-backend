@@ -252,28 +252,32 @@ export class KbSourcesService {
     input: CreateKbSourceNoteInput,
   ): Promise<typeof kbSources.$inferSelect> {
     const byteSize = Buffer.byteLength(input.text, "utf8");
-    const row = await this.db.transaction(async (tx) => {
-      await this.quota.reserve(tx, user.orgId, byteSize);
-      const [inserted] = await tx
-        .insert(kbSources)
-        .values({
-          orgId: user.orgId,
-          spaceId: input.spaceId ?? null,
-          kind: "note",
-          title: input.title,
-          noteText: input.text,
-          status: "processing",
-          createdById: user.userId,
-        })
-        .returning();
-      if (!inserted) throw new InternalServerErrorException("Insert failed");
-      await this.emitIndexEvent(tx, user.orgId, inserted.id);
-      return inserted;
-    });
-    const textDeferred = registerAfterCommit(async () => {
-      await this.processText(user.orgId, row.id, input.text, byteSize);
-    });
-    if (!textDeferred)
+    const { row, deferred } = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await this.quota.reserve(tx, user.orgId, byteSize);
+        const [inserted] = await tx
+          .insert(kbSources)
+          .values({
+            orgId: user.orgId,
+            spaceId: input.spaceId ?? null,
+            kind: "note",
+            title: input.title,
+            noteText: input.text,
+            status: "processing",
+            createdById: user.userId,
+          })
+          .returning();
+        if (!inserted) throw new InternalServerErrorException("Insert failed");
+        await this.emitIndexEvent(tx, user.orgId, inserted.id);
+        const registered = registerAfterCommit(async () => {
+          await this.processText(user.orgId, inserted.id, input.text, byteSize);
+        });
+        return { row: inserted, deferred: registered };
+      },
+      { orgId: user.orgId },
+    );
+    if (!deferred)
       await this.processText(user.orgId, row.id, input.text, byteSize);
     return row;
   }

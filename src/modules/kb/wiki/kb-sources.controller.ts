@@ -121,6 +121,7 @@ export class KbSourcesController {
   }
 
   @Post("sources/note")
+  @NoTenantTransaction()
   @Idempotent("kb.source.note")
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
