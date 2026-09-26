@@ -111,7 +111,6 @@ const UNENFORCED_MEMBERSHIP_ARTIFACTS: ReadonlySet<string> = new Set([
   "interview_panel_members_user_actor",
   "job_recruiters_user_membership",
   "job_requisitions_memberships",
-  "kb_article_versions",
   "kb_page_versions",
   "leave_balances_user_membership",
   "onboarding_documents_actors",

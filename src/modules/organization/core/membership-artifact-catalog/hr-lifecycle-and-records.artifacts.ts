@@ -218,4 +218,34 @@ export const HR_LIFECYCLE_AND_RECORDS_ARTIFACTS = [
     reason:
       "Authorship on hr_employment_history is cleared by fk_hr_emp_history_created_actor, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
+  {
+    id: "document_audiences_created_by_membership",
+    mechanism: "database-cascade",
+    table: "document_audiences",
+    keyedBy: "created_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "An audience outlives whoever defined it — the people it targets keep their access after the author departs, so only the attribution pointer is cleared. fk_document_audiences_created_by_actor is ON DELETE SET NULL (\"created_by_membership_id\") with an explicit column list, so org_id stays populated and no 23502 is raised on removal.",
+  },
+  {
+    id: "document_versions_uploaded_by_membership",
+    mechanism: "database-cascade",
+    table: "document_versions",
+    keyedBy: "uploaded_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "A version record is the document's history and must survive its uploader's departure; deleting it would rewrite what the file used to be. fk_document_versions_uploaded_by_actor is ON DELETE SET NULL (\"uploaded_by_membership_id\") with an explicit column list, so org_id is untouched.",
+  },
+  {
+    id: "document_versions_approved_by_membership",
+    mechanism: "database-cascade",
+    table: "document_versions",
+    keyedBy: "approved_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Approval attribution is cleared by fk_document_versions_approved_by_actor, ON DELETE SET NULL (\"approved_by_membership_id\") with an explicit column list. The approval itself is carried by the version's own state column, so a departed approver clears the name without reopening a version that was already approved.",
+  },
 ] as const satisfies readonly MembershipArtifact[];
