@@ -9,6 +9,8 @@ import type { Db } from "../../../db/drizzle.types";
 import {
   cycles,
   ticketAssignees,
+  ticketLabelMappings,
+  ticketLabels,
   tickets,
 } from "../../../db/schema";
 import type { AccessService } from "../../access/access.service";
@@ -121,6 +123,62 @@ export async function bulkMutateTickets(
     if (body.priority !== undefined) update.priority = body.priority;
     if (body.parentTicketId !== undefined)
       update.parentTicketId = body.parentTicketId;
+    if (body.archive) {
+      const selectedSet = new Set(ids);
+      const childRows = await tx
+        .select({ parentTicketId: tickets.parentTicketId, childId: tickets.id })
+        .from(tickets)
+        .where(
+          and(
+            eq(tickets.orgId, actor.orgId),
+            eq(tickets.projectId, projectId),
+            inArray(tickets.parentTicketId, ids),
+            isNull(tickets.deletedAt),
+          ),
+        );
+      const blockersMap = new Map<number, number>();
+      for (const row of childRows) {
+        if (row.parentTicketId !== null && !selectedSet.has(row.childId)) {
+          blockersMap.set(
+            row.parentTicketId,
+            (blockersMap.get(row.parentTicketId) ?? 0) + 1,
+          );
+        }
+      }
+      if (blockersMap.size > 0) {
+        return {
+          updated: 0,
+          ticketIds: [],
+          blocked: Array.from(blockersMap.entries()).map(
+            ([ticketId, dependencyCount]) => ({
+              ticketId,
+              reason: "Has active sub-tickets that are not included in the selection",
+              dependencyCount,
+            }),
+          ),
+        };
+      }
+      update.deletedAt = now;
+    }
+    if (body.labelIds !== undefined && body.labelIds.length > 0) {
+      const existingLabels = await tx
+        .select({ id: ticketLabels.id })
+        .from(ticketLabels)
+        .where(
+          and(
+            eq(ticketLabels.orgId, actor.orgId),
+            inArray(ticketLabels.id, body.labelIds),
+          ),
+        );
+      const existingLabelIds = new Set(existingLabels.map((l) => l.id));
+      const missingLabelIds = body.labelIds.filter(
+        (id) => !existingLabelIds.has(id),
+      );
+      if (missingLabelIds.length > 0)
+        throw new NotFoundException(
+          `Labels not found: ${missingLabelIds.join(", ")}`,
+        );
+    }
     const updated = await tx
       .update(tickets)
       .set({ ...update, version: sql`${tickets.version} + 1` })
@@ -152,6 +210,16 @@ export async function bulkMutateTickets(
             assignedBy: actor.userId,
           })),
         );
+    }
+    if (body.labelIds !== undefined && body.labelIds.length > 0 && updated.length > 0) {
+      const mappings = updated.flatMap(({ id: ticketId }) =>
+        body.labelIds!.map((labelId) => ({
+          orgId: actor.orgId,
+          ticketId,
+          labelId,
+        })),
+      );
+      await tx.insert(ticketLabelMappings).values(mappings).onConflictDoNothing();
     }
     if (body.status !== undefined)
       await emitBatchStatusChanges(

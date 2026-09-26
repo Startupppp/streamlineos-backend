@@ -22,6 +22,7 @@ import {
   allWorkQuerySchema,
   bulkUpdateSchema,
   createTicketSchema,
+  exportTicketsQuerySchema,
   importTicketsSchema,
   rankTicketSchema,
   searchTicketsQuerySchema,
@@ -31,6 +32,7 @@ import {
   type AllWorkQuery,
   type BulkUpdateInput,
   type CreateTicketInput,
+  type ExportTicketsQuery,
   type ImportTicketsInput,
   type RankTicketInput,
   type SearchTicketsQuery,
@@ -109,12 +111,13 @@ export class ProjectsTicketsController {
   @Get(":projectId/tickets/export")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(exportTicketsResultSchema)
-  @Validate({ params: projectIdParams })
+  @Validate({ params: projectIdParams, query: exportTicketsQuerySchema })
   exportTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ExportTicketsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.exportTickets(u, projectId);
+    return this.tickets.exportTickets(u, projectId, query.ticketIds);
   }
 
   @Post(":projectId/tickets/import")

@@ -350,6 +350,15 @@ export const attachmentCreateResultSchema = z.object({ id: z.number().int() });
 export const bulkUpdateResultSchema = z.object({
   updated: z.number().int(),
   ticketIds: z.array(z.number().int()),
+  blocked: z
+    .array(
+      z.object({
+        ticketId: z.number().int(),
+        reason: z.string(),
+        dependencyCount: z.number().int(),
+      }),
+    )
+    .optional(),
 });
 
 export const rankTicketResultSchema = z.object({

@@ -242,8 +242,8 @@ export class ProjectsTicketsService {
     return this.query.rankTicket(u, projectId, ticketId, body);
   }
 
-  async exportTickets(u: CurrentUserContext, projectId: number) {
-    return this.transfer.exportTickets(u, projectId);
+  async exportTickets(u: CurrentUserContext, projectId: number, ticketIds?: number[]) {
+    return this.transfer.exportTickets(u, projectId, ticketIds);
   }
 
   async importTickets(

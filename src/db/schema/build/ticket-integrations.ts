@@ -117,6 +117,8 @@ export const projectAutomations = build.table(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),
   },
   (t) => [
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_automations_org_project" }).onDelete("cascade"),

@@ -30,10 +30,25 @@ export const commitTicketImportSchema = z
   })
   .strict();
 
+const csvToIdArray = z.preprocess(
+  (v) => (typeof v === "string" && v.length > 0 ? v.split(",") : undefined),
+  z
+    .array(
+      z
+        .string()
+        .regex(/^[1-9]\d*$/)
+        .transform(Number)
+        .pipe(z.number().int().positive().max(2_147_483_647)),
+    )
+    .max(100)
+    .optional(),
+);
+
 export const exportTicketsQuerySchema = z
   .object({
     format: importFormatSchema,
     limit: z.coerce.number().int().min(1).max(EXPORT_MAX_ROWS).optional(),
+    ticketIds: csvToIdArray,
   })
   .strict();
 

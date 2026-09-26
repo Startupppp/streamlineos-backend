@@ -191,6 +191,8 @@ export const bulkUpdateSchema = z
     cycleId: z.number().int().positive().nullable().optional(),
     priority: projectPrioritySchema.optional(),
     parentTicketId: z.number().int().positive().nullable().optional(),
+    labelIds: z.array(z.number().int().positive()).max(10).optional(),
+    archive: z.boolean().optional(),
   }).strict()
   .refine(
     (data) =>
@@ -198,9 +200,29 @@ export const bulkUpdateSchema = z
       data.status !== undefined ||
       data.cycleId !== undefined ||
       data.priority !== undefined ||
-      data.parentTicketId !== undefined,
+      data.parentTicketId !== undefined ||
+      data.labelIds !== undefined ||
+      data.archive !== undefined,
     { message: "At least one field to update is required" },
   );
+
+const csvToNumberArray = z.preprocess(
+  normalizeCsv,
+  z
+    .array(
+      z
+        .string()
+        .regex(/^[1-9]\d*$/)
+        .transform(Number)
+        .pipe(z.number().int().positive().max(2_147_483_647)),
+    )
+    .max(100)
+    .optional(),
+);
+
+export const exportTicketsQuerySchema = z.object({
+  ticketIds: csvToNumberArray,
+}).strict();
 
 export const rankTicketSchema = z.object({
   beforeTicketId: z.number().int().positive().nullable().optional(),
@@ -229,4 +251,5 @@ export type AllWorkQuery = z.infer<typeof allWorkQuerySchema>;
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
 export type BulkUpdateInput = z.infer<typeof bulkUpdateSchema>;
+export type ExportTicketsQuery = z.infer<typeof exportTicketsQuerySchema>;
 export type RankTicketInput = z.infer<typeof rankTicketSchema>;

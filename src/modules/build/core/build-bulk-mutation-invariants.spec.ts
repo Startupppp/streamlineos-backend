@@ -50,6 +50,43 @@ async function harness() {
   return { module, db, set, scopeFor, service: module.get(ProjectsTicketsQueryService) };
 }
 
+async function archiveHarness(childRows: Array<{ parentTicketId: number | null; childId: number }>) {
+  const scopeFor = jest.fn().mockResolvedValue("all");
+  const rows = [{ id: 10, status: "TODO", version: 1, assigneeMembershipId: null, allowed: true }];
+  const ticketChain = {
+    from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue(rows),
+    then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
+  };
+  const childChain = {
+    from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue(childRows),
+    then: (resolve: (value: typeof childRows) => unknown) => Promise.resolve(childRows).then(resolve),
+  };
+  let selectCount = 0;
+  const set = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) });
+  const db = {
+    select: jest.fn(() => { selectCount++; return selectCount === 1 ? ticketChain : childChain; }),
+    update: jest.fn(() => ({ set })),
+    execute: jest.fn().mockResolvedValue([]),
+    query: {
+      projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 1 }) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
+    },
+    transaction: jest.fn(),
+  };
+  db.transaction.mockImplementation(async (callback: (tx: typeof db) => Promise<unknown>) => callback(db));
+  const module = await Test.createTestingModule({ providers: [
+    ProjectsTicketsQueryService,
+    { provide: DRIZZLE, useValue: db },
+    { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
+    { provide: AccessService, useValue: { scopeFor } },
+  ] }).compile();
+  return { module, db, set, scopeFor, service: module.get(ProjectsTicketsQueryService) };
+}
+
 describe("Build bulk assignment invariants", () => {
   it("requires build:tickets:assign before reading selected tickets", async () => {
     const h = await harness();
@@ -95,6 +132,27 @@ describe("Build bulk assignment invariants", () => {
     try {
       await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], parentTicketId: 999 }))
         .rejects.toThrow("Parent ticket not found in this project");
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
+  });
+
+  it("rejects unknown label ids and makes no DB write, so a stale label id does not silently map to nothing", async () => {
+    const h = await harness();
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], labelIds: [999] }))
+        .rejects.toThrow(NotFoundException);
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
+  });
+
+  it("returns blocked list with zero updates when a selected ticket has active children outside the selection, and no write occurs", async () => {
+    const h = await archiveHarness([{ parentTicketId: 10, childId: 99 }]);
+    try {
+      const result = await h.service.bulkUpdate(actor, 1, { ticketIds: [10], archive: true });
+      expect(result.updated).toBe(0);
+      expect(result.blocked).toEqual([
+        expect.objectContaining({ ticketId: 10, dependencyCount: 1 }),
+      ]);
       expect(h.set).not.toHaveBeenCalled();
     } finally { await h.module.close(); }
   });

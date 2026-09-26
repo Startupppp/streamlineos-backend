@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import { tickets } from "../../../db/schema";
@@ -29,6 +29,7 @@ export interface TicketExportResult {
 export interface TicketExportInput {
   format: ImportFormat;
   limit?: number;
+  ticketIds?: number[];
 }
 
 function cell(value: unknown): string {
@@ -57,7 +58,11 @@ export class TicketExportService {
       {
         tenant: tickets.orgId,
         scope: ticketScope(read.orgId, read.actorId),
-        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt)],
+        and: [
+          eq(tickets.projectId, projectId),
+          isNull(tickets.deletedAt),
+          ...(input.ticketIds?.length ? [inArray(tickets.id, input.ticketIds)] : []),
+        ],
       },
       (where) =>
         this.db

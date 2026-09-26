@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   projectMembers,
   organizationMembers,
@@ -38,7 +38,7 @@ export class ProjectsTicketsTransferService {
     private readonly cache: CacheService,
   ) {}
 
-  async exportTickets(u: CurrentUserContext, projectId: number) {
+  async exportTickets(u: CurrentUserContext, projectId: number, ticketIds?: number[]) {
     const [{ hasAccess }, read] = await Promise.all([
       this.read.checkProjectAccess(u.orgId, u.userId, projectId),
       resolveTicketsScope(this.access, u),
@@ -46,11 +46,16 @@ export class ProjectsTicketsTransferService {
     if (!hasAccess) throw new NotFoundException("Not found");
     if (read.denied) return { rows: [], truncated: false };
 
+    const ticketIdFilter =
+      ticketIds !== undefined && ticketIds.length > 0
+        ? [inArray(tickets.id, ticketIds)]
+        : [];
+
     const fetched = await read.read(
       {
         tenant: tickets.orgId,
         scope: ticketScope(read.orgId, read.actorId),
-        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt)],
+        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...ticketIdFilter],
       },
       ({ sql: where }) => this.db
         .select({
