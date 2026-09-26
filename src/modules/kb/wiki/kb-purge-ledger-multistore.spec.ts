@@ -6,6 +6,9 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(
     async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(mockTx),
   ),
+  runInTenantTransaction: jest.fn(
+    async (_db: unknown, fn: (tx: unknown) => Promise<unknown>, _opts: unknown) => fn(mockTx),
+  ),
 }));
 
 const insertedBatches: { orgId: string; pageId: number; store: string }[][] = [];
@@ -57,9 +60,9 @@ function extractSqlValues(cond: SQL): string[] {
 }
 
 import {
-  isStoreComplete,
-  markStoreComplete,
-  markStoreFailed,
+  incompleteStorePages,
+  markStoresComplete,
+  markStoresFailed,
   oldestIncompleteLedgerEntry,
   openMultiStoreLedger,
   purgeFavoritesForPages,
@@ -105,6 +108,23 @@ function makeSelectDb(minResult: Date | null): Db {
     select: jest.fn(() => ({
       from: jest.fn(() => ({
         where: jest.fn().mockResolvedValue([{ oldest: minResult }]),
+      })),
+    })),
+  } as unknown as Db;
+}
+
+function makeCompletedPagesDb(completedPageIdsFor: (store: KbPurgeStore) => number[]): Db {
+  return {
+    select: jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn(async (cond: SQL) => {
+          const { params } = dialect.sqlToQuery(cond);
+          const store = params.find(
+            (p): p is string => typeof p === "string" && (KB_PURGE_STORES as readonly string[]).includes(p),
+          ) as KbPurgeStore | undefined;
+          if (!store) return [];
+          return completedPageIdsFor(store).map((pageId) => ({ pageId }));
+        }),
       })),
     })),
   } as unknown as Db;
@@ -157,50 +177,57 @@ describe("openMultiStoreLedger — creates one pending entry per store per page"
   });
 });
 
-describe("isStoreComplete — reads ledger status for one store", () => {
-  it("returns true when findFirst returns a completed row", async () => {
-    const db = makeQueryDb({ status: "completed" });
-    expect(await isStoreComplete(db, ORG_A, PAGE_1, "visits")).toBe(true);
+describe("incompleteStorePages — returns page ids not yet complete for a given store", () => {
+  it("returns empty array when the page has a completed ledger row (page is done)", async () => {
+    const db = makeCompletedPagesDb(() => [PAGE_1]);
+    expect(await incompleteStorePages(db, ORG_A, [PAGE_1], "visits")).toEqual([]);
   });
 
-  it("returns false when findFirst returns a pending row", async () => {
-    const db = makeQueryDb({ status: "pending" });
-    expect(await isStoreComplete(db, ORG_A, PAGE_1, "visits")).toBe(false);
+  it("returns the page id when the page has no completed ledger row (pending status)", async () => {
+    const db = makeCompletedPagesDb(() => []);
+    expect(await incompleteStorePages(db, ORG_A, [PAGE_1], "visits")).toEqual([PAGE_1]);
   });
 
-  it("returns false when findFirst returns a failed row", async () => {
-    const db = makeQueryDb({ status: "failed" });
-    expect(await isStoreComplete(db, ORG_A, PAGE_1, "visits")).toBe(false);
+  it("returns the page id when the page has a failed ledger row (failed is not complete)", async () => {
+    const db = makeCompletedPagesDb(() => []);
+    expect(await incompleteStorePages(db, ORG_A, [PAGE_1], "visits")).toEqual([PAGE_1]);
   });
 
-  it("returns false when findFirst returns null (row absent)", async () => {
-    const db = makeQueryDb(null);
-    expect(await isStoreComplete(db, ORG_A, PAGE_1, "visits")).toBe(false);
+  it("returns the page id when no ledger row exists for the page", async () => {
+    const db = makeCompletedPagesDb(() => []);
+    expect(await incompleteStorePages(db, ORG_A, [PAGE_1], "visits")).toEqual([PAGE_1]);
   });
 
-  it("cross-tenant isolation: the where clause carries org_id so another tenant's row cannot satisfy the check", async () => {
-    const findFirst = jest.fn().mockResolvedValue(null);
+  it("cross-tenant isolation: the where clause carries org_id so another tenant's completed row cannot satisfy the check", async () => {
+    let capturedWhere: SQL | undefined;
     const db = {
-      query: { kbPagePurgeLedger: { findFirst } },
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(async (cond: SQL) => {
+            capturedWhere = cond;
+            return [];
+          }),
+        })),
+      })),
     } as unknown as Db;
-    await isStoreComplete(db, ORG_A, PAGE_1, "visits");
-    const [callArg] = findFirst.mock.calls[0] as [{ where: SQL }];
-    const { params } = dialect.sqlToQuery(callArg.where);
+    await incompleteStorePages(db, ORG_A, [PAGE_1], "visits");
+    expect(capturedWhere).toBeDefined();
+    const { params } = dialect.sqlToQuery(capturedWhere!);
     expect(params).toContain(ORG_A);
     expect(params).not.toContain(ORG_B);
   });
 });
 
-describe("markStoreComplete — records completion in the ledger", () => {
-  it("writes status=completed to the correct row", async () => {
+describe("markStoresComplete — records completion in the ledger for a batch of pages", () => {
+  it("writes status=completed for the given pages", async () => {
     const db = makeQueryDb(null);
-    await markStoreComplete(db, ORG_A, PAGE_1, "favorites");
+    await markStoresComplete(db, ORG_A, [PAGE_1], "favorites");
     expect(updatedRows.some((r) => r.status === "completed")).toBe(true);
   });
 
-  it("the where clause carries org_id, page_id, and store so only the right row is updated", async () => {
+  it("the where clause carries org_id, page_id, and store so only the right rows are updated", async () => {
     const db = makeQueryDb(null);
-    await markStoreComplete(db, ORG_A, PAGE_1, "blobs");
+    await markStoresComplete(db, ORG_A, [PAGE_1], "blobs");
     const setCall = (mockTx.update as jest.Mock).mock.results[0] as {
       value?: { set?: jest.Mock };
     };
@@ -208,34 +235,49 @@ describe("markStoreComplete — records completion in the ledger", () => {
       value?: { where?: jest.Mock };
     };
     const whereSql: SQL | undefined = whereCall?.value?.where?.mock?.calls?.[0]?.[0];
-    if (whereSql) {
-      const { params } = dialect.sqlToQuery(whereSql);
-      expect(params).toContain(ORG_A);
-      expect(params).toContain(PAGE_1);
-      expect(params).toContain("blobs");
-    }
+    expect(whereSql).toBeDefined();
+    const { params } = dialect.sqlToQuery(whereSql!);
+    expect(params).toContain(ORG_A);
+    expect(params).toContain(PAGE_1);
+    expect(params).toContain("blobs");
   });
 
   it("is idempotent: calling twice does not throw", async () => {
     const db = makeQueryDb(null);
-    await markStoreComplete(db, ORG_A, PAGE_1, "blobs");
-    await expect(markStoreComplete(db, ORG_A, PAGE_1, "blobs")).resolves.not.toThrow();
+    await markStoresComplete(db, ORG_A, [PAGE_1], "blobs");
+    await expect(markStoresComplete(db, ORG_A, [PAGE_1], "blobs")).resolves.not.toThrow();
   });
 });
 
-describe("markStoreFailed — records failure with reason", () => {
-  it("writes status=failed to the ledger", async () => {
+describe("markStoresFailed — records failure with reason for a batch of pages", () => {
+  it("writes status=failed to the ledger for the given pages", async () => {
     const db = makeQueryDb(null);
-    await markStoreFailed(db, ORG_A, PAGE_1, "page_rows", "FK violation on kb_page_visits");
+    await markStoresFailed(db, ORG_A, [PAGE_1], "page_rows", "FK violation on kb_page_visits");
     expect(updatedRows.some((r) => r.status === "failed")).toBe(true);
   });
 
-  it("truncates the reason to 1000 characters", async () => {
+  it("truncates the reason to 1000 characters before writing to the ledger", async () => {
+    let capturedFailedReason: string | undefined;
+    const localTx = {
+      update: jest.fn(() => ({
+        set: jest.fn((s: { failedReason?: string }) => {
+          capturedFailedReason = s.failedReason;
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const runInTenantTransactionMock = jest.requireMock(
+      "../../../common/tenant/run-in-tenant-transaction",
+    ) as { runInTenantTransaction: jest.Mock };
+    const prev = runInTenantTransactionMock.runInTenantTransaction.getMockImplementation();
+    runInTenantTransactionMock.runInTenantTransaction.mockImplementationOnce(
+      async (_db: unknown, fn: (tx: unknown) => Promise<unknown>, _opts: unknown) =>
+        fn(localTx),
+    );
     const db = makeQueryDb(null);
-    const longReason = "x".repeat(5_000);
-    await expect(
-      markStoreFailed(db, ORG_A, PAGE_1, "page_rows", longReason),
-    ).resolves.not.toThrow();
+    await markStoresFailed(db, ORG_A, [PAGE_1], "page_rows", "x".repeat(5_000));
+    expect(capturedFailedReason).toHaveLength(1_000);
+    if (prev) runInTenantTransactionMock.runInTenantTransaction.mockImplementation(prev);
   });
 });
 
@@ -260,35 +302,15 @@ describe("oldestIncompleteLedgerEntry — SLA metric query", () => {
 
 describe("resumability — interrupted purge resumes from the right store", () => {
   it("skips a store already marked completed and runs the pending store", async () => {
-    const storeState: Partial<Record<KbPurgeStore, string>> = {
-      visits: "completed",
-      favorites: "pending",
-      source_links: "pending",
-      reviews: "pending",
-      versions: "pending",
-      comments: "pending",
-      grants: "pending",
-      chunks: "pending",
-      analytics: "pending",
-      notifications: "pending",
-      caches: "pending",
-      public_cdn: "pending",
-      connector_projections: "pending",
-      page_rows: "pending",
-      blobs: "pending",
-    };
-
-    const findFirst = jest.fn((args: { where: SQL }) => {
-      const { params } = dialect.sqlToQuery(args.where);
-      const store = params.find((p) => KB_PURGE_STORES.includes(p as KbPurgeStore));
-      return Promise.resolve(store ? { status: storeState[store as KbPurgeStore] } : null);
-    });
-    const db = { query: { kbPagePurgeLedger: { findFirst } } } as unknown as Db;
+    const completedStores = new Set<KbPurgeStore>(["visits"]);
+    const db = makeCompletedPagesDb((store) =>
+      completedStores.has(store) ? [PAGE_1] : [],
+    );
 
     const ran: KbPurgeStore[] = [];
     for (const store of KB_PURGE_STORES) {
-      const complete = await isStoreComplete(db, ORG_A, PAGE_1, store);
-      if (!complete) ran.push(store);
+      const incomplete = await incompleteStorePages(db, ORG_A, [PAGE_1], store);
+      if (incomplete.length > 0) ran.push(store);
     }
 
     expect(ran).not.toContain("visits");
@@ -296,50 +318,29 @@ describe("resumability — interrupted purge resumes from the right store", () =
   });
 
   it("re-running after all stores complete calls no store purges", async () => {
-    const findFirst = jest.fn().mockResolvedValue({ status: "completed" });
-    const db = { query: { kbPagePurgeLedger: { findFirst } } } as unknown as Db;
+    const db = makeCompletedPagesDb(() => [PAGE_1]);
 
     const ran: KbPurgeStore[] = [];
     for (const store of KB_PURGE_STORES) {
-      const complete = await isStoreComplete(db, ORG_A, PAGE_1, store);
-      if (!complete) ran.push(store);
+      const incomplete = await incompleteStorePages(db, ORG_A, [PAGE_1], store);
+      if (incomplete.length > 0) ran.push(store);
     }
 
     expect(ran).toHaveLength(0);
   });
 
   it("a failed store is retried while already-completed stores are skipped", async () => {
-    const storeState: Partial<Record<KbPurgeStore, string>> = {
-      visits: "completed",
-      favorites: "failed",
-      source_links: "pending",
-      reviews: "pending",
-      versions: "pending",
-      comments: "pending",
-      grants: "pending",
-      chunks: "pending",
-      analytics: "pending",
-      notifications: "pending",
-      caches: "pending",
-      public_cdn: "pending",
-      connector_projections: "pending",
-      page_rows: "pending",
-      blobs: "pending",
-    };
-
-    const findFirst = jest.fn((args: { where: SQL }) => {
-      const { params } = dialect.sqlToQuery(args.where);
-      const store = params.find((p) => KB_PURGE_STORES.includes(p as KbPurgeStore));
-      return Promise.resolve(store ? { status: storeState[store as KbPurgeStore] } : null);
-    });
-    const db = { query: { kbPagePurgeLedger: { findFirst } } } as unknown as Db;
+    const completedStores = new Set<KbPurgeStore>(["visits"]);
+    const db = makeCompletedPagesDb((store) =>
+      completedStores.has(store) ? [PAGE_1] : [],
+    );
 
     const skipped: KbPurgeStore[] = [];
     const retried: KbPurgeStore[] = [];
 
     for (const store of ["visits", "favorites", "source_links"] as KbPurgeStore[]) {
-      const complete = await isStoreComplete(db, ORG_A, PAGE_1, store);
-      if (complete) skipped.push(store);
+      const incomplete = await incompleteStorePages(db, ORG_A, [PAGE_1], store);
+      if (incomplete.length === 0) skipped.push(store);
       else retried.push(store);
     }
 
@@ -356,12 +357,30 @@ describe("cross-tenant isolation on the ledger", () => {
     expect(all.some((r) => r.orgId === ORG_B)).toBe(false);
   });
 
-  it("markStoreComplete includes org_id in its WHERE clause", async () => {
+  it("markStoresComplete includes org_id in its WHERE clause so another tenant's rows cannot be updated", async () => {
+    let capturedWhere: SQL | undefined;
+    const localTx = {
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(async (cond: SQL) => {
+            capturedWhere = cond;
+          }),
+        })),
+      })),
+    };
+    const runInTenantTransactionMock = jest.requireMock(
+      "../../../common/tenant/run-in-tenant-transaction",
+    ) as { runInTenantTransaction: jest.Mock };
+    runInTenantTransactionMock.runInTenantTransaction.mockImplementationOnce(
+      async (_db: unknown, fn: (tx: unknown) => Promise<unknown>, _opts: unknown) =>
+        fn(localTx),
+    );
     const db = makeQueryDb(null);
-    await markStoreComplete(db, ORG_A, PAGE_1, "visits");
-    expect(
-      updatedRows.some((r) => r.orgId === ORG_A || r.status === "completed"),
-    ).toBe(true);
+    await markStoresComplete(db, ORG_A, [PAGE_1], "visits");
+    expect(capturedWhere).toBeDefined();
+    const { params } = dialect.sqlToQuery(capturedWhere!);
+    expect(params).toContain(ORG_A);
+    expect(params).not.toContain(ORG_B);
   });
 });
 
@@ -519,18 +538,18 @@ describe("purgeAnalyticsForPages — nullifies kb_events.article_id (no FK, woul
   });
 
   it("nullifies articleId rather than deleting the event row — analytics history is preserved", async () => {
-    const runInNewTenantTransaction = jest.requireMock(
+    const runInTenantTransactionMock = jest.requireMock(
       "../../../common/tenant/run-in-tenant-transaction",
-    ) as { runInNewTenantTransaction: jest.Mock };
-    const prev = runInNewTenantTransaction.runInNewTenantTransaction.getMockImplementation();
-    runInNewTenantTransaction.runInNewTenantTransaction.mockImplementationOnce(
-      async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) =>
+    ) as { runInTenantTransaction: jest.Mock };
+    const prev = runInTenantTransactionMock.runInTenantTransaction.getMockImplementation();
+    runInTenantTransactionMock.runInTenantTransaction.mockImplementationOnce(
+      async (_db: unknown, fn: (tx: unknown) => Promise<unknown>, _opts: unknown) =>
         fn(mockAnalyticsTx),
     );
     const db = makeQueryDb(null);
     await purgeAnalyticsForPages(db, ORG_A, [PAGE_1]);
     expect(mockAnalyticsTx.update).toHaveBeenCalledTimes(1);
-    if (prev) runInNewTenantTransaction.runInNewTenantTransaction.mockImplementation(prev);
+    if (prev) runInTenantTransactionMock.runInTenantTransaction.mockImplementation(prev);
   });
 });
 
@@ -578,16 +597,17 @@ describe("purgePublicCdnForPages — nullifies publicToken before the row is del
   });
 });
 
-describe("purgeConnectorProjectionsForPages — no-op placeholder: no connector tables exist in this repository", () => {
-  it("resolves without throwing for a non-empty page list", async () => {
+describe("purgeConnectorProjectionsForPages — no connector-projection table exists in this schema yet", () => {
+  it("resolves without error for a non-empty page list", async () => {
     const db = makeQueryDb(null);
     await expect(purgeConnectorProjectionsForPages(db, ORG_A, [PAGE_1])).resolves.not.toThrow();
   });
 
-  it("issues no DB call because there are no connector tables to clean", async () => {
+  it("issues no database call because there is no connector-projection table to write to", async () => {
     const db = makeQueryDb(null);
     await purgeConnectorProjectionsForPages(db, ORG_A, [PAGE_1]);
     expect(mockTx.delete).not.toHaveBeenCalled();
     expect(mockTx.update).not.toHaveBeenCalled();
+    expect(mockTx.insert).not.toHaveBeenCalled();
   });
 });
