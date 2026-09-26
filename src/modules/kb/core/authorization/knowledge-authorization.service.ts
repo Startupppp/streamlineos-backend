@@ -16,6 +16,8 @@ import { AccessService } from "../../../access/access.service";
 import {
   kbSpaceScopeIsAdmin,
   resolveAccessibleSpaceScope,
+  resolveAccessibleSpaceScopeWithOutcome,
+  type KbSpaceScopeDeps,
 } from "../kb-acl-cache-key";
 import {
   memoizeStandingForRequest,
@@ -113,6 +115,20 @@ export class KnowledgeAuthorizationService {
 
   async invalidateSpaceScope(orgId: string): Promise<void> {
     await this.cache.invalidateNamespace(`kb:acc-spaces:${orgId}`);
+  }
+
+  private spaceScopeDeps(): KbSpaceScopeDeps {
+    return { db: this.db, cache: this.cache, access: this.access };
+  }
+
+  async resolveAccessibleSpaces(
+    user: CurrentUserContext,
+  ): Promise<{ spaceIds: number[]; cacheOutcome: "hit" | "miss" | "bypass" }> {
+    const scope = await resolveAccessibleSpaceScopeWithOutcome(this.spaceScopeDeps(), user);
+    if (!scope.isAdmin && scope.membershipId === null) {
+      throw new ForbiddenException("Organization membership required");
+    }
+    return { spaceIds: scope.spaceIds, cacheOutcome: scope.cacheOutcome };
   }
 
   async resolvePageAccess(

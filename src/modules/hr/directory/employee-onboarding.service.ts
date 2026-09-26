@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -384,6 +385,7 @@ export class EmployeeOnboardingService {
         email: users.email,
         isActive: users.isActive,
         membershipStatus: organizationMembers.status,
+        isOwner: organizationMembers.isOwner,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
@@ -398,6 +400,10 @@ export class EmployeeOnboardingService {
     if (!target || target.membershipStatus !== "ACTIVE")
       throw new NotFoundException(EMPLOYEE_NOT_FOUND_MESSAGE);
     if (!target.isActive) throw new BadRequestException(SUSPENDED_ACCOUNT_MESSAGE);
+    if (target.isOwner && !actor.isOrgOwner)
+      throw new ForbiddenException(
+        "Only the organization owner may take a sign-in link for the organization owner",
+      );
 
     const rawToken = randomBytes(32).toString("hex");
     const expiresAt = addDays(new Date(), INVITE_TOKEN_DAYS);

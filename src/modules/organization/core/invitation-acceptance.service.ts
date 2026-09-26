@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID, randomBytes, createHash } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { LEGACY_CELL_ID } from "../../../common/region/placement";
@@ -154,7 +154,7 @@ export class InvitationAcceptanceService {
     return tx.insert(magicLinkTokens).values({
       id: randomUUID(),
       userId,
-      tokenHash: createHash("sha256").update(rawToken).digest("hex"),
+      tokenHash: hashToken(rawToken),
       expiresAt: addMinutes(new Date(), 10),
     });
   }

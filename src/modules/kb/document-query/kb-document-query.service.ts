@@ -3,7 +3,6 @@ import { and, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 import { kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { KbAccessService } from "../core/kb-access.service";
 import { AccessService } from "../../access/access.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { articleOwnerScope } from "../retrieval/kb-article-owner-scope";
@@ -41,7 +40,6 @@ const KB_DOCUMENT_QUERY_CAP = 20;
 export class KbDocumentQueryService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly kbAccess: KbAccessService,
     private readonly access: AccessService,
     private readonly auth: KnowledgeAuthorizationService,
   ) {}

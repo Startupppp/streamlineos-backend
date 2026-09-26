@@ -82,6 +82,81 @@ function makeHarness(over: { isAdmin?: boolean; spaceIds?: number[] } = {}): Har
   };
 }
 
+describe("KnowledgeAuthorizationService.resolvePageAccess — disagreement resolution", () => {
+  it("allows an org-visible page in a space the actor cannot reach, so list path and single-read path agree on org-visibility superseding space membership", async () => {
+    const { service, findPage } = makeHarness({ spaceIds: [1, 2] });
+    findPage.mockResolvedValue({
+      id: 5,
+      ownerMembershipId: null,
+      createdById: "other-user",
+      createdByMembershipId: null,
+      visibility: "org",
+      spaceId: 99,
+      projectId: null,
+    });
+
+    const decision = await inRequest(() => service.resolvePageAccess(makeUser(), 5, "view"));
+
+    expect(decision.outcome).toBe("allowed");
+  });
+
+  it("BITE: the single-read assertion still denies a page genuinely outside the actor's scope, so the positive above is not vacuous", async () => {
+    const { service } = makeHarness({ spaceIds: [1, 2] });
+
+    const decision = await inRequest(() => service.resolvePageAccess(makeUser(), 5, "view"));
+
+    expect(decision.outcome).toBe("notFound");
+  });
+
+  it("passes the restriction branch inside the scope predicate to the page query for non-admin actors, matching the list predicate so restriction-gated pages are denied at the SQL level", async () => {
+    let capturedWhere: unknown;
+    const findPage = jest.fn().mockImplementation((opts: { where: unknown }) => {
+      capturedWhere = opts.where;
+      return Promise.resolve(undefined);
+    });
+    const db = { query: { kbPages: { findFirst: findPage }, kbSpaces: { findFirst: jest.fn() } } };
+    const access = {
+      holds: jest.fn().mockResolvedValue(false),
+      getPermissionsVersion: jest.fn().mockResolvedValue(3),
+    } as unknown as AccessService;
+    const cache = {
+      cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()),
+      invalidateNamespace: jest.fn(),
+    } as unknown as CacheService;
+    const service = new KnowledgeAuthorizationService(db as never, cache, access);
+
+    await inRequest(() => service.resolvePageAccess(makeUser(), 5, "view"));
+
+    const dialect = new PgDialect();
+    const { sql: querySql } = dialect.sqlToQuery(capturedWhere as Parameters<typeof dialect.sqlToQuery>[0]);
+    expect(querySql).toContain("kb_page_restrictions");
+  });
+
+  it("BITE: an admin actor does not get a restriction clause because the admin fast path bypasses restriction checks", async () => {
+    let capturedWhere: unknown;
+    const findPage = jest.fn().mockImplementation((opts: { where: unknown }) => {
+      capturedWhere = opts.where;
+      return Promise.resolve(undefined);
+    });
+    const db = { query: { kbPages: { findFirst: findPage }, kbSpaces: { findFirst: jest.fn() } } };
+    const access = {
+      holds: jest.fn().mockResolvedValue(true),
+      getPermissionsVersion: jest.fn().mockResolvedValue(3),
+    } as unknown as AccessService;
+    const cache = {
+      cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()),
+      invalidateNamespace: jest.fn(),
+    } as unknown as CacheService;
+    const service = new KnowledgeAuthorizationService(db as never, cache, access);
+
+    await inRequest(() => service.resolvePageAccess(makeUser(), 5, "view"));
+
+    const dialect = new PgDialect();
+    const { sql: querySql } = dialect.sqlToQuery(capturedWhere as Parameters<typeof dialect.sqlToQuery>[0]);
+    expect(querySql).not.toContain("kb_page_restrictions");
+  });
+});
+
 describe("KnowledgeAuthorizationService.resolvePageAccess", () => {
   it("reports a page it cannot reach as not found, never as denied, so a hidden page is indistinguishable from a missing one", async () => {
     const { service } = makeHarness();

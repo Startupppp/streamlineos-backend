@@ -13,6 +13,7 @@ import { pageFullSearchQuerySchema, kbPageFullSearchResponseSchema, type PageFul
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { kbSearchResponseSchema } from "./dto/kb-retrieval-response.schemas";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -24,6 +25,7 @@ export class KbSearchController {
   ) {}
 
   @Get("search")
+  @NoTenantTransaction()
   @RequirePermission("kb:articles:view")
   @Validate({ query: searchSchema })
   @ResponseSchema(kbSearchResponseSchema)
@@ -36,6 +38,7 @@ export class KbSearchController {
   }
 
   @Get("pages/full-search")
+  @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ query: pageFullSearchQuerySchema })
   @ResponseSchema(kbPageFullSearchResponseSchema)

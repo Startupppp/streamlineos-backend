@@ -62,6 +62,7 @@ describe("KbAnalyticsService — cross-tenant isolation", () => {
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
     expect(allVals).toContain(ATTACKER_ORG);
+    expect(allVals).not.toContain(OWNER_ORG);
   });
 
   it("does not leak data across orgs (same-tenant control)", async () => {

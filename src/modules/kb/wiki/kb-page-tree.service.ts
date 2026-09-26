@@ -18,7 +18,6 @@ import type { MovePageInput } from "./dto/kb-pages.schemas";
 import type { ListPageTreeChildrenInput } from "./dto/kb-page-tree.dto";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
-import { KbAccessService } from "../core/kb-access.service";
 import { collectSubtreeIds } from "./kb-page-subtree.util";
 import { resolveProjectAccess } from "../../build/core/project-access";
 import {
@@ -72,7 +71,6 @@ export class KbPageTreeService {
     private readonly audit: AuditService,
     private readonly auth: KnowledgeAuthorizationService,
     private readonly access: AccessService,
-    private readonly kbAccess: KbAccessService,
   ) {}
 
   async getTreeLevel(
@@ -371,7 +369,7 @@ export class KbPageTreeService {
     }
 
     if (targetSpaceId !== page.spaceId && targetSpaceId !== null) {
-      await this.kbAccess.assertSpaceAccessible(user, targetSpaceId);
+      await this.auth.assertSpaceAccess(user, targetSpaceId, "view");
     }
 
     return this.db.transaction(async (tx) => {

@@ -94,7 +94,11 @@ function makeSimpleSelectDb(selectResults: Record<string, unknown>[][]): {
       capture.conditions.push(cond);
       return { limit, orderBy };
     });
-    return { from: jest.fn(() => ({ where })) };
+    const fromResult: { leftJoin: jest.Mock; where: typeof where } = {
+      leftJoin: jest.fn(() => fromResult),
+      where,
+    };
+    return { from: jest.fn(() => fromResult) };
   });
   return { db: { select } as unknown as Db, capture };
 }
@@ -123,7 +127,12 @@ function makeTxDb(options: {
   const select = jest.fn().mockImplementation(() => {
     const rows = selectResults[selectCallIndex++] ?? [];
     const limit = jest.fn().mockResolvedValue(rows);
-    return { from: jest.fn(() => ({ where: jest.fn(() => ({ limit })) })) };
+    const where = jest.fn(() => ({ limit }));
+    const fromResult: { leftJoin: jest.Mock; where: typeof where } = {
+      leftJoin: jest.fn(() => fromResult),
+      where,
+    };
+    return { from: jest.fn(() => fromResult) };
   });
 
   const txInsertReturning = jest.fn().mockResolvedValue(txInsertRows);

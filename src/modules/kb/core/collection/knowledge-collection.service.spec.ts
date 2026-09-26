@@ -3,7 +3,11 @@ import type { PgColumn } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { kbPages } from "../../../../db/schema";
 import { KnowledgeCollectionService } from "./knowledge-collection.service";
-import { buildVisiblePageScope } from "../authorization/knowledge-page-scope";
+import {
+  buildVisiblePageScope,
+  buildIndexedBranch,
+  buildGrantBranch,
+} from "../authorization/knowledge-page-scope";
 import type { KnowledgeAuthorizationService } from "../authorization/knowledge-authorization.service";
 import type { KbActorStanding } from "../authorization/knowledge-authorization.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
@@ -579,5 +583,85 @@ describe("KnowledgeCollectionService — BE-81 OR-to-UNION split", () => {
     const scope = buildVisiblePageScope(standing(), "view");
     expect(scope.grantBranch).not.toBeNull();
     expect(scope.indexedBranch).toBeDefined();
+  });
+});
+
+describe("KnowledgeCollectionService — four-case predicate equivalence (shape assertions; row-set equality requires a populated database and cannot be observed here)", () => {
+  function stripParamNumbers(s: string): string {
+    return s.replace(/\$\d+/g, "?");
+  }
+
+  it("case A: the indexed branch SQL contains the same expression as the standalone buildIndexedBranch output, confirming the UNION feeds the same predicate the OR form uses", () => {
+    const stand = standing();
+    const scope = buildVisiblePageScope(stand, "view");
+    const d = new PgDialect();
+    const fromScope = stripParamNumbers(d.sqlToQuery(scope.indexedBranch).sql);
+    const standalone = stripParamNumbers(d.sqlToQuery(buildIndexedBranch(stand, "view")).sql);
+    expect(fromScope).toContain(standalone);
+    expect(fromScope).not.toContain("kb_page_grants");
+  });
+
+  it("case B: the grant branch SQL contains the same expression as the standalone buildGrantBranch output, confirming the UNION feeds the same predicate the OR form uses", () => {
+    const stand = standing();
+    const scope = buildVisiblePageScope(stand, "view");
+    const grantExpr = buildGrantBranch(stand, "view");
+    expect(grantExpr).not.toBeNull();
+    if (grantExpr === null) throw new Error("unreachable");
+    if (scope.grantBranch === null) throw new Error("unreachable");
+    const d = new PgDialect();
+    const fromScope = stripParamNumbers(d.sqlToQuery(scope.grantBranch).sql);
+    const standalone = stripParamNumbers(d.sqlToQuery(grantExpr).sql);
+    expect(fromScope).toContain(standalone);
+    expect(fromScope).toContain("kb_page_grants");
+  });
+
+  it("case C: the set operator Drizzle emits is UNION not UNION ALL — row-set deduplication for a page reachable via both branches is a Postgres guarantee not observable without a populated database", () => {
+    const scope = buildVisiblePageScope(standing(), "view");
+    expect(scope.grantBranch).not.toBeNull();
+    if (scope.grantBranch === null) throw new Error("unreachable");
+    const qb = new QueryBuilder();
+    const emitted = qb
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(scope.indexedBranch)
+      .union(qb.select({ id: kbPages.id }).from(kbPages).where(scope.grantBranch))
+      .toSQL().sql;
+    expect(emitted).toMatch(/\bunion\b/i);
+    expect(emitted).not.toMatch(/union all/i);
+  });
+
+  it("case D: the OR predicate that scope.predicate carries contains both the indexed and grant branch expressions, proving the two forms are built from the same sources", () => {
+    const stand = standing();
+    const scope = buildVisiblePageScope(stand, "view");
+    const grantExpr = buildGrantBranch(stand, "view");
+    expect(grantExpr).not.toBeNull();
+    if (grantExpr === null) throw new Error("unreachable");
+    if (scope.grantBranch === null) throw new Error("unreachable");
+    const d = new PgDialect();
+    const predNorm = stripParamNumbers(d.sqlToQuery(scope.predicate).sql);
+    const indexedNorm = stripParamNumbers(d.sqlToQuery(buildIndexedBranch(stand, "view")).sql);
+    const grantNorm = stripParamNumbers(d.sqlToQuery(grantExpr).sql);
+    expect(predNorm).toContain(indexedNorm);
+    expect(predNorm).toContain(grantNorm);
+    expect(predNorm).not.toContain(OTHER_ORG);
+  });
+
+  it("both UNION branches carry the restriction predicate so a page the actor is restricted from is absent from the list — observable at SQL shape since row-set observation requires a populated database", () => {
+    const stand = standing();
+    const scope = buildVisiblePageScope(stand, "view");
+    expect(scope.grantBranch).not.toBeNull();
+    if (scope.grantBranch === null) throw new Error("unreachable");
+    const d = new PgDialect();
+    const indexedRendered = d.sqlToQuery(scope.indexedBranch);
+    const grantRendered = d.sqlToQuery(scope.grantBranch);
+    expect(indexedRendered.sql).toContain("kb_page_restrictions");
+    expect(grantRendered.sql).toContain("kb_page_restrictions");
+    expect(indexedRendered.params).toContain(stand.membershipId);
+    expect(grantRendered.params).toContain(stand.membershipId);
+    const standNoMembership = standing({ membershipId: null, roleSlugs: [] });
+    const scopeAnon = buildVisiblePageScope(standNoMembership, "view");
+    const anonIndexedRendered = d.sqlToQuery(scopeAnon.indexedBranch);
+    expect(anonIndexedRendered.sql).toContain("kb_page_restrictions");
+    expect(anonIndexedRendered.params).not.toContain(stand.membershipId);
   });
 });

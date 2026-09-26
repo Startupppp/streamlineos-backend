@@ -15,7 +15,8 @@ import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-se
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { randomUUID, randomBytes, createHash } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
+import { hashToken } from "../../../common/security/token.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
   runInTenantTransaction,
@@ -130,7 +131,7 @@ export class OrgSetupService {
         await tx.insert(magicLinkTokens).values({
           id: randomUUID(),
           userId: u.userId,
-          tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
+          tokenHash: hashToken(autoLoginToken),
           expiresAt: addMinutes(now, 10),
         });
 
@@ -208,7 +209,7 @@ export class OrgSetupService {
         await tx.insert(magicLinkTokens).values({
           id: randomUUID(),
           userId: u.userId,
-          tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
+          tokenHash: hashToken(autoLoginToken),
           expiresAt: addMinutes(now, 10),
         });
 

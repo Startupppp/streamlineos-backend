@@ -24,6 +24,7 @@ import { KnowledgeAuthorizationService } from "../authorization/knowledge-author
 import {
   buildSharedWithMeScope,
   buildVisiblePageScope,
+  visiblePageBranches,
 } from "../authorization/knowledge-page-scope";
 import {
   accessLevelsSatisfying,
@@ -104,6 +105,7 @@ export class KnowledgeCollectionService {
   ): Promise<KbPageCollectionPage> {
     const standing = await this.auth.resolveStanding(user);
     const scope = buildVisiblePageScope(standing, "view");
+    const branches = visiblePageBranches(standing, "view");
     const scopeTag = collectionScopeTag(query, scope.fingerprint);
 
     let shared: KbSharedWithMeScope | null = null;
@@ -179,13 +181,13 @@ export class KnowledgeCollectionService {
         .limit(query.limit + 1);
 
     const rows =
-      shared === null && scope.grantBranch !== null
-        ? await branchSelect(scope.indexedBranch)
-            .union(branchSelect(scope.grantBranch))
+      shared === null && branches.grantBranch !== null
+        ? await branchSelect(branches.indexedBranch)
+            .union(branchSelect(branches.grantBranch))
             .orderBy(...this.unionOrderTerms(query.sort))
             .limit(query.limit + 1)
         : await branchSelect(
-            shared !== null ? shared.predicate : scope.predicate,
+            shared !== null ? shared.predicate : branches.indexedBranch,
           );
 
     const hasMore = rows.length > query.limit;

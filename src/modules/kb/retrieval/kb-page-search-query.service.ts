@@ -14,6 +14,7 @@ import {
   searchScopeTag,
 } from "./kb-page-search-cursor";
 import type { PageFullSearchQuery, KbPageFullSearchResponse } from "./dto/kb-page-search-query.schemas";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 @Injectable()
 export class KbPageSearchQueryService {
@@ -39,66 +40,72 @@ export class KbPageSearchQueryService {
       };
     }
 
-    const standing = await this.auth.resolveStanding(user);
-    const scope = buildVisiblePageScope(standing, "view");
-    const scopeTag = searchScopeTag(input, scope.fingerprint);
-    const position = decodeSearchCursor(input.cursor, scopeTag);
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const standing = await this.auth.resolveStanding(user);
+        const scope = buildVisiblePageScope(standing, "view");
+        const scopeTag = searchScopeTag(input, scope.fingerprint);
+        const position = decodeSearchCursor(input.cursor, scopeTag);
 
-    const baseConditions = this.buildBaseConditions(user.orgId, scope.predicate, tsquery, input);
-    const rankExpr = sql`ts_rank(${kbPages}.fts, ${tsquery})`;
-    const conditions = [...baseConditions];
-    if (position !== null) {
-      conditions.push(
-        sql`(${rankExpr}, ${kbPages.updatedAt}, ${kbPages.id}) < (${sql.param(Number(position.rank))}::real, ${sql.param(position.updatedAt)}::timestamp, ${sql.param(position.id, kbPages.id)})`,
-      );
-    }
+        const baseConditions = this.buildBaseConditions(user.orgId, scope.predicate, tsquery, input);
+        const rankExpr = sql`ts_rank(${kbPages}.fts, ${tsquery})`;
+        const conditions = [...baseConditions];
+        if (position !== null) {
+          conditions.push(
+            sql`(${rankExpr}, ${kbPages.updatedAt}, ${kbPages.id}) < (${sql.param(Number(position.rank))}::real, ${sql.param(position.updatedAt)}::timestamp, ${sql.param(position.id, kbPages.id)})`,
+          );
+        }
 
-    const rows = await this.db
-      .select({
-        id: kbPages.id,
-        title: kbPages.title,
-        spaceId: kbPages.spaceId,
-        projectId: kbPages.projectId,
-        status: kbPages.status,
-        trustState: kbPages.trustState,
-        visibility: kbPages.visibility,
-        contentType: kbPages.contentType,
-        updatedAt: kbPages.updatedAt,
-        snippet: sql<string>`ts_headline('english', coalesce(${kbPages.contentText},''), ${tsquery}, 'MaxWords=20, MinWords=5')`,
-        rankValue: sql<string>`${rankExpr}::text`,
-        updatedAtValue: sql<string>`to_char(${kbPages.updatedAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`,
-      })
-      .from(kbPages)
-      .where(and(...conditions))
-      .orderBy(desc(rankExpr), desc(kbPages.updatedAt), desc(kbPages.id))
-      .limit(input.limit + 1);
+        const rows = await this.db
+          .select({
+            id: kbPages.id,
+            title: kbPages.title,
+            spaceId: kbPages.spaceId,
+            projectId: kbPages.projectId,
+            status: kbPages.status,
+            trustState: kbPages.trustState,
+            visibility: kbPages.visibility,
+            contentType: kbPages.contentType,
+            updatedAt: kbPages.updatedAt,
+            snippet: sql<string>`ts_headline('english', coalesce(${kbPages.contentText},''), ${tsquery}, 'MaxWords=20, MinWords=5')`,
+            rankValue: sql<string>`${rankExpr}::text`,
+            updatedAtValue: sql<string>`to_char(${kbPages.updatedAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`,
+          })
+          .from(kbPages)
+          .where(and(...conditions))
+          .orderBy(desc(rankExpr), desc(kbPages.updatedAt), desc(kbPages.id))
+          .limit(input.limit + 1);
 
-    const hasMore = rows.length > input.limit;
-    const kept = hasMore ? rows.slice(0, input.limit) : rows;
-    const last = kept[kept.length - 1];
+        const hasMore = rows.length > input.limit;
+        const kept = hasMore ? rows.slice(0, input.limit) : rows;
+        const last = kept[kept.length - 1];
 
-    const items = kept.map(function toItem({ rankValue: _rankValue, updatedAtValue: _updatedAtValue, ...item }) {
-      return item;
-    });
+        const items = kept.map(function toItem({ rankValue: _rankValue, updatedAtValue: _updatedAtValue, ...item }) {
+          return item;
+        });
 
-    const facets = input.facets
-      ? await this.loadFacets(user.orgId, and(...baseConditions))
-      : null;
+        const facets = input.facets
+          ? await this.loadFacets(user.orgId, and(...baseConditions))
+          : null;
 
-    return {
-      items,
-      hasMore,
-      nextCursor:
-        hasMore && last !== undefined
-          ? encodeSearchCursor(scopeTag, {
-              rank: last.rankValue,
-              updatedAt: last.updatedAtValue,
-              id: last.id,
-            })
-          : null,
-      limit: input.limit,
-      facets,
-    };
+        return {
+          items,
+          hasMore,
+          nextCursor:
+            hasMore && last !== undefined
+              ? encodeSearchCursor(scopeTag, {
+                  rank: last.rankValue,
+                  updatedAt: last.updatedAtValue,
+                  id: last.id,
+                })
+              : null,
+          limit: input.limit,
+          facets,
+        };
+      },
+      { orgId: user.orgId },
+    );
   }
 
   private buildBaseConditions(

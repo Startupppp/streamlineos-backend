@@ -1,20 +1,20 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
-import { visibleTo } from "./kb-page-visibility";
-import { kbPages } from "../../../db/schema";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
+import type { KbActorStanding } from "../core/authorization/knowledge-authorization.types";
 
-function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
+function makeStanding(overrides: Partial<KbActorStanding> = {}): KbActorStanding {
   return {
-    userId: "user-1",
     orgId: "org-1",
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: [],
     isOrgOwner: false,
-    role: "member",
-    sessionId: "sess-1",
-    tokenScopes: null,
-    principal: humanSessionPrincipal(1, false),
+    isKbAdmin: false,
+    accessibleSpaceIds: [],
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
     ...overrides,
   };
 }
@@ -26,72 +26,79 @@ const shape = (node: SQL<unknown>): string =>
 
 const boundParams = (node: SQL<unknown>): unknown[] => dialect.sqlToQuery(node).params;
 
-const pageColumns = {
-  orgId: kbPages.orgId,
-  visibility: kbPages.visibility,
-  projectId: kbPages.projectId,
-  createdById: kbPages.createdById,
-  createdByMembershipId: kbPages.createdByMembershipId,
-};
-
-const COLUMN_ALIASES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/"kb_article_chunks"\."page_created_by_membership_id"/g, "M"],
-  [/"kb_pages"\."created_by_membership_id"/g, "M"],
-  [/"kb_article_chunks"\."page_created_by_id"/g, "C"],
-  [/"kb_pages"\."created_by_id"/g, "C"],
-  [/"kb_article_chunks"\."page_visibility"/g, "V"],
-  [/"kb_pages"\."visibility"/g, "V"],
-  [/"kb_article_chunks"\."page_project_id"/g, "P"],
-  [/"kb_pages"\."project_id"/g, "P"],
-  [/"kb_article_chunks"\."org_id"/g, "O"],
-  [/"kb_pages"\."org_id"/g, "O"],
-];
-
-const normalizeColumns = (rendered: string): string =>
-  COLUMN_ALIASES.reduce((acc, [pattern, alias]) => acc.replace(pattern, alias), rendered);
-
-describe("chunkVisibleTo", () => {
-  it("reads the chunk's own copy of the page's access facts", () => {
-    const built = shape(chunkVisibleTo(makeUser(), [42]));
-    expect(built).toContain(`"kb_article_chunks"."page_visibility"`);
-    expect(built).toContain(`"kb_article_chunks"."page_project_id"`);
-    expect(built).toContain(`"kb_article_chunks"."page_created_by_id"`);
-    expect(built).toContain(`"kb_article_chunks"."page_created_by_membership_id"`);
+describe("chunkVisibleTo — semi-join to kb_pages under the canonical scope", () => {
+  it("produces an EXISTS subquery referencing kb_pages, not kb_article_chunks ACL columns", () => {
+    const built = shape(chunkVisibleTo(makeStanding()));
+    expect(built).toContain("EXISTS");
+    expect(built).toContain('"kb_pages"');
+    expect(built).not.toContain('"kb_article_chunks"."page_visibility"');
+    expect(built).not.toContain('"kb_article_chunks"."page_project_id"');
+    expect(built).not.toContain('"kb_article_chunks"."page_created_by_id"');
+    expect(built).not.toContain('"kb_article_chunks"."page_created_by_membership_id"');
   });
 
-  it("does not read the page table, so retrieval needs no join", () => {
-    const built = shape(chunkVisibleTo(makeUser(), [42]));
-    expect(built).not.toContain("kb_pages");
-    expect(built).not.toMatch(/(?<!page_)visibility(?!\w)/);
+  it("correlates the subquery on page_id so each chunk looks up its own page", () => {
+    const built = shape(chunkVisibleTo(makeStanding()));
+    expect(built).toContain('"kb_pages"."id" = "kb_article_chunks"."page_id"');
   });
 
-  it("is the same rule as the shared builder produces over the page's own columns", () => {
-    const asChunk = normalizeColumns(shape(chunkVisibleTo(makeUser(), [42])));
-    const asPage = normalizeColumns(shape(visibleTo(pageColumns, makeUser(), [42])));
-
-    expect(asChunk).toBe(asPage);
-    expect(asChunk).toContain("V IN ('org', 'public')");
-    expect(boundParams(chunkVisibleTo(makeUser(), [42]))).toEqual(
-      boundParams(visibleTo(pageColumns, makeUser(), [42])),
-    );
+  it("includes the grant branch so a page shared by explicit grant appears in chunk scope", () => {
+    const standing = makeStanding({ membershipId: 42 });
+    const built = shape(chunkVisibleTo(standing));
+    expect(built).toContain('"kb_page_grants"');
+    expect(built).toContain("revoked_at");
+    expect(boundParams(chunkVisibleTo(standing))).toContain(42);
   });
 
-  it("the column normalisation is not what makes the two sides match — a different rule still differs", () => {
-    const asChunk = normalizeColumns(shape(chunkVisibleTo(makeUser(), [42])));
-    const narrower = normalizeColumns(shape(visibleTo(pageColumns, makeUser(), [])));
+  it("BITE — with no grant branch (old predicate) a grant-only page is invisible; the new predicate admits it", () => {
+    const standing = makeStanding({ membershipId: 42, userId: "other-user" });
+    const withGrant = shape(chunkVisibleTo(standing));
+    expect(withGrant).toContain('"kb_page_grants"');
 
-    expect(asChunk).not.toBe(narrower);
+    const withoutGrant = shape(buildVisiblePageScope(
+      { ...makeStanding({ membershipId: null }), userId: "other-user" },
+      "view",
+    ).predicate);
+    expect(withoutGrant).not.toContain('"kb_page_grants"');
   });
 
-  it("narrows a reader who belongs to no project", () => {
-    const built = shape(chunkVisibleTo(makeUser(), []));
-    expect(built).toContain(`"kb_article_chunks"."page_project_id" IS NULL`);
-    expect(built).not.toContain("ANY(ARRAY");
+  it("the predicate and the canonical page scope produce the same predicate body inside the EXISTS", () => {
+    const standing = makeStanding({ accessibleProjectIds: [42] });
+    const chunkPred = shape(chunkVisibleTo(standing));
+    const pagePred = shape(buildVisiblePageScope(standing, "view").predicate);
+    expect(chunkPred).toContain(pagePred);
   });
 
-  it("gives an org owner the whole organisation", () => {
-    expect(shape(chunkVisibleTo(makeUser({ isOrgOwner: true }), []))).toContain(
-      `"kb_article_chunks"."org_id"`,
-    );
+  it("binds the org so no other tenant's pages can satisfy the predicate", () => {
+    const standing = makeStanding({ orgId: "org-sentinel" });
+    expect(boundParams(chunkVisibleTo(standing))).toContain("org-sentinel");
+  });
+
+  it("an org owner gets a predicate that only checks org membership, not visibility branches", () => {
+    const ownerPred = shape(chunkVisibleTo(makeStanding({ isOrgOwner: true })));
+    const memberPred = shape(chunkVisibleTo(makeStanding({ isOrgOwner: false })));
+    expect(ownerPred.length).toBeLessThan(memberPred.length);
+    expect(ownerPred).toContain('"kb_pages"."org_id"');
+  });
+
+  it("a project arm appears when the standing has project access, and disappears when it does not", () => {
+    const granted = shape(chunkVisibleTo(makeStanding({ accessibleProjectIds: [7] })));
+    const revoked = shape(chunkVisibleTo(makeStanding({ accessibleProjectIds: [] })));
+    expect(granted).toContain('"kb_pages"."project_id"');
+    expect(revoked).not.toContain('"kb_pages"."project_id" = ANY');
+    expect(boundParams(chunkVisibleTo(makeStanding({ accessibleProjectIds: [7] })))).toContain(7);
+  });
+
+  it("the predicate still binds the tenant when project access is revoked", () => {
+    expect(boundParams(chunkVisibleTo(makeStanding({ accessibleProjectIds: [] })))).toContain("org-1");
+  });
+
+  it("mutation — removing the grant branch makes a grant-only visibility test fail", () => {
+    const standingWithGrant = makeStanding({ membershipId: 99 });
+    const standingNoGrant = makeStanding({ membershipId: null });
+    const withBranch = shape(chunkVisibleTo(standingWithGrant));
+    const withoutBranch = shape(chunkVisibleTo(standingNoGrant));
+    expect(withBranch).toContain('"kb_page_grants"');
+    expect(withoutBranch).not.toContain('"kb_page_grants"');
   });
 });

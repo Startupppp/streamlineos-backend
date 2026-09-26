@@ -9,6 +9,16 @@ import {
   type VisiblePageScope,
 } from "./knowledge-authorization.types";
 
+export interface VisiblePageBranches {
+  indexedBranch: SQL<unknown>;
+  grantBranch: SQL<unknown> | null;
+  fingerprint: string;
+}
+
+function restrictionLevelFor(action: KbPageAction): "view" | "edit" {
+  return action === "edit" || action === "manage" ? "edit" : "view";
+}
+
 function intArray(ids: number[]): SQL<unknown> {
   return sql`ARRAY[${sql.join(
     ids.map((id) => sql`${id}`),
@@ -157,16 +167,21 @@ export function buildVisiblePageScope(
 
   const indexedBranch = buildIndexedBranch(standing, action);
   const grantBranch = buildGrantBranch(standing, action);
+  const restriction = buildArticleRestrictionBranch(
+    standing.orgId,
+    { membershipId: standing.membershipId, roleSlugs: standing.roleSlugs },
+    action,
+  );
   const reachable =
     grantBranch === null
       ? indexedBranch
       : sql`(${indexedBranch} OR ${grantBranch})`;
 
   return {
-    predicate: sql`(${tenant} AND ${reachable})`,
+    predicate: sql`(${tenant} AND ${reachable} AND ${restriction})`,
     grantBranch:
-      grantBranch === null ? null : sql`(${tenant} AND ${grantBranch})`,
-    indexedBranch: sql`(${tenant} AND ${indexedBranch})`,
+      grantBranch === null ? null : sql`(${tenant} AND ${grantBranch} AND ${restriction})`,
+    indexedBranch: sql`(${tenant} AND ${indexedBranch} AND ${restriction})`,
     fingerprint,
   };
 }
@@ -174,8 +189,10 @@ export function buildVisiblePageScope(
 export function buildArticleRestrictionBranch(
   orgId: string,
   principal: { membershipId: number | null; roleSlugs: string[] },
+  action: KbPageAction = "view",
 ): SQL {
   const kpr = kbPageRestrictions;
+  const level = restrictionLevelFor(action);
   const membershipMatch =
     principal.membershipId !== null
       ? sql`${kpr.membershipId} = ${principal.membershipId} OR `
@@ -185,13 +202,13 @@ export function buildArticleRestrictionBranch(
       SELECT 1 FROM ${kpr}
       WHERE ${kpr.pageId} = ${kbPages.id}
         AND ${kpr.orgId} = ${orgId}
-        AND ${kpr.level} = 'view'
+        AND ${kpr.level} = ${level}
     )
     OR EXISTS (
       SELECT 1 FROM ${kpr}
       WHERE ${kpr.pageId} = ${kbPages.id}
         AND ${kpr.orgId} = ${orgId}
-        AND ${kpr.level} = 'view'
+        AND ${kpr.level} = ${level}
         AND (${membershipMatch}${
           principal.roleSlugs.length > 0
             ? inArray(kpr.role, principal.roleSlugs)
@@ -199,4 +216,30 @@ export function buildArticleRestrictionBranch(
         })
     )
   )`;
+}
+
+export function visiblePageBranches(
+  standing: KbActorStanding,
+  action: KbPageAction,
+): VisiblePageBranches {
+  const tenant = eq(kbPages.orgId, standing.orgId);
+  const fingerprint = permissionFingerprintOf(standing, action);
+
+  if (standing.isOrgOwner || standing.isKbAdmin) {
+    return { indexedBranch: tenant, grantBranch: null, fingerprint };
+  }
+
+  const indexed = buildIndexedBranch(standing, action);
+  const grant = buildGrantBranch(standing, action);
+  const restriction = buildArticleRestrictionBranch(
+    standing.orgId,
+    { membershipId: standing.membershipId, roleSlugs: standing.roleSlugs },
+    action,
+  );
+
+  const indexedBranch = sql`(${tenant} AND ${indexed} AND ${restriction})`;
+  const grantBranch =
+    grant === null ? null : sql`(${tenant} AND ${grant} AND ${restriction})`;
+
+  return { indexedBranch, grantBranch, fingerprint };
 }

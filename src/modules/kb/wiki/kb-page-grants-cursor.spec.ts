@@ -50,11 +50,11 @@ function makeService(grantRows: unknown[]) {
   const db = {
     select: jest.fn().mockImplementation((projection: unknown) => {
       selectProjections.push(projection);
-      return {
-        from: jest.fn().mockReturnValue({
-          where: jest.fn(() => chain(grantRows)),
-        }),
+      const fromResult: { leftJoin: jest.Mock; where: jest.Mock } = {
+        leftJoin: jest.fn(() => fromResult),
+        where: jest.fn(() => chain(grantRows)),
       };
+      return { from: jest.fn().mockReturnValue(fromResult) };
     }),
   } as unknown as Db;
 

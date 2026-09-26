@@ -5,7 +5,6 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../db/drizzle.types";
-import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import {
   KbIndexingMetrics,
@@ -19,7 +18,6 @@ import {
   deletePageChunks,
   loadPageChunkState,
   replacePageBodyChunks,
-  updatePageChunkAcl,
 } from "./kb-chunk-repository";
 
 export function isPageIndexable(page: {
@@ -120,13 +118,8 @@ export class KbIndexingService {
           where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
           columns: {
             status: true,
-            visibility: true,
             deletedAt: true,
             contentText: true,
-            projectId: true,
-            createdById: true,
-            createdByMembershipId: true,
-            aclRevision: true,
             contentRevision: true,
           },
         }),
@@ -147,34 +140,10 @@ export class KbIndexingService {
 
     const stored = await loadPageChunkState(this.db, orgId, pageId);
     const contentHash = sha256(page.contentText);
-    const acl = {
-      pageVisibility: page.visibility,
-      pageProjectId: page.projectId,
-      pageCreatedById: page.createdById,
-      pageCreatedByMembershipId: page.createdByMembershipId,
-      aclRevision: page.aclRevision,
-    };
     const contentRevision = page.contentRevision;
 
     if (stored !== null && stored.contentHash === contentHash) {
-      const aclChanged =
-        stored.pageVisibility !== acl.pageVisibility ||
-        stored.pageProjectId !== acl.pageProjectId ||
-        stored.pageCreatedById !== acl.pageCreatedById ||
-        stored.pageCreatedByMembershipId !== acl.pageCreatedByMembershipId ||
-        stored.aclRevision !== acl.aclRevision;
-
-      if (!aclChanged) {
-        metrics.finish("reused", { reused: true });
-        return 0;
-      }
-
-      this.logger.log("KB page ACL updated (content unchanged)", {
-        orgId,
-        pageId,
-      });
-      await updatePageChunkAcl(this.db, orgId, pageId, acl);
-      metrics.finish("acl_only", { reused: true });
+      metrics.finish("reused", { reused: true });
       return 0;
     }
 
@@ -208,7 +177,7 @@ export class KbIndexingService {
       pageId,
       chunks,
       embeddings,
-      { ...acl, contentHash, contentRevision },
+      { contentHash, contentRevision },
       (tx) => this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId),
     );
 
@@ -231,24 +200,6 @@ export class KbIndexingService {
       .update(kbPages)
       .set({ aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() })
       .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId)));
-
-    const deferred = registerAfterCommit(() =>
-      this.syncAclRevisionForSpace(orgId, spaceId),
-    );
-    if (!deferred) await this.syncAclRevisionForSpace(orgId, spaceId);
-  }
-
-  async syncAclRevisionForSpace(orgId: string, spaceId: number): Promise<void> {
-    await this.db.execute(sql`
-      UPDATE kb_article_chunks c
-      SET acl_revision = p.acl_revision,
-          acl_synced_at = NOW()
-      FROM kb_pages p
-      WHERE c.page_id = p.id
-        AND c.org_id = ${orgId}
-        AND p.space_id = ${spaceId}
-        AND c.acl_revision != p.acl_revision
-    `);
   }
 
   async reindexAllPages(

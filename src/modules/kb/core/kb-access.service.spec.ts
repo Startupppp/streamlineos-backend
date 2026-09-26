@@ -1,9 +1,12 @@
+import { NotFoundException } from "@nestjs/common";
 import { KbAccessService } from "./kb-access.service";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { KnowledgeAuthorizationService } from "./authorization/knowledge-authorization.service";
+import type { KbPageScope } from "./authorization/knowledge-authorization.types";
 
-function makeUser(over: Partial<CurrentUserContext>): CurrentUserContext {
+function makeUser(over: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
     userId: "u1",
     orgId: "o1",
@@ -12,6 +15,15 @@ function makeUser(over: Partial<CurrentUserContext>): CurrentUserContext {
     enabledModules: ["kb"],
     ...over,
   } as unknown as CurrentUserContext;
+}
+
+function makeAuth(resolve: boolean): KnowledgeAuthorizationService {
+  const scope: KbPageScope = { orgId: "o1", pageId: 10, action: "view", via: "organization" };
+  return {
+    assertPageAccess: resolve
+      ? jest.fn().mockResolvedValue(scope)
+      : jest.fn().mockRejectedValue(new NotFoundException("Page not found")),
+  } as unknown as KnowledgeAuthorizationService;
 }
 
 describe("KbAccessService.getAccessibleSpaceIds — deny by default", () => {
@@ -42,7 +54,7 @@ describe("KbAccessService.getAccessibleSpaceIds — deny by default", () => {
         (_ns: unknown, _key: unknown, fn: () => unknown) => fn(),
       ),
     } as unknown as CacheService;
-    return new KbAccessService(db as never, cache, access);
+    return new KbAccessService(db as never, cache, access, makeAuth(false));
   }
 
   const member = makeUser({
@@ -82,20 +94,45 @@ describe("KbAccessService.isAdmin", () => {
     const db = {} as never;
     const cache = {} as CacheService;
     const access = { holds: jest.fn().mockResolvedValue(holdsResult) } as unknown as AccessService;
-    return new KbAccessService(db, cache, access);
+    return new KbAccessService(db, cache, access, makeAuth(false));
   }
 
   it("returns true when the seam grants kb:spaces:manage", async () => {
-    expect(await makeService(true).isAdmin(makeUser({}))).toBe(true);
+    expect(await makeService(true).isAdmin(makeUser())).toBe(true);
   });
 
   it("returns false when the seam denies kb:spaces:manage", async () => {
-    expect(await makeService(false).isAdmin(makeUser({}))).toBe(false);
+    expect(await makeService(false).isAdmin(makeUser())).toBe(false);
   });
 
   it("is true for an org owner who holds nothing explicitly — seam is sole authority", async () => {
     expect(
       await makeService(true).isAdmin(makeUser({ isOrgOwner: true })),
     ).toBe(true);
+  });
+});
+
+describe("KbAccessService.assertCanViewArticle — disagreement with buildVisiblePageScope resolved", () => {
+  function makeService(authResolves: boolean): KbAccessService {
+    const db = { query: { kbPages: { findFirst: jest.fn() } } } as never;
+    const cache = {} as CacheService;
+    const access = { holds: jest.fn().mockResolvedValue(false) } as unknown as AccessService;
+    return new KbAccessService(db, cache, access, makeAuth(authResolves));
+  }
+
+  it("allows an org-visible page in a space the actor cannot reach because assertPageAccess uses the canonical scope that treats org-visibility as superseding space membership", async () => {
+    const svc = makeService(true);
+
+    await expect(
+      svc.assertCanViewArticle(makeUser(), { id: 10, orgId: "o1", spaceId: 99 }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("BITE: assertCanViewArticle propagates a denial from assertPageAccess so it is not vacuously passing", async () => {
+    const svc = makeService(false);
+
+    await expect(
+      svc.assertCanViewArticle(makeUser(), { id: 10, orgId: "o1", spaceId: 99 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

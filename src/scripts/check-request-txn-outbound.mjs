@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
@@ -25,8 +26,50 @@ const MODULES = join(SRC, "modules");
 const OUTBOUND =
   /(?<![.\w])fetch\s*\(|(?<![.\w])postSafeWebhook\s*\(|(?<![.\w])callProvider\s*\(|(?<![.\w])outboundRequest\s*\(|\baxios\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\bsendEmailOnceDirect\s*\(/;
 
-const AI_OUTBOUND =
-  /\binvoke(?:Text|Structured|Chat)[A-Za-z]*\s*\(|\bembed(?:Query|Batch)[A-Za-z]*\s*\(/;
+const GATEWAY_SERVICE_PATH = join(SRC, "modules/ai/core/gateway/ai-gateway.service.ts");
+const GATEWAY_SERVICE_REL = "src/modules/ai/core/gateway/ai-gateway.service.ts";
+
+function parseGatewayMethods(source) {
+  const names = new Set();
+  for (const m of source.matchAll(/^\s{2}(?:async\s+)?([a-zA-Z][A-Za-z0-9_]*)\s*[(<]/gm)) {
+    const name = m[1];
+    if (/^(?:constructor|private|public|protected|get|set|if|for|while|return|catch)$/.test(name)) continue;
+    if (/^(?:invoke|embed|stream)/.test(name) && !/^is[A-Z]/.test(name)) names.add(name);
+  }
+  return names;
+}
+
+function loadGatewayMethods(gatewayPath) {
+  let source;
+  try {
+    source = readFileSync(gatewayPath, "utf8");
+  } catch {
+    return null;
+  }
+  const methods = parseGatewayMethods(source);
+  return methods.size > 0 ? methods : null;
+}
+
+function buildAiOutboundRegex(methods) {
+  const escaped = [...methods].sort().map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`\\b(?:${escaped.join("|")})\\s*\\(`);
+}
+
+const _gatewayOverride = (() => {
+  const idx = process.argv.indexOf("--gateway");
+  return idx !== -1 ? process.argv[idx + 1] : null;
+})();
+
+const _gatewayMethods = loadGatewayMethods(_gatewayOverride ?? GATEWAY_SERVICE_PATH);
+if (_gatewayMethods === null) {
+  console.error(
+    `check-request-txn-outbound: could not parse any AI provider entry points from ` +
+      `${_gatewayOverride ?? GATEWAY_SERVICE_REL}. The scan would be vacuous — aborting.`,
+  );
+  process.exit(2);
+}
+
+const AI_OUTBOUND = buildAiOutboundRegex(_gatewayMethods);
 const AI_CEILING = 1;
 
 const MAX_HOPS = 8;
@@ -251,6 +294,73 @@ function selfTest() {
     failures.push("an embedding call was counted against the frozen list instead of the ceiling");
   if (callsAnyProvider("const ok = embedder.check(value);"))
     failures.push("a name merely starting with embed was read as a gateway call");
+  if (!callsAnyProvider("await this.gateway.streamTextWithUsage(opts);"))
+    failures.push("streamTextWithUsage( not detected as a provider call");
+  if (!callsAnyProvider("await this.gateway.streamAgenticTurn(opts);"))
+    failures.push("streamAgenticTurn( not detected as a provider call");
+  if (callsOutbound("await this.gateway.streamTextWithUsage(opts);"))
+    failures.push("a streaming call was counted against the frozen list instead of the ceiling");
+  if (callsAnyProvider("const ok = streamer.streamReports(value);"))
+    failures.push("a method whose name contains stream but not a gateway prefix was read as a provider call");
+
+  const EXPECTED_GATEWAY_METHODS = [
+    "embedBatchWithCredit",
+    "embedQueryWithCredit",
+    "invokeStructured",
+    "invokeStructuredWithImage",
+    "invokeStructuredWithImageWithUsage",
+    "invokeStructuredWithUsage",
+    "invokeText",
+    "invokeTextWithUsage",
+    "streamAgenticTurn",
+    "streamTextWithUsage",
+  ];
+  for (const name of EXPECTED_GATEWAY_METHODS) {
+    if (!_gatewayMethods.has(name))
+      failures.push(`derived set missing known method ${name} — parser regression or method renamed`);
+  }
+  if (_gatewayMethods.size < EXPECTED_GATEWAY_METHODS.length)
+    failures.push(
+      `derived set has ${_gatewayMethods.size} method(s), expected at least ${EXPECTED_GATEWAY_METHODS.length}`,
+    );
+
+  const missingGatewayResult = spawnSync(
+    process.execPath,
+    [fileURLToPath(import.meta.url), "--gateway", join(tmpdir(), "__no_gateway_for_selftest__.ts")],
+    { encoding: "utf8" },
+  );
+  if (missingGatewayResult.status !== 2)
+    failures.push(
+      `a missing gateway path should exit 2, got ${missingGatewayResult.status ?? "null (signal: " + missingGatewayResult.signal + ")"}`,
+    );
+
+  const gatewayTestDir = mkdtempSync(join(tmpdir(), "txn-outbound-gwtest-"));
+  try {
+    const emptyGatewayPath = join(gatewayTestDir, "empty-gateway.ts");
+    writeFileSync(
+      emptyGatewayPath,
+      "@Injectable()\nexport class AiGatewayService {\n  constructor() {}\n  private helper() {}\n}\n",
+    );
+    const emptyGatewayResult = spawnSync(
+      process.execPath,
+      [fileURLToPath(import.meta.url), "--gateway", emptyGatewayPath],
+      { encoding: "utf8" },
+    );
+    if (emptyGatewayResult.status !== 2)
+      failures.push(
+        `a gateway with no AI methods should exit 2, got ${emptyGatewayResult.status ?? "null"}`,
+      );
+    const minimalGatewayPath = join(gatewayTestDir, "minimal-gateway.ts");
+    writeFileSync(
+      minimalGatewayPath,
+      "@Injectable()\nexport class AiGatewayService {\n  async embedQueryWithCredit(opts) {}\n  async invokeText(opts) {}\n}\n",
+    );
+    const minimalMethods = loadGatewayMethods(minimalGatewayPath);
+    if (!minimalMethods?.has("embedQueryWithCredit") || !minimalMethods?.has("invokeText"))
+      failures.push("parseGatewayMethods did not extract embedQueryWithCredit and invokeText from a minimal fixture");
+  } finally {
+    rmSync(gatewayTestDir, { recursive: true, force: true });
+  }
 
   const classOptOut = findRoutes(
     `

@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { Redis } from "@upstash/redis";
@@ -36,6 +36,7 @@ import {
 } from "./kb-ask-context";
 import { kbAiInteractions, type KbAiInteractionState, type KbAiSourceRecord } from "../../../db/schema";
 import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
+import { KbRetrievalService } from "./kb-retrieval.service";
 
 export const KB_ASK_ORG_TIER = "kb:ask:org";
 
@@ -134,6 +135,7 @@ export class KbAskService {
     private readonly citationVisibility: KbCitationVisibilityService,
     private readonly linkedDocuments: KbLinkedDocumentAskSource,
     @Inject(REDIS) private readonly redis: Redis | null,
+    @Optional() private readonly retrieval: KbRetrievalService | null = null,
   ) {}
 
   private async chargeOrgAskBudget(orgId: string): Promise<void> {
@@ -155,6 +157,88 @@ export class KbAskService {
     );
   }
 
+  private async gatherContextViaFacade(
+    user: CurrentUserContext,
+    input: AskInput,
+    options: KbAskOptions,
+  ): Promise<
+    | { kind: "no-context" }
+    | {
+        kind: "context";
+        fullContext: string;
+        top: Awaited<ReturnType<KbSearchService["retrieveTopArticles"]>>;
+        sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>;
+        linked: LinkedDocumentItem[];
+        citations: AskCitation[];
+        degraded: boolean;
+      }
+  > {
+    const retrieval = this.retrieval as KbRetrievalService;
+
+    const [retrieved, linked] = await Promise.all([
+      retrieval.retrieve(user, input.question, {
+        documentsLimit: KB_ASK_MAX_CONTEXT_DOCUMENTS,
+        sourcesLimit: 4,
+        spaceId: input.spaceId,
+        verifiedOnly: input.verifiedOnly,
+        sourceIds: input.sourceIds,
+      }),
+      runInTenantTransaction(
+        this.db,
+        async () =>
+          options.companyDocuments === true
+            ? this.linkedDocuments.retrieve(user, input.question)
+            : Promise.resolve<LinkedDocumentItem[]>([]),
+        { orgId: user.orgId },
+      ),
+    ]);
+
+    if (
+      retrieved.documents.length === 0 &&
+      retrieved.sources.length === 0 &&
+      linked.length === 0
+    )
+      return { kind: "no-context" as const };
+
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const citations = [
+          ...(await this.resolveCitations(user, retrieved.documents, retrieved.sources)),
+          ...linked.map((document) => this.linkedDocuments.citationOf(document)),
+        ];
+        if (citations.length === 0) return { kind: "no-context" as const };
+
+        const { top, sources } = restrictToCited(
+          retrieved.documents,
+          retrieved.sources,
+          citations,
+        );
+
+        const fullContext = buildKbContext(
+          assemblePassages(
+            top,
+            sources,
+            retrieved.passages,
+            linked.map((document) => this.linkedDocuments.passageOf(document)),
+          ),
+        );
+        if (fullContext.length === 0) return { kind: "no-context" as const };
+
+        return {
+          kind: "context" as const,
+          fullContext,
+          top,
+          sources,
+          linked,
+          citations,
+          degraded: retrieved.degraded,
+        };
+      },
+      { orgId: user.orgId },
+    );
+  }
+
   private async gatherContext(
     user: CurrentUserContext,
     input: AskInput,
@@ -171,6 +255,8 @@ export class KbAskService {
         degraded: boolean;
       }
   > {
+    if (this.retrieval !== null) return this.gatherContextViaFacade(user, input, options);
+
     const { linked, hasContent } = await runInTenantTransaction(
       this.db,
       async () => ({

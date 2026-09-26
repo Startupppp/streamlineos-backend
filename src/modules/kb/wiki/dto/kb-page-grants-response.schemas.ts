@@ -11,6 +11,9 @@ export const kbPageGrantItemSchema = z.object({
   grantedByMembershipId: z.number().int().nullable(),
   createdAt: wireDate(),
   revokedAt: nullableWireDate(),
+  granteeName: z.string().nullable(),
+  granteeEmail: z.string().nullable(),
+  granteeImage: z.string().nullable(),
 });
 
 export type KbPageGrantItem = z.infer<typeof kbPageGrantItemSchema>;

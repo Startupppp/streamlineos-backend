@@ -34,7 +34,9 @@ import { KbCandidateService } from "./kb-candidate.service";
 import { supportArticlePredicate, wikiPagePredicate } from "../help-centre/kb-article-page-scope";
 import { AccessService } from "../../access/access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   articleOwnerScope,
   articleOwnerScopeFilter,
@@ -215,7 +217,11 @@ export class KbSearchService {
   }> {
     const metrics = KbSearchMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
-      return await this.searchMeasured(user, input, scope, metrics);
+      return await runInTenantTransaction(
+        this.db,
+        () => this.searchMeasured(user, input, scope, metrics),
+        { orgId: user.orgId },
+      );
     } catch (error) {
       metrics.finish("error");
       throw error;
@@ -375,8 +381,8 @@ export class KbSearchService {
       vectorLiteral = await this.vectorFor(q, user.orgId, embedding);
     }
 
-    const projectIds = await this.access.getAccessibleProjectIds(user);
-    const pageVisibility = await this.auth.visiblePagePredicate(user, "view");
+    const standing = await this.auth.resolveStanding(user);
+    const pageVisibility = buildVisiblePageScope(standing, "view").predicate;
 
     const [articleKeyword, articleVector, pageKeyword, pageVector] =
       await Promise.all([
@@ -414,7 +420,7 @@ export class KbSearchService {
               user.orgId,
               vectorLiteral,
               pool,
-              chunkVisibleTo(user, projectIds),
+              chunkVisibleTo(standing),
               verifiedOnly,
             )
           : Promise.resolve<number[]>([]),

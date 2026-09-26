@@ -35,7 +35,6 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { KbAccessService } from "../core/kb-access.service";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { actingMembershipId } from "../../../common/auth/principal";
@@ -95,7 +94,6 @@ export interface SpaceArchiveImpact {
 export class KbSpacesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly access: KbAccessService,
     private readonly indexing: KbIndexingService,
     private readonly authz: KnowledgeAuthorizationService,
   ) {}
@@ -112,7 +110,7 @@ export class KbSpacesService {
       };
     }
 
-    const ids = await this.access.getAccessibleSpaceIds(user);
+    const ids = (await this.authz.resolveStanding(user)).accessibleSpaceIds;
     if (ids.length === 0) {
       return {
         data: [],
@@ -324,7 +322,7 @@ export class KbSpacesService {
       });
       return space;
     });
-    await this.access.invalidateAccessibleSpaceIds(orgId);
+    await this.authz.invalidateSpaceScope(orgId);
     return created;
   }
 
@@ -342,7 +340,7 @@ export class KbSpacesService {
       ),
     });
     if (!space) throw new NotFoundException("Space not found");
-    await this.access.assertSpaceAccessible(user, spaceId);
+    await this.authz.assertSpaceAccess(user, spaceId, "view");
 
     const membershipId = actingMembershipId(user.principal);
 
@@ -432,7 +430,7 @@ export class KbSpacesService {
       .returning();
     if (!updated) throw new NotFoundException("Space not found");
     if (aclChanged) await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
-    await this.access.invalidateAccessibleSpaceIds(orgId);
+    await this.authz.invalidateSpaceScope(orgId);
     return updated;
   }
 
@@ -609,7 +607,7 @@ export class KbSpacesService {
       },
       { orgId },
     );
-    await this.access.invalidateAccessibleSpaceIds(orgId);
+    await this.authz.invalidateSpaceScope(orgId);
     return { success: true };
   }
 

@@ -1,6 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { kbPages, kbPageRestrictions } from "../../../db/schema";
+import { kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -17,6 +17,7 @@ import {
   type KbSpaceScopeDeps,
 } from "./kb-acl-cache-key";
 import { resolveRoleSlugs } from "./authorization/knowledge-space-scope";
+import { KnowledgeAuthorizationService } from "./authorization/knowledge-authorization.service";
 
 @Injectable()
 export class KbAccessService {
@@ -24,6 +25,7 @@ export class KbAccessService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async isAdmin(user: CurrentUserContext): Promise<boolean> {
@@ -85,41 +87,13 @@ export class KbAccessService {
     user: CurrentUserContext,
     row: { id: number; orgId: string; spaceId: number | null },
   ): Promise<void> {
-    if (await this.isAdmin(user)) return;
-
-    if (row.spaceId !== null) {
-      const accessible = await this.getAccessibleSpaceIds(user);
-      if (!accessible.includes(row.spaceId)) {
-        throw new NotFoundException("Article not found");
-      }
-    }
-
-    const restrictions = await this.db
-      .select({ membershipId: kbPageRestrictions.membershipId, role: kbPageRestrictions.role })
-      .from(kbPageRestrictions)
-      .where(
-        and(
-          eq(kbPageRestrictions.orgId, row.orgId),
-          eq(kbPageRestrictions.pageId, row.id),
-          eq(kbPageRestrictions.level, "view"),
-        ),
-      );
-    if (restrictions.length > 0) {
-      const membershipId = user.principal !== undefined ? actingMembershipId(user.principal) : null;
-      const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
-      const allowed = restrictions.some(
-        (r) =>
-          (membershipId !== null && r.membershipId === membershipId) ||
-          (r.role !== null && roleSlugs.includes(r.role)),
-      );
-      if (!allowed) throw new NotFoundException("Article not found");
-    }
+    await this.auth.assertPageAccess(user, row.id, "view");
   }
 
   async assertArticleViewable(user: CurrentUserContext, articleId: number): Promise<void> {
     const article = await this.findArticle(user.orgId, articleId);
     if (!article) throw new NotFoundException("Article not found");
-    await this.assertCanViewArticle(user, article);
+    await this.auth.assertPageAccess(user, articleId, "view");
   }
 
   async assertArticleEditable(
@@ -128,35 +102,7 @@ export class KbAccessService {
   ): Promise<{ id: number; orgId: string; spaceId: number | null }> {
     const article = await this.findArticle(user.orgId, articleId);
     if (!article) throw new NotFoundException("Article not found");
-    if (await this.isAdmin(user)) return article;
-
-    if (article.spaceId !== null) {
-      const accessible = await this.getAccessibleSpaceIds(user);
-      if (!accessible.includes(article.spaceId)) {
-        throw new NotFoundException("Article not found");
-      }
-    }
-
-    const restrictions = await this.db
-      .select({ membershipId: kbPageRestrictions.membershipId, role: kbPageRestrictions.role })
-      .from(kbPageRestrictions)
-      .where(
-        and(
-          eq(kbPageRestrictions.orgId, user.orgId),
-          eq(kbPageRestrictions.pageId, articleId),
-          eq(kbPageRestrictions.level, "edit"),
-        ),
-      );
-    if (restrictions.length > 0) {
-      const membershipId = user.principal !== undefined ? actingMembershipId(user.principal) : null;
-      const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
-      const allowed = restrictions.some(
-        (r) =>
-          (membershipId !== null && r.membershipId === membershipId) ||
-          (r.role !== null && roleSlugs.includes(r.role)),
-      );
-      if (!allowed) throw new NotFoundException("Article not found");
-    }
+    await this.auth.assertPageAccess(user, articleId, "edit");
     return article;
   }
 

@@ -8,6 +8,7 @@ import {
   buildSharedWithMeScope,
   buildVisiblePageScope,
   permissionFingerprintOf,
+  visiblePageBranches,
 } from "./knowledge-page-scope";
 import {
   accessLevelsSatisfying,
@@ -459,6 +460,246 @@ describe("buildArticleRestrictionBranch — property-based invariants", () => {
         const rendered = text(buildArticleRestrictionBranch(orgId, principal));
         expect(rendered.toLowerCase()).toContain("false");
       }),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+});
+
+describe("buildArticleRestrictionBranch — action to restriction level mapping", () => {
+  const principal = { membershipId: null as null, roleSlugs: [] as string[] };
+
+  it("binds the view level for a view action so page-level view restrictions are enforced", () => {
+    const params = boundParams(buildArticleRestrictionBranch("org-1", principal, "view"));
+    expect(params).toContain("view");
+    expect(params).not.toContain("edit");
+  });
+
+  it("binds the view level for a comment action because commenting requires view-level clearance", () => {
+    const params = boundParams(buildArticleRestrictionBranch("org-1", principal, "comment"));
+    expect(params).toContain("view");
+    expect(params).not.toContain("edit");
+  });
+
+  it("binds the edit level for an edit action so page-level edit restrictions are enforced", () => {
+    const params = boundParams(buildArticleRestrictionBranch("org-1", principal, "edit"));
+    expect(params).toContain("edit");
+    expect(params).not.toContain("view");
+  });
+
+  it("binds the edit level for a manage action because managing requires at least edit-level restriction clearance", () => {
+    const params = boundParams(buildArticleRestrictionBranch("org-1", principal, "manage"));
+    expect(params).toContain("edit");
+    expect(params).not.toContain("view");
+  });
+
+  it("omitting the action argument defaults to view level so all prior callers are unaffected", () => {
+    const withDefault = boundParams(buildArticleRestrictionBranch("org-1", principal));
+    const withExplicit = boundParams(buildArticleRestrictionBranch("org-1", principal, "view"));
+    expect(withDefault).toEqual(withExplicit);
+  });
+});
+
+describe("buildVisiblePageScope — restriction folded into predicate", () => {
+  it("folds the restriction predicate into the combined predicate so a restriction-blocked page is denied even through org visibility", () => {
+    const scope = buildVisiblePageScope(makeStanding(), "view");
+    expect(text(scope.predicate)).toContain("kb_page_restrictions");
+  });
+
+  it("leaves the predicate as a plain tenant equality for an org owner — admins are never blocked by restrictions", () => {
+    const scope = buildVisiblePageScope(makeStanding({ isOrgOwner: true }), "view");
+    expect(text(scope.predicate)).not.toContain("kb_page_restrictions");
+    expect(scope.predicate).toStrictEqual(eq(kbPages.orgId, "org-1"));
+  });
+
+  it("leaves the predicate as a plain tenant equality for a kb admin — kb admins are never blocked by restrictions", () => {
+    const scope = buildVisiblePageScope(makeStanding({ isKbAdmin: true }), "view");
+    expect(text(scope.predicate)).not.toContain("kb_page_restrictions");
+  });
+
+  it("folds the restriction into the individual indexedBranch field so every exported surface enforces the same rule", () => {
+    const scope = buildVisiblePageScope(makeStanding(), "view");
+    expect(text(scope.indexedBranch)).toContain("kb_page_restrictions");
+  });
+
+  it("folds the restriction into the individual grantBranch field so the list path and the read path agree", () => {
+    const scope = buildVisiblePageScope(makeStanding(), "view");
+    expect(scope.grantBranch).not.toBeNull();
+    expect(text(scope.grantBranch!)).toContain("kb_page_restrictions");
+  });
+
+  it("uses the edit restriction level in the predicate for an edit action so edit restrictions block editing", () => {
+    const scope = buildVisiblePageScope(makeStanding(), "edit");
+    const params = boundParams(scope.predicate);
+    expect(params).toContain("edit");
+    expect(params).not.toContain("view");
+  });
+});
+
+describe("visiblePageBranches", () => {
+  it("returns null grantBranch and a plain tenant indexedBranch for an org owner, matching the admin fast-path", () => {
+    const branches = visiblePageBranches(makeStanding({ isOrgOwner: true }), "view");
+    expect(branches.grantBranch).toBeNull();
+    expect(branches.indexedBranch).toStrictEqual(eq(kbPages.orgId, "org-1"));
+  });
+
+  it("returns null grantBranch and a plain tenant indexedBranch for a kb admin", () => {
+    const branches = visiblePageBranches(makeStanding({ isKbAdmin: true }), "view");
+    expect(branches.grantBranch).toBeNull();
+    expect(branches.indexedBranch).toStrictEqual(eq(kbPages.orgId, "org-1"));
+  });
+
+  it("bakes the restriction check into the indexedBranch so a UNION caller does not need to re-apply it", () => {
+    const branches = visiblePageBranches(makeStanding(), "view");
+    expect(text(branches.indexedBranch)).toContain("kb_page_restrictions");
+  });
+
+  it("bakes the restriction check into the grantBranch so a UNION caller does not need to re-apply it", () => {
+    const branches = visiblePageBranches(makeStanding(), "view");
+    expect(branches.grantBranch).not.toBeNull();
+    expect(text(branches.grantBranch!)).toContain("kb_page_restrictions");
+  });
+
+  it("returns null grantBranch for an actor with no membership and no roles — fails closed the same as buildVisiblePageScope", () => {
+    const branches = visiblePageBranches(makeStanding({ membershipId: null, roleSlugs: [] }), "view");
+    expect(branches.grantBranch).toBeNull();
+  });
+
+  it("still exposes kb_page_grants in the grantBranch when the actor has a membership", () => {
+    const branches = visiblePageBranches(makeStanding(), "view");
+    expect(text(branches.grantBranch!)).toContain("kb_page_grants");
+  });
+
+  it("branches do NOT appear in the admin actor's indexedBranch — restriction is a no-op for admins", () => {
+    const branches = visiblePageBranches(makeStanding({ isOrgOwner: true }), "view");
+    expect(text(branches.indexedBranch)).not.toContain("kb_page_restrictions");
+  });
+
+  it("fingerprint matches buildVisiblePageScope so the two helpers share the same cache invalidation path", () => {
+    const standing = makeStanding({ accessibleSpaceIds: [1, 2] });
+    expect(visiblePageBranches(standing, "view").fingerprint).toBe(
+      buildVisiblePageScope(standing, "view").fingerprint,
+    );
+  });
+
+  it("uses edit restriction level in both branches for an edit action", () => {
+    const branches = visiblePageBranches(makeStanding(), "edit");
+    expect(boundParams(branches.indexedBranch)).toContain("edit");
+    expect(boundParams(branches.grantBranch!)).toContain("edit");
+  });
+
+  it("keeps the indexed and grant branches separately addressable so callers can UNION them without losing index-eligibility", () => {
+    const branches = visiblePageBranches(makeStanding({ accessibleSpaceIds: [5] }), "view");
+    expect(text(branches.indexedBranch)).toContain("space_id");
+    expect(text(branches.grantBranch!)).not.toContain("space_id");
+  });
+
+  it("property: every non-admin actor's indexedBranch contains both the org_id binding and the restriction check", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding().filter((s) => !s.isOrgOwner && !s.isKbAdmin),
+        arbitraryAction(),
+        (standing, action) => {
+          const branches = visiblePageBranches(standing, action);
+          const rendered = text(branches.indexedBranch);
+          expect(rendered).toContain(standing.orgId);
+          expect(rendered).toContain("kb_page_restrictions");
+        },
+      ),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("property: whenever a grantBranch exists it also contains the restriction check so the grant path is equally guarded", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding().filter(
+          (s) => !s.isOrgOwner && !s.isKbAdmin && (s.membershipId !== null || s.roleSlugs.length > 0),
+        ),
+        arbitraryAction(),
+        (standing, action) => {
+          const branches = visiblePageBranches(standing, action);
+          if (branches.grantBranch === null) return;
+          expect(text(branches.grantBranch)).toContain("kb_page_restrictions");
+        },
+      ),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+});
+
+describe("cross-surface equality invariant — UNION and predicate forms enforce the same rule", () => {
+  it("scope.indexedBranch and visiblePageBranches.indexedBranch produce identical SQL and params so no read path is more permissive than the other", () => {
+    const standing = makeStanding({ accessibleSpaceIds: [5] });
+    const scope = buildVisiblePageScope(standing, "view");
+    const branches = visiblePageBranches(standing, "view");
+    expect(text(scope.indexedBranch)).toBe(text(branches.indexedBranch));
+    expect(boundParams(scope.indexedBranch)).toEqual(boundParams(branches.indexedBranch));
+  });
+
+  it("scope.grantBranch and visiblePageBranches.grantBranch produce identical SQL and params", () => {
+    const standing = makeStanding();
+    const scope = buildVisiblePageScope(standing, "view");
+    const branches = visiblePageBranches(standing, "view");
+    expect(scope.grantBranch).not.toBeNull();
+    expect(branches.grantBranch).not.toBeNull();
+    expect(text(scope.grantBranch!)).toBe(text(branches.grantBranch!));
+    expect(boundParams(scope.grantBranch!)).toEqual(boundParams(branches.grantBranch!));
+  });
+
+  it("null grantBranch agrees between the two helpers when the actor has no membership and no roles", () => {
+    const standing = makeStanding({ membershipId: null, roleSlugs: [] });
+    expect(buildVisiblePageScope(standing, "view").grantBranch).toBeNull();
+    expect(visiblePageBranches(standing, "view").grantBranch).toBeNull();
+  });
+
+  it("the named actor's membershipId is bound in both the predicate form and the indexed-branch form so restriction rows can match on both paths", () => {
+    const standing = makeStanding({ membershipId: 7 });
+    const scope = buildVisiblePageScope(standing, "view");
+    expect(boundParams(scope.predicate)).toContain(7);
+    expect(boundParams(scope.indexedBranch)).toContain(7);
+  });
+
+  it("the non-named actor (null membership, no roles) gets false in the EXISTS arm of both forms, making restriction rows unconditionally blocking on both paths", () => {
+    const standing = makeStanding({ membershipId: null, roleSlugs: [] });
+    const scope = buildVisiblePageScope(standing, "view");
+    expect(text(scope.predicate).toLowerCase()).toContain("false");
+    expect(text(scope.indexedBranch).toLowerCase()).toContain("false");
+  });
+
+  it("property: for every non-admin actor and every action, scope.indexedBranch and branches.indexedBranch are identical", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding().filter((s) => !s.isOrgOwner && !s.isKbAdmin),
+        arbitraryAction(),
+        (standing, action) => {
+          const scope = buildVisiblePageScope(standing, action);
+          const branches = visiblePageBranches(standing, action);
+          expect(text(scope.indexedBranch)).toBe(text(branches.indexedBranch));
+          expect(boundParams(scope.indexedBranch)).toEqual(boundParams(branches.indexedBranch));
+        },
+      ),
+      { numRuns: 200, seed: 42 },
+    );
+  });
+
+  it("property: whenever a grantBranch exists, scope.grantBranch and branches.grantBranch are identical", () => {
+    fc.assert(
+      fc.property(
+        arbitraryStanding().filter(
+          (s) =>
+            !s.isOrgOwner &&
+            !s.isKbAdmin &&
+            (s.membershipId !== null || s.roleSlugs.length > 0),
+        ),
+        arbitraryAction(),
+        (standing, action) => {
+          const scope = buildVisiblePageScope(standing, action);
+          const branches = visiblePageBranches(standing, action);
+          if (scope.grantBranch === null || branches.grantBranch === null) return;
+          expect(text(scope.grantBranch)).toBe(text(branches.grantBranch));
+          expect(boundParams(scope.grantBranch)).toEqual(boundParams(branches.grantBranch));
+        },
+      ),
       { numRuns: 200, seed: 42 },
     );
   });

@@ -217,10 +217,7 @@ export class KbCandidateService {
         .from(kbArticleChunks)
         .innerJoin(
           kbPages,
-          and(
-            eq(kbPages.id, kbArticleChunks.pageId),
-            eq(kbArticleChunks.aclRevision, kbPages.aclRevision),
-          ),
+          eq(kbPages.id, kbArticleChunks.pageId),
         )
         .where(
           and(

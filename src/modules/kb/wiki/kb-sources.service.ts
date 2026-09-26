@@ -12,7 +12,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { kbSources, outboxEvents } from "../../../db/schema";
+import { kbPages, kbSources, outboxEvents } from "../../../db/schema";
 import { StorageService } from "../../storage/storage.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
 import { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
@@ -24,8 +24,8 @@ import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { TenantTx } from "../../../db/drizzle.types";
-import { KbAccessService } from "../core/kb-access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import {
   KbIndexedBytesQuotaService,
   kbSourceIndexedBytes,
@@ -108,7 +108,6 @@ export class KbSourcesService {
     private readonly storage: StorageService,
     private readonly attachmentIndexing: KbAttachmentIndexingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
-    private readonly access: KbAccessService,
     private readonly auth: KnowledgeAuthorizationService,
     private readonly quota: KbIndexedBytesQuotaService,
   ) {}
@@ -197,7 +196,16 @@ export class KbSourcesService {
     user: CurrentUserContext,
     articleId: number,
   ): Promise<KbArticleIngestionStatus> {
-    await this.access.assertArticleViewable(user, articleId);
+    const article = await this.db.query.kbPages.findFirst({
+      where: and(
+        eq(kbPages.id, articleId),
+        eq(kbPages.orgId, user.orgId),
+        supportArticlePredicate(),
+      ),
+      columns: { id: true },
+    });
+    if (!article) throw new NotFoundException("Article not found");
+    await this.auth.assertPageAccess(user, articleId, "view");
     return {
       articleId,
       ...(await this.ingestionStatusFor(user.orgId, "kb_article", articleId)),

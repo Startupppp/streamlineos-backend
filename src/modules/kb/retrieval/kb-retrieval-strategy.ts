@@ -1,3 +1,7 @@
+import { sql } from "drizzle-orm";
+import type { Db } from "../../../db/drizzle.module";
+import type { CacheService } from "../../../common/cache/cache.service";
+
 export type KbRetrievalStrategy = { kind: "exact" } | { kind: "ann"; efSearch: number };
 
 export const KB_RETRIEVAL_MIN_RECALL = 0.95;
@@ -22,4 +26,24 @@ export function decideKbRetrievalStrategy(
   if (indexedChunkCount <= KB_EXACT_SCAN_MAX_CHUNKS) return { kind: "exact" };
   if (cap > KB_ANN_EF_SEARCH_MAX) return { kind: "exact" };
   return { kind: "ann", efSearch: kbAnnEfSearch(cap) };
+}
+
+export async function resolveKbRetrievalStrategy(
+  db: Db,
+  cache: CacheService | null,
+  orgId: string,
+  cap: number,
+): Promise<KbRetrievalStrategy> {
+  const bound = KB_EXACT_SCAN_MAX_CHUNKS + 1;
+  const load = async (): Promise<number> => {
+    const rows = await db.execute(
+      sql`SELECT count(*) AS chunk_count FROM (SELECT 1 FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT ${bound}) bounded`,
+    );
+    return Number(rows[0]?.["chunk_count"] ?? 0);
+  };
+  const count =
+    cache !== null
+      ? await cache.cachedForOrg(orgId, `kb:chunk-count:${orgId}:b${bound}`, load, KB_CHUNK_COUNT_CACHE_TTL_SECONDS)
+      : await load();
+  return decideKbRetrievalStrategy(count, cap);
 }

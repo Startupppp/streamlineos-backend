@@ -29,7 +29,6 @@ import {
   replacePageDocumentChunks,
   replaceSourceChunks,
   sourceChunks,
-  updateDerivedChunkAcl,
 } from "./kb-derived-chunk-state";
 
 @Injectable()
@@ -142,7 +141,6 @@ export class KbAttachmentIndexingService {
         mimeType: kbPageAttachments.mimeType,
         fileName: kbPageAttachments.fileName,
         deletedAt: kbPageAttachments.deletedAt,
-        pageAclRevision: kbPages.aclRevision,
         pageDeletedAt: kbPages.deletedAt,
       })
       .from(kbPageAttachments)
@@ -215,22 +213,11 @@ export class KbAttachmentIndexingService {
       };
     }
 
-    const aclRevision = attachment.pageAclRevision ?? 1;
     const contentHash = sha256(text);
     const family = attachmentChunks(orgId, attachmentId);
     const stored = await loadDerivedChunkState(this.db, family);
     if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
-      if (stored.aclRevision !== aclRevision) {
-        this.logger.log("KB attachment ACL updated (text unchanged)", {
-          orgId,
-          attachmentId,
-          aclRevision,
-        });
-        await updateDerivedChunkAcl(this.db, family, aclRevision);
-        metrics.finish("acl_only", { reused: true });
-      } else {
-        metrics.finish("reused", { reused: true });
-      }
+      metrics.finish("reused", { reused: true });
       return { chunks: stored.chunkCount, warning: null };
     }
 
@@ -243,7 +230,7 @@ export class KbAttachmentIndexingService {
       attachment.pageId,
       chunks,
       embeddings,
-      { contentHash, aclRevision },
+      contentHash,
     );
 
     metrics.finish("indexed", { chunks: chunks.length, reused: false });
@@ -298,22 +285,16 @@ export class KbAttachmentIndexingService {
       return { chunks: 0, warning: null };
     }
 
-    const page = await this.db.query.kbPages.findFirst({
+    const pageExists = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, orgId),
         isNull(kbPages.deletedAt),
       ),
-      columns: {
-        visibility: true,
-        projectId: true,
-        createdById: true,
-        createdByMembershipId: true,
-        aclRevision: true,
-      },
+      columns: { id: true },
     });
 
-    if (!page) {
+    if (!pageExists) {
       metrics.finish("skipped_no_content");
       return { chunks: 0, warning: null };
     }
@@ -342,16 +323,7 @@ export class KbAttachmentIndexingService {
     const family = pageDocumentChunks(orgId, pageId);
     const stored = await loadDerivedChunkState(this.db, family);
     if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
-      if (stored.aclRevision !== page.aclRevision) {
-        this.logger.log("KB page document ACL updated (text unchanged)", {
-          orgId,
-          pageId,
-        });
-        await updateDerivedChunkAcl(this.db, family, page.aclRevision);
-        metrics.finish("acl_only", { reused: true });
-      } else {
-        metrics.finish("reused", { reused: true });
-      }
+      metrics.finish("reused", { reused: true });
       return { chunks: stored.chunkCount, warning: null };
     }
 
@@ -363,14 +335,7 @@ export class KbAttachmentIndexingService {
       pageId,
       chunks,
       embeddings,
-      {
-        contentHash,
-        aclRevision: page.aclRevision,
-        pageProjectId: page.projectId,
-        pageVisibility: page.visibility,
-        pageCreatedById: page.createdById,
-        pageCreatedByMembershipId: page.createdByMembershipId,
-      },
+      contentHash,
     );
 
     metrics.finish("indexed", { chunks: chunks.length, reused: false });
