@@ -307,8 +307,7 @@ describe("Store 5 of 5 — cache, invalidated by namespace on a KB delete", () =
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
     const service = new KbSpacesService(
       tx as never,
-      {} as never,
-      {} as never);
+      {} as never, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined) } as never);
 
     const result = await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: tx as never },

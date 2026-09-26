@@ -110,7 +110,7 @@ function traceDepth(): DepthTrace {
     attachmentIndexing,
     { ...baseConfig, R2_KB_BUCKET_NAME: "kb-files" },
     {} as unknown as KbAccessService,
-    {} as unknown as KnowledgeAuthorizationService,
+    { resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService,
     quota,
   );
 

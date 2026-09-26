@@ -53,9 +53,7 @@ function makeService(db: Db): KbSpacesService {
     assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
     invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined),
   } as unknown as KbAccessService;
-  const authz = {
-    visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
-  } as unknown as KnowledgeAuthorizationService;
+  const authz = { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [] }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined),  resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
   return new KbSpacesService(db, {} as KbIndexingService, authz);
 }
 

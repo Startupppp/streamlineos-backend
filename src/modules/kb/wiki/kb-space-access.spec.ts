@@ -85,7 +85,15 @@ function makeService(
 
   const authz = {
     visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
-  } as unknown as KnowledgeAuthorizationService;
+    resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: accessibleIds }),
+    invalidateSpaceScope: jest.fn().mockResolvedValue(undefined),
+    assertSpaceAccess: jest.fn().mockImplementation(() => {
+      if (!accessibleIds.includes(SPACE_ID)) {
+        return Promise.reject(new NotFoundException("Space not found"));
+      }
+      return Promise.resolve();
+    }),
+   resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
 
   const indexing = {} as unknown as KbIndexingService;
 
@@ -230,7 +238,7 @@ describe("KbSpacesService — space access for move operations (authorization co
     const svc = new KbSpacesService(
       db,
       {} as unknown as KbIndexingService,
-      { visiblePagePredicate: jest.fn().mockResolvedValue(undefined) } as unknown as KnowledgeAuthorizationService);
+      { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [] }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined),  resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService);
 
     await expect(svc.get(makeUser(ORG_A), SOURCE_SPACE_ID)).rejects.toThrow(NotFoundException);
   });
@@ -264,7 +272,7 @@ describe("KbSpacesService — space access for move operations (authorization co
       return new KbSpacesService(
         innerDb,
         {} as unknown as KbIndexingService,
-        { visiblePagePredicate: jest.fn().mockResolvedValue(undefined) } as unknown as KnowledgeAuthorizationService);
+        { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [] }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined),  resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService);
     }
 
     const sourceSvc = makeGetService(sourceRow, [SOURCE_SPACE_ID, TARGET_SPACE_ID]);
@@ -328,7 +336,7 @@ describe("KbSpacesService — page counts exclude pages the caller cannot see", 
     const calledWithPredicate = jest.fn().mockResolvedValue(undefined);
     const authz = {
       visiblePagePredicate: calledWithPredicate,
-    } as unknown as KnowledgeAuthorizationService;
+     resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
 
     const svc = new KbSpacesService(db, {} as unknown as KbIndexingService, authz);
     const scope = ScopedRead.of(ORG_A, "u-1", "all");

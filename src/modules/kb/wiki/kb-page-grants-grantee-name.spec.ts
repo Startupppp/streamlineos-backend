@@ -93,7 +93,7 @@ function makeListService(grantRows: unknown[]): { svc: KbPageGrantsService; capt
 
   const auth = {
     assertPageAccess: jest.fn().mockResolvedValue(undefined),
-  } as unknown as KnowledgeAuthorizationService;
+   resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
 
   const audit = {} as unknown as AuditService;
 

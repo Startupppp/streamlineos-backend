@@ -23,7 +23,7 @@ function makeAuth(resolve: boolean): KnowledgeAuthorizationService {
     assertPageAccess: resolve
       ? jest.fn().mockResolvedValue(scope)
       : jest.fn().mockRejectedValue(new NotFoundException("Page not found")),
-  } as unknown as KnowledgeAuthorizationService;
+   resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
 }
 
 describe("KbAccessService.getAccessibleSpaceIds — deny by default", () => {

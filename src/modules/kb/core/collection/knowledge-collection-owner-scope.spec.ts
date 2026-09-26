@@ -106,7 +106,7 @@ function makeHarness(actor: KbActorStanding) {
 
   const auth = {
     resolveStanding: jest.fn().mockResolvedValue(actor),
-  } as unknown as KnowledgeAuthorizationService;
+   invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
 
   return {
     capture,

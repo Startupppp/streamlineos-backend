@@ -98,7 +98,7 @@ function makeService(emitted: Emitted[], articleIds: number[], pageIds: number[]
   } as unknown as KbAccessService;
   const indexing = {} as unknown as KbIndexingService;
   return {
-    svc: new KbSpacesService(db, indexing, {} as never),
+    svc: new KbSpacesService(db, indexing, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined) } as never),
     invalidate,
     cursors,
     predicates,
@@ -168,8 +168,7 @@ describe("KB space soft delete purges the space's chunks", () => {
     } as unknown as Db;
     const svc = new KbSpacesService(
       db,
-      {} as unknown as KbIndexingService,
-      {} as never);
+      {} as unknown as KbIndexingService, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined) } as never);
 
     await expect(svc.remove(ORG, SPACE)).rejects.toThrow("Space not found");
     expect(emitted).toEqual([]);
