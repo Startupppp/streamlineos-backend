@@ -234,7 +234,7 @@ export class KbAnalyticsService {
       const afterCount = keysetInteger(position[0] ?? "");
       const afterId = keysetInteger(position[1] ?? "");
       havingConditions.push(
-        sql`(count(distinct ${kbPageVisits.id}), ${kbPages.id}) < (${afterCount}, ${afterId})`,
+        sql`(count(distinct ${kbPageVisits.id}), ${kbPages.id}) < (${sql.param(afterCount)}, ${sql.param(afterId, kbPages.id)})`,
       );
     }
 
@@ -303,7 +303,7 @@ export class KbAnalyticsService {
       const afterCount = keysetInteger(position[0] ?? "");
       const afterQuery = position[1] ?? "";
       havingConditions.push(
-        sql`(count(*)::int, coalesce(${kbEvents.query}, '')) < (${afterCount}, ${afterQuery})`,
+        sql`(count(*)::int, coalesce(${kbEvents.query}, '')) < (${sql.param(afterCount)}, ${sql.param(afterQuery, kbEvents.query)})`,
       );
     }
 
@@ -346,7 +346,7 @@ export class KbAnalyticsService {
       const afterDate = position[0] ?? "";
       const afterId = keysetInteger(position[1] ?? "");
       cursorConditions.push(
-        sql`(${kbPages.updatedAt}, ${kbPages.id}) < (${afterDate}::timestamptz, ${afterId})`,
+        sql`(${kbPages.updatedAt}, ${kbPages.id}) < (${sql.param(afterDate)}::timestamptz, ${sql.param(afterId, kbPages.id)})`,
       );
     }
 

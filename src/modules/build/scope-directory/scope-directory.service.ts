@@ -383,7 +383,7 @@ export class ScopeDirectoryService {
 
     const prodCursorCond =
       pos !== null && pos.typeIndex === 0
-        ? sql`(CASE WHEN ${managedProducts.name} = ${q} THEN 0 ELSE 1 END, ${managedProducts.name}, ${managedProducts.id}) > (${pos.rank}, ${pos.name}, ${Number(pos.id)})`
+        ? sql`(CASE WHEN ${managedProducts.name} = ${q} THEN 0 ELSE 1 END, ${managedProducts.name}, ${managedProducts.id}) > (${sql.param(pos.rank)}, ${sql.param(pos.name, managedProducts.name)}, ${sql.param(Number(pos.id), managedProducts.id)})`
         : undefined;
 
     const prodResults: ProductRow[] = await (async () => {
@@ -418,7 +418,7 @@ export class ScopeDirectoryService {
 
     const projCursorCond =
       pos !== null && pos.typeIndex === 1
-        ? sql`(CASE WHEN ${projects.name} = ${q} THEN 0 ELSE 1 END, ${projects.name}, ${projects.id}) > (${pos.rank}, ${pos.name}, ${Number(pos.id)})`
+        ? sql`(CASE WHEN ${projects.name} = ${q} THEN 0 ELSE 1 END, ${projects.name}, ${projects.id}) > (${sql.param(pos.rank)}, ${sql.param(pos.name, managedProducts.name)}, ${sql.param(Number(pos.id), managedProducts.id)})`
         : undefined;
 
     const projResults: ProjectRow[] = await (async () => {
