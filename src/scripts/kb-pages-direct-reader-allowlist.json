@@ -6,7 +6,6 @@
   "allowed": [
     "src/modules/ai/core/services/kb-rag-retrieval.service.ts",
     "src/modules/billing/core/plan-limits.service.ts",
-    "src/modules/cron/cron-kb-chunk-retention.service.ts",
     "src/modules/hr/helpdesk/hr-helpdesk.service.ts",
     "src/modules/public/kb.service.ts",
     "src/modules/storage/storage-kb.controller.ts",

@@ -1,12 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
-import { kbArticleChunks, kbPages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
-import type { TenantTx } from "../../common/tenant";
-
-const PRUNE_BATCH_SIZE = 500;
+import { pruneStaleDocumentChunks } from "../kb/core/kb-chunk-retention";
 
 export interface KbChunkRetentionResult {
   orgsProcessed: number;
@@ -23,7 +19,7 @@ export class CronKbChunkRetentionService {
     let pageChunksPruned = 0;
 
     const result = await forEachOrg(this.db, "kb-chunk-retention", async (tx, orgId) => {
-      pageChunksPruned += await this.prunePageChunksForOrg(tx, orgId);
+      pageChunksPruned += await pruneStaleDocumentChunks(tx, orgId);
     });
 
     this.logger.log(
@@ -31,38 +27,5 @@ export class CronKbChunkRetentionService {
     );
 
     return { orgsProcessed: result.succeeded, pageChunksPruned };
-  }
-
-  private async prunePageChunksForOrg(tx: TenantTx, orgId: string): Promise<number> {
-    let pruned = 0;
-
-    for (;;) {
-      const rows = await tx
-        .select({ id: kbArticleChunks.id })
-        .from(kbArticleChunks)
-        .leftJoin(kbPages, and(
-          eq(kbPages.id, kbArticleChunks.pageId),
-          eq(kbPages.orgId, orgId),
-        ))
-        .where(and(
-          eq(kbArticleChunks.orgId, orgId),
-          isNotNull(kbArticleChunks.pageId),
-          or(
-            isNull(kbPages.id),
-            eq(kbPages.status, "archived"),
-            isNotNull(kbPages.deletedAt),
-          ),
-        ))
-        .limit(PRUNE_BATCH_SIZE);
-
-      if (rows.length === 0) break;
-      await tx.delete(kbArticleChunks).where(
-        inArray(kbArticleChunks.id, rows.map((r) => r.id)),
-      );
-      pruned += rows.length;
-      if (rows.length < PRUNE_BATCH_SIZE) break;
-    }
-
-    return pruned;
   }
 }
