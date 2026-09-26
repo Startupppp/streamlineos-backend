@@ -81,6 +81,33 @@ export function readsKbPagesSchema(source) {
   return KB_PAGES_IMPORT_RE.test(source) || KB_PAGES_RAW_SQL_RE.test(source);
 }
 
+/**
+ * Matches a kb file handing the table object, or a column of it, back out under
+ * another name. This is not hypothetical: on the first day this gate had teeth,
+ * two independent lanes reached for exactly this to clear their allowlist line —
+ * `export { kbPages }` and `export const proposedDocumentTable = kbPages`. Both
+ * pass the import rule above while the outside module still holds the table and
+ * still writes its own select, join and column list. An alias is still the
+ * table, so a green gate would have been evidence of a port that never happened.
+ */
+export const KB_PAGES_REEXPORT_RE =
+  /export\s+(?:const|let|var)\s+\w+(?:\s*:[^=]+?)?\s*=\s*kbPages\b|export\s*(?:type\s*)?\{[^}]*\bkbPages\b[^}]*\}/;
+
+export function reexportsKbPagesTable(source) {
+  return KB_PAGES_REEXPORT_RE.test(source);
+}
+
+export function findTableReexporters() {
+  const offenders = [];
+  for (const file of walk(MODULES)) {
+    const rel = posix(relative(BACKEND, file));
+    if (!rel.startsWith(KB_PREFIX)) continue;
+    if (!reexportsKbPagesTable(readFileSync(file, "utf8"))) continue;
+    offenders.push(rel);
+  }
+  return offenders.sort();
+}
+
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
@@ -122,6 +149,24 @@ function loadAllowlist() {
 function main() {
   const { allowed } = loadAllowlist();
   const actual = findDirectReaders();
+  const reexporters = findTableReexporters();
+
+  if (reexporters.length > 0) {
+    console.error(
+      `check-kb-pages-direct-readers: ${reexporters.length} file(s) inside src/modules/kb/ re-export the kb_pages table or one of its columns:`,
+    );
+    for (const f of reexporters) console.error(`  ${f}`);
+    console.error(
+      "\nAn alias is still the table. Re-exporting it lets an outside module keep",
+    );
+    console.error(
+      "its own select, join and column list while this gate reports green.",
+    );
+    console.error(
+      "Expose a function that returns an explicit projection instead.",
+    );
+    process.exit(1);
+  }
 
   const unlisted = actual.filter((f) => !allowed.includes(f));
   const stale = allowed.filter((f) => !actual.includes(f));
@@ -202,6 +247,43 @@ function selfTest() {
     !readsKbPagesSchema(
       `{ id: "kb_pages", mechanism: "database-cascade", table: "kb_pages", keyedBy: "owner_membership_id" }`,
     ),
+  );
+
+  ok(
+    "detects a bare re-export of the table",
+    reexportsKbPagesTable(`export { kbPages };`),
+  );
+  ok(
+    "detects a renamed re-export of the table",
+    reexportsKbPagesTable(`export { kbPages as proposedDocumentTable };`),
+  );
+  ok(
+    "detects the table bound to an exported const",
+    reexportsKbPagesTable(`export const proposedDocumentTable = kbPages;`),
+  );
+  ok(
+    "detects a single exported column of the table",
+    reexportsKbPagesTable(`export const titleColumn = kbPages.title;`),
+  );
+  ok(
+    "detects a re-export forwarded straight from the schema barrel",
+    reexportsKbPagesTable(
+      `export { kbPages } from "../../../db/schema";`,
+    ),
+  );
+  ok(
+    "does not fire on a plain import of the table, which is how kb uses it",
+    !reexportsKbPagesTable(`import { kbPages } from "../../../db/schema";`),
+  );
+  ok(
+    "does not fire on exporting a predicate built over the table",
+    !reexportsKbPagesTable(
+      `export function publicVisibleDocuments(orgId) { return eq(kbPages.orgId, orgId); }`,
+    ),
+  );
+  ok(
+    "does not fire on a longer symbol that merely starts with the table name",
+    !reexportsKbPagesTable(`export { kbPagesArchive };`),
   );
 
   const { allowed, permanentlyExempt } = loadAllowlist();
