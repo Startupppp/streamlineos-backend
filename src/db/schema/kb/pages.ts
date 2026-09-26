@@ -154,6 +154,14 @@ export const kbPages = pgTable(
       "chk_kb_pages_external_ref_paired",
       sql`(${table.externalId} IS NULL) = (${table.externalSource} IS NULL)`,
     ),
+    check(
+      "kb_pages_status_check",
+      sql`${table.status} IN ('draft', 'in_review', 'published', 'archived')`,
+    ),
+    check(
+      "kb_pages_trust_state_check",
+      sql`${table.trustState} IN ('unverified', 'verified', 'verification_expired')`,
+    ),
     uniqueIndex("uniq_kb_pages_org_slug_ref")
       .on(table.orgId, table.slug)
       .where(sql`${table.slug} IS NOT NULL`),

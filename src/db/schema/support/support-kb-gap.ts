@@ -1,5 +1,5 @@
-import { index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { check, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
 export const SUPPORT_KNOWLEDGE_GAP_STATUSES = [
@@ -45,6 +45,10 @@ export const supportKnowledgeGaps = pgTable(
     uniqueIndex("uniq_support_knowledge_gaps_org_cluster").on(table.orgId, table.clusterKey),
     index("idx_support_knowledge_gaps_org_status_created").on(table.orgId, table.status, table.createdAt),
     unique("uniq_support_knowledge_gaps_org_id").on(table.orgId, table.id),
+    check(
+      "support_knowledge_gaps_status_check",
+      sql`${table.status} IN ('OPEN', 'DRAFTED', 'ROUTED', 'PUBLISHED', 'DISMISSED')`,
+    ),
   ],
 );
 

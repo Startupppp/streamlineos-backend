@@ -6875,6 +6875,13 @@
       "when": 1803054010725,
       "tag": "1276_support_knowledge_gaps_dismissal_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 1110,
+      "version": "7",
+      "when": 1803057610725,
+      "tag": "1277_kb_and_gap_status_vocabularies",
+      "breakpoints": true
     }
   ]
 }
