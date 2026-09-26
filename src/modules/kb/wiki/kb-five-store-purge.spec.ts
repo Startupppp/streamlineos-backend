@@ -11,6 +11,13 @@ import {
 } from "../../../common/outbox/outbox-consumer.registry";
 import { KbAccessService } from "../core/kb-access.service";
 
+jest.mock("./kb-multi-store-purge", () => ({
+  ...jest.requireActual("./kb-multi-store-purge"),
+  openMultiStoreLedger: jest.fn(async () => undefined),
+  incompleteStorePages: jest.fn(async () => []),
+  markStoresComplete: jest.fn(async () => undefined),
+  markStoresFailed: jest.fn(async () => undefined),
+}));
 jest.mock("./kb-page-attachment-purge", () => ({
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE: "kb:page:purge",
   recordPageAttachmentPurge: jest.fn(async () => mockPurgeKeys),

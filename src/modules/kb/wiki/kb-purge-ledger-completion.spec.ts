@@ -32,9 +32,9 @@ jest.mock("./kb-multi-store-purge", () => ({
     "blobs",
   ],
   openMultiStoreLedger: jest.fn(async () => undefined),
-  isStoreComplete: jest.fn(async () => false),
-  markStoreComplete: jest.fn(async () => undefined),
-  markStoreFailed: jest.fn(async () => undefined),
+  incompleteStorePages: jest.fn(async (_db: unknown, _orgId: unknown, pageIds: number[]) => pageIds),
+  markStoresComplete: jest.fn(async () => undefined),
+  markStoresFailed: jest.fn(async () => undefined),
   purgeVisitsForPages: jest.fn(async () => undefined),
   purgeFavoritesForPages: jest.fn(async () => undefined),
   purgeLinksForPages: jest.fn(async () => undefined),
@@ -51,7 +51,7 @@ jest.mock("./kb-multi-store-purge", () => ({
 
 import { KbPageTrashService } from "./kb-page-trash.service";
 import {
-  markStoreComplete,
+  markStoresComplete,
   openMultiStoreLedger,
 } from "./kb-multi-store-purge";
 import { purgeReviewsForPages } from "./kb-purge-reviews";
@@ -117,8 +117,8 @@ function makeService(): KbPageTrashService {
 
 function storesMarkedFor(pageId: number): string[] {
   return jest
-    .mocked(markStoreComplete)
-    .mock.calls.filter((call) => call[2] === pageId)
+    .mocked(markStoresComplete)
+    .mock.calls.filter((call) => (call[2] as number[]).includes(pageId))
     .map((call) => String(call[3]));
 }
 
@@ -144,9 +144,9 @@ describe("every store a purge opens in the ledger is also closed", () => {
 
     await service.emptyTrash(makeUser());
 
+    expect(jest.mocked(purgeReviewsForPages).mock.calls.map((c) => c[2]))
+      .toContainEqual(PAGE_IDS);
     for (const id of PAGE_IDS) {
-      expect(jest.mocked(purgeReviewsForPages).mock.calls.map((c) => c[2]))
-        .toContainEqual([id]);
       expect(storesMarkedFor(id)).toContain("reviews");
     }
   });

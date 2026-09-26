@@ -2,6 +2,9 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(
     async (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx),
   ),
+  runInTenantTransaction: jest.fn(
+    async (_db: unknown, fn: (tx: unknown) => unknown, _opts: unknown) => fn(mockTx),
+  ),
 }));
 
 import { PgDialect } from "drizzle-orm/pg-core";

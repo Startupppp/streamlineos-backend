@@ -10,6 +10,14 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   ) => fn(db),
 }));
 
+jest.mock("./kb-multi-store-purge", () => ({
+  ...jest.requireActual("./kb-multi-store-purge"),
+  openMultiStoreLedger: jest.fn(async () => undefined),
+  incompleteStorePages: jest.fn(async () => []),
+  markStoresComplete: jest.fn(async () => undefined),
+  markStoresFailed: jest.fn(async () => undefined),
+}));
+
 jest.mock("./kb-page-attachment-purge", () => ({
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE: "kb:page:purge",
   recordPageAttachmentPurge: jest.fn(async (_db: unknown, _org: string, ids: number[]) => {

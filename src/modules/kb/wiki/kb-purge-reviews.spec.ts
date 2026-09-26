@@ -2,6 +2,10 @@ const mockRunInNewTenantTransaction = jest.fn();
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: (...args: unknown[]) => mockRunInNewTenantTransaction(...args),
+  runInTenantTransaction: jest.fn(
+    async (db: unknown, fn: (tx: unknown) => Promise<void>, opts?: { orgId?: string }) =>
+      mockRunInNewTenantTransaction(db, opts?.orgId ?? "", fn),
+  ),
 }));
 
 import { purgeReviewsForPages } from "./kb-purge-reviews";

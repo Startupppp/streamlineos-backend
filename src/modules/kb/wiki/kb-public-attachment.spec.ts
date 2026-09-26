@@ -8,6 +8,7 @@ jest.mock("../../../common/tenant/with-public-token", () => ({
 }));
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(),
+  runInTenantTransaction: jest.fn(),
 }));
 
 const withPublicTokenMock = withPublicToken as jest.MockedFunction<typeof withPublicToken>;

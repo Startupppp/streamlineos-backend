@@ -13,6 +13,17 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
     _orgId: string,
     fn: (tx: unknown) => Promise<unknown>,
   ) => fn(db),
+  runInTenantTransaction: jest.fn(
+    async (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+  ),
+}));
+
+jest.mock("./wiki/kb-multi-store-purge", () => ({
+  ...jest.requireActual("./wiki/kb-multi-store-purge"),
+  openMultiStoreLedger: jest.fn(async () => undefined),
+  incompleteStorePages: jest.fn(async () => []),
+  markStoresComplete: jest.fn(async () => undefined),
+  markStoresFailed: jest.fn(async () => undefined),
 }));
 
 import { KbSourcesService } from "./wiki/kb-sources.service";
