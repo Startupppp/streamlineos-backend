@@ -11,6 +11,7 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { decodeJwt } from "jose";
 import { PORTAL_AUDIENCE } from "../portal-auth/portal-claims";
+import { IS_PORTAL_ROUTE } from "../portal-auth/portal-route.decorator";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
 import type { Redis } from "@upstash/redis";
@@ -95,6 +96,12 @@ export class JwtAuthGuard implements CanActivate {
       context.getClass(),
     ]);
     if (isPublic) return true;
+
+    const isPortalRoute = this.reflector.getAllAndOverride<boolean>(
+      IS_PORTAL_ROUTE,
+      [context.getHandler(), context.getClass()],
+    );
+    if (isPortalRoute) return true;
 
     const req = context
       .switchToHttp()

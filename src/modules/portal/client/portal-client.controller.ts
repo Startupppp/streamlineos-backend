@@ -15,6 +15,7 @@ import type { Request } from "express";
 import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PortalJwtAuthGuard } from "../../../common/portal-auth/portal-jwt-auth.guard";
+import { PortalRoute } from "../../../common/portal-auth/portal-route.decorator";
 import type { PortalUserContext } from "../../../common/portal-auth/portal-claims";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
@@ -53,6 +54,7 @@ const portalCommandPrincipalGuard: CanActivate = {
 };
 
 @Controller("portal/v1")
+@PortalRoute()
 @UseGuards(PortalJwtAuthGuard)
 @AuthorizedInService(
   "PortalJwtAuthGuard, then PortalClientService scopes every read to the portal membership's granted projects",
