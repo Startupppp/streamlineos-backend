@@ -44,10 +44,11 @@ const ACTIVE_ORG = {
 
 type RecordedInsert = { table: unknown; values: unknown };
 
-function buildHarness() {
+function buildHarness(orgId: string = ORG_ID) {
   const inserts: RecordedInsert[] = [];
 
-  const lockedInvitationRows = [PENDING_INVITATION];
+  const invitation = { ...PENDING_INVITATION, orgId };
+  const lockedInvitationRows = [invitation];
   const membershipRows = [{ id: 99 }];
   let selectedTable: unknown = null;
 
@@ -57,7 +58,7 @@ function buildHarness() {
       users: { findFirst: jest.fn().mockResolvedValue(null) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       organizations: { findFirst: jest.fn().mockResolvedValue(ACTIVE_ORG) },
-      invitations: { findFirst: jest.fn().mockResolvedValue(PENDING_INVITATION) },
+      invitations: { findFirst: jest.fn().mockResolvedValue(invitation) },
     },
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockImplementation(function (this: unknown, table: unknown) {
@@ -82,7 +83,7 @@ function buildHarness() {
       set: (_values: unknown) => ({
         where: () => ({
           returning: () =>
-            Promise.resolve(table === invitations ? [{ id: PENDING_INVITATION.id }] : []),
+            Promise.resolve(table === invitations ? [{ id: invitation.id }] : []),
           then: (resolve: (v: undefined) => unknown) =>
             Promise.resolve(undefined).then(resolve),
         }),
@@ -144,6 +145,30 @@ describe("InvitationAcceptanceService.accept — magic link token carries the in
   let svc: InvitationAcceptanceService;
   let harness: ReturnType<typeof buildHarness>;
 
+  async function buildFor(orgId: string) {
+    const built = buildHarness(orgId);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        InvitationAcceptanceService,
+        { provide: DRIZZLE, useValue: built.db },
+        {
+          provide: PlanLimitsService,
+          useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: SeatLedgerService,
+          useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) },
+        },
+        { provide: CacheService, useValue: built.cache },
+        {
+          provide: NotificationDispatchService,
+          useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+        },
+      ],
+    }).compile();
+    return { harness: built, svc: moduleRef.get(InvitationAcceptanceService) };
+  }
+
   beforeEach(async () => {
     harness = buildHarness();
     const moduleRef = await Test.createTestingModule({
@@ -177,14 +202,13 @@ describe("InvitationAcceptanceService.accept — magic link token carries the in
     expect(result.ok).toBe(true);
   });
 
-  it("does not stamp a foreign org onto the token when the invitation belongs to a specific org", async () => {
-    await svc.accept({ token: RAW_TOKEN });
+  it("follows the inviting tenant rather than a constant when a second org's invitation is accepted", async () => {
+    const other = await buildFor(OTHER_ORG_ID);
 
-    const magicLinkInsert = harness.inserts.find((op) => op.table === magicLinkTokens);
-    expect((magicLinkInsert!.values as Record<string, unknown>).orgId).not.toBe(
-      OTHER_ORG_ID,
-    );
-    expect((magicLinkInsert!.values as Record<string, unknown>).orgId).toBe(ORG_ID);
+    await other.svc.accept({ token: RAW_TOKEN });
+
+    const magicLinkInsert = other.harness.inserts.find((op) => op.table === magicLinkTokens);
+    expect((magicLinkInsert!.values as Record<string, unknown>).orgId).toBe(OTHER_ORG_ID);
   });
 
   it("returns an auto-login token alongside the org-stamped magic link", async () => {

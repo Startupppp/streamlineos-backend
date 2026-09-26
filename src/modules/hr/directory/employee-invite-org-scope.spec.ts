@@ -38,17 +38,16 @@ describe("EmployeeOnboardingService — magic link mints are scoped to the actin
       expect((token!.values as Record<string, unknown>).orgId).toBe(ORG_ID);
     });
 
-    it("does not stamp a foreign org onto the token when the actor belongs to a different org", async () => {
+    it("follows the acting tenant rather than a constant when a second org mints its own link", async () => {
       const harness = makeHarness({
         selects: { organization_members: [[activeMember()]] },
       });
       const { service } = buildService(harness.db);
 
-      await service.createInviteLink(ACTOR as never, TARGET);
+      await service.createInviteLink({ ...ACTOR, orgId: OTHER_ORG_ID } as never, TARGET);
 
       const token = harness.inserted.find((r) => r.table === "magic_link_tokens");
-      expect((token!.values as Record<string, unknown>).orgId).not.toBe(OTHER_ORG_ID);
-      expect((token!.values as Record<string, unknown>).orgId).toBe(ORG_ID);
+      expect((token!.values as Record<string, unknown>).orgId).toBe(OTHER_ORG_ID);
     });
   });
 
@@ -66,17 +65,16 @@ describe("EmployeeOnboardingService — magic link mints are scoped to the actin
       expect((token!.values as Record<string, unknown>).orgId).toBe(ORG_ID);
     });
 
-    it("does not attach a foreign org to the token when a different actor org is in scope", async () => {
+    it("follows the acting tenant rather than a constant when a second org resends its own invite", async () => {
       const harness = makeHarness({
         selects: { organization_members: [[activeMember()]] },
       });
       const { service } = buildService(harness.db);
 
-      await service.resendInvite(ACTOR as never, TARGET);
+      await service.resendInvite({ ...ACTOR, orgId: OTHER_ORG_ID } as never, TARGET);
 
       const token = harness.inserted.find((r) => r.table === "magic_link_tokens");
-      expect((token!.values as Record<string, unknown>).orgId).not.toBe(OTHER_ORG_ID);
-      expect((token!.values as Record<string, unknown>).orgId).toBe(ORG_ID);
+      expect((token!.values as Record<string, unknown>).orgId).toBe(OTHER_ORG_ID);
     });
   });
 });
