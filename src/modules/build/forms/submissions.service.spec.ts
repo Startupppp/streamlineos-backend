@@ -6,6 +6,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { Test } from "@nestjs/testing";
+import { encodeTupleCursor } from "../../../common/pagination/cursor";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
@@ -636,8 +637,9 @@ describe("SubmissionsService.listSubmissions", () => {
     (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
 
     const result = await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, {});
-    expect(Array.isArray(result)).toBe(true);
-    expect(mockLimit).toHaveBeenCalledWith(100);
+    expect(result.data).toEqual(submissions);
+    expect(result.pagination).toEqual({ hasMore: false, limit: 100, nextCursor: null });
+    expect(mockLimit).toHaveBeenCalledWith(101);
   });
 
   it("applies status filter when provided", async () => {
@@ -651,7 +653,7 @@ describe("SubmissionsService.listSubmissions", () => {
 
     await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, { status: "submitted" });
     expect(mockWhere).toHaveBeenCalledTimes(1);
-    expect(mockLimit).toHaveBeenCalledWith(100);
+    expect(mockLimit).toHaveBeenCalledWith(101);
   });
 
   it("applies cursor filter for date-based pagination", async () => {
@@ -663,7 +665,9 @@ describe("SubmissionsService.listSubmissions", () => {
     const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
     (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
 
-    await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, { cursor: "2026-01-01T00:00:00.000Z" });
+    await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, {
+      cursor: encodeTupleCursor(["2026-01-01T00:00:00.000Z", "30"]),
+    });
     expect(mockWhere).toHaveBeenCalledTimes(1);
   });
 });

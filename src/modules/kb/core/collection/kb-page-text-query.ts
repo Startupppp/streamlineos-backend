@@ -2,10 +2,11 @@ import { sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
 const MAX_TERMS = 8;
+const MAX_RAW_LENGTH = 200;
 
 export function kbPagePrefixTsQuery(q: string): SQL<unknown> | null {
-  const terms = q
-    .trim()
+  const raw = q.trim().slice(0, MAX_RAW_LENGTH);
+  const terms = raw
     .split(/\s+/)
     .map(function stripPunctuation(word) {
       return word.replace(/[^\p{L}\p{N}]/gu, "");
@@ -23,5 +24,5 @@ export function kbPagePrefixTsQuery(q: string): SQL<unknown> | null {
     })
     .join(" & ");
 
-  return sql`to_tsquery('english', ${prefixQuery})`;
+  return sql`(to_tsquery('english', ${prefixQuery}) || plainto_tsquery('english', ${raw}))`;
 }

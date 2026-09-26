@@ -17,13 +17,15 @@ export class KbSearchMetrics {
   private readonly startedAt = Date.now();
   private finished = false;
 
-  private constructor(orgId: string) {
-    if (orgId) this.attributes["org.id"] = orgId;
+  private constructor(opts: { orgId: string; actorStanding?: string; orgCell?: string }) {
+    if (opts.orgId) this.attributes["org.id"] = opts.orgId;
+    if (opts.actorStanding) this.attributes["actor.standing"] = opts.actorStanding;
+    if (opts.orgCell) this.attributes["org.cell"] = opts.orgCell;
     this.span = startSpan(KB_SEARCH_SPAN_NAME, { attributes: this.attributes });
   }
 
-  static begin(opts: { orgId: string }): KbSearchMetrics {
-    return new KbSearchMetrics(opts.orgId);
+  static begin(opts: { orgId: string; actorStanding?: string; orgCell?: string }): KbSearchMetrics {
+    return new KbSearchMetrics(opts);
   }
 
   finish(outcome: KbSearchOutcome, facts: { results?: number } = {}): void {

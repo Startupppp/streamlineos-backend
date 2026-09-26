@@ -68,7 +68,7 @@ describe("[seeded-e2e] KbStuckSourceReaperService tenant isolation", () => {
               return reapOrgStuckSources(tx, own.orgId, cutoff);
             });
 
-        expect(await reap()).toBe(1);
+        expect(await reap()).toMatchObject({ sourcesFailed: 1 });
         await expect(readSource(own.orgId, eligible.id)).resolves.toMatchObject({
           status: "failed",
           errorMessage: KB_SOURCE_STUCK_MESSAGE,

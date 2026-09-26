@@ -43,20 +43,19 @@ function makeUser(orgId: string): CurrentUserContext {
 
 function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; allWhereArgs: unknown[] } {
   const allWhereArgs: unknown[] = [];
+  const joinableChain = (): Record<string, unknown> => {
+    const self: Record<string, unknown> = {
+      where: jest.fn().mockImplementation((arg: unknown) => {
+        allWhereArgs.push(arg);
+        return makeChain(rows);
+      }),
+    };
+    self.leftJoin = jest.fn(() => self);
+    return self;
+  };
   const db = {
     select: jest.fn().mockImplementation(() => ({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockImplementation((arg: unknown) => {
-          allWhereArgs.push(arg);
-          return makeChain(rows);
-        }),
-        leftJoin: jest.fn().mockReturnValue({
-          where: jest.fn().mockImplementation((arg: unknown) => {
-            allWhereArgs.push(arg);
-            return makeChain(rows);
-          }),
-        }),
-      }),
+      from: jest.fn().mockReturnValue(joinableChain()),
     })),
   } as unknown as Db;
   const access = {

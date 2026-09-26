@@ -1,5 +1,19 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gt, gte, isNotNull, isNull, lt, lte, or, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   kbPageReviews,
@@ -12,7 +26,10 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { keysetAfterId, keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  keysetAfterId,
+  keysetBeforeId,
+} from "../../../common/pagination/keyset";
 import {
   buildCursorPage,
   decodeCursor,
@@ -20,6 +37,7 @@ import {
 } from "../../../common/pagination/cursor";
 import { reviewerCanSeeAllReviews } from "./kb-page-reviews.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
 import type { ListPageReviewsQuery } from "./dto/kb-page-reviews.schemas";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
@@ -41,6 +59,7 @@ export interface ReviewListItem {
   createdAt: Date;
   updatedAt: Date;
   pageTitle: string | null;
+  pageTrustState: "unverified" | "verified" | "verification_expired" | null;
   requestedByName: string | null;
   reviewerName: string | null;
 }
@@ -87,7 +106,10 @@ export class KbPageReviewsQueryService {
       "reviewer_assignee_membership",
     );
 
-    const visibilityPredicate = await this.auth.visiblePagePredicate(user, "view");
+    const visibilityPredicate = await this.auth.visiblePagePredicate(
+      user,
+      "view",
+    );
     const canSeeAll = await reviewerCanSeeAllReviews(user, this.access);
     const now = new Date();
 
@@ -112,6 +134,11 @@ export class KbPageReviewsQueryService {
 
     if (query.spaceId !== undefined) {
       conditions.push(eq(kbPages.spaceId, query.spaceId));
+    }
+
+    if (query.q !== undefined) {
+      const tsquery = kbPagePrefixTsQuery(query.q);
+      if (tsquery !== null) conditions.push(sql`${kbPages}.fts @@ ${tsquery}`);
     }
 
     if (query.dueFrom !== undefined) {
@@ -140,7 +167,10 @@ export class KbPageReviewsQueryService {
         if (query.sortDir === "desc") {
           conditions.push(
             or(
-              and(isNull(kbPageReviews.dueAt), lt(kbPageReviews.id, Number(position.id))),
+              and(
+                isNull(kbPageReviews.dueAt),
+                lt(kbPageReviews.id, Number(position.id)),
+              ),
               isNotNull(kbPageReviews.dueAt),
             ),
           );
@@ -180,6 +210,7 @@ export class KbPageReviewsQueryService {
       .select({
         ...REVIEW_LIST_COLUMNS,
         pageTitle: kbPages.title,
+        pageTrustState: kbPages.trustState,
         requestedByName: requester.name,
         reviewerName: reviewer.name,
       })
@@ -204,15 +235,13 @@ export class KbPageReviewsQueryService {
       .leftJoin(requester, eq(requesterMembership.userId, requester.id))
       .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
       .where(and(...conditions))
-      .orderBy(
-        orderFn(kbPageReviews.dueAt),
-        orderFn(kbPageReviews.id),
-      )
+      .orderBy(orderFn(kbPageReviews.dueAt), orderFn(kbPageReviews.id))
       .limit(query.limit + 1);
 
     const withDerived = rows.map((row) => ({
       ...row,
-      isOverdue: row.status === "pending" && row.dueAt !== null && row.dueAt < now,
+      isOverdue:
+        row.status === "pending" && row.dueAt !== null && row.dueAt < now,
     }));
 
     return buildCursorPage(withDerived, query.limit, (row) => ({

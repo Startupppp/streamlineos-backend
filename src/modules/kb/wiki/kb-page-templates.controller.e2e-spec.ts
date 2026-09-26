@@ -15,18 +15,20 @@ describe("KB Page Templates auth/RBAC (e2e)", () => {
 
   afterAll(async () => app.close());
 
-  type Method = "get" | "post" | "delete";
+  type Method = "get" | "post" | "patch" | "delete";
 
   function callRoute(method: Method, path: string): request.Test {
     const agent = request(app.getHttpServer());
     if (method === "get") return agent.get(path);
     if (method === "post") return agent.post(path);
+    if (method === "patch") return agent.patch(path);
     return agent.delete(path);
   }
 
   const allRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/kb/page-templates"],
     ["post", "/kb/page-templates"],
+    ["patch", "/kb/page-templates/1"],
     ["delete", "/kb/page-templates/1"],
   ];
 
@@ -57,6 +59,16 @@ describe("KB Page Templates auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ fromPageId: 1, name: "My Template" });
     expect([201, 400, 404, 409, 500]).toContain(res.status);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
+
+  it("passes auth on PATCH /kb/page-templates/1 with kb:templates:manage permission", async () => {
+    const token = await signToken({ permissions: ["kb:templates:manage"], enabledModules: ["kb"] });
+    const res = await callRoute("patch", "/kb/page-templates/1")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Renamed" });
+    expect([200, 400, 404, 409, 500]).toContain(res.status);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
   });

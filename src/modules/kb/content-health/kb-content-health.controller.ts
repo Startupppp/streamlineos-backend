@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -11,7 +11,10 @@ import {
   contentHealthSignalsQuerySchema,
   contentHealthSignalsPageSchema,
   contentHealthCountsSchema,
+  dismissHealthItemBodySchema,
+  healthItemSchema,
   type ContentHealthSignalsQuery,
+  type DismissHealthItemBody,
 } from "./dto/kb-content-health.schemas";
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -35,5 +38,16 @@ export class KbContentHealthController {
   @Get("wiki/content-health/counts")
   counts(@CurrentUser() user: CurrentUserContext) {
     return this.contentHealth.counts(user);
+  }
+
+  @RequirePermission("kb:pages:manage")
+  @Validate({ body: dismissHealthItemBodySchema })
+  @ResponseSchema(healthItemSchema)
+  @Post("wiki/content-health/signals/dismiss")
+  dismiss(
+    @CurrentUser() user: CurrentUserContext,
+    @Body() body: DismissHealthItemBody,
+  ) {
+    return this.contentHealth.dismiss(user, body);
   }
 }

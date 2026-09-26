@@ -14,6 +14,10 @@ import { actingMembershipId } from "../../../../common/auth/principal";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { AccessService } from "../../../access/access.service";
 import { kbAclCacheKey } from "../kb-acl-cache-key";
+import {
+  memoizeStandingForRequest,
+  standingMemoKey,
+} from "./kb-standing-request-memo";
 import { getAccessibleProjectIds } from "../../retrieval/kb-project-access.util";
 import {
   computeAccessibleSpaceIds,
@@ -46,6 +50,16 @@ export class KnowledgeAuthorizationService {
   async resolveStanding(user: CurrentUserContext): Promise<KbActorStanding> {
     const membershipId =
       user.principal === undefined ? null : actingMembershipId(user.principal);
+    return memoizeStandingForRequest(
+      standingMemoKey(user.orgId, user.userId, membershipId, user.isOrgOwner),
+      () => this.computeStanding(user, membershipId),
+    );
+  }
+
+  private async computeStanding(
+    user: CurrentUserContext,
+    membershipId: number | null,
+  ): Promise<KbActorStanding> {
     const [isKbAdmin, permissionsVersion, roleSlugs, accessibleProjectIds] =
       await Promise.all([
         this.access.holds(user, KB_MANAGE_SPACES),

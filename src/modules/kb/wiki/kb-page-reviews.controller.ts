@@ -76,6 +76,7 @@ export class KbPageReviewsController {
   }
 
   @Post("page-reviews/bulk-decide")
+  @Idempotent("kb.page-review.bulk-decide")
   @RequirePermission("kb:reviews:manage")
   @HttpCode(200)
   @Validate({ body: bulkDecidePageReviewsSchema })

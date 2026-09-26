@@ -71,7 +71,7 @@ describe("KbPagesService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a page in another org (cross-tenant deny)", async () => {
     const { db, wheres } = makeDb(null);
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never);
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
 
     await expect(svc.get(makeUser(ATTACKER), PAGE_ID, false)).rejects.toThrow(NotFoundException);
 
@@ -93,7 +93,7 @@ describe("KbPagesService — cross-tenant isolation", () => {
       createdByMembershipId: 1,
     };
     const { db } = makeDb(pageRow);
-    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never);
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never, {} as never, {} as never);
 
     const result = await svc.get(makeUser(OWNER), PAGE_ID, false);
 

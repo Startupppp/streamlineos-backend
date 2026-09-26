@@ -1,4 +1,10 @@
-﻿import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+﻿import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { kbPageComments, kbPages, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -76,11 +82,22 @@ export class KbPageCommentsService {
         columns: { id: true },
       });
       if (!parent) throw new NotFoundException("Parent comment not found");
+      if (input.anchorBlockIndex != null || input.anchorQuote != null) {
+        throw new BadRequestException("A reply cannot carry its own anchor");
+      }
     }
 
     const [comment] = await this.db
       .insert(kbPageComments)
-      .values({ orgId, pageId, authorId, content: input.content, parentId: input.parentId ?? null })
+      .values({
+        orgId,
+        pageId,
+        authorId,
+        content: input.content,
+        parentId: input.parentId ?? null,
+        anchorBlockIndex: input.anchorBlockIndex ?? null,
+        anchorQuote: input.anchorQuote ?? null,
+      })
       .returning();
     if (!comment) throw new Error("Failed to create comment");
 

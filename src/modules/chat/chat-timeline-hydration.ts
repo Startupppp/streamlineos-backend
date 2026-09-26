@@ -15,10 +15,12 @@ function senderFromIdentity(identity: PersonIdentity | undefined): ChatSender {
   const parts = [identity?.firstName, identity?.lastName]
     .filter(Boolean)
     .join(" ");
-  const name = identity?.displayName ?? (parts || null);
+  // Ensure name is always string | null, never undefined, to match the Zod schema.
+  // If identity has displayName, use it; else use joined parts if non-empty; else null.
+  const name = identity?.displayName ?? (parts.length > 0 ? parts : null);
   return {
     id: identity?.userId ?? null,
-    name: name ?? null,
+    name,
     image: identity?.avatarUrl ?? null,
   };
 }

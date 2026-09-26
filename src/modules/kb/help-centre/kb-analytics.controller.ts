@@ -5,7 +5,14 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAnalyticsService } from "./kb-analytics.service";
-import { rangeSchema, type RangeInput } from "./dto/kb-analytics.schemas";
+import {
+  rangeSchema,
+  overviewQuerySchema,
+  pageAnalyticsQuerySchema,
+  type RangeInput,
+  type OverviewQueryInput,
+  type PageAnalyticsQueryInput,
+} from "./dto/kb-analytics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -14,6 +21,8 @@ import {
   kbAnalyticsPagesSchema,
   kbAnalyticsGapsSchema,
   kbAnalyticsContentGapsSchema,
+  kbAnalyticsCitationReuseSchema,
+  kbAnalyticsReviewSlaSchema,
 } from "./dto/kb-helpcenter-response.schemas";
 
 @Controller("kb")
@@ -23,10 +32,10 @@ export class KbAnalyticsController {
 
   @Get("analytics/overview")
   @RequirePermission("kb:analytics:view")
-  @Validate({ query: rangeSchema })
+  @Validate({ query: overviewQuerySchema })
   @ResponseSchema(kbAnalyticsOverviewSchema)
   async overview(
-    @Query() query: RangeInput,
+    @Query() query: OverviewQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.overview(u.orgId, query);
@@ -45,9 +54,13 @@ export class KbAnalyticsController {
 
   @Get("analytics/pages")
   @RequirePermission("kb:analytics:view")
+  @Validate({ query: pageAnalyticsQuerySchema })
   @ResponseSchema(kbAnalyticsPagesSchema)
-  async pages(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return await this.analytics.pages(u);
+  async pages(
+    @Query() query: PageAnalyticsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.pages(u, query);
   }
 
   @Get("analytics/gaps")
@@ -70,5 +83,27 @@ export class KbAnalyticsController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.contentGaps(u.orgId, query);
+  }
+
+  @Get("analytics/citation-reuse")
+  @RequirePermission("kb:analytics:view")
+  @Validate({ query: rangeSchema })
+  @ResponseSchema(kbAnalyticsCitationReuseSchema)
+  async citationReuse(
+    @Query() query: RangeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.citationReuse(u, query);
+  }
+
+  @Get("analytics/review-sla")
+  @RequirePermission("kb:analytics:view")
+  @Validate({ query: rangeSchema })
+  @ResponseSchema(kbAnalyticsReviewSlaSchema)
+  async reviewSla(
+    @Query() query: RangeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.reviewSla(u.orgId, query);
   }
 }

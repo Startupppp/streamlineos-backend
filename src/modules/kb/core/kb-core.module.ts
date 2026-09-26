@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { KbNotificationVisibility } from "./kb-notification-visibility";
 import { KbCreditsService } from "./kb-credits.service";
+import { KbIndexedBytesQuotaService } from "./kb-indexed-bytes-quota.service";
 import { KbAccessService } from "./kb-access.service";
 import { KnowledgeAuthorizationService } from "./authorization/knowledge-authorization.service";
 import { KnowledgeCollectionService } from "./collection/knowledge-collection.service";
@@ -19,24 +20,36 @@ import { KbTranslationsService } from "./kb-translations.service";
 @Module({
   imports: [NotificationsModule],
   controllers: [
-    KbPageCollectionController,
+    KbTagsController,
     KbSettingsController,
     KbHrLinkFlagsController,
-    KbTagsController,
     KbTranslationsController,
+    KbPageCollectionController,
   ],
   providers: [
-    KbNotificationVisibility,
-    KbCreditsService,
-    KbAccessService,
-    KnowledgeAuthorizationService,
-    KnowledgeCollectionService,
+    KbTagsService,
     KbEventsService,
+    KbAccessService,
+    KbCreditsService,
     KbSettingsService,
     KbHrLinkFlagsService,
-    KbTagsService,
     KbTranslationsService,
+    KbNotificationVisibility,
+    KbIndexedBytesQuotaService,
+    KnowledgeCollectionService,
+    KnowledgeAuthorizationService,
   ],
-  exports: [KbCreditsService, KbAccessService, KnowledgeAuthorizationService, KnowledgeCollectionService, KbEventsService, KbSettingsService, KbHrLinkFlagsService, KbTagsService, KbTranslationsService],
+  exports: [
+    KbTagsService,
+    KbAccessService,
+    KbEventsService,
+    KbCreditsService,
+    KbSettingsService,
+    KbHrLinkFlagsService,
+    KbTranslationsService,
+    KbIndexedBytesQuotaService,
+    KnowledgeCollectionService,
+    KnowledgeAuthorizationService,
+  ],
 })
 export class KbCoreModule {}

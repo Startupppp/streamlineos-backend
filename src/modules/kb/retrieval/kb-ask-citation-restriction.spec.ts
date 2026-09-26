@@ -248,18 +248,6 @@ describe("KbAskService — citation re-verification re-applies the article-restr
   });
 });
 
-/**
- * The article restriction tests above cover the `kb_page_restrictions` ACL
- * dimension applied by `visibleArticles`. `visiblePages` is the parallel seam
- * for the wiki-page half of the product — it delegates authorization to
- * `visiblePagePredicate`, whose contract is that it returns a Drizzle SQL
- * predicate that is correct for the requesting user's standing. These tests
- * verify:
- *  1. A page whose `visiblePagePredicate` has been tightened after the answer
- *     was generated is redacted when the answer is replayed.
- *  2. A page whose `visiblePagePredicate` still allows access is NOT redacted
- *     (positive pair — a status-only negative passes on a 500 without this).
- */
 describe("KbAskService — page citation: visiblePagePredicate applied on re-verification", () => {
   const CITED_PAGE_ID = 55;
 
@@ -271,20 +259,53 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     updatedAt: new Date("2024-01-01"),
   };
 
-  /**
-   * Minimal DB double for `assertReplayCitations`. Only `execute` (consumed by
-   * `withTenant`'s set_config call) and `select` (consumed by `visiblePages`)
-   * are needed; `transaction` must invoke its callback so nothing inside it is
-   * skipped silently (BE-136).
-   */
-  function makeDbForRevocation(pageVisible: boolean) {
+  const pageWheres: CompiledWhere[] = [];
+
+  function onlyKbPagesWheres(): CompiledWhere[] {
+    return pageWheres.filter((compiled) => compiled.sql.includes("kb_pages"));
+  }
+
+  function pageIdsBoundIn(compiled: CompiledWhere): number[] | undefined {
+    const marker = '"kb_pages"."id" in (';
+    const at = compiled.sql.indexOf(marker);
+    if (at === -1) return undefined;
+    const close = compiled.sql.indexOf(")", at);
+    const ids: number[] = [];
+    for (const token of compiled.sql.slice(at + marker.length, close).split(",")) {
+      const index = Number.parseInt(token.trim().replace("$", ""), 10);
+      const value = compiled.params[index - 1];
+      if (typeof value === "number") ids.push(value);
+    }
+    return ids;
+  }
+
+  function predicateLiteralIn(compiled: CompiledWhere): boolean | undefined {
+    const tokens = compiled.sql
+      .replace(/^\(/, "")
+      .replace(/\)$/, "")
+      .split(" and ")
+      .map((token) => token.trim());
+    const last = tokens[tokens.length - 1];
+    if (last === "true") return true;
+    if (last === "false") return false;
+    return undefined;
+  }
+
+  function makeDbForRevocation() {
     const db: Record<string, unknown> = {
       execute: jest.fn().mockResolvedValue([]),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue(
-            pageVisible ? [{ id: CITED_PAGE_ID }] : [],
-          ),
+          where: jest.fn().mockImplementation((where: SQL) => {
+            const compiled = compile(where);
+            pageWheres.push(compiled);
+            const boundIds = pageIdsBoundIn(compiled);
+            const predicateTrue = predicateLiteralIn(compiled);
+            const visible =
+              predicateTrue === true &&
+              (boundIds === undefined || boundIds.includes(CITED_PAGE_ID));
+            return Promise.resolve(visible ? [{ id: CITED_PAGE_ID }] : []);
+          }),
         }),
       }),
     };
@@ -292,8 +313,12 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     return db;
   }
 
+  beforeEach(() => {
+    pageWheres.length = 0;
+  });
+
   it("revoking access to a cited page redacts the citation on re-open", async () => {
-    const db = makeDbForRevocation(false);
+    const db = makeDbForRevocation();
     const authRevoked = {
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`false`),
       assertPageAccess: jest.fn(),
@@ -305,10 +330,14 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).rejects.toThrow(NotFoundException);
+    const kbPagesWheres = onlyKbPagesWheres();
+    expect(kbPagesWheres).toHaveLength(1);
+    expect(kbPagesWheres[0].sql).toContain('"kb_pages"."id" in (');
+    expect(predicateLiteralIn(kbPagesWheres[0])).toBe(false);
   });
 
   it("a page citation accessible to the asker passes re-verification (positive pair)", async () => {
-    const db = makeDbForRevocation(true);
+    const db = makeDbForRevocation();
     const authGrants = {
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
       assertPageAccess: jest.fn(),
@@ -320,5 +349,9 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).resolves.not.toThrow();
+    const kbPagesWheres = onlyKbPagesWheres();
+    expect(kbPagesWheres).toHaveLength(1);
+    expect(predicateLiteralIn(kbPagesWheres[0])).toBe(true);
+    expect(pageIdsBoundIn(kbPagesWheres[0])).toEqual([CITED_PAGE_ID]);
   });
 });

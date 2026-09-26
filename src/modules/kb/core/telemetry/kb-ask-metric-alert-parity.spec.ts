@@ -226,6 +226,8 @@ describe("the KB Ask span carries no tenant content and survives redaction", () 
     );
     const allowed = new Set([
       "org.id",
+      "actor.standing",
+      "org.cell",
       "kb.ask.outcome",
       "kb.ask.duration_ms",
       "kb.ask.citations",

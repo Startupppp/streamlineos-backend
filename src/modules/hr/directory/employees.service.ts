@@ -419,29 +419,43 @@ export class EmployeesService {
 
   private static readonly EMPLOYEE_SEARCH_CAP = 500;
 
+  /**
+   * Matches every field the directory card actually shows.
+   *
+   * `app.search_hr_person_ids` reads `organization_people.first_name`,
+   * `last_name` and `work_email`. The card renders `users.name` and
+   * `users.email`, and the two are not the same columns — a person whose
+   * `organization_people` row is thin or absent is found by neither the
+   * resolver nor the employment fallback it dropped to, so searching a name
+   * that is on screen returned "Showing 0" (HRMS-SEARCH-001). The `users` legs
+   * were already written here but only ran above the cap, i.e. only on the
+   * orgs least likely to need them.
+   *
+   * They now always run. All four `users` columns carry `gin_trgm_ops` indexes
+   * (0007, and 1067 for `last_name`) and `users` is not RLS-enabled, so an
+   * ILIKE on them is indexed rather than a sequential scan. The cap still
+   * governs the id list alone: past it the resolver's ids are dropped and the
+   * indexed ILIKE legs carry the search on their own.
+   */
   private async employeeSearchCondition(search: string): Promise<SQL> {
-    const employmentIlike = or(
-      ilike(hrEmployments.employeeNumber, `%${search}%`),
-      ilike(hrEmployments.designation, `%${search}%`),
-    );
-    if (!employmentIlike) throw new InternalServerErrorException("Failed to build employee search fallback");
+    const pattern = `%${search}%`;
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_person_ids(${search}, ${EmployeesService.EMPLOYEE_SEARCH_CAP + 1}) AS id`,
     );
-    if (rows.length === 0) return employmentIlike;
-    if (rows.length > EmployeesService.EMPLOYEE_SEARCH_CAP) {
-      const wideFallback = or(
-        ilike(users.name, `%${search}%`),
-        ilike(users.email, `%${search}%`),
-        ilike(users.firstName, `%${search}%`),
-        ilike(users.lastName, `%${search}%`),
-        employmentIlike,
-      );
-      if (!wideFallback) throw new InternalServerErrorException("Failed to build employee search fallback");
-      return wideFallback;
-    }
-    const ids = rows.map((r) => Number(r["id"]));
-    const condition = or(inArray(hrPeople.id, ids), employmentIlike);
+    const ids =
+      rows.length > 0 && rows.length <= EmployeesService.EMPLOYEE_SEARCH_CAP
+        ? rows.map((r) => Number(r["id"]))
+        : [];
+
+    const condition = or(
+      ...(ids.length > 0 ? [inArray(hrPeople.id, ids)] : []),
+      ilike(users.name, pattern),
+      ilike(users.email, pattern),
+      ilike(users.firstName, pattern),
+      ilike(users.lastName, pattern),
+      ilike(hrEmployments.employeeNumber, pattern),
+      ilike(hrEmployments.designation, pattern),
+    );
     if (!condition) throw new InternalServerErrorException("Failed to build employee search condition");
     return condition;
   }

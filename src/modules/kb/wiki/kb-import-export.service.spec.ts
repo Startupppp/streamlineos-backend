@@ -67,15 +67,16 @@ function makeCapturingInsertDb() {
   let noConflictCalled = false;
 
   const selectChain = makeSelectChain([]);
+  const pagesReturning = jest.fn().mockResolvedValue([]);
 
   const pagesInsertChain = {
     onConflictDoUpdate: jest.fn().mockImplementation((opts: unknown) => {
       capturedUpsertOpts = opts;
-      return Promise.resolve([]);
+      return { returning: pagesReturning };
     }),
     onConflictDoNothing: jest.fn().mockImplementation(() => {
       noConflictCalled = true;
-      return Promise.resolve([]);
+      return { returning: pagesReturning };
     }),
   };
 
@@ -90,6 +91,7 @@ function makeCapturingInsertDb() {
         ? { values: jest.fn().mockReturnValue(jobsInsertChain) }
         : { values: jest.fn().mockReturnValue(pagesInsertChain) },
     ),
+    transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(db)),
   } as unknown as Db;
 
   return {

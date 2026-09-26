@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { ConflictException, InternalServerErrorException } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import {
   employeeSalaryProfileComponents,
@@ -150,7 +150,7 @@ async function insertSalaryProfile(
     throw error;
   }
   const profile = inserted[0];
-  if (!profile) throw new Error("Failed to create salary profile");
+  if (!profile) throw new InternalServerErrorException("Failed to create salary profile");
   return profile;
 }
 

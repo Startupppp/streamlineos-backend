@@ -20,15 +20,18 @@ export const kbPageReviews = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    pageId: integer("page_id")
-      .notNull(),
+    pageId: integer("page_id").notNull(),
     type: text("type").$type<"approval" | "freshness">().notNull(),
     status: text("status")
       .$type<"pending" | "approved" | "rejected">()
       .notNull()
       .default("pending"),
-    requestedById: text("requested_by_id").references(() => users.id, { onDelete: "set null" }),
-    reviewerId: text("reviewer_id").references(() => users.id, { onDelete: "set null" }),
+    requestedById: text("requested_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewerId: text("reviewer_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     requestedByMembershipId: integer("requested_by_membership_id"),
     reviewerMembershipId: integer("reviewer_membership_id"),
     dueAt: timestamp("due_at", { withTimezone: true }),
@@ -41,14 +44,40 @@ export const kbPageReviews = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_kb_page_reviews_org_status_due").on(table.orgId, table.status, table.dueAt),
+    index("idx_kb_page_reviews_org_status_due").on(
+      table.orgId,
+      table.status,
+      table.dueAt,
+    ),
     index("idx_kb_page_reviews_org_page").on(table.orgId, table.pageId),
-    index("idx_kb_page_reviews_org_reviewer_status_due").on(table.orgId, table.reviewerMembershipId, table.status, table.dueAt),
-    index("idx_kb_page_reviews_org_requester_status_due").on(table.orgId, table.requestedByMembershipId, table.status, table.dueAt),
+    index("idx_kb_page_reviews_org_reviewer_status_due").on(
+      table.orgId,
+      table.reviewerMembershipId,
+      table.status,
+      table.dueAt,
+    ),
+    index("idx_kb_page_reviews_org_requester_status_due").on(
+      table.orgId,
+      table.requestedByMembershipId,
+      table.status,
+      table.dueAt,
+    ),
     unique("uniq_kb_page_reviews_org_id").on(table.orgId, table.id),
-    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_reviews_org_page" }),
-    foreignKey({ columns: [table.orgId, table.requestedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_reviews_org_requester_membership" }).onDelete("set null"),
-    foreignKey({ columns: [table.orgId, table.reviewerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_reviews_org_reviewer_membership" }).onDelete("set null"),
+    foreignKey({
+      columns: [table.orgId, table.pageId],
+      foreignColumns: [kbPages.orgId, kbPages.id],
+      name: "fk_kb_page_reviews_org_page",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.orgId, table.requestedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_kb_page_reviews_org_requester_membership",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.orgId, table.reviewerMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_kb_page_reviews_org_reviewer_membership",
+    }).onDelete("set null"),
   ],
 );
 
@@ -59,7 +88,9 @@ export const kbImportJobs = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    sourceType: text("source_type").$type<"markdown" | "html" | "zip" | "support_kb">().notNull(),
+    sourceType: text("source_type")
+      .$type<"markdown" | "html" | "zip" | "support_kb">()
+      .notNull(),
     fileKey: text("file_key"),
     status: text("status")
       .$type<"pending" | "processing" | "completed" | "failed">()
@@ -71,7 +102,9 @@ export const kbImportJobs = pgTable(
     failedItems: integer("failed_items").notNull().default(0),
     duplicateItems: integer("duplicate_items").notNull().default(0),
     errorReport: jsonb("error_report").$type<Record<string, unknown>>(),
-    createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdById: text("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -100,7 +133,9 @@ export const kbExportJobs = pgTable(
       .default("pending"),
     fileKey: text("file_key"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
-    createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdById: text("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -110,7 +145,11 @@ export const kbExportJobs = pgTable(
   (table) => [
     index("idx_kb_export_jobs_org_created").on(table.orgId, table.createdAt),
     unique("uniq_kb_export_jobs_org_id").on(table.orgId, table.id),
-    foreignKey({ columns: [table.orgId, table.scopeId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_export_jobs_org_page" }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.orgId, table.scopeId],
+      foreignColumns: [kbPages.orgId, kbPages.id],
+      name: "fk_kb_export_jobs_org_page",
+    }).onDelete("cascade"),
   ],
 );
 

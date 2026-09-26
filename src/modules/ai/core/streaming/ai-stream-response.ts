@@ -1,6 +1,9 @@
 import { HttpException, InternalServerErrorException } from "@nestjs/common";
 import type { ServerResponse } from "http";
-import { createUIMessageStream, pipeUIMessageStreamToResponse as sdkPipeUIMessageStreamToResponse } from "ai";
+import {
+  createUIMessageStream,
+  pipeUIMessageStreamToResponse as sdkPipeUIMessageStreamToResponse,
+} from "ai";
 import type { UIMessageChunk } from "ai";
 import { logger } from "../../../../common/logger/logger.service";
 import { pipeRawAiTextStream } from "./raw-ai-text-stream";
@@ -29,33 +32,6 @@ export interface AiStreamPipeOptions {
   onFault?: (error: unknown) => void;
 }
 
-/**
- * `pipeTextStreamToResponse` returns a promise that rejects on a mid-stream
- * provider fault; dropped, that is an unhandled rejection and the client is left
- * with a truncated 200.
- *
- * The status line is already on the wire by then, so the fault cannot be
- * expressed as a status code — but it MUST still be expressed. Ending the
- * response cleanly (`res.end()`, which is what this did) sends the terminating
- * zero-length chunk, so the client's read loop sees an ordinary `done`: the
- * frontend returned `{ status: "completed", text: <partial> }`, rendered a
- * half-sentence as the finished draft, and offered an Apply button for it. An
- * error surfaced as a successful state, which none of the nine AI failure
- * states can fire on because the transport reported success.
- *
- * `res.destroy()` is the mechanism HTTP already has for this: the chunked body
- * ends without its terminator, so `fetch`'s reader rejects instead of
- * completing, `classifyAiError` puts the surface into a real failure state with
- * a retry, and a non-browser client (curl, a mobile app, a proxy) sees the same
- * truncation. It needs no wire-format change, so all 26 `respondWithAiTextStream`
- * routes and both client tests keep their contract. A sentinel token in the body
- * was the alternative and is worse twice over: `onToken` has already painted it
- * on screen before the reader could strip it, and "a string the model cannot
- * emit" is not a property anything enforces.
- *
- * A response the failed pipe already ended is left alone — the client has its
- * terminator and there is nothing left to signal.
- */
 export async function pipeAiTextStream(
   res: ServerResponse,
   stream: PipeableAiTextStream,
@@ -64,8 +40,7 @@ export async function pipeAiTextStream(
   try {
     const init = options.headers ? { headers: options.headers } : undefined;
     const textStream = stream.textStream;
-    if (textStream)
-      await pipeRawAiTextStream(textStream, res, init);
+    if (textStream) await pipeRawAiTextStream(textStream, res, init);
     else await stream.pipeTextStreamToResponse(res, init);
   } catch (error) {
     options.onFault?.(error);
@@ -81,18 +56,6 @@ export async function pipeAiTextStream(
   }
 }
 
-/**
- * `pipeUIMessageStreamToResponse` emits ALL AI SDK events (text deltas, tool-call
- * start, tool-call delta, tool-result) as SSE over the same `text/event-stream`
- * channel. It sets `x-vercel-ai-ui-message-stream: v1` so clients can detect the
- * format and route accordingly. Credit settlement callbacks (`onAbort`, `onFinish`)
- * are wired into `streamText` itself — not the pipe — so switching from
- * `pipeAiTextStream` to this function does not change settlement semantics.
- *
- * Error handling mirrors `pipeAiTextStream`: a mid-stream fault destroys the
- * response so the client's `fetch` reader rejects rather than seeing a clean end
- * on a half-sentence.
- */
 export async function pipeAiUiMessageStream(
   res: ServerResponse,
   stream: PipeableAiUiStream,
@@ -185,6 +148,49 @@ export function makeAskOsDirectivePipe(
   };
 }
 
+export function buildSourcesEventStream(
+  modelStream: ModelStreamSource,
+  eventType: `data-${string}`,
+  sources: readonly unknown[],
+): ReadableStream<UIMessageChunk> {
+  return createUIMessageStream({
+    execute: async ({ writer }) => {
+      if (sources.length > 0) {
+        writer.write({
+          type: eventType,
+          data: sources,
+          transient: true,
+        });
+      }
+      const reader = modelStream.toUIMessageStream().getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          writer.write(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+}
+
+export function makeSourcesEventPipe(
+  modelStream: ModelStreamSource,
+  eventType: `data-${string}`,
+  sources: readonly unknown[],
+): PipeableAiUiStream {
+  return {
+    pipeUIMessageStreamToResponse: async (res, init) =>
+      sdkPipeUIMessageStreamToResponse({
+        response: res,
+        stream: buildSourcesEventStream(modelStream, eventType, sources),
+        ...(init?.headers !== undefined ? { headers: init.headers } : {}),
+      }),
+  };
+}
+
 const MAX_SOURCE_HEADER_BYTES = 4_096;
 const MAX_SOURCE_FIELD_CHARS = 160;
 
@@ -201,12 +207,6 @@ export interface EncodedStreamSources {
   readonly dropped: number;
 }
 
-/**
- * A citation chip renders a title and a snippet, not an essay. Capping the
- * strings is what turns "one long source and the whole header is abandoned"
- * into "every source arrives, some of them elided" — the header budget is spent
- * on COUNT, which is what the reader needs to check the answer against.
- */
 function capSourceFields(source: unknown): unknown {
   if (!isRecord(source)) return source;
   const capped: Record<string, unknown> = {};
@@ -219,19 +219,6 @@ function capSourceFields(source: unknown): unknown {
   return capped;
 }
 
-/**
- * Citations must survive a stream that is later truncated, so they go out with
- * the headers rather than as a trailer the client may never receive.
- *
- * Loss is now REPORTED rather than silent. The old encoder walked the list
- * shortest-first and returned `null` the moment nothing fit, so a grounded
- * answer whose first source happened to carry a long title reached the client
- * with no sources at all and no way to know any had existed — the reader saw a
- * confident, apparently unsourced answer, which is precisely the state citation
- * integrity exists to prevent. String fields are capped first so a single verbose
- * source cannot evict the rest, and whatever still does not fit is counted and
- * returned to the caller, which publishes it on a companion header and logs it.
- */
 export function encodeStreamSources(
   sources: readonly unknown[],
   context?: { feature: string; orgId: string },

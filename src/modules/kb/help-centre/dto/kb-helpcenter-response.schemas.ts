@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { itemsPagedSchema } from "../../../../common/openapi/response-envelopes";
+import { itemsPagedSchema, cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 const aiUsageMetaSchema = z.object({
   model: z.string(),
@@ -30,37 +30,43 @@ export const kbAnalyticsOverviewSchema = z.object({
   aiAnswers: z.number().int(),
   aiNoContext: z.number().int(),
   views: z.number().int(),
+  ticketsDeflected: z.number().int(),
   verifiedPublished: z.number().int(),
   trustScore: z.number(),
-  topArticles: z.array(
-    z.object({
-      id: z.number().int(),
-      title: z.string(),
-      slug: z.string(),
-      spaceId: z.number().int().nullable(),
-      viewCount: z.number().int(),
-      helpfulCount: z.number().int(),
-      notHelpfulCount: z.number().int(),
-    }),
-  ),
 });
 
 export const kbAnalyticsNoResultsSchema = z.array(
   z.object({ query: z.string().nullable(), count: z.number().int() }),
 );
 
-export const kbAnalyticsPagesSchema = z.array(
+const kbAnalyticsPageItemSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  status: z.string(),
+  trustState: z.string(),
+  updatedAt: wireDate(),
+  uniqueViewers: z.number().int(),
+  commentCount: z.number().int(),
+  versionCount: z.number().int(),
+});
+
+export const kbAnalyticsPagesSchema = cursorPageSchema(kbAnalyticsPageItemSchema);
+
+export const kbAnalyticsCitationReuseSchema = z.array(
   z.object({
-    id: z.number().int(),
+    kind: z.string(),
+    refId: z.number().int(),
     title: z.string(),
-    status: z.string(),
-    trustState: z.string(),
-    updatedAt: wireDate(),
-    uniqueViewers: z.number().int(),
-    commentCount: z.number().int(),
-    versionCount: z.number().int(),
+    reuseCount: z.number().int(),
   }),
 );
+
+export const kbAnalyticsReviewSlaSchema = z.object({
+  decided: z.number().int(),
+  metSla: z.number().int(),
+  slaRate: z.number(),
+  overdueOpen: z.number().int(),
+});
 
 export const kbAnalyticsGapsSchema = z.array(
   z.object({

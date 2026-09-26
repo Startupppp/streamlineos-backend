@@ -78,21 +78,26 @@ export function correlationIdMiddleware(
       userAgent: userAgentOf(req.headers["user-agent"]),
     },
     () => {
+      const spanAttributes: Record<string, string | number | boolean> = {
+        "http.method": req.method,
+        seam: routeSeamFor(req.method),
+      };
+
       const open = startSpan(`${req.method} ${req.path}`, {
         parent: parseTraceparent(
           req.headers[TRACEPARENT_HEADER] as string | undefined,
         ),
-        attributes: {
-          "http.method": req.method,
-          seam: routeSeamFor(req.method),
-        },
+        attributes: spanAttributes,
       });
 
       res.setHeader(TRACEPARENT_HEADER, formatTraceparent(open.span));
 
       // Both, because express emits `finish` on a completed response and `close`
       // on an aborted one; `end` ignores the second of the two.
-      const done = (): void => open.end(res.statusCode >= 500 ? "error" : "ok");
+      const done = (): void => {
+        spanAttributes["http.status_code"] = res.statusCode;
+        open.end(res.statusCode >= 500 ? "error" : "ok");
+      };
       res.on("finish", done);
       res.on("close", done);
 

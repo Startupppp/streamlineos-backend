@@ -5,7 +5,19 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
 import type { TenantTx } from "../../../common/tenant";
-import { KbIngestionLeaseService, type KbIngestionLeaseHealth } from "./kb-ingestion-lease.service";
+import {
+  KbIngestionLeaseService,
+  type KbIngestionLeaseHealth,
+} from "./kb-ingestion-lease.service";
+import {
+  KbIndexedBytesQuotaService,
+  kbSourceIndexedBytes,
+} from "../core/kb-indexed-bytes-quota.service";
+
+export interface KbStuckSourceReapBatch {
+  sourcesFailed: number;
+  releasedBytes: number;
+}
 
 export const KB_SOURCE_STUCK_AFTER_MS = 30 * 60_000;
 export const KB_SOURCE_REAP_BATCH = 200;
@@ -26,7 +38,7 @@ export async function reapOrgStuckSources(
   tx: TenantTx,
   orgId: string,
   cutoff: Date,
-): Promise<number> {
+): Promise<KbStuckSourceReapBatch> {
   const rows = await tx
     .update(kbSources)
     .set({ status: "failed", errorMessage: KB_SOURCE_STUCK_MESSAGE })
@@ -43,9 +55,20 @@ export async function reapOrgStuckSources(
         limit ${KB_SOURCE_REAP_BATCH}
       )`,
     )
-    .returning({ id: kbSources.id });
+    .returning({
+      id: kbSources.id,
+      kind: kbSources.kind,
+      noteText: kbSources.noteText,
+      fileSize: kbSources.fileSize,
+    });
 
-  return rows.length;
+  return {
+    sourcesFailed: rows.length,
+    releasedBytes: rows.reduce(
+      (total, row) => total + kbSourceIndexedBytes(row),
+      0,
+    ),
+  };
 }
 
 @Injectable()
@@ -55,6 +78,7 @@ export class KbStuckSourceReaperService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly leaseService: KbIngestionLeaseService,
+    private readonly quota: KbIndexedBytesQuotaService,
   ) {}
 
   async reap(): Promise<KbStuckSourceReapResult> {
@@ -62,15 +86,24 @@ export class KbStuckSourceReaperService {
     let sourcesFailed = 0;
     let truncated = false;
 
-    const outcome = await forEachOrg(this.db, "kb-stuck-source-reaper", async (tx, orgId) => {
-      const reaped = await reapOrgStuckSources(tx, orgId, cutoff);
-      sourcesFailed += reaped;
-      if (reaped >= KB_SOURCE_REAP_BATCH) truncated = true;
-    });
+    const outcome = await forEachOrg(
+      this.db,
+      "kb-stuck-source-reaper",
+      async (tx, orgId) => {
+        const reaped = await reapOrgStuckSources(tx, orgId, cutoff);
+        sourcesFailed += reaped.sourcesFailed;
+        await this.quota.release(orgId, reaped.releasedBytes);
+        if (reaped.sourcesFailed >= KB_SOURCE_REAP_BATCH) truncated = true;
+      },
+    );
 
     const leaseHealth = this.leaseService.health();
 
-    if (sourcesFailed > 0 || leaseHealth.unavailableCount > 0 || leaseHealth.lostCount > 0)
+    if (
+      sourcesFailed > 0 ||
+      leaseHealth.unavailableCount > 0 ||
+      leaseHealth.lostCount > 0
+    )
       this.logger.error(
         `[kb-stuck-source-reaper] failed ${sourcesFailed} source(s) stuck in 'processing' past ` +
           `${KB_SOURCE_STUCK_AFTER_MS}ms; lease unavailable=${leaseHealth.unavailableCount} ` +

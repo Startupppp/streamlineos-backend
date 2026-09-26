@@ -83,7 +83,10 @@ describe("SubmissionsService tenant and project isolation", () => {
     const db = makeDb(form, [{ id: 1 }]);
     const { module, service } = await makeService(db, manageAccess);
 
-    await expect(service.listSubmissions(makeActor(ownerOrg), 1, 1, {})).resolves.toEqual([{ id: 1 }]);
+    await expect(service.listSubmissions(makeActor(ownerOrg), 1, 1, {})).resolves.toEqual({
+      data: [{ id: 1 }],
+      pagination: { hasMore: false, limit: 100, nextCursor: null },
+    });
     await module.close();
   });
 

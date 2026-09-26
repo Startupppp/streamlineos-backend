@@ -14,9 +14,16 @@ const aiUsageMetaSchema = z.object({
   costUsd: z.number(),
 });
 
+const kbPageAiCitationSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  icon: z.string().nullable(),
+});
+
 export const kbPageAiBufferedSchema = z.object({
   text: z.string(),
   aiUsage: aiUsageMetaSchema.optional(),
+  citations: z.array(kbPageAiCitationSchema).optional(),
 });
 
 export const kbPageCommentSchema = z.object({
@@ -26,6 +33,8 @@ export const kbPageCommentSchema = z.object({
   authorId: z.string().nullable(),
   parentId: z.number().int().nullable(),
   content: z.string(),
+  anchorBlockIndex: z.number().int().nullable(),
+  anchorQuote: z.string().nullable(),
   resolvedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
@@ -76,6 +85,9 @@ export const kbPageReviewSchema = z.object({
 
 export const kbPageReviewWithContextSchema = kbPageReviewSchema.extend({
   pageTitle: z.string().nullable(),
+  pageTrustState: z
+    .enum(["unverified", "verified", "verification_expired"])
+    .nullable(),
   requestedByName: z.string().nullable(),
   reviewerName: z.string().nullable(),
 });
@@ -101,6 +113,9 @@ export const kbPageTemplateSchema = z.object({
   description: z.string().nullable(),
   content: z.record(z.string(), z.unknown()).nullable(),
   createdById: z.string().nullable(),
+  createdByName: z.string().nullable(),
+  useCount: z.number().int(),
+  lastUsedAt: wireDate().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
@@ -148,7 +163,6 @@ export const kbPageSchema = z.object({
   nextReviewAt: nullableWireDate(),
   aclRevision: z.number().int(),
   contentRevision: z.number().int(),
-  sourceArticleId: z.number().int().nullable(),
 });
 
 export const kbPageWithAncestorsSchema = kbPageSchema.extend({
@@ -254,3 +268,8 @@ export const kbBulkPageResultSchema = z.object({
 });
 
 export const kbTrashPageListSchema = cursorPageSchema(kbPageListItemSchema);
+
+export const kbPageTrashPurgeImpactSchema = z.object({
+  pageCount: z.number().int(),
+  descendantCount: z.number().int(),
+});

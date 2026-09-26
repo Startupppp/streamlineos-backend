@@ -197,6 +197,19 @@ describe("timezone pinning", () => {
   });
 });
 
+describe("admission lane budget — primary + background must not exceed pool size", () => {
+  it("primaryLaneMax plus backgroundLaneMax equals max so combined admitted connections never oversubscribe the pool", () => {
+    const config = resolve({});
+    expect(config.admission.primaryLaneMax + config.admission.backgroundLaneMax).toBe(config.max);
+  });
+
+  it("primaryLaneMax is below max so background always has headroom even when primary is saturated", () => {
+    const config = resolve({});
+    expect(config.admission.primaryLaneMax).toBeLessThan(config.max);
+    expect(config.admission.primaryLaneMax).toBeGreaterThan(0);
+  });
+});
+
 describe("normalizeDatabaseUrl", () => {
   it("strips channel_binding, which Neon fails on without reporting why", () => {
     expect(normalizeDatabaseUrl(`${POOLED}&channel_binding=require`)).not.toMatch(

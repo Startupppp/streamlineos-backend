@@ -105,6 +105,7 @@ export const listFormsQuerySchema = z
         z.boolean().optional(),
       )
       .optional(),
+    cursor: z.string().min(1).optional(),
   })
   .strict();
 
@@ -136,7 +137,7 @@ export const updateFormSchema = z
 export const listSubmissionsQuerySchema = z
   .object({
     status: z.enum(formSubmissionStatusEnum.enumValues).optional(),
-    cursor: z.string().datetime().optional(),
+    cursor: z.string().min(1).optional(),
   })
   .strict();
 

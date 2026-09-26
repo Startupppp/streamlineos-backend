@@ -1,3 +1,4 @@
+import * as fc from "fast-check";
 import {
   collectionScopeTag,
   decodeCollectionCursor,
@@ -134,5 +135,101 @@ describe("KB collection cursor", () => {
   it("treats an absent cursor as page one", () => {
     const tag = collectionScopeTag(query(), FINGERPRINT);
     expect(decodeCollectionCursor(undefined, tag, "updated_desc")).toBeNull();
+  });
+});
+
+describe("KB collection cursor — fuzz", () => {
+  const microsecondTimestamp = fc
+    .tuple(
+      fc.integer({ min: 2020, max: 2035 }),
+      fc.integer({ min: 1, max: 12 }),
+      fc.integer({ min: 1, max: 28 }),
+      fc.integer({ min: 0, max: 23 }),
+      fc.integer({ min: 0, max: 59 }),
+      fc.integer({ min: 0, max: 59 }),
+      fc.integer({ min: 0, max: 999_999 }),
+    )
+    .map(([y, mo, d, h, mi, s, micros]) => {
+      const pad = (n: number, width: number) => String(n).padStart(width, "0");
+      return `${pad(y, 4)}-${pad(mo, 2)}-${pad(d, 2)}T${pad(h, 2)}:${pad(mi, 2)}:${pad(s, 2)}.${pad(micros, 6)}`;
+    });
+
+  const titleSortValue = fc
+    .string({ maxLength: 300 })
+    .filter((s) => !s.includes("\u0000"));
+
+  const idArb = fc.integer({ min: 1, max: 2_147_483_647 });
+
+  it("round-trips every microsecond-timestamp position for a timestamp sort", () => {
+    fc.assert(
+      fc.property(microsecondTimestamp, idArb, (sortValue, id) => {
+        const tag = collectionScopeTag(query(), FINGERPRINT);
+        const cursor = encodeCollectionCursor(tag, { sortValue, id });
+        expect(decodeCollectionCursor(cursor, tag, "updated_desc")).toEqual({
+          sortValue,
+          id,
+        });
+      }),
+    );
+  });
+
+  it("round-trips every non-nul title position for a title sort", () => {
+    fc.assert(
+      fc.property(titleSortValue, idArb, (sortValue, id) => {
+        const tag = collectionScopeTag(query({ sort: "title_asc" }), FINGERPRINT);
+        const cursor = encodeCollectionCursor(tag, { sortValue, id });
+        expect(decodeCollectionCursor(cursor, tag, "title_asc")).toEqual({
+          sortValue,
+          id,
+        });
+      }),
+    );
+  });
+
+  it("never exceeds the 512-byte transport budget for any title up to the schema's own cap", () => {
+    fc.assert(
+      fc.property(
+        fc.string({ maxLength: 200 }).filter((s) => !s.includes("\u0000")),
+        idArb,
+        (sortValue, id) => {
+          const tag = collectionScopeTag(query({ sort: "title_asc" }), FINGERPRINT);
+          const cursor = encodeCollectionCursor(tag, { sortValue, id });
+          expect(cursor.length).toBeLessThanOrEqual(512);
+        },
+      ),
+    );
+  });
+
+  it("never accepts a cursor minted under a different scope tag, for any filter/fingerprint pair", () => {
+    fc.assert(
+      fc.property(
+        microsecondTimestamp,
+        idArb,
+        fc.string(),
+        fc.string(),
+        (sortValue, id, fingerprintA, fingerprintB) => {
+          fc.pre(fingerprintA !== fingerprintB);
+          const tagA = collectionScopeTag(query(), fingerprintA);
+          const tagB = collectionScopeTag(query(), fingerprintB);
+          fc.pre(tagA !== tagB);
+          const cursor = encodeCollectionCursor(tagA, { sortValue, id });
+          expect(decodeCollectionCursor(cursor, tagB, "updated_desc")).toBeNull();
+        },
+      ),
+    );
+  });
+
+  it("never lets an arbitrary byte string decode into a position — either it is null or it round-trips its own re-encoding", () => {
+    fc.assert(
+      fc.property(fc.string(), (raw) => {
+        const tag = collectionScopeTag(query(), FINGERPRINT);
+        const decoded = decodeCollectionCursor(raw, tag, "updated_desc");
+        if (decoded === null) return;
+        const reEncoded = encodeCollectionCursor(tag, decoded);
+        expect(decodeCollectionCursor(reEncoded, tag, "updated_desc")).toEqual(
+          decoded,
+        );
+      }),
+    );
   });
 });

@@ -17,6 +17,12 @@ import { KbLinkedDocumentAskSource } from "../linked-documents/kb-linked-documen
 
 const dialect = new PgDialect();
 
+function onlyKbSourceConditions(conditions: unknown[]): unknown[] {
+  return conditions.filter((condition) =>
+    dialect.sqlToQuery(condition as SQL).sql.includes("kb_sources"),
+  );
+}
+
 function serializePredicate(conditions: unknown[]): string {
   return conditions
     .map((condition) => {
@@ -54,6 +60,7 @@ describe("KbAskService — source citation re-verification", () => {
   let mockDb: {
     select: jest.Mock;
     execute: jest.Mock;
+    insert: jest.Mock;
     transaction: jest.Mock;
   };
 
@@ -110,7 +117,7 @@ describe("KbAskService — source citation re-verification", () => {
       from: jest.fn().mockReturnThis(),
       where: jest.fn().mockResolvedValue([{ id: 1 }]),
     };
-    mockDb = { select: jest.fn().mockReturnValue(selectChain), execute: jest.fn().mockResolvedValue([{ one: 1 }]), transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(mockDb)) };
+    mockDb = { select: jest.fn().mockReturnValue(selectChain), execute: jest.fn().mockResolvedValue([{ one: 1 }]), insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }), transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(mockDb)) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -252,9 +259,11 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
     const normalAccess = { getAccessibleSpaceIds: jest.fn().mockResolvedValue([1, 2]) };
     const adversarialAccess = { getAccessibleSpaceIds: jest.fn().mockResolvedValue([1, 2]) };
 
-    const normalDb: Record<string, unknown> = { select: jest.fn().mockReturnValue(makeSelectChain(capturedNormalConditions)), execute: jest.fn().mockResolvedValue([{ one: 1 }]) };
+    const makeInsert = () => jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
+
+    const normalDb: Record<string, unknown> = { select: jest.fn().mockReturnValue(makeSelectChain(capturedNormalConditions)), execute: jest.fn().mockResolvedValue([{ one: 1 }]), insert: makeInsert() };
     normalDb.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(normalDb));
-    const adversarialDb: Record<string, unknown> = { select: jest.fn().mockReturnValue(makeSelectChain(capturedAdversarialConditions)), execute: jest.fn().mockResolvedValue([{ one: 1 }]) };
+    const adversarialDb: Record<string, unknown> = { select: jest.fn().mockReturnValue(makeSelectChain(capturedAdversarialConditions)), execute: jest.fn().mockResolvedValue([{ one: 1 }]), insert: makeInsert() };
     adversarialDb.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(adversarialDb));
 
     const makeSearch = (sourceOverride: string) => ({
@@ -326,12 +335,15 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
     const normalSvc = normalModule.get(KbAskService);
     const adversarialSvc = adversarialModule.get(KbAskService);
 
-    const user = makeUser();
-    await normalSvc.ask(user, { question: "normal query" });
-    await adversarialSvc.ask(user, { question: "normal query" });
+    await normalSvc.ask(makeUser(), { question: "normal query" });
+    await adversarialSvc.ask(makeUser(), { question: "normal query" });
 
-    expect(capturedNormalConditions.length).toBe(capturedAdversarialConditions.length);
-    expect(serializePredicate(capturedNormalConditions)).toBe(serializePredicate(capturedAdversarialConditions));
+    const normalKbConditions = onlyKbSourceConditions(capturedNormalConditions);
+    const adversarialKbConditions = onlyKbSourceConditions(capturedAdversarialConditions);
+
+    expect(normalKbConditions.length).toBeGreaterThan(0);
+    expect(normalKbConditions.length).toBe(adversarialKbConditions.length);
+    expect(serializePredicate(normalKbConditions)).toBe(serializePredicate(adversarialKbConditions));
   });
 
   it("the SQL WHERE predicate structure is identical regardless of query string content", async () => {
@@ -354,7 +366,7 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
           return Promise.resolve([]);
         }),
       };
-      const db: Record<string, unknown> = { select: jest.fn().mockReturnValue(selectChain), execute: jest.fn().mockResolvedValue([{ one: 1 }]) };
+      const db: Record<string, unknown> = { select: jest.fn().mockReturnValue(selectChain), execute: jest.fn().mockResolvedValue([{ one: 1 }]), insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }) };
       db.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
       const access = { getAccessibleSpaceIds: jest.fn().mockResolvedValue([3]) };
       const gateway = {

@@ -66,6 +66,17 @@ export class KbPageReviewsService {
     return membershipId;
   }
 
+  private async assertReviewPageVisible(
+    user: CurrentUserContext,
+    pageId: number,
+  ): Promise<void> {
+    await this.auth
+      .assertPageAccess(user, pageId, "view")
+      .catch(() => {
+        throw new NotFoundException("Review not found");
+      });
+  }
+
   private async reviewerMembershipId(
     orgId: string,
     reviewerId: string | undefined,
@@ -159,6 +170,7 @@ export class KbPageReviewsService {
       ),
     });
     if (!existing) throw new NotFoundException("Review not found");
+    await this.assertReviewPageVisible(user, existing.pageId);
     const reviewerMembershipId = this.actorMembershipId(user);
 
     const [updated] = await this.db
@@ -217,6 +229,7 @@ export class KbPageReviewsService {
       ),
     });
     if (!existing) throw new NotFoundException("Review not found");
+    await this.assertReviewPageVisible(user, existing.pageId);
     const reviewerMembershipId = this.actorMembershipId(user);
 
     const [updated] = await this.db

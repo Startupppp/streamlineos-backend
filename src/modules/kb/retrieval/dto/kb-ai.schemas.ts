@@ -36,6 +36,7 @@ export const askSchema = z
     spaceId: z.coerce.number().int().positive().optional(),
     conversationId: z.coerce.number().int().positive().optional(),
     sourceIds: z.array(z.coerce.number().int().positive()).max(50).optional(),
+    verifiedOnly: z.boolean().optional(),
   })
   .strict();
 export type AskInput = z.infer<typeof askSchema>;
@@ -89,6 +90,13 @@ export const kbAiFeedbackSchema = z
   })
   .strict();
 export type KbAiFeedbackInput = z.infer<typeof kbAiFeedbackSchema>;
+
+export const kbCreateKnowledgeGapSchema = z
+  .object({
+    question: z.string().trim().min(3).max(1000),
+  })
+  .strict();
+export type KbCreateKnowledgeGapInput = z.infer<typeof kbCreateKnowledgeGapSchema>;
 
 export const kbResearchBriefCreateSchema = z
   .object({

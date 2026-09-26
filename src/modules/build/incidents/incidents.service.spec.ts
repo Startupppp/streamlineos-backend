@@ -572,7 +572,10 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
     } as unknown as Db;
     const svc = await makeService(mockDb);
 
-    await expect(svc.listIncidents(u, 1, {})).resolves.toEqual([]);
+    await expect(svc.listIncidents(u, 1, {})).resolves.toEqual({
+      data: [],
+      pagination: { limit: 100, hasMore: false, nextCursor: null },
+    });
   });
 
   it("REJECTS a non-member (getIncident) with ForbiddenException", async () => {

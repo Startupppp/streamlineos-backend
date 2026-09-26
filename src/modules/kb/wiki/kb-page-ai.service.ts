@@ -8,10 +8,13 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
-import type { AiTextStream } from "../../ai/core/gateway/ai-gateway-stream.helper";
 import { throwOnAiFailure } from "../../ai/core/services/gateway-result.util";
 import type { KbDocAiAction } from "../retrieval/dto/kb-ai.schemas";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import {
+  makeSourcesEventPipe,
+  type PipeableAiUiStream,
+} from "../../ai/core/streaming/ai-stream-response";
 
 const MAX_PAGE_TEXT = 4000;
 
@@ -77,10 +80,15 @@ export class KbPageAiService {
         isNull(kbPages.deletedAt),
         predicate,
       ),
-      columns: { id: true, title: true, contentText: true },
+      columns: { id: true, title: true, icon: true, contentText: true },
     });
     if (!page) throw new NotFoundException("Page not found");
-    return { title: page.title, content: (page.contentText ?? "").slice(0, MAX_PAGE_TEXT) };
+    return {
+      id: page.id,
+      title: page.title,
+      icon: page.icon,
+      content: (page.contentText ?? "").slice(0, MAX_PAGE_TEXT),
+    };
   }
 
   private prompt(action: KbDocAiAction, doc: { title: string; content: string }, question?: string) {
@@ -134,7 +142,7 @@ export class KbPageAiService {
     pageId: number,
     action: KbDocAiAction,
     question?: string,
-  ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
+  ): Promise<{ text: string; aiUsage?: AiUsageMeta; citations: { id: number; title: string; icon: string | null }[] }> {
     const doc = await this.loadPage(user, pageId);
     const { spec, prompt } = this.prompt(action, doc, question);
 
@@ -149,7 +157,11 @@ export class KbPageAiService {
 
     if (!result.ok) return throwOnAiFailure(result);
     this.auditAction(user, pageId, action);
-    return { text: result.data, aiUsage: result.aiUsage };
+    return {
+      text: result.data,
+      aiUsage: result.aiUsage,
+      citations: [{ id: doc.id, title: doc.title, icon: doc.icon }],
+    };
   }
 
   /**
@@ -172,11 +184,11 @@ export class KbPageAiService {
     action: KbDocAiAction,
     question?: string,
     signal?: AbortSignal,
-  ): Promise<AiTextStream> {
+  ): Promise<PipeableAiUiStream> {
     const doc = await this.loadPage(user, pageId);
     const { spec, prompt } = this.prompt(action, doc, question);
 
-    const stream = await this.gateway.streamTextWithUsage({
+    const aiStream = await this.gateway.streamTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: `kb.page-${action}`,
       maxTokens: spec.maxTokens,
@@ -186,7 +198,9 @@ export class KbPageAiService {
     });
 
     this.auditAction(user, pageId, action);
-    return stream;
+    return makeSourcesEventPipe(aiStream.stream, "data-kb-page-sources", [
+      { id: doc.id, title: doc.title, icon: doc.icon },
+    ]);
   }
 
   summarize(user: CurrentUserContext, pageId: number) {

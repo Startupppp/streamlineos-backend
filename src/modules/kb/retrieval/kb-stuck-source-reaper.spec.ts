@@ -18,7 +18,18 @@ const dialect = new PgDialect();
 
 const ORG = "org-reap-1";
 
-function makeTx(reaped: Array<{ id: number }> = []) {
+function makeQuota() {
+  return { reserve: jest.fn(), release: jest.fn() };
+}
+
+function makeTx(
+  reaped: Array<{
+    id: number;
+    kind?: string;
+    noteText?: string | null;
+    fileSize?: number | null;
+  }> = [],
+) {
   const captured: SQL[] = [];
   const capturedSet: Array<Record<string, unknown>> = [];
   const tx = {
@@ -82,7 +93,7 @@ describe("reapOrgStuckSources — the predicate", () => {
 
   it("counts only the rows it actually updated", async () => {
     const { tx } = makeTx([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    expect(await reapOrgStuckSources(tx, ORG, new Date())).toBe(3);
+    expect(await reapOrgStuckSources(tx, ORG, new Date())).toMatchObject({ sourcesFailed: 3 });
   });
 });
 
@@ -153,7 +164,7 @@ describe("KbStuckSourceReaperService.reap — cross-tenant isolation", () => {
       return { organizations: 2, succeeded: 2, failed: 0 };
     });
 
-    const service = new KbStuckSourceReaperService({} as unknown as Db, makeLease() as never);
+    const service = new KbStuckSourceReaperService({} as unknown as Db, makeLease() as never, makeQuota() as never);
     await service.reap();
 
     for (const [orgId, captured] of perOrg) {
@@ -177,7 +188,7 @@ describe("KbStuckSourceReaperService.reap", () => {
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
-    const service = new KbStuckSourceReaperService({} as unknown as Db, makeLease() as never);
+    const service = new KbStuckSourceReaperService({} as unknown as Db, makeLease() as never, makeQuota() as never);
     const result = await service.reap();
 
     expect(mockedForEachOrg).toHaveBeenCalledWith(
@@ -197,15 +208,37 @@ describe("KbStuckSourceReaperService.reap", () => {
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
-    const service = new KbStuckSourceReaperService({} as unknown as Db, makeLease() as never);
+    const service = new KbStuckSourceReaperService({} as unknown as Db, makeLease() as never, makeQuota() as never);
     expect((await service.reap()).truncated).toBe(true);
+  });
+
+  it("returns the reserved bytes of every reaped source so the quota is not a one-way ratchet", async () => {
+    const { tx } = makeTx([
+      { id: 1, kind: "note", noteText: "abcde", fileSize: null },
+      { id: 2, kind: "file", noteText: null, fileSize: 400 },
+    ]);
+    const quota = makeQuota();
+    mockedForEachOrg.mockImplementation(async (_db, _sweep, fn) => {
+      await fn(tx, ORG);
+      return { organizations: 1, succeeded: 1, failed: 0 };
+    });
+
+    const service = new KbStuckSourceReaperService(
+      {} as unknown as Db,
+      makeLease() as never,
+      quota as never,
+    );
+    const result = await service.reap();
+
+    expect(quota.release).toHaveBeenCalledWith(ORG, 405);
+    expect(result.sourcesFailed).toBe(2);
   });
 
   it("surfaces the ingestion lease health that nothing else reads", async () => {
     mockedForEachOrg.mockResolvedValue({ organizations: 0, succeeded: 0, failed: 0 });
     const lease = makeLease({ unavailableCount: 4, lostCount: 1, lastUnavailableReason: "ECONNREFUSED" });
 
-    const service = new KbStuckSourceReaperService({} as unknown as Db, lease as never);
+    const service = new KbStuckSourceReaperService({} as unknown as Db, lease as never, makeQuota() as never);
     const result = await service.reap();
 
     expect(lease.health).toHaveBeenCalled();

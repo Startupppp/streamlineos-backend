@@ -1,8 +1,11 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { SENSITIVE_EXACT, SENSITIVE_SUBSTRINGS } from "../../../../common/observability/redact";
 import { resetSpanExporter, setSpanExporter } from "../../../../common/observability";
 import { LogSpanExporter } from "../../../../common/observability/log-span-exporter";
+import { SLO_CATALOGUE } from "../../../../common/slo";
 import {
   KB_SEARCH_OUTCOMES,
   KB_SEARCH_SPAN_NAME,
@@ -130,6 +133,8 @@ describe("the KB Search span carries no tenant content and survives redaction", 
     );
     const allowed = new Set([
       "org.id",
+      "actor.standing",
+      "org.cell",
       "kb.search.outcome",
       "kb.search.duration_ms",
       "kb.search.results",
@@ -178,5 +183,157 @@ describe("the KB Search emitter is wired at the search service's real decision p
     expect(seamKey).not.toBeNull();
     expect(metricsSource).not.toContain(`"${seamKey ?? ""}"`);
     expect(KB_SEARCH_SPAN_NAME).not.toContain(" ");
+  });
+});
+
+describe("KB Search denial and not-found anomalies reach an operator", () => {
+  const alertPath = join(SCRIPTS, "alert-kb-search.mjs");
+
+  it("ships an alert script, because an emitted span nothing reads is not observability", () => {
+    expect(existsSync(alertPath)).toBe(true);
+  });
+
+  it("reads the span name and outcome attribute the emitter actually writes", () => {
+    const alertSource = readFileSync(alertPath, "utf8");
+    expect(firstCapture(alertSource, /const SPAN_NAME\s*=\s*"([^"]+)"/)).toBe(KB_SEARCH_SPAN_NAME);
+    expect(firstCapture(alertSource, /const OUTCOME_ATTRIBUTE_KEY\s*=\s*"([^"]+)"/)).toBe(
+      "kb.search.outcome",
+    );
+  });
+
+  it("names no fault or anomaly outcome the frozen enum cannot produce", () => {
+    const alertSource = readFileSync(alertPath, "utf8");
+    const declared = firstCapture(alertSource, /const FAULT_OUTCOMES\s*=\s*\[([^\]]*)\]/) ?? "";
+    const parsed = [...declared.matchAll(/"([a-z_]+)"/g)].map((m) => m[1] as string);
+    expect(parsed.length).toBeGreaterThan(0);
+    const known: readonly string[] = KB_SEARCH_OUTCOMES;
+    expect(parsed.filter((outcome) => !known.includes(outcome))).toEqual([]);
+    expect(firstCapture(alertSource, /const DENIED_OUTCOME\s*=\s*"([^"]+)"/)).toBe("denied");
+    expect(firstCapture(alertSource, /const NOT_FOUND_OUTCOME\s*=\s*"([^"]+)"/)).toBe("not_found");
+  });
+
+  it("the alert counts a line the emitter actually produced, not a hand-written fixture", () => {
+    const line = emitOneLine((metrics) => metrics.finish("denied"));
+    const dir = mkdtempSync(join(tmpdir(), "kb-search-parity-"));
+    const logPath = join(dir, "spans.log");
+    writeFileSync(logPath, `${JSON.stringify(line)}\n`, "utf8");
+
+    const output = execFileSync(
+      process.execPath,
+      [alertPath, `--log=${logPath}`, "--hours=1"],
+      { encoding: "utf8" },
+    );
+    const parsed = JSON.parse(output.trim().split("\n").at(-1) ?? "{}") as {
+      operations: number;
+      deniedCount: number;
+      outcomes: Record<string, number>;
+    };
+
+    expect(parsed.operations).toBe(1);
+    expect(parsed.deniedCount).toBe(1);
+    expect(parsed.outcomes["denied"]).toBe(1);
+  });
+
+  it("a denial spike pages even when no request errored", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kb-search-denial-"));
+    const logPath = join(dir, "spans.log");
+    const lines: string[] = [];
+    for (let i = 0; i < 6; i += 1)
+      lines.push(JSON.stringify(emitOneLine((metrics) => metrics.finish("found", { results: 3 }))));
+    for (let i = 0; i < 14; i += 1)
+      lines.push(JSON.stringify(emitOneLine((metrics) => metrics.finish("denied"))));
+    writeFileSync(logPath, `${lines.join("\n")}\n`, "utf8");
+
+    let status = 0;
+    let output: string;
+    try {
+      output = execFileSync(process.execPath, [alertPath, `--log=${logPath}`, "--hours=1"], {
+        encoding: "utf8",
+      });
+    } catch (error) {
+      const failure = error as { status: number; stdout: string };
+      status = failure.status;
+      output = failure.stdout;
+    }
+    const parsed = JSON.parse(output.trim().split("\n").at(-1) ?? "{}") as {
+      fired: boolean;
+      faults: number;
+      deniedBreached: boolean;
+    };
+
+    expect(parsed.faults).toBe(0);
+    expect(parsed.deniedBreached).toBe(true);
+    expect(parsed.fired).toBe(true);
+    expect(status).toBe(1);
+  });
+
+  it("exits 2 rather than reporting health when no KB Search span reached the stream", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kb-search-unwired-"));
+    const logPath = join(dir, "spans.log");
+    writeFileSync(
+      logPath,
+      `${JSON.stringify({ message: "SPAN", name: "kb.ask.operation" })}\n`,
+      "utf8",
+    );
+
+    let status = 0;
+    try {
+      execFileSync(process.execPath, [alertPath, `--log=${logPath}`], { encoding: "utf8" });
+    } catch (error) {
+      status = (error as { status: number }).status;
+    }
+    expect(status).toBe(2);
+  });
+
+  it("its self-test passes, so the predicate is proven against fixtures the emitter shapes", () => {
+    const output = execFileSync(process.execPath, [alertPath, "--self-test"], {
+      encoding: "utf8",
+    });
+    const parsed = JSON.parse(output.trim().split("\n").at(-1) ?? "{}") as {
+      pass: boolean;
+      checks: Record<string, boolean>;
+    };
+    expect(Object.keys(parsed.checks).length).toBeGreaterThanOrEqual(10);
+    expect(Object.entries(parsed.checks).filter(([, ok]) => !ok)).toEqual([]);
+    expect(parsed.pass).toBe(true);
+  });
+});
+
+describe("the KB Search SLO names the numbers its alert actually fires on", () => {
+  const slo = SLO_CATALOGUE.find((entry) => entry.id === "module:kb:search");
+
+  it("is registered in the SLO catalogue", () => {
+    expect(slo).toBeDefined();
+  });
+
+  it("matches the ratio and the floor the script defaults to", () => {
+    const alertSource = readFileSync(join(SCRIPTS, "alert-kb-search.mjs"), "utf8");
+    const ratio = firstCapture(alertSource, /const DEFAULT_FAULT_RATIO\s*=\s*([0-9.]+);/);
+    const floor = firstCapture(alertSource, /const MIN_FAULTS\s*=\s*(\d+);/);
+    expect(ratio).not.toBeNull();
+    expect(floor).not.toBeNull();
+    if (slo === undefined) throw new Error("module:kb:search is not in the catalogue");
+    if (slo.indicator.kind !== "outcome-rate") throw new Error("wrong indicator kind");
+    expect(slo.indicator.maxFaultRatio).toBe(Number(ratio));
+    expect(slo.indicator.minFaults).toBe(Number(floor));
+    expect(slo.indicator.spanName).toBe(KB_SEARCH_SPAN_NAME);
+    expect(slo.indicator.outcomeAttribute).toBe("kb.search.outcome");
+  });
+
+  it("points at an alert id the dispatcher registers under the same owner", () => {
+    const dispatch = read(SCRIPTS, "alert-dispatch.mjs");
+    const entry = /"kb-search":\s*\{([^}]*)\}/.exec(dispatch)?.[1];
+    expect(entry).toBeDefined();
+    if (slo === undefined) throw new Error("module:kb:search is not in the catalogue");
+    expect(firstCapture(entry ?? "", /owner:\s*"([^"]+)"/)).toBe(slo.owner);
+    expect(firstCapture(entry ?? "", /runbookAnchor:\s*"([^"]+)"/)).toBe(slo.runbookAnchor);
+  });
+
+  it("ships both npm entry points, because a script nobody can run is not an alert", () => {
+    const pkg = JSON.parse(read(BACKEND_ROOT, "package.json")) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts["alert:kb-search"]).toContain("alert-kb-search.mjs");
+    expect(pkg.scripts["alert:kb-search:self-test"]).toContain("--self-test");
   });
 });

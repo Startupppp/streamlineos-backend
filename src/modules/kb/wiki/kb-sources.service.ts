@@ -25,6 +25,10 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { KbAccessService } from "../core/kb-access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import {
+  KbIndexedBytesQuotaService,
+  kbSourceIndexedBytes,
+} from "../core/kb-indexed-bytes-quota.service";
 import type {
   CreateKbSourceNoteInput,
   KbIngestionState,
@@ -103,6 +107,7 @@ export class KbSourcesService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly access: KbAccessService,
     private readonly auth: KnowledgeAuthorizationService,
+    private readonly quota: KbIndexedBytesQuotaService,
   ) {}
 
   async list(
@@ -236,7 +241,9 @@ export class KbSourcesService {
     user: CurrentUserContext,
     input: CreateKbSourceNoteInput,
   ): Promise<typeof kbSources.$inferSelect> {
+    const byteSize = Buffer.byteLength(input.text, "utf8");
     const row = await this.db.transaction(async (tx) => {
+      await this.quota.reserve(tx, user.orgId, byteSize);
       const [inserted] = await tx
         .insert(kbSources)
         .values({
@@ -254,9 +261,10 @@ export class KbSourcesService {
       return inserted;
     });
     const textDeferred = registerAfterCommit(async () => {
-      await this.processText(user.orgId, row.id, input.text);
+      await this.processText(user.orgId, row.id, input.text, byteSize);
     });
-    if (!textDeferred) await this.processText(user.orgId, row.id, input.text);
+    if (!textDeferred)
+      await this.processText(user.orgId, row.id, input.text, byteSize);
     return row;
   }
 
@@ -299,7 +307,9 @@ export class KbSourcesService {
       kbBucket,
     );
 
+    const byteSize = file.size;
     const row = await this.db.transaction(async (tx) => {
+      await this.quota.reserve(tx, user.orgId, byteSize);
       const [inserted] = await tx
         .insert(kbSources)
         .values({
@@ -320,10 +330,10 @@ export class KbSourcesService {
       return inserted;
     });
     const fileDeferred = registerAfterCommit(async () => {
-      await this.processFile(user.orgId, row.id, buffer, mimetype);
+      await this.processFile(user.orgId, row.id, buffer, mimetype, byteSize);
     });
     if (!fileDeferred)
-      await this.processFile(user.orgId, row.id, buffer, mimetype);
+      await this.processFile(user.orgId, row.id, buffer, mimetype, byteSize);
     return row;
   }
 
@@ -344,6 +354,7 @@ export class KbSourcesService {
     }
     await this.attachmentIndexing.removeSourceChunks(orgId, id);
     const row = rows[0];
+    await this.quota.release(orgId, kbSourceIndexedBytes(row));
     if (row.kind === "file" && row.fileKey) {
       try {
         await this.storage.deleteFile(
@@ -400,6 +411,7 @@ export class KbSourcesService {
     orgId: string,
     sourceId: number,
     text: string,
+    bytes: number,
   ): Promise<void> {
     try {
       const count = await this.attachmentIndexing.indexSource(
@@ -415,9 +427,11 @@ export class KbSourcesService {
           errorMessage: count > 0 ? null : "No indexable text",
         })
         .where(and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)));
+      if (count === 0) await this.quota.release(orgId, bytes);
     } catch (err) {
       this.logger.error(`Failed to index source ${sourceId}: ${String(err)}`);
       await this.markFailed(orgId, sourceId, "Indexing failed");
+      await this.quota.release(orgId, bytes);
     }
   }
 
@@ -426,19 +440,22 @@ export class KbSourcesService {
     sourceId: number,
     buffer: Buffer,
     mimeType: string,
+    bytes: number,
   ): Promise<void> {
     if (!isExtractableMime(mimeType)) {
       await this.markFailed(orgId, sourceId, "Unsupported file type");
+      await this.quota.release(orgId, bytes);
       return;
     }
     try {
       const text = await extractAttachmentText(buffer, mimeType);
-      await this.processText(orgId, sourceId, text);
+      await this.processText(orgId, sourceId, text, bytes);
     } catch (err) {
       this.logger.error(
         `Failed to extract text from source ${sourceId}: ${String(err)}`,
       );
       await this.markFailed(orgId, sourceId, "Could not read file");
+      await this.quota.release(orgId, bytes);
     }
   }
 }

@@ -48,7 +48,15 @@ describe("KbSourcesService — cross-tenant isolation", () => {
 
   it("scopes source list to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbSourcesService(db, storage, indexing, config, {} as never, authMock as never);
+    const svc = new KbSourcesService(
+      db,
+      storage,
+      indexing,
+      config,
+      {} as never,
+      authMock as never,
+      {} as never,
+    );
 
     await svc.list(ATTACKER, FIRST_PAGE);
 
@@ -60,7 +68,15 @@ describe("KbSourcesService — cross-tenant isolation", () => {
 
   it("returns sources for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbSourcesService(db, storage, indexing, config, {} as never, authMock as never);
+    const svc = new KbSourcesService(
+      db,
+      storage,
+      indexing,
+      config,
+      {} as never,
+      authMock as never,
+      {} as never,
+    );
 
     const page = await svc.list(OWNER, FIRST_PAGE);
 

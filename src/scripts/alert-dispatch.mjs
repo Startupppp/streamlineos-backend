@@ -15,6 +15,9 @@ const FAILURE_RUNBOOK =
 const OBSERVABILITY_RUNBOOK =
   "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
 
+const KB_OBS_RUNBOOK =
+  "docs/specs/knowledge-base/sessions/LEDGER-PATCH-M6.md";
+
 const REGISTRY = {
   "dead-outbox": { owner: "platform-reliability", runbookAnchor: "#dead-outbox", severity: "critical" },
   "dead-delivery": { owner: "notifications-team", runbookAnchor: "#dead-delivery", severity: "high" },
@@ -36,6 +39,7 @@ const REGISTRY = {
   "job-queue-age": { owner: "platform-reliability", runbookAnchor: "#job-queue-age", severity: "high" },
   "kb-indexing": { owner: "knowledge-team", runbookAnchor: "#kb-indexing", severity: "high" },
   "kb-ask": { owner: "knowledge-team", runbookAnchor: "#kb-ask", severity: "high" },
+  "kb-search": { owner: "knowledge-team", runbookAnchor: "#kb-search", severity: "high" },
   "pool-saturation": { owner: "platform-reliability", runbookAnchor: "#database-cell-failure", severity: "high" },
   "tenant-cost": { owner: "platform-reliability", runbookAnchor: "#tenant-cost", severity: "high" },
   "cell-recovery": { owner: "platform-reliability", runbookAnchor: "#cell-recovery", severity: "critical" },
@@ -54,6 +58,24 @@ const REGISTRY = {
   "response-contract-violations": {
     owner: "platform-reliability",
     runbookAnchor: "#response-contract-violations",
+    severity: "high",
+  },
+  "cache-invalidation-dropped": {
+    owner: "platform-reliability",
+    runbookFile: KB_OBS_RUNBOOK,
+    runbookAnchor: "#cache-invalidation-dropped",
+    severity: "high",
+  },
+  "kb-revocation-lag": {
+    owner: "knowledge-team",
+    runbookFile: KB_OBS_RUNBOOK,
+    runbookAnchor: "#kb-revocation-lag",
+    severity: "high",
+  },
+  "kb-purge-backlog": {
+    owner: "knowledge-team",
+    runbookFile: KB_OBS_RUNBOOK,
+    runbookAnchor: "#kb-purge-backlog",
     severity: "high",
   },
 };

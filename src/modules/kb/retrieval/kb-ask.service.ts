@@ -1,7 +1,9 @@
-import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
+import type { Redis } from "@upstash/redis";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
+import { REDIS } from "../../../common/cache/cache.service";
 import { KbAskMetrics } from "../core/telemetry/kb-ask-metrics";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
@@ -29,6 +31,9 @@ import {
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
 } from "./kb-ask-context";
 import { kbAiInteractions, type KbAiInteractionState, type KbAiSourceRecord } from "../../../db/schema";
+
+export const KB_ASK_ORG_LIMIT = 200;
+const KB_ASK_ORG_WINDOW_SECS = 60;
 
 export type AskCitation =
   | {
@@ -114,6 +119,7 @@ export class KbAskService {
     private readonly search: KbSearchService,
     private readonly citationVisibility: KbCitationVisibilityService,
     private readonly linkedDocuments: KbLinkedDocumentAskSource,
+    @Inject(REDIS) private readonly redis: Redis | null,
   ) {}
 
   private async gatherContext(
@@ -129,6 +135,7 @@ export class KbAskService {
         sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>;
         linked: LinkedDocumentItem[];
         citations: AskCitation[];
+        degraded: boolean;
       }
   > {
     return runInTenantTransaction(
@@ -147,6 +154,7 @@ export class KbAskService {
               input.question,
               KB_ASK_MAX_CONTEXT_DOCUMENTS,
               input.spaceId,
+              input.verifiedOnly,
             )
           : [];
         const retrievedSources = hasContent
@@ -196,6 +204,10 @@ export class KbAskService {
         );
         if (fullContext.length === 0) return { kind: "no-context" as const };
 
+        const degraded =
+          sources.some((source) => source.degraded === true) ||
+          documentPassages.some((passage) => passage.degraded === true);
+
         return {
           kind: "context" as const,
           fullContext,
@@ -203,6 +215,7 @@ export class KbAskService {
           sources,
           linked,
           citations,
+          degraded,
         };
       },
       { orgId: user.orgId },
@@ -263,6 +276,18 @@ export class KbAskService {
     aiUsage?: AiUsageMeta;
   }> {
     const correlationId = randomUUID();
+    if (this.redis) {
+      const orgKey = `rl:kb:ask:org:${user.orgId}`;
+      const count = await this.redis.incr(orgKey);
+      if (count === 1) await this.redis.expire(orgKey, KB_ASK_ORG_WINDOW_SECS);
+      if (count > KB_ASK_ORG_LIMIT) {
+        const ttl = await this.redis.ttl(orgKey);
+        throw new HttpException(
+          { message: "Org Ask rate limit exceeded", retryAfterSecs: ttl > 0 ? ttl : KB_ASK_ORG_WINDOW_SECS },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
     const metrics = KbAskMetrics.begin({ orgId: user.orgId });
     try {
       const gathered = await this.gatherContext(user, input, options);
@@ -271,7 +296,7 @@ export class KbAskService {
         void this.writeNoContextInteraction(user, correlationId);
         return this.noContextAnswer(user, input.question, correlationId);
       }
-      const { fullContext, top, sources, linked, citations } = gathered;
+      const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
 
@@ -376,7 +401,11 @@ export class KbAskService {
         { orgId: user.orgId },
       );
 
-      metrics.finish("answered", { citations: citations.length, candidates });
+      metrics.finish(degraded ? "degraded" : "answered", {
+        citations: citations.length,
+        candidates,
+        degraded,
+      });
       return { answer, citations, hasContext: true, aiUsage };
     } catch (error) {
       metrics.finish("error");
@@ -408,7 +437,7 @@ export class KbAskService {
         metrics.finish("no_context");
         return { hasContext: false };
       }
-      const { fullContext, top, sources, linked, citations } = gathered;
+      const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
       const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
 
@@ -450,7 +479,11 @@ export class KbAskService {
         signal,
       });
 
-      metrics.finish("answered", { citations: citations.length, candidates });
+      metrics.finish(degraded ? "degraded" : "answered", {
+        citations: citations.length,
+        candidates,
+        degraded,
+      });
       return {
         hasContext: true,
         aiStream,
@@ -476,6 +509,17 @@ export class KbAskService {
       sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
     );
     return rows.length > 0;
+  }
+
+  async reportKnowledgeGap(
+    user: CurrentUserContext,
+    question: string,
+  ): Promise<void> {
+    await this.events.record(user.orgId, "search_no_results", {
+      actorMembershipId: actingMembershipId(user.principal) ?? null,
+      query: question,
+      metadata: { reportedFromAsk: true },
+    });
   }
 
   async assertReplayCitations(

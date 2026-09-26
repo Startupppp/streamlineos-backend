@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, gt, isNull, or, sql, type SQL } from "drizzle-orm";
 import { pendingApprovalsForActorCondition } from "./build-inbox-count.service";
 import { projectApprovals, projects } from "../../../db/schema";
@@ -9,17 +9,38 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
 import { loadApproval } from "./approval-lookup";
 import type { InboxQuery, ListApprovalsQuery } from "./dto/approvals.schemas";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
 
-function listApprovalsKeyset(cursorId: number | undefined, cursorDueAt: Date | undefined): SQL | undefined {
-  if (cursorId === undefined) return undefined;
-  if (cursorDueAt !== undefined) {
+const NULL_DUE_AT = "__NULL_DUE_AT__";
+const PAGE_SIZE = 100;
+
+function decodeApprovalCursor(cursor: string | undefined): { id: number; dueAt: Date | null } | undefined {
+  if (!cursor) return undefined;
+  const parts = decodeTupleCursor(cursor, 2);
+  if (!parts) throw new BadRequestException("Invalid pagination cursor");
+  const [dueAtValue, idValue] = parts;
+  const id = Number(idValue);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2_147_483_647) {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+  if (dueAtValue === NULL_DUE_AT) return { id, dueAt: null };
+  const dueAt = new Date(dueAtValue);
+  if (Number.isNaN(dueAt.getTime()) || dueAt.toISOString() !== dueAtValue) {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+  return { id, dueAt };
+}
+
+function listApprovalsKeyset(cursor: { id: number; dueAt: Date | null } | undefined): SQL | undefined {
+  if (!cursor) return undefined;
+  if (cursor.dueAt !== null) {
     return or(
-      gt(projectApprovals.dueAt, cursorDueAt),
-      and(eq(projectApprovals.dueAt, cursorDueAt), gt(projectApprovals.id, cursorId)),
+      gt(projectApprovals.dueAt, cursor.dueAt),
+      and(eq(projectApprovals.dueAt, cursor.dueAt), gt(projectApprovals.id, cursor.id)),
       isNull(projectApprovals.dueAt),
     );
   }
-  return and(isNull(projectApprovals.dueAt), gt(projectApprovals.id, cursorId));
+  return and(isNull(projectApprovals.dueAt), gt(projectApprovals.id, cursor.id));
 }
 
 @Injectable()
@@ -30,7 +51,8 @@ export class ApprovalsReadService {
   ) {}
 
   async getInbox(orgId: string, membershipId: number, query: InboxQuery) {
-    return this.db
+    const cursor = decodeApprovalCursor(query.cursor);
+    const rows = await this.db
       .select({
         id: projectApprovals.id,
         projectId: projectApprovals.projectId,
@@ -47,15 +69,20 @@ export class ApprovalsReadService {
       })
       .from(projectApprovals)
       .innerJoin(projects, eq(projects.id, projectApprovals.projectId))
-      .where(and(pendingApprovalsForActorCondition(orgId, membershipId), listApprovalsKeyset(query.cursorId, query.cursorDueAt)))
+      .where(and(pendingApprovalsForActorCondition(orgId, membershipId), listApprovalsKeyset(cursor)))
       .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`, asc(projectApprovals.id))
-      .limit(100);
+      .limit(PAGE_SIZE + 1);
+    return buildTupleCursorPage(rows, PAGE_SIZE, (row) => [
+      row.dueAt?.toISOString() ?? NULL_DUE_AT,
+      String(row.id),
+    ]);
   }
 
   async listApprovals(u: CurrentUserContext, projectId: number, query: ListApprovalsQuery) {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
-    return this.db
+    const cursor = decodeApprovalCursor(query.cursor);
+    const rows = await this.db
       .select()
       .from(projectApprovals)
       .where(
@@ -65,11 +92,15 @@ export class ApprovalsReadService {
           isNull(projectApprovals.deletedAt),
           query.status ? eq(projectApprovals.status, query.status) : undefined,
           query.entityType ? eq(projectApprovals.entityType, query.entityType) : undefined,
-          listApprovalsKeyset(query.cursorId, query.cursorDueAt),
+          listApprovalsKeyset(cursor),
         ),
       )
       .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`, asc(projectApprovals.id))
-      .limit(100);
+      .limit(PAGE_SIZE + 1);
+    return buildTupleCursorPage(rows, PAGE_SIZE, (row) => [
+      row.dueAt?.toISOString() ?? NULL_DUE_AT,
+      String(row.id),
+    ]);
   }
 
   async getApproval(u: CurrentUserContext, projectId: number, approvalId: number) {

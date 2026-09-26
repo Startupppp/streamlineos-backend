@@ -150,6 +150,7 @@ describe("KbPageCommentsService mutation responses include authorName", () => {
     const authMock = makeAuthMock();
     const db = {
       query: {
+        kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID }) },
         kbPageComments: {
           findFirst: jest.fn().mockResolvedValue({ id: COMMENT_ID, authorId: "user-alice", pageId: PAGE_ID }),
         },
@@ -165,8 +166,8 @@ describe("KbPageCommentsService mutation responses include authorName", () => {
 
     await svc.update(makeUser(), COMMENT_ID, { content: "updated" });
 
-    expect(authMock.assertPageAccess).toHaveBeenCalledTimes(1);
-    const [, , action] = authMock.assertPageAccess.mock.calls[0] as [unknown, unknown, string];
+    expect(authMock.visiblePagePredicate).toHaveBeenCalledTimes(1);
+    const [, action] = authMock.visiblePagePredicate.mock.calls[0] as [unknown, string];
     expect(action).not.toBe("view");
     expect(action).toBe("comment");
   });
@@ -175,6 +176,7 @@ describe("KbPageCommentsService mutation responses include authorName", () => {
     const authMock = makeAuthMock();
     const db = {
       query: {
+        kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID }) },
         kbPageComments: {
           findFirst: jest.fn().mockResolvedValue({ id: COMMENT_ID, authorId: "user-alice", pageId: PAGE_ID }),
         },
@@ -185,8 +187,8 @@ describe("KbPageCommentsService mutation responses include authorName", () => {
 
     await svc.remove(makeUser(), COMMENT_ID);
 
-    expect(authMock.assertPageAccess).toHaveBeenCalledTimes(1);
-    const [, , action] = authMock.assertPageAccess.mock.calls[0] as [unknown, unknown, string];
+    expect(authMock.visiblePagePredicate).toHaveBeenCalledTimes(1);
+    const [, action] = authMock.visiblePagePredicate.mock.calls[0] as [unknown, string];
     expect(action).not.toBe("view");
     expect(action).toBe("comment");
   });
@@ -195,6 +197,7 @@ describe("KbPageCommentsService mutation responses include authorName", () => {
     const authMock = makeAuthMock();
     const db = {
       query: {
+        kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID }) },
         kbPageComments: {
           findFirst: jest.fn().mockResolvedValue({ id: COMMENT_ID, pageId: PAGE_ID }),
         },
@@ -210,8 +213,8 @@ describe("KbPageCommentsService mutation responses include authorName", () => {
 
     await svc.resolve(makeUser(), COMMENT_ID);
 
-    expect(authMock.assertPageAccess).toHaveBeenCalledTimes(1);
-    const [, , action] = authMock.assertPageAccess.mock.calls[0] as [unknown, unknown, string];
+    expect(authMock.visiblePagePredicate).toHaveBeenCalledTimes(1);
+    const [, action] = authMock.visiblePagePredicate.mock.calls[0] as [unknown, string];
     expect(action).not.toBe("view");
     expect(action).toBe("comment");
   });

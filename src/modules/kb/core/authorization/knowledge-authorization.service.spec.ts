@@ -13,11 +13,29 @@ jest.mock("../../retrieval/kb-project-access.util", () => ({
   getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
 }));
 
-import { computeAccessibleSpaceIds } from "./knowledge-space-scope";
+import { computeAccessibleSpaceIds, resolveRoleSlugs } from "./knowledge-space-scope";
+import { getAccessibleProjectIds } from "../../retrieval/kb-project-access.util";
+import { runWithObservabilityContext } from "../../../../common/observability/observability-context";
 
 const mockedSpaceIds = computeAccessibleSpaceIds as jest.MockedFunction<
   typeof computeAccessibleSpaceIds
 >;
+const mockedRoleSlugs = resolveRoleSlugs as jest.MockedFunction<
+  typeof resolveRoleSlugs
+>;
+const mockedProjectIds = getAccessibleProjectIds as jest.MockedFunction<
+  typeof getAccessibleProjectIds
+>;
+
+let requestSequence = 0;
+
+function inRequest<T>(fn: () => Promise<T>): Promise<T> {
+  requestSequence += 1;
+  return runWithObservabilityContext(
+    { correlationId: `correlation-${requestSequence}` },
+    fn,
+  );
+}
 
 function makeUser(over: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -288,5 +306,82 @@ describe("KnowledgeAuthorizationService.resolveSpaceAccess", () => {
     const decision = await service.resolveSpaceAccess(makeUser(), 2, "view");
 
     expect(decision.outcome).toBe("notFound");
+  });
+});
+
+describe("KnowledgeAuthorizationService.resolveStanding request memoization", () => {
+  beforeEach(() => {
+    mockedRoleSlugs.mockClear();
+    mockedProjectIds.mockClear();
+  });
+
+  it("resolves standing once when three predicate sites share a request, because paying per call site is the read-cost regression this box records", async () => {
+    const { service } = makeHarness();
+    const user = makeUser();
+
+    await inRequest(async () => {
+      await service.visiblePagePredicate(user, "view");
+      await service.visiblePagePredicate(user, "edit");
+      await service.resolvePageAccess(user, 5, "view");
+    });
+
+    expect(mockedRoleSlugs).toHaveBeenCalledTimes(1);
+    expect(mockedProjectIds).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves standing again in the next request, because a memo that outlives its request outlives a revocation", async () => {
+    const { service } = makeHarness();
+    const user = makeUser();
+
+    await inRequest(() => service.resolveStanding(user));
+    await inRequest(() => service.resolveStanding(user));
+
+    expect(mockedRoleSlugs).toHaveBeenCalledTimes(2);
+    expect(mockedProjectIds).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps two actors apart inside one request, because an unkeyed memo would hand one tenant the other's standing", async () => {
+    const { service } = makeHarness();
+    const mine = makeUser({ orgId: "o1", userId: "u1" });
+    const theirs = makeUser({ orgId: "o2", userId: "u2" });
+
+    const [first, second] = await inRequest(() =>
+      Promise.all([
+        service.resolveStanding(mine),
+        service.resolveStanding(theirs),
+      ]),
+    );
+
+    expect(mockedRoleSlugs).toHaveBeenCalledTimes(2);
+    expect(first.orgId).toBe("o1");
+    expect(second.orgId).toBe("o2");
+  });
+
+  it("resolves fresh outside a request, because background sweeps run with no ambient context", async () => {
+    const { service } = makeHarness();
+    const user = makeUser();
+
+    await service.resolveStanding(user);
+    await service.resolveStanding(user);
+
+    expect(mockedRoleSlugs).toHaveBeenCalledTimes(2);
+    expect(mockedProjectIds).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not memoize a rejected resolution, because one transient failure must not poison the rest of the request", async () => {
+    const { service } = makeHarness();
+    const user = makeUser();
+    mockedProjectIds.mockRejectedValueOnce(new Error("statement timeout"));
+
+    await inRequest(async () => {
+      await expect(service.resolveStanding(user)).rejects.toThrow(
+        "statement timeout",
+      );
+      await expect(service.resolveStanding(user)).resolves.toMatchObject({
+        orgId: "o1",
+      });
+    });
+
+    expect(mockedProjectIds).toHaveBeenCalledTimes(2);
   });
 });

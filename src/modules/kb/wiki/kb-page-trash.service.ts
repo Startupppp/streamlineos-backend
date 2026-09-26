@@ -208,6 +208,11 @@ export class KbPageTrashService {
         .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids)))
         .returning({ id: kbPages.id });
 
+      for (const id of ids)
+        await markStoreComplete(this.db, orgId, id, "page_rows").catch(
+          () => undefined,
+        );
+
       await attemptPageAttachmentPurge(
         this.db,
         this.storage,
@@ -215,6 +220,11 @@ export class KbPageTrashService {
         purgeKeys,
         this.config.R2_KB_BUCKET_NAME,
       );
+
+      for (const id of ids)
+        await markStoreComplete(this.db, orgId, id, "blobs").catch(
+          () => undefined,
+        );
 
       purgedCount += deleted.length;
       if (trashed.length < EXPIRED_PURGE_BATCH_SIZE) break;
@@ -264,6 +274,10 @@ export class KbPageTrashService {
           )}]::int[])`,
         ),
       );
+      for (const id of ids)
+        await markStoreComplete(this.db, orgId, id, "page_rows").catch(
+          () => undefined,
+        );
       await attemptPageAttachmentPurge(
         this.db,
         this.storage,
@@ -271,6 +285,10 @@ export class KbPageTrashService {
         purgeKeys,
         this.config.R2_KB_BUCKET_NAME,
       );
+      for (const id of ids)
+        await markStoreComplete(this.db, orgId, id, "blobs").catch(
+          () => undefined,
+        );
       purgedCount += ids.length;
     }
 
@@ -350,6 +368,36 @@ export class KbPageTrashService {
       sortValue: row.deletedAtText ?? "",
       id: String(row.id),
     }));
+  }
+
+  async purgeImpact(
+    user: CurrentUserContext,
+    input: BulkPageIdsInput,
+  ): Promise<{ pageCount: number; descendantCount: number }> {
+    const orgId = user.orgId;
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
+    const found = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          inArray(kbPages.id, input.pageIds),
+          predicate,
+        ),
+      );
+    const visibleIds = found.map((p) => p.id);
+    const affected = new Set<number>();
+    for (const id of visibleIds) {
+      const subtreeIds = await this.db.transaction((tx) =>
+        collectSubtreeIds(tx, orgId, id),
+      );
+      for (const subId of subtreeIds) affected.add(subId);
+    }
+    return {
+      pageCount: visibleIds.length,
+      descendantCount: Math.max(0, affected.size - visibleIds.length),
+    };
   }
 
   async bulkRestore(

@@ -46,25 +46,25 @@ function makeRows(count: number, parentId: number | null = null): FakeRow[] {
 }
 
 function makePagedDb(rows: FakeRow[]) {
-  let callCount = 0;
   const db = {
     select: jest.fn().mockImplementation(() => ({
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount % 2 === 1) {
-            return Object.assign(Promise.resolve([]), {
-              orderBy: jest.fn().mockReturnValue(
-                Object.assign(Promise.resolve([]), {
-                  limit: jest.fn().mockImplementation((n: number) =>
-                    Promise.resolve(rows.slice(0, n)),
-                  ),
-                }),
-              ),
-            });
-          }
-          return Promise.resolve([]);
-        }),
+        where: jest.fn().mockImplementation(() =>
+          Object.assign(Promise.resolve([]), {
+            orderBy: jest.fn().mockReturnValue(
+              Object.assign(Promise.resolve([]), {
+                limit: jest.fn().mockImplementation((n: number) =>
+                  Promise.resolve(rows.slice(0, n)),
+                ),
+              }),
+            ),
+          }),
+        ),
+      }),
+    })),
+    selectDistinct: jest.fn().mockImplementation(() => ({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([]),
       }),
     })),
   } as unknown as Db;
@@ -75,7 +75,7 @@ describe("KbPageTreeService — cursor-stability", () => {
   it("inserting a page mid-pagination does not duplicate a row in consecutive pages", async () => {
     const rows = makeRows(7);
     const db = makePagedDb(rows);
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     const page1 = await svc.getTreeLevel(makeUser("org-cs"), { limit: 3 });
 
@@ -97,7 +97,7 @@ describe("KbPageTreeService — cursor-stability", () => {
   it("cursor encodes the LAST KEPT row, not the sentinel row", async () => {
     const rows = makeRows(6);
     const db = makePagedDb(rows);
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     const page = await svc.getTreeLevel(makeUser("org-cs2"), { limit: 5 });
 
@@ -117,7 +117,7 @@ describe("KbPageTreeService — cursor-stability", () => {
   it("reports no next page when all rows fit on one page", async () => {
     const rows = makeRows(3);
     const db = makePagedDb(rows);
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     const page = await svc.getTreeLevel(makeUser("org-cs3"), { limit: 10 });
 
@@ -133,7 +133,7 @@ describe("KbPageTreeService — cursor-stability", () => {
       { id: 3, parentPageId: null, spaceId: null, projectId: null, title: "C", icon: null, coverImage: null, sortOrder: 100, visibility: "org", createdById: null, status: "published", updatedAt: new Date() },
     ];
     const db = makePagedDb(rows);
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never);
 
     const page = await svc.getTreeLevel(makeUser("org-cs4"), { limit: 2 });
 

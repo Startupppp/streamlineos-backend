@@ -40,9 +40,17 @@ function makeAuthMock() {
   };
 }
 
+function makeQuota() {
+  return {
+    reserve: jest.fn<Promise<void>, [unknown, string, number]>().mockResolvedValue(undefined),
+    release: jest.fn<Promise<void>, [string, number]>().mockResolvedValue(undefined),
+  };
+}
+
 function makeService(
   rows: Record<string, unknown>[],
   deleteFileFn = jest.fn().mockResolvedValue(undefined),
+  quota = makeQuota(),
 ) {
   return new KbSourcesService(
     makeDb(rows) as never,
@@ -51,8 +59,40 @@ function makeService(
     makeConfig() as never,
     {} as never,
     makeAuthMock() as never,
+    quota as never,
   );
 }
+
+describe("KbSourcesService.remove — indexed-bytes release", () => {
+  it("returns a deleted file's reserved bytes so a full-then-empty org can index again", async () => {
+    const quota = makeQuota();
+    const row = { kind: "file", fileKey: "kb-sources/org-1/doc.pdf", fileSize: 2048, noteText: null };
+    const svc = makeService([row], jest.fn().mockResolvedValue(undefined), quota);
+
+    await svc.remove("org-1", 42);
+
+    expect(quota.release).toHaveBeenCalledWith("org-1", 2048);
+  });
+
+  it("returns a deleted note's bytes measured the same way the reservation measured them", async () => {
+    const quota = makeQuota();
+    const row = { kind: "note", fileKey: null, fileSize: null, noteText: "héllo" };
+    const svc = makeService([row], jest.fn().mockResolvedValue(undefined), quota);
+
+    await svc.remove("org-1", 43);
+
+    expect(quota.release).toHaveBeenCalledWith("org-1", Buffer.byteLength("héllo", "utf8"));
+  });
+
+  it("does not release when the source was not found", async () => {
+    const quota = makeQuota();
+    const svc = makeService([], jest.fn().mockResolvedValue(undefined), quota);
+
+    await expect(svc.remove("org-1", 44)).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(quota.release).not.toHaveBeenCalled();
+  });
+});
 
 describe("KbSourcesService.remove — storage cleanup", () => {
   it("calls storage.deleteFile with the KB bucket the upload used, not the default one", async () => {

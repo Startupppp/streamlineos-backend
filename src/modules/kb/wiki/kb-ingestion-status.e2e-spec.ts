@@ -83,7 +83,15 @@ function makeDb(options: FakeDbOptions): FakeDb {
 }
 
 function makeService(db: Db): KbSourcesService {
-  return new KbSourcesService(db, {} as never, {} as never, {} as never, {} as never, auth as never);
+  return new KbSourcesService(
+    db,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    auth as never,
+    {} as never,
+  );
 }
 
 const SOURCE_ROW: Row = {

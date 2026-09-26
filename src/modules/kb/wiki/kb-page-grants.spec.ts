@@ -107,12 +107,17 @@ interface TxMocks {
   txDelete: jest.Mock;
 }
 
+interface ExecuteCapture {
+  calls: SQL[];
+}
+
 function makeTxDb(options: {
   selectResults?: Record<string, unknown>[][];
   txInsertRows?: Record<string, unknown>[];
   txUpdateFirstRows?: Record<string, unknown>[];
-}): { db: Db; tx: TxMocks } {
+}): { db: Db; tx: TxMocks; execute: ExecuteCapture } {
   const { selectResults = [], txInsertRows = [], txUpdateFirstRows = [] } = options;
+  const execute: ExecuteCapture = { calls: [] };
 
   let selectCallIndex = 0;
   const select = jest.fn().mockImplementation(() => {
@@ -147,10 +152,15 @@ function makeTxDb(options: {
 
   const tx = { insert: txInsert, update: txUpdate, delete: txDelete };
   const transaction = jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx));
+  const executeMock = jest.fn().mockImplementation((query: SQL) => {
+    execute.calls.push(query);
+    return Promise.resolve(undefined);
+  });
 
   return {
-    db: { select, transaction } as unknown as Db,
+    db: { select, transaction, execute: executeMock } as unknown as Db,
     tx: { txInsert, txUpdateFirstWhere, txUpdateFirstReturning, txUpdateSecondWhere, txDelete },
+    execute,
   };
 }
 
@@ -437,5 +447,44 @@ describe("KbPageGrantsService.revoke", () => {
       NotFoundException,
     );
     expect(tx.txUpdateFirstReturning).not.toHaveBeenCalled();
+  });
+});
+
+describe("KbPageGrantsService — chunk acl_revision sync, so a share does not fence the page out of vector search", () => {
+  it("revoke syncs kb_article_chunks.acl_revision for the exact page, not the whole org", async () => {
+    const revokedRow = { revokedAt: NOW };
+    const { db, execute } = makeTxDb({ txUpdateFirstRows: [revokedRow] });
+    await makeService(db).revoke(makeUser(), PAGE_ID, GRANT_ID);
+
+    expect(execute.calls).toHaveLength(1);
+    const q = dialect.sqlToQuery(execute.calls[0]!);
+    expect(q.sql).toContain("kb_article_chunks");
+    expect(q.sql).toContain("acl_revision");
+    expect(q.params).toContain(ORG);
+    expect(q.params).toContain(PAGE_ID);
+  });
+
+  it("create syncs kb_article_chunks.acl_revision after granting access", async () => {
+    const grantRow = makeGrantRow();
+    const { db, execute } = makeTxDb({
+      selectResults: [[{ id: TARGET_MEMBERSHIP }], []],
+      txInsertRows: [grantRow],
+    });
+    await makeService(db).create(makeUser(), PAGE_ID, {
+      membershipId: TARGET_MEMBERSHIP,
+      access: "view",
+    });
+
+    expect(execute.calls).toHaveLength(1);
+    const q = dialect.sqlToQuery(execute.calls[0]!);
+    expect(q.sql).toContain("kb_article_chunks");
+  });
+
+  it("BITE: without the sync call, a revoked grant would bump the page's acl_revision but leave its chunks stale, fencing the page out of vector search for everyone", async () => {
+    const revokedRow = { revokedAt: NOW };
+    const { db, execute } = makeTxDb({ txUpdateFirstRows: [revokedRow] });
+    await makeService(db).revoke(makeUser(), PAGE_ID, GRANT_ID);
+
+    expect(execute.calls.length).toBeGreaterThan(0);
   });
 });

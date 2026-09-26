@@ -1,7 +1,8 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   and,
   asc,
+  desc,
   eq,
   exists,
   gt,
@@ -11,6 +12,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { kbPageLinks, kbPageReviews, kbPages } from "../../../db/schema";
+import { kbHealthItems } from "../../../db/schema/kb/health-items";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -24,9 +26,16 @@ import type {
   ContentHealthSignalItem,
   ContentHealthSignalType,
   ContentHealthCounts,
+  DismissHealthItemBody,
 } from "./dto/kb-content-health.schemas";
+import type { KbHealthItemState, KbHealthItemKind } from "../../../db/schema/kb/health-items";
 
 const STALE_THRESHOLD_DAYS = 90;
+
+const IMPACT_SQL = sql<number>`LEAST(100,
+  LEAST(60, GREATEST(0, EXTRACT(EPOCH FROM (NOW() - ${kbPages.updatedAt})) / 86400 / 30)::integer * 20)
+  + CASE ${kbPages.visibility} WHEN 'public' THEN 40 WHEN 'org' THEN 20 ELSE 0 END
+)`;
 
 const PAGE_BASE_COLUMNS = {
   id: kbPages.id,
@@ -36,6 +45,7 @@ const PAGE_BASE_COLUMNS = {
   updatedAt: kbPages.updatedAt,
   nextReviewAt: kbPages.nextReviewAt,
   ownerMembershipId: kbPages.ownerMembershipId,
+  impact: IMPACT_SQL,
 };
 
 @Injectable()
@@ -68,12 +78,15 @@ export class KbContentHealthService {
     if (query.afterId !== undefined) {
       conditions.push(gt(kbPages.id, query.afterId));
     }
+    if (query.ownerMembershipId !== undefined) {
+      conditions.push(eq(kbPages.ownerMembershipId, query.ownerMembershipId));
+    }
 
     const rows = await this.db
       .select(PAGE_BASE_COLUMNS)
       .from(kbPages)
       .where(and(...conditions))
-      .orderBy(asc(kbPages.id))
+      .orderBy(desc(IMPACT_SQL), asc(kbPages.id))
       .limit(query.limit + 1);
 
     return buildIdCursorPage(rows, query.limit, (row) => row.id);
@@ -113,6 +126,70 @@ export class KbContentHealthService {
     );
 
     return { counts };
+  }
+
+  async dismiss(
+    user: CurrentUserContext,
+    body: DismissHealthItemBody,
+  ): Promise<typeof kbHealthItems.$inferSelect> {
+    const visibilityPredicate = await this.auth.visiblePagePredicate(
+      user,
+      "view",
+    );
+    const [page] = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, user.orgId),
+          eq(kbPages.id, body.pageId),
+          isNull(kbPages.deletedAt),
+          visibilityPredicate,
+        ),
+      );
+    if (!page) throw new NotFoundException("Page not found");
+
+    const now = new Date();
+    const ruleVersion = body.ruleVersion ?? 1;
+
+    const updated = await this.db
+      .update(kbHealthItems)
+      .set({
+        state: "dismissed" as KbHealthItemState,
+        dismissedAt: now,
+        dismissedReason: body.reason,
+        dismissalExpiresAt: body.dismissalExpiresAt ?? null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(kbHealthItems.orgId, user.orgId),
+          eq(kbHealthItems.pageId, body.pageId),
+          eq(kbHealthItems.kind, body.kind as KbHealthItemKind),
+          eq(kbHealthItems.ruleVersion, ruleVersion),
+          eq(kbHealthItems.state, "open"),
+        ),
+      )
+      .returning();
+
+    if (updated.length > 0) return updated[0]!;
+
+    const [inserted] = await this.db
+      .insert(kbHealthItems)
+      .values({
+        orgId: user.orgId,
+        pageId: body.pageId,
+        kind: body.kind as KbHealthItemKind,
+        ruleVersion,
+        state: "dismissed" as KbHealthItemState,
+        dismissedAt: now,
+        dismissedReason: body.reason,
+        dismissalExpiresAt: body.dismissalExpiresAt ?? null,
+        detectedAt: now,
+      })
+      .returning();
+
+    return inserted!;
   }
 
   private buildSignalPredicate(signalType: ContentHealthSignalType): SQL {

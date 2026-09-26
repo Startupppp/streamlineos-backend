@@ -10,6 +10,7 @@ export const incidentFollowUpStatusSchema = z.enum(incidentFollowUpStatusEnum.en
 export const listIncidentsQuerySchema = z.object({
   status: incidentStatusSchema.optional(),
   severity: incidentSeveritySchema.optional(),
+  cursor: z.string().min(1).optional(),
 }).strict();
 
 export const incidentChildrenQuerySchema = z.object({

@@ -124,7 +124,7 @@ const makeKbAuth = () => ({
 });
 
 function buildSearch(scope: DataScope) {
-  const { db, recorded, executed } = makeFakeKbDb(FIXTURES);
+  const { db, recorded, executed, inserted } = makeFakeKbDb(FIXTURES);
   const gateway = makeGateway();
   const events = makeEvents();
   const access = makeKbAccess();
@@ -138,7 +138,7 @@ function buildSearch(scope: DataScope) {
     scopes as never,
     makeKbAuth() as never,
   );
-  return { search, db, recorded, executed, gateway, events, access, scopes };
+  return { search, db, recorded, executed, inserted, gateway, events, access, scopes };
 }
 
 const articleQueries = (recorded: RecordedQuery[]): RecordedQuery[] =>
@@ -330,6 +330,16 @@ describe("BOLA sweep — POST /kb/ask context window", () => {
     expect(result.citations.map((c) => JSON.stringify(c)).join(" ")).not.toContain(
       VICTIM_ARTICLE.title,
     );
+  });
+
+  it("the AI interaction telemetry row carries the asker's tenant, so the write the double must support is asserted and cannot silently vanish again", async () => {
+    const { ask, inserted } = await buildAsk("own");
+
+    await ask.ask(asker(), { question: "what is the comp plan?" });
+
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.table).toBe("kb_ai_interactions");
+    expect(inserted[0]?.values.orgId).toBe(ORG);
   });
 
   it("the owner of both articles still gets both — the answer is not emptied", async () => {

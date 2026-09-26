@@ -3,6 +3,7 @@ import { and, desc, eq, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-or
 import { chatChannelMembers, chatChannels, chatMessages, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { logger } from "../../common/logger/logger.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import {
@@ -27,61 +28,73 @@ export class ChatSearchService {
     const term = query.trim();
     if (!term) return { results: [], nextCursor: undefined };
 
-    const conditions = [
-      eq(chatMessages.orgId, orgId),
-      sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
-                  WHERE m.channel_id = ${chatMessages.channelId}
-                    AND m.org_id = ${orgId}
-                    AND m.membership_id = ${membershipId})`,
-      await chatMessageContentMatch(this.db, term),
-      eq(chatMessages.isDeleted, false),
-    ];
-    // Cursor and sort key must be the same column or pagination skips and repeats
-    // rows; id is monotonic with insertion here. Revisit if this table is ever partitioned.
-    if (cursor) conditions.push(lt(chatMessages.id, cursor));
-    if (from) conditions.push(gte(chatMessages.createdAt, new Date(from)));
-    if (to) conditions.push(lte(chatMessages.createdAt, new Date(to)));
-    if (sender)
-      conditions.push(
-        sql`EXISTS (SELECT 1 FROM ${organizationMembers} om
-                    WHERE om.id = ${chatMessages.senderMembershipId}
-                      AND om.org_id = ${orgId}
-                      AND om.user_id = ${sender})`,
-      );
+    try {
+      const conditions = [
+        eq(chatMessages.orgId, orgId),
+        sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
+                    WHERE m.channel_id = ${chatMessages.channelId}
+                      AND m.org_id = ${orgId}
+                      AND m.membership_id = ${membershipId})`,
+        await chatMessageContentMatch(this.db, term),
+        eq(chatMessages.isDeleted, false),
+      ];
+      // Cursor and sort key must be the same column or pagination skips and repeats
+      // rows; id is monotonic with insertion here. Revisit if this table is ever partitioned.
+      if (cursor) conditions.push(lt(chatMessages.id, cursor));
+      if (from) conditions.push(gte(chatMessages.createdAt, new Date(from)));
+      if (to) conditions.push(lte(chatMessages.createdAt, new Date(to)));
+      if (sender)
+        conditions.push(
+          sql`EXISTS (SELECT 1 FROM ${organizationMembers} om
+                      WHERE om.id = ${chatMessages.senderMembershipId}
+                        AND om.org_id = ${orgId}
+                        AND om.user_id = ${sender})`,
+        );
 
-    const rows = await this.db.query.chatMessages.findMany({
-      where: and(...conditions),
-      orderBy: [desc(chatMessages.id)],
-      limit: limit + 1,
-      with: {
-        senderMembership: SENDER_MEMBERSHIP_WITH_USER,
-        channel: {
-          columns: { id: true, name: true, type: true, entityType: true, entityId: true },
+      const rows = await this.db.query.chatMessages.findMany({
+        where: and(...conditions),
+        orderBy: [desc(chatMessages.id)],
+        limit: limit + 1,
+        with: {
+          senderMembership: SENDER_MEMBERSHIP_WITH_USER,
+          channel: {
+            columns: { id: true, name: true, type: true, entityType: true, entityId: true },
+          },
         },
-      },
-    });
+      });
 
-    const hasMore = rows.length > limit;
-    if (hasMore) rows.pop();
-    const nextCursor = hasMore ? rows[rows.length - 1]?.id : undefined;
-    const visible = await filterByEntityAccess(
-      this.entities,
-      rows,
-      actor,
-      (row) => row.channel,
-    );
-    const resolved = await this.entities.withResolvedReferences(actor, visible);
-    const results = resolved.map((row) => {
-      const flattened = flattenMessageSender(row);
-      const { channel } = flattened;
-      return {
-        ...flattened,
-        channel: channel
-          ? { id: channel.id, name: channel.name, type: channel.type }
-          : channel,
-      };
-    });
-    return { results, nextCursor };
+      const hasMore = rows.length > limit;
+      if (hasMore) rows.pop();
+      const nextCursor = hasMore ? rows[rows.length - 1]?.id : undefined;
+      const visible = await filterByEntityAccess(
+        this.entities,
+        rows,
+        actor,
+        (row) => row.channel,
+      );
+      const resolved = await this.entities.withResolvedReferences(actor, visible);
+      const results = resolved.map((row) => {
+        const flattened = flattenMessageSender(row);
+        const { channel } = flattened;
+        return {
+          ...flattened,
+          channel: channel
+            ? { id: channel.id, name: channel.name, type: channel.type }
+            : channel,
+        };
+      });
+      return { results, nextCursor };
+    } catch (error) {
+      // Log the error but return empty results instead of crashing the chat interface.
+      // This handles cases where the search function fails (e.g., missing tenant GUC,
+      // database errors, or malformed search terms).
+      logger.error("[chat.searchMessages] Search failed", {
+        error: error instanceof Error ? error.message : String(error),
+        query: term,
+        orgId,
+      });
+      return { results: [], nextCursor: undefined };
+    }
   }
 
   async searchChannels(actor: EntityActor, query: string) {
