@@ -280,11 +280,12 @@ export class KbAskService {
     if (this.redis) {
       const orgKey = `rl:kb:ask:org:${user.orgId}`;
       const count = await this.redis.incr(orgKey);
-      if (count === 1) await this.redis.expire(orgKey, KB_ASK_ORG_WINDOW_SECS);
+      const ttlSecs = await this.redis.ttl(orgKey);
+      if (ttlSecs < 0) await this.redis.expire(orgKey, KB_ASK_ORG_WINDOW_SECS);
       if (count > KB_ASK_ORG_LIMIT) {
-        const ttl = await this.redis.ttl(orgKey);
+        const retryAfter = ttlSecs > 0 ? ttlSecs : KB_ASK_ORG_WINDOW_SECS;
         throw new HttpException(
-          { message: "Org Ask rate limit exceeded", retryAfterSecs: ttl > 0 ? ttl : KB_ASK_ORG_WINDOW_SECS },
+          { message: "Org Ask rate limit exceeded", retryAfterSecs: retryAfter },
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
@@ -459,11 +460,12 @@ export class KbAskService {
     if (this.redis) {
       const orgKey = `rl:kb:ask:org:${user.orgId}`;
       const count = await this.redis.incr(orgKey);
-      if (count === 1) await this.redis.expire(orgKey, KB_ASK_ORG_WINDOW_SECS);
+      const ttlSecs = await this.redis.ttl(orgKey);
+      if (ttlSecs < 0) await this.redis.expire(orgKey, KB_ASK_ORG_WINDOW_SECS);
       if (count > KB_ASK_ORG_LIMIT) {
-        const ttl = await this.redis.ttl(orgKey);
+        const retryAfter = ttlSecs > 0 ? ttlSecs : KB_ASK_ORG_WINDOW_SECS;
         throw new HttpException(
-          { message: "Org Ask rate limit exceeded", retryAfterSecs: ttl > 0 ? ttl : KB_ASK_ORG_WINDOW_SECS },
+          { message: "Org Ask rate limit exceeded", retryAfterSecs: retryAfter },
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }

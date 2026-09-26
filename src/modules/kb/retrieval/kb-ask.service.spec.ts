@@ -524,6 +524,12 @@ describe("KbAskService", () => {
         typeof r === "object" && r !== null && "resultState" in r && r["resultState"] === "answered",
     );
     expect(answeredRow).toBeUndefined();
+
+    const unavailableRow = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "resultState" in r && r["resultState"] === "provider_unavailable",
+    );
+    expect(unavailableRow).toBeDefined();
   });
 
   it("throws 429 when the org has exhausted its per-minute Ask cap", async () => {

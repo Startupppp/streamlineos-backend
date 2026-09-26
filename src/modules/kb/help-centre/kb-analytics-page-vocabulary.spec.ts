@@ -84,6 +84,7 @@ describe("the analytics list speaks the page vocabulary, not free text", () => {
       status: SupportKnowledgeGapStatus.DISMISSED,
       proposedArticleId: null,
       draftedBy: null,
+      dismissalReason: "Already covered by the refund policy article",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     };
 

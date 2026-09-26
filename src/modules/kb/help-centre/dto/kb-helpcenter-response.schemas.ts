@@ -105,6 +105,7 @@ export const kbAnalyticsGapActionSchema = z.object({
   status: z.enum(SUPPORT_KNOWLEDGE_GAP_STATUSES),
   proposedArticleId: z.number().int().nullable(),
   draftedBy: z.string().nullable(),
+  dismissalReason: z.string().nullable(),
   updatedAt: wireDate(),
 });
 

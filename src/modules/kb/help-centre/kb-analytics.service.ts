@@ -566,6 +566,7 @@ export class KbAnalyticsService {
         status: supportKnowledgeGaps.status,
         proposedArticleId: supportKnowledgeGaps.proposedArticleId,
         draftedBy: supportKnowledgeGaps.draftedBy,
+        dismissalReason: supportKnowledgeGaps.dismissalReason,
         updatedAt: supportKnowledgeGaps.updatedAt,
       });
     return row!;
@@ -599,6 +600,7 @@ export class KbAnalyticsService {
         status: supportKnowledgeGaps.status,
         proposedArticleId: supportKnowledgeGaps.proposedArticleId,
         draftedBy: supportKnowledgeGaps.draftedBy,
+        dismissalReason: supportKnowledgeGaps.dismissalReason,
         updatedAt: supportKnowledgeGaps.updatedAt,
       });
     return row!;
@@ -668,6 +670,7 @@ export class KbAnalyticsService {
             status: supportKnowledgeGaps.status,
             proposedArticleId: supportKnowledgeGaps.proposedArticleId,
             draftedBy: supportKnowledgeGaps.draftedBy,
+            dismissalReason: supportKnowledgeGaps.dismissalReason,
             updatedAt: supportKnowledgeGaps.updatedAt,
           });
         return row!;

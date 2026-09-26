@@ -178,6 +178,8 @@ describe("help-centre analytics count only support articles", () => {
       {},
     );
 
+    expect(result).toHaveProperty("totalCount");
+    expect(result).toHaveProperty("publishedCount");
     expect(result).not.toHaveProperty("topArticles");
     for (const projection of harness.projections) {
       expect(Object.keys(projection)).not.toContain("title");
