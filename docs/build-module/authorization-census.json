@@ -12214,7 +12214,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/import-export/ticket-import.service.ts:65",
+      "orgEvidence": "src/modules/build/import-export/ticket-import.service.ts:66",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12259,7 +12259,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/import-export/ticket-import.service.ts:74",
+      "orgEvidence": "src/modules/build/import-export/ticket-import.service.ts:75",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12914,7 +12914,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:80",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:102",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12953,7 +12953,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:84",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:106",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -12968,12 +12968,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/managed-products/managed-products.service.ts",
-          "line": 91,
+          "line": 113,
           "note": "an INSERT — no WHERE clause exists to carry a predicate"
         },
         {
           "file": "src/modules/build/managed-products/managed-products.service.ts",
-          "line": 93,
+          "line": 115,
           "note": "org bound as an ES6 shorthand column in .values()"
         }
       ]
@@ -13011,7 +13011,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:121",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:143",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13056,7 +13056,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:156",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:178",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13099,7 +13099,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:277",
+      "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:299",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],

@@ -46,6 +46,7 @@ export const organizations = pgTable("organizations", {
   favicon: text("favicon"),
   secondaryColor: text("secondary_color"),
   businessHours: jsonb("business_hours").$type<Record<string, { open: string; close: string; enabled: boolean }>>(),
+  roadmapPublicToken: text("roadmap_public_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 });

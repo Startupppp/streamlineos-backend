@@ -1,5 +1,11 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, asc, count, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import {
   feedbucketSubmissions,
   feedbucketWidgets,
@@ -11,8 +17,14 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
+import {
+  keysetAfterValue,
+  keysetBeforeId,
+} from "../../../common/pagination/keyset";
 import type {
   CreateManagedProductInput,
   ListManagedProductsQuery,
@@ -30,7 +42,10 @@ export class ManagedProductsService {
     private readonly audit: AuditService,
   ) {}
 
-  private async loadProduct(orgId: string, managedProductId: number): Promise<ManagedProductRow> {
+  private async loadProduct(
+    orgId: string,
+    managedProductId: number,
+  ): Promise<ManagedProductRow> {
     const [row] = await this.db
       .select()
       .from(managedProducts)
@@ -51,7 +66,7 @@ export class ManagedProductsService {
     query: ListManagedProductsQuery,
     _callerMembershipId: number | null,
   ) {
-    const { cursor, limit, status } = query;
+    const { cursor, limit, status, ownerId, sort } = query;
     const pos = decodeCursor(cursor);
     if (cursor !== undefined && pos === null) {
       throw new BadRequestException("Invalid pagination cursor");
@@ -60,21 +75,56 @@ export class ManagedProductsService {
       eq(managedProducts.orgId, orgId),
       isNull(managedProducts.deletedAt),
       status ? eq(managedProducts.status, status) : undefined,
-      query.search ? ilike(managedProducts.name, `%${query.search}%`) : undefined,
+      query.search
+        ? ilike(managedProducts.name, `%${query.search}%`)
+        : undefined,
+      ownerId ? eq(managedProducts.ownerId, ownerId) : undefined,
     ];
-    if (pos) conds.push(keysetBeforeId(managedProducts.createdAt, managedProducts.id, pos));
+    if (pos) {
+      if (sort === "name" || sort === "status") {
+        const col =
+          sort === "name" ? managedProducts.name : managedProducts.status;
+        conds.push(keysetAfterValue(col, managedProducts.id, pos));
+      } else {
+        const col =
+          sort === "updated"
+            ? managedProducts.updatedAt
+            : managedProducts.createdAt;
+        conds.push(keysetBeforeId(col, managedProducts.id, pos));
+      }
+    }
+
+    let orderBy;
+    if (sort === "name") {
+      orderBy = [asc(managedProducts.name), asc(managedProducts.id)];
+    } else if (sort === "updated") {
+      orderBy = [desc(managedProducts.updatedAt), desc(managedProducts.id)];
+    } else if (sort === "status") {
+      orderBy = [asc(managedProducts.status), asc(managedProducts.id)];
+    } else {
+      orderBy = [desc(managedProducts.createdAt), desc(managedProducts.id)];
+    }
 
     const rows = await this.db
       .select()
       .from(managedProducts)
       .where(and(...conds))
-      .orderBy(desc(managedProducts.createdAt), desc(managedProducts.id))
+      .orderBy(...orderBy)
       .limit(limit + 1);
 
-    return buildCursorPage(rows, limit, (r) => ({
-      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
-      id: String(r.id),
-    }));
+    return buildCursorPage(rows, limit, (r) => {
+      if (sort === "name") return { sortValue: r.name, id: String(r.id) };
+      if (sort === "updated")
+        return {
+          sortValue: (r.updatedAt ?? r.createdAt ?? new Date(0)).toISOString(),
+          id: String(r.id),
+        };
+      if (sort === "status") return { sortValue: r.status, id: String(r.id) };
+      return {
+        sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+        id: String(r.id),
+      };
+    });
   }
 
   async getManagedProduct(orgId: string, managedProductId: number) {
@@ -127,7 +177,8 @@ export class ManagedProductsService {
     await this.loadProduct(orgId, managedProductId);
     const patch: ManagedProductPatch = {};
     if (input.name !== undefined) patch.name = input.name;
-    if (input.description !== undefined) patch.description = input.description ?? null;
+    if (input.description !== undefined)
+      patch.description = input.description ?? null;
     if (input.ownerId !== undefined) patch.ownerId = input.ownerId ?? null;
     if (input.status !== undefined) patch.status = input.status;
     const [updated] = await this.db
@@ -156,83 +207,93 @@ export class ManagedProductsService {
   async getProductInsights(orgId: string, managedProductId: number) {
     await this.loadProduct(orgId, managedProductId);
 
-    const [projectRows, submissionRows, roadmapRows, feedbackRows] = await Promise.all([
-      this.db
-        .select({ status: projects.status, tally: count() })
-        .from(projects)
-        .where(
-          and(
-            eq(projects.orgId, orgId),
-            eq(projects.managedProductId, managedProductId),
-            isNull(projects.deletedAt),
-          ),
-        )
-        .groupBy(projects.status),
+    const [projectRows, submissionRows, roadmapRows, feedbackRows] =
+      await Promise.all([
+        this.db
+          .select({ status: projects.status, tally: count() })
+          .from(projects)
+          .where(
+            and(
+              eq(projects.orgId, orgId),
+              eq(projects.managedProductId, managedProductId),
+              isNull(projects.deletedAt),
+            ),
+          )
+          .groupBy(projects.status),
 
-      this.db
-        .select({ status: feedbucketSubmissions.status, tally: count() })
-        .from(feedbucketSubmissions)
-        .innerJoin(
-          feedbucketWidgets,
-          and(
-            eq(feedbucketSubmissions.widgetId, feedbucketWidgets.id),
-            eq(feedbucketSubmissions.orgId, feedbucketWidgets.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(feedbucketSubmissions.orgId, orgId),
-            eq(feedbucketWidgets.managedProductId, managedProductId),
-            isNull(feedbucketSubmissions.deletedAt),
-            isNull(feedbucketWidgets.deletedAt),
-          ),
-        )
-        .groupBy(feedbucketSubmissions.status),
+        this.db
+          .select({ status: feedbucketSubmissions.status, tally: count() })
+          .from(feedbucketSubmissions)
+          .innerJoin(
+            feedbucketWidgets,
+            and(
+              eq(feedbucketSubmissions.widgetId, feedbucketWidgets.id),
+              eq(feedbucketSubmissions.orgId, feedbucketWidgets.orgId),
+            ),
+          )
+          .where(
+            and(
+              eq(feedbucketSubmissions.orgId, orgId),
+              eq(feedbucketWidgets.managedProductId, managedProductId),
+              isNull(feedbucketSubmissions.deletedAt),
+              isNull(feedbucketWidgets.deletedAt),
+            ),
+          )
+          .groupBy(feedbucketSubmissions.status),
 
-      this.db
-        .select({ status: roadmapItems.status, tally: count() })
-        .from(roadmapItems)
-        .innerJoin(
-          projects,
-          and(
-            eq(projects.orgId, roadmapItems.orgId),
-            eq(projects.id, roadmapItems.projectId),
-            eq(projects.managedProductId, managedProductId),
-            isNull(projects.deletedAt),
-          ),
-        )
-        .where(and(eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
-        .groupBy(roadmapItems.status),
+        this.db
+          .select({ status: roadmapItems.status, tally: count() })
+          .from(roadmapItems)
+          .innerJoin(
+            projects,
+            and(
+              eq(projects.orgId, roadmapItems.orgId),
+              eq(projects.id, roadmapItems.projectId),
+              eq(projects.managedProductId, managedProductId),
+              isNull(projects.deletedAt),
+            ),
+          )
+          .where(
+            and(eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
+          )
+          .groupBy(roadmapItems.status),
 
-      this.db
-        .select({ status: feedbackPosts.status, tally: count(), votes: sql<number>`COALESCE(SUM(${feedbackPosts.votes}), 0)::int`.mapWith(Number) })
-        .from(feedbackPosts)
-        .innerJoin(
-          roadmapItems,
-          and(
-            eq(roadmapItems.orgId, feedbackPosts.orgId),
-            eq(roadmapItems.id, feedbackPosts.linkedRoadmapItemId),
-            isNull(roadmapItems.deletedAt),
-          ),
-        )
-        .innerJoin(
-          projects,
-          and(
-            eq(projects.orgId, roadmapItems.orgId),
-            eq(projects.id, roadmapItems.projectId),
-            eq(projects.managedProductId, managedProductId),
-            isNull(projects.deletedAt),
-          ),
-        )
-        .where(
-          and(
-            eq(feedbackPosts.orgId, orgId),
-            isNull(feedbackPosts.deletedAt),
-            isNull(feedbackPosts.duplicateOfId),
-          ),
-        )
-        .groupBy(feedbackPosts.status),
-    ]);
+        this.db
+          .select({
+            status: feedbackPosts.status,
+            tally: count(),
+            votes:
+              sql<number>`COALESCE(SUM(${feedbackPosts.votes}), 0)::int`.mapWith(
+                Number,
+              ),
+          })
+          .from(feedbackPosts)
+          .innerJoin(
+            roadmapItems,
+            and(
+              eq(roadmapItems.orgId, feedbackPosts.orgId),
+              eq(roadmapItems.id, feedbackPosts.linkedRoadmapItemId),
+              isNull(roadmapItems.deletedAt),
+            ),
+          )
+          .innerJoin(
+            projects,
+            and(
+              eq(projects.orgId, roadmapItems.orgId),
+              eq(projects.id, roadmapItems.projectId),
+              eq(projects.managedProductId, managedProductId),
+              isNull(projects.deletedAt),
+            ),
+          )
+          .where(
+            and(
+              eq(feedbackPosts.orgId, orgId),
+              isNull(feedbackPosts.deletedAt),
+              isNull(feedbackPosts.duplicateOfId),
+            ),
+          )
+          .groupBy(feedbackPosts.status),
+      ]);
 
     const projectsByStatus = { active: 0, completed: 0, archived: 0 };
     for (const row of projectRows) {
@@ -242,20 +303,37 @@ export class ManagedProductsService {
       else if (row.status === "ARCHIVED") projectsByStatus.archived = n;
     }
 
-    const submissionsByStatus = { open: 0, in_progress: 0, resolved: 0, archived: 0 };
+    const submissionsByStatus = {
+      open: 0,
+      in_progress: 0,
+      resolved: 0,
+      archived: 0,
+    };
     for (const row of submissionRows) {
       const n = Number(row.tally);
       const key = row.status as keyof typeof submissionsByStatus;
       if (key in submissionsByStatus) submissionsByStatus[key] = n;
     }
 
-    const roadmapItemsByStatus = { planned: 0, in_progress: 0, completed: 0, cancelled: 0 };
+    const roadmapItemsByStatus = {
+      planned: 0,
+      in_progress: 0,
+      completed: 0,
+      cancelled: 0,
+    };
     for (const row of roadmapRows) {
       const key = row.status as keyof typeof roadmapItemsByStatus;
-      if (key in roadmapItemsByStatus) roadmapItemsByStatus[key] = Number(row.tally);
+      if (key in roadmapItemsByStatus)
+        roadmapItemsByStatus[key] = Number(row.tally);
     }
 
-    const feedbackByStatus = { open: 0, planned: 0, in_progress: 0, completed: 0, declined: 0 };
+    const feedbackByStatus = {
+      open: 0,
+      planned: 0,
+      in_progress: 0,
+      completed: 0,
+      declined: 0,
+    };
     let linkedFeedbackVoteCount = 0;
     for (const row of feedbackRows) {
       const key = row.status as keyof typeof feedbackByStatus;
@@ -264,17 +342,27 @@ export class ManagedProductsService {
     }
 
     return {
-      linkedProjectCount: projectsByStatus.active + projectsByStatus.completed + projectsByStatus.archived,
+      linkedProjectCount:
+        projectsByStatus.active +
+        projectsByStatus.completed +
+        projectsByStatus.archived,
       projectsByStatus,
       submissionsByStatus,
-      roadmapItemCount: Object.values(roadmapItemsByStatus).reduce((total, value) => total + value, 0),
+      roadmapItemCount: Object.values(roadmapItemsByStatus).reduce(
+        (total, value) => total + value,
+        0,
+      ),
       roadmapItemsByStatus,
       feedbackByStatus,
       linkedFeedbackVoteCount,
     };
   }
 
-  async deleteManagedProduct(orgId: string, userId: string, managedProductId: number) {
+  async deleteManagedProduct(
+    orgId: string,
+    userId: string,
+    managedProductId: number,
+  ) {
     await this.loadProduct(orgId, managedProductId);
     await this.db
       .update(managedProducts)

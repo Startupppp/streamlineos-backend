@@ -280,13 +280,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/managed-products/managed-products.service.ts",
-        line: 91,
+        line: 113,
         anchor: /\.insert\(managedProducts\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/managed-products/managed-products.service.ts",
-        line: 93,
+        line: 115,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },

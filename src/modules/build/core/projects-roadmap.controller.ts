@@ -39,6 +39,7 @@ import {
   type UpdateFeedbackInput,
   type UpdateRoadmapInput,
 } from "./dto/projects.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -48,6 +49,7 @@ import {
   roadmapScoredItemSchema,
   roadmapScoredPageSchema,
   roadmapSignalsSchema,
+  roadmapPublicationSchema,
   feedbackPostSchema,
   changelogEntrySchema,
 } from "./dto/build-roadmap-response.schemas";
@@ -118,6 +120,37 @@ export class ProjectsRoadmapController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roadmap.deleteRoadmap(u.orgId, itemId);
+  }
+
+  @Get("roadmap-publication")
+  @RequirePermission("build:roadmap:view")
+  @ResponseSchema(roadmapPublicationSchema)
+  readRoadmapPublication(@CurrentUser() u: CurrentUserContext) {
+    return this.roadmap.readPublication(u.orgId);
+  }
+
+  @Post("roadmap-publication")
+  @RequirePermission("build:roadmap:manage")
+  @Idempotent("build.roadmap.publish")
+  @ResponseSchema(roadmapPublicationSchema)
+  publishRoadmap(@CurrentUser() u: CurrentUserContext) {
+    return this.roadmap.publish(u.orgId);
+  }
+
+  @Post("roadmap-publication/rotate")
+  @RequirePermission("build:roadmap:manage")
+  @Idempotent("build.roadmap.publication_rotate")
+  @ResponseSchema(roadmapPublicationSchema)
+  rotateRoadmapPublicationToken(@CurrentUser() u: CurrentUserContext) {
+    return this.roadmap.rotatePublicationToken(u.orgId);
+  }
+
+  @Delete("roadmap-publication")
+  @RequirePermission("build:roadmap:manage")
+  @HttpCode(204)
+  @NoContentResponse()
+  unpublishRoadmap(@CurrentUser() u: CurrentUserContext) {
+    return this.roadmap.unpublish(u.orgId);
   }
 
   @Get("feedback")

@@ -341,4 +341,76 @@ describe("ManagedProductsService", () => {
       });
     });
   });
+
+  describe("listManagedProducts — ownerId and sort filters (C3)", () => {
+    function makeListChain(rows: unknown[]) {
+      let capturedWhere: unknown;
+      let capturedOrderBy: unknown[];
+      const chain = {
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((cond: unknown) => {
+            capturedWhere = cond;
+            return {
+              orderBy: jest.fn().mockImplementation((...args: unknown[]) => {
+                capturedOrderBy = args;
+                return { limit: jest.fn().mockResolvedValue(rows) };
+              }),
+            };
+          }),
+        }),
+      };
+      return {
+        chain,
+        getCapturedWhere: () => capturedWhere,
+        getCapturedOrderBy: () => capturedOrderBy,
+      };
+    }
+
+    it("includes owner_id condition when ownerId is provided so only that owner's products are returned", async () => {
+      const rows = [makeProduct({ ownerId: "user-abc" })];
+      const { chain, getCapturedWhere } = makeListChain(rows);
+      (mockDb as { select: jest.Mock }).select.mockReturnValueOnce(chain);
+
+      await svc.listManagedProducts(ORG_ID, { limit: 20, ownerId: "user-abc" } as never, null);
+
+      const sql = renderSql(getCapturedWhere());
+      expect(sql).toMatch(/owner_id/);
+    });
+
+    it("orders by name ASC when sort=name so the list is alphabetically sorted", async () => {
+      const rows = [makeProduct({ name: "Alpha" }), makeProduct({ managedProductId: 2, name: "Beta", key: "B" })];
+      const { chain, getCapturedOrderBy } = makeListChain(rows);
+      (mockDb as { select: jest.Mock }).select.mockReturnValueOnce(chain);
+
+      await svc.listManagedProducts(ORG_ID, { limit: 20, sort: "name" } as never, null);
+
+      const orderSql = getCapturedOrderBy().map((o) => renderSql(o)).join(" ");
+      expect(orderSql).toMatch(/name/);
+      expect(orderSql).toMatch(/asc/i);
+    });
+
+    it("orders by updated_at DESC when sort=updated so most recently changed products appear first", async () => {
+      const rows = [makeProduct()];
+      const { chain, getCapturedOrderBy } = makeListChain(rows);
+      (mockDb as { select: jest.Mock }).select.mockReturnValueOnce(chain);
+
+      await svc.listManagedProducts(ORG_ID, { limit: 20, sort: "updated" } as never, null);
+
+      const orderSql = getCapturedOrderBy().map((o) => renderSql(o)).join(" ");
+      expect(orderSql).toMatch(/updated_at/);
+      expect(orderSql).toMatch(/desc/i);
+    });
+
+    it("orders by status ASC when sort=status so products are grouped by lifecycle state", async () => {
+      const rows = [makeProduct()];
+      const { chain, getCapturedOrderBy } = makeListChain(rows);
+      (mockDb as { select: jest.Mock }).select.mockReturnValueOnce(chain);
+
+      await svc.listManagedProducts(ORG_ID, { limit: 20, sort: "status" } as never, null);
+
+      const orderSql = getCapturedOrderBy().map((o) => renderSql(o)).join(" ");
+      expect(orderSql).toMatch(/status/);
+      expect(orderSql).toMatch(/asc/i);
+    });
+  });
 });

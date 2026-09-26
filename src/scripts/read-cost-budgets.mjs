@@ -1373,6 +1373,108 @@ export const BUDGETS = [
     planAssertions: [],
   },
   {
+    // Organization-level project health summary used by the Build executive brief.
+    // Service: build/core/projects-analytics.service.ts getOrgProjectHealthSummary.
+    // Keep the complete CTE shape here so the budget covers ticket aggregation, cycle
+    // aggregation, scoring, and the final scalar projection as one database read.
+    id: "build-org-project-health-summary",
+    ceiling: 12_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM build.projects WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      WITH project_ticket_stats AS (
+        SELECT p.id AS project_id,
+               COUNT(t.id)::int AS total,
+               COUNT(t.id) FILTER (WHERE ps.type = 'completed')::int AS done,
+               COUNT(t.id) FILTER (WHERE COALESCE(ps.type, 'started') NOT IN ('completed', 'cancelled'))::int AS open,
+               COUNT(t.id) FILTER (
+                 WHERE COALESCE(ps.type, 'started') NOT IN ('completed', 'cancelled')
+                   AND t.due_date IS NOT NULL
+                   AND t.due_date < CURRENT_DATE
+               )::int AS overdue
+        FROM build.projects p
+        LEFT JOIN build.tickets t
+          ON t.project_id = p.id AND t.org_id = p.org_id AND t.deleted_at IS NULL
+        LEFT JOIN build.project_statuses ps
+          ON ps.org_id = t.org_id AND ps.project_id = t.project_id AND ps.name = t.status
+        WHERE p.org_id = $1 AND p.deleted_at IS NULL
+        GROUP BY p.id
+      ), cycle_points AS (
+        SELECT c.project_id, c.id AS cycle_id, c.start_date,
+               COALESCE(SUM(CASE WHEN ps.type = 'completed'
+                 THEN COALESCE(t.story_points, t.estimate, 0) ELSE 0 END), 0) AS completed_points
+        FROM build.cycles c
+        LEFT JOIN build.tickets t
+          ON t.cycle_id = c.id AND t.org_id = $1 AND t.deleted_at IS NULL
+        LEFT JOIN build.project_statuses ps
+          ON ps.org_id = t.org_id AND ps.project_id = t.project_id AND ps.name = t.status
+        WHERE c.org_id = $1 AND c.deleted_at IS NULL
+        GROUP BY c.project_id, c.id, c.start_date
+      ), cycle_stats AS (
+        SELECT project_id,
+               COUNT(*)::int AS cycle_count,
+               COALESCE(SUM(completed_points), 0) AS total_points,
+               (ARRAY_AGG(completed_points ORDER BY start_date))[COUNT(*)] AS latest_points
+        FROM cycle_points
+        GROUP BY project_id
+      ), project_scores AS (
+        SELECT pts.project_id,
+               ROUND(
+                 CASE WHEN pts.total > 0 THEN pts.done::numeric / pts.total * 50 ELSE 0 END
+                 + CASE WHEN pts.open > 0 THEN (1 - pts.overdue::numeric / pts.open) * 30 ELSE 30 END
+                 + CASE WHEN cs.cycle_count > 0 AND cs.total_points / cs.cycle_count > 0
+                     THEN LEAST(1, cs.latest_points / (cs.total_points / cs.cycle_count)) * 20
+                   ELSE 20 END
+               )::int AS health_score
+        FROM project_ticket_stats pts
+        LEFT JOIN cycle_stats cs ON cs.project_id = pts.project_id
+      )
+      SELECT COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE health_score >= 60)::int AS healthy,
+             COUNT(*) FILTER (WHERE health_score >= 40 AND health_score < 60)::int AS "atRisk",
+             COUNT(*) FILTER (WHERE health_score < 40)::int AS critical,
+             COALESCE(ROUND(AVG(health_score)), 0)::int AS "avgScore"
+      FROM project_scores` ,
+    planAssertions: [],
+  },
+  {
+    // Organization resource allocation used by the Build workload view.
+    // Service: build/core/projects-analytics.service.ts resourceAllocation.
+    // This measures the first aggregate page and retains both direct and multi-assignee
+    // ticket paths from the service query.
+    id: "build-resource-allocation",
+    ceiling: 12_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.membershipId ? [f.orgId] : null),
+    sql: `
+      WITH open_assignments AS (
+        SELECT t.assignee_membership_id AS membership_id, t.id AS ticket_id, t.project_id
+        FROM build.tickets t
+        JOIN build.projects p ON p.id = t.project_id AND p.org_id = t.org_id
+          AND p.status = 'ACTIVE' AND p.deleted_at IS NULL
+        WHERE t.org_id = $1 AND t.deleted_at IS NULL
+          AND t.status NOT IN ('DONE', 'CANCELLED', 'CLOSED')
+          AND t.assignee_membership_id IS NOT NULL
+        UNION
+        SELECT ta.membership_id, ta.ticket_id, t2.project_id
+        FROM build.ticket_assignees ta
+        JOIN build.tickets t2 ON t2.id = ta.ticket_id AND t2.org_id = ta.org_id
+        JOIN build.projects p2 ON p2.id = t2.project_id AND p2.org_id = t2.org_id
+          AND p2.status = 'ACTIVE' AND p2.deleted_at IS NULL
+        WHERE ta.org_id = $1 AND t2.deleted_at IS NULL
+          AND t2.status NOT IN ('DONE', 'CANCELLED', 'CLOSED')
+      )
+      SELECT om.user_id AS "assigneeId", COUNT(DISTINCT oa.ticket_id)::int AS "totalOpen"
+      FROM open_assignments oa
+      JOIN organization_members om ON om.id = oa.membership_id AND om.org_id = $1
+      GROUP BY om.user_id
+      ORDER BY COUNT(DISTINCT oa.ticket_id) DESC, om.user_id ASC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
     // Feedback list — cursor-paginated by votes DESC, default excludes merged duplicates.
     // Service: build/core/projects-roadmap.service.ts listFeedback.
     // SQL verified: includeMerged=false (default) adds isNull(feedbackPosts.duplicateOfId),

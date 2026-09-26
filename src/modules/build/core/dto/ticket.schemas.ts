@@ -93,8 +93,10 @@ export const allWorkQuerySchema = baseListQuerySchema
       .default("rank"),
     orderDir: z.enum(["asc", "desc"]).optional(),
     projectIds: csvToIntArray,
+    managedProductId: z.coerce.number().int().positive().optional(),
+    teamId: z.coerce.number().int().positive().optional(),
     excludeStatus: csvToStringArray,
-    scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
+      scope: z.enum(["all", "mine", "created", "subscribed", "mentioned", "blocked", "recently-completed"]).default("all"),
   })
   .strict()
   .superRefine((data, ctx) => refineDueDateRange(data, ctx));

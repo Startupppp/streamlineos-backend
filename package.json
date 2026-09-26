@@ -75,7 +75,7 @@
     "db:check-read-budgets": "node src/scripts/run-read-cost-budgets.mjs",
     "db:check-read-budgets:self-test": "node src/scripts/run-read-cost-budgets.mjs --self-test",
     "db:check-read-budgets:verify": "node src/scripts/__tests__/plan-walker.test.mjs",
-    "db:check-read-budgets:build": "node src/scripts/run-read-cost-budgets.mjs --ids=scoped-board-page,my-work,ticket-list-project,ticket-org-assigned-to-me",
+    "db:check-read-budgets:build": "node src/scripts/run-read-cost-budgets.mjs --ids=scoped-board-page,my-work,ticket-list-project,ticket-org-assigned-to-me,build-org-project-health-summary,build-resource-allocation",
     "hrms:schema-bundle": "node --env-file-if-exists=.env -r ts-node/register src/scripts/hrms-schema-bundle/hrms-schema-bundle.ts",
     "seed:marketplace-apps": "node --env-file=.env -r ts-node/register src/db/seeds/marketplace-apps.seed.ts",
     "purge:user": "node src/scripts/purge-user.mjs",

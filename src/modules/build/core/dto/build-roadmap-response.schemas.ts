@@ -159,3 +159,8 @@ export const applyTemplateResultSchema = z.object({
   tickets: z.array(z.object({ id: z.number().int(), title: z.string() })),
 });
 
+
+export const roadmapPublicationSchema = z.object({
+  token: z.string().nullable(),
+  path: z.string().nullable(),
+});

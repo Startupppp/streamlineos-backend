@@ -14,13 +14,18 @@ import {
 } from "drizzle-orm";
 import {
   projectMembers,
+  projectTeamAssignments,
   organizationMembers,
   projects,
   ticketAssignees,
   ticketLabelMappings,
   ticketLabels,
   ticketWatchers,
+  ticketCommentMentions,
+  ticketComments,
+  ticketActivityLog,
   tickets,
+  workItemRelations,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -137,6 +142,8 @@ export class ProjectsWorkQueryService {
       orderBy,
       orderDir,
       projectIds: filterProjectIds,
+      managedProductId,
+      teamId,
       excludeStatus,
       scope,
     } = query;
@@ -181,6 +188,52 @@ export class ProjectsWorkQueryService {
       conditions.push(this.watches(u.orgId, u.userId));
     }
 
+    if (scope === "mentioned") {
+      conditions.push(sql`EXISTS (
+        SELECT 1
+        FROM ${ticketCommentMentions} tcm
+        INNER JOIN ${ticketComments} tc
+          ON tc.org_id = tcm.org_id
+         AND tc.id = tcm.comment_id
+         AND tc.ticket_id = ${tickets.id}
+         AND tc.deleted_at IS NULL
+        INNER JOIN organization_members mention_member
+          ON mention_member.org_id = tcm.org_id
+         AND mention_member.id = tcm.mentioned_user_membership_id
+         AND mention_member.user_id = ${u.userId}
+         AND mention_member.status = 'ACTIVE'
+        WHERE tcm.org_id = ${u.orgId}
+      )`);
+    }
+
+    if (scope === "blocked") {
+      conditions.push(sql`EXISTS (
+        SELECT 1
+        FROM ${workItemRelations} wir
+        INNER JOIN ${tickets} blocker
+          ON blocker.org_id = wir.org_id
+         AND blocker.id = wir.work_item_id
+         AND blocker.deleted_at IS NULL
+        WHERE wir.org_id = ${u.orgId}
+          AND wir.related_work_item_id = ${tickets.id}
+          AND wir.relation_type = 'blocks'
+          AND blocker.status NOT IN ('DONE', 'CANCELLED')
+      )`);
+    }
+
+    if (scope === "recently-completed") {
+      conditions.push(eq(tickets.status, "DONE"));
+      conditions.push(sql`EXISTS (
+        SELECT 1
+        FROM ${ticketActivityLog} completion_event
+        WHERE completion_event.org_id = ${u.orgId}
+          AND completion_event.ticket_id = ${tickets.id}
+          AND completion_event.action = 'status_changed'
+          AND completion_event.to_value = 'DONE'
+          AND completion_event.created_at >= NOW() - INTERVAL '7 days'
+      )`);
+    }
+
     if (search && search.trim()) {
       const term = search.trim();
       const prefixedRef = /^([A-Za-z]+)-(\d+)$/.exec(term);
@@ -203,6 +256,18 @@ export class ProjectsWorkQueryService {
     }
 
     if (status && status.length > 0) conditions.push(inArray(tickets.status, status));
+    if (managedProductId !== undefined) {
+      conditions.push(eq(projects.managedProductId, managedProductId));
+    }
+    if (teamId !== undefined) {
+      conditions.push(sql`EXISTS (
+        SELECT 1
+        FROM ${projectTeamAssignments} pta
+        WHERE pta.org_id = ${u.orgId}
+          AND pta.project_id = ${tickets.projectId}
+          AND pta.team_id = ${teamId}
+      )`);
+    }
     if (excludeStatus && excludeStatus.length > 0) conditions.push(notInArray(tickets.status, excludeStatus));
     if (priority && priority.length > 0) conditions.push(inArray(tickets.priority, priority));
 

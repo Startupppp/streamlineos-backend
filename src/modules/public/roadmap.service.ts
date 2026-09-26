@@ -14,7 +14,10 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { sanitizeText } from "./public.helpers";
-import type { RoadmapFeedbackInput, RoadmapVoteInput } from "./dto/public.schemas";
+import type {
+  RoadmapFeedbackInput,
+  RoadmapVoteInput,
+} from "./dto/public.schemas";
 
 @Injectable()
 export class RoadmapService {
@@ -23,16 +26,34 @@ export class RoadmapService {
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
-  async getRoadmap(orgId: string) {
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
+  private async resolveBoardOrg(handle: string) {
+    const byToken = await this.db.query.organizations.findFirst({
+      where: and(
+        eq(organizations.roadmapPublicToken, handle),
+        isNull(organizations.deletedAt),
+      ),
       columns: { id: true, name: true },
     });
+    if (byToken) return byToken;
+
+    return this.db.query.organizations.findFirst({
+      where: and(eq(organizations.id, handle), isNull(organizations.deletedAt)),
+      columns: { id: true, name: true },
+    });
+  }
+
+  async getRoadmap(handle: string) {
+    const org = await this.resolveBoardOrg(handle);
     if (!org) throw new NotFoundException("Board not found");
+    const orgId = org.id;
 
     const [items, posts, changelog] = await Promise.all([
       this.db.query.roadmapItems.findMany({
-        where: and(eq(roadmapItems.orgId, orgId), eq(roadmapItems.isPublic, true), isNull(roadmapItems.deletedAt)),
+        where: and(
+          eq(roadmapItems.orgId, orgId),
+          eq(roadmapItems.isPublic, true),
+          isNull(roadmapItems.deletedAt),
+        ),
         columns: {
           id: true,
           title: true,
@@ -42,10 +63,18 @@ export class RoadmapService {
           targetQuarter: true,
           votes: true,
         },
-        orderBy: [asc(roadmapItems.sortOrder), desc(roadmapItems.votes), asc(roadmapItems.id)],
+        orderBy: [
+          asc(roadmapItems.sortOrder),
+          desc(roadmapItems.votes),
+          asc(roadmapItems.id),
+        ],
       }),
       this.db.query.feedbackPosts.findMany({
-        where: and(eq(feedbackPosts.orgId, orgId), eq(feedbackPosts.status, "open"), isNull(feedbackPosts.deletedAt)),
+        where: and(
+          eq(feedbackPosts.orgId, orgId),
+          eq(feedbackPosts.status, "open"),
+          isNull(feedbackPosts.deletedAt),
+        ),
         columns: {
           id: true,
           title: true,
@@ -69,7 +98,10 @@ export class RoadmapService {
           type: true,
           publishedAt: true,
         },
-        orderBy: [desc(changelogEntries.publishedAt), desc(changelogEntries.id)],
+        orderBy: [
+          desc(changelogEntries.publishedAt),
+          desc(changelogEntries.id),
+        ],
       }),
     ]);
 
@@ -87,13 +119,19 @@ export class RoadmapService {
 
   private hashIp(ip: string): string {
     const secret = this.config.VOTE_IP_SALT ?? this.config.BACKEND_JWT_SECRET;
-    if (!secret) throw new Error("VOTE_IP_SALT or BACKEND_JWT_SECRET is required to hash voter IPs");
+    if (!secret)
+      throw new Error(
+        "VOTE_IP_SALT or BACKEND_JWT_SECRET is required to hash voter IPs",
+      );
     return createHmac("sha256", secret)
       .update(`roadmap-vote:${ip}`)
       .digest("hex");
   }
 
-  async vote(orgId: string, input: RoadmapVoteInput, voterIp?: string) {
+  async vote(handle: string, input: RoadmapVoteInput, voterIp?: string) {
+    const org = await this.resolveBoardOrg(handle);
+    if (!org) throw new NotFoundException("Board not found");
+    const orgId = org.id;
     const { type, id, voterKey } = input;
     const voterIpHash = voterIp ? this.hashIp(voterIp) : null;
 
@@ -174,12 +212,10 @@ export class RoadmapService {
     return { id, type, votes, voted: true };
   }
 
-  async submitFeedback(orgId: string, input: RoadmapFeedbackInput) {
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-      columns: { id: true },
-    });
+  async submitFeedback(handle: string, input: RoadmapFeedbackInput) {
+    const org = await this.resolveBoardOrg(handle);
     if (!org) throw new NotFoundException("Board not found");
+    const orgId = org.id;
 
     const { title, description, name, email } = input;
 

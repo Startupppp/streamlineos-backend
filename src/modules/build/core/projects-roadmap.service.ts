@@ -27,6 +27,12 @@ import {
 } from "./roadmap-prioritization";
 import { loadRoadmapDeliveryProgress, loadRoadmapDemandSignals } from "./roadmap-delivery";
 import {
+  publishRoadmap,
+  readRoadmapPublication,
+  rotateRoadmapPublicationToken,
+  unpublishRoadmap,
+} from "./roadmap-publication";
+import {
   applyRoadmapTierWeighting,
   loadRoadmapAccountTiers,
   type RoadmapAccountTierSummary,
@@ -259,5 +265,21 @@ export class ProjectsRoadmapService {
 
   deleteChangelog(orgId: string, entryId: number) {
     return this.changelog.deleteChangelog(orgId, entryId);
+  }
+
+  readPublication(orgId: string) {
+    return readRoadmapPublication(this.db, orgId);
+  }
+
+  publish(orgId: string) {
+    return publishRoadmap(this.db, orgId);
+  }
+
+  rotatePublicationToken(orgId: string) {
+    return rotateRoadmapPublicationToken(this.db, orgId);
+  }
+
+  unpublish(orgId: string) {
+    return unpublishRoadmap(this.db, orgId);
   }
 }

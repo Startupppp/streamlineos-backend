@@ -338,6 +338,15 @@ export class PublicController {
     return this.intake.submitIntake(projectId, body);
   }
 
+  @Get("intake/:projectId/form")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:form-view")
+  @ResponseSchema(publicFormSchema)
+  @Validate({ params: projectIdParams })
+  getProjectIntakeForm(@Param("projectId", ParseIntPipe) projectId: number) {
+    return this.publicForms.getIntakeFormByProject(projectId);
+  }
+
   @Get("forms/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:form-view")

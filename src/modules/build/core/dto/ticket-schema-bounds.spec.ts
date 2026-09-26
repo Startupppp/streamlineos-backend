@@ -83,6 +83,25 @@ describe("Build ticket numeric bounds", () => {
     expect(result.data.cycleId).toEqual([7, 8]);
   });
 
+  it("accepts positive All Work product and team filters", () => {
+    const result = allWorkQuerySchema.safeParse({ managedProductId: "12", teamId: "34" });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.managedProductId).toBe(12);
+    expect(result.data.teamId).toBe(34);
+  });
+
+  it("rejects non-positive All Work product and team filters", () => {
+    expect(allWorkQuerySchema.safeParse({ managedProductId: "0" }).success).toBe(false);
+    expect(allWorkQuerySchema.safeParse({ teamId: "-1" }).success).toBe(false);
+  });
+
+  it("accepts the documented personal relation scopes", () => {
+    for (const scope of ["mentioned", "blocked", "recently-completed"] as const) {
+      expect(allWorkQuerySchema.safeParse({ scope }).success).toBe(true);
+    }
+  });
+
   it.each([ticketsListQuerySchema, allWorkQuerySchema])("rejects oversized search terms and trims valid terms", (schema) => {
     expect(schema.safeParse({ search: "x".repeat(201) }).success).toBe(false);
     const result = schema.safeParse({ search: "  login  " });

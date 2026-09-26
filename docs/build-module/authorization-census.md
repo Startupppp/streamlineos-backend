@@ -1442,8 +1442,8 @@ PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId. asse
 
 POST /build/managed-products. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into managed_products with orgId as a column of .values() at managed-products.service.ts:83; the unique-key conflict it catches is the per-org key constraint, which is itself evidence the row is org-scoped. PASSED-UNBOUND is the expected static reading because an INSERT carries no predicate for eq() detection. The sibling updateManagedProduct binds eq(managedProducts.orgId, orgId) in its WHERE, so the table's org column is genuinely the tenant key.
 
-- `src/modules/build/managed-products/managed-products.service.ts:91` — an INSERT — no WHERE clause exists to carry a predicate
-- `src/modules/build/managed-products/managed-products.service.ts:93` — org bound as an ES6 shorthand column in .values()
+- `src/modules/build/managed-products/managed-products.service.ts:113` — an INSERT — no WHERE clause exists to carry a predicate
+- `src/modules/build/managed-products/managed-products.service.ts:115` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `POST /build/:projectId/meetings/:meetingId/action-items`
 
