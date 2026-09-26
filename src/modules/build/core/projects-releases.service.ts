@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, ilike, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -11,6 +11,7 @@ import {
 } from "../../../db/schema";
 import type { CreateReleaseInput, ListReleasesQuery, UpdateReleaseInput } from "./dto/releases.schemas";
 import { assertProjectAccess } from "./project-access";
+import { escapeLike } from "./lib/escape-like";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { buildCursorPage, decodeIntegerCursor } from "../../../common/pagination/cursor";
@@ -56,7 +57,7 @@ export class ProjectsReleasesService {
         eq(projectReleases.orgId, orgId),
         isNull(projectReleases.deletedAt),
         status ? eq(projectReleases.status, status) : undefined,
-        q ? ilike(projectReleases.name, `%${q}%`) : undefined,
+        q ? sql`${projectReleases.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
         pos ? lt(projectReleases.id, pos.id) : undefined,
       ))
       .orderBy(desc(projectReleases.id))

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import {
   intakeItems,
   projectMilestones,
@@ -12,6 +12,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { escapeLike } from "../core/lib/escape-like";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 import { buildCursorPage, decodeCursor, decodeIntegerCursor } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId } from "../../../common/pagination/keyset";
@@ -60,7 +61,7 @@ export class MilestonesService {
         eq(projectMilestones.orgId, orgId),
         isNull(projectMilestones.deletedAt),
         status ? eq(projectMilestones.status, status) : undefined,
-        q ? ilike(projectMilestones.name, `%${q}%`) : undefined,
+        q ? sql`${projectMilestones.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
         pos ? keysetAfterId(projectMilestones.targetDate, projectMilestones.id, pos) : undefined,
       ))
       .orderBy(asc(projectMilestones.targetDate), asc(projectMilestones.id))
