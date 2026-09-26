@@ -97,7 +97,7 @@ export type KbResearchBriefCreateInput = z.infer<
 export const kbResearchBriefListSchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 export type KbResearchBriefListInput = z.infer<
   typeof kbResearchBriefListSchema
 >;

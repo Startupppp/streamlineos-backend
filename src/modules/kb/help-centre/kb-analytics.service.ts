@@ -250,7 +250,13 @@ export class KbAnalyticsService {
         versionCount: sql<number>`count(distinct ${kbPageVersions.id})::int`,
       })
       .from(kbPages)
-      .leftJoin(kbPageVisits, eq(kbPageVisits.pageId, kbPages.id))
+      .leftJoin(
+        kbPageVisits,
+        and(
+          eq(kbPageVisits.pageId, kbPages.id),
+          eq(kbPageVisits.orgId, user.orgId),
+        ),
+      )
       .leftJoin(
         kbPageComments,
         and(

@@ -5,18 +5,9 @@ import {
 } from "../../../../common/openapi/wire-types";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { idCursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { KB_HEALTH_ITEM_KINDS } from "../../../../db/schema/kb/health-items";
 
-export const contentHealthSignalTypeEnum = z.enum([
-  "unowned",
-  "stale",
-  "unverified",
-  "empty",
-  "overdue_review",
-  "broken_link",
-  "overexposed",
-  "duplicate_candidate",
-  "contradictory_claim",
-]);
+export const contentHealthSignalTypeEnum = z.enum(KB_HEALTH_ITEM_KINDS);
 
 export type ContentHealthSignalType = z.infer<
   typeof contentHealthSignalTypeEnum

@@ -1,6 +1,10 @@
 SET lock_timeout = '5s';
 --> statement-breakpoint
 
+DELETE FROM "kb_page_purge_ledger"
+  WHERE store IN ('versions', 'comments', 'grants', 'chunks', 'analytics', 'notifications');
+--> statement-breakpoint
+
 ALTER TABLE "kb_page_purge_ledger"
   DROP CONSTRAINT IF EXISTS "chk_kb_purge_ledger_store";
 --> statement-breakpoint

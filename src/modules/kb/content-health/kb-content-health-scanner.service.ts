@@ -13,7 +13,7 @@ import { kbPageLinks, kbPageReviews, kbPages } from "../../../db/schema";
 import { kbHealthItems, KB_HEALTH_ITEM_KINDS } from "../../../db/schema/kb/health-items";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { KbHealthItemKind, KbHealthItemState } from "../../../db/schema/kb/health-items";
+import type { KbHealthItemKind } from "../../../db/schema/kb/health-items";
 
 const STALE_THRESHOLD_DAYS = 90;
 const SCAN_PAGE_LIMIT = 500;
@@ -83,7 +83,7 @@ export class KbContentHealthScannerService {
     }
 
     const stillMatchingIds = seen;
-    await this.resolveStaleItems(orgId, "contradictory_claim" as KbHealthItemKind, stillMatchingIds);
+    await this.resolveStaleItems(orgId, "contradictory_claim", stillMatchingIds);
   }
 
   async recordContradiction(
@@ -99,9 +99,9 @@ export class KbContentHealthScannerService {
       .values({
         orgId,
         pageId,
-        kind: "contradictory_claim" as KbHealthItemKind,
+        kind: "contradictory_claim",
         ruleVersion: 1,
-        state: "open" as KbHealthItemState,
+        state: "open",
         evidence,
         impact: computedImpact,
         detectedAt: now,
@@ -109,7 +109,7 @@ export class KbContentHealthScannerService {
       .onConflictDoUpdate({
         target: [kbHealthItems.orgId, kbHealthItems.pageId, kbHealthItems.kind, kbHealthItems.ruleVersion],
         set: {
-          state: "open" as KbHealthItemState,
+          state: "open",
           evidence,
           impact: computedImpact,
           resolvedAt: null,
@@ -119,12 +119,12 @@ export class KbContentHealthScannerService {
       .catch(() => {
         return this.db
           .update(kbHealthItems)
-          .set({ state: "open" as KbHealthItemState, evidence, impact: computedImpact, updatedAt: now })
+          .set({ state: "open", evidence, impact: computedImpact, updatedAt: now })
           .where(
             and(
               eq(kbHealthItems.orgId, orgId),
               eq(kbHealthItems.pageId, pageId),
-              eq(kbHealthItems.kind, "contradictory_claim" as KbHealthItemKind),
+              eq(kbHealthItems.kind, "contradictory_claim"),
             ),
           );
       });
@@ -259,7 +259,7 @@ export class KbContentHealthScannerService {
           pageId,
           kind,
           ruleVersion: 1,
-          state: "open" as KbHealthItemState,
+          state: "open",
           impact,
           detectedAt: now,
         })
@@ -268,13 +268,13 @@ export class KbContentHealthScannerService {
 
       await this.db
         .update(kbHealthItems)
-        .set({ state: "open" as KbHealthItemState, impact, resolvedAt: null, updatedAt: now })
+        .set({ state: "open", impact, resolvedAt: null, updatedAt: now })
         .where(
           and(
             eq(kbHealthItems.orgId, orgId),
             eq(kbHealthItems.pageId, pageId),
             eq(kbHealthItems.kind, kind),
-            eq(kbHealthItems.state, "dismissed" as KbHealthItemState),
+            eq(kbHealthItems.state, "dismissed"),
             sql`${kbHealthItems.dismissalExpiresAt} IS NOT NULL AND ${kbHealthItems.dismissalExpiresAt} < NOW()`,
           ),
         )
@@ -294,7 +294,7 @@ export class KbContentHealthScannerService {
         and(
           eq(kbHealthItems.orgId, orgId),
           eq(kbHealthItems.kind, kind),
-          eq(kbHealthItems.state, "open" as KbHealthItemState),
+          eq(kbHealthItems.state, "open"),
         ),
       );
 
@@ -307,13 +307,13 @@ export class KbContentHealthScannerService {
     const now = new Date();
     await this.db
       .update(kbHealthItems)
-      .set({ state: "resolved" as KbHealthItemState, resolvedAt: now, updatedAt: now })
+      .set({ state: "resolved", resolvedAt: now, updatedAt: now })
       .where(
         and(
           eq(kbHealthItems.orgId, orgId),
           inArray(kbHealthItems.pageId, toResolve),
           eq(kbHealthItems.kind, kind),
-          eq(kbHealthItems.state, "open" as KbHealthItemState),
+          eq(kbHealthItems.state, "open"),
         ),
       );
   }

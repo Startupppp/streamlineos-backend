@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -12,6 +12,7 @@ import {
   kbResearchBriefListSchema,
   kbResearchBriefRateSchema,
   type KbResearchBriefCreateInput,
+  type KbResearchBriefListInput,
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -44,11 +45,13 @@ export class KbResearchBriefController {
 
   @Get("research-briefs")
   @RequirePermission("kb:pages:view")
+  @Validate({ query: kbResearchBriefListSchema })
   @ResponseSchema(kbResearchBriefListResponseSchema)
-  async list(@Query() query: unknown, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    const parsed = kbResearchBriefListSchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.briefs.list(u, parsed.data);
+  async list(
+    @Query() query: KbResearchBriefListInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.briefs.list(u, query);
   }
 
   @Get("research-briefs/:briefId")

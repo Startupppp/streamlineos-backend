@@ -76,5 +76,14 @@ export const kbResearchBriefs = pgTable(
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_kb_research_briefs_org_user_mbr",
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.orgId, table.approvedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_kb_research_briefs_approved_by",
+    }).onDelete("set null"),
+    index("idx_kb_research_briefs_approved_by").on(
+      table.orgId,
+      table.approvedByMembershipId,
+    ),
   ],
 );

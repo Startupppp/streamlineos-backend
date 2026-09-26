@@ -224,7 +224,7 @@ export class KbImportExportService {
           jobId: newJob.id,
           userId: user.userId,
           orgId,
-          input: input as unknown as Record<string, unknown>,
+          input: { ...input },
         },
         occurredAt: new Date(),
       });

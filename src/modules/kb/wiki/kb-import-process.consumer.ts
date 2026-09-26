@@ -13,13 +13,13 @@ import {
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AuditService } from "../../../common/audit/audit.service";
-import type { ImportPagesInput } from "./dto/kb-import-export.schemas";
+import { importPagesSchema } from "./dto/kb-import-export.schemas";
 
 const importEventPayloadSchema = z.object({
   jobId: z.number().int(),
   userId: z.string(),
   orgId: z.string(),
-  input: z.unknown(),
+  input: importPagesSchema,
 });
 
 @Injectable()
@@ -39,8 +39,7 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
   async handle(event: OutboxEventRow): Promise<void> {
     const parsed = importEventPayloadSchema.safeParse(event.payload);
     if (!parsed.success) return;
-    const { jobId, userId, orgId, input: rawInput } = parsed.data;
-    const input = rawInput as ImportPagesInput;
+    const { jobId, userId, orgId, input } = parsed.data;
 
     let shouldProcess = false;
     await runInNewTenantTransaction(this.db, orgId, async (tx) => {

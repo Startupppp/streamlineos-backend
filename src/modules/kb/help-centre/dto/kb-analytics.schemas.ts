@@ -10,7 +10,7 @@ export type RangeInput = z.infer<typeof rangeSchema>;
 
 export const overviewQuerySchema = rangeSchema.extend({
   spaceId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 export type OverviewQueryInput = z.infer<typeof overviewQuerySchema>;
 
 export const pageAnalyticsQuerySchema = z

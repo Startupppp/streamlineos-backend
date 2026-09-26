@@ -34,7 +34,6 @@ import type {
   BulkRepairResponse,
   EvidenceQuery,
 } from "./dto/kb-content-health.schemas";
-import type { KbHealthItemState, KbHealthItemKind } from "../../../db/schema/kb/health-items";
 
 const STALE_THRESHOLD_DAYS = 90;
 
@@ -162,7 +161,7 @@ export class KbContentHealthService {
     const updated = await this.db
       .update(kbHealthItems)
       .set({
-        state: "dismissed" as KbHealthItemState,
+        state: "dismissed",
         dismissedAt: now,
         dismissedReason: body.reason,
         dismissalExpiresAt: body.dismissalExpiresAt ?? null,
@@ -172,7 +171,7 @@ export class KbContentHealthService {
         and(
           eq(kbHealthItems.orgId, user.orgId),
           eq(kbHealthItems.pageId, body.pageId),
-          eq(kbHealthItems.kind, body.kind as KbHealthItemKind),
+          eq(kbHealthItems.kind, body.kind),
           eq(kbHealthItems.ruleVersion, ruleVersion),
           eq(kbHealthItems.state, "open"),
         ),
@@ -186,9 +185,9 @@ export class KbContentHealthService {
       .values({
         orgId: user.orgId,
         pageId: body.pageId,
-        kind: body.kind as KbHealthItemKind,
+        kind: body.kind,
         ruleVersion,
-        state: "dismissed" as KbHealthItemState,
+        state: "dismissed",
         dismissedAt: now,
         dismissedReason: body.reason,
         dismissalExpiresAt: body.dismissalExpiresAt ?? null,
@@ -231,7 +230,7 @@ export class KbContentHealthService {
         and(
           eq(kbHealthItems.orgId, user.orgId),
           eq(kbHealthItems.pageId, body.pageId),
-          eq(kbHealthItems.kind, body.kind as KbHealthItemKind),
+          eq(kbHealthItems.kind, body.kind),
           eq(kbHealthItems.state, "open"),
         ),
       )
@@ -244,9 +243,9 @@ export class KbContentHealthService {
       .values({
         orgId: user.orgId,
         pageId: body.pageId,
-        kind: body.kind as KbHealthItemKind,
+        kind: body.kind,
         ruleVersion,
-        state: "open" as KbHealthItemState,
+        state: "open",
         assigneeMembershipId: body.assigneeMembershipId,
         dueAt: body.dueAt ?? null,
         detectedAt: now,
@@ -286,7 +285,7 @@ export class KbContentHealthService {
         and(
           eq(kbHealthItems.orgId, user.orgId),
           inArray(kbHealthItems.pageId, body.pageIds),
-          eq(kbHealthItems.kind, body.kind as KbHealthItemKind),
+          eq(kbHealthItems.kind, body.kind),
         ),
       );
 
@@ -318,7 +317,7 @@ export class KbContentHealthService {
               and(
                 eq(kbHealthItems.orgId, user.orgId),
                 eq(kbHealthItems.pageId, pageId),
-                eq(kbHealthItems.kind, body.kind as KbHealthItemKind),
+                eq(kbHealthItems.kind, body.kind),
               ),
             );
         } else {
@@ -327,9 +326,9 @@ export class KbContentHealthService {
             .values({
               orgId: user.orgId,
               pageId,
-              kind: body.kind as KbHealthItemKind,
+              kind: body.kind,
               ruleVersion: 1,
-              state: "open" as KbHealthItemState,
+              state: "open",
               assigneeMembershipId: body.assigneeMembershipId,
               detectedAt: now,
             });
@@ -373,7 +372,7 @@ export class KbContentHealthService {
         and(
           eq(kbHealthItems.orgId, user.orgId),
           eq(kbHealthItems.pageId, query.pageId),
-          eq(kbHealthItems.kind, query.kind as KbHealthItemKind),
+          eq(kbHealthItems.kind, query.kind),
         ),
       );
 
@@ -406,7 +405,7 @@ export class KbContentHealthService {
       .where(
         and(
           eq(kbHealthItems.orgId, user.orgId),
-          eq(kbHealthItems.state, "open" as KbHealthItemState),
+          eq(kbHealthItems.state, "open"),
           lt(kbHealthItems.detectedAt, thirtyDaysAgo),
         ),
       );
@@ -417,7 +416,7 @@ export class KbContentHealthService {
       .where(
         and(
           eq(kbHealthItems.orgId, user.orgId),
-          eq(kbHealthItems.state, "open" as KbHealthItemState),
+          eq(kbHealthItems.state, "open"),
         ),
       );
 
@@ -531,8 +530,8 @@ export class KbContentHealthService {
               and(
                 eq(kbHealthItems.orgId, kbPages.orgId),
                 eq(kbHealthItems.pageId, kbPages.id),
-                eq(kbHealthItems.kind, "contradictory_claim" as KbHealthItemKind),
-                eq(kbHealthItems.state, "open" as KbHealthItemState),
+                eq(kbHealthItems.kind, "contradictory_claim"),
+                eq(kbHealthItems.state, "open"),
               ),
             ),
         );
