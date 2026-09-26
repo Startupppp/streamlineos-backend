@@ -52,7 +52,7 @@ function makeDb(template: { content: unknown } | undefined): TemplateUsageDb {
     }),
   };
 
-  const db = {
+  const db: Record<string, unknown> = {
     query: {
       kbPageTemplates: { findFirst: jest.fn().mockResolvedValue(template) },
       kbPages: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -61,9 +61,10 @@ function makeDb(template: { content: unknown } | undefined): TemplateUsageDb {
     select: jest.fn().mockReturnValue(siblingSelectChain),
     insert,
     update,
-  } as unknown as Db;
+  };
+  db["transaction"] = jest.fn(async (fn: (tx: unknown) => unknown) => fn(db));
 
-  return { db, update, set, where };
+  return { db: db as unknown as Db, update, set, where };
 }
 
 describe("KbPagesService.create — saved template usage stamp", () => {

@@ -21,6 +21,7 @@ import {
   extractAttachmentText,
 } from "../retrieval/kb-attachment-extract.util";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { KbAccessService } from "../core/kb-access.service";
@@ -317,31 +318,41 @@ export class KbSourcesService {
     );
 
     const byteSize = file.size;
-    const row = await this.db.transaction(async (tx) => {
-      await this.quota.reserve(tx, user.orgId, byteSize);
-      const [inserted] = await tx
-        .insert(kbSources)
-        .values({
-          orgId: user.orgId,
-          spaceId: spaceId ?? null,
-          kind: "file",
-          title: originalname,
-          fileKey: result.key,
-          fileUrl: result.key,
-          mimeType: mimetype,
-          fileSize: file.size,
-          status: "processing",
-          createdById: user.userId,
-        })
-        .returning();
-      if (!inserted) throw new InternalServerErrorException("Insert failed");
-      await this.emitIndexEvent(tx, user.orgId, inserted.id);
-      return inserted;
-    });
-    const fileDeferred = registerAfterCommit(async () => {
-      await this.processFile(user.orgId, row.id, buffer, mimetype, byteSize);
-    });
-    if (!fileDeferred)
+    const { row, deferred } = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await this.quota.reserve(tx, user.orgId, byteSize);
+        const [inserted] = await tx
+          .insert(kbSources)
+          .values({
+            orgId: user.orgId,
+            spaceId: spaceId ?? null,
+            kind: "file",
+            title: originalname,
+            fileKey: result.key,
+            fileUrl: result.key,
+            mimeType: mimetype,
+            fileSize: file.size,
+            status: "processing",
+            createdById: user.userId,
+          })
+          .returning();
+        if (!inserted) throw new InternalServerErrorException("Insert failed");
+        await this.emitIndexEvent(tx, user.orgId, inserted.id);
+        const registered = registerAfterCommit(async () => {
+          await this.processFile(
+            user.orgId,
+            inserted.id,
+            buffer,
+            mimetype,
+            byteSize,
+          );
+        });
+        return { row: inserted, deferred: registered };
+      },
+      { orgId: user.orgId },
+    );
+    if (!deferred)
       await this.processFile(user.orgId, row.id, buffer, mimetype, byteSize);
     return row;
   }

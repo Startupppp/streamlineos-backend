@@ -44,10 +44,11 @@ import {
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { collectSubtreeIds } from "./kb-page-subtree.util";
 import {
-  isStoreComplete,
-  markStoreComplete,
-  markStoreFailed,
+  incompleteStorePages,
+  markStoresComplete,
+  markStoresFailed,
   openMultiStoreLedger,
+  type KbPurgeStore,
   purgeFavoritesForPages,
   purgeLinksForPages,
   purgeVisitsForPages,
@@ -124,10 +125,9 @@ export class KbPageTrashService {
       );
     });
 
-    for (const id of subtreeIds)
-      await markStoreComplete(this.db, orgId, id, "page_rows").catch(
-        () => undefined,
-      );
+    await markStoresComplete(this.db, orgId, subtreeIds, "page_rows").catch(
+      () => undefined,
+    );
 
     await attemptPageAttachmentPurge(
       this.db,
@@ -137,10 +137,9 @@ export class KbPageTrashService {
       this.config.R2_KB_BUCKET_NAME,
     );
 
-    for (const id of subtreeIds)
-      await markStoreComplete(this.db, orgId, id, "blobs").catch(
-        () => undefined,
-      );
+    await markStoresComplete(this.db, orgId, subtreeIds, "blobs").catch(
+      () => undefined,
+    );
 
     this.audit.log({
       action: "kb.page.permanently_deleted",
@@ -152,205 +151,91 @@ export class KbPageTrashService {
     });
   }
 
+  private preDeleteStores(orgId: string): {
+    store: KbPurgeStore;
+    purge: (pageIds: number[]) => Promise<void>;
+  }[] {
+    return [
+      {
+        store: "visits",
+        purge: (pageIds) => purgeVisitsForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "favorites",
+        purge: (pageIds) => purgeFavoritesForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "source_links",
+        purge: (pageIds) => purgeLinksForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "reviews",
+        purge: (pageIds) => purgeReviewsForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "versions",
+        purge: (pageIds) => purgeVersionsForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "comments",
+        purge: (pageIds) => purgeCommentsForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "grants",
+        purge: (pageIds) => purgeGrantsForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "chunks",
+        purge: (pageIds) => purgeChunksForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "analytics",
+        purge: (pageIds) => purgeAnalyticsForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "notifications",
+        purge: (pageIds) => purgeNotificationsForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "caches",
+        purge: (pageIds) => purgeCachesForPages(this.cache, orgId, pageIds),
+      },
+      {
+        store: "public_cdn",
+        purge: (pageIds) => purgePublicCdnForPages(this.db, orgId, pageIds),
+      },
+      {
+        store: "connector_projections",
+        purge: (pageIds) =>
+          purgeConnectorProjectionsForPages(this.db, orgId, pageIds),
+      },
+    ];
+  }
+
   private async executePreDeleteStores(
     orgId: string,
     subtreeIds: number[],
   ): Promise<void> {
-    for (const id of subtreeIds) {
-      if (!(await isStoreComplete(this.db, orgId, id, "visits"))) {
-        try {
-          await purgeVisitsForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "visits");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "visits",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "favorites"))) {
-        try {
-          await purgeFavoritesForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "favorites");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "favorites",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "source_links"))) {
-        try {
-          await purgeLinksForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "source_links");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "source_links",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "reviews"))) {
-        try {
-          await purgeReviewsForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "reviews");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "reviews",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "versions"))) {
-        try {
-          await purgeVersionsForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "versions");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "versions",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "comments"))) {
-        try {
-          await purgeCommentsForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "comments");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "comments",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "grants"))) {
-        try {
-          await purgeGrantsForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "grants");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "grants",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "chunks"))) {
-        try {
-          await purgeChunksForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "chunks");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "chunks",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "analytics"))) {
-        try {
-          await purgeAnalyticsForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "analytics");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "analytics",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "notifications"))) {
-        try {
-          await purgeNotificationsForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "notifications");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "notifications",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "caches"))) {
-        try {
-          await purgeCachesForPages(this.cache, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "caches");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "caches",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "public_cdn"))) {
-        try {
-          await purgePublicCdnForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "public_cdn");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "public_cdn",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
-      }
-      if (!(await isStoreComplete(this.db, orgId, id, "connector_projections"))) {
-        try {
-          await purgeConnectorProjectionsForPages(this.db, orgId, [id]);
-          await markStoreComplete(this.db, orgId, id, "connector_projections");
-        } catch (err) {
-          await markStoreFailed(
-            this.db,
-            orgId,
-            id,
-            "connector_projections",
-            String(err),
-          ).catch(() => undefined);
-          throw err;
-        }
+    for (const { store, purge } of this.preDeleteStores(orgId)) {
+      const pending = await incompleteStorePages(
+        this.db,
+        orgId,
+        subtreeIds,
+        store,
+      );
+      if (pending.length === 0) continue;
+      try {
+        await purge(pending);
+        await markStoresComplete(this.db, orgId, pending, store);
+      } catch (err) {
+        await markStoresFailed(
+          this.db,
+          orgId,
+          pending,
+          store,
+          String(err),
+        ).catch(() => undefined);
+        throw err;
       }
     }
   }
@@ -385,10 +270,9 @@ export class KbPageTrashService {
         .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids)))
         .returning({ id: kbPages.id });
 
-      for (const id of ids)
-        await markStoreComplete(this.db, orgId, id, "page_rows").catch(
-          () => undefined,
-        );
+      await markStoresComplete(this.db, orgId, ids, "page_rows").catch(
+        () => undefined,
+      );
 
       await attemptPageAttachmentPurge(
         this.db,
@@ -398,10 +282,9 @@ export class KbPageTrashService {
         this.config.R2_KB_BUCKET_NAME,
       );
 
-      for (const id of ids)
-        await markStoreComplete(this.db, orgId, id, "blobs").catch(
-          () => undefined,
-        );
+      await markStoresComplete(this.db, orgId, ids, "blobs").catch(
+        () => undefined,
+      );
 
       purgedCount += deleted.length;
       if (trashed.length < EXPIRED_PURGE_BATCH_SIZE) break;
@@ -452,10 +335,9 @@ export class KbPageTrashService {
           )}]::int[])`,
         ),
       );
-      for (const id of ids)
-        await markStoreComplete(this.db, orgId, id, "page_rows").catch(
-          () => undefined,
-        );
+      await markStoresComplete(this.db, orgId, ids, "page_rows").catch(
+        () => undefined,
+      );
       await attemptPageAttachmentPurge(
         this.db,
         this.storage,
@@ -463,10 +345,9 @@ export class KbPageTrashService {
         purgeKeys,
         this.config.R2_KB_BUCKET_NAME,
       );
-      for (const id of ids)
-        await markStoreComplete(this.db, orgId, id, "blobs").catch(
-          () => undefined,
-        );
+      await markStoresComplete(this.db, orgId, ids, "blobs").catch(
+        () => undefined,
+      );
       purgedCount += ids.length;
     }
 

@@ -5,7 +5,6 @@ import {
   desc,
   eq,
   exists,
-  gt,
   inArray,
   isNull,
   lt,
@@ -41,6 +40,18 @@ const IMPACT_SQL = sql<number>`LEAST(100,
   LEAST(60, GREATEST(0, EXTRACT(EPOCH FROM (NOW() - ${kbPages.updatedAt})) / 86400 / 30)::integer * 20)
   + CASE ${kbPages.visibility} WHEN 'public' THEN 40 WHEN 'org' THEN 20 ELSE 0 END
 )`;
+
+export function impactKeysetAfterAnchor(orgId: string, afterId: number): SQL {
+  const anchorImpact = sql`(SELECT ${IMPACT_SQL} FROM ${kbPages} WHERE ${kbPages.orgId} = ${sql.param(
+    orgId,
+    kbPages.orgId,
+  )} AND ${kbPages.id} = ${sql.param(afterId, kbPages.id)})`;
+
+  return sql`(${IMPACT_SQL}, -${kbPages.id}) < (${anchorImpact}, -${sql.param(
+    afterId,
+    kbPages.id,
+  )}::int)`;
+}
 
 const PAGE_BASE_COLUMNS = {
   id: kbPages.id,
@@ -81,7 +92,7 @@ export class KbContentHealthService {
       conditions.push(eq(kbPages.spaceId, query.spaceId));
     }
     if (query.afterId !== undefined) {
-      conditions.push(gt(kbPages.id, query.afterId));
+      conditions.push(impactKeysetAfterAnchor(user.orgId, query.afterId));
     }
     if (query.ownerMembershipId !== undefined) {
       conditions.push(eq(kbPages.ownerMembershipId, query.ownerMembershipId));

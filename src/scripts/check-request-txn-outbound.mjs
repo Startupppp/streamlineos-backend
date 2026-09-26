@@ -25,7 +25,8 @@ const MODULES = join(SRC, "modules");
 const OUTBOUND =
   /(?<![.\w])fetch\s*\(|(?<![.\w])postSafeWebhook\s*\(|(?<![.\w])callProvider\s*\(|(?<![.\w])outboundRequest\s*\(|\baxios\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\bsendEmailOnceDirect\s*\(/;
 
-const AI_OUTBOUND = /\binvoke(?:Text|Structured|Chat)[A-Za-z]*\s*\(/;
+const AI_OUTBOUND =
+  /\binvoke(?:Text|Structured|Chat)[A-Za-z]*\s*\(|\bembed(?:Query|Batch)[A-Za-z]*\s*\(/;
 const AI_CEILING = 1;
 
 const MAX_HOPS = 8;
@@ -240,6 +241,16 @@ function selfTest() {
     failures.push("invokeStructured( not detected as a provider call");
   if (callsAnyProvider("const ok = invoker.check(value);"))
     failures.push("a name merely starting with invoke was read as a gateway call");
+  if (!callsAnyProvider("await this.gateway.embedQueryWithCredit(opts);"))
+    failures.push(
+      "embedQueryWithCredit( not detected as a provider call, the blind spot that hid every KB retrieval route",
+    );
+  if (!callsAnyProvider("await this.gateway.embedBatchWithCredit(opts);"))
+    failures.push("embedBatchWithCredit( not detected as a provider call");
+  if (callsOutbound("await this.gateway.embedQueryWithCredit(opts);"))
+    failures.push("an embedding call was counted against the frozen list instead of the ceiling");
+  if (callsAnyProvider("const ok = embedder.check(value);"))
+    failures.push("a name merely starting with embed was read as a gateway call");
 
   const classOptOut = findRoutes(
     `

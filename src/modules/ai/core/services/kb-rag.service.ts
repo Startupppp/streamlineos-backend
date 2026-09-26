@@ -1,5 +1,6 @@
-import { Inject, Injectable, Optional } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable, Optional } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
+import { effectiveRateLimit, rateLimitWindowSecs } from "../../../../common/ratelimit/rate-limit.service";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { streamText, type ToolSet } from "ai";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
@@ -25,6 +26,18 @@ import { AiConcurrencyLimitException, AiProviderUnavailableException } from "./a
 const KB_RAG_STREAM_FEATURE = "kb.public-ask";
 const KB_BREAKER_MESSAGE = "AI assistant is temporarily unavailable";
 const KB_NO_CONTEXT_ANSWER = "I couldn't find anything related to that in the knowledge base yet.";
+
+export const PUBLIC_KB_ASK_ORG_TIER = "ai:public-kb-ask:org";
+
+const PUBLIC_KB_ASK_ORG_WINDOW_SCRIPT =
+  "local hits = redis.call('INCR', KEYS[1]) " +
+  "local ttl = redis.call('TTL', KEYS[1]) " +
+  "if ttl < 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) ttl = tonumber(ARGV[1]) end " +
+  "return {hits, ttl}";
+
+export function publicKbAskOrgKey(orgId: string): string {
+  return `rl:${PUBLIC_KB_ASK_ORG_TIER}:${orgId}`;
+}
 
 export interface KbAnswer {
   answer: string;
@@ -73,6 +86,24 @@ export class KbRagService {
     return this.retrieval.isEmbeddingConfigured();
   }
 
+  private async chargeOrgAskBudget(orgId: string): Promise<void> {
+    if (!this.redis) return;
+    const windowSecs = rateLimitWindowSecs(PUBLIC_KB_ASK_ORG_TIER);
+    const [hits, ttlSecs] = await this.redis.eval<[string], [number, number]>(
+      PUBLIC_KB_ASK_ORG_WINDOW_SCRIPT,
+      [publicKbAskOrgKey(orgId)],
+      [String(windowSecs)],
+    );
+    if (hits <= effectiveRateLimit(PUBLIC_KB_ASK_ORG_TIER)) return;
+    throw new HttpException(
+      {
+        message: "This knowledge base is answering too many questions right now",
+        retryAfterSecs: ttlSecs > 0 ? ttlSecs : windowSecs,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
   private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
     const ctx = await this.retrieval.retrieveContext(opts.orgId, opts.question, opts.articleId);
     if (!ctx) {
@@ -109,7 +140,8 @@ export class KbRagService {
 
   async answerQuestion(opts: AnswerOptions): Promise<KbAnswer> {
     await this.breaker.assertClosed();
-    const hasArticles = await this.retrieval.hasPublishedPublicArticles(opts.orgId);
+    await this.chargeOrgAskBudget(opts.orgId);
+    const hasArticles = await this.retrieval.hasPublishedPublicArticles(opts.orgId, opts.articleId);
     if (!hasArticles) {
       this.retrieval.recordNoContext(opts.orgId, opts.question);
       return {
@@ -128,7 +160,8 @@ export class KbRagService {
       orgId: opts.orgId,
     });
     await this.breaker.assertClosed();
-    const hasArticles = await this.retrieval.hasPublishedPublicArticles(opts.orgId);
+    await this.chargeOrgAskBudget(opts.orgId);
+    const hasArticles = await this.retrieval.hasPublishedPublicArticles(opts.orgId, opts.articleId);
     if (!hasArticles) {
       this.retrieval.recordNoContext(opts.orgId, opts.question);
       call.finish("ok", { promptTokens: 0, completionTokens: 0, creditsMilli: 0 });

@@ -3,10 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { kbPages, kbPageLinks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -60,6 +62,7 @@ export class KbPageDuplicateService {
       const rootNextSort = (rootSibRow?.sortOrder ?? 0) + 100;
 
       let newRoot: PageRow | undefined;
+      const copies: PageRow[] = [];
 
       for (const level of this.levelsOf(subtreeMap, pageId)) {
         const childSortCounters = new Map<number, number>();
@@ -106,11 +109,33 @@ export class KbPageDuplicateService {
           );
           if (!row) throw new Error("Failed to duplicate page");
           idMapping.set(entry.originalId, row.id);
+          copies.push(row);
           if (entry.originalId === pageId) newRoot = row;
         }
       }
 
       if (!newRoot) throw new NotFoundException("Duplicated page not found");
+
+      await OutboxWriter.emitMany(
+        tx,
+        copies
+          .filter((copy) => Boolean(copy.contentText?.trim()))
+          .map((copy) => ({
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "kb_page",
+            aggregateId: String(copy.id),
+            aggregateVersion: Date.now(),
+            eventType: "kb.content.index",
+            payload: {
+              contentType: "page",
+              contentId: copy.id,
+              contentRevision: copy.contentRevision,
+              aclRevision: copy.aclRevision,
+            },
+            occurredAt: new Date(),
+          })),
+      );
 
       const linkIdsByOriginal = new Map<number, number[]>();
       const allLinkIds = new Set<number>();

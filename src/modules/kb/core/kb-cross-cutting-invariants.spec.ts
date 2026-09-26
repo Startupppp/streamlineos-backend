@@ -6,7 +6,7 @@ import { kbPageCollectionQuerySchema } from "./dto/kb.schemas";
 import { kbPageCollectionItemSchema, kbPageCollectionPageSchema } from "./dto/kb-core-response.schemas";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { KB_PAGE_COLLECTION_DEFAULT_LIMIT } from "./collection/knowledge-collection.types";
-import { kbAclCacheKey } from "./kb-acl-cache-key";
+import { kbAclCacheKey, type KbAclDimension } from "./kb-acl-cache-key";
 import { buildVisiblePageScope, buildGrantBranch } from "./authorization/knowledge-page-scope";
 import { CacheFiller } from "../../../common/cache/cache-fill";
 import { updatePageSchema } from "../wiki/dto/kb-pages.schemas";
@@ -211,23 +211,31 @@ describe("Box 3 — authorization fails closed; cache unavailability cannot reta
     expect(CacheFiller.AUTHZ_KEY_MARKERS).toContain("kb:acc-spaces:");
   });
 
+  const sessionDimension = (over: Partial<KbAclDimension>): KbAclDimension => ({
+    orgId: "org-1",
+    permissionsVersion: 3,
+    membershipId: 5,
+    principalKind: "human-session",
+    ceilingDigest: "unbounded",
+    ...over,
+  });
+
   it("kbAclCacheKey throws when permissionsVersion is 0 so a cache key can never be built without a resolved version", () => {
-    expect(() =>
-      kbAclCacheKey("user-1", { orgId: "org-1", permissionsVersion: 0, membershipId: 5 }),
-    ).toThrow();
+    expect(() => kbAclCacheKey("user-1", sessionDimension({ permissionsVersion: 0 }))).toThrow();
   });
 
   it("kbAclCacheKey throws when orgId is absent so a tenant-blind key cannot be minted", () => {
-    expect(() =>
-      kbAclCacheKey("user-1", { orgId: "", permissionsVersion: 3, membershipId: 5 }),
-    ).toThrow();
+    expect(() => kbAclCacheKey("user-1", sessionDimension({ orgId: "" }))).toThrow();
   });
 
   it("kbAclCacheKey includes orgId, permissionsVersion and membershipId so each of those dimensions creates a distinct cache entry", () => {
-    const k1 = kbAclCacheKey("user-1", { orgId: "org-A", permissionsVersion: 1, membershipId: 5 });
-    const k2 = kbAclCacheKey("user-1", { orgId: "org-B", permissionsVersion: 1, membershipId: 5 });
-    const k3 = kbAclCacheKey("user-1", { orgId: "org-A", permissionsVersion: 2, membershipId: 5 });
-    const k4 = kbAclCacheKey("user-1", { orgId: "org-A", permissionsVersion: 1, membershipId: 6 });
+    const k1 = kbAclCacheKey("user-1", sessionDimension({ orgId: "org-A", permissionsVersion: 1 }));
+    const k2 = kbAclCacheKey("user-1", sessionDimension({ orgId: "org-B", permissionsVersion: 1 }));
+    const k3 = kbAclCacheKey("user-1", sessionDimension({ orgId: "org-A", permissionsVersion: 2 }));
+    const k4 = kbAclCacheKey(
+      "user-1",
+      sessionDimension({ orgId: "org-A", permissionsVersion: 1, membershipId: 6 }),
+    );
 
     expect(k1).not.toBe(k2);
     expect(k1).not.toBe(k3);
@@ -235,8 +243,11 @@ describe("Box 3 — authorization fails closed; cache unavailability cannot reta
   });
 
   it("a permission bump (new permissionsVersion) produces a new cache key even without a namespace invalidation — fail-safe against a dropped invalidation", () => {
-    const before = kbAclCacheKey("u", { orgId: "o", permissionsVersion: 3, membershipId: 1 });
-    const after = kbAclCacheKey("u", { orgId: "o", permissionsVersion: 4, membershipId: 1 });
+    const before = kbAclCacheKey("u", sessionDimension({ orgId: "o", membershipId: 1 }));
+    const after = kbAclCacheKey(
+      "u",
+      sessionDimension({ orgId: "o", permissionsVersion: 4, membershipId: 1 }),
+    );
     expect(before).not.toBe(after);
   });
 });

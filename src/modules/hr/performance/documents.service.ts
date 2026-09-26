@@ -10,6 +10,7 @@ import { SQL, and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import {
   certifications,
   documents,
+  kbLinkedDocuments,
   organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -35,7 +36,19 @@ import {
   documentReadableScope,
   formatDateString,
   isCompanyLevelDocument,
+  publishBlockers,
+  type PublishBlocker,
+  type PublishabilityRow,
 } from "./documents-helpers";
+import {
+  SCANNED_DOCUMENT_FIELDS,
+  withMetadataPiiBlocker,
+  type ScannableDocumentMetadata,
+} from "./document-pii-scan";
+import {
+  notPublishableError,
+  publishPermissionRequired,
+} from "../../kb/linked-documents/document-audience-targets";
 
 // Refused rather than clamped: silently storing `false` would tell the caller their document is public when it is not.
 function assertPublicFlagEligible(
@@ -51,6 +64,44 @@ function assertPublicFlagEligible(
     },
     HttpStatus.UNPROCESSABLE_ENTITY,
   );
+}
+
+type JudgedDocument = PublishabilityRow & Required<ScannableDocumentMetadata>;
+
+function touchesScannedField(input: UpdateDocumentInput): boolean {
+  return SCANNED_DOCUMENT_FIELDS.some((field) => input[field] !== undefined);
+}
+
+function applyUpdateToJudgedDocument(
+  current: JudgedDocument,
+  input: UpdateDocumentInput,
+): JudgedDocument {
+  return {
+    ...current,
+    name: input.name !== undefined ? input.name : current.name,
+    description:
+      input.description !== undefined ? input.description : current.description,
+    category: input.category !== undefined ? input.category : current.category,
+    tags: input.tags !== undefined ? input.tags : current.tags,
+    type: input.type !== undefined ? input.type : current.type,
+    userId: input.userId !== undefined ? input.userId : current.userId,
+  };
+}
+
+function judgeDocument(row: JudgedDocument): PublishBlocker[] {
+  return withMetadataPiiBlocker(publishBlockers(row), row);
+}
+
+function blockerIdentity(blocker: PublishBlocker): string {
+  return `${blocker.code}\u0000${blocker.message}`;
+}
+
+function newlyFailingBlockers(
+  before: readonly PublishBlocker[],
+  after: readonly PublishBlocker[],
+): PublishBlocker[] {
+  const alreadyTrue = new Set(before.map(blockerIdentity));
+  return after.filter((blocker) => !alreadyTrue.has(blockerIdentity(blocker)));
 }
 
 @Injectable()
@@ -281,18 +332,77 @@ export class DocumentsService {
     return document;
   }
 
+  private async hasLiveKnowledgeBaseLink(
+    orgId: string,
+    documentId: number,
+  ): Promise<boolean> {
+    const [link] = await this.db
+      .select({ liveLinkId: kbLinkedDocuments.id })
+      .from(kbLinkedDocuments)
+      .where(
+        and(
+          eq(kbLinkedDocuments.orgId, orgId),
+          eq(kbLinkedDocuments.documentId, documentId),
+          eq(kbLinkedDocuments.status, "active"),
+        ),
+      )
+      .limit(1);
+    return link?.liveLinkId != null;
+  }
+
+  private async assertSearchableMetadataStillPassesPublishJudgement(
+    orgId: string,
+    documentId: number,
+    doc: JudgedDocument,
+    input: UpdateDocumentInput,
+    canPublish: boolean,
+  ): Promise<void> {
+    if (!touchesScannedField(input)) return;
+    if (!(await this.hasLiveKnowledgeBaseLink(orgId, documentId))) return;
+    if (!canPublish) throw publishPermissionRequired();
+    const blockers = newlyFailingBlockers(
+      judgeDocument(doc),
+      judgeDocument(applyUpdateToJudgedDocument(doc, input)),
+    );
+    if (blockers.length > 0) throw notPublishableError(blockers);
+  }
+
   async updateDocument(
     read: ScopedRead,
     documentId: number,
     input: UpdateDocumentInput,
     membershipId?: number | null,
+    canPublish = false,
   ) {
     const orgId = read.orgId;
     const doc = await this.db.query.documents.findFirst({
       where: this.scopedWhere(read, membershipId, [eq(documents.id, documentId)]) ?? sql`false`,
-      columns: { id: true, userId: true, name: true, type: true, isPublic: true, uploadedBy: true },
+      columns: {
+        id: true,
+        orgId: true,
+        userId: true,
+        name: true,
+        description: true,
+        category: true,
+        tags: true,
+        type: true,
+        classification: true,
+        fileUrl: true,
+        isActive: true,
+        isPublic: true,
+        metadata: true,
+        uploadedBy: true,
+      },
     });
     if (!doc) throw new NotFoundException("Document not found.");
+
+    await this.assertSearchableMetadataStillPassesPublishJudgement(
+      orgId,
+      documentId,
+      doc,
+      input,
+      canPublish,
+    );
 
     // Only a request that touches the flag, the type or the owner is judged, so a legacy row that is
     // already public-and-personal can still have its name or expiry edited; the read path stops

@@ -43,7 +43,7 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
-import { fireKbMentionNotifications } from "./kb-page-mention-notifications";
+import { deferKbMentionNotifications } from "./kb-page-mention-notifications";
 import { hashPublicToken } from "./kb-public-token";
 import {
   publicTokenColumnsFor,
@@ -52,12 +52,56 @@ import {
 import { resolveProjectAccess } from "../../build/core/project-access";
 
 type PageRow = KbPageRow;
+type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export interface KbPageSearchHit {
   id: number;
   title: string;
   icon: string | null;
   snippet: string;
+}
+
+function isDocumentNode(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function documentPlainText(content: KbPageContent | null): string {
+  const parts: string[] = [];
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (!isDocumentNode(node)) return;
+    const text = node.text;
+    if (typeof text === "string" && text.length > 0) parts.push(text);
+    visit(node.content);
+    visit(node.children);
+  };
+  visit(content);
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function emitPageIndexEvent(
+  tx: KbTransaction,
+  orgId: string,
+  page: { id: number; contentRevision: number; aclRevision: number },
+): Promise<void> {
+  return OutboxWriter.emit(tx, {
+    eventId: randomUUID(),
+    organizationId: orgId,
+    aggregateType: "kb_page",
+    aggregateId: String(page.id),
+    aggregateVersion: Date.now(),
+    eventType: "kb.content.index",
+    payload: {
+      contentType: "page",
+      contentId: page.id,
+      contentRevision: page.contentRevision,
+      aclRevision: page.aclRevision,
+    },
+    occurredAt: new Date(),
+  });
 }
 
 @Injectable()
@@ -152,40 +196,49 @@ export class KbPagesService {
       .limit(1);
     const maxSort = siblings[0]?.sortOrder ?? 0;
 
-    const [page] = await this.db
-      .insert(kbPages)
-      .values({
-        orgId,
-        spaceId: input.spaceId ?? null,
-        parentPageId: input.parentPageId ?? null,
-        title: input.title ?? "",
-        content: templateContent ?? null,
-        sortOrder: maxSort + 100,
-        createdById: user.userId,
-        createdByMembershipId: this.membershipId(user),
-        lastEditedById: user.userId,
-        lastEditedByMembershipId: this.membershipId(user),
-        projectId: input.projectId ?? null,
-      })
-      .returning(KB_PAGE_COLUMNS);
-    if (!page) throw new Error("Failed to create page");
+    const templateText = documentPlainText(templateContent);
+    const contentText =
+      templateText.length > 0 ? templateText : (input.title ?? "");
 
-    if (usedTemplateId !== null) {
-      await this.db
-        .update(kbPageTemplates)
-        .set({
-          useCount: sql`${kbPageTemplates.useCount} + 1`,
-          lastUsedAt: new Date(),
+    return this.db.transaction(async (tx) => {
+      const [page] = await tx
+        .insert(kbPages)
+        .values({
+          orgId,
+          spaceId: input.spaceId ?? null,
+          parentPageId: input.parentPageId ?? null,
+          title: input.title ?? "",
+          content: templateContent ?? null,
+          contentText,
+          sortOrder: maxSort + 100,
+          createdById: user.userId,
+          createdByMembershipId: this.membershipId(user),
+          lastEditedById: user.userId,
+          lastEditedByMembershipId: this.membershipId(user),
+          projectId: input.projectId ?? null,
         })
-        .where(
-          and(
-            eq(kbPageTemplates.id, usedTemplateId),
-            eq(kbPageTemplates.orgId, orgId),
-          ),
-        );
-    }
+        .returning(KB_PAGE_COLUMNS);
+      if (!page) throw new Error("Failed to create page");
 
-    return page;
+      if (usedTemplateId !== null) {
+        await tx
+          .update(kbPageTemplates)
+          .set({
+            useCount: sql`${kbPageTemplates.useCount} + 1`,
+            lastUsedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(kbPageTemplates.id, usedTemplateId),
+              eq(kbPageTemplates.orgId, orgId),
+            ),
+          );
+      }
+
+      await emitPageIndexEvent(tx, orgId, page);
+
+      return page;
+    });
   }
 
   async get(
@@ -265,9 +318,7 @@ export class KbPagesService {
     }
 
     if (input.ownerUserId !== undefined && !canManage) {
-      throw new ForbiddenException(
-        "Only a manager can change the page owner",
-      );
+      throw new ForbiddenException("Only a manager can change the page owner");
     }
 
     const values: Partial<typeof kbPages.$inferInsert> = {
@@ -332,7 +383,12 @@ export class KbPagesService {
           ...(contentChanged
             ? { contentRevision: sql`content_revision + 1` }
             : {}),
-          ...(aclChanged ? { aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() } : {}),
+          ...(aclChanged
+            ? {
+                aclRevision: sql`acl_revision + 1`,
+                aclRevisionChangedAt: new Date(),
+              }
+            : {}),
         })
         .where(
           and(
@@ -368,35 +424,17 @@ export class KbPagesService {
         const newMentions = extractMentionUserIds(input.content);
         const addedMentions = newMentions.filter((id) => !oldMentions.has(id));
         if (addedMentions.length > 0) {
-          fireKbMentionNotifications(this.notifications, this.logger, {
+          await deferKbMentionNotifications(this.notifications, this.logger, {
             orgId,
             userIds: addedMentions,
             pageId,
             pageTitle: updated.title,
             actorId: user.userId,
-          }).catch((err) => {
-            this.logger.error(`Failed to send mention notifications: ${err}`);
           });
         }
       }
 
-      if (needsReindex) {
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "kb_page",
-          aggregateId: String(pageId),
-          aggregateVersion: Date.now(),
-          eventType: "kb.content.index",
-          payload: {
-            contentType: "page",
-            contentId: pageId,
-            contentRevision: updated.contentRevision,
-            aclRevision: updated.aclRevision,
-          },
-          occurredAt: new Date(),
-        });
-      }
+      if (needsReindex) await emitPageIndexEvent(tx, orgId, updated);
 
       return updated;
     });
@@ -495,7 +533,10 @@ export class KbPagesService {
       throw new NotFoundException("Page not found");
     }
 
-    const { bumpRevision, ...tokenFields } = publicTokenColumnsFor(visibility, page.publicToken);
+    const { bumpRevision, ...tokenFields } = publicTokenColumnsFor(
+      visibility,
+      page.publicToken,
+    );
 
     return this.db.transaction(async (tx) => {
       const [updated] = await tx
@@ -505,27 +546,15 @@ export class KbPagesService {
           ...tokenFields,
           aclRevision: sql`acl_revision + 1`,
           aclRevisionChangedAt: new Date(),
-          ...(bumpRevision ? { publicTokenRevision: sql`public_token_revision + 1` } : {}),
+          ...(bumpRevision
+            ? { publicTokenRevision: sql`public_token_revision + 1` }
+            : {}),
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: {
-          contentType: "page",
-          contentId: pageId,
-          contentRevision: updated.contentRevision,
-          aclRevision: updated.aclRevision,
-        },
-        occurredAt: new Date(),
-      });
+      await emitPageIndexEvent(tx, orgId, updated);
 
       return updated;
     });
@@ -562,7 +591,10 @@ export class KbPagesService {
     return page;
   }
 
-  async validatePublicAttachment(token: string, fileKey: string): Promise<string> {
+  async validatePublicAttachment(
+    token: string,
+    fileKey: string,
+  ): Promise<string> {
     const tokenHash = hashPublicToken(token);
     const page = await withPublicToken(this.db, tokenHash, (tx) =>
       tx.query.kbPages.findFirst({
@@ -576,16 +608,19 @@ export class KbPagesService {
       }),
     );
     if (!page) throw new NotFoundException("Page not found");
-    const attachment = await runInNewTenantTransaction(this.db, page.orgId, (tx) =>
-      tx.query.kbPageAttachments.findFirst({
-        where: and(
-          eq(kbPageAttachments.orgId, page.orgId),
-          eq(kbPageAttachments.pageId, page.id),
-          eq(kbPageAttachments.fileKey, fileKey),
-          isNull(kbPageAttachments.deletedAt),
-        ),
-        columns: { fileKey: true },
-      }),
+    const attachment = await runInNewTenantTransaction(
+      this.db,
+      page.orgId,
+      (tx) =>
+        tx.query.kbPageAttachments.findFirst({
+          where: and(
+            eq(kbPageAttachments.orgId, page.orgId),
+            eq(kbPageAttachments.pageId, page.id),
+            eq(kbPageAttachments.fileKey, fileKey),
+            isNull(kbPageAttachments.deletedAt),
+          ),
+          columns: { fileKey: true },
+        }),
     );
     if (!attachment) throw new NotFoundException("Attachment not found");
     return attachment.fileKey;

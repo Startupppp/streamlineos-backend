@@ -4,7 +4,8 @@ import { REDIS } from "../../../common/cache/cache.service";
 import { setSpanExporter, resetSpanExporter, type FinishedSpan } from "../../../common/observability";
 import { KB_ASK_SPAN_NAME } from "../core/telemetry/kb-ask-metrics";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { KbAskService, KB_ASK_ORG_LIMIT } from "./kb-ask.service";
+import { KbAskService, KB_ASK_ORG_TIER } from "./kb-ask.service";
+import { effectiveRateLimit } from "../../../common/ratelimit/rate-limit.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
@@ -480,9 +481,9 @@ describe("KbAskService", () => {
 
   it("streamAsk throws 429 when the org has exhausted its per-minute cap so the streaming path enforces the same per-org cost guard as ask", async () => {
     const saturatedRedis = {
-      incr: jest.fn().mockResolvedValue(KB_ASK_ORG_LIMIT + 1),
-      expire: jest.fn().mockResolvedValue(undefined),
-      ttl: jest.fn().mockResolvedValue(45),
+      eval: jest
+        .fn()
+        .mockResolvedValue([effectiveRateLimit(KB_ASK_ORG_TIER) + 1, 45]),
     };
     const module2: TestingModule = await Test.createTestingModule({
       providers: [
@@ -534,9 +535,9 @@ describe("KbAskService", () => {
 
   it("throws 429 when the org has exhausted its per-minute Ask cap", async () => {
     const saturatedRedis = {
-      incr: jest.fn().mockResolvedValue(KB_ASK_ORG_LIMIT + 1),
-      expire: jest.fn().mockResolvedValue(undefined),
-      ttl: jest.fn().mockResolvedValue(45),
+      eval: jest
+        .fn()
+        .mockResolvedValue([effectiveRateLimit(KB_ASK_ORG_TIER) + 1, 45]),
     };
     const module2: TestingModule = await Test.createTestingModule({
       providers: [

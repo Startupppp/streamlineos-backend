@@ -4,6 +4,10 @@ import { sql } from "drizzle-orm";
 import type { Redis } from "@upstash/redis";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { REDIS } from "../../../common/cache/cache.service";
+import {
+  effectiveRateLimit,
+  rateLimitWindowSecs,
+} from "../../../common/ratelimit/rate-limit.service";
 import { KbAskMetrics, KB_ASK_QUEUE_LANE } from "../core/telemetry/kb-ask-metrics";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
@@ -33,8 +37,17 @@ import {
 import { kbAiInteractions, type KbAiInteractionState, type KbAiSourceRecord } from "../../../db/schema";
 import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 
-export const KB_ASK_ORG_LIMIT = 200;
-const KB_ASK_ORG_WINDOW_SECS = 60;
+export const KB_ASK_ORG_TIER = "kb:ask:org";
+
+const KB_ASK_ORG_WINDOW_SCRIPT =
+  "local hits = redis.call('INCR', KEYS[1]) " +
+  "local ttl = redis.call('TTL', KEYS[1]) " +
+  "if ttl < 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) ttl = tonumber(ARGV[1]) end " +
+  "return {hits, ttl}";
+
+export function kbAskOrgKey(orgId: string): string {
+  return `rl:kb:ask:org:${orgId}`;
+}
 
 export type AskCitation =
   | {
@@ -123,6 +136,25 @@ export class KbAskService {
     @Inject(REDIS) private readonly redis: Redis | null,
   ) {}
 
+  private async chargeOrgAskBudget(orgId: string): Promise<void> {
+    const redis = this.redis;
+    if (!redis) return;
+    const windowSecs = rateLimitWindowSecs(KB_ASK_ORG_TIER);
+    const [hits, ttlSecs] = await redis.eval<[string], [number, number]>(
+      KB_ASK_ORG_WINDOW_SCRIPT,
+      [kbAskOrgKey(orgId)],
+      [String(windowSecs)],
+    );
+    if (hits <= effectiveRateLimit(KB_ASK_ORG_TIER)) return;
+    throw new HttpException(
+      {
+        message: "Org Ask rate limit exceeded",
+        retryAfterSecs: ttlSecs > 0 ? ttlSecs : windowSecs,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
   private async gatherContext(
     user: CurrentUserContext,
     input: AskInput,
@@ -139,16 +171,26 @@ export class KbAskService {
         degraded: boolean;
       }
   > {
+    const { linked, hasContent } = await runInTenantTransaction(
+      this.db,
+      async () => ({
+        linked:
+          options.companyDocuments === true
+            ? await this.linkedDocuments.retrieve(user, input.question)
+            : [],
+        hasContent: await this.orgHasIndexedContent(user.orgId),
+      }),
+      { orgId: user.orgId },
+    );
+    if (!hasContent && linked.length === 0) return { kind: "no-context" as const };
+
+    const embedding = hasContent
+      ? await this.search.resolveQueryEmbedding(input.question, user.orgId)
+      : undefined;
+
     return runInTenantTransaction(
       this.db,
       async () => {
-        const linked =
-          options.companyDocuments === true
-            ? await this.linkedDocuments.retrieve(user, input.question)
-            : [];
-        const hasContent = await this.orgHasIndexedContent(user.orgId);
-        if (!hasContent && linked.length === 0) return { kind: "no-context" as const };
-
         const retrievedTop = hasContent
           ? await this.search.retrieveTopArticles(
               user,
@@ -156,10 +198,17 @@ export class KbAskService {
               KB_ASK_MAX_CONTEXT_DOCUMENTS,
               input.spaceId,
               input.verifiedOnly,
+              embedding,
             )
           : [];
         const retrievedSources = hasContent
-          ? await this.search.retrieveTopSources(user, input.question, 4, input.sourceIds)
+          ? await this.search.retrieveTopSources(
+              user,
+              input.question,
+              4,
+              input.sourceIds,
+              embedding,
+            )
           : [];
         if (
           retrievedTop.length === 0 &&
@@ -192,6 +241,7 @@ export class KbAskService {
               input.question,
               articleIds,
               pageIds,
+              embedding,
             )
           : [];
 
@@ -277,19 +327,7 @@ export class KbAskService {
     aiUsage?: AiUsageMeta;
   }> {
     const correlationId = randomUUID();
-    if (this.redis) {
-      const orgKey = `rl:kb:ask:org:${user.orgId}`;
-      const count = await this.redis.incr(orgKey);
-      const ttlSecs = await this.redis.ttl(orgKey);
-      if (ttlSecs < 0) await this.redis.expire(orgKey, KB_ASK_ORG_WINDOW_SECS);
-      if (count > KB_ASK_ORG_LIMIT) {
-        const retryAfter = ttlSecs > 0 ? ttlSecs : KB_ASK_ORG_WINDOW_SECS;
-        throw new HttpException(
-          { message: "Org Ask rate limit exceeded", retryAfterSecs: retryAfter },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-      }
-    }
+    await this.chargeOrgAskBudget(user.orgId);
     const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
       const cacheOutcome = await this.search.aclCacheOutcome(user);
@@ -457,19 +495,7 @@ export class KbAskService {
       }
   > {
     const correlationId = randomUUID();
-    if (this.redis) {
-      const orgKey = `rl:kb:ask:org:${user.orgId}`;
-      const count = await this.redis.incr(orgKey);
-      const ttlSecs = await this.redis.ttl(orgKey);
-      if (ttlSecs < 0) await this.redis.expire(orgKey, KB_ASK_ORG_WINDOW_SECS);
-      if (count > KB_ASK_ORG_LIMIT) {
-        const retryAfter = ttlSecs > 0 ? ttlSecs : KB_ASK_ORG_WINDOW_SECS;
-        throw new HttpException(
-          { message: "Org Ask rate limit exceeded", retryAfterSecs: retryAfter },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-      }
-    }
+    await this.chargeOrgAskBudget(user.orgId);
     const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
       const cacheOutcome = await this.search.aclCacheOutcome(user);

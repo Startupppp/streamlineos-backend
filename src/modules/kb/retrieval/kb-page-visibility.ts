@@ -1,6 +1,5 @@
 import { eq, sql } from "drizzle-orm";
 import type { AnyColumn, SQL } from "drizzle-orm";
-import { kbPages } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 
@@ -35,21 +34,4 @@ export function visibleTo(
     ${unscoped}
     OR (${columns.projectId} IS NOT NULL AND ${columns.projectId} = ANY(ARRAY[${projectIdList}]::int[]))
   ))`;
-}
-
-export function pageVisibleTo(
-  user: CurrentUserContext,
-  accessibleProjectIds: number[],
-): SQL<unknown> {
-  return visibleTo(
-    {
-      orgId: kbPages.orgId,
-      visibility: kbPages.visibility,
-      projectId: kbPages.projectId,
-      createdById: kbPages.createdById,
-      createdByMembershipId: kbPages.createdByMembershipId,
-    },
-    user,
-    accessibleProjectIds,
-  );
 }

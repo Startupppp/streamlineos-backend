@@ -75,6 +75,9 @@ export const CACHE_KEYS = {
   searchResults: (orgId: string, userId: string, hash: string) =>
     `search:${orgId}:${userId}:${hash}`,
 
+  kbQueryEmbedding: (model: string, queryHash: string) =>
+    `kb:qembed:${model}:${queryHash}`,
+
   leadBoard: (orgId: string, hash: string) => `leads:board:${orgId}:${hash}`,
   leadStats: (orgId: string, hash: string) => `leads:stats:${orgId}:${hash}`,
 
@@ -127,15 +130,6 @@ export const CACHE_KEYS = {
     namespace(`inv:cret:list:${orgId}`),
   invSoNamespace: (orgId: string) => namespace(`inv:so:list:${orgId}`),
   invSoDetail: (orgId: string, id: number) => `inv:so:detail:${orgId}:${id}`,
-  // The four stock-derived reports are namespaces, not exact keys, because every
-  // one of them reads under a discriminator the writer does not know: the
-  // caller's warehouse scope, and for the paged pair a page and a limit as well.
-  // They were exact keys until 2026-09-12, and `invalidate()` is `redis.del` of
-  // one key with no prefix form, so every `invalidate(invDashboard(orgId))` after
-  // a stock movement deleted `inv:dashboard:<org>` while the reader had stored
-  // `inv:dashboard:<org>:<scopeKey>` — the dashboard, the reorder report and the
-  // stock summary all served pre-movement numbers until their TTL expired.
-  // A generation bump is scope-blind by construction, which is the point.
   invDashboardNamespace: (orgId: string) => namespace(`inv:dashboard:${orgId}`),
   invReorderNamespace: (orgId: string) => namespace(`inv:reorder:${orgId}`),
   invStockSummaryReportNamespace: (orgId: string) =>

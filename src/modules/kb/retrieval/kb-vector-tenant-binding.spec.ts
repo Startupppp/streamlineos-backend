@@ -2,7 +2,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
-import { pageVisibleTo } from "./kb-page-visibility";
+import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
+import type { KbActorStanding } from "../core/authorization/knowledge-authorization.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -22,6 +23,21 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     sessionId: "sess-1",
     tokenScopes: null,
     principal: humanSessionPrincipal(1, false),
+    ...overrides,
+  };
+}
+
+function makeStanding(overrides: Partial<KbActorStanding> = {}): KbActorStanding {
+  return {
+    orgId: ORG,
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: ["MEMBER"],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: [],
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
     ...overrides,
   };
 }
@@ -118,11 +134,40 @@ describe("the shared visibility predicate carries the tenant for every reader", 
     ).toEqual([ORG]);
   });
 
-  it("pageVisibleTo does the same on kb_pages, on both the scoped and the widened branch", () => {
-    expect(boundOrgIds(pageVisibleTo(makeUser(), []), "kb_pages")).toEqual([ORG]);
-    expect(boundOrgIds(pageVisibleTo(makeUser(), [42, 43]), "kb_pages")).toEqual([ORG]);
-    expect(boundOrgIds(pageVisibleTo(makeUser({ isOrgOwner: true }), []), "kb_pages")).toEqual([
-      ORG,
-    ]);
+  it("the canonical page scope does the same on kb_pages, on the narrow, the project-widened and the admin branch", () => {
+    expect(boundOrgIds(buildVisiblePageScope(makeStanding(), "view").predicate, "kb_pages")).toEqual(
+      [ORG],
+    );
+    expect(
+      boundOrgIds(
+        buildVisiblePageScope(makeStanding({ accessibleProjectIds: [42, 43] }), "view").predicate,
+        "kb_pages",
+      ),
+    ).toEqual([ORG]);
+    expect(
+      boundOrgIds(
+        buildVisiblePageScope(makeStanding({ isOrgOwner: true }), "view").predicate,
+        "kb_pages",
+      ),
+    ).toEqual([ORG]);
+  });
+
+  it("every separately addressable arm of the canonical page scope carries the tenant, so a union of arms cannot widen past it", () => {
+    const scope = buildVisiblePageScope(
+      makeStanding({ accessibleSpaceIds: [3], accessibleProjectIds: [42] }),
+      "view",
+    );
+
+    expect(boundOrgIds(scope.indexedBranch, "kb_pages")).toEqual([ORG]);
+    expect(scope.grantBranch).not.toBeNull();
+    expect(boundOrgIds(scope.grantBranch as SQL, "kb_pages")).toEqual([ORG]);
+    expect(boundOrgIds(scope.grantBranch as SQL, "kb_page_grants")).toEqual([ORG]);
+  });
+
+  it("the bound tenant follows the standing, so the page scope is not a constant that happens to match", () => {
+    const other = buildVisiblePageScope(makeStanding({ orgId: OTHER_ORG }), "view");
+
+    expect(boundOrgIds(other.predicate, "kb_pages")).toEqual([OTHER_ORG]);
+    expect(boundOrgIds(other.predicate, "kb_pages")).not.toContain(ORG);
   });
 });

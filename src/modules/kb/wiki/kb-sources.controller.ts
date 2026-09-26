@@ -45,6 +45,7 @@ import {
   kbSourceSchema,
   kbSourceSuccessSchema,
 } from "./dto/kb-space-response.schemas";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -96,6 +97,7 @@ export class KbSourcesController {
   }
 
   @Post("sources")
+  @NoTenantTransaction()
   @MultipartAction({ file: "file", fields: { spaceId: "string" } })
   @Idempotent("kb.source.create")
   @RequirePermission("kb:pages:create")

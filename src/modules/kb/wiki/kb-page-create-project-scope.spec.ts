@@ -45,7 +45,7 @@ describe("KbPagesService.create — project scoping", () => {
       }),
     };
 
-    return {
+    const db: Record<string, unknown> = {
       query: {
         kbPageTemplates: { findFirst: jest.fn().mockResolvedValue(undefined) },
         kbPages: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -53,7 +53,9 @@ describe("KbPagesService.create — project scoping", () => {
       },
       select: jest.fn().mockReturnValue(siblingSelectChain),
       insert,
-    } as unknown as Db;
+    };
+    db["transaction"] = jest.fn(async (fn: (tx: unknown) => unknown) => fn(db));
+    return db as unknown as Db;
   }
 
   beforeEach(() => {

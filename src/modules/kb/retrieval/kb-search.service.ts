@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import {
   and,
   asc,
@@ -20,6 +21,9 @@ import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
+import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
 import type { ScopedRead } from "../../access/scoped-read";
@@ -77,6 +81,14 @@ export interface RetrievedSourceDocument {
 
 export type DegradableContextPassage = KbContextPassage & { degraded?: true };
 
+export interface QueryEmbedding {
+  readonly vectorLiteral: string | null;
+}
+
+export function normalizeEmbeddableQuery(text: string): string {
+  return text.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 @Injectable()
 export class KbSearchService {
   private readonly logger = new Logger(KbSearchService.name);
@@ -89,6 +101,9 @@ export class KbSearchService {
     private readonly candidates: KbCandidateService,
     private readonly scopes: AccessService,
     private readonly auth: KnowledgeAuthorizationService,
+    @Optional()
+    @Inject(CacheService)
+    private readonly cache: CacheService | null = null,
   ) {}
 
   async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL> {
@@ -96,7 +111,49 @@ export class KbSearchService {
     return articleOwnerScopeFilter(read, user);
   }
 
+  private queryEmbeddingCacheKey(text: string): string {
+    return CACHE_KEYS.kbQueryEmbedding(
+      EMBEDDING_MODEL,
+      createHash("sha256").update(normalizeEmbeddableQuery(text)).digest("hex"),
+    );
+  }
+
   private async embedOrDegrade(
+    text: string,
+    orgId: string,
+  ): Promise<string | null> {
+    const cache = this.cache;
+    if (cache === null) return this.embedCharged(text, orgId);
+    const key = this.queryEmbeddingCacheKey(text);
+    const hit = await cache.get<string>(key);
+    if (hit !== null) return hit;
+    const vectorLiteral = await this.embedCharged(text, orgId);
+    if (vectorLiteral !== null)
+      await cache.set(key, vectorLiteral, CACHE_TTL.HOUR);
+    return vectorLiteral;
+  }
+
+  async resolveQueryEmbedding(
+    query: string,
+    orgId: string,
+  ): Promise<QueryEmbedding> {
+    const q = query.trim();
+    if (q.length === 0 || !this.aiGateway.isEmbeddingConfigured())
+      return { vectorLiteral: null };
+    return { vectorLiteral: await this.embedOrDegrade(q, orgId) };
+  }
+
+  private async vectorFor(
+    query: string,
+    orgId: string,
+    embedding: QueryEmbedding | undefined,
+  ): Promise<string | null> {
+    if (embedding !== undefined) return embedding.vectorLiteral;
+    if (!this.aiGateway.isEmbeddingConfigured()) return null;
+    return this.embedOrDegrade(query, orgId);
+  }
+
+  private async embedCharged(
     text: string,
     orgId: string,
   ): Promise<string | null> {
@@ -298,6 +355,7 @@ export class KbSearchService {
     limit: number,
     spaceId?: number,
     verifiedOnly?: boolean,
+    embedding?: QueryEmbedding,
   ): Promise<RetrievedSource[]> {
     const ids = await this.access.getAccessibleSpaceIds(user);
     const q = query.trim();
@@ -314,7 +372,7 @@ export class KbSearchService {
       this.aiGateway.isEmbeddingConfigured() &&
       (await this.candidates.hasEmbeddedChunks(user.orgId))
     ) {
-      vectorLiteral = await this.embedOrDegrade(q, user.orgId);
+      vectorLiteral = await this.vectorFor(q, user.orgId, embedding);
     }
 
     const projectIds = await this.access.getAccessibleProjectIds(user);
@@ -473,12 +531,11 @@ export class KbSearchService {
     query: string,
     articleIds: number[],
     pageIds: number[] = [],
+    embedding?: QueryEmbedding,
   ): Promise<DegradableContextPassage[]> {
     if (articleIds.length === 0 && pageIds.length === 0) return [];
     try {
-      const vector = this.aiGateway.isEmbeddingConfigured()
-        ? await this.embedOrDegrade(query, user.orgId)
-        : null;
+      const vector = await this.vectorFor(query, user.orgId, embedding);
       const ordering: SQL[] =
         vector === null
           ? [
@@ -518,6 +575,7 @@ export class KbSearchService {
           and(
             eq(kbPages.id, kbArticleChunks.pageId),
             eq(kbPages.orgId, kbArticleChunks.orgId),
+            eq(kbArticleChunks.aclRevision, kbPages.aclRevision),
           ),
         )
         .where(and(eq(kbArticleChunks.orgId, user.orgId), or(...scope)))
@@ -554,15 +612,14 @@ export class KbSearchService {
     query: string,
     limit: number,
     sourceIds?: number[],
+    embedding?: QueryEmbedding,
   ): Promise<RetrievedSourceDocument[]> {
     const q = query.trim();
     if (!q) return [];
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
     try {
       const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
-      const vector = this.aiGateway.isEmbeddingConfigured()
-        ? await this.embedOrDegrade(q, user.orgId)
-        : null;
+      const vector = await this.vectorFor(q, user.orgId, embedding);
 
       const cap = Math.min(limit * 4, PAGE_SIZE_CAP);
       const chunkIds =

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, min, sql } from "drizzle-orm";
+import { and, eq, inArray, min, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   kbPagePurgeLedger,
@@ -20,7 +20,7 @@ import { kbPageGrants } from "../../../db/schema/kb/page-grants";
 import { kbArticleChunks } from "../../../db/schema/support/kb-chunks";
 import { kbEvents } from "../../../db/schema/kb/events";
 import { notifications } from "../../../db/schema/common/notifications";
-import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 export { KB_PURGE_STORES };
 export type { KbPurgeStore };
@@ -39,37 +39,46 @@ export async function openMultiStoreLedger(
       status: "pending" as const,
     })),
   );
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    for (let i = 0; i < rows.length; i += 100) {
-      await tx
-        .insert(kbPagePurgeLedger)
-        .values(rows.slice(i, i + 100))
-        .onConflictDoNothing({
-          target: [
-            kbPagePurgeLedger.orgId,
-            kbPagePurgeLedger.pageId,
-            kbPagePurgeLedger.store,
-          ],
-        });
-    }
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      for (let i = 0; i < rows.length; i += 100) {
+        await tx
+          .insert(kbPagePurgeLedger)
+          .values(rows.slice(i, i + 100))
+          .onConflictDoNothing({
+            target: [
+              kbPagePurgeLedger.orgId,
+              kbPagePurgeLedger.pageId,
+              kbPagePurgeLedger.store,
+            ],
+          });
+      }
+    },
+    { orgId },
+  );
 }
 
-export async function isStoreComplete(
+export async function incompleteStorePages(
   db: Db,
   orgId: string,
-  pageId: number,
+  pageIds: number[],
   store: KbPurgeStore,
-): Promise<boolean> {
-  const row = await db.query.kbPagePurgeLedger.findFirst({
-    where: and(
-      eq(kbPagePurgeLedger.orgId, orgId),
-      eq(kbPagePurgeLedger.pageId, pageId),
-      eq(kbPagePurgeLedger.store, store),
-    ),
-    columns: { status: true },
-  });
-  return row?.status === "completed";
+): Promise<number[]> {
+  if (pageIds.length === 0) return [];
+  const completed = await db
+    .select({ pageId: kbPagePurgeLedger.pageId })
+    .from(kbPagePurgeLedger)
+    .where(
+      and(
+        eq(kbPagePurgeLedger.orgId, orgId),
+        inArray(kbPagePurgeLedger.pageId, pageIds),
+        eq(kbPagePurgeLedger.store, store),
+        eq(kbPagePurgeLedger.status, "completed"),
+      ),
+    );
+  const done = new Set(completed.map((row) => row.pageId));
+  return pageIds.filter((pageId) => !done.has(pageId));
 }
 
 export async function areAllStoresComplete(
@@ -89,53 +98,63 @@ export async function areAllStoresComplete(
   return rows.length > 0 && rows.every((r) => r.status === "completed");
 }
 
-export async function markStoreComplete(
+export async function markStoresComplete(
   db: Db,
   orgId: string,
-  pageId: number,
+  pageIds: number[],
   store: KbPurgeStore,
 ): Promise<void> {
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .update(kbPagePurgeLedger)
-      .set({
-        status: "completed",
-        completedAt: new Date(),
-        attemptCount: sql`${kbPagePurgeLedger.attemptCount} + 1`,
-      })
-      .where(
-        and(
-          eq(kbPagePurgeLedger.orgId, orgId),
-          eq(kbPagePurgeLedger.pageId, pageId),
-          eq(kbPagePurgeLedger.store, store),
-        ),
-      );
-  });
+  if (pageIds.length === 0) return;
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .update(kbPagePurgeLedger)
+        .set({
+          status: "completed",
+          completedAt: new Date(),
+          attemptCount: sql`${kbPagePurgeLedger.attemptCount} + 1`,
+        })
+        .where(
+          and(
+            eq(kbPagePurgeLedger.orgId, orgId),
+            inArray(kbPagePurgeLedger.pageId, pageIds),
+            eq(kbPagePurgeLedger.store, store),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
-export async function markStoreFailed(
+export async function markStoresFailed(
   db: Db,
   orgId: string,
-  pageId: number,
+  pageIds: number[],
   store: KbPurgeStore,
   reason: string,
 ): Promise<void> {
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .update(kbPagePurgeLedger)
-      .set({
-        status: "failed",
-        failedReason: reason.slice(0, 1_000),
-        attemptCount: sql`${kbPagePurgeLedger.attemptCount} + 1`,
-      })
-      .where(
-        and(
-          eq(kbPagePurgeLedger.orgId, orgId),
-          eq(kbPagePurgeLedger.pageId, pageId),
-          eq(kbPagePurgeLedger.store, store),
-        ),
-      );
-  });
+  if (pageIds.length === 0) return;
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .update(kbPagePurgeLedger)
+        .set({
+          status: "failed",
+          failedReason: reason.slice(0, 1_000),
+          attemptCount: sql`${kbPagePurgeLedger.attemptCount} + 1`,
+        })
+        .where(
+          and(
+            eq(kbPagePurgeLedger.orgId, orgId),
+            inArray(kbPagePurgeLedger.pageId, pageIds),
+            eq(kbPagePurgeLedger.store, store),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function oldestIncompleteLedgerEntry(
@@ -154,16 +173,20 @@ export async function purgeVisitsForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .delete(kbPageVisits)
-      .where(
-        and(
-          eq(kbPageVisits.orgId, orgId),
-          inArray(kbPageVisits.pageId, pageIds),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .delete(kbPageVisits)
+        .where(
+          and(
+            eq(kbPageVisits.orgId, orgId),
+            inArray(kbPageVisits.pageId, pageIds),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeFavoritesForPages(
@@ -172,16 +195,20 @@ export async function purgeFavoritesForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .delete(kbPageFavorites)
-      .where(
-        and(
-          eq(kbPageFavorites.orgId, orgId),
-          inArray(kbPageFavorites.pageId, pageIds),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .delete(kbPageFavorites)
+        .where(
+          and(
+            eq(kbPageFavorites.orgId, orgId),
+            inArray(kbPageFavorites.pageId, pageIds),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeLinksForPages(
@@ -190,24 +217,28 @@ export async function purgeLinksForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .delete(kbPageLinks)
-      .where(
-        and(
-          eq(kbPageLinks.orgId, orgId),
-          inArray(kbPageLinks.sourcePageId, pageIds),
-        ),
-      );
-    await tx
-      .delete(kbPageLinks)
-      .where(
-        and(
-          eq(kbPageLinks.orgId, orgId),
-          inArray(kbPageLinks.targetPageId, pageIds),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .delete(kbPageLinks)
+        .where(
+          and(
+            eq(kbPageLinks.orgId, orgId),
+            inArray(kbPageLinks.sourcePageId, pageIds),
+          ),
+        );
+      await tx
+        .delete(kbPageLinks)
+        .where(
+          and(
+            eq(kbPageLinks.orgId, orgId),
+            inArray(kbPageLinks.targetPageId, pageIds),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeVersionsForPages(
@@ -216,16 +247,20 @@ export async function purgeVersionsForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .delete(kbPageVersions)
-      .where(
-        and(
-          eq(kbPageVersions.orgId, orgId),
-          inArray(kbPageVersions.pageId, pageIds),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .delete(kbPageVersions)
+        .where(
+          and(
+            eq(kbPageVersions.orgId, orgId),
+            inArray(kbPageVersions.pageId, pageIds),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeCommentsForPages(
@@ -234,16 +269,20 @@ export async function purgeCommentsForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .delete(kbPageComments)
-      .where(
-        and(
-          eq(kbPageComments.orgId, orgId),
-          inArray(kbPageComments.pageId, pageIds),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .delete(kbPageComments)
+        .where(
+          and(
+            eq(kbPageComments.orgId, orgId),
+            inArray(kbPageComments.pageId, pageIds),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeGrantsForPages(
@@ -252,16 +291,20 @@ export async function purgeGrantsForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .delete(kbPageGrants)
-      .where(
-        and(
-          eq(kbPageGrants.orgId, orgId),
-          inArray(kbPageGrants.pageId, pageIds),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .delete(kbPageGrants)
+        .where(
+          and(
+            eq(kbPageGrants.orgId, orgId),
+            inArray(kbPageGrants.pageId, pageIds),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeChunksForPages(
@@ -270,16 +313,20 @@ export async function purgeChunksForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .delete(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, orgId),
-          inArray(kbArticleChunks.pageId, pageIds),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .delete(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.orgId, orgId),
+            inArray(kbArticleChunks.pageId, pageIds),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeAnalyticsForPages(
@@ -288,17 +335,18 @@ export async function purgeAnalyticsForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .update(kbEvents)
-      .set({ articleId: null })
-      .where(
-        and(
-          eq(kbEvents.orgId, orgId),
-          inArray(kbEvents.articleId, pageIds),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .update(kbEvents)
+        .set({ articleId: null })
+        .where(
+          and(eq(kbEvents.orgId, orgId), inArray(kbEvents.articleId, pageIds)),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeNotificationsForPages(
@@ -308,17 +356,21 @@ export async function purgeNotificationsForPages(
 ): Promise<void> {
   if (pageIds.length === 0) return;
   const entityIds = pageIds.map(String);
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .delete(notifications)
-      .where(
-        and(
-          eq(notifications.orgId, orgId),
-          inArray(notifications.entityId, entityIds),
-          inArray(notifications.entityType, ["kb_page", "kb_page_review"]),
-        ),
-      );
-  });
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .delete(notifications)
+        .where(
+          and(
+            eq(notifications.orgId, orgId),
+            inArray(notifications.entityId, entityIds),
+            inArray(notifications.entityType, ["kb_page", "kb_page_review"]),
+          ),
+        );
+    },
+    { orgId },
+  );
 }
 
 export async function purgeCachesForPages(
@@ -335,23 +387,14 @@ export async function purgePublicCdnForPages(
   pageIds: number[],
 ): Promise<void> {
   if (pageIds.length === 0) return;
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .update(kbPages)
-      .set({ publicToken: null })
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          inArray(kbPages.id, pageIds),
-        ),
-      );
-  });
-}
-
-export async function purgeConnectorProjectionsForPages(
-  _db: Db,
-  _orgId: string,
-  _pageIds: number[],
-): Promise<void> {
-  return;
+  await runInTenantTransaction(
+    db,
+    async (tx) => {
+      await tx
+        .update(kbPages)
+        .set({ publicToken: null })
+        .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, pageIds)));
+    },
+    { orgId },
+  );
 }

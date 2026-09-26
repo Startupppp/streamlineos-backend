@@ -1,5 +1,7 @@
 import * as fc from "fast-check";
 import { eq } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { kbPages } from "../../../../db/schema";
 import {
   buildArticleRestrictionBranch,
@@ -13,21 +15,6 @@ import {
   type KbActorStanding,
   type KbPageAction,
 } from "./knowledge-authorization.types";
-import { pageVisibleTo } from "../../retrieval/kb-page-visibility";
-import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { humanSessionPrincipal } from "../../../../common/auth/principal";
-
-function legacyUser(): CurrentUserContext {
-  return {
-    userId: "user-1",
-    orgId: "org-1",
-    isOrgOwner: false,
-    role: "member",
-    sessionId: "sess-1",
-    tokenScopes: null,
-    principal: humanSessionPrincipal(1, false),
-  };
-}
 
 function makeStanding(overrides: Partial<KbActorStanding> = {}): KbActorStanding {
   return {
@@ -44,18 +31,15 @@ function makeStanding(overrides: Partial<KbActorStanding> = {}): KbActorStanding
   };
 }
 
-const render = (node: unknown): string => {
+const dialect = new PgDialect();
+
+const text = (node: SQL<unknown> | null | undefined): string => {
   if (node === null || node === undefined) return "";
-  if (Array.isArray(node)) return node.map(render).join(" ");
-  if (typeof node !== "object") return String(node);
-  const record = node as Record<string, unknown>;
-  if (Array.isArray(record.queryChunks)) return render(record.queryChunks);
-  if (typeof record.value === "string" || Array.isArray(record.value)) return render(record.value);
-  if (typeof record.name === "string") return record.name;
-  return "";
+  const { sql: rendered, params } = dialect.sqlToQuery(node);
+  return `${rendered} /* bound: ${JSON.stringify(params)} */`.replace(/\s+/g, " ").trim();
 };
 
-const text = (node: unknown): string => render(node).replace(/\s+/g, " ").trim();
+const boundParams = (node: SQL<unknown>): unknown[] => dialect.sqlToQuery(node).params;
 
 describe("buildVisiblePageScope", () => {
   it("collapses to a tenant equality for an org owner so no branch can widen past the tenant", () => {
@@ -162,12 +146,54 @@ describe("buildVisiblePageScope", () => {
   });
 });
 
-describe("the legacy visibility predicate these branches replace", () => {
-  it("reaches neither an explicit grant nor an accessible space, so the new assertions are not render artifacts", () => {
-    const legacy = text(pageVisibleTo(legacyUser(), [42]));
-    expect(legacy).not.toContain("kb_page_grants");
-    expect(legacy).not.toContain("space_id");
-    expect(legacy).toContain("project_id");
+describe("project membership on the live view scope", () => {
+  it("offers a reader who belongs to no project only pages that belong to no project", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleProjectIds: [] }),
+      "view",
+    ).indexedBranch;
+
+    expect(text(branch)).toContain(`"kb_pages"."project_id" IS NULL`);
+    expect(text(branch)).not.toContain(`"kb_pages"."project_id" = ANY`);
+  });
+
+  it("still offers that reader an organization-wide and a public page", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleProjectIds: [] }),
+      "view",
+    ).indexedBranch;
+
+    expect(text(branch)).toContain("'org'");
+    expect(text(branch)).toContain("'public'");
+  });
+
+  it("widens to project 42 for a member of project 42, binding the id rather than inlining it", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleProjectIds: [42] }),
+      "view",
+    ).indexedBranch;
+
+    expect(text(branch)).toContain(`"kb_pages"."project_id" = ANY`);
+    expect(boundParams(branch)).toContain(42);
+  });
+
+  it("does not widen to project 43 for a member of only project 42", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleProjectIds: [42] }),
+      "view",
+    ).indexedBranch;
+
+    expect(boundParams(branch)).not.toContain(43);
+  });
+
+  it("keeps the reader's own authorship arm whether or not they belong to a project", () => {
+    for (const projectIds of [[], [42]]) {
+      const branch = buildVisiblePageScope(
+        makeStanding({ accessibleProjectIds: projectIds }),
+        "view",
+      ).indexedBranch;
+      expect(text(branch)).toContain(`"kb_pages"."created_by_id"`);
+    }
   });
 });
 

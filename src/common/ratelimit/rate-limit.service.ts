@@ -139,11 +139,9 @@ const TIERS: Record<string, Tier> = {
   "ai:chat": { limit: 20, windowSecs: 60 },
   "ai:vision": { limit: 10, windowSecs: 60 },
   "ai:public-kb-ask": { limit: 10, windowSecs: 60 },
+  "ai:public-kb-ask:org": { limit: 60, windowSecs: 60 },
   "kb:ask": { limit: 20, windowSecs: 60 },
-  // V-147. POST /kb/linked-documents/:id/open MINTS A SIGNED URL — a 300-second bearer credential for an
-  // employee document — and was the one unthrottled route that does. Every mint is an authorised one, so the
-  // limit only has to stop a loop harvesting live URLs faster than they expire: 30/min is far above reading
-  // documents one after another, and far below a script banking a few hundred credentials a minute.
+  "kb:ask:org": { limit: 200, windowSecs: 60 },
   "kb:linked-document-open": { limit: 30, windowSecs: 60 },
   "module-access:ownership-transfer": { limit: 5, windowSecs: 3600 },
   "module-access:group-mutate": { limit: 30, windowSecs: 60 },
@@ -244,6 +242,11 @@ export function effectiveRateLimit(tier: string): number {
   return t ? t.limit * DEV_LIMIT_MULTIPLIER : 0;
 }
 
+export function rateLimitWindowSecs(tier: string): number {
+  const t = TIERS[tier];
+  return t ? t.windowSecs : 60;
+}
+
 export interface RateLimitResult {
   allowed: boolean;
   retryAfterSecs: number;
@@ -269,10 +272,15 @@ export class RateLimitService {
   }
 
   private sweepMemory(now: number): void {
-    if (now - this.lastSweepAt < MEM_SWEEP_INTERVAL_MS && this.mem.size <= MEM_MAX_KEYS) return;
+    if (
+      now - this.lastSweepAt < MEM_SWEEP_INTERVAL_MS &&
+      this.mem.size <= MEM_MAX_KEYS
+    )
+      return;
     this.lastSweepAt = now;
 
-    for (const [key, window] of this.mem) if (window.expiresAt <= now) this.mem.delete(key);
+    for (const [key, window] of this.mem)
+      if (window.expiresAt <= now) this.mem.delete(key);
 
     if (this.mem.size <= MEM_MAX_KEYS) return;
     let overflow = this.mem.size - MEM_MAX_KEYS;

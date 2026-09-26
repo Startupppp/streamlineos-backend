@@ -415,6 +415,23 @@ export class KbPageTreeService {
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_page",
+        aggregateId: String(pageId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: {
+          contentType: "page",
+          contentId: pageId,
+          contentRevision: updated.contentRevision,
+          aclRevision: updated.aclRevision,
+        },
+        occurredAt: new Date(),
+      });
+
       return updated;
     });
   }

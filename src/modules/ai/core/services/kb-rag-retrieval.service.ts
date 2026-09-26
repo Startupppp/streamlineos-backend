@@ -57,6 +57,29 @@ interface KbChunkRanking {
   match?: SQL;
 }
 
+interface PublicChunkScope {
+  articleId?: number | undefined;
+  match?: SQL | undefined;
+}
+
+function publicChunkPredicate(orgId: string, scope: PublicChunkScope = {}): SQL | undefined {
+  const conditions: SQL[] = [
+    eq(kbArticleChunks.orgId, orgId),
+    eq(kbPages.status, "published"),
+    eq(kbPages.visibility, "public"),
+    supportArticlePredicate(),
+    isNotNull(kbPages.slug),
+    inArray(kbSpaces.audience, ["public", "mixed"]),
+    isNull(kbSpaces.deletedAt),
+  ];
+  if (scope.articleId !== undefined) conditions.push(eq(kbArticleChunks.pageId, scope.articleId));
+  if (scope.match !== undefined) conditions.push(scope.match);
+  return and(
+    ...conditions,
+    or(isNull(kbArticleChunks.attachmentId), isNull(kbPageAttachments.deletedAt)),
+  );
+}
+
 function buildKbPrompts(results: KbSearchResult[]): { system: string; user: string } {
   const context = results
     .map(
@@ -103,24 +126,17 @@ export class KbRagRetrievalService {
     return this.aiGateway.isEmbeddingConfigured();
   }
 
-  async hasPublishedPublicArticles(orgId: string): Promise<boolean> {
+  async hasPublishedPublicArticles(orgId: string, articleId?: number): Promise<boolean> {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
         const [row] = await tx
-          .select({ id: kbPages.id })
-          .from(kbPages)
+          .select({ id: kbArticleChunks.id })
+          .from(kbArticleChunks)
+          .innerJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
           .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
-          .where(
-            and(
-              eq(kbPages.orgId, orgId),
-              eq(kbPages.status, "published"),
-              eq(kbPages.visibility, "public"),
-              supportArticlePredicate(),
-              inArray(kbSpaces.audience, ["public", "mixed"]),
-              isNull(kbSpaces.deletedAt),
-            ),
-          )
+          .leftJoin(kbPageAttachments, eq(kbPageAttachments.id, kbArticleChunks.attachmentId))
+          .where(publicChunkPredicate(orgId, { articleId }))
           .limit(1);
         return Boolean(row);
       },
@@ -206,18 +222,6 @@ export class KbRagRetrievalService {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const conditions: SQL[] = [
-          eq(kbArticleChunks.orgId, orgId),
-          eq(kbPages.status, "published"),
-          eq(kbPages.visibility, "public"),
-          supportArticlePredicate(),
-          isNotNull(kbPages.slug),
-          inArray(kbSpaces.audience, ["public", "mixed"]),
-          isNull(kbSpaces.deletedAt),
-        ];
-        if (articleId !== undefined) conditions.push(eq(kbArticleChunks.pageId, articleId));
-        if (ranking.match !== undefined) conditions.push(ranking.match);
-
         const pool = await tx
           .select({
             id: kbArticleChunks.id,
@@ -234,15 +238,7 @@ export class KbRagRetrievalService {
           .innerJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
           .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
           .leftJoin(kbPageAttachments, eq(kbPageAttachments.id, kbArticleChunks.attachmentId))
-          .where(
-            and(
-              ...conditions,
-              or(
-                isNull(kbArticleChunks.attachmentId),
-                isNull(kbPageAttachments.deletedAt),
-              ),
-            ),
-          )
+          .where(publicChunkPredicate(orgId, { articleId, match: ranking.match }))
           .orderBy(ranking.order)
           .limit(Math.min(SEARCH_POOL_K, PAGE_SIZE_CAP));
 

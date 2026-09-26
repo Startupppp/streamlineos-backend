@@ -3,7 +3,6 @@ import { gte, sql, type SQL } from "drizzle-orm";
 import { kbArticleChunks, kbPages } from "../../../db/schema";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
-import { pageVisibleTo } from "./kb-page-visibility";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -24,6 +23,21 @@ function makeUser(): CurrentUserContext {
     sessionId: "sess-1",
     tokenScopes: null,
     principal: humanSessionPrincipal(5, false),
+  };
+}
+
+function makeStanding(over: Partial<KbActorStanding> = {}): KbActorStanding {
+  return {
+    orgId: ORG,
+    userId: "user-1",
+    membershipId: 5,
+    roleSlugs: ["SUPPORT"],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: [],
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+    ...over,
   };
 }
 
@@ -198,8 +212,13 @@ describe("Revocation dimension 3 — project membership is re-read per query for
   });
 
   it("the keyword page predicate offers a project arm only while the project is granted", () => {
-    const granted = render(pageVisibleTo(user, GRANTED_PROJECTS));
-    const revoked = render(pageVisibleTo(user, []));
+    const granted = render(
+      buildVisiblePageScope(makeStanding({ accessibleProjectIds: GRANTED_PROJECTS }), "view")
+        .predicate,
+    );
+    const revoked = render(
+      buildVisiblePageScope(makeStanding({ accessibleProjectIds: [] }), "view").predicate,
+    );
 
     expect(granted.text).toContain(`"kb_pages"."project_id" = ANY`);
     expect(granted.params).toContain(7);
@@ -218,8 +237,11 @@ describe("Revocation dimension 3 — project membership is re-read per query for
   });
 
   it("both revoked predicates still bind the tenant, so nothing widens as access narrows", () => {
-    for (const predicate of [pageVisibleTo(user, []), chunkVisibleTo(user, [])])
-      expect(render(predicate).params).toContain(ORG);
+    const predicates = [
+      buildVisiblePageScope(makeStanding({ accessibleProjectIds: [] }), "view").predicate,
+      chunkVisibleTo(user, []),
+    ];
+    for (const predicate of predicates) expect(render(predicate).params).toContain(ORG);
   });
 });
 
@@ -298,18 +320,8 @@ describe("The acl_revision fence drops a chunk whose revision trails its page", 
 });
 
 describe("Revocation dimension 4 — the canonical page scope loses its arms as access narrows", () => {
-  const standing = (over: Partial<KbActorStanding> = {}): KbActorStanding => ({
-    orgId: ORG,
-    userId: "user-1",
-    membershipId: 1,
-    roleSlugs: [],
-    isOrgOwner: false,
-    isKbAdmin: false,
-    accessibleSpaceIds: [],
-    accessibleProjectIds: [],
-    permissionsVersion: 1,
-    ...over,
-  });
+  const standing = (over: Partial<KbActorStanding> = {}): KbActorStanding =>
+    makeStanding({ membershipId: 1, roleSlugs: [], ...over });
 
   const textOf = (node: SQL<unknown> | null): string =>
     node === null ? "" : new PgDialect().sqlToQuery(node).sql;

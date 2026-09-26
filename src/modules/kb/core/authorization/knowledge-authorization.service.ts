@@ -13,16 +13,16 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { actingMembershipId } from "../../../../common/auth/principal";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { AccessService } from "../../../access/access.service";
-import { kbAclCacheKey } from "../kb-acl-cache-key";
+import {
+  kbSpaceScopeIsAdmin,
+  resolveAccessibleSpaceScope,
+} from "../kb-acl-cache-key";
 import {
   memoizeStandingForRequest,
   standingMemoKey,
 } from "./kb-standing-request-memo";
 import { getAccessibleProjectIds } from "../../retrieval/kb-project-access.util";
-import {
-  computeAccessibleSpaceIds,
-  resolveRoleSlugs,
-} from "./knowledge-space-scope";
+import { resolveRoleSlugs } from "./knowledge-space-scope";
 import {
   buildArticleRestrictionBranch,
   buildVisiblePageScope,
@@ -39,9 +39,6 @@ import {
   type KbSpaceScope,
 } from "./knowledge-authorization.types";
 
-const KB_MANAGE_SPACES = "kb:spaces:manage";
-const SPACE_SCOPE_TTL_SECONDS = 60;
-
 @Injectable()
 export class KnowledgeAuthorizationService {
   constructor(
@@ -54,7 +51,12 @@ export class KnowledgeAuthorizationService {
     const membershipId =
       user.principal === undefined ? null : actingMembershipId(user.principal);
     return memoizeStandingForRequest(
-      standingMemoKey(user.orgId, user.userId, membershipId, user.isOrgOwner),
+      standingMemoKey(
+        user.orgId,
+        user.userId,
+        membershipId,
+        kbSpaceScopeIsAdmin(user, false),
+      ),
       () => this.computeStanding(user, membershipId),
     );
   }
@@ -63,31 +65,15 @@ export class KnowledgeAuthorizationService {
     user: CurrentUserContext,
     membershipId: number | null,
   ): Promise<KbActorStanding> {
-    const [isKbAdmin, permissionsVersion, roleSlugs, accessibleProjectIds] =
-      await Promise.all([
-        this.access.holds(user, KB_MANAGE_SPACES),
-        this.access.getPermissionsVersion(user.orgId),
-        resolveRoleSlugs(this.db, user.orgId, user.userId),
-        getAccessibleProjectIds(this.db, user),
-      ]);
+    const [roleSlugs, accessibleProjectIds] = await Promise.all([
+      resolveRoleSlugs(this.db, user.orgId, user.userId),
+      getAccessibleProjectIds(this.db, user),
+    ]);
 
-    const isAdmin = isKbAdmin || user.isOrgOwner;
-    const accessibleSpaceIds = await this.cache.cachedVersioned(
-      `kb:acc-spaces:${user.orgId}`,
-      kbAclCacheKey(user.userId, {
-        orgId: user.orgId,
-        permissionsVersion,
-        membershipId,
-      }),
-      () =>
-        computeAccessibleSpaceIds(
-          this.db,
-          user.orgId,
-          membershipId,
-          isAdmin,
-          () => Promise.resolve(roleSlugs),
-        ),
-      SPACE_SCOPE_TTL_SECONDS,
+    const scope = await resolveAccessibleSpaceScope(
+      { db: this.db, cache: this.cache, access: this.access },
+      user,
+      { roleSlugs },
     );
 
     return {
@@ -95,11 +81,11 @@ export class KnowledgeAuthorizationService {
       userId: user.userId,
       membershipId,
       roleSlugs,
-      isOrgOwner: user.isOrgOwner,
-      isKbAdmin,
-      accessibleSpaceIds,
+      isOrgOwner: kbSpaceScopeIsAdmin(user, false),
+      isKbAdmin: scope.holdsManageKey,
+      accessibleSpaceIds: scope.spaceIds,
       accessibleProjectIds,
-      permissionsVersion,
+      permissionsVersion: scope.permissionsVersion,
     };
   }
 

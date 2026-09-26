@@ -2,7 +2,8 @@ import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { KnowledgeAuthorizationService } from "../kb/core/authorization/knowledge-authorization.service";
-import { pageVisibleTo } from "../kb/retrieval/kb-page-visibility";
+import { buildVisiblePageScope } from "../kb/core/authorization/knowledge-page-scope";
+import type { KbActorStanding } from "../kb/core/authorization/knowledge-authorization.types";
 import { ScopedRead, type ScopedWhere } from "./scoped-read";
 import { organizationMembers } from "../../db/schema";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -86,21 +87,45 @@ describe("the record-access seam composes every arm in one predicate", () => {
 });
 
 describe("the audience ACL is SQL, not an application-code check", () => {
+  const standing = (overrides: Partial<KbActorStanding> = {}): KbActorStanding => ({
+    orgId: "org-1",
+    userId: "u-1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: [],
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+    ...overrides,
+  });
+
   it("narrows a member to org-wide, public and their own pages", () => {
-    const sqlStr = render(pageVisibleTo(actor(), []));
+    const sqlStr = render(buildVisiblePageScope(standing(), "view").predicate);
     expect(sqlStr).toContain("visibility");
     expect(sqlStr).toContain("created_by");
   });
 
   it("widens to the projects the caller can reach, still in the predicate", () => {
-    const sqlStr = render(pageVisibleTo(actor(), [11, 12]));
-    expect(sqlStr).toContain("project_id");
-    expect(sqlStr).toContain("ANY");
+    const scope = buildVisiblePageScope(standing({ accessibleProjectIds: [11, 12] }), "view");
+    expect(render(scope.predicate)).toContain("project_id");
+    expect(render(scope.predicate)).toContain("ANY");
+    expect(dialect.sqlToQuery(scope.predicate).params).toEqual(
+      expect.arrayContaining([11, 12]),
+    );
   });
 
   it("does not narrow an org owner", () => {
-    const sqlStr = render(pageVisibleTo(actor({ isOrgOwner: true }), []));
+    const sqlStr = render(buildVisiblePageScope(standing({ isOrgOwner: true }), "view").predicate);
     expect(sqlStr).not.toContain("visibility");
+  });
+
+  it("is the very predicate the authorization seam hands every list surface, so no caller can be reading a looser one", async () => {
+    const { db } = captureDb(undefined);
+
+    const fromSeam = render(await buildAuth(db).visiblePagePredicate(actor(), "view"));
+
+    expect(fromSeam).toBe(render(buildVisiblePageScope(standing(), "view").predicate));
   });
 });
 

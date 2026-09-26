@@ -67,6 +67,8 @@ import { listDocumentsResponseSchema, createDocumentResponseSchema, getDocumentF
 
 const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
 
+const DOCUMENT_PUBLISH_PERMISSION = "hr:documents:publish";
+
 @RequireModule("hr")
 @Controller("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -181,12 +183,16 @@ export class DocumentsController {
     @Body() body: UpdateDocumentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveDocumentsManageScope(this.access, currentUser);
+    const [scope, canPublish] = await Promise.all([
+      resolveDocumentsManageScope(this.access, currentUser),
+      this.access.holds(currentUser, DOCUMENT_PUBLISH_PERMISSION),
+    ]);
     return this.documents.updateDocument(
       scope,
       documentId,
       body,
       actingMembershipId(currentUser.principal),
+      canPublish,
     );
   }
 

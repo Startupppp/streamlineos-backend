@@ -4,18 +4,19 @@ import { kbPages, kbPageRestrictions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { accountableMembershipId, actingMembershipId } from "../../../common/auth/principal";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { CacheService } from "../../../common/cache/cache.service";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { AccessService } from "../../access/access.service";
-import { kbAclCacheKey, type KbAclDimension } from "./kb-acl-cache-key";
 import {
-  computeAccessibleSpaceIds,
-  resolveRoleSlugs,
-} from "./authorization/knowledge-space-scope";
-
-const KB_MANAGE_SPACES = "kb:spaces:manage";
+  KB_MANAGE_SPACES,
+  resolveAccessibleSpaceScope,
+  resolveAccessibleSpaceScopeWithOutcome,
+  type KbAccessibleSpaceScope,
+  type KbSpaceScopeDeps,
+} from "./kb-acl-cache-key";
+import { resolveRoleSlugs } from "./authorization/knowledge-space-scope";
 
 @Injectable()
 export class KbAccessService {
@@ -33,35 +34,28 @@ export class KbAccessService {
     return resolveRoleSlugs(this.db, orgId, userId);
   }
 
-  private async resolveAclDimension(user: CurrentUserContext): Promise<KbAclDimension> {
-    return {
-      orgId: user.orgId,
-      permissionsVersion: await this.access.getPermissionsVersion(user.orgId),
-      membershipId: user.principal !== undefined ? accountableMembershipId(user.principal) : null,
-    };
+  private spaceScopeDeps(): KbSpaceScopeDeps {
+    return { db: this.db, cache: this.cache, access: this.access };
+  }
+
+  private assertScopeReachable(scope: KbAccessibleSpaceScope): void {
+    if (!scope.isAdmin && scope.membershipId === null) {
+      throw new ForbiddenException("Organization membership required");
+    }
   }
 
   async getAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {
-    const acl = await this.resolveAclDimension(user);
-    return this.cache.cachedVersioned(
-      `kb:acc-spaces:${user.orgId}`,
-      kbAclCacheKey(user.userId, acl),
-      () => this.computeAccessibleSpaceIds(user, acl),
-      60,
-    );
+    const scope = await resolveAccessibleSpaceScope(this.spaceScopeDeps(), user);
+    this.assertScopeReachable(scope);
+    return scope.spaceIds;
   }
 
   async getAccessibleSpaceIdsWithCacheOutcome(
     user: CurrentUserContext,
   ): Promise<{ spaceIds: number[]; cacheOutcome: "hit" | "miss" | "bypass" }> {
-    const acl = await this.resolveAclDimension(user);
-    const { value, cacheOutcome } = await this.cache.cachedVersionedWithOutcome(
-      `kb:acc-spaces:${user.orgId}`,
-      kbAclCacheKey(user.userId, acl),
-      () => this.computeAccessibleSpaceIds(user, acl),
-      60,
-    );
-    return { spaceIds: value, cacheOutcome };
+    const scope = await resolveAccessibleSpaceScopeWithOutcome(this.spaceScopeDeps(), user);
+    this.assertScopeReachable(scope);
+    return { spaceIds: scope.spaceIds, cacheOutcome: scope.cacheOutcome };
   }
 
   async invalidateAccessibleSpaceIds(orgId: string): Promise<void> {
@@ -70,19 +64,6 @@ export class KbAccessService {
 
   async getAccessibleProjectIds(user: CurrentUserContext): Promise<number[]> {
     return getAccessibleProjectIds(this.db, user);
-  }
-
-  private async computeAccessibleSpaceIds(
-    user: CurrentUserContext,
-    acl: KbAclDimension,
-  ): Promise<number[]> {
-    const isAdmin = await this.isAdmin(user);
-    if (!isAdmin && acl.membershipId === null) {
-      throw new ForbiddenException("Organization membership required");
-    }
-    return computeAccessibleSpaceIds(this.db, user.orgId, acl.membershipId, isAdmin, () =>
-      this.resolveRoleSlugs(user.orgId, user.userId),
-    );
   }
 
   async assertSpaceAccessible(user: CurrentUserContext, spaceId: number): Promise<void> {

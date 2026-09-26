@@ -6,19 +6,39 @@ const ACCESSIBLE = [42];
 jest.mock("./kb-project-access.util", () => ({
   getAccessibleProjectIds: jest.fn().mockResolvedValue(ACCESSIBLE),
 }));
-jest.mock("./kb-project-access.util", () => ({
-  getAccessibleProjectIds: jest.fn().mockResolvedValue(ACCESSIBLE),
-}));
 
-const pageVisibleTo = jest.fn().mockReturnValue({ marker: "predicate" });
-jest.mock("./kb-page-visibility", () => ({
-  pageVisibleTo: (...args: unknown[]) => pageVisibleTo(...args),
-}));
-jest.mock("./kb-page-visibility", () => ({
-  pageVisibleTo: (...args: unknown[]) => pageVisibleTo(...args),
-  visibleTo: (...args: unknown[]) => pageVisibleTo(...args),
-}));
+const mockVisibleTo = jest.fn();
+jest.mock("./kb-page-visibility", () => {
+  const actual = jest.requireActual<typeof import("./kb-page-visibility")>(
+    "./kb-page-visibility",
+  );
+  return {
+    ...actual,
+    visibleTo: (...args: Parameters<typeof actual.visibleTo>) => {
+      mockVisibleTo(...args);
+      return actual.visibleTo(...args);
+    },
+  };
+});
 
+const mockBuildVisiblePageScope = jest.fn();
+jest.mock("../core/authorization/knowledge-page-scope", () => {
+  const actual = jest.requireActual<
+    typeof import("../core/authorization/knowledge-page-scope")
+  >("../core/authorization/knowledge-page-scope");
+  return {
+    ...actual,
+    buildVisiblePageScope: (...args: Parameters<typeof actual.buildVisiblePageScope>) => {
+      mockBuildVisiblePageScope(...args);
+      return actual.buildVisiblePageScope(...args);
+    },
+  };
+});
+
+import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
+import type { KbActorStanding } from "../core/authorization/knowledge-authorization.types";
+import { visibleTo } from "./kb-page-visibility";
+import { kbPages } from "../../../db/schema";
 import { KbAnalyticsService } from "../help-centre/kb-analytics.service";
 import { KbPageAiService } from "../wiki/kb-page-ai.service";
 import { KbPageCommentsService } from "../wiki/kb-page-comments.service";
@@ -69,9 +89,22 @@ function makeAuth(): { visiblePagePredicate: jest.Mock; assertPageAccess: jest.M
   };
 }
 
+const STANDING: KbActorStanding = {
+  orgId: "org-1",
+  userId: "user-1",
+  membershipId: 1,
+  roleSlugs: [],
+  isOrgOwner: false,
+  isKbAdmin: false,
+  accessibleSpaceIds: [],
+  accessibleProjectIds: ACCESSIBLE,
+  permissionsVersion: 1,
+};
+
 describe("every KB surface takes its predicate from the canonical authorization seam", () => {
   beforeEach(() => {
-    pageVisibleTo.mockClear();
+    mockVisibleTo.mockClear();
+    mockBuildVisiblePageScope.mockClear();
   });
 
   const surfaces: Array<{
@@ -122,12 +155,35 @@ describe("every KB surface takes its predicate from the canonical authorization 
       for (const call of auth.assertPageAccess.mock.calls) expect(call[0]).toBe(USER);
     });
 
-    it(`${surface.name} never rebuilds authorization through the retired visibility predicate`, async () => {
+    it(`${surface.name} never rebuilds the page scope itself, bypassing the seam's standing resolution and cache`, async () => {
       const auth = makeAuth();
 
       await surface.run(auth).catch(() => undefined);
 
-      expect(pageVisibleTo).not.toHaveBeenCalled();
+      expect(mockBuildVisiblePageScope).not.toHaveBeenCalled();
+      expect(mockVisibleTo).not.toHaveBeenCalled();
     });
   }
+
+  it("BITE: the negative fires the moment a caller builds the canonical page scope for itself", () => {
+    buildVisiblePageScope(STANDING, "view");
+
+    expect(mockBuildVisiblePageScope).toHaveBeenCalledTimes(1);
+    expect(mockBuildVisiblePageScope).toHaveBeenCalledWith(STANDING, "view");
+  });
+
+  it("BITE: the negative also fires when a caller reaches for the legacy column-level predicate builder", () => {
+    visibleTo(
+      {
+        orgId: kbPages.orgId,
+        visibility: kbPages.visibility,
+        projectId: kbPages.projectId,
+        createdById: kbPages.createdById,
+      },
+      USER,
+      ACCESSIBLE,
+    );
+
+    expect(mockVisibleTo).toHaveBeenCalledTimes(1);
+  });
 });

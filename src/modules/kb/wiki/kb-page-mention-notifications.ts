@@ -1,5 +1,6 @@
 import type { Logger } from "@nestjs/common";
 import type { NotificationsService } from "../../notifications/notifications.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 
 export interface KbMentionNotificationTarget {
   orgId: string;
@@ -30,5 +31,22 @@ export async function fireKbMentionNotifications(
     } catch (err) {
       logger.error(`Mention notification failed for user ${userId}: ${err}`);
     }
+  }
+}
+
+export async function deferKbMentionNotifications(
+  notifications: NotificationsService,
+  logger: Logger,
+  target: KbMentionNotificationTarget,
+): Promise<void> {
+  const deferred = registerAfterCommit(async () => {
+    await fireKbMentionNotifications(notifications, logger, target);
+  });
+  if (!deferred) {
+    await fireKbMentionNotifications(notifications, logger, target).catch(
+      (err: unknown) => {
+        logger.error(`Failed to send mention notifications: ${String(err)}`);
+      },
+    );
   }
 }

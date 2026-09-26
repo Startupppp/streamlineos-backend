@@ -6,8 +6,9 @@ import {
   inArray,
   isNull,
   lt,
-  notInArray,
+  notExists,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { kbPageLinks, kbPageReviews, kbPages } from "../../../db/schema";
 import { kbHealthItems, KB_HEALTH_ITEM_KINDS } from "../../../db/schema/kb/health-items";
@@ -17,6 +18,23 @@ import type { KbHealthItemKind } from "../../../db/schema/kb/health-items";
 
 const STALE_THRESHOLD_DAYS = 90;
 const SCAN_PAGE_LIMIT = 500;
+
+const CONTRADICTION_PAIR_PREDICATE = sql`
+  o.org_id = p.org_id
+  AND o.id <> p.id
+  AND o.deleted_at IS NULL
+  AND o.status = 'published'
+  AND o.space_id IS NOT DISTINCT FROM p.space_id
+  AND (
+    lower(split_part(trim(p.title), ' ', 1)) = lower(split_part(trim(o.title), ' ', 1))
+    AND lower(split_part(trim(p.title), ' ', 2)) = lower(split_part(trim(o.title), ' ', 2))
+    AND lower(split_part(trim(p.title), ' ', 3)) = lower(split_part(trim(o.title), ' ', 3))
+    AND length(trim(p.title)) >= 10
+  )
+  AND md5(coalesce(p.content_text,'')) <> md5(coalesce(o.content_text,''))
+  AND coalesce(p.content_text, '') <> ''
+  AND coalesce(o.content_text, '') <> ''
+`;
 
 @Injectable()
 export class KbContentHealthScannerService {
@@ -49,24 +67,11 @@ export class KbContentHealthScannerService {
     }>(sql`
       SELECT p.id AS page_id, o.id AS other_id, p.title, p.space_id
       FROM kb_pages p
-      JOIN kb_pages o
-        ON  o.org_id = p.org_id
-        AND o.id <> p.id
-        AND o.deleted_at IS NULL
-        AND o.status = 'published'
-        AND o.space_id IS NOT DISTINCT FROM p.space_id
-        AND (
-          lower(split_part(trim(p.title), ' ', 1)) = lower(split_part(trim(o.title), ' ', 1))
-          AND lower(split_part(trim(p.title), ' ', 2)) = lower(split_part(trim(o.title), ' ', 2))
-          AND lower(split_part(trim(p.title), ' ', 3)) = lower(split_part(trim(o.title), ' ', 3))
-          AND length(trim(p.title)) >= 10
-        )
-        AND md5(coalesce(p.content_text,'')) <> md5(coalesce(o.content_text,''))
-        AND coalesce(p.content_text, '') <> ''
-        AND coalesce(o.content_text, '') <> ''
+      JOIN kb_pages o ON ${CONTRADICTION_PAIR_PREDICATE}
       WHERE p.org_id = ${orgId}
         AND p.deleted_at IS NULL
         AND p.status = 'published'
+      ORDER BY p.id
       LIMIT ${SCAN_PAGE_LIMIT}
     `);
 
@@ -82,8 +87,7 @@ export class KbContentHealthScannerService {
       });
     }
 
-    const stillMatchingIds = seen;
-    await this.resolveStaleItems(orgId, "contradictory_claim", stillMatchingIds);
+    await this.resolveStaleItems(orgId, "contradictory_claim");
   }
 
   async recordContradiction(
@@ -132,41 +136,45 @@ export class KbContentHealthScannerService {
 
   private async scanKind(orgId: string, kind: KbHealthItemKind): Promise<void> {
     const matchingPageIds = await this.queryMatchingPages(orgId, kind);
-    const matchingSet = new Set(matchingPageIds);
 
     await this.upsertOpenItems(orgId, kind, matchingPageIds);
-    await this.resolveStaleItems(orgId, kind, matchingSet);
+    await this.resolveStaleItems(orgId, kind);
   }
 
   private async queryMatchingPages(orgId: string, kind: KbHealthItemKind): Promise<number[]> {
-    const baseConditions = [
-      eq(kbPages.orgId, orgId),
-      isNull(kbPages.deletedAt),
-    ];
+    const kindCondition = this.buildKindCondition(kind);
+    if (kindCondition === undefined) return [];
 
-    let kindCondition;
+    const rows = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), kindCondition),
+      )
+      .limit(SCAN_PAGE_LIMIT);
+
+    return rows.map((r) => r.id);
+  }
+
+  private buildKindCondition(kind: KbHealthItemKind): SQL | undefined {
     switch (kind) {
       case "unowned":
-        kindCondition = isNull(kbPages.ownerMembershipId);
-        break;
+        return isNull(kbPages.ownerMembershipId);
 
       case "stale": {
         const threshold = new Date();
         threshold.setDate(threshold.getDate() - STALE_THRESHOLD_DAYS);
-        kindCondition = lt(kbPages.updatedAt, threshold);
-        break;
+        return lt(kbPages.updatedAt, threshold);
       }
 
       case "unverified":
-        kindCondition = sql`(${kbPages.trustState} = 'unverified' OR ${kbPages.trustState} = 'verification_expired')`;
-        break;
+        return sql`(${kbPages.trustState} = 'unverified' OR ${kbPages.trustState} = 'verification_expired')`;
 
       case "empty":
-        kindCondition = sql`(${kbPages.contentText} IS NULL OR trim(${kbPages.contentText}) = '')`;
-        break;
+        return sql`(${kbPages.contentText} IS NULL OR trim(${kbPages.contentText}) = '')`;
 
       case "overdue_review":
-        kindCondition = exists(
+        return exists(
           this.db
             .select({ present: sql<number>`1` })
             .from(kbPageReviews)
@@ -179,10 +187,9 @@ export class KbContentHealthScannerService {
               ),
             ),
         );
-        break;
 
       case "broken_link":
-        kindCondition = exists(
+        return exists(
           this.db
             .select({ present: sql<number>`1` })
             .from(kbPageLinks)
@@ -195,10 +202,9 @@ export class KbContentHealthScannerService {
               ),
             ),
         );
-        break;
 
       case "overexposed":
-        kindCondition = sql`(
+        return sql`(
           ${kbPages.visibility} = 'public'
           AND ${kbPages.spaceId} IS NOT NULL
           AND EXISTS (
@@ -209,10 +215,9 @@ export class KbContentHealthScannerService {
               AND s.deleted_at IS NULL
           )
         )`;
-        break;
 
       case "duplicate_candidate":
-        kindCondition = sql`(
+        return sql`(
           ${kbPages.contentText} IS NOT NULL
           AND trim(${kbPages.contentText}) <> ''
           AND EXISTS (
@@ -224,19 +229,10 @@ export class KbContentHealthScannerService {
               AND md5(other.content_text) = md5(${kbPages.contentText})
           )
         )`;
-        break;
 
       case "contradictory_claim":
-        return [];
+        return undefined;
     }
-
-    const rows = await this.db
-      .select({ id: kbPages.id })
-      .from(kbPages)
-      .where(and(...baseConditions, kindCondition))
-      .limit(SCAN_PAGE_LIMIT);
-
-    return rows.map((r) => r.id);
   }
 
   private async upsertOpenItems(
@@ -285,37 +281,50 @@ export class KbContentHealthScannerService {
   private async resolveStaleItems(
     orgId: string,
     kind: KbHealthItemKind,
-    stillMatchingIds: Set<number>,
   ): Promise<void> {
-    const openItems = await this.db
-      .select({ pageId: kbHealthItems.pageId })
-      .from(kbHealthItems)
-      .where(
-        and(
-          eq(kbHealthItems.orgId, orgId),
-          eq(kbHealthItems.kind, kind),
-          eq(kbHealthItems.state, "open"),
-        ),
-      );
-
-    const toResolve = openItems
-      .map((i) => i.pageId)
-      .filter((id) => !stillMatchingIds.has(id));
-
-    if (toResolve.length === 0) return;
-
     const now = new Date();
+
     await this.db
       .update(kbHealthItems)
       .set({ state: "resolved", resolvedAt: now, updatedAt: now })
       .where(
         and(
           eq(kbHealthItems.orgId, orgId),
-          inArray(kbHealthItems.pageId, toResolve),
           eq(kbHealthItems.kind, kind),
           eq(kbHealthItems.state, "open"),
+          this.pageNoLongerMatches(orgId, kind),
         ),
       );
+  }
+
+  private pageNoLongerMatches(orgId: string, kind: KbHealthItemKind): SQL {
+    if (kind === "contradictory_claim") {
+      return sql`NOT EXISTS (
+        SELECT 1
+        FROM kb_pages p
+        JOIN kb_pages o ON ${CONTRADICTION_PAIR_PREDICATE}
+        WHERE p.org_id = ${orgId}
+          AND p.id = ${kbHealthItems.pageId}
+          AND p.deleted_at IS NULL
+          AND p.status = 'published'
+      )`;
+    }
+
+    const kindCondition = this.buildKindCondition(kind);
+
+    return notExists(
+      this.db
+        .select({ present: sql<number>`1` })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            eq(kbPages.id, kbHealthItems.pageId),
+            isNull(kbPages.deletedAt),
+            kindCondition,
+          ),
+        ),
+    );
   }
 
   private async computePageImpact(orgId: string, pageId: number): Promise<number> {
