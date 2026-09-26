@@ -1,19 +1,14 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { kbPages, kbPageLinks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { extractPageLinkIds } from "./kb-page-content.util";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
+import { KbPageWriterService } from "./kb-page-writer.service";
 
 type PageRow = KbPageRow;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -24,6 +19,7 @@ export class KbPageDuplicateService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
     private readonly auth: KnowledgeAuthorizationService,
+    private readonly writer: KbPageWriterService,
   ) {}
 
   async duplicate(user: CurrentUserContext, pageId: number): Promise<PageRow> {
@@ -31,7 +27,11 @@ export class KbPageDuplicateService {
     const orgId = user.orgId;
     const root = await this.db.query.kbPages.findFirst({
       columns: { id: true },
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      where: and(
+        eq(kbPages.id, pageId),
+        eq(kbPages.orgId, orgId),
+        isNull(kbPages.deletedAt),
+      ),
     });
     if (!root) throw new NotFoundException("Page not found");
 
@@ -97,7 +97,8 @@ export class KbPageDuplicateService {
           .insert(kbPages)
           .values(plan.map((entry) => entry.values))
           .returning(KB_PAGE_COLUMNS);
-        if (created.length !== plan.length) throw new Error("Failed to duplicate page");
+        if (created.length !== plan.length)
+          throw new Error("Failed to duplicate page");
         const createdByPosition = new Map<string, PageRow>(
           created.map(function keyRow(row) {
             return [`${row.parentPageId ?? "root"}:${row.sortOrder}`, row];
@@ -116,26 +117,7 @@ export class KbPageDuplicateService {
 
       if (!newRoot) throw new NotFoundException("Duplicated page not found");
 
-      await OutboxWriter.emitMany(
-        tx,
-        copies
-          .filter((copy) => Boolean(copy.contentText?.trim()))
-          .map((copy) => ({
-            eventId: randomUUID(),
-            organizationId: orgId,
-            aggregateType: "kb_page",
-            aggregateId: String(copy.id),
-            aggregateVersion: Date.now(),
-            eventType: "kb.content.index",
-            payload: {
-              contentType: "page",
-              contentId: copy.id,
-              contentRevision: copy.contentRevision,
-              aclRevision: copy.aclRevision,
-            },
-            occurredAt: new Date(),
-          })),
-      );
+      await this.writer.commitManyPageChanges(tx, { orgId, pages: copies });
 
       const linkIdsByOriginal = new Map<number, number[]>();
       const allLinkIds = new Set<number>();
@@ -150,14 +132,21 @@ export class KbPageDuplicateService {
         const validLinks = await tx
           .select({ id: kbPages.id })
           .from(kbPages)
-          .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, [...allLinkIds])));
+          .where(
+            and(eq(kbPages.orgId, orgId), inArray(kbPages.id, [...allLinkIds])),
+          );
         const validIds = new Set(validLinks.map((l) => l.id));
-        const linkRows: Array<{ orgId: string; sourcePageId: number; targetPageId: number }> = [];
+        const linkRows: Array<{
+          orgId: string;
+          sourcePageId: number;
+          targetPageId: number;
+        }> = [];
         for (const [originalId, linkIds] of linkIdsByOriginal) {
           const sourcePageId = idMapping.get(originalId);
           if (sourcePageId === undefined) continue;
           for (const targetPageId of linkIds)
-            if (validIds.has(targetPageId)) linkRows.push({ orgId, sourcePageId, targetPageId });
+            if (validIds.has(targetPageId))
+              linkRows.push({ orgId, sourcePageId, targetPageId });
         }
         if (linkRows.length > 0)
           await tx.insert(kbPageLinks).values(linkRows).onConflictDoNothing();
@@ -167,7 +156,10 @@ export class KbPageDuplicateService {
     });
   }
 
-  private levelsOf(subtreeMap: Map<number, PageRow>, rootId: number): PageRow[][] {
+  private levelsOf(
+    subtreeMap: Map<number, PageRow>,
+    rootId: number,
+  ): PageRow[][] {
     const childrenByParent = new Map<number, PageRow[]>();
     for (const page of subtreeMap.values()) {
       if (page.id === rootId || page.parentPageId === null) continue;
@@ -184,7 +176,8 @@ export class KbPageDuplicateService {
     while (current.length > 0) {
       levels.push(current);
       const next: PageRow[] = [];
-      for (const node of current) next.push(...(childrenByParent.get(node.id) ?? []));
+      for (const node of current)
+        next.push(...(childrenByParent.get(node.id) ?? []));
       current = next;
     }
     return levels;
@@ -213,7 +206,13 @@ export class KbPageDuplicateService {
     const pages = await tx
       .select(KB_PAGE_COLUMNS)
       .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids), isNull(kbPages.deletedAt)));
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          inArray(kbPages.id, ids),
+          isNull(kbPages.deletedAt),
+        ),
+      );
     return new Map(pages.map((p) => [p.id, p]));
   }
 }

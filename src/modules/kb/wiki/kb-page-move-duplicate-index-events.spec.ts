@@ -144,6 +144,7 @@ describe("KbPageDuplicateService.duplicate — indexing the copy", () => {
       harness.db,
       { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
       makeAuth(),
+      new KbPageWriterService({} as never),
     );
 
     const copy = await svc.duplicate(makeUser(), PAGE_ID);
@@ -163,6 +164,7 @@ describe("KbPageDuplicateService.duplicate — indexing the copy", () => {
       harness.db,
       { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
       makeAuth(),
+      new KbPageWriterService({} as never),
     );
 
     await svc.duplicate(makeUser(), PAGE_ID);
@@ -185,7 +187,6 @@ describe("KbPageTreeService.move — indexing the moved page", () => {
       { log: jest.fn() } as never,
       makeAuth(),
       {} as never,
-      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
       new KbPageWriterService({} as never),
     );
 
@@ -209,7 +210,6 @@ describe("KbPageTreeService.move — indexing the moved page", () => {
       { log: jest.fn() } as never,
       makeAuth(),
       {} as never,
-      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
       new KbPageWriterService({} as never),
     );
 
@@ -218,5 +218,63 @@ describe("KbPageTreeService.move — indexing the moved page", () => {
     ).rejects.toThrow("Page not found");
 
     expect(harness.outboxRows).toHaveLength(0);
+  });
+});
+
+describe("KbPageDuplicateService.duplicate — writer delegation", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("delegates to writer.commitManyPageChanges so the copy batch flows through the canonical seam", async () => {
+    const harness = makeDuplicateHarness("escalation steps");
+    const writer = new KbPageWriterService({} as never);
+    const spy = jest.spyOn(writer, "commitManyPageChanges").mockResolvedValue(undefined);
+    const svc = new KbPageDuplicateService(
+      harness.db,
+      { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
+      makeAuth(),
+      writer,
+    );
+
+    await svc.duplicate(makeUser(), PAGE_ID);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ orgId: ORG_ID }),
+    );
+  });
+});
+
+describe("KbPageTreeService.move — writer delegation", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("delegates to writer.commitPageChange so the reindex event flows through the canonical seam", async () => {
+    const harness = makeMoveHarness([
+      { id: PAGE_ID, contentRevision: 3, aclRevision: 2 },
+    ]);
+    const writer = new KbPageWriterService({} as never);
+    const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
+    const svc = new KbPageTreeService(
+      harness.db,
+      { log: jest.fn() } as never,
+      makeAuth(),
+      {} as never,
+      writer,
+    );
+
+    await svc.move(makeUser(), PAGE_ID, { parentPageId: null, index: 0 });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        orgId: ORG_ID,
+        page: expect.objectContaining({ id: PAGE_ID }),
+      }),
+    );
   });
 });

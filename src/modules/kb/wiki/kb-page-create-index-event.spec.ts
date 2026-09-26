@@ -222,3 +222,34 @@ describe("KbPagesService.create — indexing a page at the moment it is created"
     expect(harness.outboxRows).toHaveLength(0);
   });
 });
+
+describe("KbPagesService.create — writer delegation", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("delegates to writer.commitPageChange so the event path flows through the canonical seam", async () => {
+    const harness = makeHarness();
+    const writer = new KbPageWriterService({} as never);
+    const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
+    const svc = new KbPagesService(
+      harness.db,
+      { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      writer,
+    );
+
+    await svc.create(makeUser(), { title: "Runbook" });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        orgId: ORG_ID,
+        page: expect.objectContaining({ contentRevision: 1 }),
+      }),
+    );
+  });
+});

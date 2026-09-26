@@ -21,9 +21,7 @@ function hasWriterInjected(ServiceClass: Function): boolean {
 // Removing a service from the set flips its test from "not yet migrated" to
 // "must have writer injected" — the test goes red immediately if the injection
 // was not actually added, catching an incomplete migration.
-const NOT_YET_MIGRATED = new Set<Function>([
-  KbPageDuplicateService,
-]);
+const NOT_YET_MIGRATED = new Set<Function>();
 
 // Full list of injectable services that own page mutations.
 // Add here when a new page-mutating service is introduced.

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { projects, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -15,7 +15,7 @@ import type {
   UpdateFeedbackInput,
   UpdateRoadmapInput,
 } from "./dto/projects.schemas";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { ProjectsChangelogService } from "./projects-changelog.service";
 import { ProjectsFeedbackService } from "./projects-feedback.service";
@@ -41,6 +41,97 @@ import {
 
 const ROADMAP_SEARCH_MIN_TERM_LENGTH = 3;
 export const ROADMAP_SEARCH_ID_CAP = 500;
+
+type RoadmapSortMode = "sort_order" | "updated_at" | "created_at" | "title";
+
+interface RoadmapPageKey {
+  readonly sortValue: string;
+  readonly id: number;
+}
+
+interface RoadmapOrdering {
+  readonly orderBy: SQL[];
+  readonly toPositionParts: (row: {
+    id: number;
+    sortOrder: number;
+    updatedAt: Date;
+    createdAt: Date;
+    title: string;
+  }) => readonly [string, string, string];
+  readonly buildBoundary: (key: RoadmapPageKey) => SQL | undefined;
+}
+
+function sortModeFromQuery(sort: RoadmapListQuery["sort"]): RoadmapSortMode {
+  return sort ?? "sort_order";
+}
+
+function decodeRoadmapCursor(
+  cursor: string | undefined | null,
+  mode: RoadmapSortMode,
+): RoadmapPageKey | null {
+  const parts = decodeTupleCursor(cursor, 3);
+  if (!parts) return null;
+  const [cursorMode, sortValue, rawId] = parts;
+  if (cursorMode !== mode) return null;
+  if (!/^[1-9][0-9]{0,9}$/.test(rawId)) return null;
+  const id = Number(rawId);
+  if (!Number.isSafeInteger(id) || id > 2_147_483_647) return null;
+  return { sortValue, id };
+}
+
+function buildRoadmapOrdering(mode: RoadmapSortMode): RoadmapOrdering {
+  switch (mode) {
+    case "sort_order":
+      return {
+        orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
+        toPositionParts: (row) => [mode, String(row.sortOrder), String(row.id)] as const,
+        buildBoundary: (key) => {
+          const val = Number(key.sortValue);
+          if (!Number.isInteger(val)) return undefined;
+          return or(
+            gt(roadmapItems.sortOrder, val),
+            and(eq(roadmapItems.sortOrder, val), gt(roadmapItems.id, key.id)),
+          );
+        },
+      };
+    case "updated_at":
+      return {
+        orderBy: [desc(roadmapItems.updatedAt), asc(roadmapItems.id)],
+        toPositionParts: (row) => [mode, row.updatedAt.toISOString(), String(row.id)] as const,
+        buildBoundary: (key) => {
+          const ts = new Date(key.sortValue);
+          if (Number.isNaN(ts.getTime())) return undefined;
+          return or(
+            lt(roadmapItems.updatedAt, ts),
+            and(eq(roadmapItems.updatedAt, ts), gt(roadmapItems.id, key.id)),
+          );
+        },
+      };
+    case "created_at":
+      return {
+        orderBy: [desc(roadmapItems.createdAt), asc(roadmapItems.id)],
+        toPositionParts: (row) => [mode, row.createdAt.toISOString(), String(row.id)] as const,
+        buildBoundary: (key) => {
+          const ts = new Date(key.sortValue);
+          if (Number.isNaN(ts.getTime())) return undefined;
+          return or(
+            lt(roadmapItems.createdAt, ts),
+            and(eq(roadmapItems.createdAt, ts), gt(roadmapItems.id, key.id)),
+          );
+        },
+      };
+    case "title":
+      return {
+        orderBy: [asc(roadmapItems.title), asc(roadmapItems.id)],
+        toPositionParts: (row) => [mode, row.title, String(row.id)] as const,
+        buildBoundary: (key) =>
+          or(
+            gt(roadmapItems.title, key.sortValue),
+            and(eq(roadmapItems.title, key.sortValue), gt(roadmapItems.id, key.id)),
+          ),
+      };
+  }
+}
 
 type Scored<T> = T & {
   prioritization: RoadmapPrioritization;

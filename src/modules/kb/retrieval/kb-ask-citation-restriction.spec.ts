@@ -135,6 +135,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
     };
     const auth = {
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      resolveStanding: jest.fn().mockResolvedValue({ orgId: "org-1", userId: "user-asker", membershipId: ASKER_MEMBERSHIP, roleSlugs: [], isOrgOwner: false, isKbAdmin: false, accessibleSpaceIds: [5], accessibleProjectIds: [], permissionsVersion: 1 }),
       assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
       articleRestrictionPredicate: jest.fn().mockImplementation(async (user: CurrentUserContext) => {
         if (await access.isAdmin(user)) return null;
@@ -161,7 +162,6 @@ describe("KbAskService — citation re-verification re-applies the article-restr
 
     const search = new KbSearchService(
       db as never,
-      access as never,
       gateway as never,
       events as never,
       new KbCandidateService(db as never),
@@ -190,7 +190,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       gateway as never,
       events as never,
       search as never,
-      new KbCitationVisibilityService(db as never, access as never, search as never, auth as never), NO_LINKED_DOCUMENTS, null,
+      new KbCitationVisibilityService(db as never, search as never, auth as never), NO_LINKED_DOCUMENTS, null,
     );
     return { ask, access, db };
   };
@@ -312,7 +312,7 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     const svc = new KbAskService(
       db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
-      new KbCitationVisibilityService(db as never, {} as never, {} as never, authRevoked as never), NO_LINKED_DOCUMENTS, null,
+      new KbCitationVisibilityService(db as never, {} as never, authRevoked as never), NO_LINKED_DOCUMENTS, null,
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).rejects.toThrow(NotFoundException);
@@ -331,7 +331,7 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     const svc = new KbAskService(
       db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
-      new KbCitationVisibilityService(db as never, {} as never, {} as never, authGrants as never), NO_LINKED_DOCUMENTS, null,
+      new KbCitationVisibilityService(db as never, {} as never, authGrants as never), NO_LINKED_DOCUMENTS, null,
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).resolves.not.toThrow();

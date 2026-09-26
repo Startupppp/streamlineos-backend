@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { KbAccessService } from "../core/kb-access.service";
@@ -166,7 +166,8 @@ describe("KB departed-actor authority — KbAccessService.assertCanViewArticle",
 
   it("grants access when restriction row carries the caller's membershipId (preferred path)", async () => {
     const db = makeDb([{ userId: null, membershipId: 42, role: null }]);
-    const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never);
+    const authGrant = { assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }) };
+    const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never, authGrant as never);
     const user = makeUser({ userId: "user-other", principal: humanSessionPrincipal(42, false) });
     const row = { id: 1, orgId: "org-1", spaceId: null };
     await expect(svc.assertCanViewArticle(user, row)).resolves.toBeUndefined();
@@ -174,7 +175,8 @@ describe("KB departed-actor authority — KbAccessService.assertCanViewArticle",
 
   it("denies access when restriction row targets another user and caller carries a different membershipId", async () => {
     const db = makeDb([{ userId: "other-user", membershipId: 99, role: null }]);
-    const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never);
+    const authDeny = { assertPageAccess: jest.fn().mockRejectedValue(new NotFoundException("Article not found")) };
+    const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never, authDeny as never);
     const user = makeUser({
       userId: "user-departed",
       principal: humanSessionPrincipal(42, false),
@@ -185,7 +187,8 @@ describe("KB departed-actor authority — KbAccessService.assertCanViewArticle",
 
   it("denies access when restriction row has null membershipId and null role (neither path matches — fail-closed)", async () => {
     const db = makeDb([{ userId: "user-departed", membershipId: null, role: null }]);
-    const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never);
+    const authDeny = { assertPageAccess: jest.fn().mockRejectedValue(new NotFoundException("Article not found")) };
+    const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never, authDeny as never);
     const user = makeUser({ userId: "user-departed", principal: humanSessionPrincipal(42, false) });
     const row = { id: 1, orgId: "org-1", spaceId: null };
     await expect(svc.assertCanViewArticle(user, row)).rejects.toThrow("Article not found");
@@ -193,7 +196,8 @@ describe("KB departed-actor authority — KbAccessService.assertCanViewArticle",
 
   it("confers NO authority when departed actor is account-only and restriction row's membershipId is cleared", async () => {
     const db = makeDb([{ userId: null, membershipId: null, role: null }]);
-    const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never);
+    const authDeny = { assertPageAccess: jest.fn().mockRejectedValue(new NotFoundException("Article not found")) };
+    const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never, authDeny as never);
     const user = makeUser({ userId: "user-departed", principal: ACCOUNT_ONLY_PRINCIPAL });
     const row = { id: 1, orgId: "org-1", spaceId: null };
     await expect(svc.assertCanViewArticle(user, row)).rejects.toThrow("Article not found");

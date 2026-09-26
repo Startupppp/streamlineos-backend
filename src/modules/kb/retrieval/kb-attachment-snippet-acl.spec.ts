@@ -77,7 +77,6 @@ function makeHarness(options: { scope?: string; isAdmin?: boolean } = {}) {
   };
   const service = new KbSearchService(
     db as never,
-    access as never,
     embeddings as never,
     { recordDetached: jest.fn().mockResolvedValue(undefined) } as never,
     new KbCandidateService(db as never),

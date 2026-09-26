@@ -109,12 +109,15 @@ function makeAccessMock() {
 function makeSearchService(db: Db): KbSearchService {
   return new KbSearchService(
     db,
-    makeAccessMock() as never,
     { isEmbeddingConfigured: jest.fn().mockReturnValue(false) } as never,
     { recordDetached: jest.fn().mockReturnValue(Promise.resolve()) } as never,
     new KbCandidateService(db, null),
     { scopeFor: jest.fn().mockResolvedValue("all") } as never,
-    { articleRestrictionPredicate: jest.fn().mockResolvedValue(null) } as never,
+    {
+      articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
+      resolveStanding: jest.fn().mockResolvedValue(makeKbAdminStanding()),
+      resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [1], cacheOutcome: "hit" }),
+    } as never,
     null,
   );
 }
@@ -122,7 +125,6 @@ function makeSearchService(db: Db): KbSearchService {
 function makeSearchServiceWithEmbedding(db: Db, embedDepths: number[]): KbSearchService {
   return new KbSearchService(
     db,
-    makeAccessMock() as never,
     {
       isEmbeddingConfigured: jest.fn().mockReturnValue(true),
       embedQueryWithCredit: jest.fn(async () => {
@@ -133,7 +135,11 @@ function makeSearchServiceWithEmbedding(db: Db, embedDepths: number[]): KbSearch
     { recordDetached: jest.fn().mockReturnValue(Promise.resolve()) } as never,
     new KbCandidateService(db, null),
     { scopeFor: jest.fn().mockResolvedValue("all") } as never,
-    { articleRestrictionPredicate: jest.fn().mockResolvedValue(null) } as never,
+    {
+      articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
+      resolveStanding: jest.fn().mockResolvedValue(makeKbAdminStanding()),
+      resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [1], cacheOutcome: "hit" }),
+    } as never,
     null,
   );
 }

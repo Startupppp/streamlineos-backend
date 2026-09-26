@@ -9,6 +9,7 @@ import {
   baseListQuerySchema,
   pageSizeField,
 } from "../../../../common/pagination/list-query.schema";
+import { ticketTypeEnum, ticketPriorityEnum } from "../../../../db/schema";
 
 const SEARCH_TERM_MAX_LENGTH = 200;
 
@@ -40,7 +41,7 @@ const csvToIntArray = z.preprocess(
 const csvToTicketPriorityArray = z.preprocess(
   normalizeCsv,
   z
-    .array(z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]))
+    .array(z.enum(ticketPriorityEnum.enumValues))
     .max(100)
     .optional(),
 );
@@ -48,7 +49,7 @@ const csvToTicketPriorityArray = z.preprocess(
 const csvToTicketTypeArray = z.preprocess(
   normalizeCsv,
   z
-    .array(z.enum(["TASK", "BUG", "STORY", "EPIC", "SUBTASK"]))
+    .array(z.enum(ticketTypeEnum.enumValues))
     .max(100)
     .optional(),
 );
@@ -129,8 +130,8 @@ export const createTicketSchema = z.object({
       message: "Title must contain at least one letter or number",
     }),
   description: z.string().optional(),
-  type: z.enum(["TASK", "BUG", "STORY", "EPIC", "SUBTASK"]).default("TASK"),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+  type: z.enum(ticketTypeEnum.enumValues).default("TASK"),
+  priority: z.enum(ticketPriorityEnum.enumValues).optional(),
   assigneeId: z.string().optional(),
   assigneeIds: z.array(z.string()).max(20).optional(),
   reporterId: z.string().optional(),
@@ -157,9 +158,9 @@ export const updateTicketSchema = z
       })
       .optional(),
     description: z.string().nullable().optional(),
-    type: z.string().optional(),
+    type: z.enum(ticketTypeEnum.enumValues).optional(),
     status: z.string().optional(),
-    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+    priority: z.enum(ticketPriorityEnum.enumValues).optional(),
     assigneeId: z.string().optional(),
     assigneeIds: z.array(z.string()).max(20).optional(),
     epicId: z.number().nullable().optional(),
@@ -232,9 +233,9 @@ export const rankTicketSchema = z.object({
 
 export const importTicketRowSchema = z.object({
   title: z.string().min(1).max(500),
-  type: z.enum(["TASK", "BUG", "STORY", "EPIC"]).optional(),
+  type: z.enum(ticketTypeEnum.enumValues).optional(),
   status: z.string().optional(),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+  priority: z.enum(ticketPriorityEnum.enumValues).optional(),
   points: z.number().int().min(0).optional(),
   assigneeEmail: z.string().email().optional(),
   dueDate: z.iso.date().optional(),

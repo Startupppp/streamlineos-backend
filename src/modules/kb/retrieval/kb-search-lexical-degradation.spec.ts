@@ -118,12 +118,25 @@ function makeHarness(embed: EmbedBehaviour, resultQueue: unknown[][]) {
   };
   const service = new KbSearchService(
     db as never,
-    access as never,
     embeddings as never,
     { recordDetached: jest.fn().mockResolvedValue(undefined) } as never,
     new KbCandidateService(db as never),
     { scopeFor: jest.fn().mockResolvedValue("all") } as never,
-    auth as never,
+    {
+      ...auth,
+      resolveStanding: jest.fn().mockResolvedValue({
+        orgId: ORG,
+        userId: "user-1",
+        membershipId: MEMBERSHIP,
+        roleSlugs: ["MEMBER"],
+        isOrgOwner: false,
+        isKbAdmin: false,
+        accessibleSpaceIds: [1],
+        accessibleProjectIds: [],
+        permissionsVersion: 1,
+      }),
+      resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [1], cacheOutcome: "hit" }),
+    } as never,
   );
   return { service, wheres, orders, embedQueryWithCredit };
 }

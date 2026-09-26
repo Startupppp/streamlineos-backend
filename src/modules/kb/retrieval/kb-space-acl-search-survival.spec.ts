@@ -132,11 +132,14 @@ function makeIndexing(db: unknown): KbIndexingService {
 
 function makeSpaces(db: unknown, indexing: KbIndexingService) {
   const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
+  const authz = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    invalidateSpaceScope: jest.fn().mockResolvedValue(undefined),
+  };
   return {
-    service: new KbSpacesService(db as never, access as never, indexing, {
-      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
-    } as never),
+    service: new KbSpacesService(db as never, indexing, authz as never),
     access,
+    authz,
   };
 }
 
@@ -160,7 +163,7 @@ describe("KbSpacesService.update — a space-property ACL change keeps content s
     store.seed();
     const { db, bumpedTables, syncedTables } = makeDb(store);
     const indexing = makeIndexing(db);
-    const { service, access } = makeSpaces(db, indexing);
+    const { service, authz } = makeSpaces(db, indexing);
 
     expect(store.searchablePageIds()).toEqual([PAGE, OTHER_PAGE, ARTICLE]);
 
@@ -170,7 +173,7 @@ describe("KbSpacesService.update — a space-property ACL change keeps content s
     expect(store.searchablePageIds()).toContain(ARTICLE);
     expect(bumpedTables).toEqual(["kb_pages"]);
     expect(syncedTables).toEqual(["kb_pages"]);
-    expect(access.invalidateAccessibleSpaceIds).toHaveBeenCalledWith(ORG);
+    expect(authz.invalidateSpaceScope).toHaveBeenCalledWith(ORG);
   });
 
   it("flipping isPublicHelpCenter is an ACL change too and also keeps content searchable", async () => {

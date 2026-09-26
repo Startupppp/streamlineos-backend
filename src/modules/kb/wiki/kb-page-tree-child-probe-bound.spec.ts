@@ -8,9 +8,6 @@ function makeUser(orgId: string) {
 
 const audit = {} as never;
 const access = {} as never;
-const kbAccess = {
-  assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
-} as never;
 
 function makeAuth() {
   return {
@@ -77,7 +74,6 @@ describe("KbPageTreeService.getTreeLevel — the has-children probe is bounded b
       audit,
       makeAuth() as never,
       access,
-      kbAccess,
       {} as never,
     );
 
@@ -95,7 +91,6 @@ describe("KbPageTreeService.getTreeLevel — the has-children probe is bounded b
       audit,
       makeAuth() as never,
       access,
-      kbAccess,
       {} as never,
     );
 
@@ -113,7 +108,6 @@ describe("KbPageTreeService.getTreeLevel — the has-children probe is bounded b
       audit,
       makeAuth() as never,
       access,
-      kbAccess,
       {} as never,
     );
 
@@ -132,7 +126,6 @@ describe("KbPageTreeService.getTreeLevel — the has-children probe is bounded b
       audit,
       makeAuth() as never,
       access,
-      kbAccess,
       {} as never,
     );
 

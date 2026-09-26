@@ -4,6 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { ClientAccountsService } from "./client-accounts.service";
 import { ScopedRead } from "../access/scoped-read";
+import { MembershipResolvingDispatchDouble } from "../notifications/notification-recipient-membership.spec-fixtures";
 
 /**
  * The client list narrowed by `DataScope`; four routes reached by id did not.
@@ -32,7 +33,18 @@ const OWNER_PREDICATE = '"sales_rep_id" =';
 interface Recorder {
   db: never;
   wheres: SQL[];
+  dispatch: MembershipResolvingDispatchDouble;
 }
+
+interface SelectChain {
+  from: () => SelectChain;
+  where: () => SelectChain;
+  orderBy: () => SelectChain;
+  limit: () => Promise<unknown[]>;
+}
+
+const SALES_REP_USER = "rep-2";
+const SALES_REP_MEMBERSHIP_ID = 4102;
 
 /**
  * A db that records every `where` it is handed and always finds the account.

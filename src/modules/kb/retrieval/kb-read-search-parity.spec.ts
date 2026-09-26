@@ -152,7 +152,12 @@ async function keywordSearchWhere(viewer: Viewer): Promise<SQL<unknown>> {
     groupBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([]),
   };
-  const db = { select: jest.fn().mockReturnValue(chain) };
+  const db = {
+    select: jest.fn().mockReturnValue(chain),
+    transaction: jest.fn((callback: (tx: { execute: jest.Mock }) => Promise<unknown>) =>
+      callback({ execute: jest.fn().mockResolvedValue([]) }),
+    ),
+  };
   const auth = { resolveStanding: jest.fn().mockResolvedValue(viewer.standing) };
 
   await new KbPageSearchQueryService(db as never, auth as never).search(

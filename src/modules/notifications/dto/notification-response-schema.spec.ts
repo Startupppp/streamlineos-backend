@@ -33,12 +33,10 @@ function response(overrides: Record<string, unknown> = {}) {
   return { data: [row(overrides)], nextCursor: null, hasMore: false };
 }
 
-function memberSetOf(field: string): string[] {
-  const shape = notificationListResponseSchema.shape.data.element.shape as Record<
-    string,
-    { options?: readonly string[] }
-  >;
-  return [...(shape[field].options ?? [])].sort();
+const notificationShape = notificationListResponseSchema.shape.data.element.shape;
+
+function membersOf(declared: { options: readonly string[] }): string[] {
+  return [...declared.options].sort();
 }
 
 describe("notificationListResponseSchema typed against the notification pgEnums rather than z.string()", () => {
@@ -55,15 +53,15 @@ describe("notificationListResponseSchema typed against the notification pgEnums 
   });
 
   it("enumerates exactly the members notification_category declares, so a frontend copy has a contract to be compared against", () => {
-    expect(memberSetOf("category")).toEqual([...DB_ENUMS.notification_category].sort());
+    expect(membersOf(notificationShape.category)).toEqual([...DB_ENUMS.notification_category].sort());
   });
 
   it("enumerates exactly the members notification_type declares", () => {
-    expect(memberSetOf("type")).toEqual([...DB_ENUMS.notification_type].sort());
+    expect(membersOf(notificationShape.type)).toEqual([...DB_ENUMS.notification_type].sort());
   });
 
   it("enumerates exactly the members notification_priority declares", () => {
-    expect(memberSetOf("priority")).toEqual([...DB_ENUMS.notification_priority].sort());
+    expect(membersOf(notificationShape.priority)).toEqual([...DB_ENUMS.notification_priority].sort());
   });
 
   it.each(DB_ENUMS.notification_category)("still parses %s, so tightening did not narrow a live category away", (category) => {

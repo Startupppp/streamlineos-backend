@@ -66,6 +66,9 @@ function makeCapturingDb(rows: unknown[] = []) {
     whereClauses,
     db: {
       select: jest.fn().mockReturnValue(chain),
+      transaction: jest.fn((callback: (tx: { execute: jest.Mock }) => Promise<unknown>) =>
+        callback({ execute: jest.fn().mockResolvedValue([]) }),
+      ),
     },
   };
 }

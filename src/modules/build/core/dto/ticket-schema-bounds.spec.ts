@@ -6,6 +6,40 @@ import {
   updateTicketSchema,
 } from "./ticket.schemas";
 
+describe("ticket type derives from the database enum", () => {
+  it.each(["EPIC", "STORY", "TASK", "BUG"])(
+    "createTicketSchema accepts DB enum value: %s",
+    (type) => {
+      expect(createTicketSchema.safeParse({ title: "Valid ticket", type }).success).toBe(true);
+    },
+  );
+
+  it.each(["SUBTASK", "subtask", "FEATURE", "", "null"])(
+    "createTicketSchema rejects value absent from the DB enum: %s",
+    (type) => {
+      expect(createTicketSchema.safeParse({ title: "Valid ticket", type }).success).toBe(false);
+    },
+  );
+
+  it.each(["EPIC", "STORY", "TASK", "BUG"])(
+    "updateTicketSchema accepts DB enum value: %s",
+    (type) => {
+      expect(updateTicketSchema.safeParse({ type }).success).toBe(true);
+    },
+  );
+
+  it.each(["SUBTASK", "subtask", "FEATURE", "", "null"])(
+    "updateTicketSchema rejects value absent from the DB enum: %s",
+    (type) => {
+      expect(updateTicketSchema.safeParse({ type }).success).toBe(false);
+    },
+  );
+
+  it("updateTicketSchema accepts omitted type (field is optional)", () => {
+    expect(updateTicketSchema.safeParse({}).success).toBe(true);
+  });
+});
+
 describe("Build ticket numeric bounds", () => {
   it.each([-1, 1.5, Number.POSITIVE_INFINITY])(
     "rejects invalid story points on create: %s",

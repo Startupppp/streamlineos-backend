@@ -63,7 +63,6 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
-      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
     );
 
@@ -95,7 +94,6 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
-      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
     );
 
@@ -112,7 +110,6 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
-      { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
     );
 

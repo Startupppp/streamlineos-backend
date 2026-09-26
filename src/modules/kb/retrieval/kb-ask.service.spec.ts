@@ -140,6 +140,7 @@ describe("KbAskService", () => {
           provide: KnowledgeAuthorizationService,
           useValue: {
             visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+            resolveStanding: jest.fn().mockResolvedValue({ orgId: "org1", userId: "user-1", membershipId: 1, roleSlugs: [], isOrgOwner: false, isKbAdmin: false, accessibleSpaceIds: [1], accessibleProjectIds: [], permissionsVersion: 1 }),
             assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org1", pageId: 1, action: "view", via: "admin" }),
             articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
           },
@@ -500,6 +501,7 @@ describe("KbAskService", () => {
           provide: KnowledgeAuthorizationService,
           useValue: {
             visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+            resolveStanding: jest.fn().mockResolvedValue({ orgId: "org1", userId: "user-1", membershipId: 1, roleSlugs: [], isOrgOwner: false, isKbAdmin: false, accessibleSpaceIds: [1], accessibleProjectIds: [], permissionsVersion: 1 }),
             assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org1", pageId: 1, action: "view", via: "admin" }),
             articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
           },
@@ -554,6 +556,7 @@ describe("KbAskService", () => {
           provide: KnowledgeAuthorizationService,
           useValue: {
             visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+            resolveStanding: jest.fn().mockResolvedValue({ orgId: "org1", userId: "user-1", membershipId: 1, roleSlugs: [], isOrgOwner: false, isKbAdmin: false, accessibleSpaceIds: [1], accessibleProjectIds: [], permissionsVersion: 1 }),
             assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org1", pageId: 1, action: "view", via: "admin" }),
             articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
           },

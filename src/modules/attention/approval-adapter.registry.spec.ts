@@ -1,4 +1,8 @@
-import { ApprovalAdapterRegistry } from "./approval-adapter.registry";
+import {
+  ApprovalAdapterRegistry,
+  approvalAdapterKey,
+  approvalObjectKey,
+} from "./approval-adapter.registry";
 import type { ApprovalSourceAdapter } from "./approval-adapter.registry";
 import type {
   BuildApprovalInboxItem,
@@ -12,7 +16,6 @@ function makeAdapter(module: string, kindLabel: string): ApprovalSourceAdapter {
     permission: `${module}:test:view`,
     supportsAfterCursor: false,
     fetch: (): Promise<BuildApprovalInboxItem[]> => Promise.resolve([]),
-    countPending: (): Promise<number> => Promise.resolve(0),
   };
 }
 

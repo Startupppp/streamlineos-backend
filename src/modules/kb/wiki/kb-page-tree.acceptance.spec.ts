@@ -39,7 +39,7 @@ describe("KbPageTreeService — acceptance at scale", () => {
       })),
     } as unknown as Db;
 
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, {} as never);
 
     await svc.getTreeLevel(makeUser("org-large"), { limit: KB_PAGE_TREE_PAGE_SIZE });
 
@@ -72,7 +72,7 @@ describe("KbPageTreeService — acceptance at scale", () => {
       })),
     } as unknown as Db;
 
-    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, { assertSpaceAccessible: jest.fn().mockResolvedValue(undefined) } as never, {} as never);
+    const svc = new KbPageTreeService(db, audit, makeAuth() as never, {} as never, {} as never);
 
     await svc.getTreeLevel(makeUser("org-bounded"), { limit: customLimit });
 

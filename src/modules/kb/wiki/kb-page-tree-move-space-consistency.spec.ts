@@ -3,9 +3,6 @@ import type { Db } from "../../../db/drizzle.module";
 import { outboxEvents } from "../../../db/schema/common/outbox";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { KbPageWriterService } from "./kb-page-writer.service";
-import { KbAccessService } from "../core/kb-access.service";
-import type { AccessService } from "../../access/access.service";
-import type { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 function makeUser(orgId: string) {
@@ -23,6 +20,7 @@ function makeAuth() {
       action: "edit",
       via: "admin",
     }),
+    assertSpaceAccess: jest.fn().mockResolvedValue({ orgId: "o1", spaceId: 1, action: "edit", via: "space" }),
   };
 }
 
@@ -60,17 +58,14 @@ describe("KbPageTreeService.move — space consistency between source and target
       { spaceId: 2 },
     );
     const auth = makeAuth();
-    const kbAccess = {
-      assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
-    } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
 
     await svc.move(makeUser("org-space-move"), PAGE_ID, {
       parentPageId: TARGET_ID,
       index: 0,
     });
 
-    expect(kbAccess.assertSpaceAccessible).toHaveBeenCalledWith(expect.anything(), 2);
+    expect(auth.assertSpaceAccess).toHaveBeenCalledWith(expect.anything(), 2, "edit");
     expect(updateWhere).toHaveBeenCalled();
     const setCall = (db.transaction as jest.Mock).mock.calls.length;
     expect(setCall).toBeGreaterThan(0);
@@ -84,10 +79,8 @@ describe("KbPageTreeService.move — space consistency between source and target
       { spaceId: 2 },
     );
     const auth = makeAuth();
-    const kbAccess = {
-      assertSpaceAccessible: jest.fn().mockRejectedValue(new NotFoundException("Space not found")),
-    } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
+    auth.assertSpaceAccess.mockRejectedValue(new NotFoundException("Space not found"));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
 
     await expect(
       svc.move(makeUser("org-space-move-denied"), PAGE_ID, {
@@ -108,17 +101,14 @@ describe("KbPageTreeService.move — space consistency between source and target
       { spaceId: 3 },
     );
     const auth = makeAuth();
-    const kbAccess = {
-      assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
-    } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
 
     await svc.move(makeUser("org-space-move-same"), PAGE_ID, {
       parentPageId: TARGET_ID,
       index: 0,
     });
 
-    expect(kbAccess.assertSpaceAccessible).not.toHaveBeenCalled();
+    expect(auth.assertSpaceAccess).not.toHaveBeenCalled();
   });
 });
 
@@ -132,10 +122,7 @@ describe("KbPageTreeService.move — the moved page is queued for reindexing", (
       { id: PAGE_ID, parentPageId: null, spaceId: 1 },
       { spaceId: 2 },
     );
-    const kbAccess = {
-      assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
-    } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, kbAccess, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, new KbPageWriterService({} as never));
     await svc.move(makeUser(ORG), PAGE_ID, { parentPageId: TARGET_ID, index: 0 });
     return made;
   }
@@ -180,10 +167,9 @@ describe("KbPageTreeService.move — the moved page is queued for reindexing", (
       { id: PAGE_ID, parentPageId: null, spaceId: 1 },
       { spaceId: 2 },
     );
-    const kbAccess = {
-      assertSpaceAccessible: jest.fn().mockRejectedValue(new NotFoundException("Space not found")),
-    } as unknown as KbAccessService;
-    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, kbAccess, new KbPageWriterService({} as never));
+    const auth = makeAuth();
+    auth.assertSpaceAccess.mockRejectedValue(new NotFoundException("Space not found"));
+    const svc = new KbPageTreeService(made.db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
 
     await expect(
       svc.move(makeUser(ORG), PAGE_ID, { parentPageId: TARGET_ID, index: 0 }),
@@ -202,38 +188,8 @@ function makeMember(orgId: string, membershipId: number): CurrentUserContext {
   } as unknown as CurrentUserContext;
 }
 
-function makeRealKbAccessService(
-  spaces: { id: number; audience: string }[],
-  grantedSpaceIds: number[],
-): KbAccessService {
-  const selectResults: unknown[][] = [spaces, []];
-  const makeChain = (result: unknown[]) => {
-    const chain: Record<string, jest.Mock> = {};
-    chain.from = jest.fn(() => chain);
-    chain.innerJoin = jest.fn(() => chain);
-    chain.where = jest.fn(() => Promise.resolve(result));
-    return chain;
-  };
-  const db = {
-    select: jest.fn(() => makeChain(selectResults.shift() ?? [])),
-    selectDistinct: jest.fn(() =>
-      makeChain(grantedSpaceIds.map((spaceId) => ({ spaceId }))),
-    ),
-  };
-  const access = {
-    holds: jest.fn().mockResolvedValue(false),
-    getPermissionsVersion: jest.fn().mockResolvedValue(1),
-  } as unknown as AccessService;
-  const cache = {
-    cachedVersioned: jest
-      .fn()
-      .mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()),
-  } as unknown as CacheService;
-  return new KbAccessService(db as never, cache, access);
-}
-
-describe("KbPageTreeService.move — the space check is a real authorization decision, not a mock interaction", () => {
-  it("BITE: refuses a cross-space move when the real KbAccessService reports the target space is not accessible", async () => {
+describe("KbPageTreeService.move — the space check calls the canonical auth seam", () => {
+  it("BITE: refuses a cross-space move when auth.assertSpaceAccess denies access to the target space", async () => {
     const PAGE_ID = 70;
     const TARGET_ID = 71;
     const { db, transaction } = makeMoveDb(
@@ -241,14 +197,8 @@ describe("KbPageTreeService.move — the space check is a real authorization dec
       { spaceId: 2 },
     );
     const auth = makeAuth();
-    const kbAccess = makeRealKbAccessService(
-      [
-        { id: 1, audience: "internal" },
-        { id: 2, audience: "internal" },
-      ],
-      [1],
-    );
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
+    auth.assertSpaceAccess.mockRejectedValue(new NotFoundException("Space not found"));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
 
     await expect(
       svc.move(makeMember("org-real-move", 42), PAGE_ID, {
@@ -260,7 +210,7 @@ describe("KbPageTreeService.move — the space check is a real authorization dec
     expect(transaction).not.toHaveBeenCalled();
   });
 
-  it("positive control: the same real KbAccessService permits the cross-space move once membership grants both spaces", async () => {
+  it("positive control: the move proceeds once auth.assertSpaceAccess grants access to the target space", async () => {
     const PAGE_ID = 72;
     const TARGET_ID = 73;
     const { db, updateWhere } = makeMoveDb(
@@ -268,14 +218,7 @@ describe("KbPageTreeService.move — the space check is a real authorization dec
       { spaceId: 2 },
     );
     const auth = makeAuth();
-    const kbAccess = makeRealKbAccessService(
-      [
-        { id: 1, audience: "internal" },
-        { id: 2, audience: "internal" },
-      ],
-      [1, 2],
-    );
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, kbAccess, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
 
     await svc.move(makeMember("org-real-move-granted", 42), PAGE_ID, {
       parentPageId: TARGET_ID,
