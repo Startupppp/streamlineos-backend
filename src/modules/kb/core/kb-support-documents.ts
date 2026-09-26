@@ -28,6 +28,14 @@ export type SupportArticlePatchValues = Omit<
   "contentRevision" | "aclRevision"
 >;
 
+export type DocumentStatus = NonNullable<
+  (typeof kbPages.$inferInsert)["status"]
+>;
+
+export type DocumentVisibility = NonNullable<
+  (typeof kbPages.$inferInsert)["visibility"]
+>;
+
 const supportArticleVisibility = sql<ArticleVisibility>`case when ${kbPages.visibility} = 'public' then 'public' else 'internal' end`;
 
 const listProjection = {
@@ -136,8 +144,8 @@ export function listSupportArticles(
   db: Db,
   orgId: string,
   filters: {
-    status?: string;
-    pageVisibility?: "private" | "org" | "public";
+    status?: DocumentStatus;
+    pageVisibility?: DocumentVisibility;
     categoryId?: number;
     search?: string;
   },
@@ -280,8 +288,8 @@ export async function insertSupportArticle(
     excerpt: string | null | undefined;
     contentText: string;
     contentType: typeof SUPPORT_ARTICLE_CONTENT_TYPE;
-    status: string;
-    visibility: string;
+    status: DocumentStatus;
+    visibility: DocumentVisibility;
     createdById: string;
     publishedAt: Date | null | undefined;
   },
@@ -322,7 +330,12 @@ export async function patchSupportArticle(
     .set({
       ...values,
       ...(values.contentText !== undefined
-        ? { content: articleContentToPageContent(undefined, values.contentText) }
+        ? {
+            content: articleContentToPageContent(
+              undefined,
+              values.contentText ?? undefined,
+            ),
+          }
         : {}),
       ...(options.bumpContentRevision
         ? { contentRevision: sql<number>`content_revision + 1` }

@@ -108,6 +108,7 @@ describe("Box 1 — canonical KnowledgeAuthorization is the only access decision
       "core/authorization/knowledge-authorization.service.ts",
       "core/authorization/knowledge-page-scope.ts",
       "core/collection/knowledge-collection.service.ts",
+      "core/kb-helpdesk-documents.ts",
       "retrieval/kb-page-search-query.service.ts",
       "retrieval/kb-chunk-visibility.ts",
       "retrieval/kb-search.service.ts",

@@ -15,7 +15,10 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { SessionsService } from "../sessions/sessions.service";
 import { anonymiseSubjectSupportTickets } from "../support/core/support-ticket-erasure";
-import { eraseSubjectDocumentDerivatives } from "../kb/core/kb-subject-erasure";
+import {
+  eraseSubjectDocumentDerivatives,
+  type DocumentReindexPort,
+} from "../kb/core/kb-subject-erasure";
 import { KbPageWriterService } from "../kb/wiki/kb-page-writer.service";
 import {
   GdprStoragePurgeService,
@@ -83,7 +86,8 @@ export class GdprSubjectErasureService {
     private readonly sessionsService: SessionsService,
     private readonly storagePurge: GdprStoragePurgeService,
     private readonly effectLedger: ExternalEffectLedger,
-    private readonly documentWriter: KbPageWriterService,
+    @Inject(KbPageWriterService)
+    private readonly documentWriter: DocumentReindexPort,
   ) {}
 
   async eraseSubject(

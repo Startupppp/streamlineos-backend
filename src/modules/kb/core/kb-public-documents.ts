@@ -11,7 +11,7 @@ export interface PublicDocumentSummary {
   id: number;
   categoryId: number | null;
   title: string;
-  slug: string;
+  slug: string | null;
   excerpt: string | null;
   views: number | null;
   helpfulCount: number | null;
@@ -23,7 +23,7 @@ export interface PublicDocumentSummary {
 export interface PublicDocumentDetail {
   id: number;
   title: string;
-  slug: string;
+  slug: string | null;
   excerpt: string | null;
   content: string | null;
   categoryId: number | null;

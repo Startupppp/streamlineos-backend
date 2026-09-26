@@ -3,11 +3,20 @@ import { HrHelpdeskService } from "./hr-helpdesk.service";
 import { HrCalendarService } from "./hr-calendar.service";
 import { HrHelpdeskConfigService } from "./hr-helpdesk-config.service";
 import { HrAuditService } from "../core/hr-audit.service";
+import type { KnowledgeAuthorizationService } from "../../kb/core/authorization/knowledge-authorization.service";
 import type { SupportActor } from "./lib/support-queues";
 
 function helpdeskService(db: Db): HrHelpdeskService {
   const audit = new HrAuditService(db);
-  return new HrHelpdeskService(db, new HrHelpdeskConfigService(db, audit), audit);
+  const standingIsNeverResolvedHere = {
+    resolveStanding: jest.fn(),
+  } as unknown as KnowledgeAuthorizationService;
+  return new HrHelpdeskService(
+    db,
+    new HrHelpdeskConfigService(db, audit),
+    audit,
+    standingIsNeverResolvedHere,
+  );
 }
 
 function agent(orgId: string): SupportActor {
