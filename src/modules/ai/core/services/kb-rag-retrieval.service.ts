@@ -1,26 +1,17 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
-import {
-  kbArticleChunks,
-  kbEvents,
-  kbPageAttachments,
-  kbPages,
-  kbSpaces,
-} from "../../../../db/schema";
-import { supportArticlePredicate } from "../../../kb/help-centre/kb-article-page-scope";
+import { kbEvents } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiGatewayService, type EmbedQueryResult } from "../gateway/ai-gateway.service";
-import { PAGE_SIZE_CAP } from "../../../../common/pagination/list-query.schema";
 import { AiRequestCancelledException } from "./ai-service-exceptions";
+import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import {
-  runInTenantTransaction,
-  runInNewTenantTransaction,
-} from "../../../../common/tenant/run-in-tenant-transaction";
+  hasPublicDocumentContent,
+  retrievePublicDocumentChunks,
+  type PublicDocumentChunk,
+} from "../../../kb/core/kb-rag-documents";
 
-const DEFAULT_TOP_K = 6;
-const SEARCH_POOL_K = DEFAULT_TOP_K * 4;
 const MIN_DISPLAY_SIMILARITY = 0.2;
 
 export interface KbAnswerSource {
@@ -32,18 +23,6 @@ export interface KbAnswerSource {
   similarity: number;
 }
 
-interface KbSearchResult {
-  id: number;
-  articleId: number;
-  attachmentId: number | null;
-  source: string;
-  content: string;
-  title: string;
-  slug: string;
-  attachmentName: string | null;
-  similarity: number;
-}
-
 export interface KbContext {
   sources: KbAnswerSource[];
   system: string;
@@ -51,36 +30,7 @@ export interface KbContext {
   degraded?: true;
 }
 
-interface KbChunkRanking {
-  similarity: SQL<number>;
-  order: SQL;
-  match?: SQL;
-}
-
-interface PublicChunkScope {
-  articleId?: number | undefined;
-  match?: SQL | undefined;
-}
-
-function publicChunkPredicate(orgId: string, scope: PublicChunkScope = {}): SQL | undefined {
-  const conditions: SQL[] = [
-    eq(kbArticleChunks.orgId, orgId),
-    eq(kbPages.status, "published"),
-    eq(kbPages.visibility, "public"),
-    supportArticlePredicate(),
-    isNotNull(kbPages.slug),
-    inArray(kbSpaces.audience, ["public", "mixed"]),
-    isNull(kbSpaces.deletedAt),
-  ];
-  if (scope.articleId !== undefined) conditions.push(eq(kbArticleChunks.pageId, scope.articleId));
-  if (scope.match !== undefined) conditions.push(scope.match);
-  return and(
-    ...conditions,
-    or(isNull(kbArticleChunks.attachmentId), isNull(kbPageAttachments.deletedAt)),
-  );
-}
-
-function buildKbPrompts(results: KbSearchResult[]): { system: string; user: string } {
+function buildKbPrompts(results: PublicDocumentChunk[]): { system: string; user: string } {
   const context = results
     .map(
       (r, i) =>
@@ -98,21 +48,6 @@ function buildKbPrompts(results: KbSearchResult[]): { system: string; user: stri
   };
 }
 
-function vectorRanking(vector: string): KbChunkRanking {
-  const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
-  return { similarity: sql<number>`(1 - (${distance}))::float8`, order: distance };
-}
-
-function lexicalRanking(question: string): KbChunkRanking {
-  const tsquery = sql`websearch_to_tsquery('english', ${question})`;
-  const rank = sql`ts_rank(${kbPages.fts}, ${tsquery})`;
-  return {
-    similarity: sql<number>`(${rank})::float8`,
-    order: desc(rank),
-    match: sql`${kbPages.fts} @@ ${tsquery}`,
-  };
-}
-
 @Injectable()
 export class KbRagRetrievalService {
   private readonly logger = new Logger(KbRagRetrievalService.name);
@@ -127,21 +62,7 @@ export class KbRagRetrievalService {
   }
 
   async hasPublishedPublicArticles(orgId: string, articleId?: number): Promise<boolean> {
-    return runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const [row] = await tx
-          .select({ id: kbArticleChunks.id })
-          .from(kbArticleChunks)
-          .innerJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
-          .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
-          .leftJoin(kbPageAttachments, eq(kbPageAttachments.id, kbArticleChunks.attachmentId))
-          .where(publicChunkPredicate(orgId, { articleId }))
-          .limit(1);
-        return Boolean(row);
-      },
-      { orgId },
-    );
+    return hasPublicDocumentContent(this.db, orgId, articleId);
   }
 
   recordNoContext(orgId: string, question: string): void {
@@ -164,8 +85,13 @@ export class KbRagRetrievalService {
   ): Promise<KbContext | null> {
     const vector = await this.embedQuestion(question, orgId, signal);
     signal?.throwIfAborted();
-    const ranking = vector === null ? lexicalRanking(question) : vectorRanking(vector);
-    const chunks = await this.fetchChunks(orgId, ranking, articleId);
+    const chunks = await retrievePublicDocumentChunks(
+      this.db,
+      orgId,
+      vector,
+      question,
+      articleId,
+    );
     if (chunks.length === 0) return null;
     const sources = this.dedupeSources(chunks, vector !== null);
     const { system, user: userContext } = buildKbPrompts(chunks);
@@ -214,44 +140,8 @@ export class KbRagRetrievalService {
     return embedResult.vectorLiteral;
   }
 
-  private async fetchChunks(
-    orgId: string,
-    ranking: KbChunkRanking,
-    articleId?: number,
-  ): Promise<KbSearchResult[]> {
-    return runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const pool = await tx
-          .select({
-            id: kbArticleChunks.id,
-            articleId: kbPages.id,
-            attachmentId: kbArticleChunks.attachmentId,
-            source: kbArticleChunks.source,
-            content: kbArticleChunks.content,
-            title: kbPages.title,
-            slug: kbPages.slug,
-            attachmentName: kbPageAttachments.fileName,
-            similarity: ranking.similarity,
-          })
-          .from(kbArticleChunks)
-          .innerJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
-          .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
-          .leftJoin(kbPageAttachments, eq(kbPageAttachments.id, kbArticleChunks.attachmentId))
-          .where(publicChunkPredicate(orgId, { articleId, match: ranking.match }))
-          .orderBy(ranking.order)
-          .limit(Math.min(SEARCH_POOL_K, PAGE_SIZE_CAP));
-
-        return pool
-          .flatMap((row) => (row.slug === null ? [] : [{ ...row, slug: row.slug }]))
-          .slice(0, DEFAULT_TOP_K);
-      },
-      { orgId },
-    );
-  }
-
   private dedupeSources(
-    results: KbSearchResult[],
+    results: PublicDocumentChunk[],
     applySimilarityFloor: boolean,
   ): KbAnswerSource[] {
     const seen = new Set<string>();
