@@ -5,6 +5,8 @@ const SRC = resolve(__dirname, "..", "..");
 
 const WRITER_ALLOWLIST = [
   join("common", "hr", "sync-canonical-reporting-line.ts"),
+  join("db", "schema", "hr", "core-people.ts"),
+  join("db", "schema", "hr", "reporting-manager.ts"),
 ];
 
 const SENTINEL = /effective_?[tT]o[^\n]{0,40}infinity/;

@@ -130,6 +130,7 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
         success: true,
         userId: EXISTING_USER_ID,
         invite: { sent: true, reason: null },
+        primaryManager: expect.objectContaining({ resolution: "SELECTED" }),
       });
 
       expect(harness.updated.map((row) => row.table)).not.toContain("users");
@@ -151,6 +152,7 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
           workEmail: BODY.email,
           lifecycleStatus: "ONBOARDING",
         }),
+        expect.anything(),
       );
     });
 
@@ -232,12 +234,14 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
         success: true,
         userId: EXISTING_USER_ID,
         invite: { sent: true, reason: null },
+        primaryManager: expect.objectContaining({ resolution: "SELECTED" }),
       });
 
       expect(ensureFromUser).toHaveBeenCalledWith(
         ORG_ID,
         ACTOR.userId,
         expect.objectContaining({ employeeNumber: "EMP-0001" }),
+        expect.anything(),
       );
     });
   });
@@ -265,6 +269,7 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
         success: true,
         userId: EXISTING_USER_ID,
         invite: { sent: false, reason: alreadyMemberInviteReason(HARNESS_ORGANIZATION_NAME) },
+        primaryManager: expect.objectContaining({ resolution: "SELECTED" }),
       });
 
       expect(ensureFromUser).toHaveBeenCalledTimes(1);
@@ -276,6 +281,7 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
           workEmail: BODY.email,
           lifecycleStatus: "ONBOARDING",
         }),
+        expect.anything(),
       );
     });
 

@@ -36,7 +36,8 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
 import { OrganizationUsersReader } from "./organization-users.reader";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { ReportingLineService } from "../directory/reporting-line.service";
+import { ReportingRelationshipService } from "../directory/reporting-relationship.service";
+import { orgBusinessDate } from "../hr/time/attendance-business-date";
 
 type GlobalUserPatch = Pick<
   typeof users.$inferInsert,
@@ -65,7 +66,7 @@ export class UsersService {
     private readonly invitationsSvc: InvitationCreateService,
     private readonly orgMembership: OrgMembershipService,
     private readonly employment: EmploymentFactsService,
-    private readonly reportingLines: ReportingLineService,
+    private readonly relationships: ReportingRelationshipService,
   ) {
     this.reader = new OrganizationUsersReader(db, employment);
   }
@@ -251,10 +252,15 @@ export class UsersService {
               },
             );
           }
-          if (hasReportingUpdate) {
-            const today = new Date().toISOString().slice(0, 10);
-            await this.reportingLines.assign(orgId, userId, data.reportingTo ?? null, today, actorUserId, tx);
-          }
+          if (hasReportingUpdate)
+            await this.relationships.setRelationships(tx, {
+              orgId,
+              actor: { orgId, userId: actorUserId, isOrgOwner: actor.isOrgOwner },
+              subjectUserId: userId,
+              primaryManagerUserId: data.reportingTo ?? null,
+              effectiveFrom: await orgBusinessDate(this.db, orgId),
+              source: "MANUAL",
+            });
         },
         { orgId },
       );

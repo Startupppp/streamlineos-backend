@@ -6819,6 +6819,55 @@
       "when": 1803025210725,
       "tag": "1229_kb_acl_revision_timestamps",
       "breakpoints": true
+    },
+    {
+      "idx": 1102,
+      "version": "7",
+      "when": 1803028810725,
+      "tag": "1231_hr_reporting_manager_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 1103,
+      "version": "7",
+      "when": 1803032410725,
+      "tag": "1232_hr_reporting_line_bulk_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 1104,
+      "version": "7",
+      "when": 1803036010725,
+      "tag": "1233_hr_reporting_manager_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 1105,
+      "version": "7",
+      "when": 1803039610725,
+      "tag": "1234_hr_reporting_lines_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 1106,
+      "version": "7",
+      "when": 1803043210725,
+      "tag": "1235_hr_reporting_lines_one_current_primary",
+      "breakpoints": true
+    },
+    {
+      "idx": 1107,
+      "version": "7",
+      "when": 1803046810725,
+      "tag": "1236_hr_top_level_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1108,
+      "version": "7",
+      "when": 1803050410725,
+      "tag": "1237_app_org_business_date",
+      "breakpoints": true
     }
   ]
 }

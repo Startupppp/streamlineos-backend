@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import {
   hrEmployeeSensitiveFields,
   hrReportingLines,
@@ -100,7 +100,8 @@ export async function snapshotOldValue(
         eq(hrReportingLines.employmentId, employment.id),
         eq(hrReportingLines.lineType, "primary"),
         lte(hrReportingLines.effectiveFrom, today),
-        gt(hrReportingLines.effectiveTo, today),
+        // effective_to is the line's inclusive last day, as in currentPrimaryReportingLine.
+        gte(hrReportingLines.effectiveTo, today),
       ),
     )
     .orderBy(desc(hrReportingLines.effectiveFrom), desc(hrReportingLines.id))

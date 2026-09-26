@@ -157,16 +157,30 @@ export function buildService(db: Db): Collaborators {
     } as never,
     { logCritical } as never,
     { queueWelcomeEmail, queueMembershipAddedEmail } as never,
-    { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
+    { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined), runAutomationsForEventDetached: jest.fn() } as never,
     { dispatch: jest.fn() } as never,
     { ensureFromUser } as never,
     {
       canManageOrganizationMembership: jest.fn().mockResolvedValue(true),
       resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
       membersWithPermission: jest.fn().mockResolvedValue([]),
+      holds: jest.fn().mockResolvedValue(true),
     } as never,
     admission,
-    { checkManager: jest.fn().mockResolvedValue({ ok: true, managerEmploymentId: 5 }), assign: jest.fn().mockResolvedValue({ status: "written", employmentId: 10, managerEmploymentId: 5 }) } as never,
+    { setRelationships: jest.fn().mockResolvedValue({ changed: true, warnings: [] }) } as never,
+    {
+      resolve: jest.fn().mockResolvedValue({
+        key: 1,
+        ok: true,
+        managerUserId: "user-manager",
+        managerEmploymentId: 5,
+        name: "Manager",
+        email: "manager@example.com",
+        resolution: "SELECTED",
+        dependsOnRow: null,
+      }),
+    } as never,
+    { invalidateAfterMutation: jest.fn().mockResolvedValue(undefined) } as never,
   );
 
   return {

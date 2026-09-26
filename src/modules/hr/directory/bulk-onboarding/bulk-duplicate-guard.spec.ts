@@ -76,8 +76,7 @@ function planFile() {
     new Map([["EMP-1", "user-someone-else"]]),
     new Map(),
     new Set(),
-    new Map(),
-  );
+      );
 }
 
 describe("a bulk file that mixes every duplicate and eligibility failure", () => {

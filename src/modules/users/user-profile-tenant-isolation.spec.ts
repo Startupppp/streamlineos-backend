@@ -3,7 +3,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { SessionsService } from "../sessions/sessions.service";
 import type { EmploymentFactsService } from "../directory/employment-facts.service";
-import type { ReportingLineService } from "../directory/reporting-line.service";
+import type { ReportingRelationshipService } from "../directory/reporting-relationship.service";
 import type { UserActivityService } from "./user-activity.service";
 import { UserProfileService } from "./user-profile.service";
 
@@ -40,7 +40,7 @@ describe("UserProfileService — cross-tenant isolation", () => {
       sessions as SessionsService,
       employment as EmploymentFactsService,
       activity as UserActivityService,
-      {} as ReportingLineService,
+      {} as ReportingRelationshipService,
     );
   }
 
@@ -74,7 +74,7 @@ describe("UserProfileService — cross-tenant isolation", () => {
         {} as SessionsService,
         {} as EmploymentFactsService,
         {} as UserActivityService,
-        {} as ReportingLineService,
+        {} as ReportingRelationshipService,
       );
 
       const result = await svc.updatePreferences(OWNER_ORG, USER_ID, {});
@@ -124,7 +124,7 @@ describe("UserProfileService — account records never leave the tenant", () => 
       { publishRevocations } as unknown as SessionsService,
       {} as unknown as EmploymentFactsService,
       {} as unknown as UserActivityService,
-      {} as unknown as ReportingLineService,
+      {} as unknown as ReportingRelationshipService,
     );
     return { svc, select, update, insert, prefsFindFirst, publishRevocations };
   }

@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
-import { hrEmployments, hrPeople, organizationMembers, users } from "../../../../db/schema";
+import { hrEmployments, hrPeople } from "../../../../db/schema";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
 import {
   liveEmployment,
@@ -19,7 +19,7 @@ import {
 } from "../dto/hr-directory.schemas";
 import type { DepartmentCatalog } from "./bulk-onboarding-departments";
 import type { BulkOnboardPlan } from "./bulk-onboarding.types";
-import { findManagerCycles, rosterEmailsOf, type ManagerEdge } from "./bulk-onboarding-graph";
+import { findManagerCycles, type ManagerEdge } from "./bulk-onboarding-graph";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -80,62 +80,6 @@ function resolveDepartment(
   return { departmentId: resolved };
 }
 
-export async function preloadManagerUserIdsByEmail(
-  db: DbOrTx,
-  orgId: string,
-  emails: readonly string[],
-): Promise<Map<string, string>> {
-  if (emails.length === 0) return new Map();
-  const rows = await db
-    .select({ email: users.email, userId: organizationMembers.userId })
-    .from(organizationMembers)
-    .innerJoin(users, eq(users.id, organizationMembers.userId))
-    .where(
-      and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.status, "ACTIVE"),
-        inArray(users.email, [...emails]),
-      ),
-    );
-  return new Map(rows.map((row) => [canonicalAdmissionEmail(row.email), row.userId]));
-}
-
-interface ResolvedManager {
-  reportingManagerUserId: string | null;
-  /** Set when the manager is another row of this same file, resolved after admission. */
-  reportingManagerEmail: string | null;
-}
-
-/**
- * A manager is either already in the organisation, or introduced by this file.
- *
- * Only the first case used to be considered, so a file that named a manager and
- * someone reporting to them failed the report with "Onboard the manager first"
- * — about a person two rows above. An email belonging to the file's own roster
- * is now carried forward and resolved once everyone has been admitted.
- */
-function resolveReportingManager(
-  source: BulkOnboardEmployeeRow,
-  managerByEmail: ReadonlyMap<string, string>,
-  roster: ReadonlySet<string>,
-): ResolvedManager | { error: string } {
-  if (source.reportingManagerUserId)
-    return { reportingManagerUserId: source.reportingManagerUserId, reportingManagerEmail: null };
-  if (!source.reportingManagerEmail)
-    return { reportingManagerUserId: null, reportingManagerEmail: null };
-
-  const managerEmail = canonicalAdmissionEmail(source.reportingManagerEmail);
-  const managerUserId = managerByEmail.get(managerEmail);
-  if (managerUserId) return { reportingManagerUserId: managerUserId, reportingManagerEmail: null };
-
-  if (roster.has(managerEmail))
-    return { reportingManagerUserId: null, reportingManagerEmail: managerEmail };
-
-  return {
-    error: `Reporting manager "${source.reportingManagerEmail}" is neither an active member of this organization nor a row of this file. Add them to the file, or onboard them first.`,
-  };
-}
-
 export function planBulkOnboarding(
   rows: readonly BulkOnboardEmployeeRow[],
   catalog: DepartmentCatalog,
@@ -143,10 +87,7 @@ export function planBulkOnboarding(
   employeeNumberOwner: ReadonlyMap<string, string | null>,
   roleErrors: Map<string, string>,
   globallyInactiveUserIds: ReadonlySet<string>,
-  managerByEmail: ReadonlyMap<string, string>,
 ): BulkOnboardPlan {
-  // The file's own roster, so a manager introduced by this upload resolves.
-  const roster = rosterEmailsOf(rows);
   const plan: BulkOnboardPlan = { accepted: [], rejected: [] };
   const claimedNumbers = new Map(
     [...employeeNumberOwner].map(([employeeNumber, owner]) => [
@@ -171,12 +112,6 @@ export function planBulkOnboarding(
     const department = resolveDepartment(source, catalog);
     if ("error" in department) {
       plan.rejected.push({ row, email, success: false, error: department.error });
-      continue;
-    }
-
-    const manager = resolveReportingManager(source, managerByEmail, roster);
-    if ("error" in manager) {
-      plan.rejected.push({ row, email, success: false, error: manager.error });
       continue;
     }
 
@@ -255,13 +190,16 @@ export function planBulkOnboarding(
       designation: source.designation.trim(),
       joiningDate: source.joiningDate ? formatDateOnly(source.joiningDate) : null,
       dateOfBirth: source.dateOfBirth ? formatDateOnly(source.dateOfBirth) : null,
-      reportingManagerUserId: manager.reportingManagerUserId,
-      reportingManagerEmail: manager.reportingManagerEmail,
+      reportingManagerUserId: null,
+      reportingManagerEmail: null,
+      primaryManager: null,
+      secondaryManagers: [],
+      effectiveFrom: source.effectiveFrom ?? null,
     });
     plannedEmails.add(email);
   }
 
-  return rejectCyclesAndOrphans(plan);
+  return plan;
 }
 
 /**
@@ -274,7 +212,7 @@ export function planBulkOnboarding(
  * and the operator would have no way to see the connection between the two
  * failures.
  */
-function rejectCyclesAndOrphans(plan: BulkOnboardPlan): BulkOnboardPlan {
+export function rejectCyclesAndOrphans(plan: BulkOnboardPlan): BulkOnboardPlan {
   const acceptedEmails = new Set(plan.accepted.map((employee) => employee.email));
   const rejectedRowOfEmail = new Map(plan.rejected.map((entry) => [entry.email, entry.row]));
 
@@ -286,24 +224,35 @@ function rejectCyclesAndOrphans(plan: BulkOnboardPlan): BulkOnboardPlan {
       managerEmail: employee.reportingManagerEmail ?? "",
     }));
 
-  const failedRows = new Map<number, string>();
+  const failedRows = new Map<number, { error: string; code: string; skipped: boolean; dependsOnRow: number | null }>();
 
   for (const cycle of findManagerCycles(edges))
-    failedRows.set(
-      cycle.row,
-      `Reporting chain loops back on itself: ${cycle.chain.join(" reports to ")}. Break the loop and upload again.`,
-    );
+    failedRows.set(cycle.row, {
+      error: `Reporting chain loops back on itself: ${cycle.chain.join(" reports to ")}. Break the loop and upload again.`,
+      code: "PRIMARY_CYCLE",
+      skipped: false,
+      dependsOnRow: null,
+    });
 
+  // A row naming another row as its primary or a secondary manager depends on that row; if the
+  // manager row was not accepted, the dependant is skipped with the manager's row and email.
   for (const employee of plan.accepted) {
-    const managerEmail = employee.reportingManagerEmail;
-    if (managerEmail === null || acceptedEmails.has(managerEmail)) continue;
-    const managerRow = rejectedRowOfEmail.get(managerEmail);
-    failedRows.set(
-      employee.row,
-      managerRow === undefined
-        ? `Reporting manager "${managerEmail}" could not be onboarded, so this row was not created either.`
-        : `Reporting manager "${managerEmail}" failed on row ${managerRow}, so this row was not created either.`,
-    );
+    const inFile = [
+      ...(employee.reportingManagerEmail === null ? [] : [employee.reportingManagerEmail]),
+      ...employee.secondaryManagers.flatMap((manager) => (manager.userId === null ? [manager.email] : [])),
+    ];
+    const missing = inFile.find((managerEmail) => !acceptedEmails.has(managerEmail));
+    if (missing === undefined || failedRows.has(employee.row)) continue;
+    const managerRow = rejectedRowOfEmail.get(missing);
+    failedRows.set(employee.row, {
+      error:
+        managerRow === undefined
+          ? `Reporting manager "${missing}" could not be onboarded, so this row was skipped.`
+          : `Reporting manager "${missing}" failed on row ${managerRow}, so this row was skipped.`,
+      code: "MANAGER_ROW_FAILED",
+      skipped: true,
+      dependsOnRow: managerRow ?? null,
+    });
   }
 
   if (failedRows.size === 0) return plan;
@@ -311,12 +260,18 @@ function rejectCyclesAndOrphans(plan: BulkOnboardPlan): BulkOnboardPlan {
   const kept = plan.accepted.filter((employee) => !failedRows.has(employee.row));
   const newlyRejected = plan.accepted
     .filter((employee) => failedRows.has(employee.row))
-    .map((employee) => ({
-      row: employee.row,
-      email: employee.email,
-      success: false,
-      error: failedRows.get(employee.row) ?? "This row could not be created.",
-    }));
+    .map((employee) => {
+      const failure = failedRows.get(employee.row);
+      return {
+        row: employee.row,
+        email: employee.email,
+        success: false,
+        error: failure?.error ?? "This row could not be created.",
+        code: failure?.code,
+        skipped: failure?.skipped ?? false,
+        dependsOnRow: failure?.dependsOnRow ?? null,
+      };
+    });
 
   // A row rejected here may itself have been somebody's manager, so the sweep
   // repeats until nothing new falls out.

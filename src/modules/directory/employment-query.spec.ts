@@ -82,8 +82,8 @@ describe("employment query fragments", () => {
   describe("effective dating", () => {
     it("bounds the reporting line on both sides", () => {
       const rendered = render(currentPrimaryReportingLine(ORG));
-      expect(rendered).toContain('"effective_from" <= CURRENT_DATE');
-      expect(rendered).toContain('"effective_to" >= CURRENT_DATE');
+      expect(rendered).toContain('"effective_from" <= (SELECT app.org_business_date(');
+      expect(rendered).toContain('"effective_to" >= (SELECT app.org_business_date(');
     });
 
     it("does not match a line by the infinity sentinel alone", () => {

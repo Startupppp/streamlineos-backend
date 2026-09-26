@@ -31,15 +31,11 @@ interface JobRow {
 
 /** The same table-dispatching Drizzle double the accounting suite uses. */
 function fakeDb(job: JobRow, validRows: Array<Record<string, unknown>>) {
-  let rowsServed = false;
   const rowsFor = (table: unknown): unknown[] => {
     if (table === hrImportJobs) return [job];
     if (table === organizations) return [{ timezone: "Asia/Kolkata" }];
-    if (table === hrImportRows) {
-      if (rowsServed) return [];
-      rowsServed = true;
-      return validRows.map((payload, i) => ({ id: `row-${i}`, payload }));
-    }
+    // The commit reads the valid rows twice: once for the commit order, once for the batch.
+    if (table === hrImportRows) return validRows.map((payload, i) => ({ id: `row-${i}`, rowNumber: i + 1, payload }));
     return [];
   };
 
@@ -83,6 +79,8 @@ function serviceOver(
     audit as never,
     commitService,
     cache as never,
+    { resolveMany: jest.fn() } as never,
+    { invalidateAfterMutation: jest.fn() } as never,
   );
   return { service, audit };
 }

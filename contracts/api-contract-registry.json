@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-25T06:06:29.358Z",
+  "generatedAt": "2026-09-26T03:31:07.014Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -17552,6 +17552,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /hr/employees/onboard/bulk/preview": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeesController_previewBulk",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /hr/employees/projects": {
       "classification": "internal",
       "classificationOverride": null,
@@ -24812,11 +24823,154 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "PUT /hr/reporting-lines/{employeeUserId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLinesController_setLine",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/reporting-lines/{employeeUserId}/confirm-fallback": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLinesController_confirmFallback",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/reporting-lines/bulk-jobs": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLineBulkJobsController_preview",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-lines/bulk-jobs": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLineBulkJobsController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-lines/bulk-jobs/{jobId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLineBulkJobsController_get",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/reporting-lines/bulk-jobs/{jobId}/commit": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLineBulkJobsController_commit",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-lines/bulk-jobs/{jobId}/failures.csv": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLineBulkJobsController_failures",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /hr/reporting-lines/coverage": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ReportingLinesController_coverage",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-lines/manager-candidates": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLinesController_managerCandidates",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-manager-policy": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingManagerPolicyController_get",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /hr/reporting-manager-policy": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingManagerPolicyController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-manager-requests": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingManagerRequestsController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-manager-requests/{requestId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingManagerRequestsController_get",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/reporting-manager-requests/{requestId}/review": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingManagerRequestsController_review",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -30758,6 +30912,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /kb/analytics/citation-reuse": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAnalyticsController_citationReuse",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /kb/analytics/content-gaps": {
       "classification": "internal",
       "classificationOverride": null,
@@ -30807,6 +30972,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbAnalyticsController_pages",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/analytics/review-sla": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAnalyticsController_reviewSla",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31231,6 +31407,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /kb/ask/knowledge-gap": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAskController_createKnowledgeGap",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /kb/ask/stream": {
       "classification": "internal",
       "classificationOverride": null,
@@ -31478,6 +31665,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbPageTemplatesController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /kb/page-templates/{templateId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPageTemplatesController_update",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -32056,6 +32254,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /kb/pages/trash/purge-impact": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPagesController_purgeImpact",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /kb/pages/trash/restore": {
       "classification": "internal",
       "classificationOverride": null,
@@ -32523,6 +32732,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbContentHealthController_signals",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/wiki/content-health/signals/dismiss": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbContentHealthController_dismiss",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -33392,6 +33612,72 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "EmployeeRecruitmentController_submitScorecard",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /me/reporting-line": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MyReportingLineController_get",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /me/reporting-manager-requests": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MyReportingManagerRequestsController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /me/reporting-manager-requests": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MyReportingManagerRequestsController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /me/reporting-manager-requests/{requestId}/cancel": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MyReportingManagerRequestsController_cancel",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /me/reporting-manager-requests/{requestId}/respond": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MyReportingManagerRequestsController_respond",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /me/reporting-manager-requests/manager-candidates": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MyReportingManagerRequestsController_candidates",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -46591,6 +46877,13 @@
       "consumers": [
         "outbox-relay"
       ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "hr.employee.created": {
+      "classification": "internal",
+      "owner": null,
+      "consumers": [],
       "sunsetAt": null,
       "sunsetEvidence": null
     },

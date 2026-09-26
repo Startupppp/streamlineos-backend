@@ -43,6 +43,9 @@ const RESOLVED_KEYS = [
   "resolvedLeaveTypeId",
   "resolvedDepartmentId",
   "resolvedManagerEmploymentId",
+  "resolvedPrimaryManagerUserId",
+  "primaryManagerResolution",
+  "resolvedExistingEmployee",
 ] as const;
 
 export function stripResolvedKeys(
@@ -117,43 +120,6 @@ async function membersByEmail(
   return found;
 }
 
-/** Distinct work emails -> the live employment the person holds in this org. */
-async function employmentsByEmail(
-  db: Db,
-  orgId: string,
-  emails: string[],
-): Promise<Map<string, number>> {
-  const found = new Map<string, number>();
-  if (emails.length === 0) return found;
-
-  const rows = await db
-    .select({ email: lowerWorkEmail, employmentId: hrEmployments.id })
-    .from(hrEmployments)
-    .innerJoin(
-      hrPeople,
-      and(
-        eq(hrPeople.orgId, hrEmployments.orgId),
-        eq(hrPeople.id, hrEmployments.personId),
-        isNull(hrPeople.deletedAt),
-      ),
-    )
-    .innerJoin(organizationPeople, personOfOrgPerson)
-    .where(
-      and(
-        eq(hrEmployments.orgId, orgId),
-        isNull(hrEmployments.deletedAt),
-        inArray(lowerWorkEmail, emails),
-      ),
-    );
-
-  for (const row of rows) {
-    const current = found.get(row.email);
-    if (current === undefined || row.employmentId < current)
-      found.set(row.email, row.employmentId);
-  }
-  return found;
-}
-
 export interface PreflightResult {
   valid: Row[];
   errors: Row[];
@@ -193,14 +159,17 @@ export async function resolveRowReferences(
 
 type Fail = (row: Row, message: string) => void;
 
+const MANAGER_COLUMNS = ["primaryManagerEmail", "secondaryManagerEmail1", "secondaryManagerEmail2", "secondaryManagerEmail3"] as const;
+
 async function resolveEmployees(db: Db, orgId: string, rows: Row[], fail: Fail) {
   const departmentNames = distinct(
     rows.map((row) => cell(row.payload, "departmentName").toLowerCase()),
   );
   const departmentIds = distinct(rows.map((row) => cell(row.payload, "departmentId")));
-  const managerEmails = distinct(rows.map((row) => emailCell(row.payload, "managerEmail")));
+  const managerEmails = distinct(rows.flatMap((row) => MANAGER_COLUMNS.map((key) => emailCell(row.payload, key))));
   const employeeNumbers = distinct(rows.map((row) => cell(row.payload, "employeeNumber")));
   const emails = distinct(rows.map((row) => emailCell(row.payload, "email")));
+  const roster = new Set(emails);
 
   const lowerUnitName = sql<string>`lower(trim(${orgUnits.name}))`;
   const [byName, byId, managers, members, numberOwners] = await Promise.all([
@@ -228,7 +197,7 @@ async function resolveEmployees(db: Db, orgId: string, rows: Row[], fail: Fail) 
               inArray(orgUnits.id, departmentIds),
             ),
           ),
-    employmentsByEmail(db, orgId, managerEmails),
+    membersByEmail(db, orgId, managerEmails),
     membersByEmail(db, orgId, emails),
     employeeNumbers.length === 0
       ? []
@@ -268,17 +237,17 @@ async function resolveEmployees(db: Db, orgId: string, rows: Row[], fail: Fail) 
       else row.payload.resolvedDepartmentId = resolved;
     }
 
-    const managerEmail = emailCell(row.payload, "managerEmail");
-    if (managerEmail !== "") {
-      const employmentId = managers.get(managerEmail);
-      if (employmentId === undefined)
-        fail(
-          row,
-          `Manager "${managerEmail}" is not an employee of this organization. ` +
-            "Import the manager first, or clear the managerEmail column.",
-        );
-      else row.payload.resolvedManagerEmploymentId = employmentId;
+    // HRM-15: a manager is an existing member (resolved to a user id here) or another row of this
+    // file (resolved at commit, which writes managers first). Anything else is a row error.
+    for (const key of MANAGER_COLUMNS) {
+      const managerEmail = emailCell(row.payload, key);
+      if (managerEmail === "") continue;
+      const manager = managers.get(managerEmail);
+      if (key === "primaryManagerEmail" && manager) row.payload.resolvedPrimaryManagerUserId = manager.userId;
+      if (!manager && !roster.has(managerEmail))
+        fail(row, `Manager "${managerEmail}" is neither an employee of this organization nor a row of this file.`);
     }
+    if (members.has(emailCell(row.payload, "email"))) row.payload.resolvedExistingEmployee = true;
 
     // The commit used to be the first place a taken employee number was noticed,
     // so the preview promised a row it could not write.

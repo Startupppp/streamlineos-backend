@@ -13,6 +13,7 @@ import {
   unique,
   foreignKey,
   check,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { organizations, organizationMembers, users } from "../common/auth";
@@ -310,6 +311,14 @@ export const hrReportingLines = pgTable("hr_reporting_lines", {
     .default(sql`'infinity'::date`),
   createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  source: text("source").$type<ReportingLineSource>().default("MIGRATED").notNull(),
+  changeReason: text("change_reason"),
+  relationshipLabel: text("relationship_label"),
+  fallbackConfirmedAt: timestamp("fallback_confirmed_at", { withTimezone: true }),
+  fallbackConfirmedBy: text("fallback_confirmed_by"),
+  bulkJobId: uuid("bulk_job_id"),
+  requestId: uuid("request_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_reporting_lines_org_employment" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.managerEmploymentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_reporting_lines_org_manager_employment" }).onDelete("cascade"),
@@ -317,7 +326,32 @@ export const hrReportingLines = pgTable("hr_reporting_lines", {
   index("idx_hr_reporting_lines_org_emp").on(table.orgId, table.employmentId),
   index("idx_hr_reporting_lines_manager").on(table.managerEmploymentId),
   index("idx_hr_reporting_lines_org_type").on(table.orgId, table.lineType),
+  index("idx_hr_reporting_lines_manager_type").on(table.orgId, table.managerEmploymentId, table.lineType, table.effectiveTo),
+  index("idx_hr_reporting_lines_bulk_job").on(table.orgId, table.bulkJobId).where(sql`bulk_job_id IS NOT NULL`),
+  index("idx_hr_reporting_lines_request").on(table.orgId, table.requestId).where(sql`request_id IS NOT NULL`),
+  index("idx_hr_reporting_lines_recent_primary").on(table.orgId, table.employmentId, table.createdAt).where(sql`line_type = 'primary'`),
+  uniqueIndex("uniq_hr_reporting_lines_open_primary").on(table.orgId, table.employmentId).where(sql`line_type = 'primary' AND effective_to = 'infinity'::date`),
+  check("chk_hr_reporting_lines_source", sql`${table.source} IN ('MANUAL', 'MIGRATED', 'ONBOARDING_SELECTED', 'ONBOARDING_FALLBACK', 'BULK_ONBOARDING', 'STAGED_IMPORT', 'EMPLOYEE_REQUEST', 'BULK_REASSIGNMENT', 'EMERGENCY_OVERRIDE', 'EFFECTIVE_CHANGE')`),
+  check("chk_hr_reporting_lines_change_reason", sql`${table.changeReason} IS NULL OR char_length(${table.changeReason}) <= 1000`),
+  check("chk_hr_reporting_lines_label", sql`${table.relationshipLabel} IS NULL OR (${table.lineType} <> 'primary' AND char_length(btrim(${table.relationshipLabel})) BETWEEN 1 AND 60)`),
+  check("chk_hr_reporting_lines_dates", sql`${table.effectiveFrom} <= ${table.effectiveTo}`),
+  check("chk_hr_reporting_lines_not_self", sql`${table.employmentId} <> ${table.managerEmploymentId}`),
 ]);
+
+export const REPORTING_LINE_SOURCES = [
+  "MANUAL",
+  "MIGRATED",
+  "ONBOARDING_SELECTED",
+  "ONBOARDING_FALLBACK",
+  "BULK_ONBOARDING",
+  "STAGED_IMPORT",
+  "EMPLOYEE_REQUEST",
+  "BULK_REASSIGNMENT",
+  "EMERGENCY_OVERRIDE",
+  "EFFECTIVE_CHANGE",
+] as const;
+
+export type ReportingLineSource = (typeof REPORTING_LINE_SOURCES)[number];
 
 export const hrPeopleRelations = relations(hrPeople, ({ one, many }) => ({
   org: one(organizations, { fields: [hrPeople.orgId], references: [organizations.id] }),

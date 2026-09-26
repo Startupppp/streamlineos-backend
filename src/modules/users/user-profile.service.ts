@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Inject,
   Injectable,
   NotFoundException,
@@ -22,7 +21,8 @@ import type {
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { SessionsService } from "../sessions/sessions.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { ReportingLineService } from "../directory/reporting-line.service";
+import { ReportingRelationshipService } from "../directory/reporting-relationship.service";
+import { orgBusinessDate } from "../hr/time/attendance-business-date";
 import {
   syncCanonicalEmploymentFields,
   type CanonicalEmploymentPatch,
@@ -61,7 +61,7 @@ export class UserProfileService {
     private readonly sessions: SessionsService,
     private readonly employment: EmploymentFactsService,
     private readonly activity: UserActivityService,
-    private readonly reportingLines: ReportingLineService,
+    private readonly relationships: ReportingRelationshipService,
   ) {}
 
   private async assertMember(orgId: string, userId: string): Promise<void> {
@@ -166,11 +166,6 @@ export class UserProfileService {
   ) {
     await this.assertMember(orgId, userId);
 
-    if (data.managerUserId) {
-      const check = await this.reportingLines.checkManagerAssignment(orgId, userId, data.managerUserId);
-      if (!check.ok) throw new BadRequestException(check.message);
-    }
-
     await this.db.transaction(async (tx) => {
       const employmentPatch: CanonicalEmploymentPatch = {};
       if (data.branchId !== undefined) employmentPatch.locationId = data.branchId;
@@ -180,14 +175,14 @@ export class UserProfileService {
         await syncCanonicalEmploymentFields(tx, orgId, userId, employmentPatch);
 
       if (data.managerUserId !== undefined)
-        await this.reportingLines.assign(
+        await this.relationships.setRelationships(tx, {
           orgId,
-          userId,
-          data.managerUserId,
-          new Date().toISOString().slice(0, 10),
-          actorUserId,
-          tx,
-        );
+          actor: { orgId, userId: actorUserId, isOrgOwner: false },
+          subjectUserId: userId,
+          primaryManagerUserId: data.managerUserId,
+          effectiveFrom: await orgBusinessDate(this.db, orgId),
+          source: "MANUAL",
+        });
 
       await syncOrgUnitPlacement(tx, orgId, userId, {
         BUSINESS_UNIT: data.businessUnitId,

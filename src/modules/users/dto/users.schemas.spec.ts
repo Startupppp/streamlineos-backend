@@ -1,4 +1,4 @@
-import { bulkInviteSchema } from "./users.schemas";
+import { bulkInviteSchema, bulkUpdateUsersSchema } from "./users.schemas";
 import { userIdentityListResponseSchema } from "./users-response.schemas";
 
 const now = new Date("2026-09-14T10:00:00.000Z");
@@ -73,5 +73,16 @@ describe("bulkInviteSchema", () => {
   it("accepts 500 invitations and rejects oversized requests", () => {
     expect(bulkInviteSchema.safeParse({ emails: emails(500) }).success).toBe(true);
     expect(bulkInviteSchema.safeParse({ emails: emails(501) }).success).toBe(false);
+  });
+});
+
+describe("bulkUpdateUsersSchema", () => {
+  it("rejects managerUserId as an unknown key: manager changes go through the bulk reporting change", () => {
+    expect(bulkUpdateUsersSchema.safeParse({ userIds: ["u-1"], managerUserId: "m-1" }).success).toBe(false);
+    expect(bulkUpdateUsersSchema.safeParse({ userIds: ["u-1"], managerUserId: null }).success).toBe(false);
+  });
+
+  it("still accepts the organisational fields", () => {
+    expect(bulkUpdateUsersSchema.safeParse({ userIds: ["u-1"], departmentId: "d-1", branchId: null, teamId: "t-1" }).success).toBe(true);
   });
 });

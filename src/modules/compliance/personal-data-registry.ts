@@ -139,6 +139,7 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
   { table: "hr_audit_logs", columns: ["ip_address", "user_agent"], scope: "org_id" },
   { table: "hr_dependents", columns: ["date_of_birth"], scope: "org_id" },
   { table: "hr_employee_sensitive_fields", columns: ["national_id", "passport_expiry", "passport_number"], scope: "org_id" },
+  { table: "hr_reporting_line_bulk_job_rows", columns: ["employee_email", "requested_primary_manager_email", "secondary_manager_email_1", "secondary_manager_email_2", "secondary_manager_email_3"], scope: "org_id" },
   { table: "inv_projects", columns: ["site_address", "site_contact_name", "site_contact_phone"], scope: "org_id" },
   { table: "inv_sales_orders", columns: ["shipping_address"], scope: "org_id" },
   // A false positive, kept on purpose: `qc_zepto_email_po_enabled` is a boolean

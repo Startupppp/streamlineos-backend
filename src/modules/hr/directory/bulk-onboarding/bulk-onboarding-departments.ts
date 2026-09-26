@@ -132,3 +132,19 @@ export async function ensureDepartments(
     .limit(stillMissing.length);
   for (const department of found) record(catalog, department);
 }
+
+/**
+ * HRM-15 preview: the departments a commit would create, recorded in the catalog under a
+ * placeholder id so the plan accepts their rows, without writing anything.
+ */
+export function previewDepartments(catalog: DepartmentCatalog, names: readonly string[]): string[] {
+  const created: string[] = [];
+  for (const raw of names) {
+    const name = raw.trim();
+    const key = name.toLowerCase();
+    if (!key || catalog.byKey.has(key)) continue;
+    catalog.byKey.set(key, `preview:${key}`);
+    created.push(name);
+  }
+  return created;
+}

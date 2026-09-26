@@ -29,6 +29,14 @@ import { AccessRequestsService } from "./access-requests.service";
 import { BillingModule } from "../../billing/core/billing.module";
 import { DirectoryModule } from "../../directory/directory.module";
 import { ReportingLinesController } from "./reporting-lines.controller";
+import { ReportingLineBulkJobsController } from "./reporting-line-bulk-jobs.controller";
+import { ReportingManagerPolicyController } from "./reporting-manager-policy.controller";
+import { ReportingManagerRequestsController } from "./reporting-manager-requests.controller";
+import { MyReportingManagerRequestsController } from "./reporting-manager-requests-me.controller";
+import { MyReportingLineController } from "./my-reporting-line.controller";
+import { HrReportingLinesService } from "./reporting-lines.service";
+import { ReportingManagerRequestsService } from "./reporting-manager-requests.service";
+import { ReportingLineBulkJobsService } from "./reporting-line-bulk-jobs.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { MembershipAdmissionModule } from "../../organization/core/membership-admission.module";
 
@@ -52,7 +60,13 @@ import { MembershipAdmissionModule } from "../../organization/core/membership-ad
     AssetInventoryController,
     BackgroundVerificationController,
     AccessRequestsController,
+    // Before ReportingLinesController: same prefix, and its GET :employeeUserId would swallow "bulk-jobs".
+    ReportingLineBulkJobsController,
     ReportingLinesController,
+    ReportingManagerPolicyController,
+    ReportingManagerRequestsController,
+    MyReportingManagerRequestsController,
+    MyReportingLineController,
   ],
   providers: [
     EmployeesService,
@@ -70,6 +84,9 @@ import { MembershipAdmissionModule } from "../../organization/core/membership-ad
     AssetsRecoveryService,
     BackgroundVerificationService,
     AccessRequestsService,
+    HrReportingLinesService,
+    ReportingManagerRequestsService,
+    ReportingLineBulkJobsService,
   ],
   exports: [AssetsRecoveryService],
 })
