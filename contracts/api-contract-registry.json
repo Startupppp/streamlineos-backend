@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-26T07:08:36.621Z",
+  "generatedAt": "2026-09-26T07:29:20.179Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -22440,7 +22440,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "HrRecruitmentReportsController_analytics",
+      "operationId": "RecruitingAnalyticsController_read",
       "owner": null,
       "version": "1",
       "consumers": [],
