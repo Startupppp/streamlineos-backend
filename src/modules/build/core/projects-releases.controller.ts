@@ -7,10 +7,12 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import {
   createReleaseSchema,
+  orgListReleasesQuerySchema,
   updateReleaseSchema,
   addReleaseTicketSchema,
   listReleasesQuerySchema,
   type CreateReleaseInput,
+  type OrgListReleasesQuery,
   type UpdateReleaseInput,
   type AddReleaseTicketInput,
   type ListReleasesQuery,
@@ -35,6 +37,17 @@ const projectIdreleaseIdticketIdParams = z.object({ projectId: z.coerce.number()
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsReleasesController {
   constructor(private readonly releases: ProjectsReleasesService) {}
+
+  @Get("releases")
+  @RequirePermission("build:view")
+  @ResponseSchema(projectReleaseListPageSchema)
+  @Validate({ query: orgListReleasesQuerySchema })
+  listOrgReleases(
+    @Query() query: OrgListReleasesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.releases.listOrgReleases(u, query);
+  }
 
   @Get(":projectId/releases")
   @RequirePermission("build:view")

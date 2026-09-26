@@ -6917,6 +6917,27 @@
       "when": 1803075610725,
       "tag": "1315_build_project_teams_capacity",
       "breakpoints": true
+    },
+    {
+      "idx": 1116,
+      "version": "7",
+      "when": 1803079210725,
+      "tag": "1345_project_team_members_org_team_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 1117,
+      "version": "7",
+      "when": 1803082810725,
+      "tag": "1335_build_portal_publication_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 1118,
+      "version": "7",
+      "when": 1803086410725,
+      "tag": "1346_drop_redundant_project_team_members_org_team_idx",
+      "breakpoints": true
     }
   ]
 }

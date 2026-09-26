@@ -8,6 +8,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import type { CreateRiskInput, ListRisksQuery, UpdateRiskInput } from "./dto/governance.schemas";
+import type { OrgListRisksQuery } from "./dto/org-governance.schemas";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 
 type RiskPatch = Partial<
@@ -99,6 +100,24 @@ export class RisksService {
       highCritical: row?.highCritical ?? 0,
       matrix,
     };
+  }
+
+  async listOrgRisks(u: CurrentUserContext, query: OrgListRisksQuery) {
+    const { limit, cursor, status } = query;
+    const rows = await this.db
+      .select(RisksService.RISK_COLUMNS)
+      .from(projectRisks)
+      .where(
+        and(
+          eq(projectRisks.orgId, u.orgId),
+          isNull(projectRisks.deletedAt),
+          status ? eq(projectRisks.status, status) : undefined,
+          cursor !== undefined ? lt(projectRisks.id, cursor) : undefined,
+        ),
+      )
+      .orderBy(desc(projectRisks.id))
+      .limit(limit + 1);
+    return buildIdCursorPage(rows, limit, (r) => r.id);
   }
 
   async listRisks(u: CurrentUserContext, projectId: number, query: ListRisksQuery) {

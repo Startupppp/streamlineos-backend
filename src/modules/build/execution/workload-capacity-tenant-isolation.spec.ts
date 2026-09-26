@@ -78,6 +78,56 @@ function makeSequentialDb(perCallRows: unknown[][]) {
   return { db, wheresByCall };
 }
 
+describe("WorkloadCapacityService — teamId filter", () => {
+  it("returns empty members when teamId is provided but no team members exist in that team — filter is applied server-side", async () => {
+    const { db } = makeSequentialDb([
+      [{ expectedDailyHours: "8.0" }],
+      [],
+    ]);
+    const svc = new WorkloadCapacityService(db);
+    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14", 42);
+    expect(result.members).toHaveLength(0);
+  });
+
+  it("returns only members in the team when teamId is provided and the team has members (positive control)", async () => {
+    const teamMember = { membershipId: 1 };
+    const memberRow = { userId: "u-team-1", membershipId: 1 };
+    const { db, wheresByCall } = makeSequentialDb([
+      [{ expectedDailyHours: "8.0" }],
+      [teamMember],
+      [memberRow],
+      [],
+      [],
+    ]);
+    const svc = new WorkloadCapacityService(db);
+    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14", 42);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0].userId).toBe("u-team-1");
+    const allVals = wheresByCall.flatMap((w) =>
+      w.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])),
+    );
+    expect(allVals).toContain(OWNER_ORG);
+    expect(allVals).toContain(42);
+  });
+
+  it("the team members WHERE clause contains both orgId and teamId — dropping either breaks tenant isolation or team filtering", async () => {
+    const teamMember = { membershipId: 99 };
+    const memberRow = { userId: "u-team-1", membershipId: 99 };
+    const { db, wheresByCall } = makeSequentialDb([
+      [],
+      [teamMember],
+      [memberRow],
+      [],
+      [],
+    ]);
+    const svc = new WorkloadCapacityService(db);
+    await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14", 42);
+    const teamWhereVals = wheresByCall[1]?.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])) ?? [];
+    expect(teamWhereVals).toContain(OWNER_ORG);
+    expect(teamWhereVals).toContain(42);
+  });
+});
+
 describe("WorkloadCapacityService — cross-tenant isolation", () => {
   it("all four WHERE clauses (settings, members, leaves, timesheets) contain attacker orgId and not owner orgId — drop any orgId predicate and this fails", async () => {
     const memberRow = { userId: "u-attacker-1", membershipId: 99 };

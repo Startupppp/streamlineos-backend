@@ -25,6 +25,7 @@ const capacityQuerySchema = z
   .object({
     start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    teamId: z.coerce.number().int().positive().optional(),
   })
   .strict();
 
@@ -48,6 +49,6 @@ export class WorkloadCapacityController {
     const today = format(new Date(), "yyyy-MM-dd");
     const start = query.start ?? today;
     const end = query.end ?? format(addDays(new Date(), 13), "yyyy-MM-dd");
-    return this.capacityService.capacity(u.orgId, projectId, start, end);
+    return this.capacityService.capacity(u.orgId, projectId, start, end, query.teamId);
   }
 }

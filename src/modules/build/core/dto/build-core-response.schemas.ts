@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { wireDate } from "../../../../common/openapi/wire-types";
+import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, idCursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 export const ticketLabelSchema = z.object({
@@ -157,7 +157,12 @@ export const projectWebhookSchema = z.object({
   events: z.array(z.string()),
   isActive: z.boolean(),
   createdAt: wireDate(),
+  lastDeliveryAt: nullableWireDate(),
+  lastDeliveryStatus: z.enum(["success", "failed", "pending"]).nullable(),
+  failureRate: z.number().nullable(),
 });
+
+export const projectWebhookPageSchema = idCursorPageSchema(projectWebhookSchema);
 
 export const webhookDeliverySchema = z.object({
   id: z.number().int(),
@@ -186,6 +191,13 @@ const automationActionSchema = z.object({
   value: z.string(),
 });
 
+const automationCreatedByUserSchema = z.object({
+  name: z.string().nullable(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  email: z.string().nullable(),
+});
+
 export const projectAutomationListItemSchema = z.object({
   id: z.number().int(),
   projectId: z.number().int(),
@@ -194,6 +206,10 @@ export const projectAutomationListItemSchema = z.object({
   isActive: z.boolean(),
   conditions: z.array(automationConditionSchema),
   actions: z.array(automationActionSchema),
+  createdBy: z.string().nullable(),
+  createdByUser: automationCreatedByUserSchema.nullable(),
+  lastRunAt: wireDate().nullable(),
+  lastFailureAt: wireDate().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });

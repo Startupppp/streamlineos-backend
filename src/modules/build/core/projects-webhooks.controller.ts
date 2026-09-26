@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -8,12 +8,20 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
-import { createWebhookSchema, type CreateWebhookInput } from "./dto/webhook.schemas";
+import {
+  createWebhookSchema,
+  listWebhooksQuerySchema,
+  updateWebhookSchema,
+  type CreateWebhookInput,
+  type ListWebhooksQuery,
+  type UpdateWebhookInput,
+} from "./dto/webhook.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   projectWebhookSchema,
+  projectWebhookPageSchema,
   webhookDeliverySchema,
   webhookTestResultSchema,
 } from "./dto/build-core-response.schemas";
@@ -32,13 +40,14 @@ export class ProjectsWebhooksController {
 
   @Get(":projectId/webhooks")
   @RequirePermission("build:manage")
-  @ResponseSchema(z.array(projectWebhookSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(projectWebhookPageSchema)
+  @Validate({ params: projectIdParams, query: listWebhooksQuerySchema })
   listWebhooks(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ListWebhooksQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.webhooks.listWebhooks(u.orgId, projectId);
+    return this.webhooks.listWebhooks(u.orgId, projectId, query);
   }
 
   @Post(":projectId/webhooks")
@@ -53,6 +62,19 @@ export class ProjectsWebhooksController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.createWebhook(u.orgId, projectId, u.userId, body);
+  }
+
+  @Patch(":projectId/webhooks/:webhookId")
+  @RequirePermission("build:manage")
+  @ResponseSchema(projectWebhookSchema)
+  @Validate({ params: projectIdwebhookIdParams, body: updateWebhookSchema })
+  updateWebhook(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("webhookId", ParseIntPipe) webhookId: number,
+    @Body() body: UpdateWebhookInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.webhooks.updateWebhook(u.orgId, projectId, webhookId, body);
   }
 
   @Delete(":projectId/webhooks/:webhookId")

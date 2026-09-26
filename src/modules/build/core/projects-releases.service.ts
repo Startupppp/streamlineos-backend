@@ -9,7 +9,7 @@ import {
   releaseTickets,
   tickets,
 } from "../../../db/schema";
-import type { CreateReleaseInput, ListReleasesQuery, UpdateReleaseInput } from "./dto/releases.schemas";
+import type { CreateReleaseInput, ListReleasesQuery, OrgListReleasesQuery, UpdateReleaseInput } from "./dto/releases.schemas";
 import { assertProjectAccess } from "./project-access";
 import { escapeLike } from "./lib/escape-like";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -28,6 +28,44 @@ export class ProjectsReleasesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
   ) {}
+
+  async listOrgReleases(u: CurrentUserContext, query: OrgListReleasesQuery) {
+    const orgId = u.orgId;
+    const { cursor, limit, status } = query;
+    const pos = decodeIntegerCursor(cursor ?? null);
+    const rows = await this.db
+      .select({
+        id: projectReleases.id,
+        orgId: projectReleases.orgId,
+        projectId: projectReleases.projectId,
+        name: projectReleases.name,
+        version: projectReleases.version,
+        description: projectReleases.description,
+        status: projectReleases.status,
+        releaseDate: projectReleases.releaseDate,
+        createdBy: projectReleases.createdBy,
+        createdAt: projectReleases.createdAt,
+        updatedAt: projectReleases.updatedAt,
+        ticketCount: sql<number>`CAST(
+          (SELECT COUNT(*) FROM ${releaseTickets} WHERE ${releaseTickets.releaseId} = ${projectReleases.id})
+          AS INT)`,
+      })
+      .from(projectReleases)
+      .where(
+        and(
+          eq(projectReleases.orgId, orgId),
+          isNull(projectReleases.deletedAt),
+          status ? eq(projectReleases.status, status) : undefined,
+          pos ? lt(projectReleases.id, pos.id) : undefined,
+        ),
+      )
+      .orderBy(desc(projectReleases.id))
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.id),
+      id: String(row.id),
+    }));
+  }
 
   async listReleases(u: CurrentUserContext, projectId: number, query: ListReleasesQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);

@@ -4,6 +4,7 @@ import {
   leaveRequests,
   organizationMembers,
   projectMembers,
+  projectTeamMembers,
   timesheetSettings,
   timesheets,
 } from "../../../db/schema";
@@ -16,7 +17,7 @@ import { assertProjectInOrg } from "../core/project-access";
 export class WorkloadCapacityService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async capacity(orgId: string, projectId: number, start: string, end: string) {
+  async capacity(orgId: string, projectId: number, start: string, end: string, teamId?: number) {
     await assertProjectInOrg(this.db, orgId, projectId);
 
     const [settings] = await this.db
@@ -26,6 +27,30 @@ export class WorkloadCapacityService {
       .limit(1);
     const expectedDailyHours =
       settings?.expectedDailyHours != null ? Number(settings.expectedDailyHours) : null;
+
+    let teamMembershipIdSet: Set<number> | undefined;
+    if (teamId !== undefined) {
+      const teamMemberRows = await this.db
+        .select({ membershipId: projectTeamMembers.membershipId })
+        .from(projectTeamMembers)
+        .where(
+          and(
+            eq(projectTeamMembers.orgId, orgId),
+            eq(projectTeamMembers.teamId, teamId),
+          ),
+        )
+        .limit(500);
+      if (teamMemberRows.length === 0) return { members: [] };
+      teamMembershipIdSet = new Set(teamMemberRows.map((r) => r.membershipId));
+    }
+
+    const memberWhere = teamMembershipIdSet !== undefined
+      ? and(
+          eq(projectMembers.orgId, orgId),
+          eq(projectMembers.projectId, projectId),
+          inArray(projectMembers.membershipId, [...teamMembershipIdSet]),
+        )
+      : and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projectId));
 
     const memberRows = await this.db
       .select({
@@ -41,7 +66,7 @@ export class WorkloadCapacityService {
           eq(organizationMembers.status, "ACTIVE"),
         ),
       )
-      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projectId)))
+      .where(memberWhere)
       .limit(500);
 
     if (memberRows.length === 0) return { members: [] };

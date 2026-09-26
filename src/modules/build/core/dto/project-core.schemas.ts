@@ -76,6 +76,7 @@ export const listProjectsSchema = z.object({
   afterId: idCursorSchema,
   limit: pageSizeField(9),
   managedProductId: z.coerce.number().int().positive().optional(),
+  managerId: z.string().optional(),
 }).strict();
 
 export const createProjectSchema = z

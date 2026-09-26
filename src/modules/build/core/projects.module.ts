@@ -64,6 +64,8 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
 import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
 import { ProjectsSettingsIterationsController } from "./projects-settings-iterations.controller";
 import { ProjectsSettingsIterationsService } from "./projects-settings-iterations.service";
+import { ProjectsActivityFeedController } from "./projects-activity-feed.controller";
+import { ProjectsActivityFeedService } from "./projects-activity-feed.service";
 
 @Module({
   imports: [BillingModule, NotificationsModule, UsersModule, OutboxModule],
@@ -83,6 +85,7 @@ import { ProjectsSettingsIterationsService } from "./projects-settings-iteration
     BuildMembersController,
     ProjectsCustomersController,
     ProjectsSettingsIterationsController,
+    ProjectsActivityFeedController,
     ProjectsController,
     ProjectResourcesController,
   ],
@@ -131,6 +134,7 @@ import { ProjectsSettingsIterationsService } from "./projects-settings-iteration
     BuildAutomationActionExecutor,
     BuildAutomationRunHistoryService,
     ProjectsSettingsIterationsService,
+    ProjectsActivityFeedService,
   ],
   exports: [
     BuildDueSweepService,

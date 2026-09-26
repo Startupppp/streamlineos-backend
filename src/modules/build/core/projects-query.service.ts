@@ -52,13 +52,17 @@ export class ProjectsQueryService {
     ticketRead: ScopedRead,
     input: ListProjectsInput,
   ) {
-    const { search, status, afterId, limit, managedProductId } =
+    const { search, status, afterId, limit, managedProductId, managerId } =
       input;
 
     const domain: (SQL | undefined)[] = [isNull(projects.deletedAt)];
 
     if (managedProductId !== undefined) {
       domain.push(eq(projects.managedProductId, managedProductId));
+    }
+
+    if (managerId !== undefined) {
+      domain.push(eq(organizationMembers.userId, managerId));
     }
 
     const memberOf = this.db
