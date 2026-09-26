@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import {
   intakeItems,
   projectMilestones,
@@ -13,13 +13,14 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { buildCursorPage, decodeCursor, decodeIntegerCursor } from "../../../common/pagination/cursor";
+import { keysetAfterId, keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
   CreateIntakeInput,
   CreateMilestoneInput,
   CreateViewInput,
   IntakeListQuery,
+  ListMilestonesQuery,
   UpdateIntakeInput,
   UpdateMilestoneInput,
   UpdateViewInput,
@@ -33,14 +34,41 @@ export class MilestonesService {
     private readonly access: AccessService,
   ) {}
 
-  async listMilestones(u: CurrentUserContext, projectId: number) {
+  async listMilestones(u: CurrentUserContext, projectId: number, query: ListMilestonesQuery) {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
-    return this.db.query.projectMilestones.findMany({
-      where: and(eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
-      orderBy: [asc(projectMilestones.targetDate)],
-      limit: 100,
-    });
+    const { cursor, limit, status, q } = query;
+    const pos = decodeIntegerCursor(cursor ?? null);
+    const rows = await this.db
+      .select({
+        id: projectMilestones.id,
+        projectId: projectMilestones.projectId,
+        orgId: projectMilestones.orgId,
+        name: projectMilestones.name,
+        description: projectMilestones.description,
+        targetDate: projectMilestones.targetDate,
+        status: projectMilestones.status,
+        createdBy: projectMilestones.createdBy,
+        clientVisible: projectMilestones.clientVisible,
+        deletedAt: projectMilestones.deletedAt,
+        createdAt: projectMilestones.createdAt,
+        updatedAt: projectMilestones.updatedAt,
+      })
+      .from(projectMilestones)
+      .where(and(
+        eq(projectMilestones.projectId, projectId),
+        eq(projectMilestones.orgId, orgId),
+        isNull(projectMilestones.deletedAt),
+        status ? eq(projectMilestones.status, status) : undefined,
+        q ? ilike(projectMilestones.name, `%${q}%`) : undefined,
+        pos ? keysetAfterId(projectMilestones.targetDate, projectMilestones.id, pos) : undefined,
+      ))
+      .orderBy(asc(projectMilestones.targetDate), asc(projectMilestones.id))
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.targetDate ?? "",
+      id: String(row.id),
+    }));
   }
 
   async createMilestone(u: CurrentUserContext, projectId: number, input: CreateMilestoneInput) {

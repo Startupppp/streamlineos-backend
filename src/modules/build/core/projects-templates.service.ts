@@ -4,7 +4,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lt } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -24,6 +24,8 @@ import type {
 } from "./dto/projects.schemas";
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 
 function normalizeTicketType(
@@ -47,15 +49,29 @@ export class ProjectsTemplatesService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  listTemplates(orgId: string) {
-    return this.db.query.projectTemplates.findMany({
-      where: and(eq(projectTemplates.orgId, orgId), isNull(projectTemplates.deletedAt)),
-      with: {
-        tickets: { orderBy: (t, { asc }) => [asc(t.order)], limit: 200 },
-      },
-      orderBy: (t, { desc }) => [desc(t.createdAt)],
-      limit: 50,
-    });
+  async listTemplates(orgId: string, cursor?: number) {
+    const rows = await this.db
+      .select({
+        id: projectTemplates.id,
+        orgId: projectTemplates.orgId,
+        name: projectTemplates.name,
+        description: projectTemplates.description,
+        category: projectTemplates.category,
+        createdBy: projectTemplates.createdBy,
+        deletedAt: projectTemplates.deletedAt,
+        createdAt: projectTemplates.createdAt,
+      })
+      .from(projectTemplates)
+      .where(
+        and(
+          eq(projectTemplates.orgId, orgId),
+          isNull(projectTemplates.deletedAt),
+          cursor !== undefined ? lt(projectTemplates.id, cursor) : undefined,
+        ),
+      )
+      .orderBy(desc(projectTemplates.id))
+      .limit(PAGE_SIZE_CAP + 1);
+    return buildIdCursorPage(rows, PAGE_SIZE_CAP, (r) => r.id);
   }
 
   async createTemplate(

@@ -28,6 +28,9 @@ const EXPECTED: Array<{ method: keyof typeof PublicController.prototype; tier: s
   { method: "submitSurvey", tier: "public:nps-submit" },
   { method: "submitArticleFeedback", tier: "public:kb-feedback" },
   { method: "getOrgName", tier: "public:org-info" },
+  { method: "getRoadmap", tier: "public:roadmap" },
+  { method: "voteRoadmap", tier: "public:roadmap-vote" },
+  { method: "submitRoadmapFeedback", tier: "public:roadmap-feedback" },
 ];
 
 describe("public endpoint rate-limit wiring", () => {

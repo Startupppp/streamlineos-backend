@@ -17,6 +17,8 @@ export const milestoneRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
+export const milestonePageSchema = cursorPageSchema(milestoneRowSchema);
+
 export const intakeItemSchema = z.object({
   id: z.number().int(),
   projectId: z.number().int().nullable(),

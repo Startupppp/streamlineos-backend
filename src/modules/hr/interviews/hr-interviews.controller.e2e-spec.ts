@@ -44,7 +44,6 @@ describe("HR Interviews auth (e2e)", () => {
     ["get", "/hr/recruitment/reports/scheduled"],
     ["post", "/hr/recruitment/reports/scheduled"],
     ["delete", "/hr/recruitment/reports/scheduled/1"],
-    ["get", "/hr/recruitment/analytics"],
     ["get", "/hr/recruitment/stats"],
   ];
 

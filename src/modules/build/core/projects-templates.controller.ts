@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -21,6 +22,10 @@ import {
   type ApplyTemplateInput,
   type CreateTemplateInput,
 } from "./dto/projects.schemas";
+import {
+  listTemplatesQuerySchema,
+  type ListTemplatesQuery,
+} from "./dto/template.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -39,8 +44,12 @@ export class ProjectsTemplatesController {
   @Get("templates")
   @RequirePermission("build:view")
   @ResponseSchema(templateListSchema)
-  listTemplates(@CurrentUser() u: CurrentUserContext) {
-    return this.templates.listTemplates(u.orgId);
+  @Validate({ query: listTemplatesQuerySchema })
+  listTemplates(
+    @CurrentUser() u: CurrentUserContext,
+    @Query() query: ListTemplatesQuery,
+  ) {
+    return this.templates.listTemplates(u.orgId, query.cursor);
   }
 
   @Post("templates")

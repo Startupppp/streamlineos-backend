@@ -1,4 +1,5 @@
 import { GoneException, NotFoundException } from "@nestjs/common";
+import { listReleasesQuerySchema } from "./core/dto/releases.schemas";
 import { ProjectsReleasesService } from "./core/projects-releases.service";
 import { ProjectsWebhooksService } from "./core/projects-webhooks.service";
 import { SprintsService } from "./execution/sprints.service";
@@ -58,7 +59,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
   };
 
   const cases: Array<[string, (db: Db) => Promise<unknown>]> = [
-    ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess).listReleases(releasesU, 1)],
+    ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess).listReleases(releasesU, 1, listReleasesQuerySchema.parse({}))],
     ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db).listWebhooks(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/epics", (db) => new EpicsService(db).listEpics(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/cycles", (db) => new CyclesService(db).listCycles(ATTACKER_ORG, 1, {} as never)],

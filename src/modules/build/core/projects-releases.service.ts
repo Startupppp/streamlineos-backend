@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -9,10 +9,11 @@ import {
   releaseTickets,
   tickets,
 } from "../../../db/schema";
-import type { CreateReleaseInput, UpdateReleaseInput } from "./dto/releases.schemas";
+import type { CreateReleaseInput, ListReleasesQuery, UpdateReleaseInput } from "./dto/releases.schemas";
 import { assertProjectAccess } from "./project-access";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
+import { buildCursorPage, decodeIntegerCursor } from "../../../common/pagination/cursor";
 
 type ReleaseRow = typeof projectReleases.$inferSelect;
 
@@ -27,9 +28,11 @@ export class ProjectsReleasesService {
     private readonly access: AccessService,
   ) {}
 
-  async listReleases(u: CurrentUserContext, projectId: number) {
+  async listReleases(u: CurrentUserContext, projectId: number, query: ListReleasesQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
+    const { cursor, limit, status, q } = query;
+    const pos = decodeIntegerCursor(cursor ?? null);
     const rows = await this.db
       .select({
         id: projectReleases.id,
@@ -48,11 +51,20 @@ export class ProjectsReleasesService {
           AS INT)`,
       })
       .from(projectReleases)
-      .where(and(eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
-      .orderBy(sql`${projectReleases.createdAt} DESC`)
-      .limit(100);
-
-    return rows;
+      .where(and(
+        eq(projectReleases.projectId, projectId),
+        eq(projectReleases.orgId, orgId),
+        isNull(projectReleases.deletedAt),
+        status ? eq(projectReleases.status, status) : undefined,
+        q ? ilike(projectReleases.name, `%${q}%`) : undefined,
+        pos ? lt(projectReleases.id, pos.id) : undefined,
+      ))
+      .orderBy(desc(projectReleases.id))
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.id),
+      id: String(row.id),
+    }));
   }
 
   async createRelease(u: CurrentUserContext, projectId: number, data: CreateReleaseInput) {

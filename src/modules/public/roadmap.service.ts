@@ -13,6 +13,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
 import { sanitizeText } from "./public.helpers";
 import type {
   RoadmapFeedbackInput,
@@ -68,6 +69,7 @@ export class RoadmapService {
           desc(roadmapItems.votes),
           asc(roadmapItems.id),
         ],
+        limit: PAGE_SIZE_CAP,
       }),
       this.db.query.feedbackPosts.findMany({
         where: and(
@@ -84,6 +86,7 @@ export class RoadmapService {
           createdAt: true,
         },
         orderBy: [desc(feedbackPosts.votes), desc(feedbackPosts.createdAt)],
+        limit: PAGE_SIZE_CAP,
       }),
       this.db.query.changelogEntries.findMany({
         where: and(
@@ -102,6 +105,7 @@ export class RoadmapService {
           desc(changelogEntries.publishedAt),
           desc(changelogEntries.id),
         ],
+        limit: PAGE_SIZE_CAP,
       }),
     ]);
 

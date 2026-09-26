@@ -2,6 +2,14 @@ import { z } from "zod";
 
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
+export const listMilestonesQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20),
+  status: z.enum(["PENDING", "ACHIEVED", "MISSED"]).optional(),
+  q: z.string().max(200).optional(),
+}).strict();
+export type ListMilestonesQuery = z.infer<typeof listMilestonesQuerySchema>;
+
 export const createMilestoneSchema = z.object({
   name: z.string().min(1, "Name is required").trim().max(200),
   description: z.string().max(1000).optional(),

@@ -19,6 +19,11 @@ export const listApprovalsQuerySchema = z.object({
 
 export const inboxQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
+  status: z.enum(approvalStatusEnum.enumValues).optional(),
+  type: z.enum(approvalEntityTypeEnum.enumValues).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  q: z.string().optional(),
 }).strict();
 
 export const decideApprovalSchema = z.object({

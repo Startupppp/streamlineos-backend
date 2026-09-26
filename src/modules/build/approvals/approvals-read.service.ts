@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { pendingApprovalsForActorCondition } from "./build-inbox-count.service";
 import { projectApprovals, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -69,7 +69,19 @@ export class ApprovalsReadService {
       })
       .from(projectApprovals)
       .innerJoin(projects, eq(projects.id, projectApprovals.projectId))
-      .where(and(pendingApprovalsForActorCondition(orgId, membershipId), listApprovalsKeyset(cursor)))
+      .where(
+        and(
+          pendingApprovalsForActorCondition(orgId, membershipId),
+          listApprovalsKeyset(cursor),
+          query.status ? eq(projectApprovals.status, query.status) : undefined,
+          query.type ? eq(projectApprovals.entityType, query.type) : undefined,
+          query.from ? gte(projectApprovals.dueAt, query.from) : undefined,
+          query.to ? lte(projectApprovals.dueAt, query.to) : undefined,
+          query.q
+            ? sql`to_tsvector('english', ${projectApprovals.title}) @@ plainto_tsquery('english', ${query.q})`
+            : undefined,
+        ),
+      )
       .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`, asc(projectApprovals.id))
       .limit(PAGE_SIZE + 1);
     return buildTupleCursorPage(rows, PAGE_SIZE, (row) => [

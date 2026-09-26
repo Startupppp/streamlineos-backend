@@ -35,7 +35,7 @@ describe("PublicFormsService — cross-tenant isolation", () => {
   });
 
   it("returns the form for a valid token (control — correct token)", async () => {
-    const formRow = { id: 1, orgId: "org-owner", name: "Contact", description: null, type: "contact", fields: [] };
+    const formRow = { id: 1, orgId: "org-owner", name: "Contact", description: null, type: "contact", fields: [], publicToken: VALID_TOKEN, isPublic: true, isActive: true, deletedAt: null };
     const db = makeDb(formRow);
     const svc = new PublicFormsService(db, makeSubmissions());
     const result = await svc.getFormByToken(VALID_TOKEN);

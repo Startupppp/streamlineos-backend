@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 import { refineEndAfterStart } from "./project-core.schemas";
+import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
+
+export const listTemplatesQuerySchema = z.object({
+  cursor: idCursorSchema,
+}).strict();
+export type ListTemplatesQuery = z.infer<typeof listTemplatesQuerySchema>;
 
 const templateTicketSchema = z.object({
   title: z.string().min(1),

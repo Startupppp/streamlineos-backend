@@ -1,9 +1,43 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { listMilestonesQuerySchema } from "./dto/workspace.schemas";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService, IntakeService, ViewsService } from "./workspace.service";
+
+const EMPTY_MILESTONES_QUERY = listMilestonesQuerySchema.parse({});
+
+interface MilestoneSelectChain {
+  from: jest.Mock;
+  where: jest.Mock;
+  orderBy: jest.Mock;
+  limit: jest.Mock;
+}
+
+function milestoneSelectChain(rows: unknown[]) {
+  const whereSpy = jest.fn();
+  const chain: MilestoneSelectChain = {
+    from: jest.fn(() => chain),
+    where: jest.fn((condition: unknown) => {
+      whereSpy(condition);
+      return chain;
+    }),
+    orderBy: jest.fn(() => chain),
+    limit: jest.fn(() => Promise.resolve(rows)),
+  };
+  return { chain, whereSpy };
+}
+
+function memberSelectChain(rows: unknown[]) {
+  return {
+    from: jest.fn().mockReturnValue({
+      innerJoin: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+      }),
+    }),
+  };
+}
 
 function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
   return {
@@ -41,47 +75,37 @@ beforeEach(() => {
 });
 
 describe("MilestonesService — cross-tenant isolation", () => {
-  it("listMilestones scopes findMany WHERE to requesting org (cross-tenant isolation)", async () => {
-    const projectFindFirst = jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 999 });
-    const milestoneFindMany = jest.fn().mockResolvedValue([]);
-    const memberChain = {
-      from: jest.fn().mockReturnValue({
-        innerJoin: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]) }),
-        }),
-      }),
-    };
+  it("listMilestones scopes the select WHERE to requesting org (cross-tenant isolation)", async () => {
+    const { chain, whereSpy } = milestoneSelectChain([]);
     const db = {
-      query: {
-        projects: { findFirst: projectFindFirst },
-        projectMilestones: { findMany: milestoneFindMany },
-      },
-      select: jest.fn().mockReturnValue(memberChain),
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 999 }) } },
+      select: jest
+        .fn()
+        .mockReturnValueOnce(memberSelectChain([{ role: "MEMBER" }]))
+        .mockReturnValue(chain),
     } as unknown as Db;
     const svc = new MilestonesService(db, mockAccess);
 
-    const result = await svc.listMilestones(makeU(ATTACKER_ORG), 1);
+    const result = await svc.listMilestones(makeU(ATTACKER_ORG), 1, EMPTY_MILESTONES_QUERY);
 
-    expect(milestoneFindMany).toHaveBeenCalled();
-    const opts = milestoneFindMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(opts?.where)).toContain(ATTACKER_ORG);
-    expect(sqlValues(opts?.where)).not.toContain(OWNER_ORG);
-    expect(result).toHaveLength(0);
+    expect(whereSpy).toHaveBeenCalled();
+    const condition = whereSpy.mock.calls[0]?.[0];
+    expect(sqlValues(condition)).toContain(ATTACKER_ORG);
+    expect(sqlValues(condition)).not.toContain(OWNER_ORG);
+    expect(result.data).toHaveLength(0);
   });
 
   it("listMilestones returns milestones for the owning org (control — same-tenant access works)", async () => {
-    const fakeMilestone = { id: 1, orgId: OWNER_ORG, name: "M1" };
+    const fakeMilestone = { id: 1, orgId: OWNER_ORG, name: "M1", targetDate: "2026-01-01" };
+    const { chain } = milestoneSelectChain([fakeMilestone]);
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 999 }) },
-        projectMilestones: { findMany: jest.fn().mockResolvedValue([fakeMilestone]) },
-      },
-      select: jest.fn(),
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 999 }) } },
+      select: jest.fn().mockReturnValue(chain),
     } as unknown as Db;
     const svc = new MilestonesService(db, mockAccess);
 
-    const result = await svc.listMilestones(makeU(OWNER_ORG, true), 1);
-    expect(result).toHaveLength(1);
+    const result = await svc.listMilestones(makeU(OWNER_ORG, true), 1, EMPTY_MILESTONES_QUERY);
+    expect(result.data).toHaveLength(1);
   });
 
   it("listMilestones throws NotFoundException when project not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
@@ -94,7 +118,7 @@ describe("MilestonesService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new MilestonesService(db, mockAccess);
 
-    await expect(svc.listMilestones(makeU(ATTACKER_ORG), 9999)).rejects.toThrow(NotFoundException);
+    await expect(svc.listMilestones(makeU(ATTACKER_ORG), 9999, EMPTY_MILESTONES_QUERY)).rejects.toThrow(NotFoundException);
   });
 });
 
@@ -137,13 +161,10 @@ describe("MilestonesService — project membership gate (BOLA fix)", () => {
         projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectMilestones: { findMany: jest.fn().mockResolvedValue([]) },
       },
-      select: jest.fn().mockReturnValueOnce({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]) }),
-          }),
-        }),
-      }),
+      select: jest
+        .fn()
+        .mockReturnValueOnce(memberSelectChain([{ role: "MEMBER" }]))
+        .mockReturnValue(milestoneSelectChain([]).chain),
     } as unknown as Db;
   }
 
@@ -154,13 +175,13 @@ describe("MilestonesService — project membership gate (BOLA fix)", () => {
   it("rejects non-member with ForbiddenException on listMilestones", async () => {
     const db = makeNonMemberDb();
     const svc = new MilestonesService(db, gateAccess);
-    await expect(svc.listMilestones(u, 1)).rejects.toThrow(ForbiddenException);
+    await expect(svc.listMilestones(u, 1, EMPTY_MILESTONES_QUERY)).rejects.toThrow(ForbiddenException);
   });
 
   it("allows direct project member on listMilestones", async () => {
     const db = makeMemberDb();
     const svc = new MilestonesService(db, gateAccess);
-    await expect(svc.listMilestones(u, 1)).resolves.toBeDefined();
+    await expect(svc.listMilestones(u, 1, EMPTY_MILESTONES_QUERY)).resolves.toBeDefined();
   });
 });
 

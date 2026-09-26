@@ -28,6 +28,7 @@ import {
   createViewSchema,
   createWhiteboardSchema,
   intakeListQuerySchema,
+  listMilestonesQuerySchema,
   updateIntakeSchema,
   updateMilestoneSchema,
   updateViewSchema,
@@ -37,6 +38,7 @@ import {
   type CreateViewInput,
   type CreateWhiteboardInput,
   type IntakeListQuery,
+  type ListMilestonesQuery,
   type UpdateIntakeInput,
   type UpdateMilestoneInput,
   type UpdateViewInput,
@@ -47,6 +49,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
+  milestonePageSchema,
   milestoneRowSchema,
   intakeItemSchema,
   intakeListSchema,
@@ -71,13 +74,14 @@ export class MilestonesController {
 
   @Get()
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(milestoneRowSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(milestonePageSchema)
+  @Validate({ params: projectIdParams, query: listMilestonesQuerySchema })
   listMilestones(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ListMilestonesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.listMilestones(u, projectId);
+    return this.milestones.listMilestones(u, projectId, query);
   }
 
   @Post()

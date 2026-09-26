@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema, idCursorPageSchema } from "../../../../common/openapi/response-envelopes";
 import { roadmapStatusEnum, feedbackStatusEnum } from "../../../../db/schema";
 import {
   RICE_INPUT_NAMES,
@@ -151,7 +151,7 @@ const projectTemplateSchema = z.object({
   createdAt: wireDate(),
 });
 
-export const templateListSchema = z.array(projectTemplateSchema);
+export const templateListSchema = idCursorPageSchema(projectTemplateSchema);
 export const templateRowSchema = projectTemplateSchema;
 
 export const applyTemplateResultSchema = z.object({

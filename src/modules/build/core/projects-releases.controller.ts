@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -9,9 +9,11 @@ import {
   createReleaseSchema,
   updateReleaseSchema,
   addReleaseTicketSchema,
+  listReleasesQuerySchema,
   type CreateReleaseInput,
   type UpdateReleaseInput,
   type AddReleaseTicketInput,
+  type ListReleasesQuery,
 } from "./dto/releases.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -20,7 +22,7 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 import {
-  projectReleaseListItemSchema,
+  projectReleaseListPageSchema,
   projectReleaseRowSchema,
 } from "./dto/build-core-response.schemas";
 
@@ -36,13 +38,14 @@ export class ProjectsReleasesController {
 
   @Get(":projectId/releases")
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(projectReleaseListItemSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(projectReleaseListPageSchema)
+  @Validate({ params: projectIdParams, query: listReleasesQuerySchema })
   listReleases(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ListReleasesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.releases.listReleases(u, projectId);
+    return this.releases.listReleases(u, projectId, query);
   }
 
   @Post(":projectId/releases")

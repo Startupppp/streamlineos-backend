@@ -2,7 +2,6 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, gte, lte, sql } from "drizzle-orm";
 import {
   candidateOffers,
-  candidateSlaTracking,
   candidates,
   interviews,
   jobPostings,
@@ -42,7 +41,6 @@ const OFFER_FIELDS = [
   "validUntil", "sentAt", "respondedAt", "createdAt",
 ] as const;
 
-const STAGES = ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const;
 
 function pickFields(row: Record<string, unknown>, fields: string[]): Record<string, unknown> {
   return Object.fromEntries(fields.map((f) => [f, row[f] ?? null]));
@@ -142,62 +140,6 @@ export class HrRecruitmentReportsService {
       .returning({ id: scheduledReports.id });
     if (removed.length === 0) throw new NotFoundException("Scheduled report not found");
     return { success: true };
-  }
-
-  analytics(orgId: string) {
-    return this.cache.cached(
-      `hr:recruitment-analytics:${orgId}`,
-      () => this.buildAnalytics(orgId),
-      CACHE_TTL.MEDIUM,
-    );
-  }
-
-  private async buildAnalytics(orgId: string) {
-    const timeToHireData = await this.db
-      .select({
-        stage: candidateSlaTracking.stage,
-        avgHours: sql<number>`AVG(EXTRACT(EPOCH FROM (${candidateSlaTracking.updatedAt} - ${candidateSlaTracking.enteredAt})) / 3600)`,
-        count: count(),
-      })
-      .from(candidateSlaTracking)
-      .where(eq(candidateSlaTracking.orgId, orgId))
-      .groupBy(candidateSlaTracking.stage);
-
-    const pipelineVelocity = await this.db
-      .select({ status: candidates.status, count: count() })
-      .from(candidates)
-      .where(eq(candidates.orgId, orgId))
-      .groupBy(candidates.status);
-
-    const [totalResult] = await this.db
-      .select({ total: count() })
-      .from(candidates)
-      .where(eq(candidates.orgId, orgId));
-
-    const [hiredResult] = await this.db
-      .select({ hired: count() })
-      .from(candidates)
-      .where(and(eq(candidates.orgId, orgId), eq(candidates.status, "HIRED")));
-
-    const total = Number(totalResult?.total ?? 0);
-    const hired = Number(hiredResult?.hired ?? 0);
-    const hireRate = total > 0 ? Math.round((hired / total) * 100) : 0;
-
-    const stageTimes = Object.fromEntries(
-      timeToHireData.map((r) => [r.stage, { avgHours: Number(r.avgHours ?? 0), count: Number(r.count) }]),
-    );
-
-    const funnel = STAGES.map((stage) => {
-      const stageCount = pipelineVelocity.find((v) => v.status === stage);
-      const stageTiming = stageTimes[stage];
-      return {
-        stage,
-        count: Number(stageCount?.count ?? 0),
-        avgDaysInStage: stageTiming ? Math.round((stageTiming.avgHours / 24) * 10) / 10 : null,
-      };
-    });
-
-    return { funnel, hireRate, totalCandidates: total, totalHired: hired };
   }
 
   async stats(orgId: string) {

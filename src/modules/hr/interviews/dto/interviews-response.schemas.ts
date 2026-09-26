@@ -311,17 +311,6 @@ export const interviewerPerformanceSchema = z.object({
   period: z.object({ days: z.number().int(), since: z.string() }),
 });
 
-export const recruitmentAnalyticsSchema = z.object({
-  funnel: z.array(z.object({
-    stage: z.string(),
-    count: z.number().int(),
-    avgDaysInStage: z.number().nullable(),
-  })),
-  hireRate: z.number().int(),
-  totalCandidates: z.number().int(),
-  totalHired: z.number().int(),
-});
-
 export const recruitmentStatsSchema = z.object({
   totalJobs: z.number().int(),
   openJobs: z.number().int(),

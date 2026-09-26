@@ -130,6 +130,8 @@ export const projectReleaseListItemSchema = z.object({
   ticketCount: z.number().int(),
 });
 
+export const projectReleaseListPageSchema = cursorPageSchema(projectReleaseListItemSchema);
+
 export const projectReleaseRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

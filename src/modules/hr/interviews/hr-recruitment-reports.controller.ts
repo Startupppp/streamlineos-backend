@@ -29,7 +29,6 @@ import {
   generateReportResponseSchema,
   scheduledReportSchema,
   successSchema,
-  recruitmentAnalyticsSchema,
   recruitmentStatsSchema,
 } from "./dto/interviews-response.schemas";
 
@@ -81,13 +80,6 @@ export class HrRecruitmentReportsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.deleteScheduledReport(u.orgId, reportId);
-  }
-
-  @Get("analytics")
-  @ResponseSchema(recruitmentAnalyticsSchema)
-  @RequirePermission("hr:interviews:view")
-  analytics(@CurrentUser() u: CurrentUserContext) {
-    return this.reports.analytics(u.orgId);
   }
 
   @Get("stats")
