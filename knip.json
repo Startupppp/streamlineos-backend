@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.ts",
+    "src/scripts/**/*.{ts,mjs,cjs}",
+    "scripts/**/*.{ts,mjs,cjs}",
+    "src/**/*.spec.ts",
+    "test/**/*.{ts,mjs,cjs}",
+    "evals/**/*.{ts,mjs,cjs}",
+    "drizzle.config.ts",
+    "eslint.config.mjs"
+  ],
+  "project": [
+    "src/**/*.{ts,mjs,cjs}",
+    "scripts/**/*.{ts,mjs,cjs}",
+    "test/**/*.{ts,mjs,cjs}",
+    "evals/**/*.{ts,mjs,cjs}",
+    "*.{ts,mjs,cjs}"
+  ],
+  "ignore": [
+    "dist/**",
+    "migrations/**",
+    "coverage/**",
+    ".claude/**",
+    "src/@types/**"
+  ],
+  "ignoreExportsUsedInFile": true
+}
