@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
+import { outboxEvents } from "../../../db/schema/common/outbox";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { KbAccessService } from "../core/kb-access.service";
 import type { AccessService } from "../../access/access.service";
@@ -30,21 +31,23 @@ function makeMoveDb(pageRow: { id: number; parentPageId: number | null; spaceId:
     .mockResolvedValueOnce(pageRow)
     .mockResolvedValueOnce(targetParentRow);
   const updateWhere = jest.fn().mockReturnValue({
-    returning: jest.fn().mockResolvedValue([{ id: pageRow.id, parentPageId: null, sortOrder: 100, spaceId: targetParentRow?.spaceId ?? pageRow.spaceId }]),
+    returning: jest.fn().mockResolvedValue([{ id: pageRow.id, parentPageId: null, sortOrder: 100, spaceId: targetParentRow?.spaceId ?? pageRow.spaceId, contentRevision: 7, aclRevision: 11 }]),
   });
   const txUpdate = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) });
   const txSelect = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) }) }),
   });
+  const txValues = jest.fn().mockResolvedValue([]);
+  const txInsert = jest.fn().mockReturnValue({ values: txValues });
   const transaction = jest
     .fn()
-    .mockImplementation(async (fn: (t: unknown) => unknown) => fn({ update: txUpdate, select: txSelect }));
+    .mockImplementation(async (fn: (t: unknown) => unknown) => fn({ update: txUpdate, select: txSelect, insert: txInsert }));
   const db = {
     query: { kbPages: { findFirst } },
     select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     transaction,
   } as unknown as Db;
-  return { db, transaction, txUpdate, updateWhere };
+  return { db, transaction, txUpdate, updateWhere, txInsert, txValues };
 }
 
 describe("KbPageTreeService.move — space consistency between source and target", () => {
@@ -115,6 +118,77 @@ describe("KbPageTreeService.move — space consistency between source and target
     });
 
     expect(kbAccess.assertSpaceAccessible).not.toHaveBeenCalled();
+  });
+});
+
+describe("KbPageTreeService.move — the moved page is queued for reindexing", () => {
+  const ORG = "org-move-reindex";
+  const PAGE_ID = 80;
+  const TARGET_ID = 81;
+
+  async function moveAcrossSpaces() {
+    const made = makeMoveDb(
+      { id: PAGE_ID, parentPageId: null, spaceId: 1 },
+      { spaceId: 2 },
+    );
+    const kbAccess = {
+      assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
+    } as unknown as KbAccessService;
+    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, kbAccess);
+    await svc.move(makeUser(ORG), PAGE_ID, { parentPageId: TARGET_ID, index: 0 });
+    return made;
+  }
+
+  function emittedEvent(made: { txValues: jest.Mock }) {
+    return made.txValues.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+  }
+
+  it("writes the event into outbox_events inside the same transaction as the page update", async () => {
+    const made = await moveAcrossSpaces();
+    expect(made.txInsert).toHaveBeenCalledTimes(1);
+    expect(made.txInsert).toHaveBeenCalledWith(outboxEvents);
+    expect(made.updateWhere).toHaveBeenCalled();
+  });
+
+  it("emits kb.content.index for the moved page so a space change cannot leave a stale index", async () => {
+    const made = await moveAcrossSpaces();
+    const event = emittedEvent(made);
+    expect(event?.eventType).toBe("kb.content.index");
+    expect(event?.aggregateType).toBe("kb_page");
+    expect(event?.aggregateId).toBe(String(PAGE_ID));
+  });
+
+  it("scopes the event to the acting org, so a consumer cannot reindex into another tenant", async () => {
+    const made = await moveAcrossSpaces();
+    expect(emittedEvent(made)?.organizationId).toBe(ORG);
+  });
+
+  it("carries the post-move content and acl revisions the indexer reads", async () => {
+    const made = await moveAcrossSpaces();
+    const payload = emittedEvent(made)?.payload as Record<string, unknown> | undefined;
+    expect(payload).toMatchObject({
+      contentType: "page",
+      contentId: PAGE_ID,
+      contentRevision: 7,
+      aclRevision: 11,
+    });
+  });
+
+  it("emits nothing when the move is refused for the target space", async () => {
+    const made = makeMoveDb(
+      { id: PAGE_ID, parentPageId: null, spaceId: 1 },
+      { spaceId: 2 },
+    );
+    const kbAccess = {
+      assertSpaceAccessible: jest.fn().mockRejectedValue(new NotFoundException("Space not found")),
+    } as unknown as KbAccessService;
+    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, kbAccess);
+
+    await expect(
+      svc.move(makeUser(ORG), PAGE_ID, { parentPageId: TARGET_ID, index: 0 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(made.txInsert).not.toHaveBeenCalled();
   });
 });
 
