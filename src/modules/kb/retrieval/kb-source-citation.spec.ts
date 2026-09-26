@@ -102,6 +102,7 @@ describe("KbAskService — source citation re-verification", () => {
 
   const mockSearch = {
     aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
+    resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
     retrieveTopArticles: jest.fn().mockResolvedValue([]),
     retrieveTopSources: jest.fn(),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
@@ -271,6 +272,7 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
 
     const makeSearch = (sourceOverride: string) => ({
       aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
+      resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
       retrieveTopSources: jest.fn().mockResolvedValue([
         {
@@ -386,6 +388,7 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
       const events = { record: jest.fn().mockResolvedValue(undefined) };
       const search = {
         aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
+        resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
         retrieveTopArticles: jest.fn().mockResolvedValue([]),
         retrieveTopSources: jest.fn().mockResolvedValue([
           {

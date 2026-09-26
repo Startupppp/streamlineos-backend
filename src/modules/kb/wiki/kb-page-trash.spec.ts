@@ -324,6 +324,11 @@ describe("legal hold — blocks all three purge paths", () => {
             update: () => ({ set: () => ({ where: jest.fn().mockResolvedValue([]) }) }),
           }),
       ),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue([]),
+        }),
+      }),
     } as unknown as Db;
     await expect(service(db).hardDelete(userInOrg, 7)).resolves.not.toThrow();
   });

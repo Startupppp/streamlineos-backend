@@ -89,6 +89,7 @@ describe("KbAskService — page citation cross-tenant isolation", () => {
   const events = { record: jest.fn().mockResolvedValue(undefined) } as never;
 
   const pageSearchMock = {
+    resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
     retrieveTopArticles: jest.fn().mockResolvedValue([{
       kind: "page" as const,
       id: PAGE_ID,

@@ -179,6 +179,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       updatedAt: new Date("2024-01-01"),
     }));
     jest.spyOn(search, "aclCacheOutcome").mockResolvedValue("bypass");
+    jest.spyOn(search, "resolveQueryEmbedding").mockResolvedValue({ vectorLiteral: null });
     jest.spyOn(search, "retrieveTopArticles").mockResolvedValue(retrieved);
     jest.spyOn(search, "retrieveTopSources").mockResolvedValue([]);
     jest.spyOn(search, "retrieveDocumentPassages").mockResolvedValue([]);

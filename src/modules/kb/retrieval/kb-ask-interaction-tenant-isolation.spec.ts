@@ -37,6 +37,7 @@ describe("KbAiInteractions — cross-tenant write isolation", () => {
     const events = { record: jest.fn().mockResolvedValue(undefined) };
     const search = {
       aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
+      resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
       retrieveTopArticles: jest.fn().mockResolvedValue([{
         kind: "article" as const, id: 1, title: "t",
         slug: "t", spaceId: 1, contentText: "text",

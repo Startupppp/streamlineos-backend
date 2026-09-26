@@ -68,6 +68,7 @@ const articleResult = {
 };
 
 const mockSearch = {
+  resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
   retrieveTopArticles: jest.fn().mockResolvedValue([articleResult]),
   retrieveTopSources: jest.fn().mockResolvedValue([]),
   retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
@@ -460,6 +461,7 @@ describe("KbAskService", () => {
       "How do I log in?",
       4,
       [10, 20, 30],
+      { vectorLiteral: null },
     );
   });
 

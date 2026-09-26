@@ -59,6 +59,7 @@ function build(opts: { ai: boolean; hasChunks?: boolean; hits?: LinkedDocumentIt
   };
   const events = { record: jest.fn().mockResolvedValue(undefined) };
   const search = {
+    resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
     retrieveTopArticles: jest.fn().mockResolvedValue([article]),
     retrieveTopSources: jest.fn().mockResolvedValue([]),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),

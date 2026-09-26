@@ -62,6 +62,7 @@ const articleResult = {
 function buildSearch(article = articleResult) {
   return {
     aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
+    resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
     retrieveTopArticles: jest.fn().mockResolvedValue([article]),
     retrieveTopSources: jest.fn().mockResolvedValue([]),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),

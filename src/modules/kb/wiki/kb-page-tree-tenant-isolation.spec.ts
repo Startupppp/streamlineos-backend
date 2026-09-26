@@ -172,7 +172,8 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: PAGE_ID, parentPageId: null, sortOrder: 100 }]) });
     const txUpdate = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) });
     const txSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) }) }) });
-    const tx = { update: txUpdate, select: txSelect };
+    const txInsert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) });
+    const tx = { update: txUpdate, select: txSelect, insert: txInsert };
     const db = {
       query: {
         kbPages: {
@@ -193,7 +194,8 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: PAGE_ID, parentPageId: null, sortOrder: 100 }]) });
     const txUpdate = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) });
     const txSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) }) }) });
-    const transaction = jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn({ update: txUpdate, select: txSelect }));
+    const txInsert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) });
+    const transaction = jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn({ update: txUpdate, select: txSelect, insert: txInsert }));
     const db = {
       query: { kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID, parentPageId: null }) } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),

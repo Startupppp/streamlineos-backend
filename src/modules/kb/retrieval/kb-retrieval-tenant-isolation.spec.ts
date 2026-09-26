@@ -1,3 +1,7 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { KbArticleReindexService } from "./kb-article-reindex.service";
@@ -39,13 +43,10 @@ function makeSelectChain(rows: unknown[] = []) {
 
 function makeCheckpointDb(rows: unknown[]) {
   const { where } = makeSelectChain(rows);
-  const txSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) });
-  const tx = { select: txSelect, execute: jest.fn().mockResolvedValue([]) };
-  const outerSelect = jest.fn().mockReturnValue({
-    from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
-  });
+  const sharedSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) });
+  const tx = { select: sharedSelect, execute: jest.fn().mockResolvedValue([]) };
   const db = {
-    select: outerSelect,
+    select: sharedSelect,
     transaction: jest.fn().mockImplementation(async (fn: (t: typeof tx) => unknown) => fn(tx)),
   } as unknown as Db;
   return { db, where };

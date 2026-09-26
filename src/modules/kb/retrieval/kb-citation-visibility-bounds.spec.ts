@@ -143,6 +143,7 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
     const search = {
       ...mockSearch,
       aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
+      resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
       retrieveTopSources: jest.fn().mockResolvedValue([]),
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
@@ -165,8 +166,8 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
     try {
       await module.get(KbAskService).ask(user, { question: "how do I reset my password?" });
 
-      expect(search.retrieveTopArticles).toHaveBeenCalledWith(user, "how do I reset my password?", 6, undefined, undefined);
-      expect(search.retrieveTopSources).toHaveBeenCalledWith(user, "how do I reset my password?", 4, undefined);
+      expect(search.retrieveTopArticles).toHaveBeenCalledWith(user, "how do I reset my password?", 6, undefined, undefined, { vectorLiteral: null });
+      expect(search.retrieveTopSources).toHaveBeenCalledWith(user, "how do I reset my password?", 4, undefined, { vectorLiteral: null });
     } finally {
       await module.close();
     }
