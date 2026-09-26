@@ -165,9 +165,12 @@ async function keywordSearchWhere(viewer: Viewer): Promise<SQL<unknown>> {
     SEARCH_QUERY,
   );
 
-  if (whereClauses[0] === undefined)
-    throw new Error(`keyword search never issued a query for ${viewer.label}`);
-  return whereClauses[0];
+  const pageWheres = whereClauses.filter((clause) =>
+    new PgDialect().sqlToQuery(clause).sql.includes(`"kb_pages"."org_id"`),
+  );
+  if (pageWheres[0] === undefined)
+    throw new Error(`keyword search never issued a kb_pages query for ${viewer.label}`);
+  return pageWheres[0];
 }
 
 describe("read/search parity — both paths apply the same visibility scope for the same actor", () => {

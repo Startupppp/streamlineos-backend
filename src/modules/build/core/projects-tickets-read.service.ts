@@ -14,6 +14,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { buildAssigneeFilter } from "./assignee-filter";
 import {
   organizationMembers,
   projectMembers,
@@ -270,19 +271,10 @@ export class ProjectsTicketsReadService {
 
     if (assigneeId && assigneeId.length > 0) {
       const resolved = assigneeId.map((id) => (id === "@me" ? u.userId : id));
-      const unassigned = resolved.includes("__unassigned__");
-      const realIds = resolved.filter((id) => id !== "__unassigned__");
-      if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(
-          isNull(tickets.assigneeMembershipId),
-          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`,
-        );
-        if (assigneeCondition) filterConditions.push(assigneeCondition);
-      } else if (unassigned) {
-        filterConditions.push(isNull(tickets.assigneeMembershipId));
-      } else {
-        filterConditions.push(sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`);
-      }
+      const includeUnassigned = resolved.includes("__unassigned__");
+      const userIds = resolved.filter((id) => id !== "__unassigned__");
+      const condition = buildAssigneeFilter(u.orgId, userIds, includeUnassigned);
+      if (condition) filterConditions.push(condition);
     }
 
     if (labelIds && labelIds.length > 0) {
@@ -435,19 +427,10 @@ export class ProjectsTicketsReadService {
     }
     if (query.assigneeId?.length) {
       const resolved = query.assigneeId.map((id) => (id === "@me" ? u.userId : id));
-      const unassigned = resolved.includes("__unassigned__");
-      const realIds = resolved.filter((id) => id !== "__unassigned__");
-      if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(
-          isNull(tickets.assigneeMembershipId),
-          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`,
-        );
-        if (assigneeCondition) filterConditions.push(assigneeCondition);
-      } else if (unassigned) {
-        filterConditions.push(isNull(tickets.assigneeMembershipId));
-      } else {
-        filterConditions.push(sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`);
-      }
+      const includeUnassigned = resolved.includes("__unassigned__");
+      const userIds = resolved.filter((id) => id !== "__unassigned__");
+      const condition = buildAssigneeFilter(u.orgId, userIds, includeUnassigned);
+      if (condition) filterConditions.push(condition);
     }
     if (query.labelIds?.length) {
       filterConditions.push(sql`EXISTS (

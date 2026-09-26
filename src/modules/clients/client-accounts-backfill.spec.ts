@@ -1,5 +1,6 @@
 import { ClientAccountsService } from "./client-accounts.service";
 import { ScopedRead } from "../access/scoped-read";
+import { MembershipResolvingDispatchDouble } from "../notifications/notification-recipient-membership.spec-fixtures";
 
 const registerAfterCommit = jest.fn();
 
@@ -32,6 +33,7 @@ interface Harness {
   service: ClientAccountsService;
   execute: jest.Mock;
   findMany: jest.Mock;
+  dispatch: MembershipResolvingDispatchDouble;
 }
 
 function makeHarness(): Harness {
@@ -50,14 +52,16 @@ function makeHarness(): Harness {
     }),
   };
   const access = { membersWithPermission: jest.fn().mockResolvedValue([]) };
+  const dispatch = new MembershipResolvingDispatchDouble([]);
   const service = new ClientAccountsService(
     db as never,
     null,
     {} as never,
     {} as never,
     access as never,
+    dispatch as never,
   );
-  return { service, execute, findMany };
+  return { service, execute, findMany, dispatch };
 }
 
 describe("client account backfill — the statement that aborted GET /clients", () => {

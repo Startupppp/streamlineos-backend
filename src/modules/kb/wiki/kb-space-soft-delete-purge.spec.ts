@@ -98,7 +98,7 @@ function makeService(emitted: Emitted[], articleIds: number[], pageIds: number[]
   } as unknown as KbAccessService;
   const indexing = {} as unknown as KbIndexingService;
   return {
-    svc: new KbSpacesService(db, access, indexing, {} as never),
+    svc: new KbSpacesService(db, indexing, {} as never),
     invalidate,
     cursors,
     predicates,
@@ -168,10 +168,8 @@ describe("KB space soft delete purges the space's chunks", () => {
     } as unknown as Db;
     const svc = new KbSpacesService(
       db,
-      { invalidateAccessibleSpaceIds: invalidate } as unknown as KbAccessService,
       {} as unknown as KbIndexingService,
-      {} as never,
-    );
+      {} as never);
 
     await expect(svc.remove(ORG, SPACE)).rejects.toThrow("Space not found");
     expect(emitted).toEqual([]);

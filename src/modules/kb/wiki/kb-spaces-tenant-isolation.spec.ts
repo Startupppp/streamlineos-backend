@@ -65,7 +65,7 @@ function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; al
   const authz = {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   } as unknown as KnowledgeAuthorizationService;
-  return { svc: new KbSpacesService(db, access, indexing, authz), allWhereArgs };
+  return { svc: new KbSpacesService(db, indexing, authz), allWhereArgs };
 }
 
 const LIST_QUERY = { limit: 20 } as ListSpacesQuery;

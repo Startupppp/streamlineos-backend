@@ -56,7 +56,7 @@ function makeService(db: Db): KbSpacesService {
   const authz = {
     visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
   } as unknown as KnowledgeAuthorizationService;
-  return new KbSpacesService(db, access, {} as KbIndexingService, authz);
+  return new KbSpacesService(db, {} as KbIndexingService, authz);
 }
 
 describe("KbSpacesService.archiveImpact — askIndexed reflects actual chunk presence", () => {

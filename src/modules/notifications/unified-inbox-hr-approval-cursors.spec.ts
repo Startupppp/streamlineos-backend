@@ -2,11 +2,21 @@ jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import type { Db } from "../../db/drizzle.module";
 import { makeFakeDb, type TableRows } from "../../test/fake-select-db";
-import { ApprovalAdapterRegistry } from "../attention/approval-adapter.registry";
-import { HrTimeApprovalAdapter } from "../hr/time/hr-time-approval.adapter";
+import {
+  ApprovalAdapterRegistry,
+  type ApprovalSourceAdapter,
+} from "../attention/approval-adapter.registry";
+import {
+  HrTimeApprovalAdapter,
+  LEAVE_REQUEST_OBJECT_TYPE,
+} from "../hr/time/hr-time-approval.adapter";
 import { LeavesService } from "../hr/time/leaves.service";
 import { WfhService } from "../hr/time/wfh.service";
-import { decodeInboxCursor } from "./dto/unified-inbox.schemas";
+import {
+  decodeInboxCursor,
+  type BuildApprovalInboxItem,
+  type UnifiedInboxItem,
+} from "./dto/unified-inbox.schemas";
 import {
   EXPECTED_ORDER,
   FIRST_TRIMMED_ON_PAGE_ONE,
@@ -229,7 +239,6 @@ describe("unified inbox — two approval adapters sharing one id space", () => {
       permission: "hr:leaves:approve",
       supportsAfterCursor: false,
       fetch: () => Promise.resolve([]),
-      countPending: () => Promise.resolve(0),
     });
     const svc = makeInbox(db, registry);
 
@@ -245,6 +254,68 @@ describe("unified inbox — two approval adapters sharing one id space", () => {
     expect(second.sources.find((s) => s.kind === "build_approval")?.error).toContain(
       "unsupported: legacy adapters have no cursor",
     );
+  });
+});
+
+describe("unified inbox — a second adapter reaching the same leave request", () => {
+  function workflowStepOver(objectId: string): ApprovalSourceAdapter {
+    const step: BuildApprovalInboxItem = {
+      kind: "build_approval",
+      id: 900,
+      approvalKind: "workflow",
+      status: "pending",
+      projectId: null,
+      ticketId: null,
+      dueAt: null,
+      objectType: LEAVE_REQUEST_OBJECT_TYPE,
+      objectId,
+      dedupKey: "approval:workflow:900",
+      sourceModule: "hr",
+      subject: "Leave approval step",
+      timestamp: TIED_SEEDS[0].at.toISOString(),
+      isRead: false,
+      deepLink: "/hr/approvals",
+      actor: null,
+    };
+    return {
+      module: "hr",
+      kindLabel: "workflow",
+      permission: "hr:leaves:approve",
+      supportsAfterCursor: true,
+      fetch: () => Promise.resolve([step]),
+    };
+  }
+
+  function approvalsOf(items: UnifiedInboxItem[]): BuildApprovalInboxItem[] {
+    return items.flatMap((item) =>
+      item.kind === "build_approval" ? [item] : [],
+    );
+  }
+
+  it("BITE: collapses the workflow step onto the leave request it approves, so five pending requests stay five rows", async () => {
+    const { db, registry } = makeServices(leaveOnly(TIED_SEEDS));
+    registry.register(workflowStepOver(String(TIED_SEEDS[0].id)));
+    const svc = makeInbox(db, registry);
+
+    const page = await svc.list(ORG, "u", { limit: 20, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUserCtx());
+    const approvals = approvalsOf(page.items);
+
+    expect(approvals).toHaveLength(TIED_SEEDS.length);
+    expect(new Set(approvals.map((a) => `${a.objectType}:${a.objectId}`)).size).toBe(TIED_SEEDS.length);
+    expect(approvals.map((a) => a.dedupKey)).toContain("approval:workflow:900");
+    expect(approvals.map((a) => a.dedupKey)).not.toContain(`approval:leave:${String(TIED_SEEDS[0].id)}`);
+  });
+
+  it("CONTROL: a workflow step over a leave request nobody else surfaces is delivered as its own row", async () => {
+    const { db, registry } = makeServices(leaveOnly(TIED_SEEDS));
+    registry.register(workflowStepOver("999"));
+    const svc = makeInbox(db, registry);
+
+    const page = await svc.list(ORG, "u", { limit: 20, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined }, makeUserCtx());
+    const approvals = approvalsOf(page.items);
+
+    expect(approvals).toHaveLength(TIED_SEEDS.length + 1);
+    expect(approvals.map((a) => a.dedupKey)).toContain(`approval:leave:${String(TIED_SEEDS[0].id)}`);
   });
 });
 

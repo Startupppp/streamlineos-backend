@@ -89,7 +89,7 @@ function makeService(
 
   const indexing = {} as unknown as KbIndexingService;
 
-  return { svc: new KbSpacesService(db, access, indexing, authz) };
+  return { svc: new KbSpacesService(db, indexing, authz) };
 }
 
 describe("KbSpacesService — cross-tenant and access isolation", () => {
@@ -229,10 +229,8 @@ describe("KbSpacesService — space access for move operations (authorization co
 
     const svc = new KbSpacesService(
       db,
-      access,
       {} as unknown as KbIndexingService,
-      { visiblePagePredicate: jest.fn().mockResolvedValue(undefined) } as unknown as KnowledgeAuthorizationService,
-    );
+      { visiblePagePredicate: jest.fn().mockResolvedValue(undefined) } as unknown as KnowledgeAuthorizationService);
 
     await expect(svc.get(makeUser(ORG_A), SOURCE_SPACE_ID)).rejects.toThrow(NotFoundException);
   });
@@ -265,10 +263,8 @@ describe("KbSpacesService — space access for move operations (authorization co
       } as unknown as KbAccessService;
       return new KbSpacesService(
         innerDb,
-        innerAccess,
         {} as unknown as KbIndexingService,
-        { visiblePagePredicate: jest.fn().mockResolvedValue(undefined) } as unknown as KnowledgeAuthorizationService,
-      );
+        { visiblePagePredicate: jest.fn().mockResolvedValue(undefined) } as unknown as KnowledgeAuthorizationService);
     }
 
     const sourceSvc = makeGetService(sourceRow, [SOURCE_SPACE_ID, TARGET_SPACE_ID]);
@@ -334,7 +330,7 @@ describe("KbSpacesService — page counts exclude pages the caller cannot see", 
       visiblePagePredicate: calledWithPredicate,
     } as unknown as KnowledgeAuthorizationService;
 
-    const svc = new KbSpacesService(db, access, {} as unknown as KbIndexingService, authz);
+    const svc = new KbSpacesService(db, {} as unknown as KbIndexingService, authz);
     const scope = ScopedRead.of(ORG_A, "u-1", "all");
 
     await svc.list(makeUser(ORG_A), scope, { limit: DEFAULT_LIMIT });

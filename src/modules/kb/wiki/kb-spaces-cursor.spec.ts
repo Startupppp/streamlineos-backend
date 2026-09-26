@@ -78,7 +78,7 @@ function makeService(spaceRows: unknown[]) {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   } as unknown as KnowledgeAuthorizationService;
 
-  return { svc: new KbSpacesService(db, access, indexing, authz), selectProjections };
+  return { svc: new KbSpacesService(db, indexing, authz), selectProjections };
 }
 
 describe("KbSpacesService.list — cursor precision", () => {

@@ -4,6 +4,7 @@ import { ClientsService } from "./clients.service";
 import { ClientOnboardingService } from "./client-onboarding.service";
 import { ClientOpportunitiesService } from "./client-opportunities.service";
 import { ClientAccountsService } from "./client-accounts.service";
+import { MembershipResolvingDispatchDouble } from "../notifications/notification-recipient-membership.spec-fixtures";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -132,12 +133,21 @@ describe("ClientAccountsService — cross-tenant isolation", () => {
     const clientsEmail = { send: jest.fn().mockResolvedValue(undefined) };
     const access = { membersWithPermission: jest.fn().mockResolvedValue([]) };
     const redis = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue("OK") };
-    return new ClientAccountsService(db, redis as never, audit as never, clientsEmail as never, access as never);
+    const dispatch = new MembershipResolvingDispatchDouble([]);
+    const svc = new ClientAccountsService(
+      db,
+      redis as never,
+      audit as never,
+      clientsEmail as never,
+      access as never,
+      dispatch as never,
+    );
+    return { svc, dispatch };
   }
 
   it("getClientAccounts: queries scoped to attacker org (cross-tenant isolation deny)", async () => {
     const { db, findMany } = makeQueryDb([]);
-    const svc = buildSvc(db);
+    const { svc } = buildSvc(db);
     const result = await svc.getClientAccounts(ScopedRead.of(ATTACKER, "user-1", "all"), {});
     const r = result as Record<string, unknown>;
     const arr = (r.accounts ?? r.items ?? []) as unknown[];
@@ -149,9 +159,16 @@ describe("ClientAccountsService — cross-tenant isolation", () => {
   it("getClientAccounts: queries scoped to owner org (control)", async () => {
     const row = { id: 1, orgId: OWNER, clientName: "Acme", salesRep: null, assignedCrm: null };
     const { db, findMany } = makeQueryDb([row]);
-    const svc = buildSvc(db);
+    const { svc } = buildSvc(db);
     await svc.getClientAccounts(ScopedRead.of(OWNER, "user-1", "all"), {});
     expect(findMany).toHaveBeenCalled();
     expect(sqlValues(findMany.mock.calls[0]?.[0]?.where)).toContain(OWNER);
+  });
+
+  it("getClientAccounts reaches no dispatcher, so the argument this spec used to omit was never being swallowed", async () => {
+    const { db } = makeQueryDb([]);
+    const { svc, dispatch } = buildSvc(db);
+    await svc.getClientAccounts(ScopedRead.of(ATTACKER, "user-1", "all"), {});
+    expect(dispatch.inputs).toEqual([]);
   });
 });

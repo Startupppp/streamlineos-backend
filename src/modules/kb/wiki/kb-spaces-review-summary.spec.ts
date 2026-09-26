@@ -57,7 +57,7 @@ function makeGetService(counts: { overdue: number; withPolicy: number }): KbSpac
   const authz = {
     visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
   } as unknown as KnowledgeAuthorizationService;
-  return new KbSpacesService(db, access, {} as KbIndexingService, authz);
+  return new KbSpacesService(db, {} as KbIndexingService, authz);
 }
 
 describe("KbSpacesService.get — review-policy summary", () => {
@@ -123,7 +123,7 @@ function makeListService(spaceRows: unknown[], overdueRows: unknown[]): KbSpaces
   const authz = {
     visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   } as unknown as KnowledgeAuthorizationService;
-  return new KbSpacesService(db, access, {} as KbIndexingService, authz);
+  return new KbSpacesService(db, {} as KbIndexingService, authz);
 }
 
 describe("KbSpacesService.list — owner name and review-policy health summary", () => {

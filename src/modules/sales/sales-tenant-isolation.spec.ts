@@ -1,4 +1,5 @@
 import type { Db } from "../../db/drizzle.module";
+import { MembershipResolvingDispatchDouble } from "../notifications/notification-recipient-membership.spec-fixtures";
 import { SalesService } from "./sales.service";
 import { SalesAnalyticsService } from "./sales-analytics.service";
 import { SalesDashboardService } from "./sales-dashboard.service";
@@ -48,12 +49,14 @@ const OWNER = "org-owner";
 describe("SalesService — cross-tenant isolation", () => {
   function buildSvc(db: Db) {
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue({}) };
-    return new SalesService(db, makeCache() as never, access as never);
+    const dispatch = new MembershipResolvingDispatchDouble([]);
+    const svc = new SalesService(db, makeCache() as never, access as never, dispatch as never);
+    return { svc, dispatch };
   }
 
   it("listCommissionRules: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = buildSvc(db);
+    const { svc } = buildSvc(db);
     const result = await svc.listCommissionRules(ATTACKER);
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -63,9 +66,16 @@ describe("SalesService — cross-tenant isolation", () => {
   it("listCommissionRules: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, name: "Rule1", rate: 10 };
     const { db } = makeDb([row]);
-    const svc = buildSvc(db);
+    const { svc } = buildSvc(db);
     const result = await svc.listCommissionRules(OWNER);
     expect(result).toHaveLength(1);
+  });
+
+  it("listCommissionRules reaches no dispatcher, so the argument this spec used to omit was never being swallowed", async () => {
+    const { db } = makeDb([]);
+    const { svc, dispatch } = buildSvc(db);
+    await svc.listCommissionRules(ATTACKER);
+    expect(dispatch.inputs).toEqual([]);
   });
 });
 

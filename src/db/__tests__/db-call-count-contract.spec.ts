@@ -1,5 +1,6 @@
 import { makeCountingDb } from "./counting-db";
 import type { Db } from "../drizzle.types";
+import { MembershipResolvingDispatchDouble } from "../../modules/notifications/notification-recipient-membership.spec-fixtures";
 
 jest.mock("../../common/tenant", () => {
   const actual = jest.requireActual<Record<string, unknown>>("../../common/tenant");
@@ -207,14 +208,16 @@ describe("database call-count contract", () => {
         ],
       });
       const access = { membersWithPermission: jest.fn().mockResolvedValue(members) };
+      const dispatch = new MembershipResolvingDispatchDouble([]);
       const service = new ClientAccountsService(
         counting.db as Db,
         null,
         {} as ConstructorParameters<typeof ClientAccountsService>[2],
         {} as ConstructorParameters<typeof ClientAccountsService>[3],
         access as never,
+        dispatch as never,
       );
-      return { ...counting, service };
+      return { ...counting, service, dispatch };
     }
 
     it("assigns every unassigned account in one update regardless of how many assignees share them", async () => {

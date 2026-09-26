@@ -136,7 +136,12 @@ describe("Revocation dimension 1 — space membership is re-read per query, not 
 
     const results = await run();
 
-    expect(rendered(wheres).filter((t) => t.includes(`"kb_pages"."space_id"`))).toEqual([]);
+    expect(
+      rendered(wheres).filter((t) => t.includes(`"kb_pages"."space_id" = ANY(`)),
+    ).toEqual([]);
+    expect(
+      rendered(wheres).filter((t) => t.includes(`"kb_pages"."space_id" IS NULL`)).length,
+    ).toBeGreaterThan(0);
     expect(
       rendered(wheres).filter((t) => t.includes(`"kb_pages"."content_type" = `)),
     ).toEqual([]);
@@ -319,8 +324,16 @@ describe("Revocation dimension 4 — the canonical page scope loses its arms as 
     const granted = buildVisiblePageScope(standing({ accessibleSpaceIds: [42] }), "view");
     const revoked = buildVisiblePageScope(standing({ accessibleSpaceIds: [] }), "view");
 
-    expect(textOf(granted.indexedBranch)).toContain("space_id");
-    expect(textOf(revoked.indexedBranch)).not.toContain("space_id");
+    expect(textOf(granted.indexedBranch)).toContain(`"kb_pages"."space_id" = ANY(`);
+    expect(textOf(revoked.indexedBranch)).not.toContain(`"kb_pages"."space_id" = ANY(`);
+  });
+
+  it("BITE: revocation does not fall back to org-visibility — an org-visible page inside any space stays unreachable, while a spaceless one remains visible", () => {
+    const revoked = buildVisiblePageScope(standing({ accessibleSpaceIds: [] }), "view");
+
+    expect(textOf(revoked.indexedBranch)).toContain(`"kb_pages"."space_id" IS NULL`);
+    expect(textOf(revoked.indexedBranch)).toContain(`"kb_pages"."visibility" IN ('org', 'public')`);
+    expect(textOf(revoked.predicate)).toContain(`"kb_pages"."space_id" IS NULL`);
   });
 
   it("never admits a revoked page grant, because the grant arm requires a live row", () => {

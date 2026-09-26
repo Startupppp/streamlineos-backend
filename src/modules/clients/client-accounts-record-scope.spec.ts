@@ -71,6 +71,16 @@ function recording(): Recorder {
     }),
   });
 
+  const select = (): SelectChain => {
+    const chain: SelectChain = {
+      from: () => chain,
+      where: () => chain,
+      orderBy: () => chain,
+      limit: () => Promise.resolve([]),
+    };
+    return chain;
+  };
+
   const handle = {
     query: {
       clientAccounts: {
@@ -79,7 +89,7 @@ function recording(): Recorder {
           return Promise.resolve({
             id: 7,
             orgId: "org-1",
-            salesRepId: "rep-2",
+            salesRepId: SALES_REP_USER,
             branchId: null,
             clientName: "Acme",
           });
@@ -89,6 +99,7 @@ function recording(): Recorder {
     },
     insert,
     update,
+    select,
   };
 
   const db = {
@@ -96,7 +107,11 @@ function recording(): Recorder {
     transaction: (work: (tx: unknown) => Promise<unknown>) => work(handle),
   } as unknown as never;
 
-  return { db, wheres };
+  const dispatch = new MembershipResolvingDispatchDouble([
+    { userId: SALES_REP_USER, membershipId: SALES_REP_MEMBERSHIP_ID },
+  ]);
+
+  return { db, wheres, dispatch };
 }
 
 function serviceWith(rec: Recorder): ClientAccountsService {
@@ -105,7 +120,7 @@ function serviceWith(rec: Recorder): ClientAccountsService {
   const access = {
     membersWithPermission: (_orgId: string, _key: string) => Promise.resolve([]),
   } as never;
-  return new ClientAccountsService(rec.db, null, audit, clientsEmail, access);
+  return new ClientAccountsService(rec.db, null, audit, clientsEmail, access, rec.dispatch as never);
 }
 
 const allSql = (rec: Recorder): string => rec.wheres.map(sqlText).join("\n---\n");
@@ -216,6 +231,38 @@ describe("client account routes reached by id honour the read scope", () => {
       const rec = recording();
 
       await serviceWith(rec).updateStatus(ScopedRead.of("org-1", "rep-1", "none"), 7, { status: "QUERIES" });
+
+      expect(allSql(rec)).toContain("false");
+    });
+
+    it("narrows the INVESTED branch as well, the only branch that books money and reaches the notification dispatcher", async () => {
+      const rec = recording();
+
+      await serviceWith(rec).updateStatus(ScopedRead.of("org-1", "rep-1", "own"), 7, {
+        status: "INVESTED",
+        investmentAmount: "100000",
+      });
+
+      const owned = allSql(rec).split(OWNER_PREDICATE).length - 1;
+      expect(owned).toBe(2);
+      expect(rec.dispatch.eventKeys()).toEqual(["crm.client.invested"]);
+      expect(rec.dispatch.rowsFor(SALES_REP_USER)).toEqual([
+        {
+          orgId: "org-1",
+          eventKey: "crm.client.invested",
+          userId: SALES_REP_USER,
+          membershipId: SALES_REP_MEMBERSHIP_ID,
+        },
+      ]);
+    });
+
+    it("reaches no account at scope none even on the INVESTED branch, so no notification is minted for a record the caller cannot open", async () => {
+      const rec = recording();
+
+      await serviceWith(rec).updateStatus(ScopedRead.of("org-1", "rep-1", "none"), 7, {
+        status: "INVESTED",
+        investmentAmount: "100000",
+      });
 
       expect(allSql(rec)).toContain("false");
     });

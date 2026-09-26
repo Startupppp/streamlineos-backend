@@ -50,6 +50,7 @@ describe("a sub-resource list whose parent id is outside the caller's org answer
           stub<ConstructorParameters<typeof ClientAccountsService>[2]>(),
           stub<ConstructorParameters<typeof ClientAccountsService>[3]>(),
           stub<ConstructorParameters<typeof ClientAccountsService>[4]>(),
+          stub<ConstructorParameters<typeof ClientAccountsService>[5]>(),
         ).getClientActivities(ScopedRead.of(org, "caller", "all"), 1),
     ],
     [

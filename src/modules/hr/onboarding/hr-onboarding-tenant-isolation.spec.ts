@@ -1,4 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
+import { MembershipResolvingDispatchDouble } from "../../notifications/notification-recipient-membership.spec-fixtures";
 import { OnboardingAdminService } from "./core/onboarding-admin.service";
 import { OnboardingTemplateService } from "./core/onboarding-template.service";
 import { OnboardingAnalyticsService } from "./flow/onboarding-analytics.service";
@@ -56,7 +57,8 @@ describe("OnboardingAdminService — cross-tenant isolation", () => {
   it("scopes onboarding progress query to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const mockEmail = { send: jest.fn() };
-    const svc = new OnboardingAdminService(db, mockEmail as never);
+    const dispatch = new MembershipResolvingDispatchDouble([]);
+    const svc = new OnboardingAdminService(db, mockEmail as never, dispatch as never);
     await svc.getProgressSummary(ATTACKER);
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
@@ -64,9 +66,19 @@ describe("OnboardingAdminService — cross-tenant isolation", () => {
   it("returns onboarding progress for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([{ userId: "u1", progress: 50 }]);
     const mockEmail = { send: jest.fn() };
-    const svc = new OnboardingAdminService(db, mockEmail as never);
+    const dispatch = new MembershipResolvingDispatchDouble([]);
+    const svc = new OnboardingAdminService(db, mockEmail as never, dispatch as never);
     await svc.getProgressSummary(OWNER);
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+  });
+
+  it("getProgressSummary reaches no dispatcher, so the argument this spec used to omit was never being swallowed", async () => {
+    const { db } = makeDb([]);
+    const mockEmail = { send: jest.fn() };
+    const dispatch = new MembershipResolvingDispatchDouble([]);
+    const svc = new OnboardingAdminService(db, mockEmail as never, dispatch as never);
+    await svc.getProgressSummary(ATTACKER);
+    expect(dispatch.inputs).toEqual([]);
   });
 });
 
