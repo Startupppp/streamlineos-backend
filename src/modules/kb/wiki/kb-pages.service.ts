@@ -37,6 +37,8 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
+import { randomUUID } from "node:crypto";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { KbPageWriterService } from "./kb-page-writer.service";
 import { hashPublicToken } from "./kb-public-token";
 import {

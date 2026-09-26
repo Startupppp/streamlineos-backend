@@ -8,7 +8,12 @@ import {
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { kbPageGrants, kbPages, organizationMembers } from "../../../db/schema";
+import {
+  kbPageGrants,
+  kbPages,
+  organizationMembers,
+  users,
+} from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -65,8 +70,22 @@ export class KbPageGrantsService {
       : undefined;
 
     const rows = await this.db
-      .select({ ...GRANT_COLUMNS, createdAtMicros: microsecondCursorValue(kbPageGrants.createdAt) })
+      .select({
+        ...GRANT_COLUMNS,
+        createdAtMicros: microsecondCursorValue(kbPageGrants.createdAt),
+        granteeName: users.name,
+        granteeEmail: users.email,
+        granteeImage: users.image,
+      })
       .from(kbPageGrants)
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, kbPageGrants.orgId),
+          eq(organizationMembers.id, kbPageGrants.membershipId),
+        ),
+      )
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(kbPageGrants.orgId, user.orgId),
@@ -89,6 +108,9 @@ export class KbPageGrantsService {
       grantedByMembershipId: r.grantedByMembershipId,
       createdAt: r.createdAt,
       revokedAt: r.revokedAt,
+      granteeName: r.granteeName,
+      granteeEmail: r.granteeEmail,
+      granteeImage: r.granteeImage,
     }));
 
     return buildCursorPage(items, query.limit, (row) => ({
@@ -138,7 +160,10 @@ export class KbPageGrantsService {
     let grant: KbPageGrantItem;
     try {
       grant = await this.db.transaction(async (tx) => {
-        let row: KbPageGrantItem;
+        let row: Omit<
+          KbPageGrantItem,
+          "granteeName" | "granteeEmail" | "granteeImage"
+        >;
 
         if (existing) {
           const [updated] = await tx
@@ -171,10 +196,18 @@ export class KbPageGrantsService {
 
         await tx
           .update(kbPages)
-          .set({ aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() })
+          .set({
+            aclRevision: sql`acl_revision + 1`,
+            aclRevisionChangedAt: new Date(),
+          })
           .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, user.orgId)));
 
-        return row;
+        return {
+          ...row,
+          granteeName: null,
+          granteeEmail: null,
+          granteeImage: null,
+        };
       });
     } catch (err) {
       if (isUniqueViolation(err))
@@ -229,7 +262,10 @@ export class KbPageGrantsService {
 
       await tx
         .update(kbPages)
-        .set({ aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() })
+        .set({
+          aclRevision: sql`acl_revision + 1`,
+          aclRevisionChangedAt: new Date(),
+        })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, user.orgId)));
     });
 
@@ -252,7 +288,10 @@ export class KbPageGrantsService {
     }
   }
 
-  private async syncChunkAclRevision(orgId: string, pageId: number): Promise<void> {
+  private async syncChunkAclRevision(
+    orgId: string,
+    pageId: number,
+  ): Promise<void> {
     await this.db.execute(sql`
       UPDATE kb_article_chunks c
       SET acl_revision = p.acl_revision,
