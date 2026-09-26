@@ -144,4 +144,31 @@ describe("gapRelatedPages() drill-down privacy", () => {
     expect(result.pagination.nextCursor).toBeTruthy();
     expect(result.data).toHaveLength(5);
   });
+
+  it("passes the gap query to websearch_to_tsquery so LIKE wildcards in user text are treated as literals, not pattern characters", async () => {
+    mockAuth.visiblePagePredicate.mockResolvedValue(sql`1=1`);
+
+    const chain = chainFor([]);
+    mockDb.select.mockReturnValue(chain);
+
+    const service = makeService();
+    await service.gapRelatedPages(baseUser, { query: "100% SLA guarantee", limit: 10 });
+
+    expect(chain.where).toHaveBeenCalled();
+    const whereCondition = chain.where.mock.calls[0][0];
+    expect(whereCondition).toBeDefined();
+
+    const seen = new WeakSet<object>();
+    function collectStrings(value: unknown): string[] {
+      if (typeof value === "string") return [value];
+      if (value === null || typeof value !== "object") return [];
+      if (seen.has(value)) return [];
+      seen.add(value);
+      return Object.values(value as Record<string, unknown>).flatMap(collectStrings);
+    }
+
+    const sqlStrings = collectStrings(whereCondition);
+    expect(sqlStrings.some((s) => s.includes("websearch_to_tsquery"))).toBe(true);
+    expect(sqlStrings.every((s) => !s.toLowerCase().includes(" like "))).toBe(true);
+  });
 });

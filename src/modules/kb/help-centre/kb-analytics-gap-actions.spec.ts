@@ -6,6 +6,13 @@ import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: async (
+    db: { transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown> },
+    fn: (tx: unknown) => Promise<unknown>,
+  ) => db.transaction(fn),
+}));
+
 function makeUser(orgId = "org-1"): CurrentUserContext {
   return {
     orgId,
@@ -21,6 +28,7 @@ function makeUser(orgId = "org-1"): CurrentUserContext {
 describe("KbAnalyticsService — gap actions", () => {
   let service: KbAnalyticsService;
   let mockDb: {
+    transaction: jest.Mock;
     insert: jest.Mock;
     select: jest.Mock;
   };
@@ -47,6 +55,7 @@ describe("KbAnalyticsService — gap actions", () => {
     };
 
     mockDb = {
+      transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(mockDb)),
       insert: jest.fn().mockReturnValue(insertChain),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
@@ -198,6 +207,21 @@ describe("KbAnalyticsService — gap actions", () => {
           set: expect.objectContaining({ status: SupportKnowledgeGapStatus.DRAFTED }),
         }),
       );
+    });
+
+    it("wraps the page insert and gap upsert in one transaction so a gap-upsert failure cannot orphan the draft page permanently", async () => {
+      const pageInsertChain = {
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockResolvedValue([{ id: 77 }]),
+      };
+      mockDb.insert
+        .mockReturnValueOnce(pageInsertChain)
+        .mockReturnValueOnce(insertChain);
+
+      await service.createFix(makeUser(), { query: "how to export data" });
+
+      expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+      expect(mockDb.insert).toHaveBeenCalledTimes(2);
     });
   });
 });

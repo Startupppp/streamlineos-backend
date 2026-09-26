@@ -125,6 +125,7 @@ describe("KbSearchService.search is the help-centre surface, not the whole knowl
   function makeSearch(db: unknown, candidates: KbCandidateService): KbSearchService {
     const access = {
       getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
+      getAccessibleSpaceIdsWithCacheOutcome: jest.fn().mockResolvedValue({ spaceIds: [1], cacheOutcome: "miss" }),
       getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
       isAdmin: jest.fn().mockResolvedValue(false),
       getPrincipalIds: jest.fn().mockResolvedValue(PRINCIPAL),
@@ -136,7 +137,10 @@ describe("KbSearchService.search is the help-centre surface, not the whole knowl
       { recordDetached: jest.fn().mockResolvedValue(undefined) } as never,
       candidates,
       { scopeFor: jest.fn().mockResolvedValue("all") } as never,
-      { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never,
+      {
+        visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+        articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
+      } as never,
     );
   }
 

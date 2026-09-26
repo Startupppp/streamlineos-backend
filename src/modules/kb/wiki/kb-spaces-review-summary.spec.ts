@@ -11,9 +11,15 @@ import type { ListSpacesQuery } from "../core/dto/kb.schemas";
 
 const ORG = "org-review-summary";
 const SPACE_ID = 9;
+const MEMBERSHIP_ID = 41;
 
 function makeUser() {
-  return { orgId: ORG, userId: "user-1", isOrgOwner: false } as never;
+  return {
+    orgId: ORG,
+    userId: "user-1",
+    isOrgOwner: false,
+    principal: humanSessionPrincipal(MEMBERSHIP_ID, false),
+  } as never;
 }
 
 function makeCountChain(count: number): object {
@@ -22,6 +28,9 @@ function makeCountChain(count: number): object {
       return this;
     }),
     where: jest.fn().mockImplementation(function (this: object) {
+      return this;
+    }),
+    limit: jest.fn().mockImplementation(function (this: object) {
       return this;
     }),
   });

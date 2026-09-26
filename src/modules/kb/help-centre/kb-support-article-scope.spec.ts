@@ -111,13 +111,13 @@ function projectionOf(projections: Record<string, unknown>[], field: string): Re
 }
 
 describe("help-centre analytics count only support articles", () => {
-  it("reads every article statistic from kb_pages and never from kb_articles", async () => {
+  it("reads every article statistic from kb_pages in one aggregate and never from kb_articles, because a second kb_pages read here returned per-page titles that overview never authorizes", async () => {
     const harness = makeHarness();
 
     await new KbAnalyticsService(harness.db, auth).overview("org-1", {});
 
     const pageQueries = harness.wheres.filter(readsPages);
-    expect(pageQueries.length).toBe(2);
+    expect(pageQueries.length).toBe(1);
     expect(harness.wheres.some(readsArticles)).toBe(false);
   });
 
@@ -160,14 +160,28 @@ describe("help-centre analytics count only support articles", () => {
     expect(verifiedPublished.sql.toLowerCase()).not.toContain("last_verified_at");
   });
 
-  it("ranks top articles by a view count that never reads null as the highest", async () => {
+  it("totals views with a null-safe sum, because a page that has never been viewed stores null and would otherwise make the org total null", async () => {
     const harness = makeHarness();
 
     await new KbAnalyticsService(harness.db, auth).overview("org-1", {});
 
-    const viewCount = projectionOf(harness.projections, "viewCount");
-    expect(viewCount.sql.toLowerCase()).toContain("coalesce");
-    expect(viewCount.sql.toLowerCase()).toContain(`"kb_pages"."views"`);
+    const totalViews = projectionOf(harness.projections, "totalViews");
+    expect(totalViews.sql.toLowerCase()).toContain("coalesce");
+    expect(totalViews.sql.toLowerCase()).toContain(`"kb_pages"."views"`);
+  });
+
+  it("ranks no top-article list at all, because overview never consults visiblePagePredicate and a per-page title here would name pages the caller cannot open", async () => {
+    const harness = makeHarness();
+
+    const result = await new KbAnalyticsService(harness.db, auth).overview(
+      "org-1",
+      {},
+    );
+
+    expect(result).not.toHaveProperty("topArticles");
+    for (const projection of harness.projections) {
+      expect(Object.keys(projection)).not.toContain("title");
+    }
   });
 });
 

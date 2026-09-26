@@ -36,13 +36,13 @@ function makeSelectChain(rows: unknown[]) {
 describe("KbImportExportService.importPages — split transactions (BE-84 connection hold fix)", () => {
   afterEach(() => jest.clearAllMocks());
 
-  it("uses separate transactions for withRef and withoutRef batches rather than one monolithic transaction", async () => {
-    let selectCallCount = 0;
+  it("queues the import job in exactly one transaction for mixed-ref and plain items, so batch processing does not hold a connection", async () => {
     const jobsInsertChain = { returning: jest.fn().mockResolvedValue([{ id: 1 }]) };
     const transactionSpy = jest.fn().mockImplementation(
       (cb: (tx: unknown) => Promise<unknown>) => cb({
         select: jest.fn().mockImplementation(() => makeSelectChain([])),
         insert: jest.fn().mockImplementation((table: unknown) => {
+          if (table === kbImportJobs) return { values: jest.fn().mockReturnValue(jobsInsertChain) };
           if (table === kbPages) {
             return {
               values: jest.fn().mockReturnValue({
@@ -61,14 +61,8 @@ describe("KbImportExportService.importPages — split transactions (BE-84 connec
     );
 
     const db = {
-      select: jest.fn().mockImplementation(() => {
-        selectCallCount += 1;
-        return makeSelectChain([]);
-      }),
-      insert: jest.fn().mockImplementation((table: unknown) => {
-        if (table === kbImportJobs) return { values: jest.fn().mockReturnValue(jobsInsertChain) };
-        return { values: jest.fn().mockResolvedValue(undefined) };
-      }),
+      select: jest.fn().mockImplementation(() => makeSelectChain([])),
+      insert: jest.fn().mockResolvedValue(undefined),
       transaction: transactionSpy,
     } as unknown as Db;
 
@@ -86,15 +80,15 @@ describe("KbImportExportService.importPages — split transactions (BE-84 connec
 
     await service.importPages(makeUser(), input);
 
-    expect(transactionSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(transactionSpy.mock.calls.length).toBe(1);
   });
 
   it("uses a single transaction for an all-plain import (no withRef batch)", async () => {
-    let selectCallCount = 0;
     const jobsInsertChain = { returning: jest.fn().mockResolvedValue([{ id: 1 }]) };
     const transactionSpy = jest.fn().mockImplementation(
       (cb: (tx: unknown) => Promise<unknown>) => cb({
         insert: jest.fn().mockImplementation((table: unknown) => {
+          if (table === kbImportJobs) return { values: jest.fn().mockReturnValue(jobsInsertChain) };
           if (table === kbPages) {
             return {
               values: jest.fn().mockReturnValue({
@@ -110,14 +104,8 @@ describe("KbImportExportService.importPages — split transactions (BE-84 connec
     );
 
     const db = {
-      select: jest.fn().mockImplementation(() => {
-        selectCallCount += 1;
-        return makeSelectChain([]);
-      }),
-      insert: jest.fn().mockImplementation((table: unknown) => {
-        if (table === kbImportJobs) return { values: jest.fn().mockReturnValue(jobsInsertChain) };
-        return { values: jest.fn().mockResolvedValue(undefined) };
-      }),
+      select: jest.fn().mockImplementation(() => makeSelectChain([])),
+      insert: jest.fn().mockResolvedValue(undefined),
       transaction: transactionSpy,
     } as unknown as Db;
 

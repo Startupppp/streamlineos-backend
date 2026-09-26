@@ -456,6 +456,18 @@ export class KbAskService {
       }
   > {
     const correlationId = randomUUID();
+    if (this.redis) {
+      const orgKey = `rl:kb:ask:org:${user.orgId}`;
+      const count = await this.redis.incr(orgKey);
+      if (count === 1) await this.redis.expire(orgKey, KB_ASK_ORG_WINDOW_SECS);
+      if (count > KB_ASK_ORG_LIMIT) {
+        const ttl = await this.redis.ttl(orgKey);
+        throw new HttpException(
+          { message: "Org Ask rate limit exceeded", retryAfterSecs: ttl > 0 ? ttl : KB_ASK_ORG_WINDOW_SECS },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
     const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
       const cacheOutcome = await this.search.aclCacheOutcome(user);
@@ -472,44 +484,74 @@ export class KbAskService {
       const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
       const queueLane = KB_ASK_QUEUE_LANE;
       const dbRole = "primary";
+      const callStart = Date.now();
 
-      await runInTenantTransaction(
-        this.db,
-        async (tx) => {
-          await tx.insert(kbAiInteractions).values({
-            orgId: user.orgId,
-            correlationId,
-            actorMembershipId: actingMembershipId(user.principal) ?? null,
-            resultState: "answered",
-            sourceIdsWithRevisions,
-          });
-          await this.events.record(user.orgId, "ai_answer", {
-            actorMembershipId: actingMembershipId(user.principal) ?? null,
-            query: input.question,
-            metadata: {
-              sourceIds: [
-                ...top.map((s) => `${s.kind}:${s.id}`),
-                ...linked.map((document) => `document:${document.id}`),
-              ],
-            },
-            correlationId,
-          });
-        },
-        { orgId: user.orgId },
-      );
+      const onCompleted = async (result: { text: string; promptTokens: number; completionTokens: number }): Promise<void> => {
+        await runInTenantTransaction(
+          this.db,
+          async (tx) => {
+            await tx.insert(kbAiInteractions).values({
+              orgId: user.orgId,
+              correlationId,
+              actorMembershipId: actingMembershipId(user.principal) ?? null,
+              resultState: "answered",
+              promptTokens: result.promptTokens,
+              completionTokens: result.completionTokens,
+              totalTokens: result.promptTokens + result.completionTokens,
+              latencyMs: Date.now() - callStart,
+              sourceIdsWithRevisions,
+            });
+            await this.events.record(user.orgId, "ai_answer", {
+              actorMembershipId: actingMembershipId(user.principal) ?? null,
+              query: input.question,
+              metadata: {
+                sourceIds: [
+                  ...top.map((s) => `${s.kind}:${s.id}`),
+                  ...linked.map((document) => `document:${document.id}`),
+                ],
+              },
+              correlationId,
+            });
+          },
+          { orgId: user.orgId },
+        ).catch((err: unknown) => {
+          this.logger.warn(`Failed to record streaming interaction: ${err}`);
+        });
+      };
 
-      const aiStream = await this.aiGateway.streamTextWithUsage({
-        actor: { orgId: user.orgId, userId: user.userId },
-        feature: "kb.ask",
-        tier: "fast",
-        maxTokens: 1024,
-        charge: true,
-        prompt: {
-          system: ASK_SYSTEM_PROMPT,
-          user: `Question: ${input.question}\n\nContext:\n${fullContext}`,
-        },
-        signal,
-      });
+      let aiStream: AiTextStream;
+      try {
+        aiStream = await this.aiGateway.streamTextWithUsage({
+          actor: { orgId: user.orgId, userId: user.userId },
+          feature: "kb.ask",
+          tier: "fast",
+          maxTokens: 1024,
+          charge: true,
+          prompt: {
+            system: ASK_SYSTEM_PROMPT,
+            user: `Question: ${input.question}\n\nContext:\n${fullContext}`,
+          },
+          signal,
+          onCompleted,
+        });
+      } catch (streamError: unknown) {
+        await runInTenantTransaction(
+          this.db,
+          async (tx) => {
+            await tx.insert(kbAiInteractions).values({
+              orgId: user.orgId,
+              correlationId,
+              actorMembershipId: actingMembershipId(user.principal) ?? null,
+              resultState: "provider_unavailable",
+              sourceIdsWithRevisions,
+            });
+          },
+          { orgId: user.orgId },
+        ).catch((err: unknown) => {
+          this.logger.warn(`Failed to write streaming error interaction: ${err}`);
+        });
+        throw streamError;
+      }
 
       metrics.finish(degraded ? "degraded" : "answered", {
         citations: citations.length,

@@ -46,6 +46,7 @@ const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+  articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
 });
 
 function makeEmbeddings() {

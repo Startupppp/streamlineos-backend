@@ -131,6 +131,9 @@ function extractBreachFingerprint(alertId, payload) {
   } else if (Array.isArray(payload.matches) && payload.matches.length > 0) {
     const ids = payload.matches.map((m) => m.correlationId ?? m.route ?? "").sort();
     parts.push(...ids);
+  } else if (Array.isArray(payload.noisy) && payload.noisy.length > 0) {
+    const ids = payload.noisy.map((n) => n.org_id ?? "").sort();
+    parts.push(...ids);
   }
   return createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 16);
 }
@@ -158,6 +161,8 @@ function markSuppressed(state, dedupKey, now, windowMs) {
     if (typeof state[k] === "number" && state[k] <= now) delete state[k];
 }
 
+const POST_TIMEOUT_MS = 10_000;
+
 function postJson(url, body) {
   const payload = JSON.stringify(body);
   const parsed = new URL(url);
@@ -180,6 +185,9 @@ function postJson(url, body) {
         else reject(new Error(`HTTP ${res.statusCode}`));
       },
     );
+    req.setTimeout(POST_TIMEOUT_MS, () => {
+      req.destroy(new Error(`postJson timed out after ${POST_TIMEOUT_MS}ms`));
+    });
     req.on("error", reject);
     req.write(payload);
     req.end();
@@ -289,6 +297,12 @@ if (isSelfTest) {
   const payload3 = { fired: true, rows: [{ org_id: "org_fixture_2", event_type: "payment.failed" }] };
   const result3 = await dispatch("dead-outbox", payload3, opts);
 
+  const tenantCostPayload1 = { fired: true, noisy: [{ org_id: "org_noisy_1", total_credits: 9999 }] };
+  const tenantCostPayload2 = { fired: true, noisy: [{ org_id: "org_noisy_2", total_credits: 8888 }] };
+  const result4 = await dispatch("tenant-cost", tenantCostPayload1, opts);
+  const result5 = await dispatch("tenant-cost", tenantCostPayload1, opts);
+  const result6 = await dispatch("tenant-cost", tenantCostPayload2, opts);
+
   await new Promise((resolve) => server.close(resolve));
   try {
     unlinkSync(tempState);
@@ -300,12 +314,15 @@ if (isSelfTest) {
     case1Delivered: result1.dispatched === true,
     case2Suppressed: result2.suppressed === true,
     case3Delivered: result3.dispatched === true,
-    serverReceivedExactlyTwo: receivedBodies.length === 2,
+    serverReceivedExactlyFour: receivedBodies.length === 4,
     case1BodyHasOwner: typeof receivedBodies[0]?.owner === "string",
     case1BodyHasRunbook: typeof receivedBodies[0]?.runbook === "string",
     case1BodyHasAlertId: receivedBodies[0]?.alertId === "dead-outbox",
     case3BodyDifferentBreach:
       receivedBodies[1]?.rows?.[0]?.org_id !== receivedBodies[0]?.rows?.[0]?.org_id,
+    tenantCostFirstOrgDelivered: result4.dispatched === true,
+    tenantCostSameOrgSuppressed: result5.suppressed === true,
+    tenantCostDifferentOrgDelivered: result6.dispatched === true,
   };
 
   const pass = Object.values(checks).every(Boolean);

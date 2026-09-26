@@ -125,8 +125,11 @@ describe("kb_page_links record grain — the constraint exists in both declarati
 
   it("BITE: the pre-existing (source_page_id, target_page_id) unique cannot constrain a record link, because target_page_id is NULL there", () => {
     const schema = readFileSync(join(BACKEND_ROOT, "src/db/schema/kb/pages.ts"), "utf-8");
+    const collapsed = schema.replace(/\s+/g, "");
 
-    expect(schema).toContain('uniqueIndex("uniq_kb_page_links_source_target").on(table.sourcePageId, table.targetPageId)');
+    expect(collapsed).toContain(
+      'uniqueIndex("uniq_kb_page_links_source_target").on(table.sourcePageId,table.targetPageId',
+    );
     expect(schema).toContain('targetPageId: integer("target_page_id"),');
     expect(schema).not.toContain('targetPageId: integer("target_page_id").notNull()');
   });

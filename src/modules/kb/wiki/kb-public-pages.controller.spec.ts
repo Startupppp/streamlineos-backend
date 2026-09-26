@@ -5,6 +5,7 @@ import { NotFoundException } from "@nestjs/common";
 import { KbPublicPagesController } from "./kb-public-pages.controller";
 import { KbPagesService } from "./kb-pages.service";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
+import { APP_CONFIG } from "../../../config/config.module";
 
 describe("KbPublicPagesController (e2e)", () => {
   let app: INestApplication;
@@ -36,6 +37,7 @@ describe("KbPublicPagesController (e2e)", () => {
       providers: [
         { provide: KbPagesService, useValue: mockPagesService },
         { provide: RateLimitService, useValue: mockRateLimit },
+        { provide: APP_CONFIG, useValue: { NEXT_PUBLIC_R2_PUBLIC_URL: "" } },
       ],
     }).compile();
 

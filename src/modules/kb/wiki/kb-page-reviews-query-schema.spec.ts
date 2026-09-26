@@ -27,6 +27,7 @@ function makeChain() {
 const authMock = {
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+  articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
 };
 
 function makeUser(orgId = "org-1") {

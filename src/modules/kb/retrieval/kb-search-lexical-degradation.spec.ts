@@ -2,6 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
+import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -111,6 +112,9 @@ function makeHarness(embed: EmbedBehaviour, resultQueue: unknown[][]) {
     assertPageAccess: jest
       .fn()
       .mockResolvedValue({ orgId: ORG, pageId: 1, action: "view", via: "admin" }),
+    articleRestrictionPredicate: jest.fn().mockResolvedValue(
+      buildArticleRestrictionBranch(ORG, { membershipId: MEMBERSHIP, roleSlugs: ["MEMBER"] }),
+    ),
   };
   const service = new KbSearchService(
     db as never,

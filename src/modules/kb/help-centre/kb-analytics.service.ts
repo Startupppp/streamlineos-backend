@@ -6,7 +6,6 @@ import {
   gte,
   inArray,
   isNull,
-  like,
   lt,
   lte,
   sql,
@@ -27,6 +26,7 @@ import {
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
   GapRelatedPagesQuery,
   GapsQueryInput,
@@ -337,7 +337,7 @@ export class KbAnalyticsService {
       eq(kbPages.orgId, user.orgId),
       isNull(kbPages.deletedAt),
       predicate,
-      like(kbPages.contentText, `%${query.query}%`),
+      sql`${kbPages.fts} @@ websearch_to_tsquery('english', ${query.query})`,
     ];
 
     const position = decodeTupleCursor(query.cursor, 2);
@@ -581,12 +581,17 @@ export class KbAnalyticsService {
         representativeQuestion: body.query,
         ticketCount: 0,
         status: SupportKnowledgeGapStatus.DISMISSED,
+        dismissalReason: body.reason,
         createdAt: now,
         updatedAt: now,
       })
       .onConflictDoUpdate({
         target: [supportKnowledgeGaps.orgId, supportKnowledgeGaps.clusterKey],
-        set: { status: SupportKnowledgeGapStatus.DISMISSED, updatedAt: now },
+        set: {
+          status: SupportKnowledgeGapStatus.DISMISSED,
+          dismissalReason: body.reason,
+          updatedAt: now,
+        },
       })
       .returning({
         id: supportKnowledgeGaps.id,
@@ -616,52 +621,58 @@ export class KbAnalyticsService {
       .replace(/^-|-$/g, "")
       .slice(0, 200);
 
-    const [page] = await this.db
-      .insert(kbPages)
-      .values({
-        orgId: user.orgId,
-        spaceId: spaceId ?? null,
-        title: body.query,
-        slug: `${slug}-${Date.now()}`,
-        status: "draft",
-        visibility: "org",
-        contentText: "",
-        createdById: user.userId,
-      })
-      .returning({ id: kbPages.id });
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [page] = await tx
+          .insert(kbPages)
+          .values({
+            orgId: user.orgId,
+            spaceId: spaceId ?? null,
+            title: body.query,
+            slug: `${slug}-${Date.now()}`,
+            status: "draft",
+            visibility: "org",
+            contentText: "",
+            createdById: user.userId,
+          })
+          .returning({ id: kbPages.id });
 
-    const pageId = page!.id;
+        const pageId = page!.id;
 
-    const [row] = await this.db
-      .insert(supportKnowledgeGaps)
-      .values({
-        orgId: user.orgId,
-        clusterKey: body.query,
-        representativeQuestion: body.query,
-        ticketCount: 0,
-        status: SupportKnowledgeGapStatus.DRAFTED,
-        proposedArticleId: pageId,
-        draftedBy: user.userId,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [supportKnowledgeGaps.orgId, supportKnowledgeGaps.clusterKey],
-        set: {
-          proposedArticleId: pageId,
-          draftedBy: user.userId,
-          status: SupportKnowledgeGapStatus.DRAFTED,
-          updatedAt: now,
-        },
-      })
-      .returning({
-        id: supportKnowledgeGaps.id,
-        clusterKey: supportKnowledgeGaps.clusterKey,
-        status: supportKnowledgeGaps.status,
-        proposedArticleId: supportKnowledgeGaps.proposedArticleId,
-        draftedBy: supportKnowledgeGaps.draftedBy,
-        updatedAt: supportKnowledgeGaps.updatedAt,
-      });
-    return row!;
+        const [row] = await tx
+          .insert(supportKnowledgeGaps)
+          .values({
+            orgId: user.orgId,
+            clusterKey: body.query,
+            representativeQuestion: body.query,
+            ticketCount: 0,
+            status: SupportKnowledgeGapStatus.DRAFTED,
+            proposedArticleId: pageId,
+            draftedBy: user.userId,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [supportKnowledgeGaps.orgId, supportKnowledgeGaps.clusterKey],
+            set: {
+              proposedArticleId: pageId,
+              draftedBy: user.userId,
+              status: SupportKnowledgeGapStatus.DRAFTED,
+              updatedAt: now,
+            },
+          })
+          .returning({
+            id: supportKnowledgeGaps.id,
+            clusterKey: supportKnowledgeGaps.clusterKey,
+            status: supportKnowledgeGaps.status,
+            proposedArticleId: supportKnowledgeGaps.proposedArticleId,
+            draftedBy: supportKnowledgeGaps.draftedBy,
+            updatedAt: supportKnowledgeGaps.updatedAt,
+          });
+        return row!;
+      },
+      { orgId: user.orgId },
+    );
   }
 }

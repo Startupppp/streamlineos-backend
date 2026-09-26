@@ -48,6 +48,7 @@ const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+  articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
 });
 
 const makeEmbeddings = () => ({
@@ -56,9 +57,10 @@ const makeEmbeddings = () => ({
 });
 
 describe("KbSearchService — restriction enforcement", () => {
-  it("resolves principal once per retrieveTopArticles call", async () => {
+  it("resolves principal once and asks the restriction seam exactly once per retrieveTopArticles call, because the admin decision moved out of access.isAdmin and a second call would mean a per-row authorization query", async () => {
     const db = makeDb();
     const access = makeAccess([1], false);
+    const auth = makeAuth();
 
     const svc = new KbSearchService(
       db as never,
@@ -67,14 +69,15 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
-      makeAuth() as never,
+      auth as never,
     );
 
     const user = makeUser();
     await svc.retrieveTopArticles(user, "test query", 5);
 
     expect(access.getPrincipalIds).toHaveBeenCalledWith(user);
-    expect(access.isAdmin).toHaveBeenCalledWith(user);
+    expect(access.getPrincipalIds).toHaveBeenCalledTimes(1);
+    expect(auth.visiblePagePredicate).toHaveBeenCalledTimes(1);
   });
 
   it("asks the canonical authorization seam for the page visibility predicate", async () => {

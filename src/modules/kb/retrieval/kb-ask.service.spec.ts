@@ -49,6 +49,7 @@ const makeGatewayFail = (
 
 const mockGateway = {
   invokeTextWithUsage: jest.fn(),
+  streamTextWithUsage: jest.fn(),
 };
 
 const mockEvents = {
@@ -475,6 +476,54 @@ describe("KbAskService", () => {
       makeGatewayFail("concurrency_exceeded"),
     );
     await expect(service.ask(user, input)).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it("streamAsk throws 429 when the org has exhausted its per-minute cap so the streaming path enforces the same per-org cost guard as ask", async () => {
+    const saturatedRedis = {
+      incr: jest.fn().mockResolvedValue(KB_ASK_ORG_LIMIT + 1),
+      expire: jest.fn().mockResolvedValue(undefined),
+      ttl: jest.fn().mockResolvedValue(45),
+    };
+    const module2: TestingModule = await Test.createTestingModule({
+      providers: [
+        KbAskService,
+        { provide: KbLinkedDocumentAskSource, useValue: NO_LINKED_DOCUMENTS },
+        { provide: AiGatewayService, useValue: mockGateway },
+        { provide: KbEventsService, useValue: mockEvents },
+        { provide: KbSearchService, useValue: mockSearch },
+        { provide: KbAccessService, useValue: mockAccess },
+        KbCitationVisibilityService,
+        {
+          provide: KnowledgeAuthorizationService,
+          useValue: {
+            visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+            assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org1", pageId: 1, action: "view", via: "admin" }),
+            articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
+          },
+        },
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: REDIS, useValue: saturatedRedis },
+      ],
+    }).compile();
+    const svc = module2.get(KbAskService);
+    const signal = new AbortController().signal;
+
+    const err = await svc.streamAsk(user, input, signal).catch((e: unknown) => e);
+    expect((err as HttpException).getStatus()).toBe(429);
+    expect(mockGateway.streamTextWithUsage).not.toHaveBeenCalled();
+  });
+
+  it("a provider failure on the streaming path does not leave an interaction row claiming answered — the row must not exist", async () => {
+    mockGateway.streamTextWithUsage.mockRejectedValueOnce(new Error("provider failed"));
+    const signal = new AbortController().signal;
+
+    await expect(service.streamAsk(user, input, signal)).rejects.toThrow("provider failed");
+
+    const answeredRow = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "resultState" in r && r["resultState"] === "answered",
+    );
+    expect(answeredRow).toBeUndefined();
   });
 
   it("throws 429 when the org has exhausted its per-minute Ask cap", async () => {

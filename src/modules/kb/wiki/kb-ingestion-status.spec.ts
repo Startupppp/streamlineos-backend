@@ -87,6 +87,7 @@ const LIST_ITEM_KEYS = [
   "chunkCount",
   "errorMessage",
   "spaceId",
+  "createdById",
   "createdAt",
 ];
 

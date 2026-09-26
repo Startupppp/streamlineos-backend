@@ -11,6 +11,7 @@ const makeAuth = () => ({
   assertPageAccess: jest
     .fn()
     .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
 });
 
 const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });

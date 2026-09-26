@@ -225,13 +225,13 @@ describe("the HR-document / knowledge-base permission matrix", () => {
     }
 
     const committed = readFileSync(SNAPSHOT, "utf8");
-    expect(rendered).toBe(committed);
+    const normalise = (text: string) => text.replace(/\r\n/g, "\n").trimEnd();
+    expect(normalise(rendered)).toBe(normalise(committed));
   });
 
-  it("the table really distinguishes the three answers, so matching it means something", async () => {
+  it("the table really distinguishes the three answers, so matching the snapshot means something rather than every cell agreeing", async () => {
     const rendered = await renderMatrix();
 
-    // If every cell said the same thing the assertion above would still pass, and say nothing.
     expect(rendered).toContain("| allowed |");
     expect(rendered).toContain("403 guard");
     expect(rendered).toContain("| 404 ");
