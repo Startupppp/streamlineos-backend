@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-26T04:49:17.926Z",
+  "generatedAt": "2026-09-26T07:08:36.621Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -38811,8 +38811,13 @@
           "required": true
         }
       ],
-      "idempotency": null,
-      "contractEvidence": null
+      "idempotency": {
+        "mode": "provider-signature-idempotent-effect",
+        "key": "the vendor's assessment reference, matched against interviews.external_ref",
+        "replay": "x-streamline-signature verified over the raw bytes against the assessment platform's stored inboundSecret (403 on mismatch), inside one tenant transaction. No vendor event id is stored. The effect is an in-place UPDATE of interviews.result/rating/feedback for the row whose (org_id, external_platform, external_ref) matches, so redelivering the same score converges; the handler additionally short-circuits to {replay:true} when the row already holds that rating and has left PENDING. That short-circuit is a read-then-compare inside the transaction, not a unique constraint, so it orders concurrent deliveries only as far as READ COMMITTED does — which is why the mode is convergence, not an event-id fence.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/hr/recruitment/assessments/assessment.service.ts (recordScore); table src/db/schema/hr/interviews.ts"
     },
     "POST /public/bgv-callback/{orgSlug}": {
       "classification": "published",
@@ -38834,8 +38839,13 @@
           "required": true
         }
       ],
-      "idempotency": null,
-      "contractEvidence": null
+      "idempotency": {
+        "mode": "provider-signature-idempotent-effect",
+        "key": "the agency's case reference, resolved to a candidate id",
+        "replay": "x-streamline-signature verified over the raw bytes against the BGV platform's stored inboundSecret (403 on mismatch). No agency event id is stored. recordVerdict is an in-place UPDATE of the candidates row's bgv_status/bgv_source/bgv_reference/bgv_notes, so a redelivery of the same verdict converges, and the handler returns {replay:true} without writing when the stored status already equals the target and its source is already AGENCY. A redelivery carrying a DIFFERENT outcome is a new verdict, not a replay, and is applied subject to decideVerdict's transition rules.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/hr/recruitment/bgv/bgv-callback.service.ts (receive); write in bgv.service.ts (recordVerdict)"
     },
     "POST /public/board-apply/{orgSlug}/{platform}": {
       "classification": "published",
@@ -38862,8 +38872,13 @@
           "required": true
         }
       ],
-      "idempotency": null,
-      "contractEvidence": null
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": "the board's application id, stored as candidates.external_id in the form PLATFORM:applicationId",
+        "replay": "The per-organisation, per-board inboundSecret signs the raw bytes (401 on mismatch; 404 when the board was never enabled, so the route is not an existence oracle). Dedupe is a SELECT on (org_id, external_id) that returns {replay:true, duplicate:true} instead of writing. Nothing backs it: candidates carries no unique index on external_id and no index on it at all. The window is wider than a single statement, because the lookup runs in one tenant transaction, the resume is then fetched over the network, and recordApplication runs in a second — so two concurrent redeliveries can both miss and both insert a candidate and an application.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/hr/recruitment/boards/board-apply-ingress.service.ts (receive); table src/db/schema/hr/hiring-candidates.ts"
     },
     "POST /public/build-forms/{publicToken}/submissions": {
       "classification": "published",
@@ -40514,8 +40529,13 @@
           "required": true
         }
       ],
-      "idempotency": null,
-      "contractEvidence": null
+      "idempotency": {
+        "mode": "provider-signature-idempotent-effect",
+        "key": "the vendor's screen reference, matched against interviews.external_ref",
+        "replay": "x-streamline-signature verified over the raw bytes against the voice-screen platform's stored inboundSecret (403 on mismatch), inside one tenant transaction. No vendor event id is stored. The effect is an in-place UPDATE of interviews.result/rating/rubric for the row whose (org_id, external_platform, external_ref) matches, so redelivering the same result converges; a delivery arriving after rubric.completedBy is set returns {replay:true} and writes nothing. That guard is a read-then-write inside the transaction rather than a conditional UPDATE, so it refuses sequential redeliveries and does not fence concurrent ones.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/hr/recruitment/voice-screen/voice-screen.service.ts (recordResult); table src/db/schema/hr/interviews.ts"
     },
     "POST /public/waitlist": {
       "classification": "published",
@@ -40559,8 +40579,13 @@
           "required": true
         }
       ],
-      "idempotency": null,
-      "contractEvidence": null
+      "idempotency": {
+        "mode": "provider-signature-only",
+        "key": "the provider's message id, written to candidate_messages.external_id",
+        "replay": "x-streamline-signature verified over the raw bytes against the WhatsApp platform's stored inboundSecret (403 on mismatch). Past that there is no dedupe at all: the handler matches the sender on the last ten digits of the phone number, refuses anything but exactly one candidate, and then does a bare insert into candidate_messages carrying the provider's messageId as external_id. candidate_messages has no unique index on external_id — only uniq_candidate_messages_org_id, idx_candidate_messages_candidate and idx_candidate_messages_sent — so the event id is recorded and nothing reads it back. A redelivery appends a second copy of the same inbound message to the candidate's thread. Adding uniqueIndex(org_id, external_id) and an onConflictDoNothing on the insert would make this provider-signature-and-event-id; until then the mode is a finding.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/hr/recruitment/whatsapp/whatsapp.service.ts (receiveInbound); table src/db/schema/hr/hiring-candidates.ts (candidateMessages)"
     },
     "GET /public/whiteboard-links/{token}": {
       "classification": "published",

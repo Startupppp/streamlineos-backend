@@ -22,7 +22,10 @@ import {
   type ImportPagesInput,
 } from "./dto/kb-import-export.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  BodylessAction,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
 import {
   kbImportAcceptedSchema,
   kbImportDryRunSchema,
@@ -91,6 +94,7 @@ export class KbImportExportController {
   @Post("import-jobs/:importJobId/cancel")
   @RequirePermission("kb:pages:import")
   @Validate({ params: importJobIdParams })
+  @BodylessAction()
   @ResponseSchema(kbImportJobCancelSchema)
   async cancelImportJob(
     @Param("importJobId", ParseIntPipe) importJobId: number,

@@ -75,6 +75,8 @@ const analyticsSchema = z.object({
   empty: z.boolean(),
 });
 
+const funnelCsvSchema = z.string();
+
 @RequireModule("hr")
 @Controller("hr/recruitment/analytics")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -101,6 +103,7 @@ export class RecruitingAnalyticsController {
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="recruiting-funnel.csv"')
   @RequirePermission("hr:requisitions:view")
+  @ResponseSchema(funnelCsvSchema)
   @Validate({ query: windowSchema })
   async funnelCsv(@Query() query: WindowInput, @CurrentUser() u: CurrentUserContext) {
     const analytics = await this.analytics.forWindow(u.orgId, {

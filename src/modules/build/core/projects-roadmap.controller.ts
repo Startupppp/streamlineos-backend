@@ -43,7 +43,11 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  BodylessAction,
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
 import { cursorPageSchema } from "../../../common/openapi/response-envelopes";
 import {
   roadmapScoredItemSchema,
@@ -132,6 +136,7 @@ export class ProjectsRoadmapController {
   @Post("roadmap-publication")
   @RequirePermission("build:roadmap:manage")
   @Idempotent("build.roadmap.publish")
+  @BodylessAction()
   @ResponseSchema(roadmapPublicationSchema)
   publishRoadmap(@CurrentUser() u: CurrentUserContext) {
     return this.roadmap.publish(u.orgId);
@@ -140,6 +145,7 @@ export class ProjectsRoadmapController {
   @Post("roadmap-publication/rotate")
   @RequirePermission("build:roadmap:manage")
   @Idempotent("build.roadmap.publication_rotate")
+  @BodylessAction()
   @ResponseSchema(roadmapPublicationSchema)
   rotateRoadmapPublicationToken(@CurrentUser() u: CurrentUserContext) {
     return this.roadmap.rotatePublicationToken(u.orgId);

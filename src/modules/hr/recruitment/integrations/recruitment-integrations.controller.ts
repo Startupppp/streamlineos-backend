@@ -6,7 +6,10 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { Validate } from "../../../../common/validation/validate.decorator";
-import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  BodylessAction,
+  ResponseSchema,
+} from "../../../../common/openapi/zod-operation-contracts";
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { RecruitmentIntegrationsService } from "./recruitment-integrations.service";
 import { INTEGRATION_FAMILIES } from "./integration-catalog";
@@ -86,6 +89,7 @@ export class RecruitmentIntegrationsController {
   @Post(":platform/inbound-secret")
   @RequirePermission("hr:requisitions:manage")
   @Idempotent("hr.recruitment.rotate-inbound-secret")
+  @BodylessAction()
   @ResponseSchema(rotateSecretResponseSchema)
   rotateInboundSecret(@Param("platform") platform: string, @CurrentUser() u: CurrentUserContext) {
     return this.integrations.rotateInboundSecret(u.orgId, u.userId, platform.toUpperCase());
