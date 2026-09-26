@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-25T21:03:26.435Z",
+  "generatedAt": "2026-09-26T03:31:07.014Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -30912,6 +30912,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /kb/analytics/citation-reuse": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAnalyticsController_citationReuse",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /kb/analytics/content-gaps": {
       "classification": "internal",
       "classificationOverride": null,
@@ -30961,6 +30972,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbAnalyticsController_pages",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/analytics/review-sla": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAnalyticsController_reviewSla",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31385,6 +31407,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /kb/ask/knowledge-gap": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAskController_createKnowledgeGap",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /kb/ask/stream": {
       "classification": "internal",
       "classificationOverride": null,
@@ -31632,6 +31665,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbPageTemplatesController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /kb/page-templates/{templateId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPageTemplatesController_update",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -32210,6 +32254,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /kb/pages/trash/purge-impact": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPagesController_purgeImpact",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /kb/pages/trash/restore": {
       "classification": "internal",
       "classificationOverride": null,
@@ -32677,6 +32732,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbContentHealthController_signals",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/wiki/content-health/signals/dismiss": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbContentHealthController_dismiss",
       "owner": null,
       "version": "1",
       "consumers": [],
