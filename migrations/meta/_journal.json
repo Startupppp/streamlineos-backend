@@ -6889,6 +6889,13 @@
       "when": 1803061210725,
       "tag": "1295_build_project_retention_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 1112,
+      "version": "7",
+      "when": 1803064810725,
+      "tag": "1300_build_projects_intake_published_flag",
+      "breakpoints": true
     }
   ]
 }

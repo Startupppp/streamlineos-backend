@@ -31,6 +31,19 @@ export async function resolveRoleSlugs(
   return rows.map((r) => r.slug);
 }
 
+export async function orgRoleSlugExists(
+  db: Db,
+  orgId: string,
+  slug: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ slug: roles.slug })
+    .from(roles)
+    .where(and(eq(roles.orgId, orgId), eq(roles.slug, slug)))
+    .limit(1);
+  return rows.length > 0;
+}
+
 export async function computeAccessibleSpaceIds(
   db: Db,
   orgId: string,

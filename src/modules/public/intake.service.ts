@@ -61,11 +61,12 @@ export class IntakeService {
         // unresolved project id already produces, so refusing here adds no second answer
         // for an anonymous caller to tell apart from the first.
         const [project] = await tx
-          .select({ id: projects.id })
+          .select({ id: projects.id, intakePublishedAt: projects.intakePublishedAt })
           .from(projects)
           .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
           .limit(1);
         if (!project) return null;
+        if (project.intakePublishedAt == null) return null;
 
         const [inserted] = await tx
           .insert(intakeItems)
@@ -98,6 +99,6 @@ export class IntakeService {
 
     if (!item) throw new BadRequestException("Invalid request");
 
-    return { id: item.id, message: "Request submitted successfully" };
+    return { message: "Request submitted successfully" };
   }
 }

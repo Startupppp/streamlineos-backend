@@ -175,7 +175,6 @@ export const vendorPortalSchema = z.object({
 });
 
 export const intakeSubmitSchema = z.object({
-  id: z.number().int(),
   message: z.string(),
 });
 

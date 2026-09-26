@@ -141,7 +141,7 @@ describe("public intake — a deleted project does not accept anonymous submissi
     const result = await service.submitIntake(liveProjectId, { title: "Login is broken" });
 
     expect(result).toMatchObject({ message: "Request submitted successfully" });
-    expect(typeof result.id).toBe("number");
+    expect((result as Record<string, unknown>).id).toBeUndefined();
     expect(await intakeCount(liveProjectId)).toBe(1);
   });
 

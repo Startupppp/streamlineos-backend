@@ -45,6 +45,9 @@ function membersHarness(insertOutcome: { throws?: unknown; returns?: unknown[] }
             where: jest.fn().mockResolvedValue([savedRow]),
           }),
         }),
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([{ slug: "EDITOR" }]),
+        }),
       }),
     }),
     insert,

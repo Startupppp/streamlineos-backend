@@ -10,6 +10,7 @@ import { kbSpaces, kbSpaceMembers, users, organizationMembers } from "../../../d
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
+import { orgRoleSlugExists } from "../core/authorization/knowledge-space-scope";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { PG_UNIQUE_VIOLATION, getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
@@ -89,6 +90,10 @@ export class KbMembersService {
       });
       if (!membership) throw new NotFoundException("Active organization member not found");
       membershipId = membership.id;
+    }
+
+    if (input.role && !(await orgRoleSlugExists(this.db, orgId, input.role))) {
+      throw new NotFoundException("Role not found");
     }
 
     let member: MemberRow;
