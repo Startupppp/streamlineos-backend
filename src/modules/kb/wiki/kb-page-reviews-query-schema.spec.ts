@@ -28,6 +28,13 @@ const authMock = {
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
   articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
+  resolveStanding: jest.fn().mockResolvedValue({
+    orgId: "org-1",
+    accessibleSpaceIds: [],
+    accessibleProjectIds: [],
+    roleSlugs: [],
+    membershipId: 1,
+  }),
 };
 
 function makeUser(orgId = "org-1") {
@@ -128,9 +135,8 @@ describe("KbDocumentQueryService — canonical authorization seam", () => {
   it("consults visiblePagePredicate with action 'view' so page search results include space and grant pages", async () => {
     const { chain } = makeChain();
     const db = { select: jest.fn().mockReturnValue(chain) } as never;
-    const kbAccess = { getAccessibleSpaceIds: jest.fn().mockResolvedValue([]) } as never;
     const access = {} as never;
-    const svc = new KbDocumentQueryService(db, kbAccess, access, authMock as never);
+    const svc = new KbDocumentQueryService(db, access, authMock as never);
 
     await svc.searchDocuments(makeUser(), "onboarding", 10);
 

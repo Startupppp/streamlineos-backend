@@ -56,7 +56,7 @@ type QueryNode = Promise<unknown[]> & {
 
 function makeDb(): Db {
   const node = (): QueryNode => {
-    const p = Promise.resolve([]) as QueryNode;
+    const p = Promise.resolve([]) as unknown as QueryNode;
     p.from = jest.fn(() => node());
     p.where = jest.fn(() => node());
     p.orderBy = jest.fn(() => node());

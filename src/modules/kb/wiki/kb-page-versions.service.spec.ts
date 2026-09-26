@@ -185,7 +185,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
   it("(b) nextCursor from page1 yields page2 with no overlap and no gap", async () => {
     const page1Fixture = makeVersionRows(51, 55);
     const { db: db1 } = makeDb({ pageFound: true, versionRows: page1Fixture });
-    const svc1 = new KbPageVersionsService(db1, makeAuthMock() as never);
+    const svc1 = new KbPageVersionsService(db1, makeAuthMock() as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
     const page1 = await svc1.listVersions(makeUser(), 1);
 
     expect(page1.data).toHaveLength(50);
@@ -201,7 +201,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
     const page2Fixture = makeVersionRows(5, 5);
     const capturedPage2Wheres: unknown[] = [];
     const { db: db2 } = makeDb({ pageFound: true, versionRows: page2Fixture, capturedWheres: capturedPage2Wheres });
-    const svc2 = new KbPageVersionsService(db2, makeAuthMock() as never);
+    const svc2 = new KbPageVersionsService(db2, makeAuthMock() as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
     const page2 = await svc2.listVersions(makeUser(), 1, nextCursor);
 
     expect(page2.data).toHaveLength(5);

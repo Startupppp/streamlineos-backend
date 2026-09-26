@@ -131,7 +131,6 @@ function buildSearch(scope: DataScope) {
   const scopes = { scopeFor: jest.fn().mockResolvedValue(scope) };
   const search = new KbSearchService(
     db as never,
-    access as never,
     gateway as never,
     events as never,
     new KbCandidateService(db as never),

@@ -137,7 +137,7 @@ describe("KB command fencing", () => {
       const db = makeDb(transactionFn);
       const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
       const auth = { assertPageAccess: jest.fn().mockResolvedValue(undefined), visiblePagePredicate: jest.fn() };
-      const svc = new KbPageDuplicateService(db as never, planLimits as never, auth as never);
+      const svc = new KbPageDuplicateService(db as never, planLimits as never, auth as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
 
       await svc.duplicate(makeUser(), PAGE_ID).catch(() => {});
       expect(callCount).toBe(1);
@@ -152,7 +152,7 @@ describe("KB command fencing", () => {
       const db = makeDb(transactionFn);
       const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
       const auth = { assertPageAccess: jest.fn().mockResolvedValue(undefined), visiblePagePredicate: jest.fn() };
-      const svc = new KbPageDuplicateService(db as never, planLimits as never, auth as never);
+      const svc = new KbPageDuplicateService(db as never, planLimits as never, auth as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
 
       await svc.duplicate(makeUser(), PAGE_ID).catch(() => {});
       await svc.duplicate(makeUser(), PAGE_ID).catch(() => {});
@@ -216,7 +216,7 @@ describe("KB command fencing", () => {
       });
       const db = makeDb(transactionFn);
       const auth = { assertPageAccess: jest.fn().mockResolvedValue(undefined), visiblePagePredicate: jest.fn() };
-      const svc = new KbPageVersionsService(db as never, auth as never);
+      const svc = new KbPageVersionsService(db as never, auth as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
 
       await svc.restoreVersion(makeUser(), PAGE_ID, VERSION_NUMBER, false).catch(() => {});
       expect(callCount).toBe(1);
@@ -230,7 +230,7 @@ describe("KB command fencing", () => {
       });
       const db = makeDb(transactionFn);
       const auth = { assertPageAccess: jest.fn().mockResolvedValue(undefined), visiblePagePredicate: jest.fn() };
-      const svc = new KbPageVersionsService(db as never, auth as never);
+      const svc = new KbPageVersionsService(db as never, auth as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
 
       await svc.restoreVersion(makeUser(), PAGE_ID, VERSION_NUMBER, false).catch(() => {});
       await svc.restoreVersion(makeUser(), PAGE_ID, VERSION_NUMBER, false).catch(() => {});

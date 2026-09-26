@@ -85,7 +85,7 @@ describe("KbImportProcessConsumer — plain item deduplication by title", () => 
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
     await consumer.handle(makeEvent([{ title: "My Doc", contentText: "body" }], "skip"));
 
     const last = updateCalls[updateCalls.length - 1];
@@ -117,7 +117,7 @@ describe("KbImportProcessConsumer — plain item deduplication by title", () => 
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
     await consumer.handle(makeEvent([{ title: "Brand New Page", contentText: "body" }], "skip"));
 
     const last = updateCalls[updateCalls.length - 1];
@@ -149,7 +149,7 @@ describe("KbImportProcessConsumer — plain item deduplication by title", () => 
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
     await consumer.handle(makeEvent([{ title: "Existing", contentText: "updated body" }], "update"));
 
     const last = updateCalls[updateCalls.length - 1];

@@ -301,7 +301,7 @@ describe("kb:acc-spaces has one owner — both writers key and compute identical
     return {
       keys,
       selectDistinctCalls,
-      kbAccess: new KbAccessService(db as never, cache, access),
+      kbAccess: new KbAccessService(db as never, cache, access, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), assertPageAccess: jest.fn().mockResolvedValue(undefined) } as never),
       auth: new KnowledgeAuthorizationService(db as never, cache, access),
     };
   }
@@ -394,7 +394,7 @@ describe("kb:acc-spaces has one owner — both writers key and compute identical
       getPermissionsVersion: jest.fn().mockImplementation(async () => permissionsVersion),
     } as unknown as AccessService;
 
-    const svc = new KbAccessService(db as never, cache, access);
+    const svc = new KbAccessService(db as never, cache, access, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), assertPageAccess: jest.fn().mockResolvedValue(undefined) } as never);
     const user = userWith(humanSessionPrincipal(MEMBERSHIP, false));
 
     expect(await svc.getAccessibleSpaceIds(user)).toEqual([RESTRICTED_SPACE, PUBLIC_SPACE]);
@@ -416,7 +416,7 @@ describe("kb:acc-spaces has one owner — both writers key and compute identical
       getPermissionsVersion: jest.fn().mockResolvedValue(5),
     } as unknown as AccessService;
 
-    const svc = new KbAccessService(db as never, cache, access);
+    const svc = new KbAccessService(db as never, cache, access, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), assertPageAccess: jest.fn().mockResolvedValue(undefined) } as never);
     const user = userWith(humanSessionPrincipal(MEMBERSHIP, false));
 
     await svc.getAccessibleSpaceIds(user);
@@ -430,7 +430,7 @@ describe("kb:acc-spaces has one owner — both writers key and compute identical
     const { cache, keys } = makeCache();
     const { db } = makeDb();
     const access = makeAccess();
-    const svc = new KbAccessService(db as never, cache, access);
+    const svc = new KbAccessService(db as never, cache, access, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), assertPageAccess: jest.fn().mockResolvedValue(undefined) } as never);
     const user = userWith(humanSessionPrincipal(MEMBERSHIP, false));
 
     const first = await svc.getAccessibleSpaceIdsWithCacheOutcome(user);

@@ -78,13 +78,17 @@ describe("Box 1 — canonical KnowledgeAuthorization is the only access decision
     expect(legacy).toContain("export function visibleTo");
   });
 
-  it("kb-page-visibility survives for exactly one production caller, the chunk predicate, and for no page query", () => {
+  it("kb-page-visibility has no production caller left, because the chunk predicate now binds to the canonical page scope instead of a second rule", () => {
     const importers = allKbSources()
       .filter((file) => path.basename(file) !== "kb-page-visibility.ts")
       .filter((file) => readSrc(file).includes("kb-page-visibility"))
       .map((file) => path.relative(KB_SRC, file).split(path.sep).join("/"));
 
-    expect(importers).toEqual(["retrieval/kb-chunk-visibility.ts"]);
+    expect(importers).toEqual([]);
+
+    const chunkPredicate = readSrc(path.join(KB_SRC, "retrieval/kb-chunk-visibility.ts"));
+    expect(chunkPredicate).toContain("buildVisiblePageScope");
+    expect(chunkPredicate).not.toContain("kb-page-visibility");
   });
 
   it("no production file builds a kbPages visibility predicate outside the canonical scope module", () => {
@@ -105,6 +109,8 @@ describe("Box 1 — canonical KnowledgeAuthorization is the only access decision
       "core/authorization/knowledge-page-scope.ts",
       "core/collection/knowledge-collection.service.ts",
       "retrieval/kb-page-search-query.service.ts",
+      "retrieval/kb-chunk-visibility.ts",
+      "retrieval/kb-search.service.ts",
     ];
 
     const callers = allKbSources()

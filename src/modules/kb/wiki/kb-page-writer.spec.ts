@@ -187,7 +187,7 @@ describe("KbPageWriterService.commitManyPageChanges", () => {
   });
 });
 
-describe.skip("post-migration structural invariant — remove skip after Lane 9 migrates callers", () => {
+describe("post-migration structural invariant — every page-mutating service now injects the writer", () => {
   it("every page-mutating service in KbWikiModule injects KbPageWriterService", () => {
     const serviceModules = [
       jest.requireActual("./kb-pages.service"),
@@ -205,10 +205,13 @@ describe.skip("post-migration structural invariant — remove skip after Lane 9 
     for (const ServiceClass of serviceClasses) {
       const paramTypes = Reflect.getMetadata("design:paramtypes", ServiceClass) as Function[] | undefined;
       if (!paramTypes) continue;
-      expect(
-        paramTypes.some((t) => t.name === "KbPageWriterService"),
-        `${ServiceClass.name} must inject KbPageWriterService`,
-      ).toBe(true);
+      const injectsWriter = paramTypes.some(
+        (t) => t.name === "KbPageWriterService",
+      );
+      expect({ service: ServiceClass.name, injectsWriter }).toEqual({
+        service: ServiceClass.name,
+        injectsWriter: true,
+      });
     }
   });
 });

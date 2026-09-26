@@ -75,7 +75,7 @@ describe("verification records the instant it happened, not a window to subtract
       assertPageAccess: jest.fn().mockResolvedValue({ orgId: ORG, pageId: PAGE_ID, action: "edit", via: "admin" }),
     };
 
-    const svc = new KbPageStatusService(captured.db, null as never, auth as never);
+    const svc = new KbPageStatusService(captured.db, null as never, auth as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
     await svc.verify(makeUser(), PAGE_ID, {} as never);
 
     const payload = captured.setPayload();
@@ -111,8 +111,7 @@ describe("verification records the instant it happened, not a window to subtract
         assertPageAccess: jest
           .fn()
           .mockResolvedValue({ orgId: ORG, pageId: PAGE_ID, action: "edit", via: "admin" }),
-      } as never,
-    ).verify(makeUser(), PAGE_ID, {} as never);
+      } as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never).verify(makeUser(), PAGE_ID, {} as never);
 
     const spanOf = (payload: Record<string, unknown>): number =>
       (payload["verifiedUntil"] as Date).getTime() - (payload["verifiedAt"] as Date).getTime();

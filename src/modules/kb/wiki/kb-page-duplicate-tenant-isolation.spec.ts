@@ -63,7 +63,7 @@ describe("KbPageDuplicateService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when a caller from a different org requests a page — cross-tenant isolation", async () => {
     const { db, findFirst } = makeFindFirstDb(null);
-    const svc = new KbPageDuplicateService(db, planLimits, authMock as never);
+    const svc = new KbPageDuplicateService(db, planLimits, authMock as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
 
     await expect(svc.duplicate(makeUser(ATTACKER_ORG), PAGE_ID)).rejects.toThrow(NotFoundException);
 
@@ -75,7 +75,7 @@ describe("KbPageDuplicateService — cross-tenant isolation", () => {
 
   it("does not surface NotFoundException from the correct org — same-tenant control", async () => {
     const { db, findFirst } = makeFindFirstDb(null);
-    const svc = new KbPageDuplicateService(db, planLimits, authMock as never);
+    const svc = new KbPageDuplicateService(db, planLimits, authMock as never, { commitPageChange: jest.fn().mockResolvedValue(undefined), commitManyPageChanges: jest.fn().mockResolvedValue(undefined) } as never);
 
     await expect(svc.duplicate(makeUser(OWNER_ORG), PAGE_ID)).rejects.toThrow(NotFoundException);
 

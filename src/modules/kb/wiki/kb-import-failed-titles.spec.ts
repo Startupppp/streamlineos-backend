@@ -89,7 +89,7 @@ describe("KbImportProcessConsumer — failedTitles and errorReport", () => {
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, { commitManyPageChanges: jest.fn().mockResolvedValue(undefined), commitPageChange: jest.fn().mockResolvedValue(undefined) } as never);
     await consumer.handle(makeEvent([{ title: "Will Fail", contentText: "body" }]));
 
     const last = updateCalls[updateCalls.length - 1];
@@ -121,7 +121,7 @@ describe("KbImportProcessConsumer — failedTitles and errorReport", () => {
     };
     rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
 
-    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit);
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, { commitManyPageChanges: jest.fn().mockResolvedValue(undefined), commitPageChange: jest.fn().mockResolvedValue(undefined) } as never);
     await consumer.handle(makeEvent([{ title: "Will Succeed", contentText: "body" }]));
 
     const last = updateCalls[updateCalls.length - 1];

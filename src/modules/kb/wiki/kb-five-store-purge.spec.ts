@@ -281,7 +281,7 @@ function makeDeleteEvent(): OutboxEventRow {
 describe("Store 5 of 5 — cache, invalidated by namespace on a KB delete", () => {
   it("invalidateAccessibleSpaceIds drops the whole tenant namespace, not one key", async () => {
     const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
-    const service = new KbAccessService({} as never, cache as never, {} as never);
+    const service = new KbAccessService({} as never, cache as never, {} as never, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined), assertPageAccess: jest.fn().mockResolvedValue(undefined) } as never);
 
     await service.invalidateAccessibleSpaceIds(ORG);
 
@@ -304,10 +304,14 @@ describe("Store 5 of 5 — cache, invalidated by namespace on a KB delete", () =
       })),
       select: jest.fn(() => emptyBatch),
     };
-    const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
-    const service = new KbSpacesService(
-      tx as never,
-      {} as never, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined) } as never);
+    const authz = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
+      resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }),
+      resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }),
+      invalidateSpaceScope: jest.fn().mockResolvedValue(undefined),
+      assertSpaceAccess: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new KbSpacesService(tx as never, {} as never, authz as never);
 
     const result = await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: tx as never },
@@ -316,6 +320,6 @@ describe("Store 5 of 5 — cache, invalidated by namespace on a KB delete", () =
 
     expect(result).toEqual({ success: true });
     expect(tx.update.mock.calls.map((call) => call[0] === kbSpaces)).toEqual([true]);
-    expect(access.invalidateAccessibleSpaceIds).toHaveBeenCalledWith(ORG);
+    expect(authz.invalidateSpaceScope).toHaveBeenCalledWith(ORG);
   });
 });
