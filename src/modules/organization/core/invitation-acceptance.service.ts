@@ -150,10 +150,12 @@ export class InvitationAcceptanceService {
     tx: DbOrTx,
     userId: string,
     rawToken: string,
+    orgId: string,
   ): Promise<unknown> {
     return tx.insert(magicLinkTokens).values({
       id: randomUUID(),
       userId,
+      orgId,
       tokenHash: hashToken(rawToken),
       expiresAt: addMinutes(new Date(), 10),
     });
@@ -305,7 +307,7 @@ export class InvitationAcceptanceService {
             .where(eq(users.id, userId));
 
           await this.claimInvitation(tx, invitationId, orgId, membershipId);
-          await this.issueMagicLink(tx, userId, autoLoginToken);
+          await this.issueMagicLink(tx, userId, autoLoginToken, orgId);
         },
         { orgId },
       ),
@@ -364,7 +366,7 @@ export class InvitationAcceptanceService {
             }
 
             await this.claimInvitation(tx, invitationId, orgId, membershipId);
-            await this.issueMagicLink(tx, userId, autoLoginToken);
+            await this.issueMagicLink(tx, userId, autoLoginToken, orgId);
           },
           { orgId },
         ),

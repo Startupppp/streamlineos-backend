@@ -417,6 +417,7 @@ export class EmployeeOnboardingService {
         await tx.insert(magicLinkTokens).values({
           id: randomUUID(),
           userId: employeeUserId,
+          orgId: actor.orgId,
           tokenHash: hashToken(rawToken),
           expiresAt,
         });
@@ -490,6 +491,7 @@ export class EmployeeOnboardingService {
         await tx.insert(magicLinkTokens).values({
           id: tokenId,
           userId: input.userId,
+          orgId: input.orgId,
           tokenHash: hashToken(rawToken),
           expiresAt: addDays(new Date(), INVITE_TOKEN_DAYS),
         });

@@ -131,6 +131,7 @@ export class OrgSetupService {
         await tx.insert(magicLinkTokens).values({
           id: randomUUID(),
           userId: u.userId,
+          orgId,
           tokenHash: hashToken(autoLoginToken),
           expiresAt: addMinutes(now, 10),
         });
@@ -209,6 +210,7 @@ export class OrgSetupService {
         await tx.insert(magicLinkTokens).values({
           id: randomUUID(),
           userId: u.userId,
+          orgId,
           tokenHash: hashToken(autoLoginToken),
           expiresAt: addMinutes(now, 10),
         });

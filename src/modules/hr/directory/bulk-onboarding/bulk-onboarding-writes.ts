@@ -274,6 +274,7 @@ export async function writeBulkOnboarding(
       return {
         id: randomUUID(),
         userId: employee.userId,
+        orgId,
         tokenHash: hashToken(rawToken),
         expiresAt,
       };

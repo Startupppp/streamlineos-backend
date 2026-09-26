@@ -304,6 +304,7 @@ export class UserOpsService {
     await this.db.insert(magicLinkTokens).values({
       id: randomUUID(),
       userId,
+      orgId,
       tokenHash,
       expiresAt: addHours(new Date(), 24),
     });
