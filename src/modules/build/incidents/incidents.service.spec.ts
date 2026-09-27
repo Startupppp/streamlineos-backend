@@ -889,3 +889,69 @@ describe("IncidentsService.updateIncident unresolved follow-up close policy", ()
     expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ title: "Renamed" }));
   });
 });
+
+describe("IncidentsService.listIncidents — server-side full-text search predicate", () => {
+  function hasOwnPropStrLocal<K extends string>(obj: object, key: K): obj is Record<K, unknown> {
+    return key in obj;
+  }
+
+  function collectParamValuesLocal(node: unknown, acc: unknown[] = []): unknown[] {
+    if (node === null || node === undefined) return acc;
+    if (typeof node === "string" || typeof node === "number" || typeof node === "boolean") {
+      acc.push(node);
+      return acc;
+    }
+    if (typeof node !== "object") return acc;
+    if (Array.isArray(node)) {
+      for (const item of node) collectParamValuesLocal(item, acc);
+      return acc;
+    }
+    if (hasOwnPropStrLocal(node, "encoder") && hasOwnPropStrLocal(node, "value")) {
+      acc.push(node.value);
+      return acc;
+    }
+    if (hasOwnPropStrLocal(node, "queryChunks")) {
+      const qc = node.queryChunks;
+      if (Array.isArray(qc)) {
+        for (const chunk of qc) collectParamValuesLocal(chunk, acc);
+      }
+    }
+    return acc;
+  }
+
+  it("includes the search term as a WHERE param so the DB filters rather than the caller", async () => {
+    const listChain = makeSelectChain([BASE_INCIDENT]);
+    const mockDb = { select: jest.fn().mockReturnValue(listChain) };
+    const svc = await makeService(mockDb);
+
+    await svc.listIncidents(makeUser("org-1"), 1, { q: "latency" });
+
+    const whereArg: unknown = listChain.where.mock.calls[0]?.[0];
+    expect(collectParamValuesLocal(whereArg)).toContain("latency");
+  });
+
+  it("does not include a search param for 'latency' in WHERE when no q is provided", async () => {
+    const listChain = makeSelectChain([]);
+    const mockDb = { select: jest.fn().mockReturnValue(listChain) };
+    const svc = await makeService(mockDb);
+
+    await svc.listIncidents(makeUser("org-1"), 1, {});
+
+    const whereArg: unknown = listChain.where.mock.calls[0]?.[0];
+    expect(collectParamValuesLocal(whereArg)).not.toContain("latency");
+  });
+
+  it("keeps orgId and projectId in WHERE beside the search term, which is the only reason the measured cost of search is a heap filter over one project's rows: a GIN index on the searched expression is never chosen under RLS because ts_match_vq is not leakproof and cannot be evaluated before the tenant qual (BE-80)", async () => {
+    const listChain = makeSelectChain([]);
+    const mockDb = { select: jest.fn().mockReturnValue(listChain) };
+    const svc = await makeService(mockDb);
+
+    await svc.listIncidents(makeUser("org-1"), 7777, { q: "latency" });
+
+    const whereArg: unknown = listChain.where.mock.calls[0]?.[0];
+    const params = collectParamValuesLocal(whereArg);
+    expect(params).toContain("latency");
+    expect(params).toContain("org-1");
+    expect(params).toContain(7777);
+  });
+});

@@ -118,7 +118,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/incidents with build:incidents:view — stub returns list without a DB connection", async () => {
-    incidentsSvc.listIncidents.mockResolvedValue({ items: [], nextCursor: null });
+    incidentsSvc.listIncidents.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:incidents:view"],
       enabledModules: ["build"],
@@ -131,7 +131,8 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   });
 
   it("201 on POST /build/1/incidents with build:incidents:manage — stub returns item without a DB connection", async () => {
-    incidentsSvc.createIncident.mockResolvedValue({ id: 1, title: "DB replication lag", projectId: 1 });
+    const now = new Date("2026-01-01T00:00:00Z");
+    incidentsSvc.createIncident.mockResolvedValue({ id: 1, orgId: "org-1", projectId: 1, incidentNumber: 1, title: "DB replication lag", description: null, severity: "medium", status: "detected", impact: null, ownerId: null, rootCause: null, customerComms: null, detectedAt: null, respondedAt: null, resolvedAt: null, responseDueAt: null, resolutionDueAt: null, linkedTicketId: null, releaseId: null, createdBy: null, createdAt: now, updatedAt: now, deletedAt: null });
     const token = await signToken({
       permissions: ["build:incidents:manage"],
       enabledModules: ["build"],

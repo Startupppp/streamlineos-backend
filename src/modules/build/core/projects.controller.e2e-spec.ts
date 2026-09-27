@@ -157,7 +157,7 @@ describe("Projects auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build with build:view — stub returns list without a DB connection", async () => {
-    projectsQuerySvc.listProjects.mockResolvedValue({ items: [], nextCursor: null });
+    projectsQuerySvc.listProjects.mockResolvedValue({ data: [], hasMore: false, nextCursor: null });
     const token = await signToken({ permissions: ["build:view"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer()).get("/build").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);

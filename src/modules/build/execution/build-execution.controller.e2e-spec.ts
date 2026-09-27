@@ -129,7 +129,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/cycles with build:cycles:view — stub returns list without a DB connection", async () => {
-    cyclesSvc.listCycles.mockResolvedValue({ items: [], nextCursor: null });
+    cyclesSvc.listCycles.mockResolvedValue([]);
     const token = await signToken({
       permissions: ["build:cycles:view"],
       enabledModules: ["build"],

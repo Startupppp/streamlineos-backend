@@ -18,15 +18,8 @@ import { projects, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
-  ChangelogListQuery,
-  CreateChangelogInput,
-  CreateFeedbackInput,
   CreateRoadmapInput,
-  FeedbackListQuery,
-  MergeFeedbackInput,
   RoadmapListQuery,
-  UpdateChangelogInput,
-  UpdateFeedbackInput,
   UpdateRoadmapInput,
 } from "./dto/projects.schemas";
 import {
@@ -34,8 +27,6 @@ import {
   decodeTupleCursor,
 } from "../../../common/pagination/cursor";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { ProjectsChangelogService } from "./projects-changelog.service";
-import { ProjectsFeedbackService } from "./projects-feedback.service";
 import { assertRoadmapTargetsInOrg } from "./roadmap-references";
 import {
   computeRoadmapPrioritization,
@@ -186,8 +177,6 @@ function withPrioritization<T extends RiceInputs>(
 export class ProjectsRoadmapService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly changelog: ProjectsChangelogService,
-    private readonly feedback: ProjectsFeedbackService,
   ) {}
 
   searchFallbackCondition(term: string): SQL {
@@ -386,50 +375,6 @@ export class ProjectsRoadmapService {
       .returning({ id: roadmapItems.id });
     if (!deleted) throw new NotFoundException("Roadmap item not found");
     return { success: true };
-  }
-
-  listFeedback(orgId: string, query: FeedbackListQuery) {
-    return this.feedback.listFeedback(orgId, query);
-  }
-
-  createFeedback(orgId: string, userId: string, input: CreateFeedbackInput) {
-    return this.feedback.createFeedback(orgId, userId, input);
-  }
-
-  getFeedback(orgId: string, postId: number) {
-    return this.feedback.getFeedback(orgId, postId);
-  }
-
-  updateFeedback(orgId: string, postId: number, input: UpdateFeedbackInput) {
-    return this.feedback.updateFeedback(orgId, postId, input);
-  }
-
-  mergeFeedback(orgId: string, postId: number, input: MergeFeedbackInput) {
-    return this.feedback.mergeFeedback(orgId, postId, input);
-  }
-
-  deleteFeedback(orgId: string, postId: number) {
-    return this.feedback.deleteFeedback(orgId, postId);
-  }
-
-  listChangelog(orgId: string, query: ChangelogListQuery) {
-    return this.changelog.listChangelog(orgId, query);
-  }
-
-  createChangelog(orgId: string, userId: string, input: CreateChangelogInput) {
-    return this.changelog.createChangelog(orgId, userId, input);
-  }
-
-  getChangelog(orgId: string, entryId: number) {
-    return this.changelog.getChangelog(orgId, entryId);
-  }
-
-  updateChangelog(orgId: string, entryId: number, input: UpdateChangelogInput) {
-    return this.changelog.updateChangelog(orgId, entryId, input);
-  }
-
-  deleteChangelog(orgId: string, entryId: number) {
-    return this.changelog.deleteChangelog(orgId, entryId);
   }
 
   readPublication(orgId: string) {

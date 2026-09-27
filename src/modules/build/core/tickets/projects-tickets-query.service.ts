@@ -8,7 +8,6 @@ import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { BulkUpdateInput, RankTicketInput } from "../dto/projects.schemas";
-import { assertTransitionAllowed, assertWipLimit, enforceWipLimitForStatus, type PrefetchedWorkflow } from "./projects-tickets-workflow-utils";
 import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils";
 import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
 import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "./build-ticket-mutation-policy";
@@ -28,20 +27,6 @@ export class ProjectsTicketsQueryService {
   async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
     const valid = await resolveValidTicketStatuses(this.db, projectId, orgId);
     if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
-  }
-
-  async assertTransitionAllowed(orgId: string, projectId: number, fromText: string, toText: string,
-    context: { userId: string; userProjectRole: string | null; isOrgOwner: boolean; ticketId: number }, prefetched?: PrefetchedWorkflow,
-  ): Promise<void> {
-    return assertTransitionAllowed(this.db, orgId, projectId, fromText, toText, context, prefetched);
-  }
-
-  async assertWipLimit(orgId: string, projectId: number, statusName: string, wipLimit: number, excludeTicketId?: number): Promise<void> {
-    return assertWipLimit(this.db, orgId, projectId, statusName, wipLimit, excludeTicketId);
-  }
-
-  async enforceWipLimitForStatus(orgId: string, projectId: number, statusName: string, excludeTicketId: number): Promise<void> {
-    return enforceWipLimitForStatus(this.db, orgId, projectId, statusName, excludeTicketId);
   }
 
   async bulkUpdate(actor: CurrentUserContext, projectId: number, body: BulkUpdateInput) {

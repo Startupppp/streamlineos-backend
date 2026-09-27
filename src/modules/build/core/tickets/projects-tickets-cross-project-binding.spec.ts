@@ -8,8 +8,8 @@ import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
-import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
+import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 import { ProjectsTicketNotFoundException } from "../../../../common/http/api-exceptions";
 import { assertTicketReadAccess } from "./build-ticket-read-access";
 
@@ -196,29 +196,16 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
       })),
       transaction,
     } as unknown as Db;
-    const svc = new ProjectsTicketsService(
+    const svc = new ProjectsTicketsUpdateService(
       db,
       {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
+      { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never,
+      { authorizeMutation: jest.fn().mockResolvedValue(undefined) } as never,
+      { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
+      { runForTicketEvent: jest.fn() } as never,
       { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
-      {} as never,
-      new ProjectsTicketsUpdateService(
-        db,
-        {} as never,
-        { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never,
-        { authorizeMutation: jest.fn().mockResolvedValue(undefined) } as never,
-        { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never,
-        { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
-        { runForTicketEvent: jest.fn() } as never,
-        { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
-        { holds: jest.fn().mockResolvedValue(true) } as never,
-      ),
-      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { holds: jest.fn().mockResolvedValue(true) } as never,
     );
     return { svc, transaction };
   }
@@ -303,18 +290,10 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
       scopeFor: jest.fn(),
       resolveUserPermissions: jest.fn(),
     };
-    const svc = new ProjectsTicketsService(
+    const svc = new ProjectsTicketsDeleteService(
       db,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
       { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
       { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
-      {} as never,
-      {} as never,
       access,
     );
     return { svc, transaction, db, access };

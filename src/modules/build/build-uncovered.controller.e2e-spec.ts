@@ -113,7 +113,7 @@ describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/teams with build:teams:view — stub returns list without a DB connection", async () => {
-    teamsSvc.listTeams.mockResolvedValue({ items: [], nextCursor: null });
+    teamsSvc.listTeams.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:teams:view"],
       enabledModules: ALL_MODULES,

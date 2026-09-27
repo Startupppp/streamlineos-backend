@@ -147,7 +147,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/meetings with build:meetings:view — stub returns list without a DB connection", async () => {
-    meetingsSvc.listMeetings.mockResolvedValue({ items: [], nextCursor: null });
+    meetingsSvc.listMeetings.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:meetings:view"],
       enabledModules: ["build"],
@@ -160,7 +160,8 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   });
 
   it("201 on POST /build/1/meetings with build:meetings:manage — stub returns item without a DB connection", async () => {
-    meetingsSvc.createMeeting.mockResolvedValue({ id: 2, title: "Sprint Review", projectId: 1 });
+    const now = new Date("2026-01-01T00:00:00Z");
+    meetingsSvc.createMeeting.mockResolvedValue({ id: 2, orgId: "org-1", projectId: 1, meetingNumber: 1, title: "Sprint Review", type: "general", status: "scheduled", agenda: null, notes: null, scheduledAt: null, endAt: null, durationMinutes: null, timezone: null, recurrenceRule: null, cycleId: null, createdBy: null, createdAt: now, updatedAt: now, deletedAt: null });
     const token = await signToken({
       permissions: ["build:meetings:manage"],
       enabledModules: ["build"],

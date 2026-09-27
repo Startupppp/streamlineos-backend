@@ -139,7 +139,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/approvals with build:approvals:view — stub returns list without a DB connection", async () => {
-    approvalsReadSvc.listApprovals.mockResolvedValue({ items: [], nextCursor: null });
+    approvalsReadSvc.listApprovals.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:approvals:view"],
       enabledModules: ["build"],
@@ -152,7 +152,8 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   });
 
   it("201 on POST /build/1/approvals with build:approvals:request and Idempotency-Key — stub returns item without a DB connection", async () => {
-    approvalsWriteSvc.createApproval.mockResolvedValue({ id: 1, projectId: 1, orgId: "org_1" });
+    const now = new Date("2026-01-01T00:00:00Z");
+    approvalsWriteSvc.createApproval.mockResolvedValue({ id: 1, orgId: "org-1", projectId: 1, entityType: "task", entityId: 1, title: "Approval", reason: null, requestedById: null, approverMembershipId: null, status: "requested", level: 1, dueAt: null, decisionComment: null, decidedAt: null, createdBy: null, createdAt: now, updatedAt: now, deletedAt: null });
     const token = await signToken({
       permissions: ["build:approvals:request"],
       enabledModules: ["build"],

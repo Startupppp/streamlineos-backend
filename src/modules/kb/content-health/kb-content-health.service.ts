@@ -25,6 +25,7 @@ import type {
   ContentHealthSignalItem,
   ContentHealthSignalType,
   ContentHealthCounts,
+  ContentHealthCountsQuery,
   ContentHealthTrend,
   DismissHealthItemBody,
   AssignHealthItemBody,
@@ -85,7 +86,10 @@ export class KbContentHealthService {
     return buildIdCursorPage(rows, query.limit, (row) => row.id);
   }
 
-  async counts(user: CurrentUserContext): Promise<ContentHealthCounts> {
+  async counts(
+    user: CurrentUserContext,
+    query: ContentHealthCountsQuery = {},
+  ): Promise<ContentHealthCounts> {
     const visibilityPredicate = await this.auth.visiblePagePredicate(
       user,
       "view",
@@ -95,6 +99,8 @@ export class KbContentHealthService {
       isNull(kbPages.deletedAt),
       visibilityPredicate,
     ];
+    if (query.spaceId !== undefined)
+      baseConditions.push(eq(kbPages.spaceId, query.spaceId));
 
     const signalTypes: ContentHealthSignalType[] = [
       "unowned",

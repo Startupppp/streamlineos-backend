@@ -17,6 +17,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
+import { ProjectsFeedbackService } from "./projects-feedback.service";
+import { ProjectsChangelogService } from "./projects-changelog.service";
 import {
   changelogListQuerySchema,
   createChangelogSchema,
@@ -66,7 +68,11 @@ const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).
 @Controller("build")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsRoadmapController {
-  constructor(private readonly roadmap: ProjectsRoadmapService) {}
+  constructor(
+    private readonly roadmap: ProjectsRoadmapService,
+    private readonly feedback: ProjectsFeedbackService,
+    private readonly changelog: ProjectsChangelogService,
+  ) {}
 
   @Get("roadmap")
   @RequirePermission("build:roadmap:view")
@@ -167,7 +173,7 @@ export class ProjectsRoadmapController {
     @Query() query: FeedbackListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.listFeedback(u.orgId, query);
+    return this.feedback.listFeedback(u.orgId, query);
   }
 
   @Post("feedback")
@@ -179,7 +185,7 @@ export class ProjectsRoadmapController {
     @Body() body: CreateFeedbackInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.createFeedback(u.orgId, u.userId, body);
+    return this.feedback.createFeedback(u.orgId, u.userId, body);
   }
 
   @Patch("feedback/:postId")
@@ -191,7 +197,7 @@ export class ProjectsRoadmapController {
     @Body() body: UpdateFeedbackInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.updateFeedback(u.orgId, postId, body);
+    return this.feedback.updateFeedback(u.orgId, postId, body);
   }
 
   @Post("feedback/:postId/merge")
@@ -203,7 +209,7 @@ export class ProjectsRoadmapController {
     @Body() body: MergeFeedbackInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.mergeFeedback(u.orgId, postId, body);
+    return this.feedback.mergeFeedback(u.orgId, postId, body);
   }
 
   @Delete("feedback/:postId")
@@ -215,7 +221,7 @@ export class ProjectsRoadmapController {
     @Param("postId", ParseIntPipe) postId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.deleteFeedback(u.orgId, postId);
+    return this.feedback.deleteFeedback(u.orgId, postId);
   }
 
   @Get("changelog")
@@ -226,7 +232,7 @@ export class ProjectsRoadmapController {
     @Query() query: ChangelogListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.listChangelog(u.orgId, query);
+    return this.changelog.listChangelog(u.orgId, query);
   }
 
   @Post("changelog")
@@ -238,7 +244,7 @@ export class ProjectsRoadmapController {
     @Body() body: CreateChangelogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.createChangelog(u.orgId, u.userId, body);
+    return this.changelog.createChangelog(u.orgId, u.userId, body);
   }
 
   @Patch("changelog/:entryId")
@@ -250,7 +256,7 @@ export class ProjectsRoadmapController {
     @Body() body: UpdateChangelogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.updateChangelog(u.orgId, entryId, body);
+    return this.changelog.updateChangelog(u.orgId, entryId, body);
   }
 
   @Delete("changelog/:entryId")
@@ -262,6 +268,6 @@ export class ProjectsRoadmapController {
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.deleteChangelog(u.orgId, entryId);
+    return this.changelog.deleteChangelog(u.orgId, entryId);
   }
 }

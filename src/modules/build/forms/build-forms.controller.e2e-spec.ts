@@ -106,7 +106,7 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/forms with build:forms:view — stub returns list without a DB connection", async () => {
-    formsSvc.listForms.mockResolvedValue({ items: [], nextCursor: null });
+    formsSvc.listForms.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({ permissions: ["build:forms:view"], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/build/1/forms")

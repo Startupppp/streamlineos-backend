@@ -72,7 +72,7 @@ function makeRoadmapService(rows: unknown[], tierRows: unknown[]) {
     insert: jest.fn(),
     update: jest.fn(),
   } as unknown as Db;
-  return { service: new ProjectsRoadmapService(db, {} as never, {} as never), select };
+  return { service: new ProjectsRoadmapService(db), select };
 }
 
 function listRow(id: number, scored: boolean) {

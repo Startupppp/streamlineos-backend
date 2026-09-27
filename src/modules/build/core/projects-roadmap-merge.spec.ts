@@ -1,5 +1,4 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import { ProjectsFeedbackService } from "./projects-feedback.service";
 import type { Db } from "../../../db/drizzle.module";
 
@@ -11,8 +10,8 @@ interface PostRow {
   duplicateOfId: number | null;
 }
 
-describe("ProjectsRoadmapService — mergeFeedback", () => {
-  let svc: ProjectsRoadmapService;
+describe("ProjectsFeedbackService — mergeFeedback", () => {
+  let svc: ProjectsFeedbackService;
   let findFirst: jest.Mock;
   let execute: jest.Mock;
   let updateSet: jest.Mock;
@@ -42,7 +41,7 @@ describe("ProjectsRoadmapService — mergeFeedback", () => {
     const db = {
       transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(makeTx())),
     } as unknown as Db;
-    svc = new ProjectsRoadmapService(db, {} as never, new ProjectsFeedbackService(db));
+    svc = new ProjectsFeedbackService(db);
   });
 
   it("rejects merging a post into itself", async () => {

@@ -16,8 +16,16 @@ import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ProjectsTicketsService } from "./projects-tickets.service";
+import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
+import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
+import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
+import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
+import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import { ProjectsSearchService } from "../projects-search.service";
+import { ProjectsWorkQueryService } from "../projects-work-query.service";
 import {
   allWorkQuerySchema,
   bulkUpdateSchema,
@@ -70,8 +78,16 @@ const ticketInProjectParams = z.object({ projectId: z.coerce.number().int().posi
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsTicketsController {
   constructor(
-    private readonly tickets: ProjectsTicketsService,
+    private readonly read: ProjectsTicketsReadService,
+    private readonly create: ProjectsTicketsCreateService,
+    private readonly update: ProjectsTicketsUpdateService,
+    private readonly detail: ProjectsTicketsDetailService,
+    private readonly query: ProjectsTicketsQueryService,
+    private readonly transfer: ProjectsTicketsTransferService,
+    private readonly del: ProjectsTicketsDeleteService,
     private readonly subresources: ProjectsTicketSubresourcesService,
+    private readonly search: ProjectsSearchService,
+    private readonly workQuery: ProjectsWorkQueryService,
   ) {}
 
   @Get("all-work")
@@ -82,7 +98,7 @@ export class ProjectsTicketsController {
     @Query() query: AllWorkQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.getAllWork(u, query);
+    return this.workQuery.getAllWork(u, query);
   }
 
   @Get("search/tickets")
@@ -93,7 +109,7 @@ export class ProjectsTicketsController {
     @Query() query: SearchTicketsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.searchOrgTickets(u.orgId, u.userId, query.q, query.limit);
+    return this.search.searchOrgTickets(u.orgId, u.userId, query.q, query.limit);
   }
 
   @Get(":projectId/tickets/column-counts")
@@ -105,7 +121,7 @@ export class ProjectsTicketsController {
     @Query() query: TicketsListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.getColumnCounts(u, projectId, query);
+    return this.read.getColumnCounts(u, projectId, query);
   }
 
   @Get(":projectId/tickets/export")
@@ -117,7 +133,7 @@ export class ProjectsTicketsController {
     @Query() query: ExportTicketsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.exportTickets(u, projectId, query.ticketIds);
+    return this.transfer.exportTickets(u, projectId, query.ticketIds);
   }
 
   @Post(":projectId/tickets/import")
@@ -131,7 +147,7 @@ export class ProjectsTicketsController {
     @Body() body: ImportTicketsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.importTickets(u, projectId, body);
+    return this.transfer.importTickets(u, projectId, body);
   }
 
   @Get(":projectId/tickets")
@@ -143,7 +159,7 @@ export class ProjectsTicketsController {
     @Query() query: TicketsListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.listTickets(u, projectId, query);
+    return this.read.listTickets(u, projectId, query);
   }
 
   @Post(":projectId/tickets")
@@ -157,7 +173,7 @@ export class ProjectsTicketsController {
     @Body() body: CreateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.createTicket(u, projectId, body);
+    return this.create.createTicket(u, projectId, body);
   }
 
   @Post(":projectId/tickets/bulk")
@@ -171,7 +187,7 @@ export class ProjectsTicketsController {
     @Body() body: BulkUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.bulkUpdate(u, projectId, body);
+    return this.query.bulkUpdate(u, projectId, body);
   }
 
   @Patch(":projectId/tickets/:ticketId/rank")
@@ -184,7 +200,7 @@ export class ProjectsTicketsController {
     @Body() body: RankTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.rankTicket(u, projectId, ticketId, body);
+    return this.query.rankTicket(u, projectId, ticketId, body);
   }
 
   @Get(":projectId/tickets/:ticketId/activity")
@@ -212,7 +228,7 @@ export class ProjectsTicketsController {
     @Param("ticketNumber", ParseIntPipe) ticketNumber: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.getTicketByKey(u, projectId, ticketNumber);
+    return this.detail.getTicketByKey(u, projectId, ticketNumber);
   }
 
   @Get(":projectId/tickets/:ticketId")
@@ -224,7 +240,7 @@ export class ProjectsTicketsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.getTicket(u, projectId, ticketId);
+    return this.detail.getTicket(u, projectId, ticketId);
   }
 
   @Patch(":projectId/tickets/:ticketId")
@@ -237,7 +253,7 @@ export class ProjectsTicketsController {
     @Body() body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.updateTicket(u, projectId, ticketId, body);
+    return this.update.updateTicket(u, projectId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId")
@@ -251,6 +267,6 @@ export class ProjectsTicketsController {
     @Query("force") force: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.deleteTicket(u, projectId, ticketId, force === "true");
+    return this.del.deleteTicket(u, projectId, ticketId, force === "true");
   }
 }

@@ -16,15 +16,15 @@ const bugsSvc = {
 };
 
 const testMgmtSvc = {
-  listTestSuites: jest.fn(),
-  createTestSuite: jest.fn(),
-  updateTestSuite: jest.fn(),
-  deleteTestSuite: jest.fn(),
-  listTestCases: jest.fn(),
-  getTestCase: jest.fn(),
-  createTestCase: jest.fn(),
-  updateTestCase: jest.fn(),
-  deleteTestCase: jest.fn(),
+  listSuites: jest.fn(),
+  createSuite: jest.fn(),
+  updateSuite: jest.fn(),
+  deleteSuite: jest.fn(),
+  listCases: jest.fn(),
+  getCase: jest.fn(),
+  createCase: jest.fn(),
+  updateCase: jest.fn(),
+  deleteCase: jest.fn(),
 };
 
 const testRunsSvc = {
@@ -204,7 +204,7 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/bugs with build:bugs:view — stub returns list without a DB connection", async () => {
-    bugsSvc.listBugs.mockResolvedValue({ items: [], nextCursor: null });
+    bugsSvc.listBugs.mockResolvedValue([]);
     const token = await signToken({
       permissions: ["build:bugs:view"],
       enabledModules: ["build"],
@@ -217,7 +217,7 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/test-suites with build:qa:view — stub returns list without a DB connection", async () => {
-    testMgmtSvc.listTestSuites.mockResolvedValue({ items: [], nextCursor: null });
+    testMgmtSvc.listSuites.mockResolvedValue([]);
     const token = await signToken({
       permissions: ["build:qa:view"],
       enabledModules: ["build"],
@@ -226,6 +226,6 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
       .get("/build/1/test-suites")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(testMgmtSvc.listTestSuites).toHaveBeenCalled();
+    expect(testMgmtSvc.listSuites).toHaveBeenCalled();
   });
 });

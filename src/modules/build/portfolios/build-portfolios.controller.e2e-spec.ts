@@ -138,7 +138,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/portfolios with build:portfolios:view — stub returns list without a DB connection", async () => {
-    portfoliosSvc.listPortfolios.mockResolvedValue({ items: [], nextCursor: null });
+    portfoliosSvc.listPortfolios.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:portfolios:view"],
       enabledModules: ["build"],
@@ -151,7 +151,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/programs with build:programs:view — stub returns list without a DB connection", async () => {
-    programsSvc.listPrograms.mockResolvedValue({ items: [], nextCursor: null });
+    programsSvc.listPrograms.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:programs:view"],
       enabledModules: ["build"],

@@ -9,6 +9,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbContentHealthService } from "./kb-content-health.service";
 import {
   contentHealthSignalsQuerySchema,
+  contentHealthCountsQuerySchema,
   contentHealthSignalsPageSchema,
   contentHealthCountsSchema,
   dismissHealthItemBodySchema,
@@ -20,6 +21,7 @@ import {
   contentHealthTrendSchema,
   healthItemSchema,
   type ContentHealthSignalsQuery,
+  type ContentHealthCountsQuery,
   type DismissHealthItemBody,
   type AssignHealthItemBody,
   type BulkRepairBody,
@@ -43,10 +45,14 @@ export class KbContentHealthController {
   }
 
   @RequirePermission("kb:pages:manage")
+  @Validate({ query: contentHealthCountsQuerySchema })
   @ResponseSchema(contentHealthCountsSchema)
   @Get("wiki/content-health/counts")
-  counts(@CurrentUser() user: CurrentUserContext) {
-    return this.contentHealth.counts(user);
+  counts(
+    @CurrentUser() user: CurrentUserContext,
+    @Query() query: ContentHealthCountsQuery,
+  ) {
+    return this.contentHealth.counts(user, query);
   }
 
   @RequirePermission("kb:pages:manage")

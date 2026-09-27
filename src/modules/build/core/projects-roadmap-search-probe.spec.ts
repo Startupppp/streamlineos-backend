@@ -3,8 +3,6 @@ import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsRoadmapService, ROADMAP_SEARCH_ID_CAP } from "./projects-roadmap.service";
 import type { Db } from "../../../db/drizzle.module";
-import type { ProjectsChangelogService } from "./projects-changelog.service";
-import type { ProjectsFeedbackService } from "./projects-feedback.service";
 
 const dialect = new PgDialect();
 const MIGRATION = join(
@@ -34,11 +32,7 @@ function probeBody(): string {
 function serviceWithProbe(idRows: Array<{ id: number }>) {
   const execute = jest.fn().mockResolvedValue(idRows);
   const db = { execute } as unknown as Db;
-  const svc = new ProjectsRoadmapService(
-    db,
-    {} as ProjectsChangelogService,
-    {} as ProjectsFeedbackService,
-  );
+  const svc = new ProjectsRoadmapService(db);
   return { svc, execute };
 }
 

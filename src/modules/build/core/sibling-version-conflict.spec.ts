@@ -5,8 +5,6 @@ import { MilestonesService } from "../execution/workspace.service";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import { AccessService } from "../../access/access.service";
-import { ProjectsChangelogService } from "./projects-changelog.service";
-import { ProjectsFeedbackService } from "./projects-feedback.service";
 import { systemActor } from "../../../common/auth/system-actor";
 
 const actor = systemActor("integrations.git.webhook", "org-1");
@@ -95,8 +93,6 @@ async function roadmapService(itemRow: Record<string, unknown> | undefined, upda
     providers: [
       ProjectsRoadmapService,
       { provide: DRIZZLE, useValue: db },
-      { provide: ProjectsChangelogService, useValue: {} },
-      { provide: ProjectsFeedbackService, useValue: {} },
     ],
   }).compile();
   return { service: module.get(ProjectsRoadmapService), module, update };

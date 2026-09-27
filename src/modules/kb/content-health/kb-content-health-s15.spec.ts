@@ -5,7 +5,10 @@ import type { Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { KbContentHealthService } from "./kb-content-health.service";
 import { KbContradictionScannerService } from "./kb-contradiction-scanner.service";
-import type { ContentHealthSignalsQuery } from "./dto/kb-content-health.schemas";
+import type {
+  ContentHealthSignalsQuery,
+  ContentHealthCountsQuery,
+} from "./dto/kb-content-health.schemas";
 
 const dialect = new PgDialect();
 
@@ -27,6 +30,18 @@ function makeCapturingDb(rows: unknown[] = []): { db: Db; wheres: unknown[] } {
   chain.where = jest.fn((clause: unknown) => {
     wheres.push(clause);
     return chain;
+  });
+  const db = { select: jest.fn(() => chain) } as unknown as Db;
+  return { db, wheres };
+}
+
+function makeCountsDb(): { db: Db; wheres: unknown[] } {
+  const wheres: unknown[] = [];
+  const chain: Record<string, jest.Mock> = {};
+  chain.from = jest.fn(() => chain);
+  chain.where = jest.fn((clause: unknown) => {
+    wheres.push(clause);
+    return Promise.resolve([{ count: 0 }]);
   });
   const db = { select: jest.fn(() => chain) } as unknown as Db;
   return { db, wheres };
@@ -178,6 +193,24 @@ describe("KbContentHealthService — contradictory_claim signal", () => {
     const rendered = wheres.map((w) => render(w)).join(" ");
     expect(rendered).toContain("kb_health_items");
     expect(rendered).toContain("state");
+  });
+
+  it("adds a space equality to every counted signal when a spaceId is given, and adds none without one, so a space manager's summary is not the whole organisation's", async () => {
+    const countSpaceEqualities = async (
+      query?: ContentHealthCountsQuery,
+    ): Promise<number> => {
+      const { db, wheres } = makeCountsDb();
+      const svc = new KbContentHealthService(db, auth as never);
+      await svc.counts(makeUser(), query);
+      const rendered = wheres.map((w) => render(w)).join(" ");
+      return rendered.split(`"kb_pages"."space_id" = `).length - 1;
+    };
+
+    const scoped = await countSpaceEqualities({ spaceId: 4 });
+    const unscoped = await countSpaceEqualities();
+
+    expect(scoped).toBeGreaterThan(unscoped);
+    expect(unscoped).toBe(0);
   });
 
   it("counts nine signal types including contradictory_claim, so the counts list has grown from eight", async () => {

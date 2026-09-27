@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-26T08:36:15.190Z",
+  "generatedAt": "2026-09-27T15:53:00.896Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -2581,7 +2581,9 @@
       "operationId": "AuthController_getJwks",
       "owner": null,
       "version": "1",
-      "consumers": ["external verifiers of our issued JWTs"],
+      "consumers": [
+        "external verifiers of our issued JWTs"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3195,7 +3197,9 @@
       "operationId": "BlogAdminController_listCategories",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3206,7 +3210,9 @@
       "operationId": "BlogAdminController_createCategory",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3217,7 +3223,9 @@
       "operationId": "BlogAdminController_updateCategory",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3228,7 +3236,9 @@
       "operationId": "BlogAdminController_deleteCategory",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3239,7 +3249,9 @@
       "operationId": "BlogAdminController_listPosts",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3250,7 +3262,9 @@
       "operationId": "BlogAdminController_createPost",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3261,7 +3275,9 @@
       "operationId": "BlogAdminController_getPost",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3272,7 +3288,9 @@
       "operationId": "BlogAdminController_updatePost",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3283,7 +3301,9 @@
       "operationId": "BlogAdminController_deletePost",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -3294,7 +3314,9 @@
       "operationId": "BlogController_getPostBySlug",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3320,7 +3342,9 @@
       "operationId": "BlogController_getAdjacentPosts",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3346,7 +3370,9 @@
       "operationId": "BlogController_listCategories",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3366,7 +3392,9 @@
       "operationId": "BlogController_feed",
       "owner": null,
       "version": "1",
-      "consumers": ["the public marketing site and any feed reader"],
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -3558,6 +3586,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ProjectsByIdController_deleteProject",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/{projectId}/activity": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsActivityFeedController_getProjectActivity",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -3855,6 +3894,50 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ChangeRequestAffectedItemsController_unlinkTicket",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/{projectId}/client-portal/preview": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ClientPortalManagementController_getPreview",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/client-portal/publish": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ClientPortalManagementController_publishPortal",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/{projectId}/client-portal/settings": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ClientPortalManagementController_getSettings",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/client-portal/unpublish": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ClientPortalManagementController_unpublishPortal",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -4983,6 +5066,61 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /build/{projectId}/settings/iterations": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsSettingsIterationsController_getSettings",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /build/{projectId}/settings/iterations": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsSettingsIterationsController_updateSettings",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/{projectId}/settings/retention": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsRetentionSettingsController_getSettings",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /build/{projectId}/settings/retention": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsRetentionSettingsController_updatePolicy",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /build/{projectId}/settings/retention/legal-hold": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsRetentionSettingsController_setLegalHold",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/{projectId}/sprints": {
       "classification": "internal",
       "classificationOverride": null,
@@ -5819,6 +5957,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "PATCH /build/{projectId}/webhooks/{webhookId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsWebhooksController_updateWebhook",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "DELETE /build/{projectId}/webhooks/{webhookId}": {
       "classification": "internal",
       "classificationOverride": null,
@@ -6413,6 +6562,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /build/managed-products/bulk": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ManagedProductsController_bulkUpdateManagedProducts",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/members": {
       "classification": "internal",
       "classificationOverride": null,
@@ -6655,11 +6815,22 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /build/resource-allocation": {
+    "GET /build/releases": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "ProjectsReportsController_resourceAllocation",
+      "operationId": "ProjectsReleasesController_listOrgReleases",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/risks": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RisksController_listOrgRisks",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -7289,7 +7460,9 @@
       "operationId": "CareersController_uploadResume",
       "owner": null,
       "version": "1",
-      "consumers": ["external applicants"],
+      "consumers": [
+        "external applicants"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -9817,7 +9990,9 @@
       "operationId": "CrmConsentController_listForContact",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -9828,7 +10003,9 @@
       "operationId": "CrmConsentController_record",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -9839,7 +10016,9 @@
       "operationId": "CrmConsentController_listEvents",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -9850,7 +10029,9 @@
       "operationId": "CrmConsentController_countMissing",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -9861,7 +10042,9 @@
       "operationId": "CrmPublicConsentController_unsubscribe",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -9881,7 +10064,9 @@
       "operationId": "CrmPublicConsentController_unsubscribeByLink",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -9907,7 +10092,9 @@
       "operationId": "CrmPublicConsentController_unsubscribeOneClick",
       "owner": null,
       "version": "1",
-      "consumers": ["external recipients managing marketing consent"],
+      "consumers": [
+        "external recipients managing marketing consent"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -10604,7 +10791,9 @@
       "operationId": "CrmMailboxController_push",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound mail provider push notifications"],
+      "consumers": [
+        "inbound mail provider push notifications"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -12872,6 +13061,28 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /cron/kb-contradiction-scan": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronKbController_getKbContradictionScan",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/kb-contradiction-scan": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronKbController_postKbContradictionScan",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /cron/kb-stuck-source-reap": {
       "classification": "internal",
       "classificationOverride": null,
@@ -13836,7 +14047,9 @@
       "operationId": "CsatController_get",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -13847,7 +14060,9 @@
       "operationId": "CsatController_update",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -13858,7 +14073,9 @@
       "operationId": "CsatController_remove",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -13869,7 +14086,9 @@
       "operationId": "CsatController_listResponses",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -13880,7 +14099,9 @@
       "operationId": "CsatController_submitResponse",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT survey respondents"],
+      "consumers": [
+        "external CSAT survey respondents"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -20972,6 +21193,39 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /hr/leave-policies/templates": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "LeavePoliciesController_templateOffer",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/leave-policies/templates/dismiss": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "LeavePoliciesController_dismissTemplates",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /hr/leave-policies/templates/import": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "LeavePoliciesController_importTemplates",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /hr/leave-policy": {
       "classification": "internal",
       "classificationOverride": null,
@@ -26391,7 +26645,9 @@
       "operationId": "IntegrationsGitController_webhook",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound GitHub/GitLab webhooks"],
+      "consumers": [
+        "inbound GitHub/GitLab webhooks"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -30854,44 +31110,11 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "POST /kb/ai/draft": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbAuthoringController_draft",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "POST /kb/ai/feedback": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbAiFeedbackController_submitFeedback",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/ai/improve": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbAuthoringController_improve",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/ai/summarize": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbAuthoringController_summarize",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31019,61 +31242,6 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /kb/articles": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_list",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/articles": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_create",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /kb/articles/{articleId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_get",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /kb/articles/{articleId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_update",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "DELETE /kb/articles/{articleId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_remove",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "POST /kb/articles/{articleId}/ai/ask": {
       "classification": "internal",
       "classificationOverride": null,
@@ -31162,44 +31330,11 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /kb/articles/{articleId}/comments": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCommentsController_list",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/articles/{articleId}/comments": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCommentsController_create",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "GET /kb/articles/{articleId}/indexing-status": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbSourcesController_articleIngestionStatus",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/articles/{articleId}/publish": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_publish",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31266,72 +31401,6 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbTranslationsController_remove",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/articles/{articleId}/unpublish": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_unpublish",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/articles/{articleId}/verify": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_verify",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /kb/articles/{articleId}/versions": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_versions",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/articles/{articleId}/versions/{versionNumber}/restore": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_restore",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/articles/{articleId}/view": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_recordView",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/articles/{articleId}/vote": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbArticlesController_vote",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31459,66 +31528,22 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "PATCH /kb/categories/{categoryId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCategoriesController_update",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "DELETE /kb/categories/{categoryId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCategoriesController_remove",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /kb/comments/{commentId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCommentsController_update",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "DELETE /kb/comments/{commentId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCommentsController_remove",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/comments/{commentId}/resolve": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCommentsController_resolve",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "GET /kb/export-jobs": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbImportExportController_listExportJobs",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/export-jobs/{exportJobId}/download": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbImportExportController_downloadExportJob",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31563,6 +31588,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbImportExportController_cancelImportJob",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/import-jobs/{importJobId}/retry": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbImportExportController_retryImportJob",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -32647,28 +32683,6 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /kb/spaces/{spaceId}/categories": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCategoriesController_list",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /kb/spaces/{spaceId}/categories": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbCategoriesController_create",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "GET /kb/spaces/{spaceId}/members": {
       "classification": "internal",
       "classificationOverride": null,
@@ -32740,50 +32754,6 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbTagsController_remove",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /kb/verification/queue": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbVerificationController_listDue",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /kb/wiki/analytics/contributors": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbWikiAnalyticsController_contributorActivity",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /kb/wiki/analytics/page-stats": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbWikiAnalyticsController_pageStats",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /kb/wiki/analytics/stale-pages": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "KbWikiAnalyticsController_stalePages",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -33182,7 +33152,9 @@
       "operationId": "LeadsIngestController_ingest",
       "owner": null,
       "version": "1",
-      "consumers": ["external lead sources holding an API key (ApiKeyGuard)"],
+      "consumers": [
+        "external lead sources holding an API key (ApiKeyGuard)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -35766,7 +35738,9 @@
       "operationId": "OrganizationController_acceptInvitation",
       "owner": null,
       "version": "1",
-      "consumers": ["invitees following an emailed invitation link"],
+      "consumers": [
+        "invitees following an emailed invitation link"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -35786,7 +35760,9 @@
       "operationId": "OrganizationController_declineInvitation",
       "owner": null,
       "version": "1",
-      "consumers": ["invitees following an emailed invitation link"],
+      "consumers": [
+        "invitees following an emailed invitation link"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -35806,7 +35782,9 @@
       "operationId": "OrganizationController_validateInvitationToken",
       "owner": null,
       "version": "1",
-      "consumers": ["invitees following an emailed invitation link"],
+      "consumers": [
+        "invitees following an emailed invitation link"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -38461,7 +38439,9 @@
       "operationId": "PlatformController_submitContact",
       "owner": null,
       "version": "1",
-      "consumers": ["the public contact form"],
+      "consumers": [
+        "the public contact form"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -38723,7 +38703,9 @@
       "operationId": "PortalAuthController_acceptInvitation",
       "owner": null,
       "version": "1",
-      "consumers": ["external project clients redeeming a portal invitation"],
+      "consumers": [
+        "external project clients redeeming a portal invitation"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -39462,6 +39444,29 @@
         "replay": "Safe method — repeating the request produces no additional side effect.",
         "source": "http-method"
       },
+      "contractEvidence": null
+    },
+    "POST /public/intake/t/{intakeToken}": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "PublicController_submitIntakeByToken",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "unauthenticated external users via share links, embedded widgets and emailed forms"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "intakeToken",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": null,
       "contractEvidence": null
     },
     "GET /public/interview-booking/{token}": {
@@ -43342,7 +43347,9 @@
       "operationId": "SupportCsatController_getCsatRequest",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT links delivered by email"],
+      "consumers": [
+        "external CSAT links delivered by email"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -43368,7 +43375,9 @@
       "operationId": "SupportCsatController_submitCsat",
       "owner": null,
       "version": "1",
-      "consumers": ["external CSAT links delivered by email"],
+      "consumers": [
+        "external CSAT links delivered by email"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -43438,7 +43447,9 @@
       "operationId": "SupportChannelsController_inboundEmail",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound email/SMS/WhatsApp provider push"],
+      "consumers": [
+        "inbound email/SMS/WhatsApp provider push"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -43464,7 +43475,9 @@
       "operationId": "SupportChannelsController_inboundSms",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound email/SMS/WhatsApp provider push"],
+      "consumers": [
+        "inbound email/SMS/WhatsApp provider push"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -43490,7 +43503,9 @@
       "operationId": "SupportChannelsController_inboundWhatsApp",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound email/SMS/WhatsApp provider push"],
+      "consumers": [
+        "inbound email/SMS/WhatsApp provider push"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46200,7 +46215,9 @@
       "operationId": "WebhooksController_get",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -46211,7 +46228,9 @@
       "operationId": "WebhooksController_update",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -46222,7 +46241,9 @@
       "operationId": "WebhooksController_remove",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -46233,7 +46254,9 @@
       "operationId": "WebhooksController_listLogs",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -46244,7 +46267,9 @@
       "operationId": "WebhooksController_retryLog",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -46255,7 +46280,9 @@
       "operationId": "WebhooksController_rotateSecret",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -46266,7 +46293,9 @@
       "operationId": "CalendarProviderWebhookController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46286,7 +46315,9 @@
       "operationId": "EmailWebhookController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46312,7 +46343,9 @@
       "operationId": "CarrierWebhooksPublicController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46343,7 +46376,9 @@
       "operationId": "PaymentWebhooksPublicController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46379,7 +46414,9 @@
       "operationId": "RazorpayWebhookController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46405,7 +46442,9 @@
       "operationId": "StripeWebhookController_handle",
       "owner": null,
       "version": "1",
-      "consumers": ["inbound provider webhooks (email, payments, Razorpay)"],
+      "consumers": [
+        "inbound provider webhooks (email, payments, Razorpay)"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46776,6 +46815,325 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /build/resource-allocation": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsReportsController_resourceAllocation",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/ai/draft": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAuthoringController_draft",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/ai/improve": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAuthoringController_improve",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/ai/summarize": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAuthoringController_summarize",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/articles": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/articles": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/articles/{articleId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_get",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /kb/articles/{articleId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /kb/articles/{articleId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_remove",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/articles/{articleId}/comments": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCommentsController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/articles/{articleId}/comments": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCommentsController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/articles/{articleId}/publish": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_publish",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/articles/{articleId}/unpublish": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_unpublish",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/articles/{articleId}/verify": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_verify",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/articles/{articleId}/versions": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_versions",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/articles/{articleId}/versions/{versionNumber}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_restore",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/articles/{articleId}/view": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_recordView",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/articles/{articleId}/vote": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbArticlesController_vote",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /kb/categories/{categoryId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCategoriesController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /kb/categories/{categoryId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCategoriesController_remove",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /kb/comments/{commentId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCommentsController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /kb/comments/{commentId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCommentsController_remove",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/comments/{commentId}/resolve": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCommentsController_resolve",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/spaces/{spaceId}/categories": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCategoriesController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/spaces/{spaceId}/categories": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbCategoriesController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/verification/queue": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbVerificationController_listDue",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/wiki/analytics/contributors": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbWikiAnalyticsController_contributorActivity",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/wiki/analytics/page-stats": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbWikiAnalyticsController_pageStats",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/wiki/analytics/stale-pages": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbWikiAnalyticsController_stalePages",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /careers": {
       "classification": "published",
       "classificationOverride": null,
@@ -46783,7 +47141,9 @@
       "operationId": "CareersController_list",
       "owner": null,
       "version": "1",
-      "consumers": ["the public careers page"],
+      "consumers": [
+        "the public careers page"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46803,7 +47163,9 @@
       "operationId": "CareersController_apply",
       "owner": null,
       "version": "1",
-      "consumers": ["external applicants"],
+      "consumers": [
+        "external applicants"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null,
       "deprecation": null,
@@ -46942,28 +47304,36 @@
     "accounting.journal.posted": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "build.project-webhook.delivery.requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "build.release.published": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "build.ticket.status_changed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -46984,35 +47354,45 @@
     "chat.message.fanout": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "crm.report.schedule_due": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "deal.closed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "expense.export.requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "gdpr.export.requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -47026,35 +47406,45 @@
     "hr.helpdesk.ticket_assigned": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "hr.helpdesk.ticket_created": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "hr.helpdesk.ticket_status_changed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "inventory.adjustment.approval_requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "inventory.lot.expiring": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -47068,7 +47458,9 @@
     "inventory.recall.opened": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -47110,56 +47502,72 @@
     "job.board.publish_requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "job.board.unpublish_requested": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "kb.content.index": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "kb.import.process": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "organization.setup.completed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "payroll.run.payout-posting-intent": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "payroll.run.posting-intent": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "realtime.token-revocation": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -47173,28 +47581,36 @@
     "sign.bulk_send.queued": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "sign.envelope.completed": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "support.ticket.resolved": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
     "survey.response.submitted": {
       "classification": "internal",
       "owner": null,
-      "consumers": ["outbox-relay"],
+      "consumers": [
+        "outbox-relay"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     }
@@ -47209,7 +47625,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-ticket-comments.service.ts"
+        "src/modules/build/core/tickets/projects-ticket-comments.service.ts"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -47224,7 +47640,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/deals/lib/deal-update-effects.ts"],
+      "emittedFrom": [
+        "src/modules/deals/lib/deal-update-effects.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47238,7 +47656,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/deals/lib/deal-update-effects.ts"],
+      "emittedFrom": [
+        "src/modules/deals/lib/deal-update-effects.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47269,7 +47689,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/leads/leads.service.ts"],
+      "emittedFrom": [
+        "src/modules/leads/leads.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47283,7 +47705,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/leads/leads.service.ts"],
+      "emittedFrom": [
+        "src/modules/leads/leads.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47297,7 +47721,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/hr/time/leave-decision-effects.service.ts"],
+      "emittedFrom": [
+        "src/modules/hr/time/leave-decision-effects.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47311,7 +47737,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/build/core/projects-members.service.ts"],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47325,7 +47753,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/build/core/projects-members.service.ts"],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47339,7 +47769,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/build/core/projects-members.service.ts"],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47480,7 +47912,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-tickets-update.service.ts"
+        "src/modules/build/core/tickets/apply-ticket-change.ts"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -47496,7 +47928,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-tickets-create.service.ts"
+        "src/modules/build/core/tickets/projects-tickets-create.service.ts"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -47511,7 +47943,9 @@
       "consumers": [
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
-      "emittedFrom": ["src/modules/build/core/projects-tickets.service.ts"],
+      "emittedFrom": [
+        "src/modules/build/core/tickets/projects-tickets-delete.service.ts"
+      ],
       "declaredIn": null,
       "subscribable": true,
       "sunsetAt": null,
@@ -47526,7 +47960,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-tickets-update.service.ts"
+        "src/modules/build/core/tickets/apply-ticket-change.ts"
       ],
       "declaredIn": null,
       "subscribable": true,

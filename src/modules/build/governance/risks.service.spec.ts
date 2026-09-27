@@ -713,3 +713,65 @@ describe("RisksService.getRiskStats — project-membership gate (BOLA)", () => {
     await expect(svc.getRiskStats(u, 1)).rejects.toThrow(ForbiddenException);
   });
 });
+
+describe("DecisionsService.listDecisions — server-side full-text search predicate", () => {
+  const u = makeUser("org-1");
+
+  function makeDecisionRowLocal(id: number): Record<string, unknown> {
+    return {
+      id, orgId: "org-1", projectId: 1, decisionNumber: id, title: `Decision ${id}`,
+      context: null, decision: null, optionsConsidered: null, status: "proposed",
+      ownerId: null, decidedAt: null, revisitAt: null, linkedTicketId: null,
+      deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+    };
+  }
+
+  function setupDecisionMocks(mockDb: MockDb, decisionChain: ReturnType<typeof makeSelectChain>) {
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(decisionChain);
+  }
+
+  it("includes the search term as a WHERE param so the DB filters rather than the caller", async () => {
+    const mockDb = makeMockDb();
+    const decisionChain = makeSelectChain([makeDecisionRowLocal(42)]);
+    setupDecisionMocks(mockDb, decisionChain);
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    const result = await svc.listDecisions(u, 1, { search: "auth redesign" });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]!.id).toBe(42);
+    const whereArg: unknown = decisionChain.where.mock.calls[0]?.[0];
+    expect(collectParamValues(whereArg)).toContain("auth redesign");
+  });
+
+  it("does not include a search param for 'auth redesign' in WHERE when no search is provided", async () => {
+    const mockDb = makeMockDb();
+    const decisionChain = makeSelectChain([]);
+    setupDecisionMocks(mockDb, decisionChain);
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await svc.listDecisions(u, 1, {});
+
+    const whereArg: unknown = decisionChain.where.mock.calls[0]?.[0];
+    expect(collectParamValues(whereArg)).not.toContain("auth redesign");
+  });
+
+  it("keeps orgId and projectId in WHERE beside the search term, which is the only reason the measured cost of search is a heap filter over one project's rows: a GIN index on the searched expression is never chosen under RLS because ts_match_vq is not leakproof and cannot be evaluated before the tenant qual (BE-80)", async () => {
+    const mockDb = makeMockDb();
+    const decisionChain = makeSelectChain([]);
+    setupDecisionMocks(mockDb, decisionChain);
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await svc.listDecisions(u, 4242, { search: "auth redesign" });
+
+    const whereArg: unknown = decisionChain.where.mock.calls[0]?.[0];
+    const params = collectParamValues(whereArg);
+    expect(params).toContain("auth redesign");
+    expect(params).toContain("org-1");
+    expect(params).toContain(4242);
+  });
+});

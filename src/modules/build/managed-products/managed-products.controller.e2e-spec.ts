@@ -114,7 +114,7 @@ describe("ManagedProducts auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/managed-products with build:managed-products:view — stub returns list without a DB connection", async () => {
-    managedProductsSvc.listManagedProducts.mockResolvedValue({ items: [], nextCursor: null });
+    managedProductsSvc.listManagedProducts.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:managed-products:view"],
       enabledModules: ["build"],

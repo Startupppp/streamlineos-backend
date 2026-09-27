@@ -1,4 +1,5 @@
 export { ProjectsTicketsController } from "./projects-tickets.controller";
+export { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 export { ProjectsTicketCommentsController } from "./projects-ticket-comments.controller";
 export { ProjectsTicketChecklistsController } from "./projects-ticket-checklists.controller";
 export { ProjectsTicketAssociationsController } from "./projects-ticket-associations.controller";

@@ -1,11 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
-import { Test } from "@nestjs/testing";
-import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
-import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
-import { BuildAutomationRunnerService } from "./build-automation-runner.service";
-import { CacheService } from "../../../common/cache/cache.service";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { AccessService } from "../../access/access.service";
+import { assertTransitionAllowed } from "./tickets/projects-tickets-workflow-utils";
+import type { Db } from "../../../db/drizzle.module";
 
 const ORG_ID = "org-1";
 const PROJECT_ID = 42;
@@ -16,45 +11,15 @@ const TEST_CONTEXT = {
   ticketId: 1,
 };
 
-describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enforcement", () => {
-  let svc: ProjectsTicketsQueryService;
+describe("assertTransitionAllowed — fail-open enforcement", () => {
   let mockDb: { select: jest.Mock; query: Record<string, unknown> };
 
-  function _makeSelectTransitions(rows: { fromStatusId: number | null; toStatusId: number }[]) {
-    return jest.fn().mockReturnValueOnce({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(rows),
-      }),
-    });
-  }
-
-  function _makeSelectStatuses(rows: { id: number; name: string }[]) {
-    return jest.fn().mockReturnValueOnce({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(rows),
-      }),
-    });
-  }
-
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.resetAllMocks();
-
     mockDb = {
       select: jest.fn(),
       query: {},
     };
-
-    const module = await Test.createTestingModule({
-      providers: [
-        ProjectsTicketsQueryService,
-        { provide: DRIZZLE, useValue: mockDb },
-        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn() } },
-        { provide: AccessService, useValue: {} },
-        { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
-        { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn().mockResolvedValue(undefined) } },
-      ],
-    }).compile();
-    svc = module.get(ProjectsTicketsQueryService);
   });
 
   it("ALLOWS (no throw) when there are zero workflow_transitions for the project", async () => {
@@ -72,13 +37,13 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
   it("propagates a database failure instead of treating the workflow as unrestricted", async () => {
     mockDb.select.mockImplementation(() => { throw new Error("database unavailable"); });
-    await expect(svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT))
+    await expect(assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT))
       .rejects.toThrow("database unavailable");
   });
 
@@ -103,7 +68,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "UNKNOWN_STATUS", "IN_PROGRESS", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "UNKNOWN_STATUS", "IN_PROGRESS", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -128,7 +93,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "NONEXISTENT_STATUS", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "TODO", "NONEXISTENT_STATUS", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -156,7 +121,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -184,7 +149,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -213,7 +178,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS", TEST_CONTEXT),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -242,7 +207,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "Backlog", "Review", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "Backlog", "Review", TEST_CONTEXT),
     ).rejects.toThrow(/Backlog.*Review|Review.*Backlog/i);
   });
 
@@ -256,7 +221,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
     ).rejects.toThrow("DB connection refused");
   });
 
@@ -284,8 +249,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
       };
     });
 
-    const err = await svc
-      .assertTransitionAllowed(ORG_ID, PROJECT_ID, "Open", "Blocked", TEST_CONTEXT)
+    const err = await assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "Open", "Blocked", TEST_CONTEXT)
       .catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(BadRequestException);
@@ -317,7 +281,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "Start", "Middle", TEST_CONTEXT),
+      assertTransitionAllowed(mockDb as unknown as Db, ORG_ID, PROJECT_ID, "Start", "Middle", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 });

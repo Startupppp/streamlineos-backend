@@ -77,7 +77,7 @@ function makeService(parts: {
     update: parts.update ?? jest.fn(),
     select: selectChain(parts),
   } as unknown as Db;
-  return new ProjectsRoadmapService(db, {} as never, {} as never);
+  return new ProjectsRoadmapService(db);
 }
 
 function insertCapture(returned: RoadmapRowShape) {
@@ -90,7 +90,8 @@ function updateCapture(returned: RoadmapRowShape) {
   const where = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([returned]) });
   const set = jest.fn().mockReturnValue({ where });
   const update = jest.fn().mockReturnValue({ set });
-  return { update, set };
+  const findFirst = jest.fn().mockResolvedValue({ version: 1 });
+  return { update, set, findFirst };
 }
 
 describe("createRoadmap — the four RICE columns were published but unwritable; the input gap is closed", () => {
@@ -151,8 +152,9 @@ describe("createRoadmap — the four RICE columns were published but unwritable;
 
 describe("updateRoadmap — RICE inputs round-trip through the update", () => {
   it("passes the four inputs to .set so an operator can score an existing item", async () => {
-    const { update, set } = updateCapture(roadmapRow({ reach: 10, impact: 1, confidence: 100, effort: 2 }));
-    await makeService({ update }).updateRoadmap(ORG, 7, {
+    const { update, set, findFirst } = updateCapture(roadmapRow({ reach: 10, impact: 1, confidence: 100, effort: 2 }));
+    await makeService({ update, findFirst }).updateRoadmap(ORG, 7, {
+      version: 1,
       reach: 10,
       impact: 1,
       confidence: 100,
@@ -164,14 +166,14 @@ describe("updateRoadmap — RICE inputs round-trip through the update", () => {
   });
 
   it("passes an explicit null through so a retracted guess is cleared, not ignored", async () => {
-    const { update, set } = updateCapture(roadmapRow());
-    await makeService({ update }).updateRoadmap(ORG, 7, { effort: null });
+    const { update, set, findFirst } = updateCapture(roadmapRow());
+    await makeService({ update, findFirst }).updateRoadmap(ORG, 7, { version: 1, effort: null });
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ effort: null }));
   });
 
   it("returns a null score once an input is cleared, never the stale complete score", async () => {
-    const { update } = updateCapture(roadmapRow({ reach: 10, impact: 1, confidence: 100, effort: null }));
-    const updated = await makeService({ update }).updateRoadmap(ORG, 7, { effort: null });
+    const { update, findFirst } = updateCapture(roadmapRow({ reach: 10, impact: 1, confidence: 100, effort: null }));
+    const updated = await makeService({ update, findFirst }).updateRoadmap(ORG, 7, { version: 1, effort: null });
     expect(updated.prioritization.score).toBeNull();
     expect(updated.prioritization.missingInputs).toEqual(["effort"]);
   });

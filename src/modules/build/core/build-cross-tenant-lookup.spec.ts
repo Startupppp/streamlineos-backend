@@ -2,7 +2,7 @@ import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { ProjectsTicketsService } from "./tickets/projects-tickets.service";
+import { ProjectsTicketsDeleteService } from "./tickets/projects-tickets-delete.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { assertTicketReadAccess } from "./tickets/build-ticket-read-access";
 
@@ -77,18 +77,8 @@ describe("the delete guard's blocker lookup", () => {
       },
     } as unknown as Db;
 
-    const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true }) };
-
-    const service = new ProjectsTicketsService(
+    const service = new ProjectsTicketsDeleteService(
       db,
-      {} as never,
-      {} as never,
-      {} as never,
-      read as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
       {} as never,
       {} as never,
       { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
@@ -146,18 +136,10 @@ describe("the delete guard's blocker lookup", () => {
       transaction,
     } as unknown as Db;
 
-    const service = new ProjectsTicketsService(
+    const service = new ProjectsTicketsDeleteService(
       db,
-      {} as never,
-      {} as never,
-      {} as never,
-      { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true }) } as never,
-      {} as never,
-      {} as never,
       { enqueue: jest.fn() } as never,
       { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn(), delByPrefix: jest.fn() } as never,
-      {} as never,
-      {} as never,
       { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
     );
 

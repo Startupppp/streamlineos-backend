@@ -2,7 +2,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
-import { ProjectsTicketsService } from "./tickets/projects-tickets.service";
+import { ProjectsTicketsDeleteService } from "./tickets/projects-tickets-delete.service";
 import { assertTicketReadAccess } from "./tickets/build-ticket-read-access";
 
 jest.mock("./tickets/build-ticket-read-access", () => ({
@@ -61,22 +61,13 @@ function harness(enqueueFails: boolean) {
     if (enqueueFails) throw new Error("outbox unavailable");
   });
   const webhooks = { enqueue } as unknown as ProjectsWebhooksDispatchService;
-  const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true }) };
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) };
 
   return {
-    service: new ProjectsTicketsService(
+    service: new ProjectsTicketsDeleteService(
       db,
-      {} as never,
-      {} as never,
-      {} as never,
-      read as never,
-      {} as never,
-      {} as never,
       webhooks,
       cache as never,
-      {} as never,
-      {} as never,
       { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
     ),
     enqueue,
@@ -122,17 +113,9 @@ describe("Build mutation and webhook intent atomicity", () => {
       },
       transaction: jest.fn(),
     } as unknown as Db;
-    const service = new ProjectsTicketsService(
+    const service = new ProjectsTicketsDeleteService(
       db,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
       { enqueue } as never,
-      {} as never,
-      {} as never,
       {} as never,
       { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
     );

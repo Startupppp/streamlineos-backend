@@ -93,7 +93,7 @@ describe("ProjectUpdates auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/updates with build:updates:view — stub returns list without a DB connection", async () => {
-    updatesSvc.listUpdates.mockResolvedValue({ items: [], nextCursor: null });
+    updatesSvc.listUpdates.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:updates:view"],
       enabledModules: ["build"],
@@ -106,7 +106,8 @@ describe("ProjectUpdates auth/RBAC (e2e)", () => {
   });
 
   it("200 on PATCH /build/1/updates/2 with build:updates:manage — stub returns item without a DB connection", async () => {
-    updatesSvc.editUpdate.mockResolvedValue({ id: 2, body: "Patched update.", projectId: 1 });
+    const now = new Date("2026-01-01T00:00:00Z");
+    updatesSvc.editUpdate.mockResolvedValue({ id: 2, orgId: "org-1", projectId: 1, authorMembershipId: 1, authorName: "Test User", body: "Patched update.", wins: null, risks: null, next: null, citations: null, status: "published", audience: "internal", createdAt: now, updatedAt: now, deletedAt: null });
     const token = await signToken({
       permissions: ["build:updates:manage"],
       enabledModules: ["build"],

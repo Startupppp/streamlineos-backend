@@ -175,7 +175,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("200 on GET /build/1/change-requests with build:changerequests:view — stub returns list without a DB connection", async () => {
-    changeRequestsSvc.listChangeRequests.mockResolvedValue({ items: [], nextCursor: null });
+    changeRequestsSvc.listChangeRequests.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:changerequests:view"],
       enabledModules: ["build"],
@@ -188,7 +188,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("200 on GET /build/1/client-visibility with build:clientvisibility:manage — stub returns summary without a DB connection", async () => {
-    clientVisibilitySvc.getVisibilitySummary.mockResolvedValue({ tickets: [], milestones: [], comments: [], attachments: [] });
+    clientVisibilitySvc.getVisibilitySummary.mockResolvedValue({ tickets: { data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } }, milestones: { data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } } });
     const token = await signToken({
       permissions: ["build:clientvisibility:manage"],
       enabledModules: ["build"],

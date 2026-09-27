@@ -27,6 +27,16 @@ export type ContentHealthSignalsQuery = z.infer<
   typeof contentHealthSignalsQuerySchema
 >;
 
+export const contentHealthCountsQuerySchema = z
+  .object({
+    spaceId: z.coerce.number().int().positive().optional(),
+  })
+  .strict();
+
+export type ContentHealthCountsQuery = z.infer<
+  typeof contentHealthCountsQuerySchema
+>;
+
 const contentHealthSignalItemSchema = z.object({
   id: z.number().int(),
   title: z.string(),
