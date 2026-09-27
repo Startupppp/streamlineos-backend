@@ -35,6 +35,7 @@ export const listRisksQuerySchema = z.object({
   impact: z.enum(riskImpactEnum.enumValues).optional(),
   ownerId: z.string().min(1).optional(),
   cursor: idCursorSchema,
+  search: z.string().max(200).optional(),
 }).strict();
 
 export const createDecisionSchema = z.object({

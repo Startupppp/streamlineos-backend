@@ -6980,6 +6980,34 @@
       "when": 1803093613725,
       "tag": "1377_mention_search_index",
       "breakpoints": true
+    },
+    {
+      "idx": 1125,
+      "version": "7",
+      "when": 1803093614725,
+      "tag": "1371_cycles_active_and_overlap_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 1126,
+      "version": "7",
+      "when": 1803093615725,
+      "tag": "1372_okr_links_exclusive_arc",
+      "breakpoints": true
+    },
+    {
+      "idx": 1127,
+      "version": "7",
+      "when": 1803093616725,
+      "tag": "1380_build_soft_delete_partial_unique_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1128,
+      "version": "7",
+      "when": 1803093617725,
+      "tag": "1381_build_tickets_project_id_not_null",
+      "breakpoints": true
     }
   ]
 }

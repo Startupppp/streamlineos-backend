@@ -1,4 +1,5 @@
 import { ProjectsActivityFeedService } from "./projects-activity-feed.service";
+import { decodeCursor } from "../../../common/pagination/cursor";
 import type { Db } from "../../../db/drizzle.module";
 
 function hasColumnName(node: unknown, name: string): boolean {
@@ -209,5 +210,114 @@ describe("ProjectsActivityFeedService — tenant isolation", () => {
     expect(result.data).toHaveLength(2);
     expect(result.pagination.hasMore).toBe(true);
     expect(result.pagination.nextCursor).not.toBeNull();
+  });
+});
+
+function makeActivityRow(id: number) {
+  return {
+    id,
+    action: "comment_added" as const,
+    fromValue: null,
+    toValue: null,
+    createdAt: new Date(),
+    userMembershipId: null,
+    ticketId: TICKET_ID,
+    ticketTitle: "T",
+    ticketNumber: 1,
+    projectKey: PROJECT_KEY,
+    personUserId: null,
+    memberUserId: null,
+    displayName: null,
+    firstName: null,
+    lastName: null,
+    avatarUrl: null,
+    accountName: null,
+    email: null,
+    userImage: null,
+  };
+}
+
+describe("ProjectsActivityFeedService — cursor paging yields each entry exactly once (ticket 17)", () => {
+  it("nextCursor encodes the id of the last returned row so the next call knows the exact position to continue from", async () => {
+    const rows = [makeActivityRow(10), makeActivityRow(9), makeActivityRow(8)];
+    const db = makeDb(true, rows);
+    const svc = new ProjectsActivityFeedService(db);
+
+    const page1 = await svc.getProjectActivity(actor, PROJECT_ID, { limit: 2 });
+
+    expect(page1.data.map((r) => r.id)).toEqual([10, 9]);
+    expect(page1.pagination.hasMore).toBe(true);
+    expect(page1.pagination.nextCursor).not.toBeNull();
+
+    const position = decodeCursor(page1.pagination.nextCursor!);
+    expect(position?.sortValue).toBe("9");
+  });
+
+  it("page 2 WHERE clause contains an id predicate when a cursor is supplied so the boundary row is excluded from the following page", async () => {
+    const rows1 = [makeActivityRow(10), makeActivityRow(9), makeActivityRow(8)];
+    const db1 = makeDb(true, rows1);
+    const svc1 = new ProjectsActivityFeedService(db1);
+    const page1 = await svc1.getProjectActivity(actor, PROJECT_ID, { limit: 2 });
+
+    const cursor = page1.pagination.nextCursor;
+    expect(cursor).not.toBeNull();
+
+    let capturedWherePage2: unknown;
+    const limitMock2 = jest.fn().mockResolvedValue([makeActivityRow(8)]);
+    const orderByMock2 = jest
+      .fn()
+      .mockReturnValue({ limit: limitMock2 });
+    const whereMock2 = jest.fn().mockImplementation((cond: unknown) => {
+      capturedWherePage2 = cond;
+      return { orderBy: orderByMock2 };
+    });
+    const lj3 = jest.fn().mockReturnValue({ where: whereMock2 });
+    const lj2 = jest.fn().mockReturnValue({ leftJoin: lj3 });
+    const lj1 = jest.fn().mockReturnValue({ leftJoin: lj2 });
+    const ij2 = jest.fn().mockReturnValue({ leftJoin: lj1 });
+    const ij1 = jest.fn().mockReturnValue({ innerJoin: ij2 });
+    const fromMock2 = jest.fn().mockReturnValue({ innerJoin: ij1 });
+    const db2 = {
+      query: {
+        projects: {
+          findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }),
+        },
+      },
+      select: jest.fn().mockReturnValue({ from: fromMock2 }),
+    } as unknown as Db;
+
+    const svc2 = new ProjectsActivityFeedService(db2);
+    await svc2.getProjectActivity(actor, PROJECT_ID, {
+      limit: 2,
+      cursor: cursor!,
+    });
+
+    expect(capturedWherePage2).toBeDefined();
+    expect(hasColumnName(capturedWherePage2, "id")).toBe(true);
+  });
+
+  it("row ids from page 1 are all absent from page 2 when the cursor from page 1 is passed so the keyset is a strict partition with no duplicates", async () => {
+    const rows1 = [makeActivityRow(10), makeActivityRow(9), makeActivityRow(8)];
+    const db1 = makeDb(true, rows1);
+    const svc1 = new ProjectsActivityFeedService(db1);
+    const page1 = await svc1.getProjectActivity(actor, PROJECT_ID, { limit: 2 });
+
+    expect(page1.data.map((r) => r.id)).toEqual([10, 9]);
+
+    const cursor = page1.pagination.nextCursor!;
+    const position = decodeCursor(cursor);
+    expect(Number(position?.sortValue)).toBe(9);
+
+    const rows2 = [makeActivityRow(8), makeActivityRow(7)];
+    const db2 = makeDb(true, rows2);
+    const svc2 = new ProjectsActivityFeedService(db2);
+    const page2 = await svc2.getProjectActivity(actor, PROJECT_ID, {
+      limit: 2,
+      cursor,
+    });
+
+    const page1Ids = new Set(page1.data.map((r) => r.id));
+    const page2Ids = page2.data.map((r) => r.id);
+    expect(page2Ids.every((id) => !page1Ids.has(id))).toBe(true);
   });
 });

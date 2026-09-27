@@ -1,0 +1,10 @@
+{
+  "note": "Verdict counts for Build-module authorization census. VULNERABLE and NEEDS-REVIEW may only decrease; CLOSED and VERIFIED may only increase. Update this file when a lane converts a handler. Measured 2026-09-27.",
+  "measured": "2026-09-27",
+  "counts": {
+    "VULNERABLE": 0,
+    "NEEDS-REVIEW": 0,
+    "CLOSED": 42,
+    "VERIFIED": 283
+  }
+}

@@ -13,9 +13,8 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
-  projectMembers,
-  projectTeamAssignments,
   organizationMembers,
+  projectTeamAssignments,
   projects,
   ticketAssignees,
   ticketLabelMappings,
@@ -28,6 +27,8 @@ import {
   workItemRelations,
   users,
 } from "../../../db/schema";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { reachableProjectsSql } from "../reachability/project-reachability";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -59,22 +60,6 @@ type ProjectStatusCount = {
   status: string;
   count: number;
 };
-
-export function memberProjectIdsQuery(db: Db, orgId: string, userId: string) {
-  return db
-    .select({ projectId: projectMembers.projectId })
-    .from(projectMembers)
-    .innerJoin(
-      organizationMembers,
-      and(
-        eq(organizationMembers.id, projectMembers.membershipId),
-        eq(organizationMembers.orgId, projectMembers.orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-    )
-    .where(eq(projectMembers.orgId, orgId));
-}
 
 export function allCountByStatusQuery(db: Db, where: SQL<unknown> | undefined) {
   return db
@@ -162,22 +147,14 @@ export class ProjectsWorkQueryService {
         conditions.push(inArray(tickets.projectId, filterProjectIds));
       }
     } else {
-      const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
-      const memberProjectIds = memberRows.map((r) => r.projectId);
-      if (memberProjectIds.length === 0) {
+      const membershipId = actingMembershipId(u.principal);
+      if (membershipId === null) {
         return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
       }
-
-      const allowedProjectIds =
-        filterProjectIds && filterProjectIds.length > 0
-          ? filterProjectIds.filter((id) => memberProjectIds.includes(id))
-          : memberProjectIds;
-
-      if (allowedProjectIds.length === 0) {
-        return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
+      conditions.push(reachableProjectsSql(u.orgId, membershipId));
+      if (filterProjectIds && filterProjectIds.length > 0) {
+        conditions.push(inArray(tickets.projectId, filterProjectIds));
       }
-
-      conditions.push(inArray(tickets.projectId, allowedProjectIds));
     }
 
     if (scope === "created") {
@@ -402,18 +379,12 @@ export class ProjectsWorkQueryService {
       isNull(tickets.deletedAt),
     ];
 
-    const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
-    const memberProjectIds = memberRows.map((r) => r.projectId);
-    if (memberProjectIds.length === 0) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
-
-    const allowedProjectIds =
-      opts.projectIds && opts.projectIds.length > 0
-        ? opts.projectIds.filter((id) => memberProjectIds.includes(id))
-        : memberProjectIds;
-
-    if (allowedProjectIds.length === 0) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
-
-    baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId === null) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
+    baseConditions.push(reachableProjectsSql(u.orgId, membershipId));
+    if (opts.projectIds && opts.projectIds.length > 0) {
+      baseConditions.push(inArray(tickets.projectId, opts.projectIds));
+    }
 
     const where = and(...baseConditions);
     const statusRows =
@@ -508,18 +479,12 @@ export class ProjectsWorkQueryService {
       isNull(tickets.deletedAt),
     ];
 
-    const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
-    const memberProjectIds = memberRows.map((r) => r.projectId);
-    if (memberProjectIds.length === 0) return { byStatus: {}, total: 0 };
-
-    const allowedProjectIds =
-      opts.projectIds && opts.projectIds.length > 0
-        ? opts.projectIds.filter((id) => memberProjectIds.includes(id))
-        : memberProjectIds;
-
-    if (allowedProjectIds.length === 0) return { byStatus: {}, total: 0 };
-
-    baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId === null) return { byStatus: {}, total: 0 };
+    baseConditions.push(reachableProjectsSql(u.orgId, membershipId));
+    if (opts.projectIds && opts.projectIds.length > 0) {
+      baseConditions.push(inArray(tickets.projectId, opts.projectIds));
+    }
 
     if (opts.scope === "all") {
       if (opts.assigneeId !== undefined) {

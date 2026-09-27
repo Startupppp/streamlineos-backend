@@ -1,10 +1,10 @@
 {
   "note": "Authorization-gated handlers with NO attributable deny test. The ratchet is the count measured when this gate was written; it is a floor to walk down, never a score to hold. It may only go DOWN. A new gated handler that lands without a deny test pushes the count above it and fails CI.",
   "measured": "2026-09-12",
-  "gatedHandlers": 3426,
+  "gatedHandlers": 3425,
   "covered": 1634,
-  "uncovered": 1792,
-  "uncoveredRatchet": 1792,
+  "uncovered": 1791,
+  "uncoveredRatchet": 1791,
   "uncoveredHandlers": [
     "DELETE /access/delegations/*  DelegationsController.revoke  (src/modules/delegations/delegations.controller.ts)",
     "DELETE /blog/admin/categories/*  BlogAdminController.deleteCategory  (src/modules/blog/blog-admin.controller.ts)",
@@ -264,7 +264,6 @@
     "GET /build/labels  ProjectsController.listLabels  (src/modules/build/core/projects.controller.ts)",
     "GET /build/portal/projects/*/change-requests  ClientPortalController.listPortalChangeRequests  (src/modules/build/client-portal/client-portal.controller.ts)",
     "GET /build/portal/projects/*/overview  ClientPortalController.getProjectOverview  (src/modules/build/client-portal/client-portal.controller.ts)",
-    "GET /build/resource-allocation  ProjectsReportsController.resourceAllocation  (src/modules/build/core/projects-reports.controller.ts)",
     "GET /build/search/tickets  ProjectsTicketsController.searchTickets  (src/modules/build/core/projects-tickets.controller.ts)",
     "GET /build/teams  TeamsController.listTeams  (src/modules/build/teams/teams.controller.ts)",
     "GET /build/templates  ProjectsTemplatesController.listTemplates  (src/modules/build/core/projects-templates.controller.ts)",

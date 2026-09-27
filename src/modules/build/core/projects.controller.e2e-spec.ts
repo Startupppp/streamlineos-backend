@@ -58,7 +58,6 @@ describe("Projects auth/RBAC (e2e)", () => {
     ["post", "/build/from-deal"],
     ["get", "/build/labels"],
     ["post", "/build/labels"],
-    ["get", "/build/resource-allocation"],
     ["get", "/build/1"],
     ["patch", "/build/1"],
     ["delete", "/build/1"],

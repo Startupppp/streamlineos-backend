@@ -95,7 +95,6 @@ export class KbAskController {
   @Validate({ body: askSchema })
   @ResponseSchema(kbAskAnswerSchema)
   async askQuestion(@Body() body: AskInput, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    const membershipId = actingMembershipId(u.principal) ?? 0;
     const conversationId =
       body.conversationId ??
       (
@@ -103,9 +102,7 @@ export class KbAskController {
           this.db,
           () =>
             this.history.createConversation(
-              u.orgId,
-              u.userId,
-              membershipId,
+              u,
               body.question.substring(0, 60).trim(),
             ),
           { orgId: u.orgId },
@@ -117,11 +114,9 @@ export class KbAskController {
       await runInTenantTransaction(
         this.db,
         async () => {
-          await this.history.appendToConversation(u.orgId, u.userId, membershipId, conversationId, "user", body.question);
+          await this.history.appendToConversation(u, conversationId, "user", body.question);
           await this.history.appendToConversation(
-            u.orgId,
-            u.userId,
-            membershipId,
+            u,
             conversationId,
             "assistant",
             result.answer,
@@ -158,7 +153,7 @@ export class KbAskController {
       const membershipId = actingMembershipId(u.principal) ?? 0;
       if (body.conversationId !== undefined)
         await runInTenantTransaction(this.db, () => this.history.listMessages(
-          u.orgId, u.userId, membershipId, body.conversationId ?? 0, { limit: 1 },
+          u, body.conversationId ?? 0, { limit: 1 },
         ), { orgId: u.orgId });
       const claim = await runInTenantTransaction(this.db, () => claimAiStreamCommand(this.fences, {
         key: req.headers["idempotency-key"], command: "kb.ask.stream",
@@ -168,7 +163,7 @@ export class KbAskController {
       if (claim.kind === "replay") {
         const data = kbAskResultSchema.parse(claim.data);
         await runInTenantTransaction(this.db, async () => {
-          await this.history.listMessages(u.orgId, u.userId, membershipId, data.conversationId, { limit: 1 });
+          await this.history.listMessages(u, data.conversationId, { limit: 1 });
           await this.askCitations.assertReplayCitations(u, data.citations);
         }, { orgId: u.orgId });
         return completedKbStream(data);
@@ -178,10 +173,10 @@ export class KbAskController {
         runInTenantTransaction(this.db, async () => {
           signal.throwIfAborted();
           const conversationId = body.conversationId ?? (await this.history.createConversation(
-            u.orgId, u.userId, membershipId, body.question.substring(0, 60).trim(),
+            u, body.question.substring(0, 60).trim(),
           )).id;
-          await this.history.appendToConversation(u.orgId, u.userId, membershipId, conversationId, "user", body.question);
-          await this.history.appendToConversation(u.orgId, u.userId, membershipId, conversationId, "assistant", answer, citations);
+          await this.history.appendToConversation(u, conversationId, "user", body.question);
+          await this.history.appendToConversation(u, conversationId, "assistant", answer, citations);
           signal.throwIfAborted();
           const data = { answer, citations, hasContext: result.hasContext, aiUsage, conversationId };
           await completeAiStreamCommand(this.fences, claim.fenceId, u.orgId, data);
@@ -205,7 +200,7 @@ export class KbAskController {
   async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = chatHistoryQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.history.list(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, {
+    return this.history.list(u, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
     });
@@ -215,7 +210,7 @@ export class KbAskController {
   @RequirePermission("kb:pages:view")
   @ResponseSchema(kbChatSuccessSchema)
   async clearHistory(@CurrentUser() u: CurrentUserContext): Promise<{ success: boolean }> {
-    await this.history.clear(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0);
+    await this.history.clear(u);
     return { success: true };
   }
 

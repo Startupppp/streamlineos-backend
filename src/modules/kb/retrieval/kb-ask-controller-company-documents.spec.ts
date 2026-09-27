@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { KbAskController } from "./kb-ask.controller";
 import { KbAskService } from "./kb-ask.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
+import { KbAskCitationService } from "./kb-ask-citations.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -25,12 +26,14 @@ describe("POST /kb/ask hands the assistant the company-documents source, like th
     const answer = { answer: "Ten days.", citations: [{ kind: "document", id: 9, title: "Leave Policy" }] };
     const ask = { ask: jest.fn().mockResolvedValue(answer) };
     const history = { createConversation: jest.fn().mockResolvedValue({ id: 5 }), appendToConversation: jest.fn().mockResolvedValue(undefined) };
+    const citationFilter = { filterStoredCitations: jest.fn().mockResolvedValue([]) };
     const module = await Test.createTestingModule({
       providers: [
         KbAskController,
         { provide: DRIZZLE, useValue: {} },
         { provide: KbAskService, useValue: ask },
         { provide: KbChatHistoryService, useValue: history },
+        { provide: KbAskCitationService, useValue: citationFilter },
         { provide: COMMAND_FENCE_STORE, useValue: new InMemoryCommandFenceStore() },
       ],
     })
@@ -44,6 +47,6 @@ describe("POST /kb/ask hands the assistant the company-documents source, like th
 
     expect(ask.ask).toHaveBeenCalledWith(user, expect.objectContaining({ question: "How many leave days?" }), { companyDocuments: true });
     expect(result).toMatchObject({ answer: "Ten days.", conversationId: 5 });
-    expect(history.appendToConversation).toHaveBeenCalledWith("org-a", "user-a", 7, 5, "assistant", "Ten days.", answer.citations);
+    expect(history.appendToConversation).toHaveBeenCalledWith(user, 5, "assistant", "Ten days.", answer.citations);
   });
 });

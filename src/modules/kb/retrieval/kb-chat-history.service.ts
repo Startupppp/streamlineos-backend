@@ -8,8 +8,24 @@ import {
   type KbChatRole,
   type KbChatCitation,
 } from "../../../db/schema";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { KbAskCitationService } from "./kb-ask-citations.service";
 
 const MAX_PAGE = 100;
+
+function citationKey(c: KbChatCitation): string {
+  switch (c.kind) {
+    case "article":
+      return `a:${c.articleId}`;
+    case "page":
+      return `p:${c.pageId}`;
+    case "source":
+      return `s:${c.sourceId}`;
+    case "document":
+      return `d:${c.linkedDocumentId}`;
+  }
+}
 
 export interface KbChatHistoryMessage {
   id: number;
@@ -38,20 +54,22 @@ export interface KbConversationListPage {
 
 @Injectable()
 export class KbChatHistoryService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly citationFilter: KbAskCitationService,
+  ) {}
 
   async append(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
+    user: CurrentUserContext,
     role: KbChatRole,
     content: string,
     citations?: KbChatCitation[] | null,
   ): Promise<void> {
     const trimmed = content.trim();
     if (!trimmed) return;
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     await this.db.insert(kbChatMessages).values({
-      orgId,
+      orgId: user.orgId,
       userMembershipId: membershipId,
       role,
       content: trimmed,
@@ -60,11 +78,11 @@ export class KbChatHistoryService {
   }
 
   async list(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
+    user: CurrentUserContext,
     opts: { cursor?: number; limit: number },
   ): Promise<KbChatHistoryPage> {
+    const { orgId } = user;
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const limit = Math.min(Math.max(opts.limit, 1), MAX_PAGE);
     const rows = await this.db
       .select({
@@ -90,39 +108,47 @@ export class KbChatHistoryService {
     const last = page[page.length - 1];
     const nextCursor = hasMore && last ? last.id : null;
 
+    const allCitations = page.flatMap((r) => r.citations ?? []);
+    const visible = await this.citationFilter.filterStoredCitations(
+      user,
+      allCitations,
+    );
+    const visibleKeys = new Set(visible.map(citationKey));
+
     return {
-      messages: page.map((r) => ({
-        id: r.id,
-        role: r.role,
-        content: r.content,
-        citations: r.citations ?? null,
-        createdAt: r.createdAt.toISOString(),
-      })),
+      messages: page.map((r) => {
+        const raw = r.citations ?? [];
+        const filtered = raw.filter((c) => visibleKeys.has(citationKey(c)));
+        return {
+          id: r.id,
+          role: r.role,
+          content: r.content,
+          citations: filtered.length > 0 ? filtered : null,
+          createdAt: r.createdAt.toISOString(),
+        };
+      }),
       nextCursor,
     };
   }
 
-  async clear(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
-  ): Promise<void> {
+  async clear(user: CurrentUserContext): Promise<void> {
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     await this.db
       .delete(kbChatMessages)
       .where(
         and(
-          eq(kbChatMessages.orgId, orgId),
+          eq(kbChatMessages.orgId, user.orgId),
           eq(kbChatMessages.userMembershipId, membershipId),
         ),
       );
   }
 
   async listConversations(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
+    user: CurrentUserContext,
     opts: { cursor?: number; limit: number },
   ): Promise<KbConversationListPage> {
+    const { orgId } = user;
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const limit = Math.min(Math.max(opts.limit, 1), 50);
 
     let cursorRow: { updatedAt: Date; id: number } | undefined;
@@ -193,15 +219,14 @@ export class KbChatHistoryService {
   }
 
   async createConversation(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
+    user: CurrentUserContext,
     title?: string,
   ): Promise<KbConversation> {
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const rows = await this.db
       .insert(kbChatConversations)
       .values({
-        orgId,
+        orgId: user.orgId,
         userMembershipId: membershipId,
         title: title ?? null,
       })
@@ -217,12 +242,11 @@ export class KbChatHistoryService {
   }
 
   async renameConversation(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
+    user: CurrentUserContext,
     id: number,
     title: string,
   ): Promise<KbConversation> {
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const [existing] = await this.db
       .select({
         id: kbChatConversations.id,
@@ -232,7 +256,7 @@ export class KbChatHistoryService {
       .where(
         and(
           eq(kbChatConversations.id, id),
-          eq(kbChatConversations.orgId, orgId),
+          eq(kbChatConversations.orgId, user.orgId),
           eq(kbChatConversations.userMembershipId, membershipId),
         ),
       )
@@ -247,7 +271,7 @@ export class KbChatHistoryService {
       .where(
         and(
           eq(kbChatConversations.id, id),
-          eq(kbChatConversations.orgId, orgId),
+          eq(kbChatConversations.orgId, user.orgId),
         ),
       );
 
@@ -260,18 +284,17 @@ export class KbChatHistoryService {
   }
 
   async deleteConversation(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
+    user: CurrentUserContext,
     id: number,
   ): Promise<void> {
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const [existing] = await this.db
       .select({ id: kbChatConversations.id })
       .from(kbChatConversations)
       .where(
         and(
           eq(kbChatConversations.id, id),
-          eq(kbChatConversations.orgId, orgId),
+          eq(kbChatConversations.orgId, user.orgId),
           eq(kbChatConversations.userMembershipId, membershipId),
         ),
       )
@@ -284,18 +307,18 @@ export class KbChatHistoryService {
       .where(
         and(
           eq(kbChatConversations.id, id),
-          eq(kbChatConversations.orgId, orgId),
+          eq(kbChatConversations.orgId, user.orgId),
         ),
       );
   }
 
   async listMessages(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
+    user: CurrentUserContext,
     conversationId: number,
     opts: { cursor?: number; limit: number },
   ): Promise<KbChatHistoryPage> {
+    const { orgId } = user;
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const limit = Math.min(Math.max(opts.limit, 1), MAX_PAGE);
 
     const [conv] = await this.db
@@ -336,27 +359,38 @@ export class KbChatHistoryService {
     const last = page[page.length - 1];
     const nextCursor = hasMore && last ? last.id : null;
 
+    const allCitations = page.flatMap((r) => r.citations ?? []);
+    const visible = await this.citationFilter.filterStoredCitations(
+      user,
+      allCitations,
+    );
+    const visibleKeys = new Set(visible.map(citationKey));
+
     return {
-      messages: page.map((r) => ({
-        id: r.id,
-        role: r.role,
-        content: r.content,
-        citations: r.citations ?? null,
-        createdAt: r.createdAt.toISOString(),
-      })),
+      messages: page.map((r) => {
+        const raw = r.citations ?? [];
+        const filtered = raw.filter((c) => visibleKeys.has(citationKey(c)));
+        return {
+          id: r.id,
+          role: r.role,
+          content: r.content,
+          citations: filtered.length > 0 ? filtered : null,
+          createdAt: r.createdAt.toISOString(),
+        };
+      }),
       nextCursor,
     };
   }
 
   async appendToConversation(
-    orgId: string,
-    _userId: string,
-    membershipId: number,
+    user: CurrentUserContext,
     conversationId: number,
     role: KbChatRole,
     content: string,
     citations?: KbChatCitation[] | null,
   ): Promise<void> {
+    const { orgId } = user;
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const trimmed = content.trim();
     if (!trimmed) return;
 

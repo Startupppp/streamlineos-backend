@@ -134,6 +134,9 @@ export class RisksService {
           query.probability ? eq(projectRisks.probability, query.probability) : undefined,
           query.impact ? eq(projectRisks.impact, query.impact) : undefined,
           query.ownerId ? eq(projectRisks.ownerId, query.ownerId) : undefined,
+          query.search
+            ? sql`to_tsvector('english', coalesce(${projectRisks.title}, '') || ' ' || coalesce(${projectRisks.description}, '')) @@ plainto_tsquery('english', ${query.search})`
+            : undefined,
           query.cursor !== undefined ? lt(projectRisks.id, query.cursor) : undefined,
         ),
       )

@@ -1,16 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { cycles, organizationMembers, projectStatuses, projectTeamMembers, tickets, timesheets, users } from "../../../db/schema";
+import { cycles, organizationMembers, projectStatuses, projectTeamMembers, tickets, timesheets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { assertProjectInOrg } from "./project-access";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
-  resourceAllocationCursorPositionSchema,
   type ProjectAnalyticsQuery,
-  type ResourceAllocationQuery,
 } from "./dto/analytics.schemas";
 
 @Injectable()
@@ -337,117 +334,4 @@ export class ProjectsAnalyticsService {
     };
   }
 
-  async resourceAllocation(orgId: string, query: ResourceAllocationQuery) {
-    const { limit } = query;
-    const decoded = decodeCursor(query.cursor);
-    const position = decoded === null ? null : resourceAllocationCursorPositionSchema.parse(decoded);
-
-    const openAssignments = sql`
-      SELECT t.assignee_membership_id AS membership_id, t.id AS ticket_id, t.project_id
-      FROM build.tickets t
-      JOIN build.projects p ON p.id = t.project_id AND p.org_id = t.org_id
-        AND p.status = 'ACTIVE' AND p.deleted_at IS NULL
-      WHERE t.org_id = ${orgId}
-        AND t.deleted_at IS NULL
-        AND t.status NOT IN ('DONE', 'CANCELLED', 'CLOSED')
-        AND t.assignee_membership_id IS NOT NULL
-      UNION
-      SELECT ta.membership_id, ta.ticket_id, t2.project_id
-      FROM build.ticket_assignees ta
-      JOIN build.tickets t2 ON t2.id = ta.ticket_id AND t2.org_id = ta.org_id
-      JOIN build.projects p2 ON p2.id = t2.project_id AND p2.org_id = t2.org_id
-        AND p2.status = 'ACTIVE' AND p2.deleted_at IS NULL
-      WHERE ta.org_id = ${orgId}
-        AND t2.deleted_at IS NULL
-        AND t2.status NOT IN ('DONE', 'CANCELLED', 'CLOSED')
-    `;
-
-    const openTickets = sql`COUNT(DISTINCT combined.ticket_id)`;
-    const cursorPredicate = position
-      ? sql`HAVING ${openTickets} < ${position.totalOpen}
-             OR (${openTickets} = ${position.totalOpen} AND om.user_id > ${position.id})`
-      : sql``;
-
-    const assigneeRows = await this.db.execute(sql`
-      SELECT om.user_id AS "assigneeId", ${openTickets}::int AS "totalOpen"
-      FROM (${openAssignments}) combined
-      JOIN organization_members om
-        ON om.id = combined.membership_id AND om.org_id = ${orgId}
-      GROUP BY om.user_id
-      ${cursorPredicate}
-      ORDER BY ${openTickets} DESC, om.user_id ASC
-      LIMIT ${limit + 1}
-    `);
-
-    const page = buildCursorPage(
-      assigneeRows
-        .map((row) => ({ id: String(row["assigneeId"]), totalOpen: Number(row["totalOpen"]) }))
-        .filter((row) => row.id !== "null"),
-      limit,
-      (row) => ({ sortValue: String(row.totalOpen), id: row.id }),
-    );
-
-    if (page.data.length === 0) return { data: [], pagination: page.pagination };
-
-    const pageUserIds = page.data.map((row) => row.id);
-    const pageUserIdList = sql.join(
-      pageUserIds.map((id) => sql`${id}`),
-      sql`, `,
-    );
-
-    const [breakdownRows, members] = await Promise.all([
-      this.db.execute(sql`
-        SELECT
-          om.user_id AS "assigneeId",
-          combined.project_id AS "projectId",
-          p.name AS "projectName",
-          p."key" AS "projectKey",
-          COUNT(DISTINCT combined.ticket_id)::int AS open
-        FROM (${openAssignments}) combined
-        JOIN organization_members om
-          ON om.id = combined.membership_id AND om.org_id = ${orgId}
-        JOIN build.projects p ON p.id = combined.project_id AND p.org_id = ${orgId}
-        WHERE om.user_id IN (${pageUserIdList})
-        GROUP BY om.user_id, combined.project_id, p.name, p."key"
-        ORDER BY COUNT(DISTINCT combined.ticket_id) DESC, combined.project_id ASC
-      `),
-      this.db.query.users.findMany({
-        where: inArray(users.id, pageUserIds),
-        columns: { id: true, name: true, email: true, image: true },
-        limit: pageUserIds.length,
-      }),
-    ]);
-
-    const memberMap = new Map(members.map((m) => [m.id, m]));
-    const breakdownByUser = new Map<
-      string,
-      { projectId: number; projectName: string; projectKey: string; open: number }[]
-    >();
-    for (const row of breakdownRows) {
-      const assigneeId = row["assigneeId"];
-      if (typeof assigneeId !== "string") continue;
-      const entries = breakdownByUser.get(assigneeId) ?? [];
-      entries.push({
-        projectId: Number(row["projectId"]),
-        projectName: String(row["projectName"]),
-        projectKey: String(row["projectKey"]),
-        open: Number(row["open"]),
-      });
-      breakdownByUser.set(assigneeId, entries);
-    }
-
-    const data = page.data.flatMap((row) => {
-      const user = memberMap.get(row.id);
-      if (!user) return [];
-      return [
-        {
-          user,
-          totalOpen: row.totalOpen,
-          byProject: breakdownByUser.get(row.id) ?? [],
-        },
-      ];
-    });
-
-    return { data, pagination: page.pagination };
-  }
 }

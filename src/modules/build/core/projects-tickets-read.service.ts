@@ -1,5 +1,4 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { actingMembershipId } from "../../../common/auth/principal";
 import {
   and,
   asc,
@@ -16,11 +15,6 @@ import {
 } from "drizzle-orm";
 import { buildAssigneeFilter } from "./assignee-filter";
 import {
-  organizationMembers,
-  projectMembers,
-  projects,
-  projectTeamAssignments,
-  projectTeamMembers,
   tickets,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -32,6 +26,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { TicketsListQuery } from "./dto/projects.schemas";
 import { queryTickets } from "./projects-tickets-read.query";
+import { resolveProjectAccess } from "./project-access";
+import { ProjectAccessCache } from "../reachability/project-access-cache";
 
 const TRIGRAM_MIN_TERM_LENGTH = 3;
 
@@ -114,75 +110,6 @@ export class ProjectsTicketsReadService {
     private readonly access: AccessService,
   ) {}
 
-  async checkProjectAccess(
-    orgId: string,
-    userId: string,
-    projectId: number,
-    membershipId: number | null = null,
-  ): Promise<{ hasAccess: boolean; role: string | null }> {
-    const [perms, project] = await Promise.all([
-      this.access.resolveUserPermissions(orgId, userId),
-      this.db.query.projects.findFirst({
-        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-        columns: { managerMembershipId: true },
-      }),
-    ]);
-    if (!project) return { hasAccess: false, role: null };
-    if (perms.has("build:manage")) return { hasAccess: true, role: "OWNER" };
-    if (membershipId !== null && project.managerMembershipId === membershipId)
-      return { hasAccess: true, role: "MANAGER" };
-    const membership = await this.db
-      .select({ id: projectMembers.id, role: projectMembers.role })
-      .from(projectMembers)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.id, projectMembers.membershipId),
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .where(
-        and(
-          eq(projectMembers.projectId, projectId),
-          eq(projectMembers.orgId, orgId),
-        ),
-      )
-      .limit(1);
-    if (membership.length > 0) {
-      return { hasAccess: true, role: membership[0]?.role ?? null };
-    }
-    const teamAccess = await this.db
-      .select({ id: projectTeamMembers.id })
-      .from(projectTeamAssignments)
-      .innerJoin(
-        projectTeamMembers,
-        and(
-          eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
-          eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
-        ),
-      )
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.id, projectTeamMembers.membershipId),
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .where(
-        and(
-          eq(projectTeamAssignments.projectId, projectId),
-          eq(projectTeamAssignments.orgId, orgId),
-        ),
-      )
-      .limit(1);
-    if (teamAccess.length > 0) return { hasAccess: true, role: "MEMBER" };
-    return { hasAccess: false, role: null };
-  }
-
   private async resolveTitleMatch(term: string): Promise<SQL<unknown>> {
     const like = sql`${tickets.title} ILIKE ${"%" + term + "%"}`;
     if (term.length < TRIGRAM_MIN_TERM_LENGTH) return like;
@@ -199,12 +126,10 @@ export class ProjectsTicketsReadService {
     u: CurrentUserContext,
     projectId: number,
     query: TicketsListQuery,
+    cache: ProjectAccessCache = new ProjectAccessCache(),
   ) {
-    const { hasAccess } = await this.checkProjectAccess(
-      u.orgId,
-      u.userId,
-      projectId,
-      actingMembershipId(u.principal),
+    const { hasAccess } = await cache.get(u.orgId, u.userId, projectId, () =>
+      resolveProjectAccess(this.db, this.access, u, projectId),
     );
     if (!hasAccess) throw new NotFoundException("Not found");
 
@@ -392,12 +317,10 @@ export class ProjectsTicketsReadService {
     u: CurrentUserContext,
     projectId: number,
     query: TicketsListQuery = { limit: 50, orderBy: "rank" },
+    cache: ProjectAccessCache = new ProjectAccessCache(),
   ): Promise<Record<string, number>> {
-    const { hasAccess } = await this.checkProjectAccess(
-      u.orgId,
-      u.userId,
-      projectId,
-      actingMembershipId(u.principal),
+    const { hasAccess } = await cache.get(u.orgId, u.userId, projectId, () =>
+      resolveProjectAccess(this.db, this.access, u, projectId),
     );
     if (!hasAccess) throw new NotFoundException("Not found");
 

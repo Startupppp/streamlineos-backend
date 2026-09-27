@@ -492,6 +492,34 @@ function makeRiskRow(id: number): Record<string, unknown> {
   };
 }
 
+function hasOwnPropStr<K extends string>(obj: object, key: K): obj is Record<K, unknown> {
+  return key in obj;
+}
+
+function collectParamValues(node: unknown, acc: unknown[] = []): unknown[] {
+  if (node === null || node === undefined) return acc;
+  if (typeof node === "string" || typeof node === "number" || typeof node === "boolean") {
+    acc.push(node);
+    return acc;
+  }
+  if (typeof node !== "object") return acc;
+  if (Array.isArray(node)) {
+    for (const item of node) collectParamValues(item, acc);
+    return acc;
+  }
+  if (hasOwnPropStr(node, "encoder") && hasOwnPropStr(node, "value")) {
+    acc.push(node.value);
+    return acc;
+  }
+  if (hasOwnPropStr(node, "queryChunks")) {
+    const qc = node.queryChunks;
+    if (Array.isArray(qc)) {
+      for (const chunk of qc) collectParamValues(chunk, acc);
+    }
+  }
+  return acc;
+}
+
 describe("RisksService.listRisks — page 2 cursor returned by page 1 excludes all page-1 rows and no page-2 row is skipped", () => {
   const u = makeUser("org-1");
 
@@ -580,6 +608,72 @@ describe("DecisionsService.listDecisions — page 2 cursor returned by page 1 ex
     const page1Ids = new Set(page1.data.map((r) => r.id));
     expect(page2.data.every((r) => !page1Ids.has(r.id))).toBe(true);
     expect(page2.data.every((r) => r.id < (page1.nextCursor ?? 0))).toBe(true);
+  });
+});
+
+describe("RisksService.listRisks — server-side full-text search predicate", () => {
+  const u = makeUser("org-1");
+
+  function setupMocks(mockDb: MockDb, riskChain: ReturnType<typeof makeSelectChain>) {
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(riskChain);
+  }
+
+  it("includes the search term as a WHERE param so the DB filters rather than the caller", async () => {
+    const mockDb = makeMockDb();
+    const riskChain = makeSelectChain([makeRiskRow(150)]);
+    setupMocks(mockDb, riskChain);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    const result = await svc.listRisks(u, 1, { search: "vendor" });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]!.id).toBe(150);
+    const whereArg: unknown = riskChain.where.mock.calls[0]?.[0];
+    expect(collectParamValues(whereArg)).toContain("vendor");
+  });
+
+  it("does not include a search param for 'vendor' in WHERE when no search is provided", async () => {
+    const mockDb = makeMockDb();
+    const riskChain = makeSelectChain([]);
+    setupMocks(mockDb, riskChain);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await svc.listRisks(u, 1, {});
+
+    const whereArg: unknown = riskChain.where.mock.calls[0]?.[0];
+    expect(collectParamValues(whereArg)).not.toContain("vendor");
+  });
+
+  it("search term and cursor are both forwarded as WHERE params so the two predicates compose", async () => {
+    const mockDb = makeMockDb();
+    const riskChain = makeSelectChain([]);
+    setupMocks(mockDb, riskChain);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await svc.listRisks(u, 1, { search: "vendor", cursor: 50 });
+
+    const whereArg: unknown = riskChain.where.mock.calls[0]?.[0];
+    const params = collectParamValues(whereArg);
+    expect(params).toContain("vendor");
+    expect(params).toContain(50);
+  });
+
+  it("orgId is always in WHERE alongside the search term so another tenant's matching risk is excluded", async () => {
+    const mockDb = makeMockDb();
+    const riskChain = makeSelectChain([]);
+    setupMocks(mockDb, riskChain);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await svc.listRisks(u, 1, { search: "supply chain" });
+
+    const whereArg: unknown = riskChain.where.mock.calls[0]?.[0];
+    const params = collectParamValues(whereArg);
+    expect(params).toContain("supply chain");
+    expect(params).toContain("org-1");
   });
 });
 

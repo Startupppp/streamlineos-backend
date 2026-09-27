@@ -10,7 +10,13 @@ import type { AccessService } from "../access/access.service";
 import type { MailService } from "../mail/mail.service";
 import type { BroadcastsService } from "./broadcasts.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { decodeInboxCursor, type InboxKind, type InboxSourcePosition } from "./dto/unified-inbox.schemas";
+import {
+  decodeInboxCursor,
+  encodeInboxCursor,
+  parseInboxCursor,
+  type InboxKind,
+  type InboxSourcePosition,
+} from "./dto/unified-inbox.schemas";
 import { fetchNotificationItems } from "./unified-inbox-sources";
 
 const ORG = "org-1";
@@ -254,6 +260,101 @@ async function scrollNotifications(seeds: ApprovalSeed[], limit: number, pages: 
 
   return delivered;
 }
+
+describe("67.69 — cursor boundary: malformed, invalid timestamp, incomplete pair, source error", () => {
+  function makeSvc(seeds: ApprovalSeed[]): UnifiedInboxService {
+    const db = makeApprovalDb(seeds);
+    return new UnifiedInboxService(
+      db,
+      makeAccess(),
+      makeMail(),
+      makeBroadcasts(),
+      new BuildApprovalsInboxService(db),
+      makeRegistry(),
+    );
+  }
+
+  it("parseInboxCursor returns ok:false with an actionable reason when the cursor is not valid JSON", () => {
+    const malformed = Buffer.from("not-valid-json", "utf8").toString("base64url");
+    const result = parseInboxCursor(malformed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/json/i);
+      expect(result.reason).toContain("resubmit without a cursor");
+    }
+  });
+
+  it("parseInboxCursor returns ok:false with an actionable reason when the cursor is valid base64 of non-object JSON", () => {
+    const notAnObject = Buffer.from(JSON.stringify([1, 2, 3]), "utf8").toString("base64url");
+    const result = parseInboxCursor(notAnObject);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("resubmit without a cursor");
+    }
+  });
+
+  it("approval source shows a cursor error and delivers no items when the cursor has an approval id but no timestamp", async () => {
+    const incompleteCursor = encodeInboxCursor({
+      n: null, nt: null, b: null, bt: null, m: null,
+      a: 30, at: null, ap: {},
+    });
+
+    const svc = makeSvc(NONMONOTONIC);
+    const result = await svc.list(
+      ORG, UID,
+      { limit: 5, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined, cursor: incompleteCursor },
+      makeUser(),
+    );
+
+    expect(result.items).toHaveLength(0);
+    const approvalSource = result.sources.find((s) => s.kind === "build_approval");
+    expect(approvalSource?.included).toBe(true);
+    expect(approvalSource?.available).toBe(false);
+    expect(approvalSource?.error).toContain("timestamp");
+    expect(approvalSource?.error).toContain("resubmit without a cursor");
+  });
+
+  it("approval source shows a cursor error and delivers no items when the cursor has an invalid timestamp string", async () => {
+    const invalidTsCursor = encodeInboxCursor({
+      n: null, nt: null, b: null, bt: null, m: null,
+      a: 30, at: "not-a-valid-timestamp", ap: {},
+    });
+
+    const svc = makeSvc(NONMONOTONIC);
+    const result = await svc.list(
+      ORG, UID,
+      { limit: 5, kinds: ["build_approval"], unreadOnly: false, eventKeys: undefined, cursor: invalidTsCursor },
+      makeUser(),
+    );
+
+    expect(result.items).toHaveLength(0);
+    const approvalSource = result.sources.find((s) => s.kind === "build_approval");
+    expect(approvalSource?.included).toBe(true);
+    expect(approvalSource?.available).toBe(false);
+    expect(approvalSource?.error).toContain("invalid timestamp");
+    expect(approvalSource?.error).toContain("resubmit without a cursor");
+  });
+
+  it("all sources show a cursor error when the cursor string is malformed JSON and no items are delivered", async () => {
+    const malformed = Buffer.from("not-valid-json", "utf8").toString("base64url");
+    const svc = makeSvc(NONMONOTONIC);
+
+    const result = await svc.list(
+      ORG, UID,
+      { limit: 5, kinds: ["build_approval", "notification"], unreadOnly: false, eventKeys: undefined, cursor: malformed },
+      makeUser(),
+    );
+
+    expect(result.items).toHaveLength(0);
+    expect(result.degraded).toBe(true);
+    const included = result.sources.filter((s) => s.included);
+    expect(included.length).toBeGreaterThan(0);
+    included.forEach((s) => {
+      expect(s.available).toBe(false);
+      expect(s.error).toContain("resubmit without a cursor");
+    });
+  });
+});
 
 describe("unified inbox — notification keyset on the same (created_at, id) key", () => {
   it("BITE: delivers every notification across a complete scroll of an id-nonmonotonic source", async () => {

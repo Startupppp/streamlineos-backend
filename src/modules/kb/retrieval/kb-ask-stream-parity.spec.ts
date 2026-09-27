@@ -5,6 +5,7 @@ import request from "supertest";
 import { KbAskController } from "./kb-ask.controller";
 import { KbAskService } from "./kb-ask.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
+import { KbAskCitationService } from "./kb-ask-citations.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -30,7 +31,7 @@ async function fixture(noContext = false) {
     appendToConversation: jest.fn().mockResolvedValue(undefined),
   };
   const verifyCitations = jest.fn().mockResolvedValue([]);
-  const ask = { assertReplayCitations: jest.fn().mockResolvedValue(undefined), streamAsk: jest.fn().mockResolvedValue(noContext ? { hasContext: false } : {
+  const ask = { streamAsk: jest.fn().mockResolvedValue(noContext ? { hasContext: false } : {
     hasContext: true, citations: [], verifyCitations,
     aiStream: {
       model: "gpt-4o-mini", correlationId: "test-call",
@@ -43,9 +44,14 @@ async function fixture(noContext = false) {
       },
     },
   }) };
+  const citationFilter = {
+    assertReplayCitations: jest.fn().mockResolvedValue(undefined),
+    filterStoredCitations: jest.fn().mockResolvedValue([]),
+  };
   const module = await Test.createTestingModule({ providers: [
     KbAskController, { provide: DRIZZLE, useValue: {} },
     { provide: KbAskService, useValue: ask }, { provide: KbChatHistoryService, useValue: history },
+    { provide: KbAskCitationService, useValue: citationFilter },
     { provide: COMMAND_FENCE_STORE, useValue: new InMemoryCommandFenceStore() },
   ] })
     .overrideGuard(JwtAuthGuard).useValue({ canActivate: () => true })
@@ -64,7 +70,7 @@ async function fixture(noContext = false) {
     res.status(error instanceof HttpException ? error.getStatus() : 500).json({ error: "request failed" });
   };
   app.use(handleError);
-  return { app, history, ask, verifyCitations };
+  return { app, history, ask, verifyCitations, citationFilter };
 }
 
 describe("KB streamed result parity", () => {
@@ -77,8 +83,8 @@ describe("KB streamed result parity", () => {
     expect(response.text).toContain('"conversationId":42');
     expect(response.text).toContain('"aiUsage":');
     expect(f.verifyCitations).toHaveBeenCalledTimes(1);
-    expect(f.history.appendToConversation).toHaveBeenNthCalledWith(1, "org-a", "user-a", 7, 42, "user", "How does this work?");
-    expect(f.history.appendToConversation).toHaveBeenNthCalledWith(2, "org-a", "user-a", 7, 42, "assistant", "Verified answer", []);
+    expect(f.history.appendToConversation).toHaveBeenNthCalledWith(1, user, 42, "user", "How does this work?");
+    expect(f.history.appendToConversation).toHaveBeenNthCalledWith(2, user, 42, "assistant", "Verified answer", []);
   });
 
   it("lets the streamed answer draw on company documents, which the tenant's own switch then decides", async () => {
@@ -123,14 +129,14 @@ describe("KB streamed result parity", () => {
     expect(readFrames(replay.text)).toEqual(readFrames(first.text));
     expect(f.ask.streamAsk).toHaveBeenCalledTimes(1);
     expect(f.history.appendToConversation).toHaveBeenCalledTimes(2);
-    expect(f.ask.assertReplayCitations).toHaveBeenCalledTimes(1);
-    expect(f.history.listMessages).toHaveBeenCalledWith("org-a", "user-a", 7, 42, { limit: 1 });
+    expect(f.citationFilter.assertReplayCitations).toHaveBeenCalledTimes(1);
+    expect(f.history.listMessages).toHaveBeenCalledWith(user, 42, { limit: 1 });
   });
 
   it("fails closed when replay citations were revoked", async () => {
     const f = await fixture();
     await request(f.app).post("/ask").set("Idempotency-Key", "same-key").send({ question: "Question" });
-    f.ask.assertReplayCitations.mockRejectedValue(new NotFoundException("Revoked"));
+    f.citationFilter.assertReplayCitations.mockRejectedValue(new NotFoundException("Revoked"));
     const replay = await request(f.app).post("/ask").set("Idempotency-Key", "same-key").send({ question: "Question" });
     expect(replay.status).toBe(404);
     expect(replay.text).not.toContain("Verified answer");

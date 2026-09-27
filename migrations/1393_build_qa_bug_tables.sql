@@ -1,0 +1,300 @@
+-- 1393 — Build: Create work_item_qa_details and bug_work_item_map tables
+--
+-- Promotes backend/migrations/sql/b-qa-bug-01-expand.sql into the journalled
+-- migration chain. All CREATE TABLE and ALTER TABLE statements use IF NOT EXISTS /
+-- DROP … IF EXISTS so the migration is idempotent when the stray file was already
+-- applied manually (the tables exist in production before this migration runs).
+--
+-- Ticket 66: https://linear.app/streamlineos/issue/SL-66
+--
+-- Dependencies (must be present before this migration):
+--   build.tickets, build.test_cases, build.project_releases,
+--   public.organization_members, public.organizations,
+--   public.bug_status (enum), public.bug_severity (enum)
+--
+-- Migration order: no dependency on 1371/1372/1380/1381; can apply independently.
+-- For the journal, assign an idx strictly greater than the current last entry.
+
+SET lock_timeout = '5s';
+SET statement_timeout = 0;
+--> statement-breakpoint
+
+DO $$
+BEGIN
+  IF to_regclass('build.tickets') IS NULL THEN
+    RAISE EXCEPTION '1393 precondition: build.tickets is absent';
+  END IF;
+  IF to_regclass('build.test_cases') IS NULL THEN
+    RAISE EXCEPTION '1393 precondition: build.test_cases is absent';
+  END IF;
+  IF to_regclass('build.project_releases') IS NULL THEN
+    RAISE EXCEPTION '1393 precondition: build.project_releases is absent';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type WHERE typname = 'bug_status'
+  ) THEN
+    RAISE EXCEPTION '1393 precondition: public.bug_status enum is absent';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type WHERE typname = 'bug_severity'
+  ) THEN
+    RAISE EXCEPTION '1393 precondition: public.bug_severity enum is absent';
+  END IF;
+END $$;
+--> statement-breakpoint
+
+-- Unique index on (org_id, project_id, id) in tickets required by the
+-- composite FK fk_work_item_qa_details_org_project_item below.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_tickets_org_project_id
+  ON build.tickets (org_id, project_id, id);
+--> statement-breakpoint
+
+-- ====== work_item_qa_details ======
+
+CREATE TABLE IF NOT EXISTS build.work_item_qa_details (
+  org_id              text                      NOT NULL,
+  work_item_id        integer                   NOT NULL,
+  project_id          integer                   NOT NULL,
+  qa_state            public.bug_status         NOT NULL DEFAULT 'new',
+  severity            public.bug_severity       NOT NULL DEFAULT 'major',
+  steps_to_reproduce  text,
+  expected_result     text,
+  actual_result       text,
+  environment         text,
+  browser_device      text,
+  affected_release_id integer,
+  fixed_release_id    integer,
+  qa_owner_user_id    text,
+  qa_owner_membership_id integer,
+  linked_test_case_id integer,
+  reopen_count        integer                   NOT NULL DEFAULT 0,
+  created_by_user_id  text,
+  created_at          timestamp with time zone  NOT NULL DEFAULT now(),
+  updated_at          timestamp with time zone  NOT NULL DEFAULT now(),
+  CONSTRAINT pk_work_item_qa_details PRIMARY KEY (org_id, work_item_id),
+  CONSTRAINT chk_work_item_qa_details_reopen_count CHECK (reopen_count >= 0)
+);
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details
+  DROP CONSTRAINT IF EXISTS work_item_qa_details_org_id_fkey;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  ADD CONSTRAINT work_item_qa_details_org_id_fkey
+  FOREIGN KEY (org_id)
+  REFERENCES public.organizations (id)
+  ON DELETE CASCADE NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  VALIDATE CONSTRAINT work_item_qa_details_org_id_fkey;
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details
+  DROP CONSTRAINT IF EXISTS fk_work_item_qa_details_org_project_item;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  ADD CONSTRAINT fk_work_item_qa_details_org_project_item
+  FOREIGN KEY (org_id, project_id, work_item_id)
+  REFERENCES build.tickets (org_id, project_id, id)
+  ON DELETE CASCADE NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  VALIDATE CONSTRAINT fk_work_item_qa_details_org_project_item;
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details
+  DROP CONSTRAINT IF EXISTS fk_work_item_qa_details_org_affected_release;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  ADD CONSTRAINT fk_work_item_qa_details_org_affected_release
+  FOREIGN KEY (org_id, affected_release_id)
+  REFERENCES build.project_releases (org_id, id)
+  ON DELETE SET NULL (affected_release_id) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  VALIDATE CONSTRAINT fk_work_item_qa_details_org_affected_release;
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details
+  DROP CONSTRAINT IF EXISTS fk_work_item_qa_details_org_fixed_release;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  ADD CONSTRAINT fk_work_item_qa_details_org_fixed_release
+  FOREIGN KEY (org_id, fixed_release_id)
+  REFERENCES build.project_releases (org_id, id)
+  ON DELETE SET NULL (fixed_release_id) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  VALIDATE CONSTRAINT fk_work_item_qa_details_org_fixed_release;
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details
+  DROP CONSTRAINT IF EXISTS fk_work_item_qa_details_org_test_case;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  ADD CONSTRAINT fk_work_item_qa_details_org_test_case
+  FOREIGN KEY (org_id, linked_test_case_id)
+  REFERENCES build.test_cases (org_id, id)
+  ON DELETE SET NULL (linked_test_case_id) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  VALIDATE CONSTRAINT fk_work_item_qa_details_org_test_case;
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details
+  DROP CONSTRAINT IF EXISTS fk_work_item_qa_details_qa_owner_actor;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  ADD CONSTRAINT fk_work_item_qa_details_qa_owner_actor
+  FOREIGN KEY (org_id, qa_owner_membership_id)
+  REFERENCES public.organization_members (org_id, id)
+  ON DELETE SET NULL (qa_owner_membership_id) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  VALIDATE CONSTRAINT fk_work_item_qa_details_qa_owner_actor;
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details
+  DROP CONSTRAINT IF EXISTS fk_work_item_qa_details_qa_owner_user;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  ADD CONSTRAINT fk_work_item_qa_details_qa_owner_user
+  FOREIGN KEY (qa_owner_user_id)
+  REFERENCES public.users (id)
+  ON DELETE SET NULL NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  VALIDATE CONSTRAINT fk_work_item_qa_details_qa_owner_user;
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details
+  DROP CONSTRAINT IF EXISTS fk_work_item_qa_details_created_by_user;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  ADD CONSTRAINT fk_work_item_qa_details_created_by_user
+  FOREIGN KEY (created_by_user_id)
+  REFERENCES public.users (id)
+  ON DELETE SET NULL NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.work_item_qa_details
+  VALIDATE CONSTRAINT fk_work_item_qa_details_created_by_user;
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS idx_work_item_qa_details_org_severity
+  ON build.work_item_qa_details (org_id, severity);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS idx_work_item_qa_details_linked_test_case
+  ON build.work_item_qa_details (org_id, linked_test_case_id);
+--> statement-breakpoint
+
+ALTER TABLE build.work_item_qa_details ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+DROP POLICY IF EXISTS tenant_isolation ON build.work_item_qa_details;
+--> statement-breakpoint
+CREATE POLICY tenant_isolation ON build.work_item_qa_details
+  USING (org_id = app.current_org_id())
+  WITH CHECK (org_id = app.current_org_id());
+--> statement-breakpoint
+GRANT SELECT, INSERT, UPDATE, DELETE ON build.work_item_qa_details TO streamline_app;
+--> statement-breakpoint
+
+-- ====== bug_work_item_map ======
+
+CREATE TABLE IF NOT EXISTS build.bug_work_item_map (
+  org_id              text     NOT NULL,
+  bug_id              integer  NOT NULL,
+  project_id          integer  NOT NULL,
+  legacy_bug_number   integer  NOT NULL,
+  work_item_id        integer  NOT NULL,
+  ticket_number       integer  NOT NULL,
+  migration_batch     text     NOT NULL DEFAULT 'b-qa-bug-02',
+  migrated_at         timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT bug_work_item_map_pkey PRIMARY KEY (org_id, bug_id),
+  CONSTRAINT uniq_bug_work_item_map_org_work_item UNIQUE (org_id, work_item_id),
+  CONSTRAINT uniq_bug_work_item_map_project_legacy_number UNIQUE (project_id, legacy_bug_number)
+);
+--> statement-breakpoint
+
+ALTER TABLE build.bug_work_item_map
+  DROP CONSTRAINT IF EXISTS bug_work_item_map_org_id_fkey;
+--> statement-breakpoint
+ALTER TABLE build.bug_work_item_map
+  ADD CONSTRAINT bug_work_item_map_org_id_fkey
+  FOREIGN KEY (org_id)
+  REFERENCES public.organizations (id)
+  ON DELETE CASCADE NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.bug_work_item_map
+  VALIDATE CONSTRAINT bug_work_item_map_org_id_fkey;
+--> statement-breakpoint
+
+ALTER TABLE build.bug_work_item_map
+  DROP CONSTRAINT IF EXISTS fk_bug_work_item_map_org_work_item;
+--> statement-breakpoint
+ALTER TABLE build.bug_work_item_map
+  ADD CONSTRAINT fk_bug_work_item_map_org_work_item
+  FOREIGN KEY (org_id, work_item_id)
+  REFERENCES build.tickets (org_id, id)
+  ON DELETE CASCADE NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.bug_work_item_map
+  VALIDATE CONSTRAINT fk_bug_work_item_map_org_work_item;
+--> statement-breakpoint
+
+-- NOTE: the Drizzle schema (qa.ts) declares fk_bug_work_item_map_org_project
+-- referencing build.projects, but the stray file b-qa-bug-01-expand.sql did not
+-- include it. It is omitted here so that this migration is a safe no-op when
+-- the stray file was already applied; the FK can be added in a follow-on migration
+-- after a production survey confirms project_id values are all valid.
+
+CREATE INDEX IF NOT EXISTS idx_bug_work_item_map_org_project
+  ON build.bug_work_item_map (org_id, project_id, legacy_bug_number);
+--> statement-breakpoint
+
+ALTER TABLE build.bug_work_item_map ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+DROP POLICY IF EXISTS tenant_isolation ON build.bug_work_item_map;
+--> statement-breakpoint
+CREATE POLICY tenant_isolation ON build.bug_work_item_map
+  USING (org_id = app.current_org_id())
+  WITH CHECK (org_id = app.current_org_id());
+--> statement-breakpoint
+GRANT SELECT, INSERT, UPDATE, DELETE ON build.bug_work_item_map TO streamline_app;
+--> statement-breakpoint
+
+-- ====== test_run_results: add linked_work_item_id if absent ======
+
+ALTER TABLE build.test_run_results
+  ADD COLUMN IF NOT EXISTS linked_work_item_id integer;
+--> statement-breakpoint
+
+ALTER TABLE build.test_run_results
+  DROP CONSTRAINT IF EXISTS fk_test_run_results_org_work_item;
+--> statement-breakpoint
+ALTER TABLE build.test_run_results
+  ADD CONSTRAINT fk_test_run_results_org_work_item
+  FOREIGN KEY (org_id, linked_work_item_id)
+  REFERENCES build.tickets (org_id, id)
+  ON DELETE SET NULL (linked_work_item_id) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE build.test_run_results
+  VALIDATE CONSTRAINT fk_test_run_results_org_work_item;
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS idx_test_run_results_org_work_item
+  ON build.test_run_results (org_id, linked_work_item_id);
+--> statement-breakpoint
+
+DO $$
+BEGIN
+  ASSERT to_regclass('build.work_item_qa_details') IS NOT NULL,
+    '1393 post-check: build.work_item_qa_details does not exist';
+  ASSERT to_regclass('build.bug_work_item_map') IS NOT NULL,
+    '1393 post-check: build.bug_work_item_map does not exist';
+  ASSERT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'build'
+      AND tablename = 'tickets'
+      AND indexname = 'uniq_tickets_org_project_id'
+  ), '1393 post-check: uniq_tickets_org_project_id was not created';
+END $$;

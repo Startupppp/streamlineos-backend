@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, idCursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const ticketLabelSchema = z.object({
   id: z.number().int(),
@@ -65,7 +66,7 @@ export const projectCustomStateSchema = z.object({
   name: z.string(),
   order: z.number().int(),
   color: z.string().nullable(),
-  type: z.string(),
+  type: z.enum(DB_ENUMS.state_group).nullable(),
   wipLimit: z.number().int().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
@@ -81,7 +82,7 @@ export const bulkReorderStatesResultSchema = z.object({
 export const orgCustomStateSchema = z.object({
   name: z.string(),
   color: z.string().nullable(),
-  type: z.string().nullable(),
+  type: z.enum(DB_ENUMS.state_group).nullable(),
 });
 
 export const buildCustomFieldSchema = z.object({

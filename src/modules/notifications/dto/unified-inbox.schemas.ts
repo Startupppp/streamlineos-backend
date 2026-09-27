@@ -243,6 +243,55 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export type InboxCursorParseResult =
+  | { ok: false; reason: string }
+  | { ok: true; state: InboxCursorState };
+
+export function parseInboxCursor(
+  cursor: string | undefined | null,
+): InboxCursorParseResult {
+  if (typeof cursor !== "string" || cursor.length === 0)
+    return { ok: true, state: emptyInboxCursor() };
+  let raw: string;
+  try {
+    raw = Buffer.from(cursor, "base64url").toString("utf8");
+  } catch {
+    return { ok: false, reason: "cursor could not be decoded — resubmit without a cursor" };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, reason: "cursor is not valid JSON — resubmit without a cursor" };
+  }
+  if (!isPlainRecord(parsed))
+    return { ok: false, reason: "cursor payload is not a plain object — resubmit without a cursor" };
+  return {
+    ok: true,
+    state: {
+      n: typeof parsed["n"] === "number" ? parsed["n"] : null,
+      nt: typeof parsed["nt"] === "string" ? parsed["nt"] : null,
+      b: typeof parsed["b"] === "number" ? parsed["b"] : null,
+      bt: typeof parsed["bt"] === "string" ? parsed["bt"] : null,
+      m: typeof parsed["m"] === "string" ? parsed["m"] : null,
+      a: typeof parsed["a"] === "number" ? parsed["a"] : null,
+      at: typeof parsed["at"] === "string" ? parsed["at"] : null,
+      ap: decodeAdapterPositions(parsed["ap"]),
+    },
+  };
+}
+
+export function validateSourcePosition(
+  id: number | null,
+  t: string | null,
+): string | null {
+  if (id === null) return null;
+  if (t === null) return "position has id but no timestamp — resubmit without a cursor";
+  if (Number.isNaN(new Date(t).getTime()))
+    return "position has invalid timestamp — resubmit without a cursor";
+  return null;
+}
+
 export function decodeAdapterPositions(
   value: unknown,
 ): Record<string, InboxSourcePosition> {

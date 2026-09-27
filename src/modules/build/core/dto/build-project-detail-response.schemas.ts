@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 const userColsSchema = z.object({
   id: z.string(),
@@ -10,13 +11,14 @@ const userColsSchema = z.object({
   image: z.string().nullable(),
 });
 
-const projectStatusSchema = z.object({
+export const projectStatusSchema = z.object({
   id: z.number().int(),
   projectId: z.number().int(),
   orgId: z.string(),
   name: z.string(),
   order: z.number().int(),
   color: z.string().nullable(),
+  type: z.enum(DB_ENUMS.state_group).nullable(),
   wipLimit: z.number().int().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),

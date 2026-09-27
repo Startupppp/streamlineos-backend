@@ -46,10 +46,13 @@ import {
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { InboxSourcePosition } from "./dto/unified-inbox.schemas";
 import {
+  INBOX_KINDS,
   decodeInboxCursor,
   encodeInboxCursor,
   inboxSourcePosition,
+  parseInboxCursor,
   sameInboxCursorState,
+  validateSourcePosition,
   type BroadcastInboxItem,
   type BuildApprovalInboxItem,
   type InboxCursorState,
@@ -290,7 +293,6 @@ export class UnifiedInboxService {
     user: CurrentUserContext,
   ): Promise<UnifiedInboxResponse> {
     const limit = Math.min(query.limit ?? 25, 100);
-    const cursorState = decodeInboxCursor(query.cursor);
     const unreadOnly = query.unreadOnly ?? false;
     const triage = query.triage ?? "active";
     const filters: InboxFilters = {
@@ -305,6 +307,29 @@ export class UnifiedInboxService {
       query.kinds && query.kinds.length > 0
         ? query.kinds
         : ["notification", "broadcast", "mail", "build_approval"];
+
+    const cursorParsed = parseInboxCursor(query.cursor);
+    if (!cursorParsed.ok) {
+      return {
+        items: [],
+        hasMore: false,
+        nextCursor: null,
+        degraded: true,
+        sources: INBOX_KINDS.map(
+          (kind): SourceStatus => ({
+            kind,
+            included: kindsFilter.includes(kind),
+            available: false,
+            reason: null,
+            error: cursorParsed.reason,
+          }),
+        ),
+      };
+    }
+    const cursorState: InboxCursorState = cursorParsed.state;
+
+    const approvalCursorError = validateSourcePosition(cursorState.a, cursorState.at);
+    const notifCursorError = validateSourcePosition(cursorState.n, cursorState.nt);
 
     const allowsFixedModule = (sourceModule: string): boolean =>
       filters.module === undefined || filters.module === sourceModule;
@@ -365,7 +390,7 @@ export class UnifiedInboxService {
 
     const [notifOutcome, broadcastOutcome, mailOutcome, adapterResult] =
       await Promise.all([
-        wantsNotifications
+        wantsNotifications && notifCursorError === null
           ? readSource(() =>
               fetchNotificationItems(
                 this.db,
@@ -405,7 +430,7 @@ export class UnifiedInboxService {
               ),
             )
           : null,
-        wantsBuildApprovals && approvalsSupport
+        wantsBuildApprovals && approvalsSupport && approvalCursorError === null
           ? this.fetchAllAdapters(
               orgId,
               userId,
@@ -434,7 +459,15 @@ export class UnifiedInboxService {
 
     const sources: SourceStatus[] = [
       wantsNotifications
-        ? includedSource("notification", notifOutcome)
+        ? notifCursorError !== null
+          ? {
+              kind: "notification" as InboxKind,
+              included: true,
+              available: false,
+              reason: null,
+              error: notifCursorError,
+            }
+          : includedSource("notification", notifOutcome)
         : skippedSource("notification", null),
       wantsBroadcasts && broadcastsSupport
         ? includedSource("broadcast", broadcastOutcome)
@@ -452,12 +485,20 @@ export class UnifiedInboxService {
         mailFreshForUnreadOnly,
         mailOutcome,
       ),
-      buildApprovalSourceStatus(
-        wantsBuildApprovals,
-        approvalsSupport,
-        adapterResult,
-        filters.q !== undefined && filters.q.trim() !== "",
-      ),
+      wantsBuildApprovals && approvalCursorError !== null
+        ? {
+            kind: "build_approval" as InboxKind,
+            included: true,
+            available: false,
+            reason: null,
+            error: approvalCursorError,
+          }
+        : buildApprovalSourceStatus(
+            wantsBuildApprovals,
+            approvalsSupport,
+            adapterResult,
+            filters.q !== undefined && filters.q.trim() !== "",
+          ),
     ];
 
     const merged = stableSortItems([

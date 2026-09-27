@@ -95,6 +95,7 @@ const BUILD_MODULE = join(SRC, "modules", "build");
 const OUT_DIR = join(REPO_ROOT, "docs", "build-module");
 const OUT_MD = join(OUT_DIR, "authorization-census.md");
 const OUT_JSON = join(OUT_DIR, "authorization-census.json");
+const OUT_RATCHET = join(OUT_DIR, "authorization-census-ratchet.json");
 
 // Vacuity floors. Raise when the build module grows; never lower to make a run pass.
 const CONTROLLER_FLOOR = 40;
@@ -1710,6 +1711,34 @@ function run(checkOnly) {
   console.log("");
   for (const k of VERDICTS) console.log(`  ${k.padEnd(17)} ${c[k]}`);
   console.log(`  ${"total".padEnd(17)} ${rows.length}`);
+  console.log("");
+  console.log("Verified: every Build controller handler classified for org-scoping, parent-scoping, and permission-guard presence.");
+  console.log("Verified: REVIEWED hand-read verdicts all match their source anchors.");
+  console.log("Not verified: actual runtime behavior (RLS, network calls, post-commit hooks) — use e2e/integration tests for those.");
+  console.log("Not verified: non-Build modules (HR, KB, billing, etc.) — this census is scoped to src/modules/build/**.");
+
+  // Ratchet: VULNERABLE and NEEDS-REVIEW may only decrease; CLOSED and VERIFIED may only increase.
+  if (existsSync(OUT_RATCHET)) {
+    const ratchet = JSON.parse(readFileSync(OUT_RATCHET, "utf8"));
+    const rc = ratchet.counts;
+    let ratchetFailed = false;
+    for (const k of ["VULNERABLE", "NEEDS-REVIEW"]) {
+      if (c[k] > rc[k]) {
+        console.error(`\nRATCHET BREACH: ${k} rose from ${rc[k]} to ${c[k]}. It may only decrease.`);
+        ratchetFailed = true;
+      }
+    }
+    for (const k of ["CLOSED", "VERIFIED"]) {
+      if (c[k] < rc[k]) {
+        console.error(`\nRATCHET BREACH: ${k} fell from ${rc[k]} to ${c[k]}. It may only increase.`);
+        ratchetFailed = true;
+      }
+    }
+    if (ratchetFailed) {
+      console.error("Update docs/build-module/authorization-census-ratchet.json when a handler's verdict genuinely improves.");
+      return 1;
+    }
+  }
 
   const mdText = renderMd(files, rows);
   const jsonText = renderJson(files, rows);
@@ -2001,6 +2030,35 @@ export class FakeController {
     REVIEWED.every((r) => real.rows.some((row) => row.key === r.key)),
     REVIEWED.filter((r) => !real.rows.some((row) => row.key === r.key)).map((r) => r.key).join(", "),
   );
+
+  // ── Ratchet logic self-test ─────────────────────────────────────────────────
+  {
+    const goodCounts = { VULNERABLE: 0, "CLOSED-IN-FLIGHT": 0, "NEEDS-REVIEW": 0, CLOSED: 42, VERIFIED: 283 };
+    const ratchetBase = { VULNERABLE: 0, "NEEDS-REVIEW": 0, CLOSED: 42, VERIFIED: 283 };
+
+    let ratchetBreached = false;
+    for (const k of ["VULNERABLE", "NEEDS-REVIEW"]) {
+      if (goodCounts[k] > ratchetBase[k]) ratchetBreached = true;
+    }
+    for (const k of ["CLOSED", "VERIFIED"]) {
+      if (goodCounts[k] < ratchetBase[k]) ratchetBreached = true;
+    }
+    check("ratchet: counts at floor do not breach", !ratchetBreached, "ratchet incorrectly reports a breach on compliant counts");
+
+    const badCounts = { VULNERABLE: 1, "CLOSED-IN-FLIGHT": 0, "NEEDS-REVIEW": 0, CLOSED: 42, VERIFIED: 283 };
+    let ratchetCaught = false;
+    for (const k of ["VULNERABLE", "NEEDS-REVIEW"]) {
+      if (badCounts[k] > ratchetBase[k]) ratchetCaught = true;
+    }
+    check("ratchet: VULNERABLE rising above floor is detected", ratchetCaught, "ratchet missed a VULNERABLE increase");
+
+    const shrinkCounts = { VULNERABLE: 0, "CLOSED-IN-FLIGHT": 0, "NEEDS-REVIEW": 0, CLOSED: 42, VERIFIED: 100 };
+    let shrinkCaught = false;
+    for (const k of ["CLOSED", "VERIFIED"]) {
+      if (shrinkCounts[k] < ratchetBase[k]) shrinkCaught = true;
+    }
+    check("ratchet: VERIFIED falling below floor is detected", shrinkCaught, "ratchet missed a VERIFIED decrease");
+  }
 
   console.log(`\nbuild-authorization-census self-test: ${passed} passed, ${failed} failed`);
   return failed === 0 ? 0 : 1;

@@ -7,6 +7,7 @@ import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbLinkedDocumentAskSource } from "../linked-documents/kb-linked-document-ask-source";
 import type { LinkedDocumentItem } from "../linked-documents/dto/kb-linked-documents-response.schemas";
 import type { AskCitation } from "./kb-ask-context";
+import type { KbChatCitation } from "../../../db/schema";
 
 export interface CitableTop {
   kind: "article" | "page";
@@ -99,6 +100,52 @@ export class KbAskCitationService {
     return linked
       .filter((document) => citable.has(document.id))
       .map((document) => this.linkedDocuments.citationOf(document));
+  }
+
+  async filterStoredCitations(
+    user: CurrentUserContext,
+    citations: KbChatCitation[],
+  ): Promise<KbChatCitation[]> {
+    if (citations.length === 0) return [];
+    const articleIds = citations.flatMap((c) =>
+      c.kind === "article" ? [c.articleId] : [],
+    );
+    const pageIds = citations.flatMap((c) =>
+      c.kind === "page" ? [c.pageId] : [],
+    );
+    const sourceIds = citations.flatMap((c) =>
+      c.kind === "source" ? [c.sourceId] : [],
+    );
+    const documentIds = citations.flatMap((c) =>
+      c.kind === "document" ? [c.linkedDocumentId] : [],
+    );
+    const [visibleArticles, visiblePages, visibleSources, visibleDocuments] =
+      await Promise.all([
+        articleIds.length > 0
+          ? this.citationVisibility.visibleArticles(user, articleIds)
+          : Promise.resolve(new Set<number>()),
+        pageIds.length > 0
+          ? this.citationVisibility.visiblePages(user, pageIds)
+          : Promise.resolve(new Set<number>()),
+        sourceIds.length > 0
+          ? this.citationVisibility.visibleSources(user, sourceIds)
+          : Promise.resolve(new Set<number>()),
+        documentIds.length > 0
+          ? this.linkedDocuments.stillCitable(user, documentIds)
+          : Promise.resolve(new Set<number>()),
+      ]);
+    return citations.filter((c) => {
+      switch (c.kind) {
+        case "article":
+          return visibleArticles.has(c.articleId);
+        case "page":
+          return visiblePages.has(c.pageId);
+        case "source":
+          return visibleSources.has(c.sourceId);
+        case "document":
+          return visibleDocuments.has(c.linkedDocumentId);
+      }
+    });
   }
 
   async assertReplayCitations(

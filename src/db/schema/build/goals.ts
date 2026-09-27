@@ -1,4 +1,5 @@
 import {
+  check,
   pgEnum,
   text,
   timestamp,
@@ -106,6 +107,7 @@ export const okrLinks = build.table("okr_links", {
   foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_okr_links_org_ticket" }).onDelete("cascade"),
   uniqueIndex("uniq_okr_links_goal_ticket").on(table.goalId, table.ticketId),
   uniqueIndex("uniq_okr_links_goal_project").on(table.goalId, table.projectId).where(sql`project_id IS NOT NULL`),
+  check("chk_okr_links_exclusive_arc", sql`num_nonnulls(${table.ticketId}, ${table.projectId}) = 1`),
   unique("uniq_okr_links_org_id").on(table.orgId, table.id),
 ]);
 

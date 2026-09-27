@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   and,
   asc,
@@ -84,18 +84,24 @@ function sortModeFromQuery(sort: RoadmapListQuery["sort"]): RoadmapSortMode {
   return sort ?? "sort_order";
 }
 
+type RoadmapCursorDecoded =
+  | { match: "valid"; key: RoadmapPageKey }
+  | { match: "absent" }
+  | { match: "cross_sort" };
+
 function decodeRoadmapCursor(
   cursor: string | undefined | null,
   mode: RoadmapSortMode,
-): RoadmapPageKey | null {
+): RoadmapCursorDecoded {
+  if (typeof cursor !== "string" || cursor.length === 0) return { match: "absent" };
   const parts = decodeTupleCursor(cursor, 3);
-  if (!parts) return null;
+  if (!parts) return { match: "absent" };
   const [cursorMode, sortValue, rawId] = parts;
-  if (cursorMode !== mode) return null;
-  if (!/^[1-9][0-9]{0,9}$/.test(rawId)) return null;
+  if (cursorMode !== mode) return { match: "cross_sort" };
+  if (!/^[1-9][0-9]{0,9}$/.test(rawId)) return { match: "absent" };
   const id = Number(rawId);
-  if (!Number.isSafeInteger(id) || id > 2_147_483_647) return null;
-  return { sortValue, id };
+  if (!Number.isSafeInteger(id) || id > 2_147_483_647) return { match: "absent" };
+  return { match: "valid", key: { sortValue, id } };
 }
 
 function buildRoadmapOrdering(mode: RoadmapSortMode): RoadmapOrdering {
@@ -211,7 +217,12 @@ export class ProjectsRoadmapService {
     const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
     const mode = sortModeFromQuery(query.sort);
     const ordering = buildRoadmapOrdering(mode);
-    const position = decodeRoadmapCursor(cursor, mode);
+    const cursorDecoded = decodeRoadmapCursor(cursor, mode);
+    if (cursorDecoded.match === "cross_sort")
+      throw new BadRequestException(
+        "Cursor was issued under a different sort order — resubmit without a cursor",
+      );
+    const position = cursorDecoded.match === "valid" ? cursorDecoded.key : null;
     const conditions = [
       eq(roadmapItems.orgId, orgId),
       isNull(roadmapItems.deletedAt),

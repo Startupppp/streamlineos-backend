@@ -9,6 +9,9 @@ import { KbSearchService } from "./kb-search.service";
 import { KbArticleReindexService } from "./kb-article-reindex.service";
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
+import type { KbAskCitationService } from "./kb-ask-citations.service";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbCandidateService } from "./kb-candidate.service";
 
 const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
@@ -371,8 +374,10 @@ describe("Fix 5 — listConversations cursor is tenant-scoped", () => {
       select: jest.fn(() => ({ from: jest.fn(() => makeChain()) })),
     } as unknown as Db;
 
-    const svc = new KbChatHistoryService(db);
-    await svc.listConversations("org-cursor", "user-1", 55, { cursor: 42, limit: 10 });
+    const citationFilter: KbAskCitationService = { filterStoredCitations: jest.fn().mockResolvedValue([]) } as unknown as KbAskCitationService;
+    const user: CurrentUserContext = { userId: "user-1", orgId: "org-cursor", role: "member", isOrgOwner: false, sessionId: "s", tokenScopes: null, principal: humanSessionPrincipal(55, false) };
+    const svc = new KbChatHistoryService(db, citationFilter);
+    await svc.listConversations(user, { cursor: 42, limit: 10 });
 
     expect(capturedWheres.length).toBeGreaterThan(0);
 
@@ -404,8 +409,10 @@ describe("Fix 5 — listConversations cursor is tenant-scoped", () => {
       select: jest.fn(() => ({ from: jest.fn(() => makeChain()) })),
     } as unknown as Db;
 
-    const svc = new KbChatHistoryService(db);
-    await svc.listConversations("org-control", "user-1", 77, { limit: 10 });
+    const citationFilter: KbAskCitationService = { filterStoredCitations: jest.fn().mockResolvedValue([]) } as unknown as KbAskCitationService;
+    const user: CurrentUserContext = { userId: "user-1", orgId: "org-control", role: "member", isOrgOwner: false, sessionId: "s", tokenScopes: null, principal: humanSessionPrincipal(77, false) };
+    const svc = new KbChatHistoryService(db, citationFilter);
+    await svc.listConversations(user, { limit: 10 });
 
     const allValues = capturedWheres.flatMap((w) => sqlValues(w));
     expect(allValues).toContain("org-control");

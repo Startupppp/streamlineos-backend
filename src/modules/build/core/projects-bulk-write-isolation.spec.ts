@@ -89,7 +89,8 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
       expect(h.db.select).toHaveBeenCalledTimes(2);
       expect(h.db.query.organizationMembers.findFirst).not.toHaveBeenCalled();
       expect(h.set).toHaveBeenCalledTimes(1);
-      expect(h.set).toHaveBeenCalledWith(expect.objectContaining({ version: expect.anything(), assigneeMembershipId: 9 }));
+      expect(h.set).toHaveBeenCalledWith(expect.objectContaining({ assigneeMembershipId: 9 }));
+      expect(h.set).toHaveBeenCalledWith(expect.not.objectContaining({ version: expect.anything() }));
       expect(h.db.delete).toHaveBeenCalledTimes(1);
       expect(h.values).toHaveBeenCalledTimes(1);
       expect(h.values.mock.calls[0]?.[0]).toHaveLength(size);

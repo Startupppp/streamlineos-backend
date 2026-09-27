@@ -13,10 +13,8 @@ import { ApiOkResponse } from "@nestjs/swagger";
 import type { Response } from "express";
 import {
   projectAnalyticsQuerySchema,
-  resourceAllocationQuerySchema,
   velocityQuerySchema,
   type ProjectAnalyticsQuery,
-  type ResourceAllocationQuery,
   type VelocityQuery,
 } from "./dto/analytics.schemas";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -43,7 +41,6 @@ import {
   criticalPathSchema,
   cycleTimeSchema,
   leadTimeSchema,
-  resourceAllocationPageSchema,
   snapshotResultSchema,
   velocitySchema,
 } from "./dto/build-reports-response.schemas";
@@ -58,18 +55,6 @@ export class ProjectsReportsController {
     private readonly reports: ProjectsReportsService,
     private readonly analytics: ProjectsAnalyticsService,
   ) {}
-
-  @Get("resource-allocation")
-  @RequirePermission("build:view")
-  @ResponseSchema(resourceAllocationPageSchema)
-  @Validate({ query: resourceAllocationQuerySchema })
-  async resourceAllocation(
-    @Query() query: ResourceAllocationQuery,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.reports.authorizeOrganization(u);
-    return this.analytics.resourceAllocation(u.orgId, query);
-  }
 
   @Get(":projectId/analytics")
   @RequirePermission("build:view")

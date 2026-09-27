@@ -111,51 +111,52 @@ export async function resolveProjectAccess(
   if (callerMid !== null && project.managerMembershipId === callerMid)
     return { hasAccess: true, role: "MANAGER" };
 
-  const membership = await db
-    .select({ role: projectMembers.role })
-    .from(projectMembers)
-    .innerJoin(
-      organizationMembers,
-      and(
-        eq(organizationMembers.id, projectMembers.membershipId),
-        eq(organizationMembers.orgId, projectMembers.orgId),
-        eq(organizationMembers.userId, u.userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-    )
-    .where(
-      and(eq(projectMembers.projectId, projectId), eq(projectMembers.orgId, u.orgId)),
-    )
-    .limit(1);
-  if (membership.length > 0)
-    return { hasAccess: true, role: membership[0]?.role ?? null };
+  const [membership, teamAccess] = await Promise.all([
+    db
+      .select({ role: projectMembers.role })
+      .from(projectMembers)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, projectMembers.membershipId),
+          eq(organizationMembers.orgId, projectMembers.orgId),
+          eq(organizationMembers.userId, u.userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .where(
+        and(eq(projectMembers.projectId, projectId), eq(projectMembers.orgId, u.orgId)),
+      )
+      .limit(1),
+    db
+      .select({ id: projectTeamMembers.id })
+      .from(projectTeamAssignments)
+      .innerJoin(
+        projectTeamMembers,
+        and(
+          eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+          eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
+        ),
+      )
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, projectTeamMembers.membershipId),
+          eq(organizationMembers.orgId, projectTeamMembers.orgId),
+          eq(organizationMembers.userId, u.userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .where(
+        and(
+          eq(projectTeamAssignments.projectId, projectId),
+          eq(projectTeamAssignments.orgId, u.orgId),
+        ),
+      )
+      .limit(1),
+  ]);
 
-  const teamAccess = await db
-    .select({ id: projectTeamMembers.id })
-    .from(projectTeamAssignments)
-    .innerJoin(
-      projectTeamMembers,
-      and(
-        eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
-        eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
-      ),
-    )
-    .innerJoin(
-      organizationMembers,
-      and(
-        eq(organizationMembers.id, projectTeamMembers.membershipId),
-        eq(organizationMembers.orgId, projectTeamMembers.orgId),
-        eq(organizationMembers.userId, u.userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-    )
-    .where(
-      and(
-        eq(projectTeamAssignments.projectId, projectId),
-        eq(projectTeamAssignments.orgId, u.orgId),
-      ),
-    )
-    .limit(1);
+  if (membership.length > 0) return { hasAccess: true, role: membership[0]?.role ?? null };
   if (teamAccess.length > 0) return { hasAccess: true, role: "MEMBER" };
 
   return { hasAccess: false, role: null };

@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import { decodeTupleCursor } from "../../../common/pagination/cursor";
@@ -173,27 +174,61 @@ describe("S04 roadmap cursor contract", () => {
     expect(queryParams(findMany, 1)).toEqual(expect.arrayContaining([ORG, "beta", 31]));
   });
 
-  it("rejects a cursor issued under updated_at when applied to the default sort_order ordering", async () => {
+  it("throws BadRequestException when a cursor issued under one sort is applied to a different ordering — policy: cross-sort cursor is rejected, not silently restarted as page 1", async () => {
     const t = new Date("2024-01-02T00:00:00.000Z");
     const findMany = jest.fn<Promise<RoadmapRow[]>, [{ where: unknown; orderBy: unknown[]; limit: number }]>()
       .mockResolvedValueOnce([
         { id: 40, sortOrder: 0, updatedAt: t, createdAt: t, title: "A" },
         { id: 41, sortOrder: 0, updatedAt: t, createdAt: t, title: "B" },
-      ])
-      .mockResolvedValueOnce([{ id: 1, sortOrder: 99, updatedAt: t, createdAt: t, title: "Z" }]);
+      ]);
     const service = makeService(findMany);
 
     const updatedAtFirst = await service.listRoadmap(ORG, { limit: 1, sort: "updated_at" });
     expect(updatedAtFirst.pagination.hasMore).toBe(true);
 
-    const crossMode = await service.listRoadmap(ORG, {
-      limit: 1,
-      cursor: updatedAtFirst.pagination.nextCursor ?? undefined,
+    await expect(
+      service.listRoadmap(ORG, {
+        limit: 1,
+        cursor: updatedAtFirst.pagination.nextCursor ?? undefined,
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("anchors equal-timestamp pages on the id tie-breaker — both cursor and boundary use the shared millisecond and the last-row id", async () => {
+    // postgres-js returns JavaScript Date objects (millisecond precision). Two rows whose DB
+    // timestamps differ only in sub-millisecond digits (e.g. T.000900 and T.000800) both arrive
+    // as T.000. The cursor encodes T.000 + lastId; the boundary uses (updatedAt = T.000 AND id > lastId).
+    // This test exercises that equal-time tie-breaker path with the actual boundary params.
+    const sharedMs = new Date("2024-06-15T12:00:00.000Z");
+    const findMany = jest.fn<Promise<RoadmapRow[]>, [{ where: unknown; orderBy: unknown[]; limit: number }]>()
+      .mockResolvedValueOnce([
+        { id: 5, sortOrder: 0, updatedAt: sharedMs, createdAt: sharedMs, title: "A" },
+        { id: 6, sortOrder: 0, updatedAt: sharedMs, createdAt: sharedMs, title: "B" },
+        { id: 7, sortOrder: 0, updatedAt: sharedMs, createdAt: sharedMs, title: "C" },
+      ])
+      .mockResolvedValueOnce([{ id: 7, sortOrder: 0, updatedAt: sharedMs, createdAt: sharedMs, title: "C" }]);
+    const service = makeService(findMany);
+
+    const first = await service.listRoadmap(ORG, { limit: 2, sort: "updated_at" });
+    expect(first.data.map((r) => r.id)).toEqual([5, 6]);
+    expect(first.pagination.hasMore).toBe(true);
+
+    const parts = decodeTupleCursor(first.pagination.nextCursor ?? null, 3);
+    expect(parts?.[0]).toBe("updated_at");
+    expect(parts?.[1]).toBe(sharedMs.toISOString());
+    expect(parts?.[2]).toBe("6");
+
+    const second = await service.listRoadmap(ORG, {
+      limit: 2,
+      sort: "updated_at",
+      cursor: first.pagination.nextCursor ?? undefined,
     });
-    expect(crossMode.data.map((r) => r.id)).toEqual([1]);
-    const secondCallParams = queryParams(findMany, 1);
-    expect(secondCallParams).toContain(ORG);
-    expect(secondCallParams).not.toContain(40);
-    expect(secondCallParams).not.toContain(t);
+    expect(second.data.map((r) => r.id)).toEqual([7]);
+    expect(second.pagination.hasMore).toBe(false);
+    expect(second.pagination.nextCursor).toBeNull();
+    const params = queryParams(findMany, 1);
+    expect(params).toContain(ORG);
+    expect(params).toContain(sharedMs.toISOString());
+    expect(params).toContain(6);
   });
 });

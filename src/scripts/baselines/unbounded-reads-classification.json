@@ -1079,8 +1079,8 @@
     },
     "/build/core/projects-analytics.service.ts": {
       "verdict": "FALSE-POSITIVE",
-      "note": "Analytics aggregates and resource-allocation page reads are bounded by SQL aggregation, cursor limits, or the page ID list",
-      "justification": "getOrgProjectHealthSummary is one tenant-scoped SQL aggregate; resourceAllocation limits the assignee page to limit+1, scopes breakdown rows to that page, and caps the users lookup at pageUserIds.length. Remaining detector matches are aggregate/raw SQL shapes that do not materialize an unbounded application row set 2026-09-25"
+      "note": "Analytics aggregates are bounded by SQL aggregation or the page ID list",
+      "justification": "getOrgProjectHealthSummary is one tenant-scoped SQL aggregate. Remaining detector matches are aggregate/raw SQL shapes that do not materialize an unbounded application row set 2026-09-25"
     },
     "/build/core/projects-budget.service.ts": {
       "verdict": "FALSE-POSITIVE",

@@ -1,5 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
-import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { resolveProjectAccess } from "./project-access";
 
 function memberThenTeamChain(memberRows: unknown[], teamRows: unknown[]): jest.Mock {
   const memberChain = {
@@ -17,66 +18,80 @@ function memberThenTeamChain(memberRows: unknown[], teamRows: unknown[]): jest.M
   return jest.fn().mockReturnValueOnce(memberChain).mockReturnValue(teamChain);
 }
 
-describe("ProjectsTicketsReadService — cross-tenant isolation", () => {
+function makeUser(orgId: string, membershipId: number): CurrentUserContext {
+  return {
+    orgId,
+    userId: "u1",
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s1",
+    tokenScopes: null,
+    principal: { kind: "human-session", membershipId, isOrgOwner: false },
+  } as unknown as CurrentUserContext;
+}
+
+describe("resolveProjectAccess — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
-  const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as never;
-
-  function makeDb(projectRow: unknown | null, memberRows: unknown[]) {
-    return {
-      db: {
-        query: { projects: { findFirst: jest.fn().mockResolvedValue(projectRow) } },
-        select: jest.fn().mockReturnValue({ from: memberThenTeamChain(memberRows, []) }),
-      } as unknown as Db,
-    };
-  }
-
-  it("returns hasAccess=false for project in a different org (cross-tenant isolation)", async () => {
-    const { db } = makeDb(null, []);
-    const svc = new ProjectsTicketsReadService(db, access);
-    const result = await svc.checkProjectAccess(ATTACKER_ORG, "u1", 99);
-    expect(result.hasAccess).toBe(false);
+  it("throws NotFoundException for a project in a different org (cross-tenant isolation)", async () => {
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
+      select: jest.fn().mockReturnValue({ from: memberThenTeamChain([], []) }),
+    } as unknown as Db;
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as never;
+    const u = makeUser(ATTACKER_ORG, 1);
+    await expect(resolveProjectAccess(db, access, u, 99)).rejects.toThrow("Project not found");
   });
 
-  it("returns hasAccess=true for the owning org (same-tenant control)", async () => {
-    const project = { id: 1, orgId: OWNER_ORG, managerId: "u1" };
-    const { db } = makeDb(project, []);
-    const svc = new ProjectsTicketsReadService(db, access);
-    const result = await svc.checkProjectAccess(OWNER_ORG, "u1", 1);
+  it("returns hasAccess=true for the owning org when caller has build:manage (same-tenant control)", async () => {
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
+      select: jest.fn().mockReturnValue({ from: memberThenTeamChain([], []) }),
+    } as unknown as Db;
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as never;
+    const u = makeUser(OWNER_ORG, 1);
+    const result = await resolveProjectAccess(db, access, u, 1);
     expect(result.hasAccess).toBe(true);
   });
 });
 
-describe("checkProjectAccess — direct-member org-status gate", () => {
+describe("resolveProjectAccess — direct-member org-status gate", () => {
   const ORG = "org-a";
-  const USER_ID = "user-1";
   const PROJECT_ID = 5;
+  const MEMBERSHIP_ID = 1;
 
-  function makeDbForMemberPath(memberRows: unknown[], teamRows: unknown[] = []) {
+  function makeDb(memberRows: unknown[], teamRows: unknown[] = []) {
     return {
-      access: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as never,
-      db: {
-        query: {
-          projects: { findFirst: jest.fn().mockResolvedValue({ managerId: "other-manager" }) },
-        },
-        select: jest.fn().mockReturnValue({ from: memberThenTeamChain(memberRows, teamRows) }),
-      } as unknown as Db,
-    };
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 99 }) },
+      },
+      select: jest.fn().mockReturnValue({ from: memberThenTeamChain(memberRows, teamRows) }),
+    } as unknown as Db;
   }
 
-  it("denies a suspended org member even when present in projectMembers (DENY)", async () => {
-    const { db, access } = makeDbForMemberPath([]);
-    const svc = new ProjectsTicketsReadService(db, access);
-    const result = await svc.checkProjectAccess(ORG, USER_ID, PROJECT_ID);
+  const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as never;
+
+  it("denies a user with no project membership (DENY)", async () => {
+    const db = makeDb([]);
+    const u = makeUser(ORG, MEMBERSHIP_ID);
+    const result = await resolveProjectAccess(db, access, u, PROJECT_ID);
     expect(result.hasAccess).toBe(false);
   });
 
-  it("grants access to an active org member present in projectMembers (CONTROL)", async () => {
-    const { db, access } = makeDbForMemberPath([{ id: 1, role: "CONTRIBUTOR" }]);
-    const svc = new ProjectsTicketsReadService(db, access);
-    const result = await svc.checkProjectAccess(ORG, USER_ID, PROJECT_ID);
+  it("grants access to a direct project member (CONTROL)", async () => {
+    const db = makeDb([{ id: 1, role: "CONTRIBUTOR" }]);
+    const u = makeUser(ORG, MEMBERSHIP_ID);
+    const result = await resolveProjectAccess(db, access, u, PROJECT_ID);
     expect(result.hasAccess).toBe(true);
     expect(result.role).toBe("CONTRIBUTOR");
+  });
+
+  it("grants access via team membership when direct membership is absent (team branch)", async () => {
+    const db = makeDb([], [{ id: 7 }]);
+    const u = makeUser(ORG, MEMBERSHIP_ID);
+    const result = await resolveProjectAccess(db, access, u, PROJECT_ID);
+    expect(result.hasAccess).toBe(true);
+    expect(result.role).toBe("MEMBER");
   });
 });

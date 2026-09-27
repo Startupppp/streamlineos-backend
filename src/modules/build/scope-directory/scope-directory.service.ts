@@ -3,11 +3,9 @@ import { and, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm"
 import {
   managedProductMemberships,
   managedProducts,
-  projectMembers,
-  projectTeamAssignments,
-  projectTeamMembers,
   projects,
 } from "../../../db/schema";
+import { reachableProjectsSql } from "../reachability/project-reachability";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
@@ -172,77 +170,26 @@ export class ScopeDirectoryService {
         : new Map<string, string>();
     const buildManageIsAll = perms.get("build:manage") === "all";
 
-    let accessibleProjectIds: number[] | null = null;
     let accessibleProductIds: number[] | null = null;
-
-    if (!buildManageIsAll && (hasProjectKeys || hasProductKeys)) {
-      const projectTask: Promise<void> = hasProjectKeys
-        ? (async () => {
-            if (membershipId === null) {
-              accessibleProjectIds = [];
-              return;
-            }
-            const [directRows, teamRows] = await Promise.all([
-              this.db
-                .select({ projectId: projectMembers.projectId })
-                .from(projectMembers)
-                .where(
-                  and(
-                    eq(projectMembers.orgId, orgId),
-                    inArray(projectMembers.projectId, requestedProjectIds),
-                    eq(projectMembers.membershipId, membershipId),
-                  ),
-                ),
-              this.db
-                .select({ projectId: projectTeamAssignments.projectId })
-                .from(projectTeamAssignments)
-                .innerJoin(
-                  projectTeamMembers,
-                  and(
-                    eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
-                    eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
-                    eq(projectTeamMembers.membershipId, membershipId),
-                  ),
-                )
-                .where(
-                  and(
-                    eq(projectTeamAssignments.orgId, orgId),
-                    inArray(projectTeamAssignments.projectId, requestedProjectIds),
-                  ),
-                ),
-            ]);
-            const idSet = new Set<number>([
-              ...directRows.map((r) => r.projectId),
-              ...teamRows.map((r) => r.projectId),
-            ]);
-            accessibleProjectIds = [...idSet];
-          })()
-        : Promise.resolve();
-
-      const productTask: Promise<void> = hasProductKeys
-        ? (async () => {
-            if (membershipId === null) {
-              accessibleProductIds = [];
-              return;
-            }
-            const prodRows = await this.db
-              .select({ managedProductId: managedProductMemberships.managedProductId })
-              .from(managedProductMemberships)
-              .where(
-                and(
-                  eq(managedProductMemberships.orgId, orgId),
-                  inArray(
-                    managedProductMemberships.managedProductId,
-                    productEntries.map((e) => Number(e.rawId)),
-                  ),
-                  eq(managedProductMemberships.organizationMembershipId, membershipId),
-                ),
-              );
-            accessibleProductIds = prodRows.map((r) => r.managedProductId);
-          })()
-        : Promise.resolve();
-
-      await Promise.all([projectTask, productTask]);
+    if (!buildManageIsAll && hasProductKeys) {
+      if (membershipId === null) {
+        accessibleProductIds = [];
+      } else {
+        const prodRows = await this.db
+          .select({ managedProductId: managedProductMemberships.managedProductId })
+          .from(managedProductMemberships)
+          .where(
+            and(
+              eq(managedProductMemberships.orgId, orgId),
+              inArray(
+                managedProductMemberships.managedProductId,
+                productEntries.map((e) => Number(e.rawId)),
+              ),
+              eq(managedProductMemberships.organizationMembershipId, membershipId),
+            ),
+          );
+        accessibleProductIds = prodRows.map((r) => r.managedProductId);
+      }
     }
 
     const productIdsToFetch: number[] =
@@ -250,34 +197,22 @@ export class ScopeDirectoryService {
         ? accessibleProductIds
         : productEntries.map((e) => Number(e.rawId));
 
-    const buildProjectWhere = (): SQL<unknown> | null => {
-      if (!hasProjectKeys) return null;
-      const base: SQL<unknown>[] = [
-        eq(projects.orgId, orgId),
-        inArray(projects.id, requestedProjectIds),
-        isNull(projects.deletedAt),
-      ];
-      if (accessibleProjectIds !== null) {
-        const hasDirectAccess = accessibleProjectIds.length > 0;
-        const hasManagerAccess = membershipId !== null;
-        if (!hasDirectAccess && !hasManagerAccess) return null;
-        const memberFilter =
-          hasDirectAccess && hasManagerAccess && membershipId !== null
-            ? or(
-                inArray(projects.id, accessibleProjectIds),
-                eq(projects.managerMembershipId, membershipId),
-              )
-            : hasDirectAccess
-              ? inArray(projects.id, accessibleProjectIds)
-              : membershipId !== null
-                ? eq(projects.managerMembershipId, membershipId)
-                : null;
-        if (memberFilter) base.push(memberFilter);
+    let projectWhere: SQL<unknown> | null = null;
+    if (hasProjectKeys) {
+      if (!buildManageIsAll && membershipId === null) {
+        projectWhere = null;
+      } else {
+        const base: SQL<unknown>[] = [
+          eq(projects.orgId, orgId),
+          inArray(projects.id, requestedProjectIds),
+          isNull(projects.deletedAt),
+        ];
+        if (!buildManageIsAll && membershipId !== null) {
+          base.push(reachableProjectsSql(orgId, membershipId));
+        }
+        projectWhere = and(...base) ?? null;
       }
-      return and(...base) ?? null;
-    };
-
-    const projectWhere = buildProjectWhere();
+    }
 
     const [productRows, projectRows] = await Promise.all([
       productIdsToFetch.length > 0
@@ -338,47 +273,18 @@ export class ScopeDirectoryService {
     const escapedQ = q.replace(/[%_\\]/g, (c) => `\\${c}`);
 
     let accessibleProdIds: number[] | null = null;
-    let accessibleProjIds: number[] | null = null;
 
     if (!buildManageIsAll && membershipId !== null) {
-      const [prodRows, directRows, teamRows] = await Promise.all([
-        this.db
-          .select({ managedProductId: managedProductMemberships.managedProductId })
-          .from(managedProductMemberships)
-          .where(
-            and(
-              eq(managedProductMemberships.orgId, orgId),
-              eq(managedProductMemberships.organizationMembershipId, membershipId),
-            ),
+      const prodRows = await this.db
+        .select({ managedProductId: managedProductMemberships.managedProductId })
+        .from(managedProductMemberships)
+        .where(
+          and(
+            eq(managedProductMemberships.orgId, orgId),
+            eq(managedProductMemberships.organizationMembershipId, membershipId),
           ),
-        this.db
-          .select({ projectId: projectMembers.projectId })
-          .from(projectMembers)
-          .where(
-            and(
-              eq(projectMembers.orgId, orgId),
-              eq(projectMembers.membershipId, membershipId),
-            ),
-          ),
-        this.db
-          .select({ projectId: projectTeamAssignments.projectId })
-          .from(projectTeamAssignments)
-          .innerJoin(
-            projectTeamMembers,
-            and(
-              eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
-              eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
-              eq(projectTeamMembers.membershipId, membershipId),
-            ),
-          )
-          .where(eq(projectTeamAssignments.orgId, orgId)),
-      ]);
+        );
       accessibleProdIds = prodRows.map((r) => r.managedProductId);
-      const projSet = new Set([
-        ...directRows.map((r) => r.projectId),
-        ...teamRows.map((r) => r.projectId),
-      ]);
-      accessibleProjIds = [...projSet];
     }
 
     const prodCursorCond =
@@ -422,19 +328,11 @@ export class ScopeDirectoryService {
         : undefined;
 
     const projResults: ProjectRow[] = await (async () => {
-      if (accessibleProjIds !== null && accessibleProjIds.length === 0 && membershipId === null)
-        return [];
+      if (!buildManageIsAll && membershipId === null) return [];
       const authFilter =
-        accessibleProjIds !== null && membershipId !== null
-          ? or(
-              accessibleProjIds.length > 0
-                ? inArray(projects.id, accessibleProjIds)
-                : undefined,
-              eq(projects.managerMembershipId, membershipId),
-            )
+        !buildManageIsAll && membershipId !== null
+          ? reachableProjectsSql(orgId, membershipId)
           : undefined;
-      if (accessibleProjIds !== null && accessibleProjIds.length === 0 && authFilter === undefined)
-        return [];
       return this.db
         .select({
           id: projects.id,
