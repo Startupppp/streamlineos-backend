@@ -341,17 +341,9 @@
       "as": 0,
       "nonNull": 1
     },
-    "src/modules/build/core/projects-roadmap.service.ts": {
-      "as": 0,
-      "nonNull": 1
-    },
     "src/modules/build/core/projects-tickets-create.service.ts": {
       "as": 0,
       "nonNull": 3
-    },
-    "src/modules/build/core/projects-tickets-update.service.ts": {
-      "as": 1,
-      "nonNull": 1
     },
     "src/modules/build/core/projects-webhooks-dispatch.service.ts": {
       "as": 1,

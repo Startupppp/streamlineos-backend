@@ -134,11 +134,12 @@ async function syncAssignees(
       .delete(ticketAssignees)
       .where(and(eq(ticketAssignees.orgId, orgId), eq(ticketAssignees.ticketId, ticketId)));
     const newAssigneeId = resolveAssigneeId(input.assigneeId);
-    if (newAssigneeId && membershipByUserId.has(newAssigneeId)) {
+    const membershipId = newAssigneeId ? membershipByUserId.get(newAssigneeId) : undefined;
+    if (membershipId !== undefined) {
       await db.insert(ticketAssignees).values({
         orgId,
         ticketId,
-        membershipId: membershipByUserId.get(newAssigneeId)!,
+        membershipId,
         assignedBy: actingUserId,
       });
     }
@@ -284,7 +285,8 @@ export async function applyTicketChange(
       .set(updateData)
       .where(versionCondition)
       .returning({ id: tickets.id, version: tickets.version });
-    if (affected.length === 0) {
+    const [updated] = affected;
+    if (!updated) {
       const [current] = await tx
         .select({ version: tickets.version })
         .from(tickets)
@@ -292,14 +294,14 @@ export async function applyTicketChange(
         .limit(1);
       throw new TicketVersionConflictException(current?.version ?? before.version);
     }
-    updatedVersion = affected[0]!.version;
+    updatedVersion = updated.version;
     if (input.status && input.status !== before.status) {
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
         organizationId: orgId,
         aggregateType: "ticket",
         aggregateId: String(ticketId),
-        aggregateVersion: affected[0]!.version,
+        aggregateVersion: updated.version,
         eventType: "build.ticket.status_changed",
         occurredAt: now,
         payload: {
