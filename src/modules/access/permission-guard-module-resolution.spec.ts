@@ -1,4 +1,5 @@
 import { Controller, Get, Global, Injectable, Module, UseGuards } from "@nestjs/common";
+import type { Type } from "@nestjs/common";
 import { DiscoveryModule, MetadataScanner } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import { RateLimitModule } from "../../common/ratelimit/rate-limit.module";
@@ -31,7 +32,7 @@ class ConsumerModule {}
 
 const accessStub = { hasPermission: (): boolean => true };
 
-function globalAccessModule(exportDiscovery: boolean): unknown {
+function globalAccessModule(exportDiscovery: boolean): Type<unknown> {
   @Global()
   @Module({
     imports: [DiscoveryModule],

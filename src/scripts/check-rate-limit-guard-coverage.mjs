@@ -2,22 +2,27 @@
  * Rate-limit guard coverage — static analysis over every *.controller.ts.
  *
  * WHAT IT CHECKS
- * `@UseRateLimit("tier")` is metadata. `RateLimitGuard` is the only thing that
- * reads it, and BE-28 lists the five global `APP_GUARD`s — RateLimitGuard is
- * not among them. So every controller is individually responsible for
- * remembering `@UseGuards(..., RateLimitGuard)`, and a handler that carries the
- * decorator without the guard in scope is limited by nothing while reading, in
- * review and in the OpenAPI surface, exactly like one that is.
+ * This gate used to assert the opposite of what it asserts now, and the reason
+ * is worth stating rather than losing.
  *
- * That is the same shape as the problem `RouteClassifierGuard` solved for route
- * exposure: a forgotten decorator with no symptom. This script is the static
- * half of the same answer, and it is modelled on
- * `route-classification-report.mjs` line for line.
+ * Originally `RateLimitGuard` was not global, so every controller was
+ * individually responsible for `@UseGuards(..., RateLimitGuard)` and a handler
+ * carrying `@UseRateLimit` without it was limited by nothing. The gate found
+ * those. `RateLimitGuard` is now the third global `APP_GUARD` (BE-28), so that
+ * failure mode cannot occur and every finding the old gate produced would be
+ * false. It refused to run rather than print a clean sheet, which is why this
+ * file was rewritten instead of quietly passing.
  *
- * The runtime counterpart cannot exist as cheaply here. `RouteClassifierGuard`
- * can sweep at boot because it only needs the metadata; guard *registration* is
- * not reflected as metadata Nest exposes per handler in a form a sixth global
- * guard could read reliably, so the sweep is static.
+ * The live invariant is the inverse: a route that still names RateLimitGuard in
+ * its own `@UseGuards` is mounting it twice. That is not a correctness bug —
+ * the guard latches per request and charges the tier once, pinned by
+ * "charges the tier once per request" in rate-limit.guard.spec.ts — but it is a
+ * live instruction to the next reader that the decorator needs a manual guard,
+ * which is how the original defect gets reintroduced.
+ *
+ * Tier *existence* is not this gate's job. `RateLimitGuard.onApplicationBootstrap`
+ * refuses to boot on an unknown tier, and rate-limit-coverage.spec.ts pins both
+ * the global registration and tier reachability.
  *
  * HOW IT WORKS
  * Identical parse to the classification report: decorator lines accumulate in a
@@ -28,13 +33,10 @@
  * class and handler guards together rather than letting one override the other.
  *
  * LIMITATIONS
- * - Static and regex-based. A guard reaching a route by any means other than
- *   `@UseGuards` on the handler or its class is invisible here; today there is
- *   no such means, because `app.module.ts` is the only place an `APP_GUARD` is
- *   registered and RateLimitGuard is not one (pinned by
- *   `src/common/ratelimit/rate-limit-coverage.spec.ts`).
- * - This gate says nothing about whether the tier exists. That is BE-35 and
- *   `rate-limit-coverage.spec.ts`.
+ * - Static and regex-based. It sees `@UseGuards` on a handler or its class and
+ *   nothing else.
+ * - It says nothing about whether the tier exists. That is BE-35, the boot
+ *   sweep, and `rate-limit-coverage.spec.ts`.
  *
  * Usage:
  *   node src/scripts/check-rate-limit-guard-coverage.mjs [options]
@@ -43,13 +45,13 @@
  * Options:
  *   --self-test   Run internal assertions and exit.
  *   --json        Output JSON instead of human-readable text.
- *   --verbose     Include every rate-limited handler, not just the uncovered.
+ *   --verbose     Include every rate-limited handler, not just the redundant.
  *
  * Exit codes:
- *   0 = every rate-limited handler has RateLimitGuard in scope
- *   1 = one or more UNCOVERED handlers found, or --self-test failed
- *   2 = no controller files found, or RateLimitGuard became global and this
- *       gate would now pass vacuously
+ *   0 = no rate-limited handler mounts RateLimitGuard redundantly
+ *   1 = one or more REDUNDANT mounts found, or --self-test failed
+ *   2 = no controller files found, or RateLimitGuard is no longer a global
+ *       APP_GUARD, which inverts this gate's premise
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -220,9 +222,10 @@ export function parseRateLimitedHandlers(rawContent) {
 }
 
 /**
- * RateLimitGuard becoming a global APP_GUARD would make every finding below
- * false, and a gate that reports zero for the wrong reason is worse than no
- * gate. Read app.module.ts and say so rather than printing a clean run.
+ * This gate's premise is that RateLimitGuard is global, which is what makes an
+ * explicit mount redundant. If it stops being global the premise inverts and
+ * every finding below becomes wrong in the opposite direction — a missing mount
+ * would then be the real defect and this gate would be silent about it.
  *
  * @param {string} appModuleSource
  * @returns {boolean}
@@ -250,8 +253,8 @@ class ThingController {
 }
 `;
   const r1 = parseRateLimitedHandlers(handlerGuard);
-  checks.handlerLevelGuardCovers = r1.length === 1 && r1[0]?.covered === true;
-  checks.handlerLevelGuardScopeReported = r1[0]?.guardScope === "handler";
+  checks.handlerLevelMountIsRedundant = r1.length === 1 && r1[0]?.covered === true;
+  checks.handlerLevelMountScopeReported = r1[0]?.guardScope === "handler";
 
   const missingGuard = `
 @Controller("things")
@@ -263,9 +266,9 @@ class ThingController {
 }
 `;
   const r2 = parseRateLimitedHandlers(missingGuard);
-  checks.decoratorWithoutGuardIsUncovered = r2.length === 1 && r2[0]?.covered === false;
-  checks.uncoveredHandlerKeepsItsTier = r2[0]?.tier === "things:invite-link";
-  checks.uncoveredHandlerKeepsItsRoute =
+  checks.decoratorAloneIsTheCorrectStateNow = r2.length === 1 && r2[0]?.covered === false;
+  checks.handlerKeepsItsTier = r2[0]?.tier === "things:invite-link";
+  checks.handlerKeepsItsRoute =
     r2[0]?.verb === "Post" && r2[0]?.routePath === ":thingId/invite-link";
 
   const classGuard = `
@@ -282,7 +285,7 @@ class ThingController {
 }
 `;
   const r3 = parseRateLimitedHandlers(classGuard);
-  checks.classLevelGuardCoversEveryHandler =
+  checks.classLevelMountIsRedundantForEveryHandler =
     r3.length === 2 && r3.every((h) => h.covered && h.guardScope === "class");
 
   const noTier = `
@@ -306,7 +309,7 @@ class ThingController {
   x() {}
 }
 `;
-  checks.anUnrelatedGuardDoesNotCount =
+  checks.anUnrelatedGuardIsNotMistakenForRateLimitGuard =
     parseRateLimitedHandlers(otherGuard)[0]?.covered === false;
 
   // Prettier wraps a three-guard list, and the whole point of the collapse pass
@@ -324,7 +327,7 @@ class ThingController {
   y() {}
 }
 `;
-  checks.wrappedGuardListStillCovers =
+  checks.wrappedGuardListIsStillSeenAsAMount =
     parseRateLimitedHandlers(wrappedGuards)[0]?.covered === true;
 
   const wrappedTier = `
@@ -356,7 +359,7 @@ class ThingController {
 `;
   const r5 = parseRateLimitedHandlers(classTier);
   checks.classLevelTierAppliesToEveryHandler = r5.length === 2;
-  checks.classLevelTierStillNeedsAGuard =
+  checks.classLevelTierReportsPerHandlerMountState =
     r5.find((h) => h.method === "one")?.covered === false &&
     r5.find((h) => h.method === "two")?.covered === true;
 
@@ -376,7 +379,7 @@ class ThingController {
 `;
   const r6 = parseRateLimitedHandlers(reservedWords);
   checks.reservedWordMethodNamesAreStillHandlers = r6.length === 2;
-  checks.reservedWordHandlersAreUncoveredWhenTheyAre = r6.every((h) => !h.covered);
+  checks.reservedWordHandlersReportNoMountWhenTheyHaveNone = r6.every((h) => !h.covered);
 
   checks.globalRegistrationIsDetected = rateLimitGuardIsGlobal(
     `{ provide: APP_GUARD, useClass: RateLimitGuard },`,
@@ -402,11 +405,12 @@ const asJson = args.includes("--json");
 const verbose = args.includes("--verbose");
 
 const appModule = readFileSync(join(SRC_ROOT, "app.module.ts"), "utf8");
-if (rateLimitGuardIsGlobal(appModule)) {
+if (!rateLimitGuardIsGlobal(appModule)) {
   process.stdout.write(
-    "ERROR: RateLimitGuard is registered as a global APP_GUARD. Every finding this gate " +
-      "produces would be false, so it refuses to report. Delete this gate or restate the " +
-      "invariant it checks.\n",
+    "ERROR: RateLimitGuard is no longer a global APP_GUARD in app.module.ts. This gate " +
+      "reports redundant explicit mounts, which is only meaningful while the guard is " +
+      "global. Restore the global registration, or restate this gate to find MISSING " +
+      "mounts again — see the header.\n",
   );
   process.exit(2);
 }
@@ -423,22 +427,24 @@ for (const filePath of walk(SRC_ROOT)) {
 }
 
 let totalRateLimited = 0;
-let totalCovered = 0;
+let totalRedundant = 0;
 
-/** @type {{ file: string, handler: string, tier: string, route: string }[]} */
-const uncovered = [];
+/** @type {{ file: string, handler: string, tier: string, route: string, scope: string }[]} */
+const redundant = [];
 
 for (const { file, handlers } of results) {
   for (const handler of handlers) {
     totalRateLimited++;
-    if (handler.covered) totalCovered++;
-    else
-      uncovered.push({
+    if (handler.covered) {
+      totalRedundant++;
+      redundant.push({
         file,
         handler: handler.method,
         tier: handler.tier,
         route: `${handler.verb.toUpperCase()} ${handler.routePath}`,
+        scope: handler.guardScope,
       });
+    }
   }
 }
 
@@ -449,6 +455,15 @@ if (totalRateLimited === 0) {
   process.exit(2);
 }
 
+const BASELINE_PATH = join(__dirname, "baselines", "rate-limit-redundant-mounts.json");
+/** @type {{ entries: string[] }} */
+const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
+const baselineSet = new Set(baseline.entries);
+const currentSet = new Set(redundant.map((r) => `${r.file}#${r.handler}`));
+
+const newlyRedundant = redundant.filter((r) => !baselineSet.has(`${r.file}#${r.handler}`));
+const staleBaseline = baseline.entries.filter((key) => !currentSet.has(key));
+
 if (asJson) {
   process.stdout.write(
     JSON.stringify(
@@ -456,10 +471,14 @@ if (asJson) {
         summary: {
           controllersWithRateLimits: results.length,
           rateLimitedHandlers: totalRateLimited,
-          covered: totalCovered,
-          uncovered: uncovered.length,
+          redundant: totalRedundant,
+          baseline: baseline.entries.length,
+          newlyRedundant: newlyRedundant.length,
+          staleBaseline: staleBaseline.length,
         },
-        uncovered,
+        redundant,
+        newlyRedundant,
+        staleBaseline,
         ...(verbose ? { all: results } : {}),
       },
       null,
@@ -468,20 +487,31 @@ if (asJson) {
   );
 } else {
   process.stdout.write(
-    `\nRate-limit guard coverage\n` +
+    `\nRate-limit guard redundancy (RateLimitGuard is global — an explicit mount is dead weight)\n` +
       `  Controllers with @UseRateLimit : ${results.length}\n` +
       `  Rate-limited handlers          : ${totalRateLimited}\n` +
-      `  RateLimitGuard in scope        : ${totalCovered}\n` +
-      `  UNCOVERED                      : ${uncovered.length}\n`,
+      `  REDUNDANT explicit mounts      : ${totalRedundant}\n` +
+      `  Baselined (shrink-only)        : ${baseline.entries.length}\n` +
+      `  NEW since the baseline         : ${newlyRedundant.length}\n` +
+      `  Stale baseline entries         : ${staleBaseline.length}\n`,
   );
 
-  if (uncovered.length > 0) {
+  if (newlyRedundant.length > 0) {
     process.stdout.write(
-      `\nUNCOVERED handlers (@UseRateLimit with no RateLimitGuard on the handler or its class — the tier is metadata nobody reads):\n`,
+      `\nNEW redundant mounts (RateLimitGuard is already global; remove it from @UseGuards so the next reader does not copy the pattern):\n`,
     );
-    for (const { file, handler, tier, route } of uncovered) {
-      process.stdout.write(`  ${file}  →  ${handler}  [${route}]  tier="${tier}"\n`);
+    for (const { file, handler, tier, route, scope } of newlyRedundant) {
+      process.stdout.write(
+        `  ${file}  →  ${handler}  [${route}]  tier="${tier}"  mounted on the ${scope}\n`,
+      );
     }
+  }
+
+  if (staleBaseline.length > 0) {
+    process.stdout.write(
+      `\nSTALE baseline entries — the mount is gone, so delete the entry; a baseline that outlives its site licenses a return:\n`,
+    );
+    for (const key of staleBaseline) process.stdout.write(`  ${key}\n`);
   }
 
   if (verbose) {
@@ -489,7 +519,7 @@ if (asJson) {
     for (const { file, handlers } of results) {
       for (const h of handlers) {
         process.stdout.write(
-          `  [${(h.covered ? h.guardScope : "UNCOVERED").padEnd(9)}]  ${file}  →  ${h.method}  tier="${h.tier}"\n`,
+          `  [${(h.covered ? `REDUNDANT:${h.guardScope}` : "global").padEnd(19)}]  ${file}  →  ${h.method}  tier="${h.tier}"\n`,
         );
       }
     }
@@ -497,11 +527,11 @@ if (asJson) {
 
   process.stdout.write(
     `\n${
-      uncovered.length === 0
-        ? "RESULT: EVERY RATE-LIMITED HANDLER HAS RateLimitGuard IN SCOPE"
-        : `RESULT: ${uncovered.length} UNCOVERED HANDLER(S) — add RateLimitGuard to @UseGuards on the handler or its controller`
+      newlyRedundant.length === 0 && staleBaseline.length === 0
+        ? `RESULT: NO NEW REDUNDANT MOUNTS (${baseline.entries.length} baselined, shrink-only)`
+        : `RESULT: ${newlyRedundant.length} NEW redundant mount(s), ${staleBaseline.length} stale baseline entr(ies)`
     }\n`,
   );
 }
 
-process.exit(uncovered.length > 0 ? 1 : 0);
+process.exit(newlyRedundant.length > 0 || staleBaseline.length > 0 ? 1 : 0);

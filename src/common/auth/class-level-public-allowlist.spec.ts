@@ -128,9 +128,7 @@ describe("class-level @Public() allowlist", () => {
   it("the allowlist contains no names absent from the codebase — stale entries are removed", () => {
     const nameSet = new Set(allNames);
     const stale = [...CLASS_LEVEL_PUBLIC_ALLOWLIST].filter((name) => !nameSet.has(name));
-    if (stale.length > 0) {
-      expect(stale).toEqual([]);
-    }
+    expect(stale).toEqual([]);
   });
 
   it("demonstrates that adding a new class-level @Public() would fail — the gate genuinely bites", () => {

@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { GUARDS_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 import { UseGuards } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
@@ -119,9 +121,6 @@ describe("PermissionGuard boot sweep — @RequirePermission without mounted guar
   });
 
   it("passes the real application: no controller in the codebase carries @RequirePermission without PermissionGuard", () => {
-    const { readdirSync, readFileSync, statSync } = require("node:fs") as typeof import("node:fs");
-    const { join, resolve } = require("node:path") as typeof import("node:path");
-
     const SRC = resolve(__dirname, "..", "..");
 
     function walk(dir: string): string[] {

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { ExecutionContext, HttpException, HttpStatus } from "@nestjs/common";
 import { PATH_METADATA } from "@nestjs/common/constants";
 import { Reflector } from "@nestjs/core";
@@ -227,12 +229,7 @@ describe("RateLimitGuard boot sweep", () => {
   });
 
   it("the real AppModule registers RateLimitGuard as a global APP_GUARD after JwtAuthGuard", () => {
-    const { readFileSync } = require("node:fs");
-    const { resolve } = require("node:path");
-    const appModule = readFileSync(
-      resolve(__dirname, "../../app.module.ts"),
-      "utf8",
-    ) as string;
+    const appModule = readFileSync(resolve(__dirname, "../../app.module.ts"), "utf8");
     const globalGuards = [
       ...appModule.matchAll(/APP_GUARD,\s*useClass:\s*(\w+)/g),
     ].map((match) => match[1] as string);
