@@ -1,7 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { type INestApplication, type CanActivate, type ExecutionContext } from "@nestjs/common";
 import request from "supertest";
-import { Reflector } from "@nestjs/core";
+import { DiscoveryModule, Reflector } from "@nestjs/core";
 import { EssController } from "./ess.controller";
 import { EssService } from "./ess.service";
 import { EssSelfServiceService } from "./ess-self-service.service";
@@ -42,6 +42,7 @@ const denyAll = {
 
 async function buildApp(): Promise<INestApplication> {
   const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [DiscoveryModule],
     controllers: [EssController],
     providers: [
       {

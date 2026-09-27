@@ -1,5 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import { DiscoveryModule, Reflector } from "@nestjs/core";
 import { ExecutionContextHost } from "@nestjs/core/helpers/execution-context-host";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { testAuthContext } from "../../../../test/helpers/module-guard-context";
@@ -42,6 +42,7 @@ describe("KbHrLinkFlagsController authorisation", () => {
     flags.getAdmin.mockReset().mockResolvedValue(ADMIN_VIEW);
     flags.update.mockReset().mockResolvedValue(ADMIN_VIEW);
     moduleRef = await Test.createTestingModule({
+      imports: [DiscoveryModule],
       providers: [
         PermissionGuard,
         Reflector,

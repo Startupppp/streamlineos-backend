@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import { DiscoveryModule, Reflector } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import { makeGuardCtx, MODULE_AVAILABLE, MODULE_DISABLED, testActor } from "../../../../test/helpers/module-guard-context";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -25,6 +25,7 @@ function gateOf(handler: Handler): unknown {
 async function guardHolding(keys: readonly string[]): Promise<PermissionGuard> {
   const held = new Set(keys);
   const module = await Test.createTestingModule({
+      imports: [DiscoveryModule],
     providers: [
       PermissionGuard,
       Reflector,
@@ -98,6 +99,7 @@ describe("EmployeeSupportController — the employee's own requests under /me/su
       getMine: jest.fn().mockRejectedValue(new NotFoundException("Ticket not found.")),
     };
     const module = await Test.createTestingModule({
+      imports: [DiscoveryModule],
       controllers: [EmployeeSupportController],
       providers: [{ provide: HrHelpdeskService, useValue: helpdesk }],
     })
@@ -167,7 +169,8 @@ describe("HrHelpdeskController — the agent surface", () => {
         ]),
       ),
     };
-    const module = await Test.createTestingModule({ providers: [{ provide: AccessService, useValue: access }] }).compile();
+    const module = await Test.createTestingModule({
+      imports: [DiscoveryModule], providers: [{ provide: AccessService, useValue: access }] }).compile();
     const accessService = module.get(AccessService);
 
     const memberActor = await resolveSupportActor(accessService, testActor({ orgId: "org-1", userId: "u-1" }));
@@ -184,6 +187,7 @@ describe("HrHelpdeskController — the agent surface", () => {
     const helpdesk = { getById: jest.fn().mockRejectedValue(new NotFoundException("Ticket not found.")) };
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map([["hr:helpdesk:manage", "all"]])) };
     const module = await Test.createTestingModule({
+      imports: [DiscoveryModule],
       controllers: [HrHelpdeskController],
       providers: [
         { provide: HrHelpdeskService, useValue: helpdesk },

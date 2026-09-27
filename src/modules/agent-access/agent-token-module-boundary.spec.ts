@@ -38,7 +38,7 @@ import {
   type INestApplication,
   UseGuards,
 } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import { DiscoveryModule, Reflector } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import { createHash } from "node:crypto";
 import request from "supertest";
@@ -218,6 +218,7 @@ describe("agent token cross-module boundary (AgentTokenGuard + PermissionGuard)"
       .mockImplementation(async () => new Map(heldByUser));
 
     const moduleRef = await Test.createTestingModule({
+      imports: [DiscoveryModule],
       controllers: [ModuleBoundaryProbeController],
       providers: [
         Reflector,

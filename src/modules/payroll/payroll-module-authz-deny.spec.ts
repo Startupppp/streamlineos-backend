@@ -1,7 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { type INestApplication, type CanActivate, type ExecutionContext } from "@nestjs/common";
 import request from "supertest";
-import { Reflector } from "@nestjs/core";
+import { DiscoveryModule, Reflector } from "@nestjs/core";
 import { AccountingMappingsController } from "./insights/accounting-mappings.controller";
 import { AccountingMappingsService } from "./insights/accounting-mappings.service";
 import { PayrollEntitiesController } from "./entities/entities.controller";
@@ -49,6 +49,7 @@ const denyAll = {
 
 async function buildApp(): Promise<INestApplication> {
   const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [DiscoveryModule],
     controllers: [AccountingMappingsController, PayrollEntitiesController, PayrollJobsController, PayrollReadinessController],
     providers: [
       { provide: AccountingMappingsService, useValue: { list: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn() } },

@@ -17,7 +17,7 @@
  */
 
 import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import { DiscoveryModule, Reflector } from "@nestjs/core";
 import { ExecutionContextHost } from "@nestjs/core/helpers/execution-context-host";
 import { Test, type TestingModule } from "@nestjs/testing";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -113,6 +113,7 @@ describe("PermissionGuard — missing AuthContext produces 401, not 403", () => 
     getModuleState.mockReset().mockResolvedValue(true);
 
     moduleRef = await Test.createTestingModule({
+      imports: [DiscoveryModule],
       providers: [
         PermissionGuard,
         Reflector,
