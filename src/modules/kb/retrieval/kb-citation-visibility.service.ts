@@ -6,6 +6,7 @@ import { wikiPagePredicate } from "../help-centre/kb-article-page-scope";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { articleSpacePredicate } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
@@ -55,7 +56,6 @@ export class KbCitationVisibilityService {
     ids: number[],
   ): Promise<Set<number>> {
     const spaceIds = (await this.auth.resolveStanding(user)).accessibleSpaceIds;
-    if (spaceIds.length === 0) return new Set();
     const [ownerFilter, restrictionFilter] = await Promise.all([
       this.search.articleOwnerFilterFor(user),
       this.auth.articleRestrictionPredicate(user),
@@ -64,7 +64,7 @@ export class KbCitationVisibilityService {
       eq(kbPages.orgId, user.orgId),
       inArray(kbPages.id, ids),
       supportArticlePredicate(),
-      inArray(kbPages.spaceId, spaceIds),
+      articleSpacePredicate(spaceIds),
       eq(kbPages.status, "published"),
     ];
     if (ownerFilter) conditions.push(ownerFilter);

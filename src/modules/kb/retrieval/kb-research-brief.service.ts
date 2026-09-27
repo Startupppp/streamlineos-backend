@@ -226,6 +226,34 @@ export class KbResearchBriefService {
     return { briefId, jobId };
   }
 
+  async deleteBrief(user: CurrentUserContext, briefId: number): Promise<void> {
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    const rows = await this.db
+      .select({ id: kbResearchBriefs.id, status: kbResearchBriefs.status, jobId: kbResearchBriefs.jobId })
+      .from(kbResearchBriefs)
+      .where(
+        and(
+          eq(kbResearchBriefs.id, briefId),
+          eq(kbResearchBriefs.orgId, user.orgId),
+          eq(kbResearchBriefs.userMembershipId, membershipId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new NotFoundException("Research brief not found");
+    if (row.status === "queued" && row.jobId != null) await this.aiJobs.cancel(user.orgId, row.jobId);
+    await this.db
+      .delete(kbResearchBriefs)
+      .where(
+        and(
+          eq(kbResearchBriefs.id, briefId),
+          eq(kbResearchBriefs.orgId, user.orgId),
+          eq(kbResearchBriefs.userMembershipId, membershipId),
+        ),
+      );
+  }
+
   async cancelBrief(user: CurrentUserContext, briefId: number): Promise<void> {
     const membershipId = actingMembershipId(user.principal);
     if (membershipId == null) throw new ForbiddenException("Organization membership required");

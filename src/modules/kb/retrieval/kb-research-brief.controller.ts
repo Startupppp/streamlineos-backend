@@ -103,7 +103,7 @@ export class KbResearchBriefController {
     @Param("briefId", ParseIntPipe) briefId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<void> {
-    await this.briefs.cancelBrief(u, briefId);
+    await this.briefs.deleteBrief(u, briefId);
   }
 
   @Post("research-briefs/:briefId/approve")
