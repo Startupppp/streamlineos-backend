@@ -6,7 +6,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { AiJobHandlerRegistry, type AiJobHandler, type AiJobContext } from "../../ai/jobs/ai-job-handler";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import { KbEventsService } from "../core/kb-events.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
@@ -22,7 +22,7 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly search: KbSearchService,
+    private readonly search: KbSearchRetrievalService,
     private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
     private readonly registry: AiJobHandlerRegistry,

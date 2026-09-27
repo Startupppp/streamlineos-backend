@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateCycleInput, CycleListQuery, UpdateCycleInput } from "./dto/iterations.schemas";
 import { assertProjectInOrg } from "../core/project-access";
+import { sqlstateOf } from "../../../common/observability/error-classification";
 
 @Injectable()
 export class CyclesService {
@@ -97,18 +98,25 @@ export class CyclesService {
     if (overlapping.length > 0)
       throw new ConflictException("Cycle dates overlap with an existing cycle.");
 
-    const [cycle] = await this.db
-      .insert(cycles)
-      .values({
-        projectId,
-        orgId,
-        name: input.name,
-        description: input.description,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        createdBy: userId,
-      })
-      .returning();
+    let cycle: (typeof cycles.$inferSelect) | undefined;
+    try {
+      [cycle] = await this.db
+        .insert(cycles)
+        .values({
+          projectId,
+          orgId,
+          name: input.name,
+          description: input.description,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          createdBy: userId,
+        })
+        .returning();
+    } catch (error: unknown) {
+      if (sqlstateOf(error) === "23P01")
+        throw new ConflictException("Cycle dates overlap with an existing cycle.");
+      throw error;
+    }
 
     return cycle;
   }
@@ -128,11 +136,20 @@ export class CyclesService {
         throw new ConflictException("Only one active cycle is allowed at a time per project.");
     }
 
-    const [updated] = await this.db
-      .update(cycles)
-      .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
-      .returning();
+    let updated: (typeof cycles.$inferSelect) | undefined;
+    try {
+      [updated] = await this.db
+        .update(cycles)
+        .set({ ...input, updatedAt: new Date() })
+        .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
+        .returning();
+    } catch (error: unknown) {
+      if (sqlstateOf(error) === "23505")
+        throw new ConflictException("Only one active cycle is allowed at a time per project.");
+      if (sqlstateOf(error) === "23P01")
+        throw new ConflictException("Cycle dates overlap with an existing cycle.");
+      throw error;
+    }
 
     if (!updated) throw new NotFoundException("Cycle not found");
     return updated;

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { KbPageTrashService } from "./kb-page-trash.service";
+import { KbPageTrashQueryService } from "./kb-page-trash-query.service";
 import { trashPagesQuerySchema, bulkPageIdsSchema } from "./dto/kb-pages.schemas";
 import { decodeTimestampCursor } from "../../../common/pagination/cursor";
 import type { Db } from "../../../db/drizzle.module";
@@ -99,6 +100,10 @@ function service(db: Db, treeMock?: ReturnType<typeof makeTreeMock>): KbPageTras
   );
 }
 
+function queryService(db: Db, authOverride?: typeof auth): KbPageTrashQueryService {
+  return new KbPageTrashQueryService(db, (authOverride ?? auth) as never);
+}
+
 function trashQuery(over: Record<string, unknown> = {}) {
   return trashPagesQuerySchema.parse({ ...over });
 }
@@ -154,7 +159,7 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
       assertPageAccess: jest.fn(),
     };
     const { db } = makeTrashDb([]);
-    const svc = new KbPageTrashService(db, auditMock as never, storageMock, configMock, restrictedAuth as never, makeTreeMock() as never, { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never);
+    const svc = queryService(db, restrictedAuth);
     const page = await svc.getTrash(userInOrg, trashQuery());
     expect(page.data).toHaveLength(0);
     expect(restrictedAuth.visiblePagePredicate).toHaveBeenCalledWith(userInOrg, "view");
@@ -162,14 +167,14 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
 
   it("a deleted page in the caller's visible scope DOES appear in their trash", async () => {
     const { db } = makeTrashDb([makeRow(1)]);
-    const page = await service(db).getTrash(userInOrg, trashQuery());
+    const page = await queryService(db).getTrash(userInOrg, trashQuery());
     expect(page.data.length).toBeGreaterThan(0);
   });
 
   it("over-fetches one sentinel row so hasMore costs no second query", async () => {
     const rows = Array.from({ length: 60 }, (_, i) => makeRow(100 - i));
     const { db, limits } = makeTrashDb(rows);
-    const page = await service(db).getTrash(userInOrg, trashQuery({ limit: 50 }));
+    const page = await queryService(db).getTrash(userInOrg, trashQuery({ limit: 50 }));
     expect(limits).toEqual([51]);
     expect(page.data).toHaveLength(50);
     expect(page.pagination.hasMore).toBe(true);
@@ -178,7 +183,7 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
   it("the list pages past 100 rows and reports hasMore — no silent truncation at 100", async () => {
     const rows = Array.from({ length: 105 }, (_, i) => makeRow(200 - i));
     const { db, limits } = makeTrashDb(rows);
-    const page = await service(db).getTrash(userInOrg, trashQuery({ limit: 100 }));
+    const page = await queryService(db).getTrash(userInOrg, trashQuery({ limit: 100 }));
     expect(limits).toEqual([101]);
     expect(page.data).toHaveLength(100);
     expect(page.pagination.hasMore).toBe(true);
@@ -188,7 +193,7 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
   it("reports no next page when all results fit", async () => {
     const rows = Array.from({ length: 3 }, (_, i) => makeRow(3 - i));
     const { db } = makeTrashDb(rows);
-    const page = await service(db).getTrash(userInOrg, trashQuery({ limit: 50 }));
+    const page = await queryService(db).getTrash(userInOrg, trashQuery({ limit: 50 }));
     expect(page.pagination.hasMore).toBe(false);
     expect(page.pagination.nextCursor).toBeNull();
   });
@@ -200,7 +205,7 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
       deletedAtText: "2024-06-01T12:00:00.000000",
     }));
     const { db } = makeTrashDb(rows);
-    const page = await service(db).getTrash(userInOrg, trashQuery({ limit: 5 }));
+    const page = await queryService(db).getTrash(userInOrg, trashQuery({ limit: 5 }));
     const cursor = decodeTimestampCursor(page.pagination.nextCursor ?? undefined);
     if (!cursor) throw new Error("expected a cursor");
     expect(cursor.id).toBe(page.data[page.data.length - 1]?.id);

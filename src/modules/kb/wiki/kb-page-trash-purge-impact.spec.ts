@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { KbPageTrashService } from "./kb-page-trash.service";
+import { KbPageTrashQueryService } from "./kb-page-trash-query.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -10,11 +10,6 @@ const userInOrg = {
   orgId: ORG_ID,
   isOrgOwner: false,
 } as CurrentUserContext;
-
-const auditMock = { log: jest.fn() };
-const storageMock = {} as never;
-const configMock = { R2_KB_BUCKET_NAME: "test-bucket" } as never;
-const treeMock = { restore: jest.fn() } as never;
 
 function makeAuth(predicateResult: ReturnType<typeof sql> = sql`true`) {
   return {
@@ -48,11 +43,11 @@ function makeDb(
   } as unknown as Db;
 }
 
-function service(db: Db, auth: ReturnType<typeof makeAuth>): KbPageTrashService {
-  return new KbPageTrashService(db, auditMock as never, storageMock, configMock, auth as never, treeMock, { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never);
+function service(db: Db, auth: ReturnType<typeof makeAuth>): KbPageTrashQueryService {
+  return new KbPageTrashQueryService(db, auth as never);
 }
 
-describe("KbPageTrashService.purgeImpact — dependency impact before a destructive purge", () => {
+describe("KbPageTrashQueryService.purgeImpact — dependency impact before a destructive purge", () => {
   it("reports the selected page count plus descendants that would also be purged", async () => {
     const db = makeDb(
       [{ id: 1 }, { id: 2 }],

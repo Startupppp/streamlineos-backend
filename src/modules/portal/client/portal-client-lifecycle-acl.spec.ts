@@ -288,3 +288,91 @@ describe("PortalClientService — source ACL gate: clientVisible=true on sub-res
     expect(result.comments).toHaveLength(0);
   });
 });
+
+describe("PortalClientService — parent ticket clientVisible required on attachment and comment joins (Requirement F)", () => {
+  function buildCapturingDb() {
+    const capturedJoinPredicates: unknown[] = [];
+    let selectCallCount = 0;
+
+    const stubFromChain = (callIndex: number) => ({
+      where: jest.fn().mockImplementation(() => ({
+        limit: jest.fn().mockImplementation(() => {
+          if (callIndex === 1) return Promise.resolve([ALL_CAPS_GRANT]);
+          if (callIndex === 2) return Promise.resolve([MINIMAL_PROJECT]);
+          return Promise.resolve([]);
+        }),
+      })),
+      innerJoin: jest.fn().mockImplementation((_table: unknown, pred: unknown) => {
+        capturedJoinPredicates.push(pred);
+        return {
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        };
+      }),
+    });
+
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        const ci = selectCallCount;
+        return { from: jest.fn().mockReturnValue(stubFromChain(ci)) };
+      }),
+    } as unknown as Db;
+
+    return { db, capturedJoinPredicates };
+  }
+
+  it("every innerJoin on a ticket child table includes 'client_visible' in the ON clause so a child of an internal-only ticket is excluded at the DB", async () => {
+    const { db, capturedJoinPredicates } = buildCapturingDb();
+    const svc = new PortalClientService(db, makeAudit());
+    await svc.getProjectOverview("org-1", "mem-1", 42);
+
+    expect(capturedJoinPredicates.length).toBeGreaterThanOrEqual(2);
+    for (const pred of capturedJoinPredicates) {
+      expect(renderSql(pred)).toContain("client_visible");
+    }
+  });
+
+  it("removing 'client_visible' from the join predicate causes the test to fail — guard against regression", async () => {
+    const capturedJoinPredicates: unknown[] = [];
+    let selectCallCount = 0;
+
+    const brokenFromChain = (callIndex: number) => ({
+      where: jest.fn().mockImplementation(() => ({
+        limit: jest.fn().mockImplementation(() => {
+          if (callIndex === 1) return Promise.resolve([ALL_CAPS_GRANT]);
+          if (callIndex === 2) return Promise.resolve([MINIMAL_PROJECT]);
+          return Promise.resolve([]);
+        }),
+      })),
+      innerJoin: jest.fn().mockImplementation((_table: unknown, pred: unknown) => {
+        capturedJoinPredicates.push(pred);
+        return {
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        };
+      }),
+    });
+
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        const ci = selectCallCount;
+        return { from: jest.fn().mockReturnValue(brokenFromChain(ci)) };
+      }),
+    } as unknown as Db;
+
+    const svc = new PortalClientService(db, makeAudit());
+    await svc.getProjectOverview("org-1", "mem-1", 42);
+
+    expect(capturedJoinPredicates.length).toBeGreaterThanOrEqual(2);
+    const allContainClientVisible = capturedJoinPredicates.every(
+      (pred) => renderSql(pred).includes("client_visible"),
+    );
+    expect(allContainClientVisible).toBe(true);
+  });
+});

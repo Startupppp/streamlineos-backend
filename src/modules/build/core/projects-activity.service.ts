@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   cycles,
   organizationMembers,
@@ -7,6 +7,7 @@ import {
   projects,
   ticketActivityLog,
   ticketCommentMentions,
+  tickets,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -129,6 +130,18 @@ export class ProjectsActivityService {
     return row?.id ?? null;
   }
 
+  private async resolveTicketProjectId(
+    orgId: string,
+    ticketId: number,
+  ): Promise<number | null> {
+    const [row] = await this.db
+      .select({ projectId: tickets.projectId })
+      .from(tickets)
+      .where(and(eq(tickets.orgId, orgId), eq(tickets.id, ticketId)))
+      .limit(1);
+    return row?.projectId ?? null;
+  }
+
   async logTicketActivity(
     orgId: string,
     ticketId: number,
@@ -137,10 +150,14 @@ export class ProjectsActivityService {
     fromValue?: string | null,
     toValue?: string | null,
   ): Promise<void> {
-    const userMembershipId = await this.resolveMembershipId(orgId, userId);
+    const [userMembershipId, projectId] = await Promise.all([
+      this.resolveMembershipId(orgId, userId),
+      this.resolveTicketProjectId(orgId, ticketId),
+    ]);
     await this.db.insert(ticketActivityLog).values({
       orgId,
       ticketId,
+      projectId,
       userMembershipId,
       action,
       fromValue: fromValue ?? null,
@@ -262,11 +279,15 @@ export class ProjectsActivityService {
 
     if (entries.length === 0) return;
 
-    const userMembershipId = await this.resolveMembershipId(orgId, userId);
+    const [userMembershipId, projectId] = await Promise.all([
+      this.resolveMembershipId(orgId, userId),
+      this.resolveTicketProjectId(orgId, ticketId),
+    ]);
     await this.db.insert(ticketActivityLog).values(
       entries.map((entry) => ({
         orgId,
         ticketId,
+        projectId,
         userMembershipId,
         action: entry.action,
         fromValue: entry.from,
@@ -360,6 +381,12 @@ export class ProjectsActivityService {
     const tokens = extractMentionTokens(input.content);
     if (tokens.length === 0) return;
 
+    const idRows = await this.db.execute(
+      sql`SELECT uid FROM app.search_mention_user_ids(${tokens}) AS uid`,
+    );
+    const candidateIds = idRows.map((r) => String(r["uid"]));
+    if (candidateIds.length === 0) return;
+
     const orgUsers = await this.db
       .select({
         id: users.id,
@@ -373,10 +400,7 @@ export class ProjectsActivityService {
       .where(
         and(
           eq(organizationMembers.orgId, input.orgId),
-          or(
-            ...tokens.map((token) => ilike(users.email, `%${token}%`)),
-            ...tokens.map((token) => ilike(users.name, `%${token}%`)),
-          ),
+          inArray(users.id, candidateIds),
         ),
       )
       .limit(20);

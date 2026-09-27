@@ -63,7 +63,7 @@ const mockDeleteTx = {
 };
 
 import { KbPageTrashService } from "./kb-page-trash.service";
-import { KbSpacesService } from "./kb-spaces.service";
+import { KbSpaceLifecycleService } from "./kb-space-lifecycle.service";
 
 const actualPurge: typeof import("./kb-page-attachment-purge") = jest.requireActual(
   "./kb-page-attachment-purge",
@@ -311,7 +311,7 @@ describe("Store 5 of 5 — cache, invalidated by namespace on a KB delete", () =
       invalidateSpaceScope: jest.fn().mockResolvedValue(undefined),
       assertSpaceAccess: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new KbSpacesService(tx as never, {} as never, authz as never);
+    const service = new KbSpaceLifecycleService(tx as never, authz as never);
 
     const result = await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: tx as never },

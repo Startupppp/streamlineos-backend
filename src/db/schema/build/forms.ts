@@ -48,7 +48,7 @@ export const projectForms = build.table("project_forms", {
 }, (t) => [
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_forms_org_project" }).onDelete("cascade"),
   index("idx_project_forms_org_project").on(t.orgId, t.projectId).where(sql`deleted_at IS NULL`),
-  uniqueIndex("uq_project_forms_project_number").on(t.projectId, t.formNumber),
+  uniqueIndex("uq_project_forms_project_number").on(t.projectId, t.formNumber).where(sql`deleted_at IS NULL`),
   index("idx_project_forms_public_token").on(t.publicToken),
   unique("uniq_project_forms_org_id").on(t.orgId, t.id),
 ]);

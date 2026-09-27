@@ -180,6 +180,7 @@ export class PortalClientService {
                 eq(tickets.projectId, projectId),
                 eq(tickets.orgId, orgId),
                 isNull(tickets.deletedAt),
+                eq(tickets.clientVisible, true),
               ),
             )
             .where(
@@ -207,6 +208,7 @@ export class PortalClientService {
                 eq(tickets.projectId, projectId),
                 eq(tickets.orgId, orgId),
                 isNull(tickets.deletedAt),
+                eq(tickets.clientVisible, true),
               ),
             )
             .leftJoin(users, eq(users.id, ticketComments.userId))

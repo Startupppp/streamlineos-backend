@@ -32,6 +32,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { logger } from "../../../common/logger/logger.service";
 import { KbAskService } from "./kb-ask.service";
+import { KbAskCitationService } from "./kb-ask-citations.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
 import {
   askSchema,
@@ -79,6 +80,7 @@ export class KbAskController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ask: KbAskService,
+    private readonly askCitations: KbAskCitationService,
     private readonly history: KbChatHistoryService,
     @Inject(COMMAND_FENCE_STORE) private readonly fences: CommandFenceStore,
   ) {}
@@ -167,7 +169,7 @@ export class KbAskController {
         const data = kbAskResultSchema.parse(claim.data);
         await runInTenantTransaction(this.db, async () => {
           await this.history.listMessages(u.orgId, u.userId, membershipId, data.conversationId, { limit: 1 });
-          await this.ask.assertReplayCitations(u, data.citations);
+          await this.askCitations.assertReplayCitations(u, data.citations);
         }, { orgId: u.orgId });
         return completedKbStream(data);
       }

@@ -5,12 +5,12 @@ import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import type {
   RetrievedSource,
   RetrievedSourceDocument,
   DegradableContextPassage,
-} from "./kb-search.service";
+} from "./kb-search-retrieval.service";
 import {
   resolveKbRetrievalStrategy,
   type KbRetrievalStrategy,
@@ -47,7 +47,7 @@ export interface KbRetrievalResult {
 export class KbRetrievalService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly search: KbSearchService,
+    private readonly search: KbSearchRetrievalService,
     @Optional()
     @Inject(CacheService)
     private readonly cache: CacheService | null = null,

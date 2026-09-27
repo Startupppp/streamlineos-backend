@@ -1,16 +1,6 @@
-type ContentType =
-  | "note"
-  | "sop"
-  | "policy"
-  | "support_article"
-  | "troubleshooting"
-  | "decision_record"
-  | "meeting_notes"
-  | "runbook"
-  | "project_brief"
-  | "playbook";
+import { KbPageContentType } from "../core/kb-content-type";
 
-const DEFAULT_INTERVALS: Record<ContentType, number> = {
+const DEFAULT_INTERVALS: Record<KbPageContentType, number> = {
   policy: 180,
   sop: 90,
   support_article: 120,
@@ -24,7 +14,7 @@ const DEFAULT_INTERVALS: Record<ContentType, number> = {
 };
 
 export function computeVerificationInterval(
-  contentType: ContentType,
+  contentType: KbPageContentType,
   override?: number,
 ): number {
   if (override !== undefined && override > 0) return override;

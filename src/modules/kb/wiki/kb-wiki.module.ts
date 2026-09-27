@@ -4,14 +4,15 @@ import { BillingModule } from "../../billing/core/billing.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { KbCoreModule } from "../core/kb-core.module";
-import { KbWikiAnalyticsController } from "../analytics/kb-wiki-analytics.controller";
-import { KbWikiAnalyticsService } from "../analytics/kb-wiki-analytics.service";
 import { KbContentHealthController } from "../content-health/kb-content-health.controller";
 import { KbContentHealthService } from "../content-health/kb-content-health.service";
 import { KbRetrievalModule } from "../retrieval/kb-retrieval.module";
 import { KbSpacesService } from "./kb-spaces.service";
+import { KbSpaceLifecycleService } from "./kb-space-lifecycle.service";
 import { KbMembersService } from "./kb-members.service";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPagePublicService } from "./kb-page-public.service";
+import { KbPageTrashQueryService } from "./kb-page-trash-query.service";
 import { KbPageWriterService } from "./kb-page-writer.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
@@ -68,16 +69,18 @@ import { KbBriefToPageService } from "./kb-brief-to-page.service";
     KbSourcesController,
     KbPageAiController,
     KbPageGrantsController,
-    KbWikiAnalyticsController,
     KbContentHealthController,
   ],
   providers: [
     KbMediaService,
     KbPageAiService,
     KbSpacesService,
+    KbSpaceLifecycleService,
     KbMembersService,
     KbSourcesService,
     KbPagesService,
+    KbPagePublicService,
+    KbPageTrashQueryService,
     KbPageGrantsService,
     KbPageStatusService,
     KbPageVersionsService,
@@ -90,7 +93,6 @@ import { KbBriefToPageService } from "./kb-brief-to-page.service";
     KbPageReviewsService,
     KbImportExportService,
     KbImportProcessConsumer,
-    KbWikiAnalyticsService,
     KbContentHealthService,
     KbPageRecordLinksService,
     KbPageReviewsQueryService,

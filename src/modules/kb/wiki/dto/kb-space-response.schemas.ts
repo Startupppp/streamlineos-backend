@@ -62,6 +62,10 @@ export const kbExportResultSchema = z.object({
   content: z.string(),
 });
 
+export const kbExportDownloadSchema = z.object({
+  downloadUrl: z.string().url(),
+});
+
 export const kbMediaUploadSchema = z.object({
   key: z.string(),
   size: z.number().int(),

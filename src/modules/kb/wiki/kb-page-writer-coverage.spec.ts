@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { KbPageWriterService } from "./kb-page-writer.service";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPagePublicService } from "./kb-page-public.service";
 import { KbPageStatusService } from "./kb-page-status.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
@@ -29,6 +30,7 @@ const NOT_YET_MIGRATED = new Set<Function>();
 // or the test fails immediately.
 const PAGE_MUTATING_SERVICES: Function[] = [
   KbPagesService,
+  KbPagePublicService,
   KbPageStatusService,
   KbPageVersionsService,
   KbPageTreeService,

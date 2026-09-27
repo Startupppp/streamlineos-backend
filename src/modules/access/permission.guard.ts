@@ -1,5 +1,14 @@
-import { ForbiddenException, UnauthorizedException, CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import {
+  ForbiddenException,
+  UnauthorizedException,
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+} from "@nestjs/common";
+import { GUARDS_METADATA, PATH_METADATA } from "@nestjs/common/constants";
+import { DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -13,11 +22,59 @@ import type { AuthResult } from "./access.types";
 import { REQUIRE_PERMISSION } from "./require-permission.decorator";
 
 @Injectable()
-export class PermissionGuard implements CanActivate {
+export class PermissionGuard implements CanActivate, OnApplicationBootstrap {
+  private readonly bootLogger = new Logger(PermissionGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     private readonly access: AccessService,
+    private readonly discovery: DiscoveryService,
+    private readonly scanner: MetadataScanner,
   ) {}
+
+  onApplicationBootstrap(): void {
+    const broken: string[] = [];
+
+    for (const wrapper of this.discovery.getControllers()) {
+      const { instance } = wrapper;
+      if (!instance || typeof instance !== "object") continue;
+
+      const proto: object = Object.getPrototypeOf(instance);
+      const classRef = proto.constructor;
+
+      for (const methodName of this.scanner.getAllMethodNames(proto)) {
+        const handler: unknown = Reflect.get(proto, methodName);
+        if (typeof handler !== "function") continue;
+        if (Reflect.getMetadata(PATH_METADATA, handler) === undefined) continue;
+
+        const permissionKey = this.reflector.getAllAndOverride<string | undefined>(
+          REQUIRE_PERMISSION,
+          [handler, classRef],
+        );
+        if (permissionKey === undefined) continue;
+
+        const handlerGuards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, handler) ?? [];
+        const classGuards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, classRef) ?? [];
+        const hasPermissionGuard = [...classGuards, ...handlerGuards].includes(PermissionGuard);
+
+        if (!hasPermissionGuard) {
+          broken.push(`${classRef.name as string}#${methodName}`);
+        }
+      }
+    }
+
+    if (broken.length === 0) {
+      this.bootLogger.log(
+        "PermissionGuard: every @RequirePermission route has PermissionGuard in its guard chain",
+      );
+      return;
+    }
+
+    const list = broken.sort().join("\n  ");
+    throw new Error(
+      `PermissionGuard: ${broken.length} route(s) declare @RequirePermission but mount no PermissionGuard — add @UseGuards(JwtAuthGuard, PermissionGuard) to each controller or handler:\n  ${list}`,
+    );
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const permissionKey = this.reflector.getAllAndOverride<string | undefined>(REQUIRE_PERMISSION, [
@@ -50,11 +107,6 @@ export class PermissionGuard implements CanActivate {
 
     if (!result.allow) {
       if (result.reason === "UNAUTHENTICATED") throw new UnauthorizedException("Unauthorized");
-      // Same condition ModuleGuard reports, so it gets the same answer: 402 with
-      // the module named. A 403 here reads as "you lack the permission" and the
-      // frontend's EntitlementGate, which keys the upgrade prompt on 402, shows
-      // an access-denied dead end instead of an offer to enable the module.
-      // namespaceOf, never administeringModuleOf, or a disabled Chat offers to enable Home.
       if (result.reason === "NO_MODULE")
         throw new ModuleDisabledException(
           namespaceOf(permissionKey),

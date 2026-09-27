@@ -19,6 +19,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { withSavepoint } from "../../data-quality/savepoint";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
@@ -408,12 +409,12 @@ export class ProjectsTicketSubresourcesService {
     userId: string,
   ): Promise<void> {
     try {
-      await this.activity.logTicketActivity(
+      await withSavepoint(() => this.activity.logTicketActivity(
         orgId,
         ticketId,
         userId,
         "label_changed",
-      );
+      ));
     } catch (error) {
       logger.error("Failed to log label activity", { error });
     }

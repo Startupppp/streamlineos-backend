@@ -1,4 +1,79 @@
+import type { LinkedDocumentCitation } from "../linked-documents/kb-linked-document-ask-source";
+
 export type KbDocumentKind = "article" | "page" | "source" | "document";
+
+export type AskCitation =
+  | {
+      kind: "article";
+      articleId: number;
+      title: string;
+      slug: string;
+      spaceId: number | null;
+      updatedAt: Date;
+    }
+  | {
+      kind: "page";
+      pageId: number;
+      title: string;
+      spaceId: number | null;
+      updatedAt: Date;
+    }
+  | {
+      kind: "source";
+      sourceId: number;
+      title: string;
+      spaceId: number | null;
+      updatedAt: Date;
+    }
+  | LinkedDocumentCitation;
+
+export interface KbAskOptions {
+  companyDocuments?: boolean;
+}
+
+export function restrictToCited<
+  TTop extends { kind: "article" | "page"; id: number },
+  TSource extends { sourceId: number },
+>(
+  top: TTop[],
+  sources: TSource[],
+  citations: AskCitation[],
+): { top: TTop[]; sources: TSource[] } {
+  const citedArticles = new Set<number>();
+  const citedPages = new Set<number>();
+  const citedSources = new Set<number>();
+  for (const citation of citations) {
+    if (citation.kind === "article") citedArticles.add(citation.articleId);
+    else if (citation.kind === "page") citedPages.add(citation.pageId);
+    else if (citation.kind === "source") citedSources.add(citation.sourceId);
+  }
+  return {
+    top: top.filter((item) =>
+      item.kind === "article"
+        ? citedArticles.has(item.id)
+        : citedPages.has(item.id),
+    ),
+    sources: sources.filter((item) => citedSources.has(item.sourceId)),
+  };
+}
+
+export function buildAskSourceRecords(
+  top: ReadonlyArray<{ kind: "article" | "page"; id: number }>,
+  sources: ReadonlyArray<{ sourceId: number }>,
+  linked: ReadonlyArray<{ id: number }>,
+): Array<{ kind: string; id: number; aclRevision: null }> {
+  const records: Array<{ kind: string; id: number; aclRevision: null }> = [];
+  for (const item of top) {
+    records.push({ kind: item.kind, id: item.id, aclRevision: null });
+  }
+  for (const s of sources) {
+    records.push({ kind: "source", id: s.sourceId, aclRevision: null });
+  }
+  for (const doc of linked) {
+    records.push({ kind: "document", id: doc.id, aclRevision: null });
+  }
+  return records;
+}
 
 export interface KbContextPassage {
   documentKey: string;

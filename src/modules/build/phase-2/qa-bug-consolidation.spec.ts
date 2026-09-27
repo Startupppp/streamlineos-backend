@@ -10,8 +10,8 @@ import {
 import { tickets } from "../../../db/schema/build/ticket-core";
 import { stateGroupEnum, ticketPriorityEnum } from "../../../db/schema/common/enums";
 import { DEFAULT_PROJECT_STATUSES } from "../core/lib/default-statuses";
+import { BUG_COLUMN_DISPOSITIONS } from "./bug-column-dispositions";
 import {
-  BUG_COLUMN_DISPOSITIONS,
   BUG_PRIORITY_TO_TICKET_PRIORITY,
   BUG_SEVERITY_TO_SUGGESTED_PRIORITY,
   BUG_STATUS_TO_STATE_GROUP,

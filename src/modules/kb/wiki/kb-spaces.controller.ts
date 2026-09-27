@@ -19,6 +19,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { KbSpacesService } from "./kb-spaces.service";
+import { KbSpaceLifecycleService } from "./kb-space-lifecycle.service";
 import { resolveKbSpacesViewScope } from "../core/kb-scope";
 import {
   createSpaceSchema,
@@ -51,6 +52,7 @@ const spaceIdParams = z
 export class KbSpacesController {
   constructor(
     private readonly spaces: KbSpacesService,
+    private readonly lifecycle: KbSpaceLifecycleService,
     private readonly access: AccessService,
   ) {}
 
@@ -113,7 +115,7 @@ export class KbSpacesController {
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.spaces.remove(u.orgId, spaceId);
+    return await this.lifecycle.remove(u.orgId, spaceId);
   }
 
   @Get(":spaceId/archive-impact")
@@ -124,7 +126,7 @@ export class KbSpacesController {
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.spaces.archiveImpact(u.orgId, spaceId);
+    return await this.lifecycle.archiveImpact(u.orgId, spaceId);
   }
 
   @Post(":spaceId/archive")
@@ -137,7 +139,7 @@ export class KbSpacesController {
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.spaces.archive(u.orgId, spaceId);
+    return await this.lifecycle.archive(u.orgId, spaceId);
   }
 
   @Post(":spaceId/restore")
@@ -150,6 +152,6 @@ export class KbSpacesController {
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.spaces.restore(u.orgId, spaceId);
+    return await this.lifecycle.restore(u.orgId, spaceId);
   }
 }

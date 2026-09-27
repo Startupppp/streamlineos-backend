@@ -310,4 +310,5 @@ export const CACHE_TTL = {
   LONG: 600,
   HOUR: 3600,
   VERY_LONG: 1800,
+  WEEK: 604800,
 } as const;

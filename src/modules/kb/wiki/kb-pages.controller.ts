@@ -19,11 +19,13 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPagePublicService } from "./kb-page-public.service";
 import { KbPageStatusService } from "./kb-page-status.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { KbPageTrashService } from "./kb-page-trash.service";
+import { KbPageTrashQueryService } from "./kb-page-trash-query.service";
 import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import { KbBriefToPageService } from "./kb-brief-to-page.service";
 import {
@@ -99,11 +101,13 @@ const pageIdversionNumberParams = z
 export class KbPagesController {
   constructor(
     private readonly pages: KbPagesService,
+    private readonly pagesPublic: KbPagePublicService,
     private readonly status: KbPageStatusService,
     private readonly versions: KbPageVersionsService,
     private readonly visits: KbPageVisitsService,
     private readonly tree: KbPageTreeService,
     private readonly trash: KbPageTrashService,
+    private readonly trashQuery: KbPageTrashQueryService,
     private readonly pageDuplicate: KbPageDuplicateService,
     private readonly briefToPage: KbBriefToPageService,
     private readonly access: AccessService,
@@ -142,7 +146,7 @@ export class KbPagesController {
     @Query() query: TrashPagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.trash.getTrash(u, query);
+    return this.trashQuery.getTrash(u, query);
   }
 
   @Post("pages/trash/restore")
@@ -180,7 +184,7 @@ export class KbPagesController {
     @Body() body: BulkPageIdsInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.trash.purgeImpact(u, body);
+    return this.trashQuery.purgeImpact(u, body);
   }
 
   @Get("pages/search")
@@ -191,7 +195,7 @@ export class KbPagesController {
     @Query() query: SearchPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.search(u, query.q, query.limit, query.projectId);
+    return this.pagesPublic.search(u, query.q, query.limit, query.projectId);
   }
 
   @Post("pages")
@@ -429,7 +433,7 @@ export class KbPagesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const canManage = await this.access.holds(u, "kb:pages:manage");
-    return this.pages.setVisibility(u, pageId, body.visibility, canManage);
+    return this.pagesPublic.setVisibility(u, pageId, body.visibility, canManage);
   }
 
   @Post("pages/:pageId/publish")

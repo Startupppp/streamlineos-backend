@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   projectAutomations,
   projectStatuses,
@@ -101,7 +101,7 @@ export class BuildAutomationActionExecutor {
         await this.db.transaction(async tx => {
           await reserveTicketCapacity(tx, orgId, projectId, [{ status: action.value, count: 1 }], [ticketId]);
           await tx.update(tickets)
-            .set({ status: action.value, updatedAt: new Date(), version: sql`${tickets.version} + 1` })
+            .set({ status: action.value, updatedAt: new Date() })
             .where(ticketWhere);
         });
         return;

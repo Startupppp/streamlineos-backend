@@ -291,9 +291,9 @@ export class ProjectsTicketsUpdateService {
         and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(tickets.version, before.version));
       const affected = await tx
         .update(tickets)
-        .set({ ...updateData, version: sql`${tickets.version} + 1` })
+        .set(updateData)
         .where(versionCondition)
-        .returning({ id: tickets.id });
+        .returning({ id: tickets.id, version: tickets.version });
       if (affected.length === 0)
         throw new ConflictException("Ticket was modified by another request — refresh and retry");
 
@@ -303,7 +303,7 @@ export class ProjectsTicketsUpdateService {
           organizationId: orgId,
           aggregateType: "ticket",
           aggregateId: String(ticketId),
-          aggregateVersion: now.getTime(),
+          aggregateVersion: affected[0]!.version,
           eventType: "build.ticket.status_changed",
           payload: {
             ticketId,

@@ -2,12 +2,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import "reflect-metadata";
 
+import { PgDialect } from "drizzle-orm/pg-core";
 import { kbPageCollectionQuerySchema } from "./dto/kb.schemas";
 import { kbPageCollectionItemSchema, kbPageCollectionPageSchema } from "./dto/kb-core-response.schemas";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { KB_PAGE_COLLECTION_DEFAULT_LIMIT } from "./collection/knowledge-collection.types";
 import { kbAclCacheKey, type KbAclDimension } from "./kb-acl-cache-key";
 import { buildVisiblePageScope, buildGrantBranch } from "./authorization/knowledge-page-scope";
+import { chunkVisibleTo } from "../retrieval/kb-chunk-visibility";
 import { CacheFiller } from "../../../common/cache/cache-fill";
 import { updatePageSchema } from "../wiki/dto/kb-pages.schemas";
 import { KbPagesController } from "../wiki/kb-pages.controller";
@@ -70,12 +72,15 @@ function makeStanding(over: Partial<KbActorStanding> = {}): KbActorStanding {
 }
 
 describe("Box 1 — canonical KnowledgeAuthorization is the only access decision", () => {
-  it("the retired page-bound visibility predicate no longer exists, so no file can reach for a second page ACL rule", () => {
-    const legacy = readSrc(path.join(KB_SRC, "retrieval/kb-page-visibility.ts"));
+  it("chunkVisibleTo joins kb_pages under the canonical scope, not ACL columns from kb_article_chunks — structural proof so a rename cannot defeat this assertion", () => {
+    const standing = makeStanding({ membershipId: 42 });
+    const rendered = new PgDialect().sqlToQuery(chunkVisibleTo(standing)).sql;
 
-    expect(legacy).not.toContain("pageVisibleTo");
-    expect(legacy).not.toContain("kbPages");
-    expect(legacy).toContain("export function visibleTo");
+    expect(rendered).toContain('"kb_pages"');
+    expect(rendered).not.toContain('"kb_article_chunks"."page_visibility"');
+    expect(rendered).not.toContain('"kb_article_chunks"."page_project_id"');
+    expect(rendered).not.toContain('"kb_article_chunks"."page_created_by_id"');
+    expect(rendered).not.toContain('"kb_article_chunks"."page_created_by_membership_id"');
   });
 
   it("kb-page-visibility has no production caller left, because the chunk predicate now binds to the canonical page scope instead of a second rule", () => {

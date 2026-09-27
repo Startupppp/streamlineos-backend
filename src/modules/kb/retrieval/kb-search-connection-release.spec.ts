@@ -6,6 +6,7 @@ import { NO_TENANT_TRANSACTION } from "../../../common/tenant/no-tenant-transact
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { KbSearchController } from "./kb-search.controller";
 import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import { KbPageSearchQueryService } from "./kb-page-search-query.service";
 import { KbCandidateService } from "./kb-candidate.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -93,23 +94,9 @@ function makeKbAdminStanding() {
   };
 }
 
-function makeAccessMock() {
-  return {
-    getAccessibleSpaceIdsWithCacheOutcome: jest
-      .fn()
-      .mockResolvedValue({ spaceIds: [1], cacheOutcome: "hit" }),
-    getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
-    getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-    getPrincipalIds: jest
-      .fn()
-      .mockResolvedValue({ userId: USER.userId, membershipId: 1, roleSlugs: [] }),
-  };
-}
-
 function makeSearchService(db: Db): KbSearchService {
   return new KbSearchService(
     db,
-    { isEmbeddingConfigured: jest.fn().mockReturnValue(false) } as never,
     { recordDetached: jest.fn().mockReturnValue(Promise.resolve()) } as never,
     new KbCandidateService(db, null),
     { scopeFor: jest.fn().mockResolvedValue("all") } as never,
@@ -118,12 +105,11 @@ function makeSearchService(db: Db): KbSearchService {
       resolveStanding: jest.fn().mockResolvedValue(makeKbAdminStanding()),
       resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [1], cacheOutcome: "hit" }),
     } as never,
-    null,
   );
 }
 
-function makeSearchServiceWithEmbedding(db: Db, embedDepths: number[]): KbSearchService {
-  return new KbSearchService(
+function makeSearchRetrievalService(db: Db, embedDepths: number[]): KbSearchRetrievalService {
+  return new KbSearchRetrievalService(
     db,
     {
       isEmbeddingConfigured: jest.fn().mockReturnValue(true),
@@ -132,7 +118,6 @@ function makeSearchServiceWithEmbedding(db: Db, embedDepths: number[]): KbSearch
         return { ok: true as const, vectorLiteral: "[0.1,0.2]" };
       }),
     } as never,
-    { recordDetached: jest.fn().mockReturnValue(Promise.resolve()) } as never,
     new KbCandidateService(db, null),
     { scopeFor: jest.fn().mockResolvedValue("all") } as never,
     {
@@ -207,13 +192,13 @@ describe("KbSearchService.search — re-enters the tenant transaction for all DB
   });
 });
 
-describe("KbSearchService.resolveQueryEmbedding — provider call must run outside the tenant transaction boundary", () => {
+describe("KbSearchRetrievalService.resolveQueryEmbedding — provider call must run outside the tenant transaction boundary", () => {
   it("embedQueryWithCredit is called at transaction depth 0 so a provider brown-out never parks a pooled connection", async () => {
     const embedDepths: number[] = [];
     const db = makeDb();
     trackingTxn();
 
-    const svc = makeSearchServiceWithEmbedding(db, embedDepths);
+    const svc = makeSearchRetrievalService(db, embedDepths);
     await svc.resolveQueryEmbedding("how do I reset my password", ORG);
 
     expect(embedDepths).toHaveLength(1);
@@ -225,7 +210,7 @@ describe("KbSearchService.resolveQueryEmbedding — provider call must run outsi
     const db = makeDb();
     trackingTxn();
 
-    const svc = makeSearchServiceWithEmbedding(db, embedDepths);
+    const svc = makeSearchRetrievalService(db, embedDepths);
     await runInTenantTransaction(
       db,
       () => svc.resolveQueryEmbedding("how do I reset my password", ORG),

@@ -22,9 +22,11 @@ import {
 import { KbPageBackfillService } from "./kb-page-backfill.service";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import { KbPageSearchQueryService } from "./kb-page-search-query.service";
 import { KbRetrievalService } from "./kb-retrieval.service";
 import { KbAskService } from "./kb-ask.service";
+import { KbAskCitationService } from "./kb-ask-citations.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
 import { KbResearchBriefService } from "./kb-research-brief.service";
@@ -61,9 +63,11 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbPageBackfillService,
     KbCandidateService,
     KbSearchService,
+    KbSearchRetrievalService,
     KbPageSearchQueryService,
     KbRetrievalService,
     KbAskService,
+    KbAskCitationService,
     KbCitationVisibilityService,
     KbChatHistoryService,
     KbResearchBriefService,
@@ -75,8 +79,10 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbArticleReindexService,
     KbPageBackfillService,
     KbSearchService,
+    KbSearchRetrievalService,
     KbRetrievalService,
     KbAskService,
+    KbAskCitationService,
     KbStuckSourceReaperService,
     KbResearchBriefService,
   ],

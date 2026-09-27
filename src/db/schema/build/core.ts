@@ -154,6 +154,9 @@ export const cycles = build.table(
     index("idx_cycles_org_project_velocity_cursor")
       .on(table.orgId, table.projectId, table.startDate.desc(), table.id.desc())
       .where(sql`${table.deletedAt} IS NULL AND ${table.status} IN ('active', 'completed')`),
+    uniqueIndex("uniq_cycles_one_active_per_project")
+      .on(table.orgId, table.projectId)
+      .where(sql`${table.status} = 'active' AND ${table.deletedAt} IS NULL`),
     unique("uniq_cycles_org_id").on(table.orgId, table.id),
   ],
 );

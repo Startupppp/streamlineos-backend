@@ -10,7 +10,7 @@ import {
   uniqueIndex,
   foreignKey,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { tickets, ticketComments } from "./tasks";
 import { build, buildEvents } from "./namespaces";
@@ -36,6 +36,7 @@ export const ticketActivityLog = buildEvents.table("ticket_activity_log", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").notNull(),
+  projectId: integer("project_id"),
   userMembershipId: integer("user_membership_id"),
   action: ticketActivityActionEnum("action").notNull(),
   fromValue: text("from_value"),
@@ -45,6 +46,7 @@ export const ticketActivityLog = buildEvents.table("ticket_activity_log", {
   foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_activity_log_org_ticket" }).onDelete("cascade"),
   index("idx_ticket_activity_log_ticket_recent").on(table.ticketId, table.id),
   index("idx_ticket_activity_log_org_ticket").on(table.orgId, table.ticketId, table.id),
+  index("idx_ticket_activity_log_org_project").on(table.orgId, table.projectId, table.id).where(sql`project_id IS NOT NULL`),
   unique("uniq_ticket_activity_log_org_id").on(table.orgId, table.id),
   foreignKey({
     name: "fk_ticket_activity_log_user_actor",

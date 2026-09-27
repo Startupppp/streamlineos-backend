@@ -17,7 +17,7 @@ export async function rebalanceProjectRanks(db: Db, orgId: string, projectId: nu
       WITH ordered AS (
         SELECT id, row_number() OVER (ORDER BY rank ASC, id ASC) * 1000 AS new_rank
         FROM build.tickets WHERE org_id = ${orgId} AND project_id = ${projectId} AND deleted_at IS NULL
-      ) UPDATE build.tickets t SET rank = ordered.new_rank, version = t.version + 1
+      ) UPDATE build.tickets t SET rank = ordered.new_rank
         FROM ordered WHERE t.id = ordered.id AND t.org_id = ${orgId} AND t.project_id = ${projectId}
     `);
   });
@@ -66,7 +66,7 @@ export async function rankTicket(db: Db, cache: CacheService, access: AccessServ
     const rankValue = String(positionRow?.rank ?? "");
     if (body.status !== undefined) await validateBatchTransition(tx, actor, projectId, [target], status, policy.role);
     const now = new Date();
-    const [updated] = await tx.update(tickets).set({ rank: rankValue, status, updatedAt: now, version: sql`${tickets.version} + 1` })
+    const [updated] = await tx.update(tickets).set({ rank: rankValue, status, updatedAt: now })
       .where(and(eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.id, ticketId), isNull(tickets.deletedAt)))
       .returning({ id: tickets.id, rank: tickets.rank, status: tickets.status });
     if (!updated) throw new NotFoundException("Ticket not found");

@@ -1,4 +1,5 @@
 import { Global, Module } from "@nestjs/common";
+import { DiscoveryModule } from "@nestjs/core";
 import { AccessService } from "./access.service";
 import { AccessExplainResolver } from "./access-explain.resolver";
 import { AccessVersionCache } from "./access-version-cache";
@@ -17,7 +18,7 @@ import { MFA_POLICY } from "../../common/auth/mfa-policy.token";
 
 @Global()
 @Module({
-  imports: [BillingModule],
+  imports: [BillingModule, DiscoveryModule],
   controllers: [EntitlementsController, UserModuleAccessController],
   providers: [
     AccessService,

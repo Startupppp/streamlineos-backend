@@ -15,7 +15,9 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { StorageService } from "../../storage/storage.service";
 import type { ExportPageInput, ImportPagesInput } from "./dto/kb-import-export.schemas";
+import { importItemSchema } from "./dto/kb-import-export.schemas";
 import { toMarkdown, toHtml } from "./kb-export-serializer";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import {
@@ -64,6 +66,7 @@ export class KbImportExportService {
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
     private readonly auth: KnowledgeAuthorizationService,
+    private readonly storage: StorageService,
   ) {}
 
   async exportPage(
@@ -140,6 +143,29 @@ export class KbImportExportService {
       sortValue: row.createdAtText ?? "",
       id: String(row.id),
     }));
+  }
+
+  async getExportJobDownload(
+    orgId: string,
+    jobId: number,
+  ): Promise<{ downloadUrl: string }> {
+    const rows = await this.db
+      .select({
+        id: kbExportJobs.id,
+        fileKey: kbExportJobs.fileKey,
+        expiresAt: kbExportJobs.expiresAt,
+      })
+      .from(kbExportJobs)
+      .where(and(eq(kbExportJobs.orgId, orgId), eq(kbExportJobs.id, jobId)))
+      .limit(1);
+    const job = rows[0];
+    if (!job) throw new NotFoundException("Export job not found");
+    if (!job.fileKey) throw new NotFoundException("Export file not available");
+    if (!job.expiresAt || job.expiresAt <= new Date())
+      throw new NotFoundException("Export has expired");
+    const expiresIn = Math.floor((job.expiresAt.getTime() - Date.now()) / 1000);
+    const downloadUrl = await this.storage.getFileUrl(orgId, job.fileKey, expiresIn);
+    return { downloadUrl };
   }
 
   async importPages(
@@ -389,6 +415,84 @@ export class KbImportExportService {
         : "Import job cancelled";
 
     return { status: "cancelled", message };
+  }
+
+  async retryImportJob(
+    user: CurrentUserContext,
+    jobId: number,
+  ): Promise<ImportAccepted> {
+    const orgId = user.orgId;
+    const rows = await this.db
+      .select({
+        id: kbImportJobs.id,
+        status: kbImportJobs.status,
+        sourceType: kbImportJobs.sourceType,
+        errorReport: kbImportJobs.errorReport,
+      })
+      .from(kbImportJobs)
+      .where(and(eq(kbImportJobs.orgId, orgId), eq(kbImportJobs.id, jobId)))
+      .limit(1);
+    const job = rows[0];
+    if (!job) throw new NotFoundException("Import job not found");
+    if (job.status === "pending" || job.status === "processing") {
+      throw new ConflictException("Import job is still in progress");
+    }
+    const report = job.errorReport as Record<string, unknown> | null;
+    const rawFailedItems = Array.isArray(report?.["failedItems"]) ? report["failedItems"] : [];
+    const failedItems = rawFailedItems.flatMap((raw) => {
+      const parsed = importItemSchema.safeParse(raw);
+      return parsed.success ? [parsed.data] : [];
+    });
+    if (failedItems.length === 0) {
+      throw new ConflictException("No retryable failed items in this job");
+    }
+    const [newJob] = await this.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(kbImportJobs)
+        .values({
+          orgId,
+          sourceType: job.sourceType,
+          status: "pending",
+          totalItems: failedItems.length,
+          processedItems: 0,
+          succeededItems: 0,
+          failedItems: 0,
+          duplicateItems: 0,
+          createdById: user.userId,
+        })
+        .returning();
+      const newJobRow = inserted[0];
+      if (!newJobRow) throw new InternalServerErrorException("Failed to create retry job");
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_import_job",
+        aggregateId: String(newJobRow.id),
+        aggregateVersion: Date.now(),
+        eventType: "kb.import.process",
+        payload: {
+          jobId: newJobRow.id,
+          userId: user.userId,
+          orgId,
+          input: {
+            sourceType: job.sourceType as "markdown" | "html" | "zip",
+            items: failedItems,
+            visibility: "org",
+            duplicatePolicy: "skip",
+          },
+        },
+        occurredAt: new Date(),
+      });
+      return inserted;
+    });
+    if (!newJob) throw new InternalServerErrorException("Failed to create retry job");
+    this.audit.log({
+      action: "kb.pages.import.retried",
+      userId: user.userId,
+      orgId,
+      metadata: { originalJobId: jobId, retryJobId: newJob.id, itemCount: failedItems.length },
+    });
+    return { jobId: newJob.id, status: "pending" };
   }
 
   async listImportJobs(orgId: string, cursor?: string): Promise<ImportJobPage> {

@@ -55,7 +55,10 @@ export class ProjectsActivityFeedService {
     const rawId = position !== null ? Number(position.sortValue) : NaN;
     const beforeId = isNaN(rawId) ? undefined : rawId;
 
-    const conditions = [eq(ticketActivityLog.orgId, orgId)];
+    const conditions = [
+      eq(ticketActivityLog.orgId, orgId),
+      eq(ticketActivityLog.projectId, projectId),
+    ];
     if (beforeId !== undefined) {
       conditions.push(lt(ticketActivityLog.id, beforeId));
     }
@@ -88,7 +91,6 @@ export class ProjectsActivityFeedService {
         and(
           eq(tickets.id, ticketActivityLog.ticketId),
           eq(tickets.orgId, ticketActivityLog.orgId),
-          eq(tickets.projectId, projectId),
           isNull(tickets.deletedAt),
         ),
       )

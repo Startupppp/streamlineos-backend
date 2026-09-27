@@ -4,7 +4,7 @@ import {
   HttpException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import { DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
 import { ExecutionContextHost } from "@nestjs/core/helpers/execution-context-host";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ModuleDisabledException } from "../../common/http/api-exceptions";
@@ -63,6 +63,14 @@ describe("PermissionGuard", () => {
       providers: [
         PermissionGuard,
         Reflector,
+        {
+          provide: DiscoveryService,
+          useValue: { getControllers: () => [] },
+        },
+        {
+          provide: MetadataScanner,
+          useValue: { getAllMethodNames: () => [] },
+        },
         {
           provide: AccessService,
           useValue: {

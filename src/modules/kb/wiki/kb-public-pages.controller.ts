@@ -2,7 +2,7 @@
 import type { Response } from "express";
 import { z } from "zod";
 import { Public } from "../../../common/auth/public.decorator";
-import { KbPagesService } from "./kb-pages.service";
+import { KbPagePublicService } from "./kb-page-public.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { resolveClientIpOr } from "../../../common/http/client-ip";
@@ -25,7 +25,7 @@ const kbPublicMediaBrokerSchema = z.object({ redirected: z.literal(true) });
 @Controller("public/wiki")
 export class KbPublicPagesController {
   constructor(
-    private readonly pages: KbPagesService,
+    private readonly pages: KbPagePublicService,
     private readonly rateLimit: RateLimitService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}

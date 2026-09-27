@@ -181,7 +181,7 @@ export async function bulkMutateTickets(
     }
     const updated = await tx
       .update(tickets)
-      .set({ ...update, version: sql`${tickets.version} + 1` })
+      .set(update)
       .where(
         and(
           eq(tickets.orgId, actor.orgId),

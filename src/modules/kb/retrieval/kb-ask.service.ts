@@ -1,20 +1,13 @@
-import { HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
 import type { Redis } from "@upstash/redis";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { REDIS } from "../../../common/cache/cache.service";
-import {
-  effectiveRateLimit,
-  rateLimitWindowSecs,
-} from "../../../common/ratelimit/rate-limit.service";
 import { KbAskMetrics, KB_ASK_QUEUE_LANE } from "../core/telemetry/kb-ask-metrics";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
-import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import {
   KbLinkedDocumentAskSource,
-  type LinkedDocumentCitation,
 } from "../linked-documents/kb-linked-document-ask-source";
 import type { LinkedDocumentItem } from "../linked-documents/dto/kb-linked-documents-response.schemas";
 import {
@@ -29,99 +22,23 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import type { AskInput } from "./dto/kb-ai.schemas";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 import {
+  AskCitation,
   ASK_SYSTEM_PROMPT,
   assemblePassages,
   buildKbContext,
+  buildAskSourceRecords,
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
+  KbAskOptions,
+  restrictToCited,
 } from "./kb-ask-context";
-import { kbAiInteractions, type KbAiInteractionState, type KbAiSourceRecord } from "../../../db/schema";
+import { kbAiInteractions } from "../../../db/schema";
 import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 import { KbRetrievalService, isAnyChannelDegraded } from "./kb-retrieval.service";
+import { KbAskCitationService } from "./kb-ask-citations.service";
+import { chargeKbAskOrgBudget } from "./kb-ask-rate-limit";
+import type { RetrievedSource, RetrievedSourceDocument } from "./kb-search-retrieval.service";
 
-export const KB_ASK_ORG_TIER = "kb:ask:org";
-
-const KB_ASK_ORG_WINDOW_SCRIPT =
-  "local hits = redis.call('INCR', KEYS[1]) " +
-  "local ttl = redis.call('TTL', KEYS[1]) " +
-  "if ttl < 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) ttl = tonumber(ARGV[1]) end " +
-  "return {hits, ttl}";
-
-export function kbAskOrgKey(orgId: string): string {
-  return `rl:kb:ask:org:${orgId}`;
-}
-
-export type AskCitation =
-  | {
-      kind: "article";
-      articleId: number;
-      title: string;
-      slug: string;
-      spaceId: number | null;
-      updatedAt: Date;
-    }
-  | {
-      kind: "page";
-      pageId: number;
-      title: string;
-      spaceId: number | null;
-      updatedAt: Date;
-    }
-  | {
-      kind: "source";
-      sourceId: number;
-      title: string;
-      spaceId: number | null;
-      updatedAt: Date;
-    }
-  | LinkedDocumentCitation;
-
-export function restrictToCited<
-  TTop extends { kind: "article" | "page"; id: number },
-  TSource extends { sourceId: number },
->(
-  top: TTop[],
-  sources: TSource[],
-  citations: AskCitation[],
-): { top: TTop[]; sources: TSource[] } {
-  const citedArticles = new Set<number>();
-  const citedPages = new Set<number>();
-  const citedSources = new Set<number>();
-  for (const citation of citations) {
-    if (citation.kind === "article") citedArticles.add(citation.articleId);
-    else if (citation.kind === "page") citedPages.add(citation.pageId);
-    else if (citation.kind === "source") citedSources.add(citation.sourceId);
-  }
-  return {
-    top: top.filter((item) =>
-      item.kind === "article"
-        ? citedArticles.has(item.id)
-        : citedPages.has(item.id),
-    ),
-    sources: sources.filter((item) => citedSources.has(item.sourceId)),
-  };
-}
-
-export interface KbAskOptions {
-  companyDocuments?: boolean;
-}
-
-function buildSourceRecords(
-  top: ReadonlyArray<{ kind: "article" | "page"; id: number }>,
-  sources: ReadonlyArray<{ sourceId: number }>,
-  linked: ReadonlyArray<{ id: number }>,
-): KbAiSourceRecord[] {
-  const records: KbAiSourceRecord[] = [];
-  for (const item of top) {
-    records.push({ kind: item.kind, id: item.id, aclRevision: null });
-  }
-  for (const s of sources) {
-    records.push({ kind: "source", id: s.sourceId, aclRevision: null });
-  }
-  for (const doc of linked) {
-    records.push({ kind: "document", id: doc.id, aclRevision: null });
-  }
-  return records;
-}
+export type { AskCitation, KbAskOptions };
 
 @Injectable()
 export class KbAskService {
@@ -132,32 +49,13 @@ export class KbAskService {
     private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
     private readonly search: KbSearchService,
-    private readonly citationVisibility: KbCitationVisibilityService,
+    private readonly citationsService: KbAskCitationService,
     private readonly linkedDocuments: KbLinkedDocumentAskSource,
     @Inject(REDIS) private readonly redis: Redis | null,
-    @Optional() private readonly retrieval: KbRetrievalService | null = null,
+    private readonly retrieval: KbRetrievalService,
   ) {}
 
-  private async chargeOrgAskBudget(orgId: string): Promise<void> {
-    const redis = this.redis;
-    if (!redis) return;
-    const windowSecs = rateLimitWindowSecs(KB_ASK_ORG_TIER);
-    const [hits, ttlSecs] = await redis.eval<[string], [number, number]>(
-      KB_ASK_ORG_WINDOW_SCRIPT,
-      [kbAskOrgKey(orgId)],
-      [String(windowSecs)],
-    );
-    if (hits <= effectiveRateLimit(KB_ASK_ORG_TIER)) return;
-    throw new HttpException(
-      {
-        message: "Org Ask rate limit exceeded",
-        retryAfterSecs: ttlSecs > 0 ? ttlSecs : windowSecs,
-      },
-      HttpStatus.TOO_MANY_REQUESTS,
-    );
-  }
-
-  private async gatherContextViaFacade(
+  private async gatherContext(
     user: CurrentUserContext,
     input: AskInput,
     options: KbAskOptions,
@@ -166,17 +64,15 @@ export class KbAskService {
     | {
         kind: "context";
         fullContext: string;
-        top: Awaited<ReturnType<KbSearchService["retrieveTopArticles"]>>;
-        sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>;
+        top: RetrievedSource[];
+        sources: RetrievedSourceDocument[];
         linked: LinkedDocumentItem[];
         citations: AskCitation[];
         degraded: boolean;
       }
   > {
-    const retrieval = this.retrieval as KbRetrievalService;
-
     const [retrieved, linked] = await Promise.all([
-      retrieval.retrieve(user, input.question, {
+      this.retrieval.retrieve(user, input.question, {
         documentsLimit: KB_ASK_MAX_CONTEXT_DOCUMENTS,
         sourcesLimit: 4,
         spaceId: input.spaceId,
@@ -204,7 +100,7 @@ export class KbAskService {
       this.db,
       async () => {
         const citations = [
-          ...(await this.resolveCitations(user, retrieved.documents, retrieved.sources)),
+          ...(await this.citationsService.resolveCitations(user, retrieved.documents, retrieved.sources)),
           ...linked.map((document) => this.linkedDocuments.citationOf(document)),
         ];
         if (citations.length === 0) return { kind: "no-context" as const };
@@ -233,126 +129,6 @@ export class KbAskService {
           linked,
           citations,
           degraded: isAnyChannelDegraded(retrieved.degraded),
-        };
-      },
-      { orgId: user.orgId },
-    );
-  }
-
-  private async gatherContext(
-    user: CurrentUserContext,
-    input: AskInput,
-    options: KbAskOptions,
-  ): Promise<
-    | { kind: "no-context" }
-    | {
-        kind: "context";
-        fullContext: string;
-        top: Awaited<ReturnType<KbSearchService["retrieveTopArticles"]>>;
-        sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>;
-        linked: LinkedDocumentItem[];
-        citations: AskCitation[];
-        degraded: boolean;
-      }
-  > {
-    if (this.retrieval !== null) return this.gatherContextViaFacade(user, input, options);
-
-    const { linked, hasContent } = await runInTenantTransaction(
-      this.db,
-      async () => ({
-        linked:
-          options.companyDocuments === true
-            ? await this.linkedDocuments.retrieve(user, input.question)
-            : [],
-        hasContent: await this.orgHasIndexedContent(user.orgId),
-      }),
-      { orgId: user.orgId },
-    );
-    if (!hasContent && linked.length === 0) return { kind: "no-context" as const };
-
-    const embedding = hasContent
-      ? await this.search.resolveQueryEmbedding(input.question, user.orgId)
-      : undefined;
-
-    return runInTenantTransaction(
-      this.db,
-      async () => {
-        const retrievedTop = hasContent
-          ? await this.search.retrieveTopArticles(
-              user,
-              input.question,
-              KB_ASK_MAX_CONTEXT_DOCUMENTS,
-              input.spaceId,
-              input.verifiedOnly,
-              embedding,
-            )
-          : [];
-        const retrievedSources = hasContent
-          ? await this.search.retrieveTopSources(
-              user,
-              input.question,
-              4,
-              input.sourceIds,
-              embedding,
-            )
-          : [];
-        if (
-          retrievedTop.length === 0 &&
-          retrievedSources.length === 0 &&
-          linked.length === 0
-        )
-          return { kind: "no-context" as const };
-
-        const citations = [
-          ...(await this.resolveCitations(user, retrievedTop, retrievedSources)),
-          ...linked.map((document) => this.linkedDocuments.citationOf(document)),
-        ];
-        if (citations.length === 0) return { kind: "no-context" as const };
-
-        const { top, sources } = restrictToCited(
-          retrievedTop,
-          retrievedSources,
-          citations,
-        );
-
-        const articleIds = top
-          .filter((source) => source.kind === "article")
-          .map((source) => source.id);
-        const pageIds = top
-          .filter((source) => source.kind === "page")
-          .map((source) => source.id);
-        const documentPassages = hasContent
-          ? await this.search.retrieveDocumentPassages(
-              user,
-              input.question,
-              articleIds,
-              pageIds,
-              embedding,
-            )
-          : [];
-
-        const fullContext = buildKbContext(
-          assemblePassages(
-            top,
-            sources,
-            documentPassages,
-            linked.map((document) => this.linkedDocuments.passageOf(document)),
-          ),
-        );
-        if (fullContext.length === 0) return { kind: "no-context" as const };
-
-        const degraded =
-          sources.some((source) => source.degraded === true) ||
-          documentPassages.some((passage) => passage.degraded === true);
-
-        return {
-          kind: "context" as const,
-          fullContext,
-          top,
-          sources,
-          linked,
-          citations,
-          degraded,
         };
       },
       { orgId: user.orgId },
@@ -413,7 +189,7 @@ export class KbAskService {
     aiUsage?: AiUsageMeta;
   }> {
     const correlationId = randomUUID();
-    await this.chargeOrgAskBudget(user.orgId);
+    await chargeKbAskOrgBudget(this.redis, user.orgId);
     const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
       const cacheOutcome = await this.search.aclCacheOutcome(user);
@@ -425,7 +201,7 @@ export class KbAskService {
       }
       const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
-      const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
+      const sourceIdsWithRevisions = buildAskSourceRecords(top, sources, linked);
       const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
       const queueLane = KB_ASK_QUEUE_LANE;
       const dbRole = "primary";
@@ -446,14 +222,7 @@ export class KbAskService {
 
       if (!gatewayResult.ok) {
         if (gatewayResult.kind === "quota_exceeded") {
-          metrics.finish("credits_exhausted", {
-            citations: citations.length,
-            candidates,
-            queueLane,
-            sourceKind,
-            cacheOutcome,
-            dbRole,
-          });
+          metrics.finish("credits_exhausted", { citations: citations.length, candidates, queueLane, sourceKind, cacheOutcome, dbRole });
           await runInTenantTransaction(
             this.db,
             async (tx) => {
@@ -469,29 +238,13 @@ export class KbAskService {
             },
             { orgId: user.orgId },
           );
-          throw new InsufficientAiCreditsException({
-            message: gatewayResult.message,
-          });
+          throw new InsufficientAiCreditsException({ message: gatewayResult.message });
         }
         if (gatewayResult.kind === "concurrency_exceeded") {
-          metrics.finish("provider_unavailable", {
-            citations: citations.length,
-            candidates,
-            queueLane,
-            sourceKind,
-            cacheOutcome,
-            dbRole,
-          });
+          metrics.finish("provider_unavailable", { citations: citations.length, candidates, queueLane, sourceKind, cacheOutcome, dbRole });
           throw new ServiceUnavailableException("AI concurrency limit reached — retry shortly");
         }
-        metrics.finish("provider_unavailable", {
-          citations: citations.length,
-          candidates,
-          queueLane,
-          sourceKind,
-          cacheOutcome,
-          dbRole,
-        });
+        metrics.finish("provider_unavailable", { citations: citations.length, candidates, queueLane, sourceKind, cacheOutcome, dbRole });
         await runInTenantTransaction(
           this.db,
           async (tx) => {
@@ -508,8 +261,7 @@ export class KbAskService {
           { orgId: user.orgId },
         );
         return {
-          answer:
-            "The AI assistant is temporarily unavailable. Here are the most relevant sources found for your question.",
+          answer: "The AI assistant is temporarily unavailable. Here are the most relevant sources found for your question.",
           citations,
           hasContext: true,
         };
@@ -538,27 +290,14 @@ export class KbAskService {
           await this.events.record(user.orgId, "ai_answer", {
             actorMembershipId: actingMembershipId(user.principal) ?? null,
             query: input.question,
-            metadata: {
-              sourceIds: [
-                ...top.map((s) => `${s.kind}:${s.id}`),
-                ...linked.map((document) => `document:${document.id}`),
-              ],
-            },
+            metadata: { sourceIds: [...top.map((s) => `${s.kind}:${s.id}`), ...linked.map((d) => `document:${d.id}`)] },
             correlationId,
           });
         },
         { orgId: user.orgId },
       );
 
-      metrics.finish(degraded ? "degraded" : "answered", {
-        citations: citations.length,
-        candidates,
-        degraded,
-        queueLane,
-        sourceKind,
-        cacheOutcome,
-        dbRole,
-      });
+      metrics.finish(degraded ? "degraded" : "answered", { citations: citations.length, candidates, degraded, queueLane, sourceKind, cacheOutcome, dbRole });
       return { answer, citations, hasContext: true, aiUsage };
     } catch (error) {
       metrics.finish("error");
@@ -581,7 +320,7 @@ export class KbAskService {
       }
   > {
     const correlationId = randomUUID();
-    await this.chargeOrgAskBudget(user.orgId);
+    await chargeKbAskOrgBudget(this.redis, user.orgId);
     const metrics = KbAskMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
       const cacheOutcome = await this.search.aclCacheOutcome(user);
@@ -594,7 +333,7 @@ export class KbAskService {
       }
       const { fullContext, top, sources, linked, citations, degraded } = gathered;
       const candidates = top.length + sources.length + linked.length;
-      const sourceIdsWithRevisions = buildSourceRecords(top, sources, linked);
+      const sourceIdsWithRevisions = buildAskSourceRecords(top, sources, linked);
       const sourceKind = sources.length > 0 && top.length > 0 ? "mixed" : sources.length > 0 ? "source" : top.length > 0 ? "article" : "none";
       const queueLane = KB_ASK_QUEUE_LANE;
       const dbRole = "primary";
@@ -618,12 +357,7 @@ export class KbAskService {
             await this.events.record(user.orgId, "ai_answer", {
               actorMembershipId: actingMembershipId(user.principal) ?? null,
               query: input.question,
-              metadata: {
-                sourceIds: [
-                  ...top.map((s) => `${s.kind}:${s.id}`),
-                  ...linked.map((document) => `document:${document.id}`),
-                ],
-              },
+              metadata: { sourceIds: [...top.map((s) => `${s.kind}:${s.id}`), ...linked.map((d) => `document:${d.id}`)] },
               correlationId,
             });
           },
@@ -667,15 +401,7 @@ export class KbAskService {
         throw streamError;
       }
 
-      metrics.finish(degraded ? "degraded" : "answered", {
-        citations: citations.length,
-        candidates,
-        degraded,
-        queueLane,
-        sourceKind,
-        cacheOutcome,
-        dbRole,
-      });
+      metrics.finish(degraded ? "degraded" : "answered", { citations: citations.length, candidates, degraded, queueLane, sourceKind, cacheOutcome, dbRole });
       return {
         hasContext: true,
         aiStream,
@@ -684,8 +410,8 @@ export class KbAskService {
           runInTenantTransaction(
             this.db,
             async () => [
-              ...(await this.resolveCitations(user, top, sources)),
-              ...(await this.stillCitableDocuments(user, linked)),
+              ...(await this.citationsService.resolveCitations(user, top, sources)),
+              ...(await this.citationsService.stillCitableDocuments(user, linked)),
             ],
             { orgId: user.orgId },
           ),
@@ -694,13 +420,6 @@ export class KbAskService {
       metrics.finish("error");
       throw error;
     }
-  }
-
-  private async orgHasIndexedContent(orgId: string): Promise<boolean> {
-    const rows = await this.db.execute(
-      sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
-    );
-    return rows.length > 0;
   }
 
   async reportKnowledgeGap(
@@ -712,119 +431,5 @@ export class KbAskService {
       query: question,
       metadata: { reportedFromAsk: true },
     });
-  }
-
-  async assertReplayCitations(
-    user: CurrentUserContext,
-    citations: AskCitation[],
-  ): Promise<void> {
-    await runInTenantTransaction(
-      this.db,
-      async () => {
-        const articleIds = citations.flatMap((citation) =>
-          citation.kind === "article" ? [citation.articleId] : [],
-        );
-        const pageIds = citations.flatMap((citation) =>
-          citation.kind === "page" ? [citation.pageId] : [],
-        );
-        const sourceIds = citations.flatMap((citation) =>
-          citation.kind === "source" ? [citation.sourceId] : [],
-        );
-        const linkedDocumentIds = citations.flatMap((citation) =>
-          citation.kind === "document" ? [citation.linkedDocumentId] : [],
-        );
-        const [articles, pages, sources, documents] = await Promise.all([
-          articleIds.length
-            ? this.citationVisibility.visibleArticles(user, articleIds)
-            : Promise.resolve(new Set<number>()),
-          pageIds.length
-            ? this.citationVisibility.visiblePages(user, pageIds)
-            : Promise.resolve(new Set<number>()),
-          sourceIds.length
-            ? this.citationVisibility.visibleSources(user, sourceIds)
-            : Promise.resolve(new Set<number>()),
-          this.linkedDocuments.stillCitable(user, linkedDocumentIds),
-        ]);
-        if (
-          articleIds.some((id) => !articles.has(id)) ||
-          pageIds.some((id) => !pages.has(id)) ||
-          sourceIds.some((id) => !sources.has(id)) ||
-          linkedDocumentIds.some((id) => !documents.has(id))
-        )
-          throw new NotFoundException(
-            "The saved answer is no longer accessible",
-          );
-      },
-      { orgId: user.orgId },
-    );
-  }
-
-  private async stillCitableDocuments(
-    user: CurrentUserContext,
-    linked: LinkedDocumentItem[],
-  ): Promise<AskCitation[]> {
-    const citable = await this.linkedDocuments.stillCitable(
-      user,
-      linked.map((document) => document.id),
-    );
-    return linked
-      .filter((document) => citable.has(document.id))
-      .map((document) => this.linkedDocuments.citationOf(document));
-  }
-
-  private async resolveCitations(
-    user: CurrentUserContext,
-    top: Awaited<ReturnType<KbSearchService["retrieveTopArticles"]>>,
-    sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>,
-  ): Promise<AskCitation[]> {
-    const articleIds = top.filter((s) => s.kind === "article").map((s) => s.id);
-    const pageIds = top.filter((s) => s.kind === "page").map((s) => s.id);
-    const sourceIds = sources.map((s) => s.sourceId);
-
-    const [visibleArticles, visiblePages, visibleSources] = await Promise.all([
-      articleIds.length > 0
-        ? this.citationVisibility.visibleArticles(user, articleIds)
-        : Promise.resolve(new Set<number>()),
-      pageIds.length > 0
-        ? this.citationVisibility.visiblePages(user, pageIds)
-        : Promise.resolve(new Set<number>()),
-      sourceIds.length > 0
-        ? this.citationVisibility.visibleSources(user, sourceIds)
-        : Promise.resolve(new Set<number>()),
-    ]);
-
-    const citations: AskCitation[] = [];
-    for (const source of top) {
-      if (source.kind === "article" && visibleArticles.has(source.id)) {
-        citations.push({
-          kind: "article",
-          articleId: source.id,
-          title: source.title,
-          slug: source.slug,
-          spaceId: source.spaceId,
-          updatedAt: source.updatedAt,
-        });
-      } else if (source.kind === "page" && visiblePages.has(source.id)) {
-        citations.push({
-          kind: "page",
-          pageId: source.id,
-          title: source.title,
-          spaceId: source.spaceId,
-          updatedAt: source.updatedAt,
-        });
-      }
-    }
-    for (const s of sources) {
-      if (visibleSources.has(s.sourceId)) {
-        citations.push({
-          kind: "source",
-          sourceId: s.sourceId,
-          title: s.title,
-          spaceId: s.spaceId,
-          updatedAt: s.updatedAt,
-        });
-      }
-    }
-    return citations;
   }
 }

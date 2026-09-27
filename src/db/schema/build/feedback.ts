@@ -129,7 +129,7 @@ export const feedbucketWidgets = build.table(
   (t) => [
   foreignKey({ columns: [t.orgId, t.managedProductId], foreignColumns: [managedProducts.orgId, managedProducts.id], name: "fk_feedbucket_widgets_org_product" }).onDelete("set null"),
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_feedbucket_widgets_org_project" }).onDelete("set null"),
-    uniqueIndex("uniq_feedbucket_widgets_public_key").on(t.publicKey),
+    uniqueIndex("uniq_feedbucket_widgets_public_key").on(t.publicKey).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_widgets_org").on(t.orgId, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_widgets_managed_product").on(t.orgId, t.managedProductId).where(sql`deleted_at IS NULL`),
     unique("uniq_feedbucket_widgets_org_id").on(t.orgId, t.id),

@@ -205,33 +205,60 @@ describe("buildSharedWithMeScope", () => {
     ).toBeNull();
   });
 
-  it("requires a live grant scoped to the exact page, so visibility alone never satisfies it", () => {
-    const scope = buildSharedWithMeScope(makeStanding());
+  it("grant EXISTS arm binds the actor's membershipId in params so only a grant naming that exact actor satisfies it — removing the grantee check leaves the membershipId absent", () => {
+    const ACTOR = 42;
+    const OTHER = 99;
+    const scope = buildSharedWithMeScope(makeStanding({ membershipId: ACTOR }));
     expect(scope).not.toBeNull();
-    const rendered = text(scope?.predicate);
-    expect(rendered.toLowerCase()).toContain("exists");
-    expect(rendered).toContain("kb_page_grants");
-    expect(rendered).not.toContain("visibility");
+    expect(boundParams(scope!.predicate)).toContain(ACTOR);
+    expect(boundParams(scope!.predicate)).not.toContain(OTHER);
+
+    const otherScope = buildSharedWithMeScope(makeStanding({ membershipId: OTHER }));
+    expect(otherScope).not.toBeNull();
+    expect(boundParams(otherScope!.predicate)).toContain(OTHER);
+    expect(boundParams(otherScope!.predicate)).not.toContain(ACTOR);
   });
 
-  it("an org-visible page the actor can merely view, with no grant naming them, does not satisfy the predicate structure", () => {
-    const scope = buildSharedWithMeScope(makeStanding());
-    const rendered = text(scope?.predicate);
-    expect(rendered.toLowerCase()).toContain("revoked_at");
-    expect(rendered.toLowerCase()).toContain("is null");
+  it("an org-visible page the actor can merely view with no grant naming them does not satisfy the scope — grant arm binds actor membershipId and access levels, not a page visibility column", () => {
+    const ACTOR = 42;
+    const scope = buildSharedWithMeScope(makeStanding({ membershipId: ACTOR }));
+    expect(scope).not.toBeNull();
+
+    const params = boundParams(scope!.predicate);
+    expect(params).toContain(ACTOR);
+    expect(params).toContain("view");
+
+    const rendered = text(scope!.predicate);
+    expect(rendered).not.toContain('"kb_pages"."visibility"');
+
+    const noMembershipScope = buildSharedWithMeScope(makeStanding({ membershipId: null, roleSlugs: ["writer"] }));
+    expect(noMembershipScope).not.toBeNull();
+    expect(boundParams(noMembershipScope!.predicate)).not.toContain(ACTOR);
   });
 
-  it("excludes a page the actor owns from sharedWithMe even when a role grant would otherwise match", () => {
-    const scope = buildSharedWithMeScope(makeStanding({ membershipId: 9 }));
-    const rendered = text(scope?.predicate);
-    expect(rendered).toContain("owner_membership_id");
-    expect(rendered).toContain("created_by_membership_id");
+  it("ownership exclusions bind the actor's membershipId so a page owned by this actor is excluded even when a role grant names the actor — removing the exclusion drops the membership param count", () => {
+    const ACTOR = 9;
+    const scope = buildSharedWithMeScope(makeStanding({ membershipId: ACTOR }));
+    expect(scope).not.toBeNull();
+
+    const params = boundParams(scope!.predicate);
+    const countActor = params.filter((p) => p === ACTOR).length;
+    expect(countActor).toBeGreaterThanOrEqual(2);
+
+    const rendered = text(scope!.predicate);
+    expect(rendered).toContain('"kb_pages"."owner_membership_id"');
+    expect(rendered).toContain('"kb_pages"."created_by_membership_id"');
   });
 
-  it("excludes a page the actor created, identified by user id rather than membership", () => {
-    const scope = buildSharedWithMeScope(makeStanding());
-    const rendered = text(scope?.predicate);
-    expect(rendered).toContain("created_by_id");
+  it("creator exclusion binds the actor's userId in params so a page created by this user is excluded — removing the exclusion drops the userId from params", () => {
+    const scope = buildSharedWithMeScope(makeStanding({ userId: "user-1", membershipId: 1 }));
+    expect(scope).not.toBeNull();
+
+    const params = boundParams(scope!.predicate);
+    expect(params).toContain("user-1");
+
+    const rendered = text(scope!.predicate);
+    expect(rendered).toContain('"kb_pages"."created_by_id"');
   });
 
   it("binds the actor's own org so a shared page from another tenant can never match", () => {

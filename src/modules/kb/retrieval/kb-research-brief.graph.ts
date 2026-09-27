@@ -2,10 +2,10 @@ import { z } from "zod";
 import { Annotation, StateGraph, END, START } from "@langchain/langgraph";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type {
-  KbSearchService,
+  KbSearchRetrievalService,
   RetrievedSource,
   RetrievedSourceDocument,
-} from "./kb-search.service";
+} from "./kb-search-retrieval.service";
 import {
   assemblePassages,
   buildKbContext,
@@ -60,7 +60,7 @@ type BriefStateType = typeof BriefState.State;
 
 export interface BriefGraphDeps {
   gateway: AiGatewayService;
-  search: KbSearchService;
+  search: KbSearchRetrievalService;
 }
 
 function buildContext(retrieved: BriefStateType["retrieved"]): string {

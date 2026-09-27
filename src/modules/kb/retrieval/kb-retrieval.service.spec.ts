@@ -13,7 +13,7 @@ import {
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { kbDocumentKey } from "./kb-ask-context";
-import type { QueryEmbedding } from "./kb-search.service";
+import type { QueryEmbedding } from "./kb-search-retrieval.service";
 
 const VECTOR = "[0.1,0.2]";
 const QUESTION = "how do I reset my password";

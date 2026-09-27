@@ -10,6 +10,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import { withSavepoint } from "../../data-quality/savepoint";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { ProjectsActivityService } from "./projects-activity.service";
@@ -192,13 +193,13 @@ export class ProjectsTicketCommentsService {
     });
 
     try {
-      await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_added");
+      await withSavepoint(() => this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_added"));
     } catch (error) {
       logger.error("Failed to log comment activity", { error });
     }
 
     try {
-      await this.activity.processCommentMentions({
+      await withSavepoint(() => this.activity.processCommentMentions({
         orgId: u.orgId,
         ticketId,
         ticketNumber: ticket.ticketNumber,
@@ -208,7 +209,7 @@ export class ProjectsTicketCommentsService {
         content: body.content,
         authorId: u.userId,
         authorName: "A teammate",
-      });
+      }));
     } catch (error) {
       logger.error("Failed to process comment mentions", { error });
     }
@@ -246,7 +247,7 @@ export class ProjectsTicketCommentsService {
       .where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, u.orgId)));
 
     try {
-      await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_updated");
+      await withSavepoint(() => this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_updated"));
     } catch (error) {
       logger.error("Failed to log comment edit activity", { error });
     }
@@ -282,7 +283,7 @@ export class ProjectsTicketCommentsService {
     });
 
     try {
-      await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_deleted");
+      await withSavepoint(() => this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_deleted"));
     } catch (error) {
       logger.error("Failed to log comment delete activity", { error });
     }

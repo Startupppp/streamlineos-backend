@@ -68,6 +68,7 @@ export class EpicsService {
           eq(tickets.orgId, orgId),
           eq(tickets.projectId, projectId),
           eq(tickets.type, "EPIC"),
+          isNull(tickets.deletedAt),
         ),
       )
       .returning();

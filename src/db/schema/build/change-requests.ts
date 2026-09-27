@@ -43,7 +43,7 @@ export const changeRequests = build.table("change_requests", {
 }, (t) => [
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_change_requests_org_project" }).onDelete("cascade"),
   index("idx_change_requests_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
-  uniqueIndex("uq_change_requests_project_number").on(t.projectId, t.crNumber),
+  uniqueIndex("uq_change_requests_project_number").on(t.projectId, t.crNumber).where(sql`deleted_at IS NULL`),
   index("idx_change_requests_requested_by").on(t.requestedById),
   index("idx_change_requests_org_approval_owner_membership").on(t.orgId, t.approvalOwnerMembershipId),
   index("idx_change_requests_org_release").on(t.orgId, t.releaseId).where(sql`release_id IS NOT NULL AND deleted_at IS NULL`),

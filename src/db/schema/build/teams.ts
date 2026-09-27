@@ -25,7 +25,7 @@ export const projectTeams = build.table(
     deletedAt: timestamp("deleted_at"),
   },
   (t) => [
-    uniqueIndex("uniq_project_teams_org_key").on(t.orgId, t.key),
+    uniqueIndex("uniq_project_teams_org_key").on(t.orgId, t.key).where(sql`deleted_at IS NULL`),
     index("idx_project_teams_org").on(t.orgId).where(sql`deleted_at IS NULL`),
     unique("uniq_project_teams_org_id").on(t.orgId, t.id),
   ],

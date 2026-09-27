@@ -1,6 +1,16 @@
 import { ProjectsActivityFeedService } from "./projects-activity-feed.service";
 import type { Db } from "../../../db/drizzle.module";
 
+function hasColumnName(node: unknown, name: string): boolean {
+  if (!node || typeof node !== "object") return false;
+  const obj = node as Record<string, unknown>;
+  if (obj["name"] === name) return true;
+  if (Array.isArray(obj["queryChunks"])) {
+    return (obj["queryChunks"] as unknown[]).some((c) => hasColumnName(c, name));
+  }
+  return false;
+}
+
 const PROJECT_ID = 7;
 const ORG_ID = "org-1";
 const TICKET_ID = 42;
@@ -134,6 +144,37 @@ describe("ProjectsActivityFeedService — tenant isolation", () => {
 
     expect(result.data[0]?.user).toBeNull();
     expect(result.data[0]?.label).toBe("created this ticket");
+  });
+
+  it("places the project_id filter on the log table column so the org-project-id partial index is the seek path", async () => {
+    let capturedWhere: unknown;
+
+    const limitMock = jest.fn().mockResolvedValue([]);
+    const orderByMock = jest.fn().mockReturnValue({ limit: limitMock });
+    const whereMock = jest.fn().mockImplementation((cond: unknown) => {
+      capturedWhere = cond;
+      return { orderBy: orderByMock };
+    });
+    const leftJoin3 = jest.fn().mockReturnValue({ where: whereMock });
+    const leftJoin2 = jest.fn().mockReturnValue({ leftJoin: leftJoin3 });
+    const leftJoin1 = jest.fn().mockReturnValue({ leftJoin: leftJoin2 });
+    const innerJoin2 = jest.fn().mockReturnValue({ leftJoin: leftJoin1 });
+    const innerJoin1 = jest.fn().mockReturnValue({ innerJoin: innerJoin2 });
+    const fromMock = jest.fn().mockReturnValue({ innerJoin: innerJoin1 });
+    const db = {
+      query: {
+        projects: {
+          findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }),
+        },
+      },
+      select: jest.fn().mockReturnValue({ from: fromMock }),
+    } as unknown as Db;
+
+    const svc = new ProjectsActivityFeedService(db);
+    await svc.getProjectActivity(actor, PROJECT_ID, { limit: 20 });
+
+    expect(capturedWhere).toBeDefined();
+    expect(hasColumnName(capturedWhere, "project_id")).toBe(true);
   });
 
   it("trims the sentinel row and signals hasMore so the client knows a next page exists without a count query", async () => {

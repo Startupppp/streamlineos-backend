@@ -34,11 +34,13 @@ import {
   kbImportJobSchema,
   kbExportResultSchema,
   kbExportJobListSchema,
+  kbExportDownloadSchema,
 } from "./dto/kb-space-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
 const importJobIdParams = z.object({ importJobId: z.coerce.number().int().positive() }).strict();
+const exportJobIdParams = z.object({ exportJobId: z.coerce.number().int().positive() }).strict();
 const jobListQuery = z.object({ cursor: z.string().optional() }).strict();
 
 @Controller("kb")
@@ -91,6 +93,17 @@ export class KbImportExportController {
     return this.importExport.getImportJob(u.orgId, importJobId);
   }
 
+  @Post("import-jobs/:importJobId/retry")
+  @RequirePermission("kb:pages:import")
+  @Validate({ params: importJobIdParams })
+  @ResponseSchema(kbImportAcceptedSchema)
+  async retryImportJob(
+    @Param("importJobId", ParseIntPipe) importJobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.importExport.retryImportJob(u, importJobId);
+  }
+
   @Post("import-jobs/:importJobId/cancel")
   @RequirePermission("kb:pages:import")
   @Validate({ params: importJobIdParams })
@@ -124,5 +137,16 @@ export class KbImportExportController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.importExport.listExportJobs(u.orgId, cursor);
+  }
+
+  @Get("export-jobs/:exportJobId/download")
+  @RequirePermission("kb:pages:export")
+  @Validate({ params: exportJobIdParams })
+  @ResponseSchema(kbExportDownloadSchema)
+  async downloadExportJob(
+    @Param("exportJobId", ParseIntPipe) exportJobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.importExport.getExportJobDownload(u.orgId, exportJobId);
   }
 }

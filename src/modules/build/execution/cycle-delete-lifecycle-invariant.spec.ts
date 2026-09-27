@@ -13,6 +13,31 @@ const TOMBSTONE_BLIND_READERS = [
   join(SRC, "modules", "dashboard", "dashboard-project.service.ts"),
 ];
 
+function predicateExcludesTombstones(where: unknown): boolean {
+  const columns: string[] = [];
+  const fragments: string[] = [];
+  const visit = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if ("queryChunks" in node) {
+      visit(node.queryChunks);
+      return;
+    }
+    if ("value" in node && Array.isArray(node.value)) {
+      fragments.push(node.value.join(""));
+      return;
+    }
+    if ("name" in node && typeof node.name === "string" && "table" in node) {
+      columns.push(node.name);
+    }
+  };
+  visit(where);
+  return columns.includes("deleted_at") && /is\s+null/i.test(fragments.join(" "));
+}
+
 function readsCyclesWithoutTombstoneFilter(file: string): boolean {
   const text = readFileSync(file, "utf8");
   let index = text.indexOf(".from(cycles)");
