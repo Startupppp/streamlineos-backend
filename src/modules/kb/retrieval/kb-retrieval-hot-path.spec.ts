@@ -416,7 +416,7 @@ describe("KB query embedding cache — a vector is a pure function of model and 
     expect(embeddings.embedQueryWithCredit).toHaveBeenCalledTimes(2);
   });
 
-  it("keys the entry by embedding model and a sha256 of the normalised text, with no tenant in the key", async () => {
+  it("keys the entry by tenant, embedding model and a sha256 of the normalised text, because a key without the tenant lets one org's paid embedding serve every other org and skips the credit reservation on the hit (BE-123)", async () => {
     const cache = makeCache();
     const embeddings = makeEmbeddings();
     const { db } = makeDb([{ id: 1 }]);
@@ -425,11 +425,11 @@ describe("KB query embedding cache — a vector is a pure function of model and 
     await svc.resolveQueryEmbedding(QUESTION, "org-1");
 
     expect(cache.set).toHaveBeenCalledWith(
-      expect.stringMatching(/^kb:qembed:text-embedding-3-small:[0-9a-f]{64}$/),
+      expect.stringMatching(/^kb:qembed:org-1:text-embedding-3-small:[0-9a-f]{64}$/),
       VECTOR,
       CACHE_TTL.WEEK,
     );
-    expect(cache.set.mock.calls[0]?.[0]).not.toContain("org-1");
+    expect(cache.set.mock.calls[0]?.[0]).toContain("org-1");
   });
 
   it("caches no entry when the provider fails, so an outage is not remembered for an hour", async () => {
