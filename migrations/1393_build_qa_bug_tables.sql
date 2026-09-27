@@ -1,20 +1,3 @@
--- 1393 — Build: Create work_item_qa_details and bug_work_item_map tables
---
--- Promotes backend/migrations/sql/b-qa-bug-01-expand.sql into the journalled
--- migration chain. All CREATE TABLE and ALTER TABLE statements use IF NOT EXISTS /
--- DROP … IF EXISTS so the migration is idempotent when the stray file was already
--- applied manually (the tables exist in production before this migration runs).
---
--- Ticket 66: https://linear.app/streamlineos/issue/SL-66
---
--- Dependencies (must be present before this migration):
---   build.tickets, build.test_cases, build.project_releases,
---   public.organization_members, public.organizations,
---   public.bug_status (enum), public.bug_severity (enum)
---
--- Migration order: no dependency on 1371/1372/1380/1381; can apply independently.
--- For the journal, assign an idx strictly greater than the current last entry.
-
 SET lock_timeout = '5s';
 SET statement_timeout = 0;
 --> statement-breakpoint
@@ -43,13 +26,9 @@ BEGIN
 END $$;
 --> statement-breakpoint
 
--- Unique index on (org_id, project_id, id) in tickets required by the
--- composite FK fk_work_item_qa_details_org_project_item below.
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_tickets_org_project_id
   ON build.tickets (org_id, project_id, id);
 --> statement-breakpoint
-
--- ====== work_item_qa_details ======
 
 CREATE TABLE IF NOT EXISTS build.work_item_qa_details (
   org_id              text                      NOT NULL,
@@ -198,8 +177,6 @@ CREATE POLICY tenant_isolation ON build.work_item_qa_details
 GRANT SELECT, INSERT, UPDATE, DELETE ON build.work_item_qa_details TO streamline_app;
 --> statement-breakpoint
 
--- ====== bug_work_item_map ======
-
 CREATE TABLE IF NOT EXISTS build.bug_work_item_map (
   org_id              text     NOT NULL,
   bug_id              integer  NOT NULL,
@@ -241,12 +218,6 @@ ALTER TABLE build.bug_work_item_map
   VALIDATE CONSTRAINT fk_bug_work_item_map_org_work_item;
 --> statement-breakpoint
 
--- NOTE: the Drizzle schema (qa.ts) declares fk_bug_work_item_map_org_project
--- referencing build.projects, but the stray file b-qa-bug-01-expand.sql did not
--- include it. It is omitted here so that this migration is a safe no-op when
--- the stray file was already applied; the FK can be added in a follow-on migration
--- after a production survey confirms project_id values are all valid.
-
 CREATE INDEX IF NOT EXISTS idx_bug_work_item_map_org_project
   ON build.bug_work_item_map (org_id, project_id, legacy_bug_number);
 --> statement-breakpoint
@@ -261,8 +232,6 @@ CREATE POLICY tenant_isolation ON build.bug_work_item_map
 --> statement-breakpoint
 GRANT SELECT, INSERT, UPDATE, DELETE ON build.bug_work_item_map TO streamline_app;
 --> statement-breakpoint
-
--- ====== test_run_results: add linked_work_item_id if absent ======
 
 ALTER TABLE build.test_run_results
   ADD COLUMN IF NOT EXISTS linked_work_item_id integer;

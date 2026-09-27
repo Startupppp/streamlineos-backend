@@ -1,6 +1,3 @@
--- Rollback for 1390_rls_project_updates.sql
--- Disables RLS on build.project_updates and removes the tenant_isolation policy.
-
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

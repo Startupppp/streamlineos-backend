@@ -1,13 +1,3 @@
--- 1393-rollback — Drop work_item_qa_details and bug_work_item_map tables
---
--- WARNING: this rollback drops both tables (and all their data).
--- Only run after confirming that the bug service and QA module are no longer
--- in production, or after a full data evacuation.
---
--- The linked_work_item_id column on test_run_results is NOT rolled back here
--- because it may have been added independently and dropping it risks data loss
--- on a table the test-run service writes to in production.
-
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

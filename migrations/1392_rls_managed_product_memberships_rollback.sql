@@ -1,6 +1,3 @@
--- Rollback for 1392_rls_managed_product_memberships.sql
--- Disables RLS on build.managed_product_memberships and removes the tenant_isolation policy.
-
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

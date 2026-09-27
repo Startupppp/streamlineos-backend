@@ -1,16 +1,3 @@
--- Enable row-level security on build.project_updates.
---
--- This table carries a NOT NULL org_id and has had ALTER DEFAULT PRIVILEGES grants
--- since creation, but no RLS policy was ever authored for it. Every SELECT by the
--- app role therefore read org-wide and returned 200 silently.
---
--- The audit in CCG-7 (docs/build-module/99-cross-cutting-gaps.md) confirmed that
--- every read and write path for this table runs inside a tenant transaction via
--- TenantContextInterceptor. No background sweep and no after-commit hook touches
--- it. Enabling the policy is therefore safe: no call path will encounter a 42501.
---
--- Pattern follows 0650 and 1295: ENABLE, DROP IF EXISTS, CREATE, GRANT.
-
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

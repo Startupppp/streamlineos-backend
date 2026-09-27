@@ -1,5 +1,3 @@
--- 1381-rollback — Remove NOT NULL from tickets.project_id
-
 SET lock_timeout = '5s';
 --> statement-breakpoint
 

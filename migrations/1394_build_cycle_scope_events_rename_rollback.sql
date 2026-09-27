@@ -1,9 +1,3 @@
--- 1394-rollback — Rename cycle_scope_events back to sprint_scope_events
---
--- WARNING: rolling back this rename will break the application code which
--- already references build_events.cycle_scope_events. Only run this rollback
--- as part of a complete rollback of the code deployment as well.
-
 SET lock_timeout = '5s';
 --> statement-breakpoint
 
