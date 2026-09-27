@@ -45,6 +45,13 @@ import {
 
 export { normalizeEmbeddableQuery };
 
+export type RetrievalChannelKind = "ok" | "empty" | "disabled" | "degraded" | "failed";
+
+export interface RetrievalChannelOutcome<T> {
+  kind: RetrievalChannelKind;
+  results: T[];
+}
+
 export const KB_DOCUMENT_PASSAGE_ROWS =
   KB_ASK_MAX_CONTEXT_DOCUMENTS * KB_ASK_CONTEXT_BUDGET.maxPassagesPerDocument;
 
@@ -333,7 +340,26 @@ export class KbSearchRetrievalService {
     pageIds: number[] = [],
     embedding?: QueryEmbedding,
   ): Promise<DegradableContextPassage[]> {
-    if (articleIds.length === 0 && pageIds.length === 0) return [];
+    const { results } = await this.retrieveDocumentPassagesWithOutcome(
+      user,
+      query,
+      articleIds,
+      pageIds,
+      embedding,
+    );
+    return results;
+  }
+
+  async retrieveDocumentPassagesWithOutcome(
+    user: CurrentUserContext,
+    query: string,
+    articleIds: number[],
+    pageIds: number[] = [],
+    embedding?: QueryEmbedding,
+  ): Promise<RetrievalChannelOutcome<DegradableContextPassage>> {
+    if (articleIds.length === 0 && pageIds.length === 0) {
+      return { kind: "disabled", results: [] };
+    }
     try {
       const vector = await this.vectorFor(query, user.orgId, embedding);
       const ordering: SQL[] =
@@ -381,9 +407,9 @@ export class KbSearchRetrievalService {
         .where(and(eq(kbArticleChunks.orgId, user.orgId), or(...scope)))
         .orderBy(...ordering)
         .limit(Math.min(KB_DOCUMENT_PASSAGE_ROWS, PAGE_SIZE_CAP));
-      const degraded = vector === null ? { degraded: true as const } : {};
+      const degradedFlag = vector === null ? { degraded: true as const } : {};
       const askedAsArticle = new Set(articleIds);
-      return rows.flatMap<DegradableContextPassage>((row) => {
+      const results = rows.flatMap<DegradableContextPassage>((row) => {
         if (row.pageId === null) return [];
         return [
           {
@@ -394,16 +420,19 @@ export class KbSearchRetrievalService {
             documentTitle: row.title,
             passageIndex: row.chunkIndex,
             text: row.content,
-            ...degraded,
+            ...degradedFlag,
           },
         ];
       });
+      if (vector === null) return { kind: "degraded", results };
+      if (results.length === 0) return { kind: "empty", results: [] };
+      return { kind: "ok", results };
     } catch (err) {
       this.logger.warn("KB document passage retrieval failed", {
         orgId: user.orgId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return [];
+      return { kind: "failed", results: [] };
     }
   }
 
@@ -415,9 +444,30 @@ export class KbSearchRetrievalService {
     embedding?: QueryEmbedding,
     spaceId?: number,
   ): Promise<RetrievedSourceDocument[]> {
+    const { results } = await this.retrieveTopSourcesWithOutcome(
+      user,
+      query,
+      limit,
+      sourceIds,
+      embedding,
+      spaceId,
+    );
+    return results;
+  }
+
+  async retrieveTopSourcesWithOutcome(
+    user: CurrentUserContext,
+    query: string,
+    limit: number,
+    sourceIds?: number[],
+    embedding?: QueryEmbedding,
+    spaceId?: number,
+  ): Promise<RetrievalChannelOutcome<RetrievedSourceDocument>> {
     const q = query.trim();
-    if (!q) return [];
-    if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
+    if (!q) return { kind: "disabled", results: [] };
+    if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) {
+      return { kind: "disabled", results: [] };
+    }
     try {
       const accessibleSpaceIds = (await this.auth.resolveStanding(user))
         .accessibleSpaceIds;
@@ -428,7 +478,9 @@ export class KbSearchRetrievalService {
         vector === null
           ? []
           : await this.candidates.vectorChunkIds(user.orgId, vector, cap);
-      if (vector !== null && chunkIds.length === 0) return [];
+      if (vector !== null && chunkIds.length === 0) {
+        return { kind: "empty", results: [] };
+      }
 
       const spaceFilter =
         accessibleSpaceIds.length > 0
@@ -478,7 +530,7 @@ export class KbSearchRetrievalService {
         .orderBy(ordering)
         .limit(cap);
 
-      const degraded = vector === null ? { degraded: true as const } : {};
+      const degradedFlag = vector === null ? { degraded: true as const } : {};
       const byId = new Map<number, RetrievedSourceDocument>();
       for (const row of rows) {
         const existing = byId.get(row.sourceId);
@@ -489,7 +541,7 @@ export class KbSearchRetrievalService {
           spaceId: row.spaceId,
           updatedAt: row.updatedAt,
           passages: [],
-          ...degraded,
+          ...degradedFlag,
         };
         document.passages.push({
           documentKey: kbDocumentKey("source", row.sourceId),
@@ -499,13 +551,16 @@ export class KbSearchRetrievalService {
         });
         if (existing === undefined) byId.set(row.sourceId, document);
       }
-      return [...byId.values()];
+      const results = [...byId.values()];
+      if (vector === null) return { kind: "degraded", results };
+      if (results.length === 0) return { kind: "empty", results: [] };
+      return { kind: "ok", results };
     } catch (err) {
       this.logger.warn("KB top-source retrieval failed", {
         orgId: user.orgId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return [];
+      return { kind: "failed", results: [] };
     }
   }
 }
