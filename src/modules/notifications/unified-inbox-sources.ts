@@ -99,8 +99,7 @@ export async function readSourceWithin<T>(
 export function notificationKeyset(
   cursor: InboxSourcePosition | null,
 ): SQL | undefined {
-  if (cursor === null) return undefined;
-  if (cursor.t === null) return lt(notifications.id, cursor.id);
+  if (cursor === null || cursor.t === null) return undefined;
   const at = new Date(cursor.t);
   return or(
     lt(notifications.createdAt, at),

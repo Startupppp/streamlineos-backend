@@ -20,8 +20,7 @@ export function approvalInboxKeyset(
   cursorId: number | null,
   cursorAt: string | null,
 ): SQL | undefined {
-  if (cursorId === null) return undefined;
-  if (cursorAt === null) return lt(projectApprovals.id, cursorId);
+  if (cursorId === null || cursorAt === null) return undefined;
   const at = new Date(cursorAt);
   return or(
     lt(projectApprovals.createdAt, at),

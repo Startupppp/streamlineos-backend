@@ -10,7 +10,8 @@ import type { AccessService } from "../access/access.service";
 import type { MailService } from "../mail/mail.service";
 import type { BroadcastsService } from "./broadcasts.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { decodeInboxCursor, type InboxKind } from "./dto/unified-inbox.schemas";
+import { decodeInboxCursor, type InboxKind, type InboxSourcePosition } from "./dto/unified-inbox.schemas";
+import { fetchNotificationItems } from "./unified-inbox-sources";
 
 const ORG = "org-1";
 const UID = "user-1";
@@ -187,7 +188,7 @@ describe("unified inbox — build approvals page on the key the merge sorts by",
     expect(whereSql).toContain('"project_approvals"."id" < $');
   });
 
-  it("falls back to an id-only bound when a legacy cursor carries no timestamp", async () => {
+  it("discards a cursor that carries an id but no timestamp, returning the first page", async () => {
     const dialect = new PgDialect();
     let whereSql = "";
     const chain: Record<string, jest.Mock> = {};
@@ -202,7 +203,89 @@ describe("unified inbox — build approvals page on the key the merge sorts by",
 
     await new BuildApprovalsInboxService(db).getInboxPage(ORG, UID, MEMBERSHIP, 5, 30, null);
 
-    expect(whereSql).toContain('"project_approvals"."id" < $');
+    expect(whereSql).not.toContain('"project_approvals"."id" < $');
     expect(whereSql).not.toContain('"project_approvals"."created_at" < $');
+  });
+});
+
+function notifRows(seeds: ApprovalSeed[]): TableRows {
+  const ordered = [...seeds].sort((a, b) => {
+    const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+    return byTime !== 0 ? byTime : b.id - a.id;
+  });
+  return {
+    notifications: ordered.map((seed) => ({
+      id: seed.id,
+      org_id: ORG,
+      membership_id: MEMBERSHIP,
+      type: "info",
+      priority: "normal",
+      category: "system",
+      source_module: "system",
+      event_key: null,
+      title: `notification ${String(seed.id)}`,
+      message: "",
+      link: null,
+      is_read: false,
+      pinned: false,
+      created_at: seed.createdAt,
+      deleted_at: null,
+      archived_at: null,
+      snoozed_until: null,
+      actor_user_id: null,
+    })),
+    users: [],
+  };
+}
+
+async function scrollNotifications(seeds: ApprovalSeed[], limit: number, pages: number): Promise<string[]> {
+  const db = makeFakeDb(notifRows(seeds)) as unknown as Db;
+  const delivered: string[] = [];
+  let cursor: InboxSourcePosition | null = null;
+
+  for (let page = 0; page < pages; page++) {
+    const items = await fetchNotificationItems(db, ORG, MEMBERSHIP, limit, cursor, false);
+    for (const item of items) delivered.push(item.dedupKey);
+    if (items.length < limit) break;
+    const last = items[items.length - 1];
+    if (!last) break;
+    cursor = { id: last.id, t: last.timestamp };
+  }
+
+  return delivered;
+}
+
+describe("unified inbox — notification keyset on the same (created_at, id) key", () => {
+  it("BITE: delivers every notification across a complete scroll of an id-nonmonotonic source", async () => {
+    const delivered = await scrollNotifications(NONMONOTONIC, 2, 5);
+
+    expect(delivered).toEqual(["notification:10", "notification:30", "notification:20"]);
+    expect(new Set(delivered).size).toBe(3);
+  });
+
+  it("BITE: never delivers the same notification twice while the cursor walks the source", async () => {
+    const delivered = await scrollNotifications(NONMONOTONIC, 2, 5);
+
+    expect(delivered.length).toBe(new Set(delivered).size);
+  });
+
+  it("discards a notification cursor that carries an id but no timestamp, returning the first page", async () => {
+    const dialect = new PgDialect();
+    let whereSql = "";
+    const chain: Record<string, jest.Mock> = {};
+    chain["from"] = jest.fn(() => chain);
+    chain["leftJoin"] = jest.fn(() => chain);
+    chain["where"] = jest.fn((predicate: SQL) => {
+      whereSql = dialect.sqlToQuery(predicate).sql;
+      return chain;
+    });
+    chain["orderBy"] = jest.fn(() => chain);
+    chain["limit"] = jest.fn(() => Promise.resolve([]));
+    const db = { select: jest.fn(() => chain) } as unknown as Db;
+
+    await fetchNotificationItems(db, ORG, MEMBERSHIP, 5, { id: 30, t: null }, false);
+
+    expect(whereSql).not.toContain('"notifications"."id" < $');
+    expect(whereSql).not.toContain('"notifications"."created_at" = $');
   });
 });
