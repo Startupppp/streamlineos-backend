@@ -8,6 +8,31 @@ const ORG_A = "org-members-a";
 const ORG_B = "org-members-b";
 const SPACE_ID = 11;
 
+const ORG_A_SPACE = { id: SPACE_ID, orgId: ORG_A, deletedAt: null };
+
+function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
+  if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+    return [v];
+  if (Array.isArray(v)) return v.flatMap((i) => sqlValues(i, seen));
+  if (typeof v !== "object" || seen.has(v)) return [];
+  seen.add(v);
+  const r = v as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : []),
+  ];
+}
+
+function makeSpaceFindFirst(): jest.Mock {
+  return jest.fn().mockImplementation(async (opts: { where?: unknown } = {}) => {
+    const vals = sqlValues(opts.where);
+    if (vals.includes(ORG_B)) return undefined;
+    if (vals.includes(ORG_A) && vals.includes(SPACE_ID)) return ORG_A_SPACE;
+    if (vals.includes(ORG_A)) return undefined;
+    return ORG_A_SPACE;
+  });
+}
+
 function makeSelectChain(rows: unknown[] = []): object {
   const chain: object = Object.assign(Promise.resolve(rows), {
     from: jest.fn().mockReturnThis(),
@@ -19,10 +44,10 @@ function makeSelectChain(rows: unknown[] = []): object {
   return chain;
 }
 
-function makeService(spaceRow: object | undefined): KbMembersService {
+function makeService(): KbMembersService {
   const db = {
     query: {
-      kbSpaces: { findFirst: jest.fn().mockResolvedValue(spaceRow) },
+      kbSpaces: { findFirst: makeSpaceFindFirst() },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 5 }) },
       kbSpaceMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
     },
@@ -38,37 +63,28 @@ function makeService(spaceRow: object | undefined): KbMembersService {
 }
 
 describe("KbMembersService — tenant isolation", () => {
-  it("BITE: list returns 404 when the space belongs to a different org (cross-tenant miss is 404, not 200)", async () => {
-    const svc = makeService(undefined);
+  it("BITE: list returns 404 when the space belongs to a different org — removing the orgId filter from assertSpaceExists causes this to resolve instead of rejecting", async () => {
+    const svc = makeService();
 
     await expect(svc.list(ORG_B, SPACE_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("list resolves when the space belongs to the requesting org (same-tenant positive control)", async () => {
-    const svc = makeService({ id: SPACE_ID, orgId: ORG_A, deletedAt: null });
+  it("list resolves when the space belongs to the requesting org (positive control — the same space lookup succeeds for the owning org)", async () => {
+    const svc = makeService();
 
     await expect(svc.list(ORG_A, SPACE_ID)).resolves.toBeInstanceOf(Array);
   });
 
-  it("cross-tenant and not-found produce the same error message, so the caller cannot distinguish them", async () => {
-    const crossTenantSvc = makeService(undefined);
-    const notFoundSvc = makeService(undefined);
+  it("cross-tenant miss and not-found produce the same error message so the caller cannot distinguish them", async () => {
+    const svc = makeService();
 
-    const crossTenantErr = await crossTenantSvc.list(ORG_B, SPACE_ID).catch((e) => e);
-    const notFoundErr = await notFoundSvc.list(ORG_A, SPACE_ID + 9999).catch((e) => e);
+    const crossTenantErr = await svc.list(ORG_B, SPACE_ID).catch((e) => e);
+    const notFoundErr = await svc.list(ORG_A, SPACE_ID + 9999).catch((e) => e);
 
     expect(crossTenantErr).toBeInstanceOf(NotFoundException);
     expect(notFoundErr).toBeInstanceOf(NotFoundException);
     expect((crossTenantErr as NotFoundException).message).toBe(
       (notFoundErr as NotFoundException).message,
     );
-  });
-
-  it("sibling org membership is never visible — a member row in ORG_A space is not listed when the caller is ORG_B", async () => {
-    const svc = makeService(undefined);
-
-    const result = await svc.list(ORG_B, SPACE_ID).catch(() => null);
-
-    expect(result).toBeNull();
   });
 });

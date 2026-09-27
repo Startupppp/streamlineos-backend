@@ -156,3 +156,71 @@ describe("KbPageCommentsService.resolve — enumeration guard", () => {
     expect(auth.visiblePagePredicate).toHaveBeenCalled();
   });
 });
+
+describe("KbPageCommentsService.list — enumeration guard", () => {
+  it("throws NotFoundException('Comment not found') when page is inaccessible, so page existence cannot be probed via listing comments", async () => {
+    const { db } = makeDb(null, null);
+    const auth = makeAuth(false);
+    const svc = new KbPageCommentsService(db, dispatch, access, auth as never);
+
+    const error = await svc.list(makeUser(), PAGE_ID).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(NotFoundException);
+    expect((error as NotFoundException).message).toBe("Comment not found");
+  });
+
+  it("returns comments when the page is accessible (positive control — the guard fires only for inaccessible pages)", async () => {
+    const listChain = {
+      from: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const db = {
+      query: { kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID }) } },
+      select: jest.fn().mockReturnValue(listChain),
+    } as unknown as Db;
+    const auth = makeAuth(true);
+    const svc = new KbPageCommentsService(db, dispatch, access, auth as never);
+
+    const result = await svc.list(makeUser(), PAGE_ID);
+
+    expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+describe("KbPageCommentsService.create — enumeration guard", () => {
+  it("throws NotFoundException('Comment not found') when page is inaccessible, so page existence cannot be probed via comment creation", async () => {
+    const { db } = makeDb(null, null);
+    const auth = makeAuth(false);
+    const svc = new KbPageCommentsService(db, dispatch, access, auth as never);
+
+    const error = await svc.create(makeUser(), PAGE_ID, { content: "test" } as never).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(NotFoundException);
+    expect((error as NotFoundException).message).toBe("Comment not found");
+  });
+
+  it("passes the page guard when the page exists, so the guard fires only for inaccessible pages (positive control)", async () => {
+    const db = {
+      query: {
+        kbPages: {
+          findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID, createdById: null, ownerUserId: null }),
+        },
+      },
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+    } as unknown as Db;
+    const auth = makeAuth(true);
+    const svc = new KbPageCommentsService(db, dispatch, access, auth as never);
+
+    const error = await svc.create(makeUser(), PAGE_ID, { content: "test" } as never).catch((e: unknown) => e);
+
+    expect(error).not.toBeInstanceOf(NotFoundException);
+    expect((error as Error).message).toBe("Failed to create comment");
+  });
+});

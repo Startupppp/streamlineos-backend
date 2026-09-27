@@ -70,7 +70,7 @@ export class KbPageCommentsService {
       ),
       columns: { id: true, createdById: true, ownerUserId: true },
     });
-    if (!page) throw new NotFoundException("Page not found");
+    if (!page) throw new NotFoundException("Comment not found");
 
     if (input.parentId) {
       const parent = await this.db.query.kbPageComments.findFirst({
@@ -201,7 +201,7 @@ export class KbPageCommentsService {
       ),
       columns: { id: true },
     });
-    if (!page) throw new NotFoundException("Page not found");
+    if (!page) throw new NotFoundException("Comment not found");
   }
 
   private async assertCommentPageVisible(user: CurrentUserContext, pageId: number): Promise<void> {
