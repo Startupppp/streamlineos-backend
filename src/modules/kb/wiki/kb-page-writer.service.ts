@@ -10,6 +10,7 @@ import {
 import { extractMentionUserIds } from "./kb-page-content.util";
 import { deferKbMentionNotifications } from "./kb-page-mention-notifications";
 import type { KbPageContent } from "../../../db/schema/kb/pages";
+import { KbWriteMetrics } from "../analytics/kb-write-metrics";
 
 export type KbPageChangeActor = {
   userId: string;
@@ -36,6 +37,7 @@ export type CommitPageChangeInput = {
   changed: {
     content?: KbPageChangedContent;
   };
+  writeOutcome?: "created" | "updated";
 };
 
 export type CommitManyPageChangesInput = {
@@ -58,63 +60,70 @@ export class KbPageWriterService {
     tx: KbTransaction,
     input: CommitPageChangeInput,
   ): Promise<void> {
-    const { orgId, actor, page, changed } = input;
+    const metrics = KbWriteMetrics.begin({ orgId: input.orgId });
+    try {
+      const { orgId, actor, page, changed } = input;
 
-    if (changed.content !== undefined) {
-      const {
-        newContent,
-        previousContent,
-        changeSummary = null,
-        forced = false,
-      } = changed.content;
+      if (changed.content !== undefined) {
+        const {
+          newContent,
+          previousContent,
+          changeSummary = null,
+          forced = false,
+        } = changed.content;
 
-      await snapshotIfNeeded(
-        tx,
-        orgId,
-        {
-          id: page.id,
-          title: page.title,
-          content: newContent,
-          contentText: page.contentText,
-        },
-        actor.userId,
-        changeSummary,
-        forced,
-        actor.membershipId,
-      );
-
-      await resyncPageLinks(tx, orgId, page.id, newContent);
-
-      const prevMentionSet = new Set(extractMentionUserIds(previousContent));
-      const addedMentions = extractMentionUserIds(newContent).filter(
-        (id) => !prevMentionSet.has(id),
-      );
-      if (addedMentions.length > 0) {
-        await deferKbMentionNotifications(this.notifications, this.logger, {
+        await snapshotIfNeeded(
+          tx,
           orgId,
-          userIds: addedMentions,
-          pageId: page.id,
-          pageTitle: page.title,
-          actorId: actor.userId,
-        });
-      }
-    }
+          {
+            id: page.id,
+            title: page.title,
+            content: newContent,
+            contentText: page.contentText,
+          },
+          actor.userId,
+          changeSummary,
+          forced,
+          actor.membershipId,
+        );
 
-    await OutboxWriter.emit(tx, {
-      eventId: randomUUID(),
-      organizationId: orgId,
-      aggregateType: "kb_page",
-      aggregateId: String(page.id),
-      aggregateVersion: Date.now(),
-      eventType: "kb.content.index",
-      payload: {
-        contentType: "page",
-        contentId: page.id,
-        contentRevision: page.contentRevision,
-        aclRevision: page.aclRevision,
-      },
-      occurredAt: new Date(),
-    });
+        await resyncPageLinks(tx, orgId, page.id, newContent);
+
+        const prevMentionSet = new Set(extractMentionUserIds(previousContent));
+        const addedMentions = extractMentionUserIds(newContent).filter(
+          (id) => !prevMentionSet.has(id),
+        );
+        if (addedMentions.length > 0) {
+          await deferKbMentionNotifications(this.notifications, this.logger, {
+            orgId,
+            userIds: addedMentions,
+            pageId: page.id,
+            pageTitle: page.title,
+            actorId: actor.userId,
+          });
+        }
+      }
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_page",
+        aggregateId: String(page.id),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: {
+          contentType: "page",
+          contentId: page.id,
+          contentRevision: page.contentRevision,
+          aclRevision: page.aclRevision,
+        },
+        occurredAt: new Date(),
+      });
+      metrics.finish(input.writeOutcome ?? "updated");
+    } catch (error) {
+      metrics.finish("error");
+      throw error;
+    }
   }
 
   async commitManyPageChanges(

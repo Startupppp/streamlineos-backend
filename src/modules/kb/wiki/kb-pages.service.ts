@@ -35,6 +35,7 @@ import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 import { KbPageWriterService } from "./kb-page-writer.service";
 import { withoutUnsharedToken } from "./kb-page-share-visibility";
 import { resolveProjectAccess } from "../../build/core/project-access";
+import { KbReadMetrics } from "../analytics/kb-read-metrics";
 
 type PageRow = KbPageRow;
 
@@ -195,6 +196,7 @@ export class KbPagesService {
         actor: { userId: user.userId, membershipId: this.membershipId(user) },
         page,
         changed: {},
+        writeOutcome: "created",
       });
 
       return page;
@@ -212,44 +214,53 @@ export class KbPagesService {
       canEdit: boolean;
     }
   > {
-    const orgId = user.orgId;
-    const predicate = await this.auth.visiblePagePredicate(user, "view");
-    const page = await this.db.query.kbPages.findFirst({
-      where: and(
-        eq(kbPages.id, pageId),
-        eq(kbPages.orgId, orgId),
-        isNull(kbPages.deletedAt),
-        predicate,
-      ),
-      columns: { fts: false },
-    });
-    if (!page) throw new NotFoundException("Page not found");
-
-    const [ancestors, editDecision, fav] = await Promise.all([
-      buildPageAncestors(this.db, orgId, page.parentPageId),
-      this.auth.resolvePageAccess(user, pageId, "edit"),
-      this.db.query.kbPageFavorites.findFirst({
+    const metrics = KbReadMetrics.begin({ orgId: user.orgId });
+    try {
+      const orgId = user.orgId;
+      const predicate = await this.auth.visiblePagePredicate(user, "view");
+      const page = await this.db.query.kbPages.findFirst({
         where: and(
-          eq(kbPageFavorites.pageId, pageId),
-          eq(kbPageFavorites.userId, user.userId),
-          eq(kbPageFavorites.orgId, orgId),
+          eq(kbPages.id, pageId),
+          eq(kbPages.orgId, orgId),
+          isNull(kbPages.deletedAt),
+          predicate,
         ),
-        columns: { id: true },
-      }),
-    ]);
+        columns: { fts: false },
+      });
+      if (!page) throw new NotFoundException("Page not found");
 
-    return {
-      ...page,
-      publicToken: withoutUnsharedToken(
-        user,
-        page,
-        this.membershipId(user),
-        canManage,
-      ).publicToken,
-      ancestors,
-      isFavorite: !!fav,
-      canEdit: editDecision.outcome === "allowed",
-    };
+      const [ancestors, editDecision, fav] = await Promise.all([
+        buildPageAncestors(this.db, orgId, page.parentPageId),
+        this.auth.resolvePageAccess(user, pageId, "edit"),
+        this.db.query.kbPageFavorites.findFirst({
+          where: and(
+            eq(kbPageFavorites.pageId, pageId),
+            eq(kbPageFavorites.userId, user.userId),
+            eq(kbPageFavorites.orgId, orgId),
+          ),
+          columns: { id: true },
+        }),
+      ]);
+
+      metrics.finish("found");
+      return {
+        ...page,
+        publicToken: withoutUnsharedToken(
+          user,
+          page,
+          this.membershipId(user),
+          canManage,
+        ).publicToken,
+        ancestors,
+        isFavorite: !!fav,
+        canEdit: editDecision.outcome === "allowed",
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) metrics.finish("not_found");
+      else if (error instanceof ForbiddenException) metrics.finish("denied");
+      else metrics.finish("error");
+      throw error;
+    }
   }
 
   async update(

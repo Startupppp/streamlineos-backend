@@ -4,6 +4,7 @@ import { KB_SLOS } from "./slo-kb-indexing";
 import { KB_ASK_SLOS } from "./slo-kb-ask";
 import { KB_SEARCH_SLOS } from "./slo-kb-search";
 import { KB_FRESHNESS_SLOS } from "./slo-kb-freshness";
+import { KB_READ_WRITE_SLOS } from "./slo-kb-read-write";
 import type { ServiceLevelObjective } from "./slo-types";
 
 export { SLO_OWNERS, KB_ALERT_RUNBOOK } from "./slo-types";
@@ -55,4 +56,5 @@ export const SLO_CATALOGUE: readonly ServiceLevelObjective[] = [
   ...KB_ASK_SLOS,
   ...KB_SEARCH_SLOS,
   ...KB_FRESHNESS_SLOS,
+  ...KB_READ_WRITE_SLOS,
 ];

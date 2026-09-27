@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
@@ -45,6 +46,8 @@ import {
   pageContentToArticleContent,
   supportArticlePredicate,
 } from "./kb-article-page-scope";
+import { KbReadMetrics } from "../analytics/kb-read-metrics";
+import { KbWriteMetrics } from "../analytics/kb-write-metrics";
 
 @Injectable()
 export class KbArticlesService {
@@ -66,41 +69,50 @@ export class KbArticlesService {
     user: CurrentUserContext,
     articleId: number,
   ): Promise<ArticleWithCategory> {
-    const [row] = await this.db
-      .select({
-        ...KB_ARTICLE_COLUMNS,
-        categoryName: kbCategories.name,
-        categorySlug: kbCategories.slug,
-      })
-      .from(kbPages)
-      .leftJoin(
-        kbCategories,
-        and(
-          eq(kbCategories.orgId, kbPages.orgId),
-          eq(kbCategories.id, kbPages.categoryId),
-        ),
-      )
-      .where(this.articleScope(user.orgId, articleId))
-      .limit(1);
-    if (!row) throw new NotFoundException("Article not found");
+    const metrics = KbReadMetrics.begin({ orgId: user.orgId });
+    try {
+      const [row] = await this.db
+        .select({
+          ...KB_ARTICLE_COLUMNS,
+          categoryName: kbCategories.name,
+          categorySlug: kbCategories.slug,
+        })
+        .from(kbPages)
+        .leftJoin(
+          kbCategories,
+          and(
+            eq(kbCategories.orgId, kbPages.orgId),
+            eq(kbCategories.id, kbPages.categoryId),
+          ),
+        )
+        .where(this.articleScope(user.orgId, articleId))
+        .limit(1);
+      if (!row) throw new NotFoundException("Article not found");
 
-    const { categoryName, categorySlug, ...page } = row;
-    await this.access.assertCanViewArticle(user, {
-      id: page.id,
-      orgId: page.orgId,
-      spaceId: page.spaceId,
-    });
+      const { categoryName, categorySlug, ...page } = row;
+      await this.access.assertCanViewArticle(user, {
+        id: page.id,
+        orgId: page.orgId,
+        spaceId: page.spaceId,
+      });
 
-    return {
-      ...toArticleRow(page),
-      category:
-        page.categoryId === null ||
-        categoryName === null ||
-        categorySlug === null
-          ? null
-          : { id: page.categoryId, name: categoryName, slug: categorySlug },
-      tags: await readArticleTags(this.db, user.orgId, articleId),
-    };
+      metrics.finish("found");
+      return {
+        ...toArticleRow(page),
+        category:
+          page.categoryId === null ||
+          categoryName === null ||
+          categorySlug === null
+            ? null
+            : { id: page.categoryId, name: categoryName, slug: categorySlug },
+        tags: await readArticleTags(this.db, user.orgId, articleId),
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) metrics.finish("not_found");
+      else if (error instanceof ForbiddenException) metrics.finish("denied");
+      else metrics.finish("error");
+      throw error;
+    }
   }
 
   async recordView(
@@ -123,61 +135,70 @@ export class KbArticlesService {
     user: CurrentUserContext,
     input: CreateArticleInput,
   ): Promise<ArticleWithTags> {
-    const orgId = user.orgId;
-    await this.access.assertSpaceAccessible(user, input.spaceId);
+    const metrics = KbWriteMetrics.begin({ orgId: user.orgId });
+    try {
+      const orgId = user.orgId;
+      await this.access.assertSpaceAccessible(user, input.spaceId);
 
-    const tagNames = input.tags ?? [];
-    const maxAttempts = 3;
-    for (let attempt = 1; ; attempt += 1) {
-      const slug = await uniqueArticleSlug(this.db, orgId, input.title);
-      try {
-        return await this.db.transaction(async (tx) => {
-          const [article] = await tx
-            .insert(kbPages)
-            .values({
+      const tagNames = input.tags ?? [];
+      const maxAttempts = 3;
+      for (let attempt = 1; ; attempt += 1) {
+        const slug = await uniqueArticleSlug(this.db, orgId, input.title);
+        try {
+          const result = await this.db.transaction(async (tx) => {
+            const [article] = await tx
+              .insert(kbPages)
+              .values({
+                orgId,
+                spaceId: input.spaceId,
+                categoryId: input.categoryId ?? null,
+                title: input.title,
+                slug,
+                excerpt: input.excerpt ?? null,
+                content: articleContentToPageContent(
+                  input.content,
+                  input.contentText,
+                ),
+                contentText: input.contentText ?? "",
+                contentType: SUPPORT_ARTICLE_CONTENT_TYPE,
+                status: input.status,
+                visibility: articleVisibilityToPage(input.visibility),
+                createdById: user.userId,
+                ownerMembershipId: actingMembershipId(user.principal),
+                seoTitle: input.seoTitle ?? null,
+                seoDescription: input.seoDescription ?? null,
+                reviewIntervalDays: input.reviewIntervalDays ?? null,
+                publishedAt: input.status === "published" ? new Date() : null,
+              })
+              .returning(KB_ARTICLE_COLUMNS);
+
+            await snapshotArticleVersion(
+              tx,
               orgId,
-              spaceId: input.spaceId,
-              categoryId: input.categoryId ?? null,
-              title: input.title,
-              slug,
-              excerpt: input.excerpt ?? null,
-              content: articleContentToPageContent(
-                input.content,
-                input.contentText,
-              ),
-              contentText: input.contentText ?? "",
-              contentType: SUPPORT_ARTICLE_CONTENT_TYPE,
-              status: input.status,
-              visibility: articleVisibilityToPage(input.visibility),
-              createdById: user.userId,
-              ownerMembershipId: actingMembershipId(user.principal),
-              seoTitle: input.seoTitle ?? null,
-              seoDescription: input.seoDescription ?? null,
-              reviewIntervalDays: input.reviewIntervalDays ?? null,
-              publishedAt: input.status === "published" ? new Date() : null,
-            })
-            .returning(KB_ARTICLE_COLUMNS);
-
-          await snapshotArticleVersion(
-            tx,
-            orgId,
-            article,
-            user.userId,
-            undefined,
-            actingMembershipId(user.principal),
-          );
-          const resolvedTags = await syncArticleTags(
-            tx,
-            orgId,
-            article.id,
-            tagNames,
-          );
-          return { ...toArticleRow(article), tags: resolvedTags };
-        });
-      } catch (err) {
-        if (attempt < maxAttempts && this.isUniqueViolation(err)) continue;
-        throw err;
+              article,
+              user.userId,
+              undefined,
+              actingMembershipId(user.principal),
+            );
+            const resolvedTags = await syncArticleTags(
+              tx,
+              orgId,
+              article.id,
+              tagNames,
+            );
+            return { ...toArticleRow(article), tags: resolvedTags };
+          });
+          metrics.finish("created");
+          return result;
+        } catch (err) {
+          if (attempt < maxAttempts && this.isUniqueViolation(err)) continue;
+          throw err;
+        }
       }
+    } catch (error) {
+      if (error instanceof ForbiddenException) metrics.finish("denied");
+      else metrics.finish("error");
+      throw error;
     }
   }
 
@@ -190,107 +211,117 @@ export class KbArticlesService {
     articleId: number,
     input: UpdateArticleInput,
   ): Promise<ArticleWithTags> {
-    await this.access.assertArticleEditable(user, articleId);
-    const orgId = user.orgId;
-    const [current] = await this.db
-      .select(KB_ARTICLE_COLUMNS)
-      .from(kbPages)
-      .where(this.articleScope(orgId, articleId))
-      .limit(1);
-    if (!current) throw new NotFoundException("Article not found");
+    const metrics = KbWriteMetrics.begin({ orgId: user.orgId });
+    try {
+      await this.access.assertArticleEditable(user, articleId);
+      const orgId = user.orgId;
+      const [current] = await this.db
+        .select(KB_ARTICLE_COLUMNS)
+        .from(kbPages)
+        .where(this.articleScope(orgId, articleId))
+        .limit(1);
+      if (!current) throw new NotFoundException("Article not found");
 
-    const values: Partial<typeof kbPages.$inferInsert> = {};
-    if (input.categoryId !== undefined) values.categoryId = input.categoryId;
-    if (input.excerpt !== undefined) values.excerpt = input.excerpt;
-    if (input.content !== undefined)
-      values.content = articleContentToPageContent(
-        input.content,
-        input.contentText,
-      );
-    if (input.contentText !== undefined) values.contentText = input.contentText;
-    if (input.visibility !== undefined)
-      values.visibility = articleVisibilityToPage(input.visibility);
-    if (input.seoTitle !== undefined) values.seoTitle = input.seoTitle;
-    if (input.seoDescription !== undefined)
-      values.seoDescription = input.seoDescription;
-    if (input.reviewIntervalDays !== undefined)
-      values.reviewIntervalDays = input.reviewIntervalDays;
-
-    if (input.title !== undefined) {
-      values.title = input.title;
-      values.slug = await uniqueArticleSlug(
-        this.db,
-        orgId,
-        input.title,
-        articleId,
-      );
-    }
-    if (input.status !== undefined) {
-      values.status = input.status;
-      if (input.status === "published" && !current.publishedAt)
-        values.publishedAt = new Date();
-    }
-
-    const titleChanged =
-      input.title !== undefined && input.title !== current.title;
-    const contentChanged =
-      input.content !== undefined &&
-      input.content !== pageContentToArticleContent(current.content);
-    const aclChanged =
-      input.visibility !== undefined &&
-      articleVisibilityToPage(input.visibility) !== current.visibility;
-
-    return this.db.transaction(async (tx) => {
-      const [result] = await tx
-        .update(kbPages)
-        .set({
-          ...values,
-          updatedAt: new Date(),
-          ...(contentChanged
-            ? { contentRevision: sql`content_revision + 1` }
-            : {}),
-          ...(aclChanged ? { aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() } : {}),
-        })
-        .where(
-          and(
-            this.articleScope(orgId, articleId),
-            eq(kbPages.contentRevision, input.expectedContentRevision),
-          ),
-        )
-        .returning(KB_ARTICLE_COLUMNS);
-      if (!result) {
-        throw new HttpException(
-          {
-            message:
-              "Article was modified by another editor. Reload to see the latest version.",
-            code: "STALE_REVISION",
-          },
-          HttpStatus.CONFLICT,
+      const values: Partial<typeof kbPages.$inferInsert> = {};
+      if (input.categoryId !== undefined) values.categoryId = input.categoryId;
+      if (input.excerpt !== undefined) values.excerpt = input.excerpt;
+      if (input.content !== undefined)
+        values.content = articleContentToPageContent(
+          input.content,
+          input.contentText,
         );
-      }
+      if (input.contentText !== undefined) values.contentText = input.contentText;
+      if (input.visibility !== undefined)
+        values.visibility = articleVisibilityToPage(input.visibility);
+      if (input.seoTitle !== undefined) values.seoTitle = input.seoTitle;
+      if (input.seoDescription !== undefined)
+        values.seoDescription = input.seoDescription;
+      if (input.reviewIntervalDays !== undefined)
+        values.reviewIntervalDays = input.reviewIntervalDays;
 
-      if (titleChanged || contentChanged) {
-        await snapshotArticleVersion(
-          tx,
+      if (input.title !== undefined) {
+        values.title = input.title;
+        values.slug = await uniqueArticleSlug(
+          this.db,
           orgId,
-          result,
-          user.userId,
-          input.changeSummary,
-          actingMembershipId(user.principal),
+          input.title,
+          articleId,
         );
       }
-
-      if (result.status === "published" && (contentChanged || aclChanged)) {
-        await emitArticleIndexEvent(tx, orgId, articleId, result);
+      if (input.status !== undefined) {
+        values.status = input.status;
+        if (input.status === "published" && !current.publishedAt)
+          values.publishedAt = new Date();
       }
 
-      const tags =
-        input.tags !== undefined
-          ? await syncArticleTags(tx, orgId, articleId, input.tags)
-          : await readArticleTags(tx, orgId, articleId);
+      const titleChanged =
+        input.title !== undefined && input.title !== current.title;
+      const contentChanged =
+        input.content !== undefined &&
+        input.content !== pageContentToArticleContent(current.content);
+      const aclChanged =
+        input.visibility !== undefined &&
+        articleVisibilityToPage(input.visibility) !== current.visibility;
 
-      return { ...toArticleRow(result), tags };
-    });
+      const result = await this.db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(kbPages)
+          .set({
+            ...values,
+            updatedAt: new Date(),
+            ...(contentChanged
+              ? { contentRevision: sql`content_revision + 1` }
+              : {}),
+            ...(aclChanged ? { aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() } : {}),
+          })
+          .where(
+            and(
+              this.articleScope(orgId, articleId),
+              eq(kbPages.contentRevision, input.expectedContentRevision),
+            ),
+          )
+          .returning(KB_ARTICLE_COLUMNS);
+        if (!updated) {
+          throw new HttpException(
+            {
+              message:
+                "Article was modified by another editor. Reload to see the latest version.",
+              code: "STALE_REVISION",
+            },
+            HttpStatus.CONFLICT,
+          );
+        }
+
+        if (titleChanged || contentChanged) {
+          await snapshotArticleVersion(
+            tx,
+            orgId,
+            updated,
+            user.userId,
+            input.changeSummary,
+            actingMembershipId(user.principal),
+          );
+        }
+
+        if (updated.status === "published" && (contentChanged || aclChanged)) {
+          await emitArticleIndexEvent(tx, orgId, articleId, updated);
+        }
+
+        const tags =
+          input.tags !== undefined
+            ? await syncArticleTags(tx, orgId, articleId, input.tags)
+            : await readArticleTags(tx, orgId, articleId);
+
+        return { ...toArticleRow(updated), tags };
+      });
+      metrics.finish("updated");
+      return result;
+    } catch (error) {
+      if (error instanceof ForbiddenException) metrics.finish("denied");
+      else if (error instanceof HttpException && error.getStatus() === HttpStatus.CONFLICT) metrics.finish("conflict");
+      else metrics.finish("error");
+      throw error;
+    }
   }
 
   async archive(
