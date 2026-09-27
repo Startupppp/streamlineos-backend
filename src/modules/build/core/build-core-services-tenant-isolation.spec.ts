@@ -17,6 +17,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketsTransferService } from "./tickets/projects-tickets-transfer.service";
 import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import type { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { NotificationsService } from "../../notifications/notifications.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -160,6 +162,8 @@ describe("ProjectsTicketsQueryService — cross-tenant isolation", () => {
       { provide: DRIZZLE, useValue: db },
       { provide: CacheService, useValue: {} },
       { provide: AccessService, useValue: {} },
+      { provide: ProjectsWebhooksDispatchService, useValue: {} },
+      { provide: BuildAutomationRunnerService, useValue: {} },
     ] }).compile();
     return module.get(ProjectsTicketsQueryService);
   }
