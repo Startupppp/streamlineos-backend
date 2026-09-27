@@ -13,13 +13,8 @@ import { KbAuthoringService } from "./kb-authoring.service";
 import { KbVerificationService } from "./kb-verification.service";
 import { KbFromTicketService } from "./kb-from-ticket.service";
 import { KbAnalyticsService } from "./kb-analytics.service";
-import { KbArticlesController } from "./kb-articles.controller";
-import { KbCategoriesController } from "./kb-categories.controller";
-import { KbCommentsController } from "./kb-comments.controller";
 import { KbArticleAiController } from "./kb-article-ai.controller";
 import { KbAiFeedbackController } from "./kb-ai-feedback.controller";
-import { KbAuthoringController } from "./kb-authoring.controller";
-import { KbVerificationController } from "./kb-verification.controller";
 import { KbFromTicketController } from "./kb-from-ticket.controller";
 import { KbAnalyticsController } from "./kb-analytics.controller";
 import { KbWidgetController } from "./kb-widget.controller";
@@ -27,13 +22,8 @@ import { KbWidgetController } from "./kb-widget.controller";
 @Module({
   imports: [AiModule, AiJobsModule, KbCoreModule, KbRetrievalModule],
   controllers: [
-    KbArticlesController,
-    KbCategoriesController,
-    KbCommentsController,
     KbArticleAiController,
     KbAiFeedbackController,
-    KbAuthoringController,
-    KbVerificationController,
     KbFromTicketController,
     KbAnalyticsController,
     KbWidgetController,
