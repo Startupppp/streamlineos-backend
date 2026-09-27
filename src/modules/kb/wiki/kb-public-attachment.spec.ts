@@ -1,7 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { KbPagesService } from "./kb-pages.service";
+import { KbPagePublicService } from "./kb-page-public.service";
 
 jest.mock("../../../common/tenant/with-public-token", () => ({
   withPublicToken: jest.fn(),
@@ -16,10 +16,8 @@ const runInNewTenantTransactionMock = runInNewTenantTransaction as jest.MockedFu
   typeof runInNewTenantTransaction
 >;
 
-function makeService(): KbPagesService {
-  return new KbPagesService(
-    {} as never,
-    {} as never,
+function makeService(): KbPagePublicService {
+  return new KbPagePublicService(
     {} as never,
     {} as never,
     {} as never,

@@ -1,9 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import type { Db } from "../../../db/drizzle.module";
-import type { KbAccessService } from "../core/kb-access.service";
-import type { KbIndexingService } from "../retrieval/kb-indexing.service";
-import { KbSpacesService } from "./kb-spaces.service";
+import { KbSpaceLifecycleService } from "./kb-space-lifecycle.service";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 
 const ORG = "org-kb-purge-1";
 const SPACE = 77;
@@ -88,17 +86,20 @@ function makeService(emitted: Emitted[], articleIds: number[], pageIds: number[]
   const invalidate = jest.fn().mockResolvedValue(undefined);
   const cursors: number[] = [];
   const predicates: string[] = [];
-  const db = {
-    transaction: (fn: (tx: unknown) => Promise<unknown>) =>
-      fn(makeTx(emitted, articleIds, pageIds, cursors, predicates)),
-    execute: jest.fn().mockResolvedValue([]),
-  } as unknown as Db;
-  const access = {
-    invalidateAccessibleSpaceIds: invalidate,
-  } as unknown as KbAccessService;
-  const indexing = {} as unknown as KbIndexingService;
+  const tx = makeTx(emitted, articleIds, pageIds, cursors, predicates);
+  const authz = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
+    resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }),
+    resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }),
+    invalidateSpaceScope: invalidate,
+    assertSpaceAccess: jest.fn().mockResolvedValue(undefined),
+  };
+  const lifecycle = new KbSpaceLifecycleService(tx as never, authz as never);
   return {
-    svc: new KbSpacesService(db, indexing, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: invalidate, assertSpaceAccess: jest.fn().mockResolvedValue(undefined) } as never),
+    svc: {
+      remove: (orgId: string, spaceId: number) =>
+        runWithTenantContext({ orgId, audience: "INTERNAL" as const, tx: tx as never }, () => lifecycle.remove(orgId, spaceId)),
+    },
     invalidate,
     cursors,
     predicates,
@@ -161,16 +162,19 @@ describe("KB space soft delete purges the space's chunks", () => {
     const emitted: Emitted[] = [];
     const invalidate = jest.fn().mockResolvedValue(undefined);
     const cursors: number[] = [];
-    const db = {
-      transaction: (fn: (tx: unknown) => Promise<unknown>) =>
-        fn(makeTx(emitted, [11], [21], cursors, [], false)),
-      execute: jest.fn().mockResolvedValue([]),
-    } as unknown as Db;
-    const svc = new KbSpacesService(
-      db,
-      {} as unknown as KbIndexingService, { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }), resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }), invalidateSpaceScope: invalidate, assertSpaceAccess: jest.fn().mockResolvedValue(undefined) } as never);
+    const tx = makeTx(emitted, [11], [21], cursors, [], false);
+    const lifecycle = new KbSpaceLifecycleService(tx as never, {
+      visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
+      resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [], accessibleProjectIds: [], roleSlugs: [], membershipId: 1 }),
+      resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [], outcome: "hit" }),
+      invalidateSpaceScope: invalidate,
+      assertSpaceAccess: jest.fn().mockResolvedValue(undefined),
+    } as never);
 
-    await expect(svc.remove(ORG, SPACE)).rejects.toThrow("Space not found");
+    const remove = (orgId: string, spaceId: number) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL" as const, tx: tx as never }, () => lifecycle.remove(orgId, spaceId));
+
+    await expect(remove(ORG, SPACE)).rejects.toThrow("Space not found");
     expect(emitted).toEqual([]);
     expect(cursors).toEqual([]);
     expect(invalidate).not.toHaveBeenCalled();

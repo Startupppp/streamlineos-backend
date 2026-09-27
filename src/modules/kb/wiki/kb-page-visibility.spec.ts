@@ -1,5 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
-import { KbPagesService } from "./kb-pages.service";
+import { KbPagePublicService } from "./kb-page-public.service";
 import { KbPageWriterService } from "./kb-page-writer.service";
 import { hashPublicToken } from "./kb-public-token";
 
@@ -53,7 +53,7 @@ function makeDb(existingPublicToken: string | null) {
 }
 
 function makeService(db: Db) {
-  return new KbPagesService(db, {} as never, {} as never, {} as never, {} as never, new KbPageWriterService({} as never));
+  return new KbPagePublicService(db, {} as never, {} as never, new KbPageWriterService({} as never));
 }
 
 describe("KbPagesService.setVisibility — public share tokens", () => {

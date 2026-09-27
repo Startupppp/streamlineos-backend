@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import { KbPagesService } from "./kb-pages.service";
+import { KbPagePublicService } from "./kb-page-public.service";
 import { hashPublicToken } from "./kb-public-token";
 
 const RAW_TOKEN = "abc123XYZ-valid-share-token-1234";
@@ -65,7 +65,7 @@ function makeDb(row: unknown) {
 }
 
 function makeService(db: never) {
-  return new KbPagesService(db, {} as never, {} as never, {} as never, {} as never, {} as never);
+  return new KbPagePublicService(db, {} as never, {} as never, {} as never);
 }
 
 describe("KbPagesService.getPublicPage — share links resolve by hash, never by plaintext", () => {

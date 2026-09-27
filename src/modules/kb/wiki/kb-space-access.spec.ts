@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { KbSpacesService } from "./kb-spaces.service";
+import { KbSpaceLifecycleService } from "./kb-space-lifecycle.service";
 import type { KbAccessService } from "../core/kb-access.service";
 import type { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import type { KbIndexingService } from "../retrieval/kb-indexing.service";
@@ -100,6 +101,23 @@ function makeService(
   return { svc: new KbSpacesService(db, indexing, authz) };
 }
 
+function makeLifecycleService(spaceLookupResult: object | undefined) {
+  const db = {
+    query: {
+      kbSpaces: { findFirst: makeQueryOne(spaceLookupResult) },
+    },
+    update: jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([{ id: SPACE_ID }]),
+        }),
+      }),
+    }),
+  } as unknown as Db;
+
+  return { svc: new KbSpaceLifecycleService(db, {} as never) };
+}
+
 describe("KbSpacesService — cross-tenant and access isolation", () => {
   it("returns 404 for a space in another org (cross-tenant miss is indistinguishable from not-found)", async () => {
     const { svc } = makeService(undefined, []);
@@ -138,10 +156,10 @@ describe("KbSpacesService — cross-tenant and access isolation", () => {
   });
 });
 
-describe("KbSpacesService — archive and restore", () => {
+describe("KbSpaceLifecycleService — archive and restore", () => {
   it("archive sets archivedAt and returns success", async () => {
     const spaceRow = { id: SPACE_ID, orgId: ORG_A, deletedAt: null };
-    const { svc } = makeService(spaceRow, [SPACE_ID]);
+    const { svc } = makeLifecycleService(spaceRow);
 
     const result = await svc.archive(ORG_A, SPACE_ID);
 
@@ -150,7 +168,7 @@ describe("KbSpacesService — archive and restore", () => {
 
   it("restore returns success even when space is already restored (idempotent)", async () => {
     const spaceRow = { id: SPACE_ID, orgId: ORG_A, deletedAt: null, archivedAt: null };
-    const { svc } = makeService(spaceRow, [SPACE_ID]);
+    const { svc } = makeLifecycleService(spaceRow);
 
     const first = await svc.restore(ORG_A, SPACE_ID);
     const second = await svc.restore(ORG_A, SPACE_ID);
@@ -161,7 +179,7 @@ describe("KbSpacesService — archive and restore", () => {
 
   it("archive then restore leaves the space reachable", async () => {
     const spaceRow = { id: SPACE_ID, orgId: ORG_A, deletedAt: null };
-    const { svc } = makeService(spaceRow, [SPACE_ID]);
+    const { svc } = makeLifecycleService(spaceRow);
 
     await svc.archive(ORG_A, SPACE_ID);
     const result = await svc.restore(ORG_A, SPACE_ID);
@@ -170,7 +188,7 @@ describe("KbSpacesService — archive and restore", () => {
   });
 
   it("archive on a space in another org is 404", async () => {
-    const { svc } = makeService(undefined, []);
+    const { svc } = makeLifecycleService(undefined);
 
     await expect(svc.archive(ORG_B, SPACE_ID)).rejects.toThrow(NotFoundException);
   });
