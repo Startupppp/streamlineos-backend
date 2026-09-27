@@ -1,4 +1,5 @@
 import type { LinkedDocumentCitation } from "../linked-documents/kb-linked-document-ask-source";
+import type { KbAiSourceRecord } from "../../../db/schema/kb/ai-interactions";
 
 export type KbDocumentKind = "article" | "page" | "source" | "document";
 
@@ -61,8 +62,8 @@ export function buildAskSourceRecords(
   top: ReadonlyArray<{ kind: "article" | "page"; id: number }>,
   sources: ReadonlyArray<{ sourceId: number }>,
   linked: ReadonlyArray<{ id: number }>,
-): Array<{ kind: string; id: number; aclRevision: null }> {
-  const records: Array<{ kind: string; id: number; aclRevision: null }> = [];
+): KbAiSourceRecord[] {
+  const records: KbAiSourceRecord[] = [];
   for (const item of top) {
     records.push({ kind: item.kind, id: item.id, aclRevision: null });
   }

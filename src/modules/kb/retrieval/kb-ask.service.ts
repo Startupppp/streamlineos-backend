@@ -340,7 +340,7 @@ export class KbAskService {
       const dbRole = "primary";
       const callStart = Date.now();
 
-      const onCompleted = async (result: { text: string; promptTokens: number; completionTokens: number }): Promise<void> => {
+      const onCompleted = async (result: { text: string; promptTokens: number; completionTokens: number; model: string; costCredits: number; gatewayCorrelationId: string }): Promise<void> => {
         await runInTenantTransaction(
           this.db,
           async (tx) => {
@@ -349,10 +349,13 @@ export class KbAskService {
               correlationId,
               actorMembershipId: actingMembershipId(user.principal) ?? null,
               resultState: "answered",
+              model: result.model,
               promptTokens: result.promptTokens,
               completionTokens: result.completionTokens,
               totalTokens: result.promptTokens + result.completionTokens,
+              costCredits: result.costCredits,
               latencyMs: Date.now() - callStart,
+              gatewayCorrelationId: result.gatewayCorrelationId,
               sourceIdsWithRevisions,
             });
             await this.events.record(user.orgId, "ai_answer", {

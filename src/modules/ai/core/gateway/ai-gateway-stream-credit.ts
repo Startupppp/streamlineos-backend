@@ -59,7 +59,7 @@ export async function settleStream(
   ledger: AiCreditLedger,
   usageSvc: Pick<AiUsageService, "track">,
   settlement: StreamSettlement,
-): Promise<void> {
+): Promise<{ milliCredits: number }> {
   const { reservationId, model, promptTokens, completionTokens, orgId, userId, feature, ttftMs, appOverheadMs } =
     settlement;
   const { costUsd, milliCredits } = computeTokenCharge(model, promptTokens, completionTokens);
@@ -85,4 +85,5 @@ export async function settleStream(
     outcome: settlement.outcome ?? "ok",
     ...(settlement.timings ? { timings: settlement.timings } : {}),
   });
+  return { milliCredits };
 }

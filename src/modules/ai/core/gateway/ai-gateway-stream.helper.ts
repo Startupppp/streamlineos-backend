@@ -14,6 +14,7 @@ import { resolveGatewayTier } from "../routing/model-routing";
 import { classifyLlmError, resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { redactSensitiveData } from "../redaction.util";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
+import { milliToCredits } from "../billing/ai-model-pricing.constants";
 import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { AiStreamBreaker, type AiStreamBreakerRedis } from "../streaming/ai-stream-breaker";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
@@ -56,7 +57,7 @@ export interface AiStreamTextOpts {
   model?: LanguageModel;
   modelId?: string;
   providerOptions?: ProviderOptions;
-  onCompleted?: (result: { text: string; promptTokens: number; completionTokens: number }) => Promise<void>;
+  onCompleted?: (result: { text: string; promptTokens: number; completionTokens: number; model: string; costCredits: number; gatewayCorrelationId: string }) => Promise<void>;
 }
 
 export interface AiTextStream {
@@ -308,8 +309,9 @@ export class AiGatewayStreamHelper {
             completionTokens,
           });
           if (!reservation.markSettled()) return;
+          let settledMilliCredits = 0;
           try {
-            await settleStream(this.ledger, this.usageSvc, {
+            const settled = await settleStream(this.ledger, this.usageSvc, {
               reservationId: reservation.reservationId,
               model: modelId,
               promptTokens,
@@ -321,6 +323,7 @@ export class AiGatewayStreamHelper {
               appOverheadMs: timings.overheadMs,
               timings,
             });
+            settledMilliCredits = settled.milliCredits;
             auditSettlement("ok", promptTokens, completionTokens);
           } catch (err) {
             logger.error("Failed to settle AI text stream", {
@@ -332,7 +335,7 @@ export class AiGatewayStreamHelper {
           }
           if (!opts.onCompleted) return;
           try {
-            await opts.onCompleted({ text, promptTokens, completionTokens });
+            await opts.onCompleted({ text, promptTokens, completionTokens, model: modelId, costCredits: milliToCredits(settledMilliCredits), gatewayCorrelationId: call.correlationId });
           } catch (err) {
             logger.error("AI stream completion hook failed", {
               error: err instanceof Error ? (err.stack ?? err.message) : String(err),

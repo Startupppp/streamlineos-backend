@@ -610,4 +610,59 @@ describe("KbAskService", () => {
     expect(saturatedRedis.eval).toHaveBeenCalled();
     expect(mockGateway.invokeTextWithUsage).not.toHaveBeenCalled();
   });
+
+  it("streaming interaction row carries model, costCredits and gatewayCorrelationId — per-tenant cost attribution silently undercounts every streamed answer without these three columns", async () => {
+    let capturedOnCompleted:
+      | ((result: {
+          text: string;
+          promptTokens: number;
+          completionTokens: number;
+          model: string;
+          costCredits: number;
+          gatewayCorrelationId: string;
+        }) => Promise<void>)
+      | undefined;
+
+    mockGateway.streamTextWithUsage.mockImplementationOnce(
+      async (opts: { onCompleted?: typeof capturedOnCompleted }) => {
+        capturedOnCompleted = opts.onCompleted;
+        return { model: "gpt-4o-mini", correlationId: "gw-corr-stream-1", stream: {} as never };
+      },
+    );
+
+    const signal = new AbortController().signal;
+    await service.streamAsk(user, input, signal);
+    insertedRows.length = 0;
+
+    await capturedOnCompleted?.({
+      text: "streamed answer",
+      promptTokens: 10,
+      completionTokens: 5,
+      model: "gpt-4o-mini",
+      costCredits: 1,
+      gatewayCorrelationId: "gw-corr-stream-1",
+    });
+
+    const row = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "resultState" in r && r["resultState"] === "answered",
+    );
+    expect(row?.model).toBe("gpt-4o-mini");
+    expect(row?.costCredits).toBe(1);
+    expect(row?.gatewayCorrelationId).toBe("gw-corr-stream-1");
+  });
+
+  it("non-streaming interaction row still carries model, costCredits and gatewayCorrelationId after the streaming fix — positive pair confirms the streaming fix does not regress the non-streaming path", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Answer."));
+
+    await service.ask(user, input);
+
+    const row = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "resultState" in r && r["resultState"] === "answered",
+    );
+    expect(row?.model).toBe("gpt-4o-mini");
+    expect(row?.costCredits).toBe(1);
+    expect(row?.gatewayCorrelationId).toBe("gw-corr-1");
+  });
 });
