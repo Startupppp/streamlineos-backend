@@ -114,6 +114,8 @@ export class TestRunsService {
     const results = await this.db
       .select({
         id: testRunResults.id,
+        orgId: testRunResults.orgId,
+        projectId: testRunResults.projectId,
         runId: testRunResults.runId,
         testCaseId: testRunResults.testCaseId,
         status: testRunResults.status,
@@ -123,9 +125,11 @@ export class TestRunsService {
         linkedWorkItemId: testRunResults.linkedWorkItemId,
         createdAt: testRunResults.createdAt,
         updatedAt: testRunResults.updatedAt,
-        caseNumber: testCases.caseNumber,
-        caseTitle: testCases.title,
-        casePriority: testCases.priority,
+        testCase: {
+          caseNumber: testCases.caseNumber,
+          title: testCases.title,
+          priority: testCases.priority,
+        },
       })
       .from(testRunResults)
       .innerJoin(testCases, eq(testRunResults.testCaseId, testCases.id))
