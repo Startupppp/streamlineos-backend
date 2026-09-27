@@ -17,6 +17,7 @@ import { ClientPortalManagementService } from "./client-portal-management.servic
 import { ClientPortalService } from "./client-portal.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { z } from "zod";
 import {
   portalSettingsSchema,
@@ -46,6 +47,7 @@ export class ClientPortalManagementController {
   }
 
   @Post("publish")
+  @Idempotent("build.portal.publish")
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("build:clientvisibility:manage")

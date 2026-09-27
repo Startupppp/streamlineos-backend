@@ -1221,9 +1221,9 @@
       "justification": "has explicit .limit(); violations are per-project/ticket incident reads; gate missed limit placement 2026-09-01"
     },
     "/build/meetings/meetings.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "listMeetings uses a tenant/project-scoped limit+1 read and rejects overflow instead of silently truncating the meeting list",
-      "justification": "MeetingsService.listMeetings overflow test asserts the 101-row probe and explicit BadRequestException"
+      "verdict": "FALSE-POSITIVE",
+      "note": "listMeetings has an explicit .limit(limit+1) at line 142; the three aggregate count sub-queries (lines 153, 158, 168) use groupBy(meetingId) with inArray(meetingId, ids) — ids is the paginated page slice so at most limit rows are grouped; gate pattern flags select() without limit() but cannot see the inArray+groupBy semantic bound",
+      "justification": "listMeetings L142 explicit limit; aggregate sub-queries bounded by inArray(ids) where ids.length<=limit; gate static pattern cannot see this 2026-09-27"
     },
     "/build/qa/test-runs.service.ts": {
       "verdict": "FALSE-POSITIVE",

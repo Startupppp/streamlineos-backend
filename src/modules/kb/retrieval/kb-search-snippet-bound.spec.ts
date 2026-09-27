@@ -35,7 +35,7 @@ const USER: CurrentUserContext = {
   principal: humanSessionPrincipal(1, false),
 };
 
-const SEARCH_INPUT = { q: "hello", page: 1, pageSize: 20 } as const;
+const SEARCH_INPUT = { q: "hello", pageSize: 20 } as const;
 
 function makeSearchScope() {
   return {

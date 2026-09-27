@@ -5,6 +5,7 @@ import {
   isKnownChatModelId,
   KNOWN_CHAT_MODEL_IDS,
   MIN_CHARGE_MILLI,
+  providerOfModelId,
 } from "./ai-model-pricing.constants";
 
 describe("AI model catalog integrity", () => {
@@ -33,5 +34,18 @@ describe("AI model catalog integrity", () => {
     expect(isKnownChatModelId("openai/gpt-4o-mini")).toBe(true);
     expect(isKnownChatModelId("text-embedding-3-small")).toBe(false);
     expect(isKnownChatModelId("not-a-real-model")).toBe(false);
+  });
+
+  it("providerOfModelId separates the three dispatch paths, because a null provider in the AI ledger is lost provenance", () => {
+    expect(providerOfModelId("openai/gpt-4o")).toBe("openrouter");
+    expect(providerOfModelId("gpt-4o")).toBe("openai");
+    expect(providerOfModelId("gemini-2.5-pro")).toBe("google");
+  });
+
+  it("providerOfModelId agrees with the configured provider for both default chains, so the ledger records the path the call actually took", () => {
+    const openRouter = resolveLlmProvider({ AI_LLM_PROVIDER: "openrouter" });
+    const direct = resolveLlmProvider({});
+    expect(providerOfModelId(openRouter.standardChain[0] ?? "")).toBe("openrouter");
+    expect(providerOfModelId(direct.standardChain[0] ?? "")).toBe("openai");
   });
 });

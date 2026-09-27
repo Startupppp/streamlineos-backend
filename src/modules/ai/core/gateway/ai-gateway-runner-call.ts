@@ -2,6 +2,7 @@ import { redactSensitiveData } from "../redaction.util";
 import {
   computeTokenCharge,
   milliToCredits,
+  providerOfModelId,
 } from "../billing/ai-model-pricing.constants";
 import { getReserveEstimateMilli as getCatalogEstimateMilli } from "../billing/ai-cost-catalog";
 import { AiCallMetrics, type AiCallOutcome } from "../telemetry/ai-call-metrics";
@@ -250,6 +251,7 @@ export function withUsageMeta<T>(result: AiInvokeResult<T>): AiInvokeWithUsageRe
 
   const aiUsage: AiUsageMeta = {
     model: result.model,
+    provider: providerOfModelId(result.model),
     promptTokens: result.usage.promptTokens ?? 0,
     completionTokens: result.usage.completionTokens ?? 0,
     totalTokens: result.usage.totalTokens ?? 0,

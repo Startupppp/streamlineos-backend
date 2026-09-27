@@ -119,6 +119,9 @@ export class IncidentsService {
           isNull(projectIncidents.deletedAt),
           query.status ? eq(projectIncidents.status, query.status) : undefined,
           query.severity ? eq(projectIncidents.severity, query.severity) : undefined,
+          query.q
+            ? sql`to_tsvector('english', coalesce(${projectIncidents.title}, '')) @@ plainto_tsquery('english', ${query.q})`
+            : undefined,
           cursor
             ? cursor.detectedAt
               ? or(

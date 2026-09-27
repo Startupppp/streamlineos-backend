@@ -54,6 +54,14 @@ export function isKnownChatModelId(model: string): boolean {
   return KNOWN_CHAT_MODEL_IDS.has(normalizeModelId(model));
 }
 
+export const GOOGLE_MODEL_ID_PREFIX = "gemini-";
+
+export function providerOfModelId(model: string): string {
+  if (model.includes("/")) return "openrouter";
+  if (model.startsWith(GOOGLE_MODEL_ID_PREFIX)) return "google";
+  return "openai";
+}
+
 function hasCatalogEntry(id: string): id is PricedModelId {
   return Object.hasOwn(AI_MODEL_CATALOG, id);
 }

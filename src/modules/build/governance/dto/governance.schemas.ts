@@ -66,6 +66,7 @@ export const listDecisionsQuerySchema = z.object({
   status: z.enum(decisionStatusEnum.enumValues).optional(),
   ownerId: z.string().min(1).optional(),
   cursor: idCursorSchema,
+  search: z.string().max(200).optional(),
 }).strict();
 
 export type CreateRiskInput = z.infer<typeof createRiskSchema>;

@@ -311,17 +311,70 @@ export class KbSpacesService {
   async get(
     user: CurrentUserContext,
     spaceId: number,
-  ): Promise<
-    SpaceRow & { pagesOverdueForReview: number; pagesWithReviewPolicy: number; viewerSpaceRole: string | null }
-  > {
-    const space = await this.db.query.kbSpaces.findFirst({
-      where: and(
-        eq(kbSpaces.id, spaceId),
-        eq(kbSpaces.orgId, user.orgId),
-        isNull(kbSpaces.deletedAt),
-      ),
-    });
-    if (!space) throw new NotFoundException("Space not found");
+  ): Promise<{
+    id: number;
+    orgId: string;
+    name: string;
+    slug: string;
+    description: string | null;
+    audience: "internal" | "public" | "mixed";
+    icon: string | null;
+    branding: Record<string, unknown> | null;
+    isPublicHelpCenter: boolean;
+    createdByMembershipId: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    deletedAt: Date | null;
+    type: string;
+    color: string | null;
+    defaultVisibility: string;
+    owningTeamId: string | null;
+    archivedAt: Date | null;
+    ownerName: string | null;
+    pagesOverdueForReview: number;
+    pagesWithReviewPolicy: number;
+    viewerSpaceRole: string | null;
+  }> {
+    const [spaceRow] = await this.db
+      .select({
+        id: kbSpaces.id,
+        orgId: kbSpaces.orgId,
+        name: kbSpaces.name,
+        slug: kbSpaces.slug,
+        description: kbSpaces.description,
+        audience: kbSpaces.audience,
+        icon: kbSpaces.icon,
+        branding: kbSpaces.branding,
+        isPublicHelpCenter: kbSpaces.isPublicHelpCenter,
+        createdByMembershipId: kbSpaces.createdByMembershipId,
+        createdAt: kbSpaces.createdAt,
+        updatedAt: kbSpaces.updatedAt,
+        deletedAt: kbSpaces.deletedAt,
+        type: kbSpaces.type,
+        color: kbSpaces.color,
+        defaultVisibility: kbSpaces.defaultVisibility,
+        owningTeamId: kbSpaces.owningTeamId,
+        archivedAt: kbSpaces.archivedAt,
+        ownerName: users.name,
+      })
+      .from(kbSpaces)
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, kbSpaces.orgId),
+          eq(organizationMembers.id, kbSpaces.createdByMembershipId),
+        ),
+      )
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          eq(kbSpaces.id, spaceId),
+          eq(kbSpaces.orgId, user.orgId),
+          isNull(kbSpaces.deletedAt),
+        ),
+      );
+
+    if (!spaceRow) throw new NotFoundException("Space not found");
     await this.authz.assertSpaceAccess(user, spaceId, "view");
 
     const membershipId = actingMembershipId(user.principal);
@@ -366,7 +419,7 @@ export class KbSpacesService {
     ]);
 
     return {
-      ...space,
+      ...spaceRow,
       pagesOverdueForReview: overdueResult[0]?.count ?? 0,
       pagesWithReviewPolicy: policyResult[0]?.count ?? 0,
       viewerSpaceRole: memberRow[0]?.spaceRole ?? null,

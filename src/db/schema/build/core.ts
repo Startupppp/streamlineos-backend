@@ -65,6 +65,7 @@ export const projects = build.table(
     }>(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     intakePublishedAt: timestamp("intake_published_at", { withTimezone: true }),
+    intakeToken: text("intake_token").notNull(),
     portalPublishedAt: timestamp("portal_published_at", { withTimezone: true }),
     reportRevision: bigint("report_revision", { mode: "number" }).default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

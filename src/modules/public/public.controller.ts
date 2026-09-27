@@ -42,6 +42,7 @@ import {
   externalReferralSubmitSchema,
   externalReferrerRegisterSchema,
   intakeSchema,
+  intakeTokenParams,
   publicFormSubmitSchema,
   kbFeedbackSchema,
   kbListQuerySchema,
@@ -71,7 +72,10 @@ import {
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { resolveClientIp } from "../../common/http/client-ip";
-import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  MultipartAction,
+  ResponseSchema,
+} from "../../common/openapi/zod-operation-contracts";
 import { RESUME_MAX_BYTES } from "./careers-resume-intake";
 import {
   contactSubmitSchema as contactSubmitResponseSchema,
@@ -106,17 +110,21 @@ import {
 } from "./dto/public-response.schemas";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
-const orgSlugjobIdParams = z.object({ orgSlug: z.string().min(1), jobId: z.coerce.number().int().positive() }).strict();
-const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const orgSlugjobIdParams = z
+  .object({
+    orgSlug: z.string().min(1),
+    jobId: z.coerce.number().int().positive(),
+  })
+  .strict();
+const projectIdParams = z
+  .object({ projectId: z.coerce.number().int().positive() })
+  .strict();
 const slugParams = z.object({ slug: z.string().min(1) }).strict();
-/**
- * PRD-C048 — `GET /public/careers/:orgSlug/jobs` and `GET /public/org/:orgId` were the two
- * public routes still binding a path segment with no pipe and no `@Validate({ params })`.
- * Unauthenticated surfaces are exactly where an unvalidated segment matters most.
- */
-const orgSlugParams = z.object({ orgSlug: z.string().min(1).max(128) }).strict();
-const orgIdParams = z.object({ orgId: z.string().min(1).max(128) }).strict();
 
+const orgSlugParams = z
+  .object({ orgSlug: z.string().min(1).max(128) })
+  .strict();
+const orgIdParams = z.object({ orgId: z.string().min(1).max(128) }).strict();
 
 function header(req: Request, name: string): string | undefined {
   const raw = req.headers[name];
@@ -149,10 +157,7 @@ export class PublicController {
   @UseRateLimit("public:contact")
   @ResponseSchema(contactSubmitResponseSchema)
   @Validate({ body: contactSubmitSchema })
-  submitContact(
-    @Body() body: ContactSubmitInput,
-    @Req() req: Request,
-  ) {
+  submitContact(@Body() body: ContactSubmitInput, @Req() req: Request) {
     return this.contact.submit(body, resolveClientIp(req));
   }
 
@@ -162,10 +167,7 @@ export class PublicController {
   @UseRateLimit("public:waitlist")
   @ResponseSchema(waitlistJoinResponseSchema)
   @Validate({ body: waitlistJoinSchema })
-  joinWaitlist(
-    @Body() body: WaitlistJoinInput,
-    @Req() req: Request,
-  ) {
+  joinWaitlist(@Body() body: WaitlistJoinInput, @Req() req: Request) {
     return this.waitlist.join(body, {
       clientIp: resolveClientIp(req),
       userAgent: header(req, "user-agent"),
@@ -207,17 +209,13 @@ export class PublicController {
     return this.careers.getOrgJob(orgSlug, jobId);
   }
 
-  /**
-   * The only apply door. Accepts JSON, or `multipart/form-data` when the
-   * candidate attaches a résumé — multer leaves a non-multipart request's body
-   * alone, so one handler serves both and `applySchema` coerces the string
-   * shapes multipart forces on `consent` and `answers`.
-   */
   @Post("careers/:orgSlug/jobs/:jobId/apply")
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:job-apply")
-  @UseInterceptors(FileInterceptor("resume", { limits: { fileSize: RESUME_MAX_BYTES } }))
+  @UseInterceptors(
+    FileInterceptor("resume", { limits: { fileSize: RESUME_MAX_BYTES } }),
+  )
   @MultipartAction({
     file: "resume",
     fileRequired: false,
@@ -241,16 +239,12 @@ export class PublicController {
     @Body() body: unknown,
     @UploadedFile() resume?: Express.Multer.File,
   ) {
-    /**
-     * The body is parsed here rather than through `@Validate({ body })`.
-     * `ZodValidationInterceptor` is a GLOBAL `APP_INTERCEPTOR` and
-     * `FileInterceptor` is route-scoped, so Nest runs the global one first —
-     * before multer has parsed the multipart stream. Declaring the body on the
-     * decorator would therefore validate an empty object and reject every
-     * upload with a 400 about missing fields. Same schema, same boundary, one
-     * step later; a `ZodError` still maps to 400 in `AllExceptionsFilter`.
-     */
-    return this.careers.applyToOrgJob(orgSlug, jobId, applySchema.parse(body), resume);
+    return this.careers.applyToOrgJob(
+      orgSlug,
+      jobId,
+      applySchema.parse(body),
+      resume,
+    );
   }
 
   @Get("offer/:token")
@@ -313,7 +307,11 @@ export class PublicController {
     @Body() body: ExternalReferralSubmitInput,
     @Req() req: Request,
   ) {
-    return this.referrers.submitExternalReferral(token, body, resolveClientIp(req));
+    return this.referrers.submitExternalReferral(
+      token,
+      body,
+      resolveClientIp(req),
+    );
   }
 
   @Get("vendor-portal/:token")
@@ -323,6 +321,19 @@ export class PublicController {
   @Validate({ params: tokenParams })
   getVendorPortal(@Param("token") token: string) {
     return this.referrers.getVendorPortal(token);
+  }
+
+  @Post("intake/t/:intakeToken")
+  @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:intake")
+  @ResponseSchema(intakeSubmitSchema)
+  @Validate({ params: intakeTokenParams, body: intakeSchema })
+  submitIntakeByToken(
+    @Param("intakeToken") intakeToken: string,
+    @Body() body: IntakeInput,
+  ) {
+    return this.intake.submitIntakeByToken(intakeToken, body);
   }
 
   @Post("intake/:projectId")
@@ -384,10 +395,7 @@ export class PublicController {
   @UseRateLimit("public:lead-form-submit")
   @ResponseSchema(leadFormSubmitSchema)
   @Validate({ params: tokenParams, body: leadFormBodySchema })
-  submitLeadForm(
-    @Param("token") token: string,
-    @Body() body: LeadFormBody,
-  ) {
+  submitLeadForm(@Param("token") token: string, @Body() body: LeadFormBody) {
     return this.crm.submitLeadForm(token, body);
   }
 
@@ -406,10 +414,7 @@ export class PublicController {
   @UseRateLimit("public:nps-submit")
   @ResponseSchema(surveySumbitSchema)
   @Validate({ params: tokenParams, body: npsSubmitSchema })
-  submitSurvey(
-    @Param("token") token: string,
-    @Body() body: NpsSubmitInput,
-  ) {
+  submitSurvey(@Param("token") token: string, @Body() body: NpsSubmitInput) {
     return this.crm.submitSurvey(token, body);
   }
 
@@ -419,9 +424,13 @@ export class PublicController {
   @ResponseSchema(roadmapSchema)
   @Validate({ query: roadmapQuerySchema })
   getRoadmap(@Query() query: RoadmapQueryInput) {
-    return runInTenantTransaction(this.db, () => this.roadmap.getRoadmap(query.org), {
-      orgId: query.org,
-    });
+    return runInTenantTransaction(
+      this.db,
+      () => this.roadmap.getRoadmap(query.org),
+      {
+        orgId: query.org,
+      },
+    );
   }
 
   @Post("roadmap/vote")
@@ -452,9 +461,13 @@ export class PublicController {
     @Query() query: RoadmapQueryInput,
     @Body() body: RoadmapFeedbackInput,
   ) {
-    return runInTenantTransaction(this.db, () => this.roadmap.submitFeedback(query.org, body), {
-      orgId: query.org,
-    });
+    return runInTenantTransaction(
+      this.db,
+      () => this.roadmap.submitFeedback(query.org, body),
+      {
+        orgId: query.org,
+      },
+    );
   }
 
   @Get("org/:orgId")
@@ -476,7 +489,9 @@ export class PublicController {
   @ResponseSchema(kbListSchema)
   @Validate({ query: kbListQuerySchema })
   listKb(@Query() query: KbListInput) {
-    return runInTenantTransaction(this.db, () => this.kb.list(query), { orgId: query.org });
+    return runInTenantTransaction(this.db, () => this.kb.list(query), {
+      orgId: query.org,
+    });
   }
 
   @Get("kb/:slug")
@@ -484,13 +499,14 @@ export class PublicController {
   @UseRateLimit("public:kb-article")
   @ResponseSchema(kbArticleSchema)
   @Validate({ params: slugParams, query: orgQuerySchema })
-  getArticle(
-    @Param("slug") slug: string,
-    @Query() query: OrgQueryInput,
-  ) {
-    return runInTenantTransaction(this.db, () => this.kb.getArticle(slug, query.org), {
-      orgId: query.org,
-    });
+  getArticle(@Param("slug") slug: string, @Query() query: OrgQueryInput) {
+    return runInTenantTransaction(
+      this.db,
+      () => this.kb.getArticle(slug, query.org),
+      {
+        orgId: query.org,
+      },
+    );
   }
 
   @Post("kb/:slug/feedback")
@@ -498,7 +514,11 @@ export class PublicController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:kb-feedback")
   @ResponseSchema(kbFeedbackResponseSchema)
-  @Validate({ params: slugParams, query: orgQuerySchema, body: kbFeedbackSchema })
+  @Validate({
+    params: slugParams,
+    query: orgQuerySchema,
+    body: kbFeedbackSchema,
+  })
   submitArticleFeedback(
     @Param("slug") slug: string,
     @Query() query: OrgQueryInput,
@@ -513,13 +533,6 @@ export class PublicController {
     );
   }
 
-  /**
-   * What the product costs, in the currency the caller asked for.
-   *
-   * Public because a price that requires a demo is a price the buyer assumes is
-   * bad. Reads the same table the charge path reads -- a marketing page with its
-   * own copy of the prices eventually quotes a number we do not charge.
-   */
   @Get("pricing")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:pricing")
@@ -528,12 +541,6 @@ export class PublicController {
     return this.pricing.pricing(currency);
   }
 
-  /**
-   * Where a customer's data would rest.
-   *
-   * Every European evaluation asks this before anything else, and a compliance
-   * review that has to contact us to find out is a review that stalls.
-   */
   @Get("data-residency")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:pricing")

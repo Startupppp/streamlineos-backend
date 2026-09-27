@@ -51,8 +51,12 @@ jest.mock("./kb-multi-store-purge", () => ({
 
 import { KbPageTrashService } from "./kb-page-trash.service";
 import {
+  incompleteStorePages,
   markStoresComplete,
+  markStoresFailed,
   openMultiStoreLedger,
+  purgeCommentsForPages,
+  purgeVisitsForPages,
 } from "./kb-multi-store-purge";
 import { purgeReviewsForPages } from "./kb-purge-reviews";
 
@@ -200,5 +204,57 @@ describe("every store a purge opens in the ledger is also closed", () => {
     await service.emptyTrash(makeUser());
 
     expect(storesMarkedFor(999)).toEqual([]);
+  });
+});
+
+describe("an interrupted purge keeps its completed stores and resumes on the stores that remain", () => {
+  beforeEach(() => {
+    jest
+      .mocked(incompleteStorePages)
+      .mockImplementation(async (_db, _orgId, pageIds) => pageIds as number[]);
+  });
+
+  it("leaves every store before the failing one complete, marks the failing one failed, and never marks it complete", async () => {
+    jest
+      .mocked(purgeCommentsForPages)
+      .mockRejectedValueOnce(new Error("object store brown-out"));
+    const service = makeService();
+
+    await expect(service.emptyTrash(makeUser())).rejects.toThrow(
+      "object store brown-out",
+    );
+
+    const marked = storesMarkedFor(PAGE_IDS[0] as number);
+    expect(marked).toContain("visits");
+    expect(marked).toContain("versions");
+    expect(marked).not.toContain("comments");
+    expect(jest.mocked(markStoresFailed).mock.calls.map((call) => String(call[3]))).toContain(
+      "comments",
+    );
+  });
+
+  it("does not re-run a store the earlier attempt already completed, so resumption is not a full replay", async () => {
+    const completed = new Set(["visits", "favorites", "source_links", "reviews", "versions"]);
+    jest
+      .mocked(incompleteStorePages)
+      .mockImplementation(async (_db, _orgId, pageIds, store) =>
+        completed.has(String(store)) ? [] : (pageIds as number[]),
+      );
+    const service = makeService();
+
+    await service.emptyTrash(makeUser());
+
+    expect(jest.mocked(purgeVisitsForPages)).not.toHaveBeenCalled();
+    expect(jest.mocked(purgeCommentsForPages)).toHaveBeenCalled();
+    expect(storesMarkedFor(PAGE_IDS[0] as number)).not.toContain("visits");
+  });
+
+  it("re-runs every store when the ledger reports nothing complete, so the skip above is not vacuous", async () => {
+    const service = makeService();
+
+    await service.emptyTrash(makeUser());
+
+    expect(jest.mocked(purgeVisitsForPages)).toHaveBeenCalled();
+    expect(storesMarkedFor(PAGE_IDS[0] as number)).toContain("visits");
   });
 });

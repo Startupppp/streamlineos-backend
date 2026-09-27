@@ -1,16 +1,12 @@
 import { z } from "zod";
 import {
-  pageNumberField,
   pageSizeField,
 } from "../../../../common/pagination/list-query.schema";
-
-const KB_SEARCH_MAX_PAGE = 200;
 
 export const searchSchema = z
   .object({
     q: z.string().trim().min(1).max(200),
     spaceId: z.coerce.number().int().positive().optional(),
-    page: pageNumberField.transform((v) => Math.min(v, KB_SEARCH_MAX_PAGE)),
     pageSize: pageSizeField(20, 50),
   })
   .strict();

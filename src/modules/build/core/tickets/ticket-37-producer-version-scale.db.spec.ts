@@ -229,13 +229,13 @@ describe("ticket 37 — both ticket status event producers (apply-ticket-change 
       },
     ]);
 
-    const rows = await rawSql<{ eventId: string; aggregateVersion: string }[]>`
+    const rows = await rawSql<{ event_id: string; aggregate_version: string }[]>`
       SELECT event_id, aggregate_version FROM outbox_events
       WHERE organization_id = ${f.orgId} AND event_id = ANY(${[singleEventId, batchEventId]})
     `;
     expect(rows).toHaveLength(2);
-    const singleVer = Number(rows.find((r) => r.eventId === singleEventId)?.aggregateVersion ?? "0");
-    const batchVer = Number(rows.find((r) => r.eventId === batchEventId)?.aggregateVersion ?? "0");
+    const singleVer = Number(rows.find((r) => r.event_id === singleEventId)?.aggregate_version ?? "0");
+    const batchVer = Number(rows.find((r) => r.event_id === batchEventId)?.aggregate_version ?? "0");
     expect(batchVer).toBe(singleVer + 1);
     expect(singleVer).toBeLessThan(ROW_SCALE_CEILING);
     expect(batchVer).toBeLessThan(ROW_SCALE_CEILING);

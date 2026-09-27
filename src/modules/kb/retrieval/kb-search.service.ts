@@ -63,10 +63,6 @@ export class KbSearchService {
       updatedAt: Date;
       snippet: string;
     }[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
   }> {
     const metrics = KbSearchMetrics.begin({ orgId: user.orgId, actorStanding: user.isOrgOwner ? "owner" : "member", orgCell: PROCESS_CELL_ID });
     try {
@@ -98,17 +94,9 @@ export class KbSearchService {
       updatedAt: Date;
       snippet: string;
     }[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
   }> {
     const empty = {
       items: [],
-      total: 0,
-      page: input.page,
-      pageSize: input.pageSize,
-      totalPages: 0,
     };
     const dbRole = "primary";
     const queueLane = KB_SEARCH_QUEUE_LANE;
@@ -148,8 +136,6 @@ export class KbSearchService {
       () => sql`false`,
     );
 
-    const offset = (input.page - 1) * input.pageSize;
-
     const rows = await this.db
       .select({
         id: kbPages.id,
@@ -168,14 +154,7 @@ export class KbSearchService {
         desc(this.candidates.keywordRank(tsquery)),
         desc(kbPages.updatedAt),
       )
-      .limit(input.pageSize)
-      .offset(offset);
-
-    const [countRow] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(kbPages)
-      .where(where);
-    const total = countRow?.count ?? 0;
+      .limit(input.pageSize);
 
     const items = rows.map(({ contentText, slug, ...card }) => ({
       ...card,
@@ -185,22 +164,18 @@ export class KbSearchService {
 
     await this.events.recordDetached(
       user.orgId,
-      total > 0 ? "search" : "search_no_results",
+      items.length > 0 ? "search" : "search_no_results",
       {
         actorMembershipId: actingMembershipId(user.principal) ?? null,
         query: input.q,
-        metadata: { resultsCount: total },
+        metadata: { resultsCount: items.length },
       },
     );
 
     const sourceKind = "article";
-    metrics.finish(total > 0 ? "found" : "not_found", { results: total, sourceKind, cacheOutcome, queueLane, dbRole });
+    metrics.finish(items.length > 0 ? "found" : "not_found", { results: items.length, sourceKind, cacheOutcome, queueLane, dbRole });
     return {
       items,
-      total,
-      page: input.page,
-      pageSize: input.pageSize,
-      totalPages: Math.ceil(total / input.pageSize),
     };
   }
 }

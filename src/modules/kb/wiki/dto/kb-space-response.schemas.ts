@@ -112,6 +112,7 @@ const kbSpaceRowSchema = z.object({
   defaultVisibility: z.string(),
   owningTeamId: z.string().nullable(),
   archivedAt: nullableWireDate(),
+  ownerName: z.string().nullable(),
   pagesOverdueForReview: z.number().int().optional(),
   pagesWithReviewPolicy: z.number().int().optional(),
   viewerSpaceRole: z.enum(["viewer", "commenter", "editor", "publisher", "admin"]).nullable().optional(),

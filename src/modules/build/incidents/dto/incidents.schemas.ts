@@ -11,6 +11,7 @@ export const listIncidentsQuerySchema = z.object({
   status: incidentStatusSchema.optional(),
   severity: incidentSeveritySchema.optional(),
   cursor: z.string().min(1).optional(),
+  q: z.string().max(200).optional(),
 }).strict();
 
 export const incidentChildrenQuerySchema = z.object({

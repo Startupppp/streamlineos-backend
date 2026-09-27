@@ -83,10 +83,6 @@ export const kbSearchItemSchema = z.object({
 
 export const kbSearchResponseSchema = z.object({
   items: z.array(kbSearchItemSchema),
-  total: z.number().int(),
-  page: z.number().int(),
-  pageSize: z.number().int(),
-  totalPages: z.number().int(),
 });
 
 export const kbReindexPageSchema = z.object({ reindexed: z.boolean() });

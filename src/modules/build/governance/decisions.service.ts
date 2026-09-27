@@ -61,6 +61,9 @@ export class DecisionsService {
           query.status ? eq(projectDecisions.status, query.status) : undefined,
           query.ownerId ? eq(projectDecisions.ownerId, query.ownerId) : undefined,
           query.cursor !== undefined ? lt(projectDecisions.id, query.cursor) : undefined,
+          query.search
+            ? sql`to_tsvector('english', coalesce(${projectDecisions.title}, '')) @@ plainto_tsquery('english', ${query.search})`
+            : undefined,
         ),
       )
       .orderBy(desc(projectDecisions.id))
