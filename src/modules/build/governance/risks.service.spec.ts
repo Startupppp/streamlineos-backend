@@ -682,6 +682,21 @@ describe("RisksService.listRisks — server-side full-text search predicate", ()
     expect(params).toContain("supply chain");
     expect(params).toContain("org-1");
   });
+
+  it("keeps orgId and projectId in WHERE beside the search term, which is the only reason the measured cost of search is a heap filter over one project's rows: a GIN index on the searched expression is never chosen under RLS because ts_match_vq is not leakproof and so cannot be evaluated before the tenant qual (BE-80)", async () => {
+    const mockDb = makeMockDb();
+    const riskChain = makeSelectChain([]);
+    setupMocks(mockDb, riskChain);
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await svc.listRisks(u, 4242, { search: "vendor" });
+
+    const whereArg: unknown = riskChain.where.mock.calls[0]?.[0];
+    const params = collectParamValues(whereArg);
+    expect(params).toContain("vendor");
+    expect(params).toContain("org-1");
+    expect(params).toContain(4242);
+  });
 });
 
 describe("RisksService.getRiskStats — project-membership gate (BOLA)", () => {
