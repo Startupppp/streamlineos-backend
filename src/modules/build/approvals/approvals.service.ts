@@ -25,7 +25,7 @@ import {
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
 import type { OrganizationActor } from "../../../common/organization/organization-actor";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import { loadApproval } from "./approval-lookup";
 import type {
   CreateApprovalInput,

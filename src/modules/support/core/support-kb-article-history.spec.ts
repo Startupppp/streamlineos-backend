@@ -100,7 +100,7 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
 
   it("snapshots the edit into kb_page_versions with the next version number", async () => {
     const { db, insertedVersions } = makeDb(makeCurrent(7), [makeUpdated(8)]);
-    const svc = new SupportKbService(db, new KbPageWriterService({} as never));
+    const svc = new SupportKbService(db, new KbPageWriterService({} as never, {} as never));
 
     await svc.updateArticle(ORG_ID, ARTICLE_ID, { content: "new body" }, "user-9");
 
@@ -116,7 +116,7 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
 
   it("bumps content_revision and emits the reindex event when content changes", async () => {
     const { db } = makeDb(makeCurrent(7), [makeUpdated(8)]);
-    const svc = new SupportKbService(db, new KbPageWriterService({} as never));
+    const svc = new SupportKbService(db, new KbPageWriterService({} as never, {} as never));
 
     await svc.updateArticle(ORG_ID, ARTICLE_ID, { content: "new body" });
 
@@ -132,7 +132,7 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
 
   it("guards the UPDATE with the revision the CLIENT sent, not the one it just read", async () => {
     const { db, capturedWheres } = makeDb(makeCurrent(7), [makeUpdated(8)]);
-    const svc = new SupportKbService(db, new KbPageWriterService({} as never));
+    const svc = new SupportKbService(db, new KbPageWriterService({} as never, {} as never));
 
     await svc.updateArticle(ORG_ID, ARTICLE_ID, {
       content: "new body",
@@ -148,7 +148,7 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
 
   it("a metadata-only edit carries no revision predicate — a rename is not gated on someone else's typing", async () => {
     const { db, capturedWheres } = makeDb(makeCurrent(7), [makeUpdated(7)]);
-    const svc = new SupportKbService(db, new KbPageWriterService({} as never));
+    const svc = new SupportKbService(db, new KbPageWriterService({} as never, {} as never));
 
     await svc.updateArticle(ORG_ID, ARTICLE_ID, { title: "Renamed" });
 
@@ -159,7 +159,7 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
 
   it("throws 409 STALE_REVISION and writes no version when a concurrent edit won the race", async () => {
     const { db, insertedVersions } = makeDb(makeCurrent(7), []);
-    const svc = new SupportKbService(db, new KbPageWriterService({} as never));
+    const svc = new SupportKbService(db, new KbPageWriterService({} as never, {} as never));
 
     let caught: unknown;
     try {
@@ -182,7 +182,7 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
 
   it("writes no version and emits nothing when only metadata changed", async () => {
     const { db, insertedVersions } = makeDb(makeCurrent(7), [makeUpdated(7)]);
-    const svc = new SupportKbService(db, new KbPageWriterService({} as never));
+    const svc = new SupportKbService(db, new KbPageWriterService({} as never, {} as never));
 
     await svc.updateArticle(ORG_ID, ARTICLE_ID, { excerpt: "shorter" });
 

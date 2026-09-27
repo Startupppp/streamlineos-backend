@@ -81,7 +81,7 @@ describe("KbPagesService.create — saved template usage stamp", () => {
       auth,
       access,
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await svc.create(makeUser(), { templateId: TEMPLATE_ID });
@@ -111,7 +111,7 @@ describe("KbPagesService.create — saved template usage stamp", () => {
       auth,
       access,
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await expect(
@@ -129,7 +129,7 @@ describe("KbPagesService.create — saved template usage stamp", () => {
       auth,
       access,
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await svc.create(makeUser(), { title: "Blank page" });
@@ -145,7 +145,7 @@ describe("KbPagesService.create — saved template usage stamp", () => {
       auth,
       access,
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await svc.create(makeUser(), { templateId: TEMPLATE_ID });

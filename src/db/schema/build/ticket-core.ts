@@ -21,6 +21,7 @@ import {
 } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { projectStatuses, modules, cycles } from "./core";
+import { portfolioHealthEnum } from "./portfolios";
 import { crmOrgPartyMap } from "../party/legacy-party-map";
 
 export const tickets = build.table(
@@ -71,6 +72,7 @@ export const tickets = build.table(
     recurrenceNextRunAt: timestamp("recurrence_next_run_at", {
       withTimezone: true,
     }),
+    health: portfolioHealthEnum("health"),
     customerId: integer("customer_id"),
     version: integer("version").notNull().default(1),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

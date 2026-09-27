@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { tickets } from "../../../db/schema";
+import { tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateEpicInput, UpdateEpicInput } from "./dto/iterations.schemas";
@@ -14,7 +14,7 @@ export class EpicsService {
 
   async listEpics(orgId: string, projectId: number) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    return this.db.query.tickets.findMany({
+    const epics = await this.db.query.tickets.findMany({
       where: and(
         eq(tickets.orgId, orgId),
         eq(tickets.projectId, projectId),
@@ -27,6 +27,39 @@ export class EpicsService {
       orderBy: [desc(tickets.createdAt)],
       limit: 100,
     });
+
+    if (epics.length === 0) return [];
+
+    const epicIds = epics.map((e) => e.id);
+    const idList = sql.join(epicIds.map((id) => sql`${id}`), sql`, `);
+
+    const [asSource, asTarget] = await Promise.all([
+      this.db
+        .select({ id: workItemRelations.workItemId })
+        .from(workItemRelations)
+        .where(
+          and(
+            eq(workItemRelations.orgId, orgId),
+            sql`${workItemRelations.workItemId} IN (${idList})`,
+          ),
+        ),
+      this.db
+        .select({ id: workItemRelations.relatedWorkItemId })
+        .from(workItemRelations)
+        .where(
+          and(
+            eq(workItemRelations.orgId, orgId),
+            sql`${workItemRelations.relatedWorkItemId} IN (${idList})`,
+          ),
+        ),
+    ]);
+
+    const depCountMap = new Map<number, number>();
+    for (const r of [...asSource, ...asTarget]) {
+      depCountMap.set(r.id, (depCountMap.get(r.id) ?? 0) + 1);
+    }
+
+    return epics.map((epic) => ({ ...epic, dependencyCount: depCountMap.get(epic.id) ?? 0 }));
   }
 
   async createEpic(orgId: string, userId: string, projectId: number, input: CreateEpicInput) {

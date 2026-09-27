@@ -32,7 +32,7 @@ function service(): RateLimitService {
 
 function guardFor(tier: string | undefined, svc: RateLimitService): RateLimitGuard {
   const reflector = { getAllAndOverride: jest.fn().mockReturnValue(tier) } as unknown as Reflector;
-  return new RateLimitGuard(reflector, svc);
+  return new RateLimitGuard(reflector, svc, {} as never, {} as never);
 }
 
 function contextFor(options: { userId?: string; ip?: string; forwardedFor?: string }): {

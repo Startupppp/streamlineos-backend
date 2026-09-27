@@ -9,7 +9,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
 import { ChatChannelsService } from "../../chat/chat-channels.service";
 import { ChatMessagesService } from "../../chat/chat-messages.service";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import { ApprovalsService } from "./approvals.service";
 
 jest.mock("../core/project-access", () => ({ assertProjectAccess: jest.fn() }));

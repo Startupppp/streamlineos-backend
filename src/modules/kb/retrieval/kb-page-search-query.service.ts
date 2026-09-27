@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -15,6 +15,8 @@ import {
 } from "./kb-page-search-cursor";
 import type { PageFullSearchQuery, KbPageFullSearchResponse } from "./dto/kb-page-search-query.schemas";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+
+export const FTS_ID_CAP = 500;
 
 @Injectable()
 export class KbPageSearchQueryService {
@@ -48,7 +50,9 @@ export class KbPageSearchQueryService {
         const scopeTag = searchScopeTag(input, scope.fingerprint);
         const position = decodeSearchCursor(input.cursor, scopeTag);
 
-        const baseConditions = this.buildBaseConditions(user.orgId, scope.predicate, tsquery, input);
+        const ftsPredicate: SQL<unknown> = sql`${kbPages}.id IN (SELECT app.search_kb_page_ids(${input.q}, ${FTS_ID_CAP}))`;
+
+        const baseConditions = this.buildBaseConditions(user.orgId, scope.predicate, ftsPredicate, input);
         const rankExpr = sql`ts_rank(${kbPages}.fts, ${tsquery})`;
         const conditions = [...baseConditions];
         if (position !== null) {
@@ -111,14 +115,14 @@ export class KbPageSearchQueryService {
   private buildBaseConditions(
     orgId: string,
     visibility: SQL<unknown>,
-    tsquery: SQL<unknown>,
+    ftsPredicate: SQL<unknown>,
     input: Pick<PageFullSearchQuery, "spaceId" | "status" | "type" | "verified">,
   ): SQL<unknown>[] {
     const conditions: SQL<unknown>[] = [
       eq(kbPages.orgId, orgId),
       isNull(kbPages.deletedAt),
       visibility,
-      sql`${kbPages}.fts @@ ${tsquery}`,
+      ftsPredicate,
     ];
 
     if (input.spaceId !== undefined) {

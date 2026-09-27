@@ -256,13 +256,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/execution/workspace.service.ts",
-        line: 316,
+        line: 380,
         anchor: /projectId: null,/,
         note: "the row is intentionally project-less, so there is no parent dimension",
       },
       {
         file: "src/modules/build/execution/workspace.service.ts",
-        line: 317,
+        line: 381,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -280,13 +280,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/managed-products/managed-products.service.ts",
-        line: 113,
+        line: 143,
         anchor: /\.insert\(managedProducts\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/managed-products/managed-products.service.ts",
-        line: 115,
+        line: 145,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -328,13 +328,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/teams/teams.service.ts",
-        line: 133,
+        line: 151,
         anchor: /\.insert\(projectTeams\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/teams/teams.service.ts",
-        line: 135,
+        line: 153,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },

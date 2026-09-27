@@ -95,7 +95,7 @@ describe("updateArticle — reindex delegation to KbPageWriterService", () => {
   beforeEach(() => jest.clearAllMocks());
 
   it("calls writer.commitPageChange when a published article's content changes, not OutboxWriter.emit directly", async () => {
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, {} as never);
     const commitSpy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
 
     const db = makeDb(makeCurrent("published", 3), [makeUpdated("published", 4, 1)]);
@@ -116,7 +116,7 @@ describe("updateArticle — reindex delegation to KbPageWriterService", () => {
   });
 
   it("does not call writer.commitPageChange when the article is not published", async () => {
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, {} as never);
     const commitSpy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
 
     const db = makeDb(makeCurrent("draft", 3), [makeUpdated("draft", 4, 1)]);
@@ -126,7 +126,7 @@ describe("updateArticle — reindex delegation to KbPageWriterService", () => {
   });
 
   it("does not call writer.commitPageChange for a metadata-only change on a published article", async () => {
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, {} as never);
     const commitSpy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
 
     const db = makeDb(makeCurrent("published", 3), [makeUpdated("published", 3, 1)]);

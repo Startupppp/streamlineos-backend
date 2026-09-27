@@ -128,7 +128,7 @@ function makeService(db: Db, authDecision: "allowed" | "forbidden" | "notFound" 
     makeAuth(authDecision) as never,
     {} as never,
     {} as never,
-    new KbPageWriterService({} as never),
+    new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
   );
 }
 

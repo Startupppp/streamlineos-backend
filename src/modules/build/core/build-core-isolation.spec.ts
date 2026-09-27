@@ -106,7 +106,7 @@ describe("ProjectsReleasesService — cross-tenant isolation (BOLA)", () => {
     const db = makeNotFoundDb();
     const svc = new ProjectsReleasesService(db, makeNoPermAccess());
 
-    await expect(svc.updateRelease(makeAttackerU(), 99, 999, { name: "v2" })).rejects.toThrow(NotFoundException);
+    await expect(svc.updateRelease(makeAttackerU(), 99, 999, { name: "v2", rowVersion: 1 })).rejects.toThrow(NotFoundException);
   });
 
   it("throws NotFoundException when adding ticket to a cross-org release", async () => {

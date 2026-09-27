@@ -1,6 +1,9 @@
 import type { Db } from "../../../../db/drizzle.module";
 import type { ApplyTicketChangeDeps } from "./apply-ticket-change";
 import { applyTicketChange } from "./apply-ticket-change";
+import type { UpdateTicketInput } from "../dto/ticket.schemas";
+
+function ti(input: UpdateTicketInput): UpdateTicketInput { return input; }
 
 const ORG = "org-effects-test";
 
@@ -140,7 +143,7 @@ it.each([
   {
     label: "any change always logs activity",
     ticket: makeTicket(),
-    input: { version: 1, priority: "HIGH" },
+    input: ti({ version: 1, priority: "HIGH" }),
     assertFn: (_: jest.Mock, __: jest.Mock, activityLog: jest.Mock) => {
       expect(activityLog).toHaveBeenCalled();
     },

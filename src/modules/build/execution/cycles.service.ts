@@ -25,6 +25,7 @@ export class CyclesService {
         name: cycles.name,
         description: cycles.description,
         goal: cycles.goal,
+        capacity: cycles.capacity,
         startDate: cycles.startDate,
         endDate: cycles.endDate,
         status: cycles.status,

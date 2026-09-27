@@ -140,6 +140,7 @@ export const cycles = build.table(
     status: cycleStatusEnum("status").default("draft").notNull(),
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
+    capacity: integer("capacity"),
     createdBy: text("created_by")
       .references(() => users.id)
       .notNull(),

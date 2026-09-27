@@ -122,7 +122,7 @@ function makeService(db: Db): KbPagesService {
     {} as never,
     {} as never,
     {} as never,
-    new KbPageWriterService({} as never),
+    new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
   );
 }
 
@@ -230,7 +230,7 @@ describe("KbPagesService.create — writer delegation", () => {
 
   it("delegates to writer.commitPageChange so the event path flows through the canonical seam", async () => {
     const harness = makeHarness();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = new KbPagesService(
       harness.db,

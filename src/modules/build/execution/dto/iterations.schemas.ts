@@ -69,6 +69,7 @@ export const createCycleSchema = z
       .optional(),
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
+    capacity: z.number().int().min(0).optional(),
   }).strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
@@ -89,6 +90,7 @@ export const updateCycleSchema = z
       .max(500, "Description must be 500 characters or fewer")
       .optional(),
     goal: z.string().max(500, "Goal must be 500 characters or fewer").optional(),
+    capacity: z.number().int().min(0).nullable().optional(),
     status: z.enum(["draft", "active", "completed"]).optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
@@ -204,6 +206,7 @@ export const updateEpicSchema = z.object({
   description: z.string().optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
   assigneeId: z.string().nullable().optional(),
+  health: z.enum(["on_track", "at_risk", "off_track"]).nullable().optional(),
   startDate: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
   points: z.number().nullable().optional(),

@@ -58,7 +58,7 @@ describe("KbPageTreeService.move — space consistency between source and target
       { spaceId: 2 },
     );
     const auth = makeAuth();
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await svc.move(makeUser("org-space-move"), PAGE_ID, {
       parentPageId: TARGET_ID,
@@ -80,7 +80,7 @@ describe("KbPageTreeService.move — space consistency between source and target
     );
     const auth = makeAuth();
     auth.assertSpaceAccess.mockRejectedValue(new NotFoundException("Space not found"));
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await expect(
       svc.move(makeUser("org-space-move-denied"), PAGE_ID, {
@@ -101,7 +101,7 @@ describe("KbPageTreeService.move — space consistency between source and target
       { spaceId: 3 },
     );
     const auth = makeAuth();
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await svc.move(makeUser("org-space-move-same"), PAGE_ID, {
       parentPageId: TARGET_ID,
@@ -122,7 +122,7 @@ describe("KbPageTreeService.move — the moved page is queued for reindexing", (
       { id: PAGE_ID, parentPageId: null, spaceId: 1 },
       { spaceId: 2 },
     );
-    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(made.db, audit, makeAuth() as never, {} as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
     await svc.move(makeUser(ORG), PAGE_ID, { parentPageId: TARGET_ID, index: 0 });
     return made;
   }
@@ -169,7 +169,7 @@ describe("KbPageTreeService.move — the moved page is queued for reindexing", (
     );
     const auth = makeAuth();
     auth.assertSpaceAccess.mockRejectedValue(new NotFoundException("Space not found"));
-    const svc = new KbPageTreeService(made.db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(made.db, audit, auth as never, {} as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await expect(
       svc.move(makeUser(ORG), PAGE_ID, { parentPageId: TARGET_ID, index: 0 }),
@@ -198,7 +198,7 @@ describe("KbPageTreeService.move — the space check calls the canonical auth se
     );
     const auth = makeAuth();
     auth.assertSpaceAccess.mockRejectedValue(new NotFoundException("Space not found"));
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await expect(
       svc.move(makeMember("org-real-move", 42), PAGE_ID, {
@@ -218,7 +218,7 @@ describe("KbPageTreeService.move — the space check calls the canonical auth se
       { spaceId: 2 },
     );
     const auth = makeAuth();
-    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never));
+    const svc = new KbPageTreeService(db, audit, auth as never, {} as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await svc.move(makeMember("org-real-move-granted", 42), PAGE_ID, {
       parentPageId: TARGET_ID,

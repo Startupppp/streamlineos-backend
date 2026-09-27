@@ -126,7 +126,7 @@ describe("KbPageStatusService — cross-tenant isolation", () => {
           }),
         ),
       } as unknown as Db;
-      return { svc: new KbPageStatusService(db, null as never, auth as never, new KbPageWriterService({} as never)), auth };
+      return { svc: new KbPageStatusService(db, null as never, auth as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never)), auth };
     }
 
     it("demands manage on the record before locking a page, not merely the ability to see it", async () => {

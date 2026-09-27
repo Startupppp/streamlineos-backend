@@ -37,8 +37,9 @@ function makeCountChain(count: number): object {
 }
 
 function makeGetService(counts: { overdue: number; withPolicy: number }): KbSpacesService {
+  const spaceData = { id: SPACE_ID, orgId: ORG };
+  const countValues = [counts.overdue, counts.withPolicy, 0, 0];
   let call = 0;
-  const values = [counts.overdue, counts.withPolicy];
   const db = {
     query: {
       kbSpaces: {
@@ -48,7 +49,18 @@ function makeGetService(counts: { overdue: number; withPolicy: number }): KbSpac
     select: jest.fn().mockImplementation(() => {
       const idx = call;
       call += 1;
-      return makeCountChain(values[idx] ?? 0);
+      if (idx === 0) {
+        return {
+          from: jest.fn().mockReturnValue({
+            leftJoin: jest.fn().mockReturnValue({
+              leftJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockResolvedValue([spaceData]),
+              }),
+            }),
+          }),
+        };
+      }
+      return makeCountChain(countValues[idx - 1] ?? 0);
     }),
   } as unknown as Db;
   const access = {

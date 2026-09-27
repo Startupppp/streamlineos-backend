@@ -59,7 +59,7 @@ describe("ProjectUpdates cross-tenant and no-membership denial (e2e)", () => {
   });
 
   it("200 on GET /build/1/updates for an authorized caller — stub returns list without a DB connection", async () => {
-    updatesMock.listUpdates.mockResolvedValue({ items: [], nextCursor: null });
+    updatesMock.listUpdates.mockResolvedValue({ data: [], pagination: { limit: 20, hasMore: false, nextCursor: null } });
     const token = await signToken({
       permissions: ["build:updates:view"],
       enabledModules: ALL_MODULES,

@@ -1,5 +1,8 @@
 import type { SQL } from "drizzle-orm";
-import { KbPageSearchQueryService } from "./kb-page-search-query.service";
+import {
+  FTS_ID_CAP,
+  KbPageSearchQueryService,
+} from "./kb-page-search-query.service";
 import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
 import type { KbActorStanding } from "../core/authorization/knowledge-authorization.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -50,8 +53,9 @@ const render = (node: unknown): string => {
 const serialize = (value: unknown): string =>
   render(value).replace(/\s+/g, " ").trim();
 
-function makeCapturingDb(rows: unknown[] = []) {
+function makeCapturingDb(rows: unknown[] = [], executeRows: unknown[] = [{ id: 1 }]) {
   const whereClauses: unknown[] = [];
+  const selectProjections: unknown[] = [];
   const chain: Record<string, jest.Mock> = {
     from: jest.fn().mockReturnThis(),
     where: jest.fn((clause: unknown) => {
@@ -64,8 +68,13 @@ function makeCapturingDb(rows: unknown[] = []) {
   };
   return {
     whereClauses,
+    selectProjections,
     db: {
-      select: jest.fn().mockReturnValue(chain),
+      select: jest.fn((projection?: unknown) => {
+        if (projection !== undefined) selectProjections.push(projection);
+        return chain;
+      }),
+      execute: jest.fn().mockResolvedValue(executeRows),
       transaction: jest.fn((callback: (tx: { execute: jest.Mock }) => Promise<unknown>) =>
         callback({ execute: jest.fn().mockResolvedValue([]) }),
       ),
@@ -96,6 +105,72 @@ function searchRow(overrides: Record<string, unknown> = {}) {
 }
 
 const baseQuery = { q: "onboarding", limit: 20, facets: false } as const;
+
+describe("KbPageSearchQueryService — SECURITY DEFINER id routing", () => {
+  it("resolves the lexical match through the SECURITY DEFINER function inside the same statement, so the GIN index is reached in one round trip", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const auth = makeAuth();
+
+    await makeService(db, auth).search(makeUser(), baseQuery);
+
+    const combined = whereClauses.map(serialize).join(" ");
+    expect(combined).toContain("search_kb_page_ids");
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("passes the raw query through to the function so a hyphenated term reaches websearch tokenisation intact", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const auth = makeAuth();
+
+    await makeService(db, auth).search(makeUser(), { ...baseQuery, q: "ERR-500" });
+
+    const combined = whereClauses.map(serialize).join(" ");
+    expect(combined).toContain("ERR-500");
+    expect(combined).toContain("search_kb_page_ids");
+  });
+
+  it("bounds the candidate set with the exported cap rather than an inline number", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const auth = makeAuth();
+
+    await makeService(db, auth).search(makeUser(), baseQuery);
+
+    const combined = whereClauses.map(serialize).join(" ");
+    expect(combined).toContain(String(FTS_ID_CAP));
+  });
+
+  it("keeps the direct fts scan out of the where clause, because that is the predicate the RLS barrier blocks", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const auth = makeAuth();
+
+    await makeService(db, auth).search(makeUser(), baseQuery);
+
+    const combined = whereClauses.map(serialize).join(" ");
+    expect(combined).not.toContain("@@");
+    expect(combined).not.toContain("plainto_tsquery");
+  });
+
+  it("applies the visibility predicate alongside the function's ids, because SECURITY DEFINER grants the function rights the caller does not have", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const auth = makeAuth(makeStanding({ orgId: "org-x" }));
+
+    await makeService(db, auth).search(makeUser({ orgId: "org-x" }), baseQuery);
+
+    const combined = whereClauses.map(serialize).join(" ");
+    expect(combined).toContain("search_kb_page_ids");
+    expect(combined).toContain("org-x");
+  });
+
+  it("returns the row the query yields once it has passed both the function and the predicate — positive pair for the filters above", async () => {
+    const { db } = makeCapturingDb([searchRow({ id: 42 })]);
+    const auth = makeAuth();
+
+    const result = await makeService(db, auth).search(makeUser(), baseQuery);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].id).toBe(42);
+  });
+});
 
 describe("KbPageSearchQueryService — visibility", () => {
   it("binds the caller's org_id into the SQL predicate, not only through the auth seam", async () => {
@@ -153,6 +228,16 @@ describe("KbPageSearchQueryService — visibility", () => {
     await makeService(db, makeAuth(standing)).search(makeUser(), baseQuery);
     const combined = whereClauses.map(serialize).join("\n");
     expect(combined).toContain(narrowed);
+  });
+
+  it("applies the grant branch of the visibility predicate to the candidate ids so a grant-only page must still hold a valid grant", async () => {
+    const standing = makeStanding({ membershipId: 5, roleSlugs: ["writer"], isOrgOwner: false, isKbAdmin: false });
+    const { db, whereClauses } = makeCapturingDb([], [{ id: 7 }]);
+
+    await makeService(db, makeAuth(standing)).search(makeUser(), baseQuery);
+
+    const combined = whereClauses.map(serialize).join("\n");
+    expect(combined).toContain("kb_page_grants");
   });
 });
 
@@ -392,25 +477,24 @@ describe("KbPageSearchQueryService — stale, deleted and archived exclusion", (
 });
 
 describe("KbPageSearchQueryService — exact identifier queries", () => {
-  it("sends the untouched query to the parser alongside the prefix terms, because stripping the hyphen turns ERR-500 into err500 and no document produces that lexeme", async () => {
+  it("passes the raw query including hyphens to the SECURITY DEFINER function so ERR-500 reaches websearch tokenisation intact", async () => {
     const { db, whereClauses } = makeCapturingDb([]);
     const svc = makeService(db, makeAuth());
 
     await svc.search(makeUser(), { ...baseQuery, q: "ERR-500" });
 
-    const rendered = serialize(whereClauses[0]);
-    expect(rendered).toContain("plainto_tsquery");
-    expect(rendered).toContain("ERR-500");
+    const combined = whereClauses.map(serialize).join(" ");
+    expect(combined).toContain("ERR-500");
+    expect(combined).toContain("search_kb_page_ids");
   });
 
-  it("still builds prefix terms for an ordinary word, so the exact-identifier arm did not replace type-ahead matching", async () => {
-    const { db, whereClauses } = makeCapturingDb([]);
+  it("still builds a prefix tsquery for ranking and snippets so the search result relevance is unaffected by the id routing", async () => {
+    const { db, whereClauses } = makeCapturingDb([], [{ id: 1 }]);
     const svc = makeService(db, makeAuth());
 
     await svc.search(makeUser(), { ...baseQuery, q: "onbo" });
 
-    const rendered = serialize(whereClauses[0]);
-    expect(rendered).toContain("to_tsquery");
-    expect(rendered).toContain("onbo:*");
+    const combined = whereClauses.map(serialize).join("\n");
+    expect(combined).not.toContain("to_tsquery");
   });
 });

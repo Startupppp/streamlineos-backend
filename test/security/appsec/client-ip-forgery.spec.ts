@@ -42,7 +42,7 @@ const BACKEND_ROOT = resolve(__dirname, "../../..");
 
 function guardFor(tier: string, svc: RateLimitService): RateLimitGuard {
   const reflector = { getAllAndOverride: jest.fn().mockReturnValue(tier) } as unknown as Reflector;
-  return new RateLimitGuard(reflector, svc);
+  return new RateLimitGuard(reflector, svc, {} as never, {} as never);
 }
 
 /** One request as the framework hands it over: a socket-derived `ip` plus whatever headers arrived. */

@@ -53,7 +53,7 @@ function makeDb(existingPublicToken: string | null) {
 }
 
 function makeService(db: Db) {
-  return new KbPagePublicService(db, {} as never, {} as never, new KbPageWriterService({} as never));
+  return new KbPagePublicService(db, {} as never, {} as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 }
 
 describe("KbPagesService.setVisibility — public share tokens", () => {

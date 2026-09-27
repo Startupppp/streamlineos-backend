@@ -38,16 +38,20 @@ describe("EpicsService — cross-tenant isolation", () => {
 
   it("listEpics returns epics for the owning org (control — same-tenant access works)", async () => {
     const fakeEpic = { id: 1, orgId: OWNER_ORG, title: "Epic 1", type: "EPIC" };
+    const relWhere = jest.fn().mockResolvedValue([]);
+    const relFrom = jest.fn().mockReturnValue({ where: relWhere });
     const db = {
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
         tickets: { findMany: jest.fn().mockResolvedValue([fakeEpic]) },
       },
+      select: jest.fn().mockReturnValue({ from: relFrom }),
     } as unknown as Db;
     const svc = new EpicsService(db);
 
     const result = await svc.listEpics(OWNER_ORG, 1);
     expect(result).toHaveLength(1);
+    expect(result[0]).toHaveProperty("dependencyCount", 0);
   });
 });
 
@@ -190,6 +194,7 @@ describe("epicRowSchema — response contract completeness", () => {
     type: "EPIC",
     status: "TODO",
     priority: "MEDIUM",
+    health: null,
     projectId: 1,
     ticketNumber: 42,
     cycleId: null,
@@ -204,6 +209,7 @@ describe("epicRowSchema — response contract completeness", () => {
     rank: "0|hzzzzz:",
     timeSpent: "0",
     version: 1,
+    dependencyCount: 0,
     deletedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -223,14 +229,17 @@ describe("epicRowSchema — response contract completeness", () => {
 describe("CyclesService — cross-project scope within one org — updateCycle", () => {
   it("updateCycle constrains the UPDATE by projectId, so a cycle of a sibling project cannot be edited through this project's URL", async () => {
     const projectFindFirst = jest.fn().mockResolvedValue({ id: 7 });
-    const where = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 99 }]) });
+    const cycleFindFirst = jest.fn().mockResolvedValue({ version: 1 });
+    const select = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) });
+    const where = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 99, version: 2 }]) });
     const db = {
-      query: { projects: { findFirst: projectFindFirst } },
+      query: { projects: { findFirst: projectFindFirst }, cycles: { findFirst: cycleFindFirst } },
+      select,
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
     const svc = new CyclesService(db);
 
-    await svc.updateCycle(OWNER_ORG, 7, 99, { name: "Renamed" });
+    await svc.updateCycle(OWNER_ORG, 7, 99, { version: 1, name: "Renamed" });
 
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(7);
   });

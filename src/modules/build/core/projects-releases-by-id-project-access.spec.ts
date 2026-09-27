@@ -105,7 +105,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
     const { db, rowFindFirst, update, transaction } = makeNonMemberDb();
     const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
 
-    await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "hijacked" })).rejects.toThrow(
+    await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "hijacked", rowVersion: 1 })).rejects.toThrow(
       ForbiddenException,
     );
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -135,13 +135,17 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
             .fn()
             .mockResolvedValue({ managerMembershipId: OTHER_MANAGER_MEMBERSHIP_ID }),
         },
+        projectReleases: { findFirst: jest.fn().mockResolvedValue({ rowVersion: 1 }) },
       },
-      select: memberSelect([countChain]),
+      select: jest.fn()
+        .mockImplementationOnce(() => membershipProbe([{ role: "MEMBER" }]))
+        .mockImplementationOnce(() => membershipProbe([]))
+        .mockImplementationOnce(countChain),
       transaction,
     } as unknown as Db;
     const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
 
-    await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "v2" })).resolves.toMatchObject({
+    await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "v2", rowVersion: 1 })).resolves.toMatchObject({
       id: 5,
       name: "v2",
     });

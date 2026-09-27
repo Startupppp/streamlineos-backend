@@ -20,4 +20,4 @@ export { reserveTicketCapacity } from "./build-ticket-capacity";
 export { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
 export { resolveValidTicketStatuses } from "./ticket-status.util";
 export { TicketVersionConflictException } from "./ticket-version-conflict.exception";
-export { resolveTicketsScope, ticketScope } from "./tickets-scope";
+export { resolveTicketsScope, ticketScope, TICKETS_PERMISSION } from "./tickets-scope";

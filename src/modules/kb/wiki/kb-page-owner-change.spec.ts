@@ -101,7 +101,7 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
       auth as never,
       {} as never,
       audit as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await expect(
@@ -130,7 +130,7 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
       auth as never,
       {} as never,
       audit as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     const result = await svc.update(
@@ -174,7 +174,7 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
       auth as never,
       {} as never,
       audit as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await svc.update(makeUser(), PAGE_ID, { title: "New title" }, false);

@@ -447,7 +447,7 @@ const REVIEWED_INLINE = [
     summary: "PATCH /build/:projectId/modules/:moduleId. No @Param(\"projectId\"); the UPDATE binds (id, orgId).",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/modules.service.ts", line: 170, anchor: /eq\(modules\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/modules.service.ts", line: 167, anchor: /eq\(modules\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -458,7 +458,7 @@ const REVIEWED_INLINE = [
       "DELETE /build/:projectId/modules/:moduleId. No @Param(\"projectId\"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).",
     blastRadius: "Intra-tenant cross-project delete, with a side effect on every ticket referencing the module.",
     evidence: [
-      { file: "src/modules/build/execution/modules.service.ts", line: 188, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/modules.service.ts", line: 202, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -481,7 +481,7 @@ const REVIEWED_INLINE = [
       "PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is \"build/:projectId/milestones\", yet no @Param(\"projectId\") is declared and the UPDATE binds (id, orgId).",
     blastRadius: "Intra-tenant cross-project write; org-wide permission is sufficient, there is no row-derived re-check.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 68, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 109, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\), eq\(projectMilestones\.version, before\.version\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
@@ -491,7 +491,7 @@ const REVIEWED_INLINE = [
     summary: "DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.",
     blastRadius: "Intra-tenant cross-project delete.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 78, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 122, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
@@ -502,7 +502,7 @@ const REVIEWED_INLINE = [
       "PATCH /build/:projectId/intake/:requestId. No @Param(\"projectId\"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 154, anchor: /\.where\(and\(eq\(intakeItems\.id, requestId\), eq\(intakeItems\.projectId, projectId\), eq\(intakeItems\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 198, anchor: /\.where\(and\(eq\(intakeItems\.id, requestId\), eq\(intakeItems\.projectId, projectId\), eq\(intakeItems\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
@@ -514,8 +514,8 @@ const REVIEWED_INLINE = [
     blastRadius:
       "Intra-tenant. Private views are additionally user-scoped; SHARED views have no project or user constraint, so any org member can edit a shared view belonging to any project.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 269, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 279, anchor: /\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\)/, note: "UPDATE binds id + orgId" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 333, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 343, anchor: /\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\)/, note: "UPDATE binds id + orgId" },
     ],
   },
   {
@@ -525,8 +525,8 @@ const REVIEWED_INLINE = [
     summary: "DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.",
     blastRadius: "Intra-tenant; shared views are deletable across projects by any org member.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 286, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 293, anchor: /await this\.db\.delete\(projectViews\)\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\);/, note: "DELETE binds id + orgId" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 350, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 357, anchor: /await this\.db\.delete\(projectViews\)\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\);/, note: "DELETE binds id + orgId" },
     ],
   },
 

@@ -144,7 +144,7 @@ describe("KbPageDuplicateService.duplicate — indexing the copy", () => {
       harness.db,
       { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
       makeAuth(),
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     const copy = await svc.duplicate(makeUser(), PAGE_ID);
@@ -164,7 +164,7 @@ describe("KbPageDuplicateService.duplicate — indexing the copy", () => {
       harness.db,
       { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
       makeAuth(),
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await svc.duplicate(makeUser(), PAGE_ID);
@@ -187,7 +187,7 @@ describe("KbPageTreeService.move — indexing the moved page", () => {
       { log: jest.fn() } as never,
       makeAuth(),
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await svc.move(makeUser(), PAGE_ID, { parentPageId: null, index: 0 });
@@ -210,7 +210,7 @@ describe("KbPageTreeService.move — indexing the moved page", () => {
       { log: jest.fn() } as never,
       makeAuth(),
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
     );
 
     await expect(
@@ -228,7 +228,7 @@ describe("KbPageDuplicateService.duplicate — writer delegation", () => {
 
   it("delegates to writer.commitManyPageChanges so the copy batch flows through the canonical seam", async () => {
     const harness = makeDuplicateHarness("escalation steps");
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     const spy = jest.spyOn(writer, "commitManyPageChanges").mockResolvedValue(undefined);
     const svc = new KbPageDuplicateService(
       harness.db,
@@ -256,7 +256,7 @@ describe("KbPageTreeService.move — writer delegation", () => {
     const harness = makeMoveHarness([
       { id: PAGE_ID, contentRevision: 3, aclRevision: 2 },
     ]);
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = new KbPageTreeService(
       harness.db,

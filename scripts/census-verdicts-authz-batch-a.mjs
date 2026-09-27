@@ -34,7 +34,7 @@ export default [
       "None: an approvalId that does not belong to the named :projectId (whether in the caller's org or another org) 404s at loadApproval before any row is returned.",
     evidence: [
       { file: "src/modules/build/approvals/approvals.controller.ts", line: 104, anchor: /getApproval\(/, note: "handler binds both projectId and approvalId route params and forwards both" },
-      { file: "src/modules/build/approvals/approvals-read.service.ts", line: 108, anchor: /return loadApproval\(this\.db, u\.orgId, projectId, approvalId\);/, note: "projectId is passed into loadApproval alongside approvalId and orgId" },
+      { file: "src/modules/build/approvals/approvals-read.service.ts", line: 130, anchor: /return loadApproval\(this\.db, u\.orgId, projectId, approvalId\);/, note: "projectId is passed into loadApproval alongside approvalId and orgId" },
       { file: "src/modules/build/approvals/approval-lookup.ts", line: 6, anchor: /export async function loadApproval\(db: Db, orgId: string, projectId: number, approvalId: number\)/, note: "shared lookup takes projectId as a required parameter" },
       { file: "src/modules/build/approvals/approval-lookup.ts", line: 11, anchor: /eq\(projectApprovals\.projectId, projectId\),/, note: "WHERE clause binds the approval row to the named project; NotFoundException on any mismatch" },
     ],
@@ -94,8 +94,8 @@ export default [
       "None: a changeRequestId belonging to a different project (or org) 404s directly at the SELECT's WHERE clause.",
     evidence: [
       { file: "src/modules/build/client-portal/change-requests.controller.ts", line: 73, anchor: /getChangeRequest\(/, note: "handler binds both projectId and changeRequestId and forwards both" },
-      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 156, anchor: /async getChangeRequest\(u: CurrentUserContext, projectId: number, crId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 163, anchor: /eq\(changeRequests\.id, crId\),/, note: "SELECT WHERE binds id+orgId+projectId together (see surrounding and(...))" },
+      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 157, anchor: /async getChangeRequest\(u: CurrentUserContext, projectId: number, crId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 164, anchor: /eq\(changeRequests\.id, crId\),/, note: "SELECT WHERE binds id+orgId+projectId together (see surrounding and(...))" },
     ],
   },
   {
@@ -108,8 +108,8 @@ export default [
       "None: a foreign :changeRequestId 404s at the existence check before the UPDATE is even attempted, and the UPDATE's own WHERE independently re-asserts the same binding.",
     evidence: [
       { file: "src/modules/build/client-portal/change-requests.controller.ts", line: 98, anchor: /updateChangeRequest\(/, note: "handler binds both projectId and changeRequestId and forwards both" },
-      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 246, anchor: /eq\(changeRequests\.id, crId\),/, note: "existence check binds id+orgId+projectId" },
-      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 300, anchor: /eq\(changeRequests\.id, crId\),/, note: "the UPDATE's own WHERE re-binds id+orgId+projectId" },
+      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 237, anchor: /eq\(changeRequests\.id, crId\),/, note: "existence check binds id+orgId+projectId" },
+      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 291, anchor: /eq\(changeRequests\.id, crId\),/, note: "the UPDATE's own WHERE re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -122,8 +122,8 @@ export default [
       "None: a foreign :changeRequestId 404s at the existence check, and the UPDATE's own WHERE independently re-asserts the binding.",
     evidence: [
       { file: "src/modules/build/client-portal/change-requests.controller.ts", line: 112, anchor: /deleteChangeRequest\(/, note: "handler binds both projectId and changeRequestId and forwards both" },
-      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 338, anchor: /eq\(changeRequests\.id, crId\),/, note: "existence check binds id+orgId+projectId" },
-      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 351, anchor: /eq\(changeRequests\.id, crId\),/, note: "soft-delete UPDATE re-binds id+orgId+projectId" },
+      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 329, anchor: /eq\(changeRequests\.id, crId\),/, note: "existence check binds id+orgId+projectId" },
+      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 342, anchor: /eq\(changeRequests\.id, crId\),/, note: "soft-delete UPDATE re-binds id+orgId+projectId" },
     ],
   },
 
@@ -137,9 +137,9 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s at the existence check before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 53, anchor: /toggleTicketVisibility\(/, note: "handler binds both projectId and ticketId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 54, anchor: /eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\), eq\(tickets\.projectId, projectId\), isNull\(tickets\.deletedAt\)/, note: "existence check binds id+orgId+projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 61, anchor: /\.where\(and\(eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 55, anchor: /toggleTicketVisibility\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 90, anchor: /eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\), eq\(tickets\.projectId, projectId\), isNull\(tickets\.deletedAt\)/, note: "existence check binds id+orgId+projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 97, anchor: /\.where\(and\(eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
     ],
   },
   {
@@ -151,9 +151,9 @@ export default [
     blastRadius:
       "None: a milestoneId belonging to a different project 404s at the existence check before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 66, anchor: /toggleMilestoneVisibility\(/, note: "handler binds both projectId and milestoneId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 78, anchor: /eq\(projectMilestones\.id, milestoneId\),/, note: "existence check binds id+orgId+projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 89, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 68, anchor: /toggleMilestoneVisibility\(/, note: "handler binds both projectId and milestoneId and forwards both" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 114, anchor: /eq\(projectMilestones\.id, milestoneId\),/, note: "existence check binds id+orgId+projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 125, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
     ],
   },
   {
@@ -165,9 +165,9 @@ export default [
     blastRadius:
       "None: a commentId whose parent ticket belongs to a different project 404s at the join before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 79, anchor: /toggleCommentVisibility\(/, note: "handler binds both projectId and commentId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 107, anchor: /\.innerJoin\(tickets, and\(/, note: "join binds the comment's ticket to the named project via tickets.projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 119, anchor: /\.where\(and\(eq\(ticketComments\.id, commentId\), eq\(ticketComments\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 81, anchor: /toggleCommentVisibility\(/, note: "handler binds both projectId and commentId and forwards both" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 143, anchor: /\.innerJoin\(tickets, and\(/, note: "join binds the comment's ticket to the named project via tickets.projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 155, anchor: /\.where\(and\(eq\(ticketComments\.id, commentId\), eq\(ticketComments\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
     ],
   },
   {
@@ -179,9 +179,9 @@ export default [
     blastRadius:
       "None: an attachmentId whose parent ticket belongs to a different project 404s at the join before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 92, anchor: /toggleAttachmentVisibility\(/, note: "handler binds both projectId and attachmentId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 131, anchor: /async toggleAttachmentVisibility\(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean\) \{/, note: "signature carries the authenticated actor and projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 139, anchor: /eq\(tickets\.projectId, projectId\),/, note: "join binds the attachment's ticket to the named project" },
+      { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 94, anchor: /toggleAttachmentVisibility\(/, note: "handler binds both projectId and attachmentId and forwards both" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 167, anchor: /async toggleAttachmentVisibility\(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean\) \{/, note: "signature carries the authenticated actor and projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 175, anchor: /eq\(tickets\.projectId, projectId\),/, note: "join binds the attachment's ticket to the named project" },
     ],
   },
 
@@ -565,8 +565,8 @@ export default [
       "None: a cycleId belonging to a different project 404s directly at the UPDATE's own WHERE clause.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 185, anchor: /updateCycle\(/, note: "handler binds both projectId and cycleId and forwards both" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 116, anchor: /async updateCycle\(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 134, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "UPDATE's own WHERE binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 127, anchor: /async updateCycle\(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 155, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\), eq\(cycles\.version, before\.version\)\)\)/, note: "UPDATE's own WHERE binds id+projectId+orgId" },
     ],
   },
   {
@@ -579,8 +579,8 @@ export default [
       "None: a cycleId belonging to a different project 404s directly at the DELETE's own WHERE clause.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 199, anchor: /deleteCycle\(/, note: "handler binds both projectId and cycleId and forwards both" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 141, anchor: /async deleteCycle\(orgId: string, projectId: number, cycleId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 147, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "DELETE's own WHERE binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 172, anchor: /async deleteCycle\(orgId: string, projectId: number, cycleId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 178, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "DELETE's own WHERE binds id+projectId+orgId" },
     ],
   },
   {
@@ -594,7 +594,7 @@ export default [
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 300, anchor: /updateEpic\(/, note: "handler binds both projectId and epicId and forwards both" },
       { file: "src/modules/build/execution/epics.service.ts", line: 61, anchor: /async updateEpic\(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 67, anchor: /eq\(tickets\.id, epicId\),/, note: "UPDATE's own WHERE binds id+orgId+projectId+type" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 63, anchor: /eq\(tickets\.id, epicId\),/, note: "UPDATE's own WHERE binds id+orgId+projectId+type" },
     ],
   },
   {
@@ -607,8 +607,8 @@ export default [
       "None: an epicId belonging to a different project 404s at the existence check before the DELETE runs.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 314, anchor: /deleteEpic\(/, note: "handler binds both projectId and epicId and forwards both" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 78, anchor: /async deleteEpic\(orgId: string, projectId: number, epicId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 81, anchor: /eq\(tickets\.id, epicId\),/, note: "existence check binds id+orgId+projectId+type; 404 on mismatch" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 91, anchor: /async deleteEpic\(orgId: string, projectId: number, epicId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 94, anchor: /eq\(tickets\.id, epicId\),/, note: "existence check binds id+orgId+projectId+type; 404 on mismatch" },
     ],
   },
 
@@ -677,9 +677,9 @@ export default [
     blastRadius:
       "None: a whiteboardId belonging to a different project 404s at loadBoardWithAccess before any board data is returned.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 323, anchor: /getWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 202, anchor: /async getWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 64, anchor: /private async loadBoardWithAccess\(/, note: "private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 335, anchor: /getWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 235, anchor: /async getWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 67, anchor: /private async loadBoardWithAccess\(/, note: "private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch" },
     ],
   },
   {
@@ -691,9 +691,9 @@ export default [
     blastRadius:
       "None: a whiteboardId belonging to a different project 404s at loadBoardWithAccess, and the UPDATE's own WHERE independently re-asserts the same binding.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 335, anchor: /updateWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 229, anchor: /async updateWhiteboard\(/, note: "signature" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 253, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the UPDATE's own WHERE re-binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 347, anchor: /updateWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 262, anchor: /async updateWhiteboard\(/, note: "signature" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 286, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the UPDATE's own WHERE re-binds id+projectId+orgId" },
     ],
   },
   {
@@ -705,9 +705,9 @@ export default [
     blastRadius:
       "None: a whiteboardId belonging to a different project 404s at loadBoardWithAccess, and the UPDATE's own WHERE independently re-asserts the same binding.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 349, anchor: /deleteWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 266, anchor: /async deleteWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 280, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 361, anchor: /deleteWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 299, anchor: /async deleteWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 313, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId" },
     ],
   },
 
@@ -752,7 +752,7 @@ export default [
       "None: a formId belonging to a different project 404s at loadForm before any form data is returned.",
     evidence: [
       { file: "src/modules/build/forms/forms.controller.ts", line: 58, anchor: /getForm\(/, note: "handler binds both projectId and formId and forwards both" },
-      { file: "src/modules/build/forms/forms.service.ts", line: 98, anchor: /async getForm\(u: CurrentUserContext, projectId: number, formId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/forms/forms.service.ts", line: 101, anchor: /async getForm\(u: CurrentUserContext, projectId: number, formId: number\) \{/, note: "signature takes projectId" },
       { file: "src/modules/build/forms/forms.service.ts", line: 39, anchor: /private async loadForm\(orgId: string, projectId: number, formId: number\): Promise<FormRow> \{/, note: "loadForm's WHERE (a few lines below) binds id+orgId+projectId together; 404 on mismatch" },
     ],
   },
@@ -766,8 +766,8 @@ export default [
       "None: a formId belonging to a different project 404s at loadForm before the patch is built or the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/forms/forms.controller.ts", line: 83, anchor: /updateForm\(/, note: "handler binds both projectId and formId and forwards both" },
-      { file: "src/modules/build/forms/forms.service.ts", line: 140, anchor: /async updateForm\(u: CurrentUserContext, projectId: number, formId: number, input: UpdateFormInput\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/forms/forms.service.ts", line: 142, anchor: /const existing = await this\.loadForm\(u\.orgId, projectId, formId\);/, note: "binds id+orgId+projectId; 404 on mismatch before any patch logic runs" },
+      { file: "src/modules/build/forms/forms.service.ts", line: 143, anchor: /async updateForm\(u: CurrentUserContext, projectId: number, formId: number, input: UpdateFormInput\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/forms/forms.service.ts", line: 145, anchor: /const existing = await this\.loadForm\(u\.orgId, projectId, formId\);/, note: "binds id+orgId+projectId; 404 on mismatch before any patch logic runs" },
     ],
   },
   {
@@ -780,8 +780,8 @@ export default [
       "None: a formId belonging to a different project 404s at loadForm before the soft-delete UPDATE runs.",
     evidence: [
       { file: "src/modules/build/forms/forms.controller.ts", line: 97, anchor: /deleteForm\(/, note: "handler binds both projectId and formId and forwards both" },
-      { file: "src/modules/build/forms/forms.service.ts", line: 179, anchor: /async deleteForm\(u: CurrentUserContext, projectId: number, formId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/forms/forms.service.ts", line: 181, anchor: /await this\.loadForm\(u\.orgId, projectId, formId\);/, note: "binds id+orgId+projectId; 404 on mismatch before the delete" },
+      { file: "src/modules/build/forms/forms.service.ts", line: 182, anchor: /async deleteForm\(u: CurrentUserContext, projectId: number, formId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/forms/forms.service.ts", line: 184, anchor: /await this\.loadForm\(u\.orgId, projectId, formId\);/, note: "binds id+orgId+projectId; 404 on mismatch before the delete" },
     ],
   },
 ];

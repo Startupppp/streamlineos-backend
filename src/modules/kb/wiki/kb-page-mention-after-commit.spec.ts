@@ -105,7 +105,7 @@ function makeService(db: Db, notifications: { create: jest.Mock }): KbPagesServi
     } as never,
     {} as never,
     { log: jest.fn() } as never,
-    new KbPageWriterService(notifications as never),
+    new KbPageWriterService(notifications as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never),
   );
 }
 

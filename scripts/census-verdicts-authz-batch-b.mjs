@@ -47,7 +47,7 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign decisionId 404s inside loadDecision.",
     evidence: [
       { file: "src/modules/build/governance/decisions.controller.ts", line: 63, anchor: /return this\.svc\.getDecision\(u, projectId, decisionId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/governance/decisions.service.ts", line: 72, anchor: /return this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "getDecision delegates to loadDecision" },
+      { file: "src/modules/build/governance/decisions.service.ts", line: 76, anchor: /return this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "getDecision delegates to loadDecision" },
       { file: "src/modules/build/governance/decisions.service.ts", line: 41, anchor: /eq\(projectDecisions\.projectId, projectId\),/, note: "loadDecision's WHERE binds decisionId to projectId and orgId together" },
     ],
   },
@@ -59,8 +59,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign decisionId 404s before the UPDATE runs, and the UPDATE's own WHERE repeats the binding.",
     evidence: [
       { file: "src/modules/build/governance/decisions.controller.ts", line: 89, anchor: /return this\.svc\.updateDecision\(u, projectId, decisionId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/governance/decisions.service.ts", line: 122, anchor: /await this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "binds decisionId to projectId via loadDecision before patching" },
-      { file: "src/modules/build/governance/decisions.service.ts", line: 137, anchor: /\.where\(and\(eq\(projectDecisions\.id, decisionId\), eq\(projectDecisions\.orgId, u\.orgId\), eq\(projectDecisions\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/governance/decisions.service.ts", line: 126, anchor: /await this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "binds decisionId to projectId via loadDecision before patching" },
+      { file: "src/modules/build/governance/decisions.service.ts", line: 141, anchor: /\.where\(and\(eq\(projectDecisions\.id, decisionId\), eq\(projectDecisions\.orgId, u\.orgId\), eq\(projectDecisions\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -71,8 +71,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign decisionId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/governance/decisions.controller.ts", line: 102, anchor: /return this\.svc\.softDeleteDecision\(u, projectId, decisionId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/governance/decisions.service.ts", line: 154, anchor: /await this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "binds decisionId to projectId via loadDecision before deleting" },
-      { file: "src/modules/build/governance/decisions.service.ts", line: 158, anchor: /\.where\(and\(eq\(projectDecisions\.id, decisionId\), eq\(projectDecisions\.orgId, u\.orgId\), eq\(projectDecisions\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/governance/decisions.service.ts", line: 158, anchor: /await this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "binds decisionId to projectId via loadDecision before deleting" },
+      { file: "src/modules/build/governance/decisions.service.ts", line: 162, anchor: /\.where\(and\(eq\(projectDecisions\.id, decisionId\), eq\(projectDecisions\.orgId, u\.orgId\), eq\(projectDecisions\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -82,9 +82,9 @@ export default [
     summary: "GET /build/:projectId/risks/:riskId. getRisk calls assertProjectAccess(projectId) then loadRisk(orgId, projectId, riskId), whose WHERE binds id=riskId AND orgId AND projectId. A riskId from another project 404s.",
     blastRadius: "None beyond the caller's own org/project: a foreign riskId 404s inside loadRisk.",
     evidence: [
-      { file: "src/modules/build/governance/risks.controller.ts", line: 81, anchor: /return this\.svc\.getRisk\(u, projectId, riskId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/governance/risks.service.ts", line: 125, anchor: /return this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "getRisk delegates to loadRisk" },
-      { file: "src/modules/build/governance/risks.service.ts", line: 33, anchor: /eq\(projectRisks\.projectId, projectId\),/, note: "loadRisk's WHERE binds riskId to projectId and orgId together" },
+      { file: "src/modules/build/governance/risks.controller.ts", line: 90, anchor: /return this\.svc\.getRisk\(u, projectId, riskId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/risks.service.ts", line: 150, anchor: /return this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "getRisk delegates to loadRisk" },
+      { file: "src/modules/build/governance/risks.service.ts", line: 34, anchor: /eq\(projectRisks\.projectId, projectId\),/, note: "loadRisk's WHERE binds riskId to projectId and orgId together" },
     ],
   },
   {
@@ -94,9 +94,9 @@ export default [
     summary: "PATCH /build/:projectId/risks/:riskId. updateRisk calls assertProjectAccess(projectId) then loadRisk(orgId, projectId, riskId) before patching, and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign riskId 404s before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/governance/risks.controller.ts", line: 107, anchor: /return this\.svc\.updateRisk\(u, projectId, riskId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/governance/risks.service.ts", line: 174, anchor: /await this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "binds riskId to projectId via loadRisk before patching" },
-      { file: "src/modules/build/governance/risks.service.ts", line: 188, anchor: /\.where\(and\(eq\(projectRisks\.id, riskId\), eq\(projectRisks\.orgId, u\.orgId\), eq\(projectRisks\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/governance/risks.controller.ts", line: 116, anchor: /return this\.svc\.updateRisk\(u, projectId, riskId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/risks.service.ts", line: 199, anchor: /await this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "binds riskId to projectId via loadRisk before patching" },
+      { file: "src/modules/build/governance/risks.service.ts", line: 213, anchor: /\.where\(and\(eq\(projectRisks\.id, riskId\), eq\(projectRisks\.orgId, u\.orgId\), eq\(projectRisks\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -106,9 +106,9 @@ export default [
     summary: "DELETE /build/:projectId/risks/:riskId (soft delete). Same binding as updateRisk: assertProjectAccess + loadRisk(orgId, projectId, riskId) 404s a foreign riskId, and the soft-delete UPDATE's own WHERE independently repeats id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign riskId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/governance/risks.controller.ts", line: 120, anchor: /return this\.svc\.softDeleteRisk\(u, projectId, riskId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/governance/risks.service.ts", line: 205, anchor: /await this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "binds riskId to projectId via loadRisk before deleting" },
-      { file: "src/modules/build/governance/risks.service.ts", line: 209, anchor: /\.where\(and\(eq\(projectRisks\.id, riskId\), eq\(projectRisks\.orgId, u\.orgId\), eq\(projectRisks\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/governance/risks.controller.ts", line: 129, anchor: /return this\.svc\.softDeleteRisk\(u, projectId, riskId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/risks.service.ts", line: 230, anchor: /await this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "binds riskId to projectId via loadRisk before deleting" },
+      { file: "src/modules/build/governance/risks.service.ts", line: 234, anchor: /\.where\(and\(eq\(projectRisks\.id, riskId\), eq\(projectRisks\.orgId, u\.orgId\), eq\(projectRisks\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -119,7 +119,7 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s inside loadIncident.",
     evidence: [
       { file: "src/modules/build/incidents/incidents.controller.ts", line: 97, anchor: /return this\.svc\.getIncident\(u, projectId, incidentId, query\);/, note: "route handler passes both path params and the validated child query to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 148, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading child resources" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 151, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading child resources" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 68, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "loadIncident's WHERE binds incidentId to projectId and orgId together" },
     ],
   },
@@ -131,9 +131,9 @@ export default [
     blastRadius: "None beyond the caller's own org/project: project access is required and a foreign incidentId 404s before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/incidents/incidents.controller.ts", line: 123, anchor: /return this\.svc\.updateIncident\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 199, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 200, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 240, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 202, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 203, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 243, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -144,9 +144,9 @@ export default [
     blastRadius: "None beyond the caller's own org/project: project access is required and a foreign incidentId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/incidents/incidents.controller.ts", line: 136, anchor: /return this\.svc\.deleteIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 300, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 301, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before deleting" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 309, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 303, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 304, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before deleting" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 312, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -157,8 +157,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s before any row is written.",
     evidence: [
       { file: "src/modules/build/incidents/incidents.controller.ts", line: 150, anchor: /return this\.svc\.addUpdate\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 329, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 360, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 332, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 363, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -220,7 +220,7 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign meetingId 404s inside loadMeeting.",
     evidence: [
       { file: "src/modules/build/meetings/meetings.controller.ts", line: 76, anchor: /return this\.svc\.getMeeting\(u, projectId, meetingId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 173, anchor: /const meeting = await this\.loadMeeting\(u\.orgId, projectId, meetingId\);/, note: "getMeeting binds via loadMeeting before reading child rows" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 208, anchor: /const meeting = await this\.loadMeeting\(u\.orgId, projectId, meetingId\);/, note: "getMeeting binds via loadMeeting before reading child rows" },
       { file: "src/modules/build/meetings/meetings.service.ts", line: 57, anchor: /eq\(projectMeetings\.projectId, projectId\),/, note: "loadMeeting's WHERE binds meetingId to projectId and orgId together" },
     ],
   },
@@ -232,8 +232,8 @@ export default [
     blastRadius: "Within the caller's own org: a foreign meetingId 404s before the UPDATE runs. The only gap is a coarser-than-siblings project-access check, not an object-binding bypass.",
     evidence: [
       { file: "src/modules/build/meetings/meetings.controller.ts", line: 102, anchor: /return this\.svc\.updateMeeting\(u\.orgId, u\.userId, projectId, meetingId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 283, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 299, anchor: /\.where\(and\(eq\(projectMeetings\.id, meetingId\), eq\(projectMeetings\.orgId, orgId\)\)\)/, note: "UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 318, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 334, anchor: /\.where\(and\(eq\(projectMeetings\.id, meetingId\), eq\(projectMeetings\.orgId, orgId\)\)\)/, note: "UPDATE targets the already-verified row by primary key id + orgId" },
     ],
   },
   {
@@ -244,8 +244,8 @@ export default [
     blastRadius: "Within the caller's own org: a foreign meetingId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/meetings/meetings.controller.ts", line: 115, anchor: /return this\.svc\.deleteMeeting\(u\.orgId, u\.userId, projectId, meetingId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 314, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 318, anchor: /\.where\(and\(eq\(projectMeetings\.id, meetingId\), eq\(projectMeetings\.orgId, orgId\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 349, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 353, anchor: /\.where\(and\(eq\(projectMeetings\.id, meetingId\), eq\(projectMeetings\.orgId, orgId\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
     ],
   },
   {
@@ -256,8 +256,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign meetingId 404s, and a non-project-member userId is rejected as \"not a project member\" before any row is written.",
     evidence: [
       { file: "src/modules/build/meetings/meetings.controller.ts", line: 129, anchor: /return this\.svc\.addAttendee\(u\.orgId, u\.userId, projectId, meetingId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 330, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 334, anchor: /\.where\(and\(eq\(projectMembers\.projectId, projectId\), eq\(projectMembers\.membershipId, sql`\(SELECT id FROM organization_members WHERE org_id = \$\{orgId\} AND user_id = \$\{input\.userId\} AND status = 'ACTIVE'\)`\)\)\)/, note: "resolves the attendee to a member of this exact projectId, scoped by orgId, before inserting" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 365, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 369, anchor: /\.where\(and\(eq\(projectMembers\.projectId, projectId\), eq\(projectMembers\.membershipId, sql`\(SELECT id FROM organization_members WHERE org_id = \$\{orgId\} AND user_id = \$\{input\.userId\} AND status = 'ACTIVE'\)`\)\)\)/, note: "resolves the attendee to a member of this exact projectId, scoped by orgId, before inserting" },
     ],
   },
   {
@@ -268,8 +268,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign meetingId 404s before the DELETE runs, which itself only ever removes an attendee row scoped to that meeting and org.",
     evidence: [
       { file: "src/modules/build/meetings/meetings.controller.ts", line: 143, anchor: /return this\.svc\.removeAttendee\(u\.orgId, u\.userId, projectId, meetingId, attendeeUserId\);/, note: "route handler passes all three raw path params straight to the service" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 349, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 356, anchor: /eq\(meetingAttendees\.orgId, orgId\),/, note: "DELETE WHERE clause re-binds orgId alongside meetingId" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 384, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 391, anchor: /eq\(meetingAttendees\.orgId, orgId\),/, note: "DELETE WHERE clause re-binds orgId alongside meetingId" },
     ],
   },
   {
@@ -280,7 +280,7 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign meetingId 404s before the upsert runs.",
     evidence: [
       { file: "src/modules/build/meetings/meetings.controller.ts", line: 156, anchor: /return this\.svc\.upsertStandup\(u\.orgId, u\.userId, projectId, meetingId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/meetings/meetings.service.ts", line: 362, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting before the upsert" },
+      { file: "src/modules/build/meetings/meetings.service.ts", line: 397, anchor: /await this\.loadMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via loadMeeting before the upsert" },
     ],
   },
   {
@@ -420,7 +420,7 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign runId 404s before any result row is read.",
     evidence: [
       { file: "src/modules/build/qa/test-runs.controller.ts", line: 104, anchor: /return this\.svc\.listRunResults\(u, projectId, runId, query\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 149, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before listing results" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 153, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before listing results" },
     ],
   },
   {
@@ -431,8 +431,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign runId 404s before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/qa/test-runs.controller.ts", line: 130, anchor: /return this\.svc\.updateRun\(u, projectId, runId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 281, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before patching" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 303, anchor: /\.where\(and\(eq\(testRuns\.id, runId\), eq\(testRuns\.orgId, orgId\), eq\(testRuns\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 285, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before patching" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 307, anchor: /\.where\(and\(eq\(testRuns\.id, runId\), eq\(testRuns\.orgId, orgId\), eq\(testRuns\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -443,8 +443,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign runId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/qa/test-runs.controller.ts", line: 143, anchor: /return this\.svc\.deleteRun\(u, projectId, runId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 325, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before deleting" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 334, anchor: /\.where\(and\(eq\(testRuns\.id, runId\), eq\(testRuns\.orgId, orgId\), eq\(testRuns\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 329, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before deleting" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 338, anchor: /\.where\(and\(eq\(testRuns\.id, runId\), eq\(testRuns\.orgId, orgId\), eq\(testRuns\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -455,8 +455,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project/run: a resultId belonging to a different run, project, or org 404s before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/qa/test-runs.controller.ts", line: 157, anchor: /return this\.svc\.updateResult\(u, projectId, runId, resultId, body\);/, note: "route handler passes all three raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 351, anchor: /eq\(testRunResults\.runId, runId\),/, note: "existence check binds resultId to runId, orgId, and projectId together in one WHERE" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 370, anchor: /\.where\(and\(eq\(testRunResults\.id, resultId\), eq\(testRunResults\.orgId, orgId\), eq\(testRunResults\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 355, anchor: /eq\(testRunResults\.runId, runId\),/, note: "existence check binds resultId to runId, orgId, and projectId together in one WHERE" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 374, anchor: /\.where\(and\(eq\(testRunResults\.id, resultId\), eq\(testRunResults\.orgId, orgId\), eq\(testRunResults\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -467,8 +467,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project/run: a resultId belonging to a different run, project, or org 404s before any ticket is created.",
     evidence: [
       { file: "src/modules/build/qa/test-runs.controller.ts", line: 172, anchor: /return this\.svc\.createBugFromResultConsolidated\(u, projectId, runId, resultId, body\);/, note: "route handler passes all three raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 390, anchor: /eq\(testRunResults\.projectId, projectId\),/, note: "existence check binds resultId to runId, orgId, and projectId together in one WHERE" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 396, anchor: /where: and\(eq\(testCases\.id, result\.testCaseId\), eq\(testCases\.orgId, orgId\)\),/, note: "linked test case is resolved from the already-validated result row's own testCaseId, not a client param" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 394, anchor: /eq\(testRunResults\.projectId, projectId\),/, note: "existence check binds resultId to runId, orgId, and projectId together in one WHERE" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 400, anchor: /where: and\(eq\(testCases\.id, result\.testCaseId\), eq\(testCases\.orgId, orgId\)\),/, note: "linked test case is resolved from the already-validated result row's own testCaseId, not a client param" },
     ],
   },
   {
@@ -479,8 +479,8 @@ export default [
     blastRadius: "None beyond the caller's own org: a foreign teamId 404s, and a memberUserId outside the org fails membership resolution before any row is touched.",
     evidence: [
       { file: "src/modules/build/teams/teams.controller.ts", line: 161, anchor: /return this\.members\.updateMemberRole\(/, note: "route handler passes teamId and memberUserId straight to the service" },
-      { file: "src/modules/build/teams/team-members.service.ts", line: 166, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before updating" },
-      { file: "src/modules/build/teams/team-members.service.ts", line: 175, anchor: /\(await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberUserId \}\)\)\.membershipId,/, note: "memberUserId is resolved to a membership scoped to this exact orgId via assertOrganizationActor" },
+      { file: "src/modules/build/teams/team-members.service.ts", line: 183, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before updating" },
+      { file: "src/modules/build/teams/team-members.service.ts", line: 192, anchor: /\(await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberUserId \}\)\)\.membershipId,/, note: "memberUserId is resolved to a membership scoped to this exact orgId via assertOrganizationActor" },
     ],
   },
   {
@@ -491,8 +491,8 @@ export default [
     blastRadius: "None beyond the caller's own org: a foreign teamId 404s, and a memberId outside the org fails membership resolution before any row is touched.",
     evidence: [
       { file: "src/modules/build/teams/teams.controller.ts", line: 180, anchor: /return this\.members\.removeMember\(u\.orgId, u\.userId, teamId, memberId\);/, note: "route handler passes teamId and memberId straight to the service" },
-      { file: "src/modules/build/teams/team-members.service.ts", line: 136, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before deleting" },
-      { file: "src/modules/build/teams/team-members.service.ts", line: 144, anchor: /\(await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberId \}\)\)\.membershipId,/, note: "memberId is resolved to a membership scoped to this exact orgId via assertOrganizationActor" },
+      { file: "src/modules/build/teams/team-members.service.ts", line: 153, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before deleting" },
+      { file: "src/modules/build/teams/team-members.service.ts", line: 161, anchor: /\(await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberId \}\)\)\.membershipId,/, note: "memberId is resolved to a membership scoped to this exact orgId via assertOrganizationActor" },
     ],
   },
   {
@@ -515,8 +515,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign updateId 404s before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/updates/updates.controller.ts", line: 81, anchor: /return this\.svc\.editUpdate\(u, projectId, updateId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/updates/updates.service.ts", line: 117, anchor: /const update = await this\.loadUpdate\(u\.orgId, projectId, updateId\);/, note: "binds updateId to projectId via loadUpdate before patching" },
-      { file: "src/modules/build/updates/updates.service.ts", line: 131, anchor: /eq\(projectUpdates\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/updates/updates.service.ts", line: 184, anchor: /const update = await this\.loadUpdate\(u\.orgId, projectId, updateId\);/, note: "binds updateId to projectId via loadUpdate before patching" },
+      { file: "src/modules/build/updates/updates.service.ts", line: 204, anchor: /eq\(projectUpdates\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {

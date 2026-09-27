@@ -87,7 +87,7 @@ describe("KbPageVersionsService.restoreVersion — re-index after restore", () =
   it("emits kb.content.index via OutboxWriter.emit inside the transaction", async () => {
     const { db, txInsert } = makeDb();
     const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
-    const svc = new KbPageVersionsService(db as never, makeAuthMock() as never, new KbPageWriterService({} as never));
+    const svc = new KbPageVersionsService(db as never, makeAuthMock() as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await svc.restoreVersion(makeUser(), 7, 2, false);
 
@@ -102,7 +102,7 @@ describe("KbPageVersionsService.restoreVersion — re-index after restore", () =
   it("bites: removing OutboxWriter.emit from restoreVersion causes the spy to record zero calls", async () => {
     const { db } = makeDb();
     const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
-    const svc = new KbPageVersionsService(db as never, makeAuthMock() as never, new KbPageWriterService({} as never));
+    const svc = new KbPageVersionsService(db as never, makeAuthMock() as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await svc.restoreVersion(makeUser(), 7, 2, false);
 
@@ -112,7 +112,7 @@ describe("KbPageVersionsService.restoreVersion — re-index after restore", () =
   it("bumps contentRevision in the update (content_revision + 1 SQL expression is present)", async () => {
     const { db, tx } = makeDb();
     jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
-    const svc = new KbPageVersionsService(db as never, makeAuthMock() as never, new KbPageWriterService({} as never));
+    const svc = new KbPageVersionsService(db as never, makeAuthMock() as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await svc.restoreVersion(makeUser(), 7, 2, false);
 
@@ -129,7 +129,7 @@ describe("KbPageVersionsService.restoreVersion — re-index after restore", () =
     const { db } = makeDb();
     jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     const authMock = makeAuthMock();
-    const svc = new KbPageVersionsService(db as never, authMock as never, new KbPageWriterService({} as never));
+    const svc = new KbPageVersionsService(db as never, authMock as never, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await svc.restoreVersion(makeUser(), 7, 2, false);
 

@@ -290,9 +290,9 @@ describe("PortalClientService — source ACL gate: clientVisible=true on sub-res
 });
 
 describe("PortalClientService — table-driven visibility matrix: parent × child clientVisible, deleted records, revoked grants, cross-project/cross-tenant (Requirement F full coverage)", () => {
-  function buildPredicateCapturingDb(): { db: Db; joinPredicates: unknown[]; wherePredicates: unknown[] } {
+  function buildPredicateCapturingDb(): { db: Db; joinPredicates: unknown[]; wherePredicates: Array<{ callIndex: number; pred: unknown }> } {
     const joinPredicates: unknown[] = [];
-    const wherePredicates: unknown[] = [];
+    const wherePredicates: Array<{ callIndex: number; pred: unknown }> = [];
     let selectCallCount = 0;
 
     const stubFromChain = (callIndex: number) => ({

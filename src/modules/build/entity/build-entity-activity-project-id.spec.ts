@@ -94,7 +94,7 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         projects: { findFirst: jest.fn() },
       },
       transaction: jest.fn().mockImplementation(
-        async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+        async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
       ),
     };
 
@@ -116,7 +116,7 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         projects: { findFirst: jest.fn() },
       },
       transaction: jest.fn().mockImplementation(
-        async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+        async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
       ),
     };
 
@@ -138,7 +138,7 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         projects: { findFirst: jest.fn() },
       },
       transaction: jest.fn().mockImplementation(
-        async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+        async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
       ),
     };
 

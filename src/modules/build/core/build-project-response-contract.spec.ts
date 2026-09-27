@@ -24,6 +24,7 @@ describe("releaseRowWithCount", () => {
     description: null,
     status: "draft" as const,
     releaseDate: null,
+    rowVersion: 1,
     createdBy: "user-1",
     deletedAt: null,
     createdAt: new Date("2026-09-15T10:00:00.000Z"),
