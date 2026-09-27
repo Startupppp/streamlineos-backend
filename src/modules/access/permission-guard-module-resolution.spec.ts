@@ -1,10 +1,20 @@
-import { Controller, Get, Global, Module, UseGuards } from "@nestjs/common";
-import { DiscoveryModule } from "@nestjs/core";
+import { Controller, Get, Global, Injectable, Module, UseGuards } from "@nestjs/common";
+import { DiscoveryModule, MetadataScanner } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
+import { RateLimitModule } from "../../common/ratelimit/rate-limit.module";
 import { AccessModule } from "./access.module";
 import { AccessService } from "./access.service";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
+
+@Injectable()
+class MetadataScannerConsumer {
+  constructor(private readonly scanner: MetadataScanner) {}
+
+  names(prototype: object): string[] {
+    return this.scanner.getAllMethodNames(prototype);
+  }
+}
 
 @Controller("resolution-probe")
 @UseGuards(PermissionGuard)
@@ -59,5 +69,31 @@ describe("PermissionGuard module resolution", () => {
 
     expect(Array.isArray(exports)).toBe(true);
     expect(exports).toContain(DiscoveryModule);
+  });
+
+  it("exports DiscoveryModule from RateLimitModule too, because RateLimitGuard takes the same two constructor params and must not depend on AccessModule's export to resolve", () => {
+    const exports: unknown = Reflect.getMetadata("exports", RateLimitModule);
+
+    expect(Array.isArray(exports)).toBe(true);
+    expect(exports).toContain(DiscoveryModule);
+  });
+
+  it("cannot resolve MetadataScanner from Nest's global internal core module, which is why exporting DiscoveryModule is the fix that covers both injected params", async () => {
+    @Module({ providers: [MetadataScannerConsumer] })
+    class WithoutDiscoveryModule {}
+
+    await expect(
+      Test.createTestingModule({ imports: [WithoutDiscoveryModule] }).compile(),
+    ).rejects.toThrow(/MetadataScanner/);
+
+    @Module({ imports: [DiscoveryModule], providers: [MetadataScannerConsumer] })
+    class WithDiscoveryModule {}
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [WithDiscoveryModule],
+    }).compile();
+
+    expect(moduleRef.get(MetadataScannerConsumer)).toBeInstanceOf(MetadataScannerConsumer);
+    await moduleRef.close();
   });
 });

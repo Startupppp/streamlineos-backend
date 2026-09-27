@@ -122,7 +122,7 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
   // Remove the skip annotation to observe the assertion fail when the handler always throws.
   // Command to enable: edit this file and delete the `.skip` from the line below.
   // Expected output when enabled: FAIL — "Expected: 200, Received: 500"
-  it.skip("BROKEN-HANDLER-proof: list-transitions returns 200 — remove skip to see failure when handler always throws", async () => {
+  it("does not reach 200 when the handler always throws, which is what makes the success assertions in this tier load-bearing rather than decorative", async () => {
     const brokenSvc = { listTransitions: jest.fn().mockRejectedValue(new Error("simulated handler failure")) };
     const brokenApp = await createE2eApp({
       overrides: [
@@ -135,6 +135,9 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
       .get("/build/1/workflow/transitions")
       .set("Authorization", `Bearer ${token}`);
     await brokenApp.close();
-    expect(res.status).toBe(200);
+
+    expect(brokenSvc.listTransitions).toHaveBeenCalled();
+    expect(res.status).toBe(500);
+    expect(res.status).not.toBe(200);
   });
 });

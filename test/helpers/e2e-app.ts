@@ -355,6 +355,16 @@ const HARNESS_STUBS = new Map<unknown, object>([
  * a scope of `team` rather than `all` — overrides the new name directly, and
  * that still wins.
  */
+export function withBootSweepExecute(double: object): object {
+  const missing: PropertyDescriptorMap = {};
+  if (!("execute" in double))
+    missing.execute = { value: () => Promise.resolve([]), enumerable: true };
+  if (!("__client" in double))
+    missing.__client = { value: { end: () => Promise.resolve() }, enumerable: true };
+  if (Object.keys(missing).length === 0) return double;
+  return Object.create(double, missing);
+}
+
 function layerOverStub(stub: object, override: Record<string, unknown>): object {
   const merged: Record<string, unknown> = withDerivedScope(stub, override) as Record<string, unknown>;
 
@@ -449,10 +459,14 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
 
   for (const override of options.overrides ?? []) {
     const stub = HARNESS_STUBS.get(override.provide);
-    const value =
+    const layered =
       stub && override.useValue && typeof override.useValue === "object"
         ? layerOverStub(stub, override.useValue as Record<string, unknown>)
         : override.useValue;
+    const value =
+      override.provide === DRIZZLE && layered !== null && typeof layered === "object"
+        ? withBootSweepExecute(layered)
+        : layered;
     builder = builder.overrideProvider(override.provide).useValue(value);
   }
 

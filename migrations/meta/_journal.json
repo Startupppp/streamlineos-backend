@@ -6966,6 +6966,20 @@
       "when": 1803093611725,
       "tag": "1382_notifications_membership_id_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 1123,
+      "version": "7",
+      "when": 1803093612725,
+      "tag": "1373_tickets_version_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 1124,
+      "version": "7",
+      "when": 1803093613725,
+      "tag": "1377_mention_search_index",
+      "breakpoints": true
     }
   ]
 }
