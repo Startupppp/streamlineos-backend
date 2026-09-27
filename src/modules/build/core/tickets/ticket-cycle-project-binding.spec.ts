@@ -8,7 +8,8 @@ function read(name: string): string {
 }
 
 const CREATE = read("projects-tickets-create.service.ts");
-const UPDATE = read("projects-tickets-update.service.ts");
+const UPDATE =
+  read("projects-tickets-update.service.ts") + read("apply-ticket-change.ts");
 const BULK = read("build-ticket-bulk-mutation.ts");
 
 const PROJECT_SCOPED_CYCLE_LOOKUP = /eq\(cycles\.projectId,\s*(?:projectId|body\.projectId)\)/;
@@ -30,9 +31,17 @@ describe("a ticket cannot be bound to a cycle belonging to another project in th
     expect(CREATE).toContain("eq(cycles.orgId, u.orgId)");
   });
 
-  it("the single-ticket update path rejects an out-of-project cycle rather than writing it", () => {
+  it("the single-ticket update path rejects an out-of-project cycle rather than writing it, read across both files the write spans since the consolidation moved the cycle lookup out of the orchestrator", () => {
     expect(UPDATE).toContain("Cycle not found in this project");
     expect(UPDATE).toContain("eq(cycles.orgId, orgId)");
+  });
+
+  it("reads the update path as orchestrator plus change module because the orchestrator writes no cycle itself, so scanning it alone reports a guard as missing when it is merely elsewhere", () => {
+    const orchestrator = read("projects-tickets-update.service.ts");
+
+    expect(orchestrator).toContain("applyTicketChange");
+    expect(orchestrator).not.toContain("cycles.projectId");
+    expect(read("apply-ticket-change.ts")).toContain("eq(cycles.projectId, projectId)");
   });
 
   it("the update path skips the check only when projectId is null, which is the system-job shape that carries no project to scope to", () => {
