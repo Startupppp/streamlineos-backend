@@ -14,7 +14,7 @@ import { join } from "path";
 
 const VERIFIER = join(__dirname, "..", "..", "src", "scripts", "db-verify-rls.mjs");
 
-const EXPECTED_EXEMPTIONS = [
+const CONTROL_PLANE_EXEMPTIONS = [
   "public.organization_placement",
   "public.organization_lifecycle_sagas",
   "public.organization_saga_steps",
@@ -24,6 +24,18 @@ const EXPECTED_EXEMPTIONS = [
   "public.placement_decisions",
   "public.noisy_neighbour_reviews",
 ];
+
+const PRE_AUTHENTICATION_EXEMPTIONS = ["public.magic_link_tokens", "public.impersonation_sessions"];
+
+const EXPECTED_EXEMPTIONS = [...CONTROL_PLANE_EXEMPTIONS, ...PRE_AUTHENTICATION_EXEMPTIONS];
+
+function isControlPlane(table: string): boolean {
+  return (
+    table.startsWith("public.organization_") ||
+    table.startsWith("public.placement_") ||
+    table.startsWith("public.noisy_neighbour_")
+  );
+}
 
 function parseExemptions(source: string): string[] {
   const start = source.indexOf("const PLATFORM_GLOBAL_TABLES = new Set([");
@@ -47,16 +59,30 @@ describe("RLS exemption allowlist", () => {
     expect([...actual].sort()).toEqual([...EXPECTED_EXEMPTIONS].sort());
   });
 
-  it("every exemption is a control-plane or cross-tenant-uniqueness table", () => {
-    // A tenant business table must never appear here — it would silence its own hole.
+  it("every exemption is either a control-plane table or one of the two named pre-authentication tables, so a tenant business table cannot silence its own hole", () => {
     for (const table of actual) {
-      expect(table.startsWith("public.organization_") || table.startsWith("public.placement_") || table.startsWith("public.noisy_neighbour_")).toBe(true);
+      expect(isControlPlane(table) || PRE_AUTHENTICATION_EXEMPTIONS.includes(table)).toBe(true);
+    }
+  });
+
+  it("the pre-authentication class is a closed list of two, not a prefix rule, because a prefix would admit any future auth table without review", () => {
+    expect(PRE_AUTHENTICATION_EXEMPTIONS).toHaveLength(2);
+    for (const table of PRE_AUTHENTICATION_EXEMPTIONS) {
+      expect(isControlPlane(table)).toBe(false);
+    }
+  });
+
+  it("magic_link_tokens and impersonation_sessions are exempt because their only readers run before a tenant GUC exists: verifyMagicLink is the authentication itself, and impersonation is read in jwt-auth.guard.ts, which BE-73 states has no GUC", () => {
+    for (const table of PRE_AUTHENTICATION_EXEMPTIONS) {
+      expect(actual).toContain(table);
     }
   });
 
   it("detects an added exemption", () => {
     const tampered = [...EXPECTED_EXEMPTIONS, "public.hr_employees"];
     expect([...tampered].sort()).not.toEqual([...EXPECTED_EXEMPTIONS].sort());
-    expect(tampered.some((t) => !t.startsWith("public.organization_") && !t.startsWith("public.placement_") && !t.startsWith("public.noisy_neighbour_"))).toBe(true);
+    expect(
+      tampered.some((t) => !isControlPlane(t) && !PRE_AUTHENTICATION_EXEMPTIONS.includes(t)),
+    ).toBe(true);
   });
 });

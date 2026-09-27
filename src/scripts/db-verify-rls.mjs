@@ -158,6 +158,9 @@ const PLATFORM_GLOBAL_TABLES = new Set([
   "public.organization_relocation_checksums",
   "public.placement_decisions",
   "public.noisy_neighbour_reviews",
+
+  "public.magic_link_tokens",
+  "public.impersonation_sessions",
 ]);
 
 
