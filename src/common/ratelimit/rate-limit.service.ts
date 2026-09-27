@@ -247,6 +247,10 @@ export function rateLimitWindowSecs(tier: string): number {
   return t ? t.windowSecs : 60;
 }
 
+export function isKnownTier(tier: string): boolean {
+  return Object.prototype.hasOwnProperty.call(TIERS, tier);
+}
+
 export interface RateLimitResult {
   allowed: boolean;
   retryAfterSecs: number;

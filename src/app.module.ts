@@ -21,6 +21,7 @@ import { DrizzleModule } from "./db/drizzle.module";
 import { CacheModule } from "./common/cache/cache.module";
 import { AuditModule } from "./common/audit/audit.module";
 import { RateLimitModule } from "./common/ratelimit/rate-limit.module";
+import { RateLimitGuard } from "./common/ratelimit/rate-limit.guard";
 import { ActivationModule } from "./modules/onboarding-activation/activation.module";
 import { AdmissionModule } from "./common/admission/admission.module";
 import { AdmissionGuard } from "./common/admission/admission.guard";
@@ -247,6 +248,7 @@ import { BuildAgentPulseModule } from "./modules/build/agent-pulse/build-agent-p
     TenantContextService,
     { provide: APP_GUARD, useClass: RouteClassifierGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_GUARD, useClass: AdmissionGuard },
     { provide: APP_GUARD, useClass: MfaGuard },
     { provide: APP_GUARD, useClass: ModuleGuard },

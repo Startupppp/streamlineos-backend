@@ -189,13 +189,13 @@ describe("rate limiting is targeted, not ambient — and the targeting is enforc
     expect(new Set(handlers.map((handler) => handler.id)).size).toBe(handlers.length);
   });
 
-  it("RateLimitGuard is deliberately not an APP_GUARD, and admission is the ambient layer", () => {
+  it("RateLimitGuard is registered as a global APP_GUARD so @UseRateLimit bites everywhere", () => {
     const appModule = readFileSync(resolve(CONTROLLER_ROOT, "app.module.ts"), "utf8");
     const globalGuards = [...appModule.matchAll(/APP_GUARD,\s*useClass:\s*(\w+)/g)].map(
       (match) => match[1],
     );
 
-    expect(globalGuards).not.toContain("RateLimitGuard");
+    expect(globalGuards).toContain("RateLimitGuard");
     expect(globalGuards).toContain("AdmissionGuard");
 
     const guard = readFileSync(join(__dirname, "rate-limit.guard.ts"), "utf8");

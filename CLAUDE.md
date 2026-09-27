@@ -45,14 +45,14 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 
 ## 4. Routes, Guards & Exposure
 
-**BE-28.** Five guards are global, in this order: `RouteClassifierGuard`, `JwtAuthGuard`, `AdmissionGuard`, `MfaGuard`, `ModuleGuard`. (`app.module.ts:246`)
+**BE-28.** Six guards are global, in this order: `RouteClassifierGuard`, `JwtAuthGuard`, `RateLimitGuard`, `AdmissionGuard`, `MfaGuard`, `ModuleGuard`. (`app.module.ts:246`) `RateLimitGuard` sits third so `req.user` is already resolved and a tier can key per user rather than per IP.
 **BE-29.** `PermissionGuard` is **not** global. Without `@UseGuards(JwtAuthGuard, PermissionGuard)` a route is authenticated but unchecked.
 **BE-30.** Declare exactly one exposure per route: `@Public()` | `@Universal()` | `@RequirePermission(...)` | `@AuthorizedInService("<what checks it>")`. Absence denies at boot. (gate: check:route-classification)
 **BE-31.** To make a route universal, move the guard — never delete the key. *Why:* `PermissionGuard` denies a covered route with no key.
 **BE-32.** Read identity from `@CurrentUser()`. Never accept `userId`, `actorId` or `orgId` from the client.
 **BE-33.** Never write inside a GET. (gate: check:get-route-writes)
 **BE-34.** Accept `Idempotency-Key` on mutating endpoints via `@Idempotent()`; replay the first result, 409 while in flight. (gate: check:idempotent-commands)
-**BE-35.** Give every `@UseRateLimit("key")` a matching `TIERS` entry. An unknown tier denies and logs. `RateLimitGuard` is **not** global (BE-28), so the same route also needs `@UseGuards(…, RateLimitGuard)` on the handler or its class, or the tier is metadata nobody reads. (gate: check:rate-limit-guards)
+**BE-35.** Give every `@UseRateLimit("key")` a matching `TIERS` entry. `RateLimitGuard` is global (BE-28), so the decorator alone now enforces — no `@UseGuards(…, RateLimitGuard)` is needed, and a route carrying both is charged once. An unknown tier is refused **at boot** by the guard's `onApplicationBootstrap` sweep, not silently at request time. (gate: check:rate-limit-guards)
 **BE-36.** Versioning is URI-based with the current version aliased to the unversioned path (`common/openapi/configure-api-versioning.ts`).
 
 ## 5. Database & Schema
