@@ -3,7 +3,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import type { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
+import type { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
 
 jest.mock("../build/core/project-access", () => ({
   assertProjectAccess: jest.fn(),
@@ -77,7 +77,7 @@ function makeService(db: Db) {
 function makeTicketsService() {
   const createFromFeedback = jest.fn().mockResolvedValue({ id: 900 });
   return {
-    service: { createFromFeedback } as unknown as ProjectsTicketsService,
+    service: { createFromFeedback } as unknown as ProjectsTicketsCreateService,
     createFromFeedback,
   };
 }

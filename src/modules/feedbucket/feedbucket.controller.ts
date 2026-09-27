@@ -22,7 +22,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
-import { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import {
@@ -83,9 +83,9 @@ const submissionMediaParams = submissionIdParams
 export class FeedbucketController {
   constructor(
     private readonly widgets: FeedbucketWidgetsService,
-    private readonly submissions: FeedbucketSubmissionsService,
-    private readonly tickets: ProjectsTicketsService,
     private readonly feedbucketAi: FeedbucketAiService,
+    private readonly tickets: ProjectsTicketsCreateService,
+    private readonly submissions: FeedbucketSubmissionsService,
   ) {}
 
   @Get("widgets")

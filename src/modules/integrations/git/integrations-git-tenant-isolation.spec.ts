@@ -1,6 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { stubService } from "../../../test/service-stub.spec-fixtures";
-import type { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
+import type { ProjectsTicketsUpdateService } from "../../build/core/tickets/projects-tickets-update.service";
 import type { WebhookRequest } from "./git.types";
 import { IntegrationsGitService } from "./integrations-git.service";
 
@@ -32,7 +32,7 @@ describe("IntegrationsGitService — cross-tenant isolation", () => {
 
   it("processWebhook resolves orgId from connection — an invalid connectionId prevents cross-tenant access (cross-tenant isolation)", async () => {
     const { db, transaction } = makeDb(null);
-    const mockProjectsTickets = stubService<ProjectsTicketsService>({});
+    const mockProjectsTickets = stubService<ProjectsTicketsUpdateService>({});
     const svc = new IntegrationsGitService(db, mockProjectsTickets);
     const req: WebhookRequest = {
       connectionIdRaw: "9999",
@@ -50,7 +50,7 @@ describe("IntegrationsGitService — cross-tenant isolation", () => {
   it("processWebhook resolves orgId from the connection row — uses owner orgId (control — same-tenant)", async () => {
     const { db, transaction } = makeDb(OWNER);
     transaction.mockReset().mockResolvedValue(undefined);
-    const mockProjectsTickets = stubService<ProjectsTicketsService>({});
+    const mockProjectsTickets = stubService<ProjectsTicketsUpdateService>({});
     const svc = new IntegrationsGitService(db, mockProjectsTickets);
     const req: WebhookRequest = {
       connectionIdRaw: String(CONN_ID),

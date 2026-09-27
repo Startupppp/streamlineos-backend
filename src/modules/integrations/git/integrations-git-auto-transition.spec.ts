@@ -11,7 +11,7 @@
 import * as tenantTx from "../../../common/tenant/run-in-tenant-transaction";
 import { IntegrationsGitService } from "./integrations-git.service";
 import type { Db } from "../../../db/drizzle.module";
-import type { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
+import type { ProjectsTicketsUpdateService } from "../../build/core/tickets/projects-tickets-update.service";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => {
   const actual = jest.requireActual<typeof import("../../../common/tenant/run-in-tenant-transaction")>(
@@ -39,8 +39,8 @@ function makeDb(): Db {
   } as unknown as Db;
 }
 
-function makeTicketsService(): ProjectsTicketsService {
-  return { updateTicket: jest.fn().mockResolvedValue(undefined) } as unknown as ProjectsTicketsService;
+function makeTicketsService(): ProjectsTicketsUpdateService {
+  return { updateTicket: jest.fn().mockResolvedValue(undefined) } as unknown as ProjectsTicketsUpdateService;
 }
 
 describe("IntegrationsGitService — autoTransitionOnMerge tenant isolation (I2)", () => {

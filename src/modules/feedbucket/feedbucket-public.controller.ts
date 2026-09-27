@@ -29,7 +29,7 @@ import { StorageService } from "../storage/storage.service";
 import { MediaTransformRunner } from "../storage/media-transform.runner";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
 import { publicSubmitSchema, publicAiAssistSchema, publicSubmitDeclSchema, publicAiAssistDeclSchema } from "./feedbucket.schemas";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -66,7 +66,7 @@ export class FeedbucketPublicController {
     private readonly storage: StorageService,
     private readonly notifications: NotificationsService,
     private readonly rateLimitService: RateLimitService,
-    private readonly ticketsService: ProjectsTicketsService,
+    private readonly ticketsService: ProjectsTicketsCreateService,
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly transforms: MediaTransformRunner,
   ) {}
