@@ -26,6 +26,7 @@ import {
   type ListRisksQuery,
   type UpdateRiskInput,
 } from "./dto/governance.schemas";
+import { orgListRisksQuerySchema, type OrgListRisksQuery } from "./dto/org-governance.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import {
@@ -42,12 +43,20 @@ export const riskIdParams = z
   .strict();
 
 @RequireModule("build")
-@Controller("build/:projectId/risks")
+@Controller("build")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RisksController {
   constructor(private readonly svc: RisksService) {}
 
-  @Get()
+  @Get("risks")
+  @RequirePermission("build:risks:view")
+  @ResponseSchema(riskPageSchema)
+  @Validate({ query: orgListRisksQuerySchema })
+  listOrgRisks(@CurrentUser() u: CurrentUserContext, @Query() query: OrgListRisksQuery) {
+    return this.svc.listOrgRisks(u, query);
+  }
+
+  @Get(":projectId/risks")
   @RequirePermission("build:risks:view")
   @ResponseSchema(riskPageSchema)
   @Validate({ query: listRisksQuerySchema })
@@ -59,7 +68,7 @@ export class RisksController {
     return this.svc.listRisks(u, projectId, query);
   }
 
-  @Get("stats")
+  @Get(":projectId/risks/stats")
   @RequirePermission("build:risks:view")
   @ResponseSchema(riskStatsSchema)
   getRiskStats(
@@ -69,7 +78,7 @@ export class RisksController {
     return this.svc.getRiskStats(u, projectId);
   }
 
-  @Get(":riskId")
+  @Get(":projectId/risks/:riskId")
   @RequirePermission("build:risks:view")
   @ResponseSchema(riskRowSchema)
   @Validate({ params: riskIdParams })
@@ -81,7 +90,7 @@ export class RisksController {
     return this.svc.getRisk(u, projectId, riskId);
   }
 
-  @Post()
+  @Post(":projectId/risks")
   @HttpCode(201)
   @RequirePermission("build:risks:manage")
   @ResponseSchema(riskRowSchema)
@@ -94,7 +103,7 @@ export class RisksController {
     return this.svc.createRisk(u, projectId, body);
   }
 
-  @Patch(":riskId")
+  @Patch(":projectId/risks/:riskId")
   @RequirePermission("build:risks:manage")
   @ResponseSchema(riskRowSchema)
   @Validate({ params: riskIdParams, body: updateRiskSchema })
@@ -107,7 +116,7 @@ export class RisksController {
     return this.svc.updateRisk(u, projectId, riskId, body);
   }
 
-  @Delete(":riskId")
+  @Delete(":projectId/risks/:riskId")
   @RequirePermission("build:risks:manage")
   @HttpCode(204)
   @NoContentResponse()

@@ -7,6 +7,7 @@ import { RisksService } from "./risks.service";
 import { DecisionsService } from "./decisions.service";
 
 const risksSvc = {
+  listOrgRisks: jest.fn(),
   listRisks: jest.fn(),
   getRisk: jest.fn(),
   createRisk: jest.fn(),
@@ -176,6 +177,20 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(risksSvc.listRisks).toHaveBeenCalled();
+  });
+
+  it("routes GET /build/risks to the organization-level risk list", async () => {
+    risksSvc.listOrgRisks.mockResolvedValue({ data: [], hasMore: false, nextCursor: null });
+    const token = await signToken({
+      permissions: ["build:risks:view"],
+      enabledModules: ["build"],
+    });
+    const res = await request(app.getHttpServer())
+      .get("/build/risks")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(risksSvc.listOrgRisks).toHaveBeenCalled();
+    expect(risksSvc.listRisks).not.toHaveBeenCalled();
   });
 
   it("200 on GET /build/1/decisions with build:decisions:view — stub returns list without a DB connection", async () => {
