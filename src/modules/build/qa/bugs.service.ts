@@ -8,7 +8,7 @@ import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
-import { resolveWorkItemStatus, resolveTicketPriority } from "./phase-2/bug-consolidation-mapping";
+import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
 
 @Injectable()
 export class BugsService {

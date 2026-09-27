@@ -25,7 +25,7 @@ import {
   resolveWorkItemStatus,
   type ProjectStatusCandidate,
   type StateGroup,
-} from "../qa/phase-2/bug-consolidation-mapping";
+} from "../qa/bug-consolidation/bug-consolidation-mapping";
 
 const SRC_ROOT = join(__dirname, "..", "..", "..");
 
