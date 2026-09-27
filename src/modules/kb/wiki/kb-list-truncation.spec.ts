@@ -130,11 +130,11 @@ describe("GET /kb/pages/search — a declared ceiling, not a buried one", () => 
   it("states the ceiling as a constant instead of a bare .limit()", () => {
     expect(KB_PAGE_SEARCH_MAX_LIMIT).toBe(20);
     const source = fs.readFileSync(
-      path.resolve(__dirname, "kb-pages.service.ts"),
+      path.resolve(__dirname, "../retrieval/kb-page-search-query.service.ts"),
       "utf8",
     ) as string;
     expect(source).not.toMatch(/^\s*\.limit\(20\)/m);
-    expect(source).toMatch(/\.limit\(limit \+ 1\)/);
+    expect(source).toMatch(/\.limit\(input\.limit \+ 1\)/);
     expect(source).toContain("hasMore");
   });
 

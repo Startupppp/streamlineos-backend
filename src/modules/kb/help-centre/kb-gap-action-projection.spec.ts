@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { kbAnalyticsGapActionSchema } from "./dto/kb-helpcenter-response.schemas";
 
 const SERVICE = readFileSync(
-  join(__dirname, "kb-analytics.service.ts"),
+  join(__dirname, "kb-content-gap.service.ts"),
   "utf8",
 );
 

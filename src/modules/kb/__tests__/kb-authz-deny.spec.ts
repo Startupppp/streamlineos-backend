@@ -1,4 +1,5 @@
 import request from "supertest";
+import { DiscoveryService } from "@nestjs/core";
 import {
   createAuthzHarness,
   ORG_B,
@@ -45,9 +46,11 @@ describe("kb — authorization deny", () => {
   let harness: AuthzHarness;
 
   beforeAll(async () => {
-    harness = await createAuthzHarness([
-      KbSourcesController,
-    ]);
+    harness = await createAuthzHarness([KbSourcesController], {
+      providers: [
+        { provide: DiscoveryService, useValue: { getControllers: () => [] } },
+      ],
+    });
   });
 
   afterAll(async () => {
