@@ -87,13 +87,6 @@ describe("notification fanout — one recipient cannot take the chunk down", () 
     return new Proxy({}, handler);
   }
 
-  /**
-   * Only the membership lookup projects both `userId` and `id`; the email, locale
-   * and digest lookups each project a different pair. Answering every select with
-   * `[]` modelled a state the database cannot produce — an ACTIVE member with no
-   * membership row — and the fanout now refuses that state rather than writing a
-   * notification nobody can read.
-   */
   function selectFor(projection?: Record<string, unknown>): unknown {
     const keys = projection ? Object.keys(projection) : [];
     if (keys.includes("userId") && keys.includes("id")) {

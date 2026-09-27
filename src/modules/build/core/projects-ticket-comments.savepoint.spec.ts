@@ -65,11 +65,9 @@ describe("withSavepoint — savepoint creates a DB-level boundary (ticket 38)", 
       { orgId: "org-savepoint-3", audience: "INTERNAL" as const, tx: outerTx },
       async () => {
         effectWasCalled = true;
-        try {
-          await withSavepoint(() => Promise.reject(new Error("activity log failed")));
-        } catch {
-          // intentionally swallowed — the effect is best-effort
-        }
+        await withSavepoint(() =>
+          Promise.reject(new Error("activity log failed")),
+        ).catch(() => undefined);
         return mainResult;
       },
     );

@@ -195,10 +195,6 @@ describe("S04 roadmap cursor contract", () => {
   });
 
   it("anchors equal-timestamp pages on the id tie-breaker — both cursor and boundary use the shared millisecond and the last-row id", async () => {
-    // postgres-js returns JavaScript Date objects (millisecond precision). Two rows whose DB
-    // timestamps differ only in sub-millisecond digits (e.g. T.000900 and T.000800) both arrive
-    // as T.000. The cursor encodes T.000 + lastId; the boundary uses (updatedAt = T.000 AND id > lastId).
-    // This test exercises that equal-time tie-breaker path with the actual boundary params.
     const sharedMs = new Date("2024-06-15T12:00:00.000Z");
     const findMany = jest.fn<Promise<RoadmapRow[]>, [{ where: unknown; orderBy: unknown[]; limit: number }]>()
       .mockResolvedValueOnce([

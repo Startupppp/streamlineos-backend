@@ -50,13 +50,9 @@ describe("withSavepoint in projects-activity — savepoint isolates the mention 
     const result = await runWithTenantContext(
       { orgId: "org-activity-2", audience: "INTERNAL" as const, tx: outerTx },
       async () => {
-        try {
-          await withSavepoint(() =>
-            Promise.reject(new Error("mention insert failed")),
-          );
-        } catch {
-          // intentionally swallowed — mention recording is best-effort
-        }
+        await withSavepoint(() =>
+          Promise.reject(new Error("mention insert failed")),
+        ).catch(() => undefined);
         return mainResult;
       },
     );
