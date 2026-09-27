@@ -26,6 +26,11 @@ export const askSchema = z
       .min(1)
       .max(50)
       .optional(),
+    pageIds: z
+      .array(z.coerce.number().int().positive())
+      .min(1)
+      .max(50)
+      .optional(),
     verifiedOnly: z.boolean().optional(),
   })
   .strict();

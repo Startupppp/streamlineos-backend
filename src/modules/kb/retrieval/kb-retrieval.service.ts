@@ -23,6 +23,7 @@ export interface KbRetrieveOptions {
   spaceId?: number;
   verifiedOnly?: boolean;
   sourceIds?: number[];
+  pageIds?: number[];
 }
 
 export interface KbRetrievalDegradation {
@@ -99,6 +100,7 @@ export class KbRetrievalService {
             opts.spaceId,
             opts.verifiedOnly,
             embedding,
+            opts.pageIds,
           ),
           this.search.retrieveTopSources(
             user,

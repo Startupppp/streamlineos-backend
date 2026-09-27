@@ -91,6 +91,7 @@ export class KbAskService {
         spaceId: input.spaceId,
         verifiedOnly: input.verifiedOnly,
         sourceIds: input.sourceIds,
+        pageIds: input.pageIds,
       }),
       runInTenantTransaction(
         this.db,

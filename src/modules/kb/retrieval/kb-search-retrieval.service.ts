@@ -144,6 +144,7 @@ export class KbSearchRetrievalService {
     spaceId?: number,
     verifiedOnly?: boolean,
     embedding?: QueryEmbedding,
+    pageIds?: number[],
   ): Promise<RetrievedSource[]> {
     const standing = await this.auth.resolveStanding(user);
     const ids = standing.accessibleSpaceIds;
@@ -200,6 +201,7 @@ export class KbSearchRetrievalService {
           pool,
           pageVisibility,
           verifiedOnly,
+          pageIds,
         ),
         vectorLiteral
           ? this.candidates.pageVectorCandidates(
@@ -208,6 +210,7 @@ export class KbSearchRetrievalService {
               pool,
               chunkVisibleTo(standing),
               verifiedOnly,
+              pageIds,
             )
           : Promise.resolve<number[]>([]),
       ]);
@@ -226,7 +229,7 @@ export class KbSearchRetrievalService {
     const articleIds = fused
       .filter((k) => k.startsWith("a:"))
       .map((k) => parseInt(k.slice(2), 10));
-    const pageIds = fused
+    const fusedPageIds = fused
       .filter((k) => k.startsWith("p:"))
       .map((k) => parseInt(k.slice(2), 10));
 
@@ -266,7 +269,7 @@ export class KbSearchRetrievalService {
       }
     }
 
-    if (pageIds.length > 0) {
+    if (fusedPageIds.length > 0) {
       const pageRows = await this.db
         .select({
           id: kbPages.id,
@@ -280,7 +283,7 @@ export class KbSearchRetrievalService {
         .where(
           and(
             eq(kbPages.orgId, user.orgId),
-            inArray(kbPages.id, pageIds),
+            inArray(kbPages.id, fusedPageIds),
             wikiPagePredicate(),
             ne(kbPages.status, "archived"),
             pageVisibility,
