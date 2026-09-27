@@ -389,7 +389,7 @@
       "as": 0,
       "nonNull": 3
     },
-    "src/modules/build/qa/phase-2/bug-consolidation-mapping.ts": {
+    "src/modules/build/qa/bug-consolidation/bug-consolidation-mapping.ts": {
       "as": 3,
       "nonNull": 1
     },

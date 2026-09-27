@@ -990,6 +990,10 @@ jobs:
       - name: List endpoint projections match their response schemas
         if: ${{ !cancelled() }}
         run: pnpm check:list-projections:self-test && pnpm check:list-projections
+
+      - name: A ticket write outside the change module fails the gate
+        if: ${{ !cancelled() }}
+        run: pnpm check:ticket-write-module:self-test && pnpm check:ticket-write-module
   # The golden path, on every pull request.
   #
   # It proves the one thing no unit test can: that buy -> receive -> put away ->

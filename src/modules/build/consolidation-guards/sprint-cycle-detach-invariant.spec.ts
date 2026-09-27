@@ -114,8 +114,10 @@ describe("phase-04 detach invariant: sprintId column-selection form (relational 
     expect(content).toContain("cycle: {");
   });
 
-  it("projects-tickets-update.service resolves cycleId straight from the request with no sprintId branch", () => {
-    const content = src("modules/build/core/projects-tickets-update.service.ts");
+  it("the ticket-update path resolves cycleId straight from the request with no sprintId branch, wherever that path now lives", () => {
+    const content =
+      src("modules/build/core/projects-tickets-update.service.ts") +
+      src("modules/build/core/apply-ticket-change.ts");
     expect(content).not.toMatch(/sprintId\s*:\s*true/);
     expect(content).not.toContain("sprintId");
     expect(content).toContain("updateData.cycleId");
@@ -368,7 +370,7 @@ describe("the AI ticket-move action agrees on both halves: proposer and executor
 
   it("the executor reads cycleId from the payload and calls updateTicket with cycleId, never sprintId", () => {
     expect(CONFIRM_ACTIONS).toContain("{ ticketId, cycleId, cycleName }");
-    expect(CONFIRM_ACTIONS).toContain("updateTicket(actor, null, ticketId, { cycleId })");
+    expect(CONFIRM_ACTIONS).toMatch(/updateTicket(?:FromSystem)?\(actor, null, ticketId, \{ cycleId \}\)/);
     expect(CONFIRM_ACTIONS).not.toContain("sprintId");
   });
 
