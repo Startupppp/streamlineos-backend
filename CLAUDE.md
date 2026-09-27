@@ -46,7 +46,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 ## 4. Routes, Guards & Exposure
 
 **BE-28.** Six guards are global, in this order: `RouteClassifierGuard`, `JwtAuthGuard`, `RateLimitGuard`, `AdmissionGuard`, `MfaGuard`, `ModuleGuard`. (`app.module.ts:246`) `RateLimitGuard` sits third so `req.user` is already resolved and a tier can key per user rather than per IP.
-**BE-29.** `PermissionGuard` is **not** global. Without `@UseGuards(JwtAuthGuard, PermissionGuard)` a route is authenticated but unchecked.
+**BE-29.** `PermissionGuard` is **not** global. Without `@UseGuards(JwtAuthGuard, PermissionGuard)` a route is authenticated but unchecked. Its `onApplicationBootstrap` sweep now refuses this combination at boot, so the mistake denies at startup rather than serving unchecked traffic. Making it global is the wrong fix — it throws when a route has no permission key, which would deny every `@Universal()` and `@AuthorizedInService()` route.
 **BE-30.** Declare exactly one exposure per route: `@Public()` | `@Universal()` | `@RequirePermission(...)` | `@AuthorizedInService("<what checks it>")`. Absence denies at boot. (gate: check:route-classification)
 **BE-31.** To make a route universal, move the guard — never delete the key. *Why:* `PermissionGuard` denies a covered route with no key.
 **BE-32.** Read identity from `@CurrentUser()`. Never accept `userId`, `actorId` or `orgId` from the client.
