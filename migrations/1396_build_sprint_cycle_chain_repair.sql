@@ -16,7 +16,9 @@ BEGIN
   FOR rec IN
     SELECT 'build' AS sch, 'project_meetings' AS tbl
     UNION ALL SELECT 'build', 'test_runs'
+    UNION ALL SELECT 'build', 'tickets'
     UNION ALL SELECT 'build_events', 'cycle_scope_events'
+    UNION ALL SELECT 'build_events', 'sprint_scope_events'
   LOOP
     IF to_regclass(rec.sch || '.' || rec.tbl) IS NULL THEN
       CONTINUE;
@@ -36,6 +38,10 @@ END $$;
 --> statement-breakpoint
 
 ALTER TABLE "build"."cycles" ADD COLUMN IF NOT EXISTS "legacy_sprint_id" integer;
+--> statement-breakpoint
+ALTER TABLE "build"."cycles" ADD COLUMN IF NOT EXISTS "goal" text;
+--> statement-breakpoint
+ALTER TABLE "build"."cycles" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp with time zone;
 --> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "build"."sprints_archive" (
@@ -93,26 +99,22 @@ END $$;
 
 DO $$
 DECLARE
-  seeded integer := 0;
+  admin_key text := NULL;
 BEGIN
-  IF EXISTS (SELECT 1 FROM permissions WHERE name = 'build:cycles:view') THEN
+  IF EXISTS (SELECT 1 FROM permissions WHERE name IN ('build:cycles:view', 'build:cycles:manage')) THEN
     RETURN;
   END IF;
 
-  INSERT INTO permissions (name, resource, action, description, module_key, administering_module_key, risk_class, is_delegable)
-  SELECT 'build:sprints:view', 'build:sprints', 'view', 'View iterations', module_key, administering_module_key, risk_class, is_delegable
-  FROM permissions WHERE name = 'build:tickets:view'
-  ON CONFLICT (name) DO NOTHING;
-
-  INSERT INTO permissions (name, resource, action, description, module_key, administering_module_key, risk_class, is_delegable)
-  SELECT 'build:sprints:manage', 'build:sprints', 'manage', 'Manage iterations', module_key, administering_module_key, risk_class, is_delegable
-  FROM permissions WHERE name = 'build:tickets:update'
-  ON CONFLICT (name) DO NOTHING;
-
-  SELECT count(*) INTO seeded FROM permissions WHERE name IN ('build:sprints:view', 'build:sprints:manage');
-  IF seeded <> 2 THEN
-    RAISE EXCEPTION '1396 could not seed the legacy iteration permissions 1197 renames: found % of 2, and build:tickets:view/update must exist first', seeded;
+  IF to_regclass('public.modules_catalog') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM modules_catalog WHERE module_key = 'build') THEN
+    admin_key := 'build';
   END IF;
+
+  INSERT INTO permissions (name, resource, action, description, module_key, administering_module_key, is_delegable)
+  VALUES
+    ('build:sprints:view', 'build:sprints', 'view', 'View iterations', 'build', admin_key, true),
+    ('build:sprints:manage', 'build:sprints', 'manage', 'Manage iterations', 'build', admin_key, true)
+  ON CONFLICT (name) DO NOTHING;
 END $$;
 --> statement-breakpoint
 
