@@ -20,8 +20,9 @@ export class KbEmbeddingCache {
     private readonly cache: CacheService | null,
   ) {}
 
-  private queryEmbeddingCacheKey(text: string): string {
+  private queryEmbeddingCacheKey(orgId: string, text: string): string {
     return CACHE_KEYS.kbQueryEmbedding(
+      orgId,
       EMBEDDING_MODEL,
       createHash("sha256").update(normalizeEmbeddableQuery(text)).digest("hex"),
     );
@@ -30,7 +31,7 @@ export class KbEmbeddingCache {
   async embedOrDegrade(text: string, orgId: string): Promise<string | null> {
     const cache = this.cache;
     if (cache === null) return this.embedCharged(text, orgId);
-    const key = this.queryEmbeddingCacheKey(text);
+    const key = this.queryEmbeddingCacheKey(orgId, text);
     const hit = await cache.get<string>(key);
     if (hit !== null) return hit;
     const vectorLiteral = await this.embedCharged(text, orgId);

@@ -75,8 +75,8 @@ export const CACHE_KEYS = {
   searchResults: (orgId: string, userId: string, hash: string) =>
     `search:${orgId}:${userId}:${hash}`,
 
-  kbQueryEmbedding: (model: string, queryHash: string) =>
-    `kb:qembed:${model}:${queryHash}`,
+  kbQueryEmbedding: (orgId: string, model: string, queryHash: string) =>
+    `kb:qembed:${orgId}:${model}:${queryHash}`,
 
   leadBoard: (orgId: string, hash: string) => `leads:board:${orgId}:${hash}`,
   leadStats: (orgId: string, hash: string) => `leads:stats:${orgId}:${hash}`,
