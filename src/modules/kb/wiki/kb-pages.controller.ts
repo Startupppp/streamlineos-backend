@@ -81,20 +81,11 @@ import {
   kbPageVersionSchema,
   kbTrashPageListSchema,
 } from "./dto/kb-wiki-response.schemas";
-import { z } from "zod";
-
-const pageIdParams = z
-  .object({ pageId: z.coerce.number().int().positive() })
-  .strict();
-const briefIdParams = z
-  .object({ briefId: z.coerce.number().int().positive() })
-  .strict();
-const pageIdversionNumberParams = z
-  .object({
-    pageId: z.coerce.number().int().positive(),
-    versionNumber: z.coerce.number().int().positive(),
-  })
-  .strict();
+import {
+  pageIdParams,
+  briefIdParams,
+  pageIdversionNumberParams,
+} from "./dto/kb-pages-params.schemas";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)

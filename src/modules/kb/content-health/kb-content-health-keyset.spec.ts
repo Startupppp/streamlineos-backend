@@ -2,10 +2,8 @@ import { and, eq, gt, isNull, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { kbPages } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
-import {
-  KbContentHealthService,
-  impactKeysetAfterAnchor,
-} from "./kb-content-health.service";
+import { KbContentHealthService } from "./kb-content-health.service";
+import { impactKeysetAfterAnchor } from "./kb-content-health-signal-predicates";
 import type { ContentHealthSignalsQuery } from "./dto/kb-content-health.schemas";
 
 const dialect = new PgDialect();
