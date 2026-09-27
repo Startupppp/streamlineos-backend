@@ -1,5 +1,18 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { projects, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -15,7 +28,10 @@ import type {
   UpdateFeedbackInput,
   UpdateRoadmapInput,
 } from "./dto/projects.schemas";
-import { buildTupleCursorPage, decodeTupleCursor, decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  buildTupleCursorPage,
+  decodeTupleCursor,
+} from "../../../common/pagination/cursor";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { ProjectsChangelogService } from "./projects-changelog.service";
 import { ProjectsFeedbackService } from "./projects-feedback.service";
@@ -25,7 +41,10 @@ import {
   type RiceInputs,
   type RoadmapPrioritization,
 } from "./roadmap-prioritization";
-import { loadRoadmapDeliveryProgress, loadRoadmapDemandSignals } from "./roadmap-delivery";
+import {
+  loadRoadmapDeliveryProgress,
+  loadRoadmapDemandSignals,
+} from "./roadmap-delivery";
 import {
   publishRoadmap,
   readRoadmapPublication,
@@ -84,7 +103,8 @@ function buildRoadmapOrdering(mode: RoadmapSortMode): RoadmapOrdering {
     case "sort_order":
       return {
         orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
-        toPositionParts: (row) => [mode, String(row.sortOrder), String(row.id)] as const,
+        toPositionParts: (row) =>
+          [mode, String(row.sortOrder), String(row.id)] as const,
         buildBoundary: (key) => {
           const val = Number(key.sortValue);
           if (!Number.isInteger(val)) return undefined;
@@ -97,7 +117,8 @@ function buildRoadmapOrdering(mode: RoadmapSortMode): RoadmapOrdering {
     case "updated_at":
       return {
         orderBy: [desc(roadmapItems.updatedAt), asc(roadmapItems.id)],
-        toPositionParts: (row) => [mode, row.updatedAt.toISOString(), String(row.id)] as const,
+        toPositionParts: (row) =>
+          [mode, row.updatedAt.toISOString(), String(row.id)] as const,
         buildBoundary: (key) => {
           const ts = new Date(key.sortValue);
           if (Number.isNaN(ts.getTime())) return undefined;
@@ -110,7 +131,8 @@ function buildRoadmapOrdering(mode: RoadmapSortMode): RoadmapOrdering {
     case "created_at":
       return {
         orderBy: [desc(roadmapItems.createdAt), asc(roadmapItems.id)],
-        toPositionParts: (row) => [mode, row.createdAt.toISOString(), String(row.id)] as const,
+        toPositionParts: (row) =>
+          [mode, row.createdAt.toISOString(), String(row.id)] as const,
         buildBoundary: (key) => {
           const ts = new Date(key.sortValue);
           if (Number.isNaN(ts.getTime())) return undefined;
@@ -127,7 +149,10 @@ function buildRoadmapOrdering(mode: RoadmapSortMode): RoadmapOrdering {
         buildBoundary: (key) =>
           or(
             gt(roadmapItems.title, key.sortValue),
-            and(eq(roadmapItems.title, key.sortValue), gt(roadmapItems.id, key.id)),
+            and(
+              eq(roadmapItems.title, key.sortValue),
+              gt(roadmapItems.id, key.id),
+            ),
           ),
       };
   }
@@ -169,11 +194,13 @@ export class ProjectsRoadmapService {
   }
 
   async searchCondition(term: string): Promise<SQL> {
-    if (term.length < ROADMAP_SEARCH_MIN_TERM_LENGTH) return this.searchFallbackCondition(term);
+    if (term.length < ROADMAP_SEARCH_MIN_TERM_LENGTH)
+      return this.searchFallbackCondition(term);
     const idRows = await this.db.execute(
       sql`SELECT app.search_roadmap_item_ids(${term}, ${ROADMAP_SEARCH_ID_CAP + 1}) AS id`,
     );
-    if (idRows.length > ROADMAP_SEARCH_ID_CAP) return this.searchFallbackCondition(term);
+    if (idRows.length > ROADMAP_SEARCH_ID_CAP)
+      return this.searchFallbackCondition(term);
     const ids = idRows.map((row) => Number(row["id"]));
     if (ids.length === 0) return sql`false`;
     return inArray(roadmapItems.id, ids);
@@ -182,59 +209,42 @@ export class ProjectsRoadmapService {
   async listRoadmap(orgId: string, query: RoadmapListQuery) {
     const { cursor, limit: rawLimit } = query;
     const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
-    const position = decodeCursor(cursor);
-    const conditions = [eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)];
+    const mode = sortModeFromQuery(query.sort);
+    const ordering = buildRoadmapOrdering(mode);
+    const position = decodeRoadmapCursor(cursor, mode);
+    const conditions = [
+      eq(roadmapItems.orgId, orgId),
+      isNull(roadmapItems.deletedAt),
+    ];
     if (query.status) conditions.push(eq(roadmapItems.status, query.status));
     if (query.search) conditions.push(await this.searchCondition(query.search));
     if (query.managedProductId !== undefined) {
       const sub = this.db
         .select({ id: projects.id })
         .from(projects)
-        .where(and(eq(projects.orgId, orgId), eq(projects.managedProductId, query.managedProductId)));
+        .where(
+          and(
+            eq(projects.orgId, orgId),
+            eq(projects.managedProductId, query.managedProductId),
+          ),
+        );
       conditions.push(inArray(roadmapItems.projectId, sub));
     }
     if (position) {
-      const sortVal = Number(position.sortValue);
-      const cursorId = Number(position.id);
-      conditions.push(
-        or(
-          gt(roadmapItems.sortOrder, sortVal),
-          and(eq(roadmapItems.sortOrder, sortVal), gt(roadmapItems.id, cursorId)),
-        )!,
-      );
+      const boundary = ordering.buildBoundary(position);
+      if (boundary) conditions.push(boundary);
     }
     const where = and(...conditions);
-    const sortOrderBy =
-      query.sort === "updated_at"
-        ? [desc(roadmapItems.updatedAt), asc(roadmapItems.sortOrder), asc(roadmapItems.id)]
-        : query.sort === "created_at"
-          ? [desc(roadmapItems.createdAt), asc(roadmapItems.sortOrder), asc(roadmapItems.id)]
-          : query.sort === "title"
-            ? [asc(roadmapItems.title), asc(roadmapItems.id)]
-            : [asc(roadmapItems.sortOrder), asc(roadmapItems.id)];
     const rows = await this.db.query.roadmapItems.findMany({
       where,
-      orderBy: sortOrderBy,
+      orderBy: ordering.orderBy,
       limit: limit + 1,
     });
-    const page = buildCursorPage(rows, limit, (row) => ({
-      sortValue: String(row.sortOrder),
-      id: String(row.id),
-    }));
-    return {
-      data: page.data,
-      pagination: {
-        limit: page.pagination.limit,
-        nextCursor: page.pagination.nextCursor,
-        hasMore: page.pagination.hasMore,
-      },
-    };
+    return buildTupleCursorPage(rows, limit, (row) =>
+      ordering.toPositionParts(row),
+    );
   }
 
-  /**
-   * The page's tiers come from one grouped query rather than one per row
-   * (BE-47); the page itself is already capped by `listRoadmap` (BE-132).
-   */
   async listRoadmapWithPrioritization(orgId: string, query: RoadmapListQuery) {
     const page = await this.listRoadmap(orgId, query);
     const accounts = await loadRoadmapAccountTiers(
@@ -242,7 +252,12 @@ export class ProjectsRoadmapService {
       orgId,
       page.data.map((row) => row.id),
     );
-    return { ...page, data: page.data.map((row) => withPrioritization(row, accounts.get(row.id))) };
+    return {
+      ...page,
+      data: page.data.map((row) =>
+        withPrioritization(row, accounts.get(row.id)),
+      ),
+    };
   }
 
   private async accountTiersOf(orgId: string, itemId: number) {
@@ -250,7 +265,11 @@ export class ProjectsRoadmapService {
     return accounts.get(itemId);
   }
 
-  async createRoadmap(orgId: string, userId: string, input: CreateRoadmapInput) {
+  async createRoadmap(
+    orgId: string,
+    userId: string,
+    input: CreateRoadmapInput,
+  ) {
     await assertRoadmapTargetsInOrg(this.db, orgId, input);
     const [item] = await this.db
       .insert(roadmapItems)
@@ -277,21 +296,38 @@ export class ProjectsRoadmapService {
 
   async getRoadmap(orgId: string, itemId: number) {
     const item = await this.db.query.roadmapItems.findFirst({
-      where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
+      where: and(
+        eq(roadmapItems.id, itemId),
+        eq(roadmapItems.orgId, orgId),
+        isNull(roadmapItems.deletedAt),
+      ),
     });
     if (!item) throw new NotFoundException("Roadmap item not found");
     return withPrioritization(item, await this.accountTiersOf(orgId, item.id));
   }
 
-  async updateRoadmap(orgId: string, itemId: number, input: UpdateRoadmapInput) {
+  async updateRoadmap(
+    orgId: string,
+    itemId: number,
+    input: UpdateRoadmapInput,
+  ) {
     await assertRoadmapTargetsInOrg(this.db, orgId, input);
     const [updated] = await this.db
       .update(roadmapItems)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
+      .where(
+        and(
+          eq(roadmapItems.id, itemId),
+          eq(roadmapItems.orgId, orgId),
+          isNull(roadmapItems.deletedAt),
+        ),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Roadmap item not found");
-    return withPrioritization(updated, await this.accountTiersOf(orgId, updated.id));
+    return withPrioritization(
+      updated,
+      await this.accountTiersOf(orgId, updated.id),
+    );
   }
 
   async getRoadmapSignals(orgId: string, itemId: number) {
@@ -316,7 +352,13 @@ export class ProjectsRoadmapService {
     const [deleted] = await this.db
       .update(roadmapItems)
       .set({ deletedAt: new Date() })
-      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
+      .where(
+        and(
+          eq(roadmapItems.id, itemId),
+          eq(roadmapItems.orgId, orgId),
+          isNull(roadmapItems.deletedAt),
+        ),
+      )
       .returning({ id: roadmapItems.id });
     if (!deleted) throw new NotFoundException("Roadmap item not found");
     return { success: true };

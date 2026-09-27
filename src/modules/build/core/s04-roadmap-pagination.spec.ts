@@ -1,6 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
-import { decodeCursor } from "../../../common/pagination/cursor";
+import { decodeTupleCursor } from "../../../common/pagination/cursor";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
 
 const dialect = new PgDialect();
@@ -9,6 +9,9 @@ const ORG = "org-s04";
 interface RoadmapRow {
   id: number;
   sortOrder: number;
+  updatedAt?: Date;
+  createdAt?: Date;
+  title?: string;
 }
 
 function makeService(findMany: jest.Mock) {
@@ -40,9 +43,9 @@ describe("S04 roadmap cursor contract", () => {
     const service = makeService(findMany);
 
     const first = await service.listRoadmap(ORG, { limit: 2 });
-    const position = decodeCursor(first.pagination.nextCursor);
+    const parts = decodeTupleCursor(first.pagination.nextCursor ?? null, 3);
     expect(first.data.map((row) => row.id)).toEqual([10, 11]);
-    expect(position).toEqual({ sortValue: "1", id: "11" });
+    expect(parts).toEqual(["sort_order", "1", "11"]);
 
     const last = await service.listRoadmap(ORG, {
       limit: 2,
@@ -75,5 +78,122 @@ describe("S04 roadmap cursor contract", () => {
     expect(page.pagination.nextCursor).toBeNull();
     expect(page.pagination.nextCursor).not.toBeUndefined();
     expect(page.pagination.hasMore).toBe(false);
+  });
+
+  it("pages past the first page under updated_at sort with no duplicates and no missing items", async () => {
+    const t1 = new Date("2024-01-03T00:00:00.000Z");
+    const t2 = new Date("2024-01-02T00:00:00.000Z");
+    const t3 = new Date("2024-01-01T00:00:00.000Z");
+    const findMany = jest.fn<Promise<RoadmapRow[]>, [{ where: unknown; orderBy: unknown[]; limit: number }]>()
+      .mockResolvedValueOnce([
+        { id: 10, sortOrder: 0, updatedAt: t1, createdAt: t1, title: "A" },
+        { id: 11, sortOrder: 0, updatedAt: t2, createdAt: t2, title: "B" },
+        { id: 12, sortOrder: 0, updatedAt: t3, createdAt: t3, title: "C" },
+      ])
+      .mockResolvedValueOnce([{ id: 12, sortOrder: 0, updatedAt: t3, createdAt: t3, title: "C" }]);
+    const service = makeService(findMany);
+
+    const first = await service.listRoadmap(ORG, { limit: 2, sort: "updated_at" });
+    expect(first.data.map((r) => r.id)).toEqual([10, 11]);
+    expect(first.pagination.hasMore).toBe(true);
+
+    const parts = decodeTupleCursor(first.pagination.nextCursor ?? null, 3);
+    expect(parts?.[0]).toBe("updated_at");
+    expect(parts?.[2]).toBe("11");
+
+    const second = await service.listRoadmap(ORG, {
+      limit: 2,
+      sort: "updated_at",
+      cursor: first.pagination.nextCursor ?? undefined,
+    });
+    expect(second.data.map((r) => r.id)).toEqual([12]);
+    expect(second.pagination.hasMore).toBe(false);
+    expect(second.pagination.nextCursor).toBeNull();
+    expect(queryParams(findMany, 1)).toEqual(expect.arrayContaining([ORG, 11]));
+  });
+
+  it("pages past the first page under created_at sort with no duplicates and no missing items", async () => {
+    const t1 = new Date("2024-03-03T00:00:00.000Z");
+    const t2 = new Date("2024-03-02T00:00:00.000Z");
+    const t3 = new Date("2024-03-01T00:00:00.000Z");
+    const findMany = jest.fn<Promise<RoadmapRow[]>, [{ where: unknown; orderBy: unknown[]; limit: number }]>()
+      .mockResolvedValueOnce([
+        { id: 20, sortOrder: 0, updatedAt: t1, createdAt: t1, title: "X" },
+        { id: 21, sortOrder: 0, updatedAt: t2, createdAt: t2, title: "Y" },
+        { id: 22, sortOrder: 0, updatedAt: t3, createdAt: t3, title: "Z" },
+      ])
+      .mockResolvedValueOnce([{ id: 22, sortOrder: 0, updatedAt: t3, createdAt: t3, title: "Z" }]);
+    const service = makeService(findMany);
+
+    const first = await service.listRoadmap(ORG, { limit: 2, sort: "created_at" });
+    expect(first.data.map((r) => r.id)).toEqual([20, 21]);
+    expect(first.pagination.hasMore).toBe(true);
+
+    const parts = decodeTupleCursor(first.pagination.nextCursor ?? null, 3);
+    expect(parts?.[0]).toBe("created_at");
+    expect(parts?.[2]).toBe("21");
+
+    const second = await service.listRoadmap(ORG, {
+      limit: 2,
+      sort: "created_at",
+      cursor: first.pagination.nextCursor ?? undefined,
+    });
+    expect(second.data.map((r) => r.id)).toEqual([22]);
+    expect(second.pagination.hasMore).toBe(false);
+    expect(second.pagination.nextCursor).toBeNull();
+    expect(queryParams(findMany, 1)).toEqual(expect.arrayContaining([ORG, 21]));
+  });
+
+  it("pages past the first page under title sort with no duplicates and no missing items", async () => {
+    const t = new Date("2024-01-01T00:00:00.000Z");
+    const findMany = jest.fn<Promise<RoadmapRow[]>, [{ where: unknown; orderBy: unknown[]; limit: number }]>()
+      .mockResolvedValueOnce([
+        { id: 30, sortOrder: 0, updatedAt: t, createdAt: t, title: "alpha" },
+        { id: 31, sortOrder: 0, updatedAt: t, createdAt: t, title: "beta" },
+        { id: 32, sortOrder: 0, updatedAt: t, createdAt: t, title: "gamma" },
+      ])
+      .mockResolvedValueOnce([{ id: 32, sortOrder: 0, updatedAt: t, createdAt: t, title: "gamma" }]);
+    const service = makeService(findMany);
+
+    const first = await service.listRoadmap(ORG, { limit: 2, sort: "title" });
+    expect(first.data.map((r) => r.id)).toEqual([30, 31]);
+    expect(first.pagination.hasMore).toBe(true);
+
+    const parts = decodeTupleCursor(first.pagination.nextCursor ?? null, 3);
+    expect(parts).toEqual(["title", "beta", "31"]);
+
+    const second = await service.listRoadmap(ORG, {
+      limit: 2,
+      sort: "title",
+      cursor: first.pagination.nextCursor ?? undefined,
+    });
+    expect(second.data.map((r) => r.id)).toEqual([32]);
+    expect(second.pagination.hasMore).toBe(false);
+    expect(second.pagination.nextCursor).toBeNull();
+    expect(queryParams(findMany, 1)).toEqual(expect.arrayContaining([ORG, "beta", 31]));
+  });
+
+  it("rejects a cursor issued under updated_at when applied to the default sort_order ordering", async () => {
+    const t = new Date("2024-01-02T00:00:00.000Z");
+    const findMany = jest.fn<Promise<RoadmapRow[]>, [{ where: unknown; orderBy: unknown[]; limit: number }]>()
+      .mockResolvedValueOnce([
+        { id: 40, sortOrder: 0, updatedAt: t, createdAt: t, title: "A" },
+        { id: 41, sortOrder: 0, updatedAt: t, createdAt: t, title: "B" },
+      ])
+      .mockResolvedValueOnce([{ id: 1, sortOrder: 99, updatedAt: t, createdAt: t, title: "Z" }]);
+    const service = makeService(findMany);
+
+    const updatedAtFirst = await service.listRoadmap(ORG, { limit: 1, sort: "updated_at" });
+    expect(updatedAtFirst.pagination.hasMore).toBe(true);
+
+    const crossMode = await service.listRoadmap(ORG, {
+      limit: 1,
+      cursor: updatedAtFirst.pagination.nextCursor ?? undefined,
+    });
+    expect(crossMode.data.map((r) => r.id)).toEqual([1]);
+    const secondCallParams = queryParams(findMany, 1);
+    expect(secondCallParams).toContain(ORG);
+    expect(secondCallParams).not.toContain(40);
+    expect(secondCallParams).not.toContain(t);
   });
 });
