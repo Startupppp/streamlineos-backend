@@ -69,10 +69,13 @@ describe("KbMembersService — tenant isolation", () => {
     await expect(svc.list(ORG_B, SPACE_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("list resolves when the space belongs to the requesting org (positive control — the same space lookup succeeds for the owning org)", async () => {
+  it("list resolves to a CursorPage when the space belongs to the requesting org (positive control — the same space lookup succeeds for the owning org)", async () => {
     const svc = makeService();
 
-    await expect(svc.list(ORG_A, SPACE_ID)).resolves.toBeInstanceOf(Array);
+    const result = await svc.list(ORG_A, SPACE_ID);
+
+    expect(result).toHaveProperty("data");
+    expect(Array.isArray((result as { data: unknown }).data)).toBe(true);
   });
 
   it("cross-tenant miss and not-found produce the same error message so the caller cannot distinguish them", async () => {

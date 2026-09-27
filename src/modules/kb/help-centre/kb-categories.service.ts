@@ -13,8 +13,24 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAccessService } from "../core/kb-access.service";
 import { kbSlugify, KB_MAX_COLLECTION_DEPTH } from "../core/kb.util";
 import type { CreateCategoryInput, UpdateCategoryInput } from "../core/dto/kb.schemas";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 type CategoryRow = typeof kbCategories.$inferSelect;
+
+const KB_CATEGORY_LIST_COLUMNS = {
+  id: kbCategories.id,
+  orgId: kbCategories.orgId,
+  spaceId: kbCategories.spaceId,
+  parentId: kbCategories.parentId,
+  name: kbCategories.name,
+  slug: kbCategories.slug,
+  description: kbCategories.description,
+  icon: kbCategories.icon,
+  sortOrder: kbCategories.sortOrder,
+  isPublished: kbCategories.isPublished,
+  createdAt: kbCategories.createdAt,
+  updatedAt: kbCategories.updatedAt,
+} as const;
 
 @Injectable()
 export class KbCategoriesService {
@@ -26,10 +42,11 @@ export class KbCategoriesService {
   async listBySpace(user: CurrentUserContext, spaceId: number): Promise<CategoryRow[]> {
     await this.access.assertSpaceAccessible(user, spaceId);
     return this.db
-      .select()
+      .select(KB_CATEGORY_LIST_COLUMNS)
       .from(kbCategories)
       .where(and(eq(kbCategories.orgId, user.orgId), eq(kbCategories.spaceId, spaceId)))
-      .orderBy(asc(kbCategories.sortOrder), asc(kbCategories.name));
+      .orderBy(asc(kbCategories.sortOrder), asc(kbCategories.name))
+      .limit(PAGE_SIZE_CAP);
   }
 
   async create(user: CurrentUserContext, spaceId: number, input: CreateCategoryInput): Promise<CategoryRow> {

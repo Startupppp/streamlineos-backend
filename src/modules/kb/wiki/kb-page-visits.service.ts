@@ -21,6 +21,8 @@ import {
   type KbPageRow,
 } from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { buildCursorPage, decodeIntegerCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 type PageRow = KbPageRow;
 
@@ -192,26 +194,43 @@ export class KbPageVisitsService {
   async getBacklinks(
     user: CurrentUserContext,
     pageId: number,
-  ): Promise<Pick<PageRow, "id" | "title" | "icon">[]> {
+    cursor?: string,
+    limit = 50,
+  ): Promise<CursorPage<Pick<PageRow, "id" | "title" | "icon">>> {
     const orgId = user.orgId;
     await this.auth.assertPageAccess(user, pageId, "view");
-    const [links, predicate] = await Promise.all([
+    const pageSize = Math.min(Math.max(1, limit), PAGE_SIZE_CAP);
+    const position = decodeIntegerCursor(cursor);
+    const afterLink = position
+      ? sql`${kbPageLinks.id} > ${sql.param(position.id, kbPageLinks.id)}`
+      : undefined;
+    const [linksResult, predicate] = await Promise.all([
       this.db
-        .select({ sourcePageId: kbPageLinks.sourcePageId })
+        .select({ id: kbPageLinks.id, sourcePageId: kbPageLinks.sourcePageId })
         .from(kbPageLinks)
         .where(
           and(
             eq(kbPageLinks.orgId, orgId),
             eq(kbPageLinks.targetPageId, pageId),
+            afterLink,
           ),
         )
-        .limit(200),
+        .orderBy(asc(kbPageLinks.id))
+        .limit(pageSize + 1),
       this.auth.visiblePagePredicate(user, "view"),
     ]);
 
-    if (links.length === 0) return [];
-    const ids = links.map((l) => l.sourcePageId);
-    return this.db
+    const { data: linksPage, pagination } = buildCursorPage(linksResult, pageSize, (link) => ({
+      sortValue: String(link.id),
+      id: String(link.id),
+    }));
+
+    if (linksPage.length === 0) {
+      return { data: [], pagination };
+    }
+
+    const ids = linksPage.map((l) => l.sourcePageId);
+    const pages = await this.db
       .select({ id: kbPages.id, title: kbPages.title, icon: kbPages.icon })
       .from(kbPages)
       .where(
@@ -225,5 +244,10 @@ export class KbPageVisitsService {
           )}]::int[])`,
         ),
       );
+    const pageMap = new Map(pages.map((p) => [p.id, p]));
+    const data = ids
+      .map((id) => pageMap.get(id))
+      .filter((p): p is Pick<PageRow, "id" | "title" | "icon"> => p !== undefined);
+    return { data, pagination };
   }
 }

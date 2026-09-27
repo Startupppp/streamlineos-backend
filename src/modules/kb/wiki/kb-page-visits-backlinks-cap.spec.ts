@@ -11,9 +11,10 @@ function makeUser(): CurrentUserContext {
   return { orgId: "org-1", userId: "user-1", isOrgOwner: true } as unknown as CurrentUserContext;
 }
 
-function makeDb(linkRows: Array<{ sourcePageId: number }>) {
+function makeDb(linkRows: Array<{ id: number; sourcePageId: number }>) {
   const limitFn = jest.fn().mockResolvedValue(linkRows);
-  const where1 = jest.fn().mockReturnValue({ limit: limitFn });
+  const orderByFn = jest.fn().mockReturnValue({ limit: limitFn });
+  const where1 = jest.fn().mockReturnValue({ orderBy: orderByFn });
   const from1 = jest.fn().mockReturnValue({ where: where1 });
 
   const where2 = jest.fn().mockResolvedValue([]);
@@ -30,32 +31,43 @@ function makeDb(linkRows: Array<{ sourcePageId: number }>) {
   return { db, limitFn };
 }
 
-describe("KbPageVisitsService.getBacklinks — 200-row cap", () => {
+describe("KbPageVisitsService.getBacklinks — bound and cursor", () => {
   beforeEach(() => {
     authMock.visiblePagePredicate.mockClear();
     authMock.assertPageAccess.mockClear();
   });
 
-  it("calls .limit(200) on the backlinks select so a widely-linked page is bounded in the DB", async () => {
+  it("calls .limit(limit+1) using the sentinel technique so hasMore can be computed without a count query", async () => {
     const { db, limitFn } = makeDb([]);
     const svc = new KbPageVisitsService(db as never, authMock as never);
 
     await svc.getBacklinks(makeUser(), 1);
 
-    expect(limitFn).toHaveBeenCalledWith(200);
+    expect(limitFn).toHaveBeenCalledWith(51);
   });
 
-  it("returns an empty array when there are no backlinks", async () => {
+  it("no longer calls .limit(200) which was twice the platform cap", async () => {
+    const { db, limitFn } = makeDb([]);
+    const svc = new KbPageVisitsService(db as never, authMock as never);
+
+    await svc.getBacklinks(makeUser(), 1);
+
+    expect(limitFn).not.toHaveBeenCalledWith(200);
+  });
+
+  it("returns a CursorPage shape with data and pagination when there are no backlinks", async () => {
     const { db } = makeDb([]);
     const svc = new KbPageVisitsService(db as never, authMock as never);
 
     const result = await svc.getBacklinks(makeUser(), 1);
 
-    expect(result).toEqual([]);
+    expect(result).toHaveProperty("data");
+    expect(result).toHaveProperty("pagination");
+    expect(Array.isArray(result.data)).toBe(true);
   });
 
-  it("fetches pages for up to 200 backlink ids", async () => {
-    const linkRows = Array.from({ length: 200 }, (_, i) => ({ sourcePageId: i + 1 }));
+  it("fetches pages for up to limit backlink ids", async () => {
+    const linkRows = Array.from({ length: 50 }, (_, i) => ({ id: i + 1, sourcePageId: i + 1 }));
     const { db } = makeDb(linkRows);
     const svc = new KbPageVisitsService(db as never, authMock as never);
 

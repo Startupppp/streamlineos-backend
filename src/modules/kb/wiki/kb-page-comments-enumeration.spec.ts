@@ -169,7 +169,7 @@ describe("KbPageCommentsService.list — enumeration guard", () => {
     expect((error as NotFoundException).message).toBe("Comment not found");
   });
 
-  it("returns comments when the page is accessible (positive control — the guard fires only for inaccessible pages)", async () => {
+  it("returns a CursorPage when the page is accessible (positive control — the guard fires only for inaccessible pages)", async () => {
     const listChain = {
       from: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
@@ -186,7 +186,8 @@ describe("KbPageCommentsService.list — enumeration guard", () => {
 
     const result = await svc.list(makeUser(), PAGE_ID);
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveProperty("data");
+    expect(Array.isArray((result as { data: unknown }).data)).toBe(true);
   });
 });
 

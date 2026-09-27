@@ -6,18 +6,33 @@ import type { ScopedRead } from "../../access/scoped-read";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
-import { articleTsquery, resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
+import {
+  articleTsquery,
+  resolveArticleKeywordSql,
+} from "../core/kb-article-keyword-search";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ListArticlesInput } from "../core/dto/kb.schemas";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  buildCursorPage,
+  decodeCursor,
+  decodeIntegerCursor,
+} from "../../../common/pagination/cursor";
+import {
+  keysetBeforeId,
+  keysetBeforeIntValue,
+} from "../../../common/pagination/keyset";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { articleOwnerScope } from "../retrieval/kb-article-owner-scope";
-import { pageContentToArticleContent, pageVisibilityToArticle, supportArticlePredicate } from "./kb-article-page-scope";
+import {
+  pageContentToArticleContent,
+  pageVisibilityToArticle,
+  supportArticlePredicate,
+} from "./kb-article-page-scope";
 import type {
   kbArticleListItemSchema,
   kbArticleVersionSchema,
 } from "./dto/kb-helpcenter-response.schemas";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 const ARTICLE_KEYWORD_ID_CAP = 500;
 
@@ -32,6 +47,13 @@ type ArticleListResult = {
   limit: number;
 };
 
+type VersionListResult = {
+  items: ArticleVersion[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  limit: number;
+};
+
 @Injectable()
 export class KbArticleQueryService {
   constructor(
@@ -39,32 +61,59 @@ export class KbArticleQueryService {
     private readonly access: KbAccessService,
   ) {}
 
-  async list(user: CurrentUserContext, query: ListArticlesInput, scope: ScopedRead): Promise<ArticleListResult> {
+  async list(
+    user: CurrentUserContext,
+    query: ListArticlesInput,
+    scope: ScopedRead,
+  ): Promise<ArticleListResult> {
     if (scope.denied)
-      return { items: [], nextCursor: null, hasMore: false, limit: query.limit };
+      return {
+        items: [],
+        nextCursor: null,
+        hasMore: false,
+        limit: query.limit,
+      };
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0)
-      return { items: [], nextCursor: null, hasMore: false, limit: query.limit };
+      return {
+        items: [],
+        nextCursor: null,
+        hasMore: false,
+        limit: query.limit,
+      };
 
-    const domain: SQL[] = [supportArticlePredicate(), inArray(kbPages.spaceId, ids)];
+    const domain: SQL[] = [
+      supportArticlePredicate(),
+      inArray(kbPages.spaceId, ids),
+    ];
     if (query.spaceId) domain.push(eq(kbPages.spaceId, query.spaceId));
     if (query.categoryId) domain.push(eq(kbPages.categoryId, query.categoryId));
     if (query.status) domain.push(eq(kbPages.status, query.status));
     if (query.search) {
       const tsquery = articleTsquery(query.search);
       domain.push(
-        await resolveArticleKeywordSql(this.db, query.search, tsquery, ARTICLE_KEYWORD_ID_CAP),
+        await resolveArticleKeywordSql(
+          this.db,
+          query.search,
+          tsquery,
+          ARTICLE_KEYWORD_ID_CAP,
+        ),
       );
     }
 
     const position = decodeCursor(query.cursor);
-    if (position) domain.push(keysetBeforeId(kbPages.updatedAt, kbPages.id, position));
+    if (position)
+      domain.push(keysetBeforeId(kbPages.updatedAt, kbPages.id, position));
 
     const membershipId = actingMembershipId(user.principal);
     const where = scope
       ? scope.compose(
-          { tenant: kbPages.orgId, scope: articleOwnerScope(membershipId), and: domain },
+          {
+            tenant: kbPages.orgId,
+            scope: articleOwnerScope(membershipId),
+            and: domain,
+          },
           ({ sql: composed }) => composed,
           () => sql`false`,
         )
@@ -127,8 +176,28 @@ export class KbArticleQueryService {
     };
   }
 
-  async listVersions(user: CurrentUserContext, articleId: number): Promise<ArticleVersion[]> {
+  async listVersions(
+    user: CurrentUserContext,
+    articleId: number,
+    cursor?: string,
+    limit = 50,
+  ): Promise<VersionListResult> {
+    const cappedLimit = Math.min(limit, PAGE_SIZE_CAP);
     await this.access.assertArticleViewable(user, articleId);
+    const position = decodeIntegerCursor(cursor);
+    const filters: SQL[] = [
+      eq(kbPageVersions.pageId, articleId),
+      eq(kbPageVersions.orgId, user.orgId),
+    ];
+    if (position)
+      filters.push(
+        keysetBeforeIntValue(
+          kbPageVersions.versionNumber,
+          kbPageVersions.id,
+          position,
+        ),
+      );
+
     const rows = await this.db
       .select({
         id: kbPageVersions.id,
@@ -144,24 +213,34 @@ export class KbArticleQueryService {
         createdAt: kbPageVersions.createdAt,
       })
       .from(kbPageVersions)
-      .where(and(eq(kbPageVersions.pageId, articleId), eq(kbPageVersions.orgId, user.orgId)))
+      .where(and(...filters))
       .orderBy(desc(kbPageVersions.versionNumber))
-      .limit(100);
+      .limit(cappedLimit + 1);
 
-    return rows.map(function toArticleVersion(row): ArticleVersion {
-      return {
-        id: row.id,
-        orgId: row.orgId,
-        articleId: row.pageId,
-        versionNumber: row.versionNumber,
-        title: row.title,
-        content: pageContentToArticleContent(row.content),
-        excerpt: row.excerpt,
-        changeSummary: row.changeSummary,
-        authorId: row.authorId,
-        authorMembershipId: row.authorMembershipId,
-        createdAt: row.createdAt,
-      };
-    });
+    const page = buildCursorPage(rows, cappedLimit, (row) => ({
+      sortValue: String(row.versionNumber),
+      id: String(row.id),
+    }));
+
+    return {
+      items: page.data.map(function toArticleVersion(row): ArticleVersion {
+        return {
+          id: row.id,
+          orgId: row.orgId,
+          articleId: row.pageId,
+          versionNumber: row.versionNumber,
+          title: row.title,
+          content: pageContentToArticleContent(row.content),
+          excerpt: row.excerpt,
+          changeSummary: row.changeSummary,
+          authorId: row.authorId,
+          authorMembershipId: row.authorMembershipId,
+          createdAt: row.createdAt,
+        };
+      }),
+      nextCursor: page.pagination.nextCursor,
+      hasMore: page.pagination.hasMore,
+      limit: page.pagination.limit,
+    };
   }
 }

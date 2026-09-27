@@ -17,8 +17,6 @@ export { ProjectsTicketRelationsService } from "./projects-ticket-relations.serv
 export { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
 export { reserveTicketCapacity } from "./build-ticket-capacity";
 export { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
-export { assertTicketReadAccess } from "./build-ticket-read-access";
-export type { TicketReadAccess } from "./build-ticket-read-access";
 export { resolveValidTicketStatuses } from "./ticket-status.util";
 export { TicketVersionConflictException } from "./ticket-version-conflict.exception";
-export { resolveTicketsScope, ticketScope, ticketsScopeIsUnrestricted, TICKETS_PERMISSION } from "./tickets-scope";
+export { resolveTicketsScope, ticketScope } from "./tickets-scope";
