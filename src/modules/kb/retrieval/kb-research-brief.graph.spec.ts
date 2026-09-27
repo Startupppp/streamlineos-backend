@@ -1,5 +1,5 @@
 import { buildResearchBriefGraph, runResearchBrief } from "./kb-research-brief.graph";
-import type { RetrievedSource } from "./kb-search.service";
+import type { RetrievedSource } from "./kb-search-retrieval.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 

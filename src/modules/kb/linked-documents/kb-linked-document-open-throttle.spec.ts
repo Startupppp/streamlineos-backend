@@ -40,7 +40,7 @@ describe("minting a signed URL for a linked document is throttled", () => {
   it("answers 429 with Retry-After once the caller is over the limit, keyed on the caller and not their IP", async () => {
     const setHeader = jest.fn();
     const check = jest.fn().mockResolvedValue({ allowed: false, retryAfterSecs: 42 });
-    const guard = new RateLimitGuard(new Reflector(), { check } as never);
+    const guard = new RateLimitGuard(new Reflector(), { check } as never, null as never, null as never);
 
     const error = await guard.canActivate(contextFor(open, "user-reader", setHeader)).catch((thrown: unknown) => thrown);
 
@@ -52,7 +52,7 @@ describe("minting a signed URL for a linked document is throttled", () => {
 
   it("lets a caller inside the limit through, so the guard is not simply refusing everything", async () => {
     const check = jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 });
-    const guard = new RateLimitGuard(new Reflector(), { check } as never);
+    const guard = new RateLimitGuard(new Reflector(), { check } as never, null as never, null as never);
 
     await expect(guard.canActivate(contextFor(open, "user-reader", jest.fn()))).resolves.toBe(true);
   });

@@ -2,7 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { gte, sql, type SQL } from "drizzle-orm";
 import { kbArticleChunks, kbPages } from "../../../db/schema";
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -85,10 +85,9 @@ const makeScopes = () => ({ scopeFor: jest.fn().mockResolvedValue("all") });
 function retrieve(standing: KbActorStanding) {
   const { db, wheres } = makeCapturingDb();
   const auth = makeKbAuth(standing);
-  const service = new KbSearchService(
+  const service = new KbSearchRetrievalService(
     db as never,
     makeEmbeddings() as never,
-    makeEvents() as never,
     new KbCandidateService(db as never),
     makeScopes() as never,
     auth as never,

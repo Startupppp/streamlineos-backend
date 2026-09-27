@@ -1,5 +1,5 @@
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -100,11 +100,10 @@ function makeJoinCapturingDb() {
   return { db, joins };
 }
 
-function makeService(db: unknown, spaceIds: number[]): KbSearchService {
-  return new KbSearchService(
+function makeService(db: unknown, spaceIds: number[]): KbSearchRetrievalService {
+  return new KbSearchRetrievalService(
     db as never,
     makeEmbeddings() as never,
-    makeEvents() as never,
     new KbCandidateService(db as never),
     makeScopes() as never,
     makeKbAuth(spaceIds) as never,

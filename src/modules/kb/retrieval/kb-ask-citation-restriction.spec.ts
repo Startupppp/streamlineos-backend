@@ -163,7 +163,6 @@ describe("KbAskService — citation re-verification re-applies the article-restr
 
     const search = new KbSearchService(
       db as never,
-      gateway as never,
       events as never,
       new KbCandidateService(db as never),
       scopes as never,

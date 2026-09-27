@@ -4,19 +4,21 @@ import { KbRetrievalService } from "./kb-retrieval.service";
 
 describe("KbAskService citation delegation", () => {
   it("KbAskService constructor does not declare assertReplayCitations so callers must use KbAskCitationService directly", () => {
-    const proto = KbAskService.prototype as Record<string, unknown>;
+    const proto = KbAskService.prototype as unknown as Record<string, unknown>;
     expect(typeof proto["assertReplayCitations"]).toBe("undefined");
   });
 
   it("KbAskCitationService is the canonical assertReplayCitations owner", () => {
-    const proto = KbAskCitationService.prototype as Record<string, unknown>;
+    const proto = KbAskCitationService.prototype as unknown as Record<string, unknown>;
     expect(typeof proto["assertReplayCitations"]).toBe("function");
   });
 
-  it("KbAskService.ask uses the required KbRetrievalService parameter not an optional one", () => {
-    const ctorLength = KbAskService.length;
-    expect(ctorLength).toBeGreaterThan(0);
-    const params = KbAskService.toString();
-    expect(params).not.toContain("null = null");
+  it("KbAskService declares all eight constructor parameters as required, so retrieval cannot be defaulted away and silently leave gatherContext calling undefined", () => {
+    expect(KbAskService.length).toBe(8);
+  });
+
+  it("KbRetrievalService owns retrieve, so the eighth parameter has somewhere to resolve from", () => {
+    const proto = KbRetrievalService.prototype as unknown as Record<string, unknown>;
+    expect(typeof proto["retrieve"]).toBe("function");
   });
 });

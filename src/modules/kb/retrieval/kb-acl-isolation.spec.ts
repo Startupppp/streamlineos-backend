@@ -1,7 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import { KbMembersService } from "../wiki/kb-members.service";
 import { KbIndexingService } from "./kb-indexing.service";
 import { kbPages } from "../../../db/schema";
@@ -87,10 +87,9 @@ describe("KB cross-tenant isolation", () => {
       embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
     };
 
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       embeddings as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeKbAuth([1]) as never,
@@ -124,10 +123,9 @@ describe("KB cross-tenant isolation", () => {
       select: jest.fn().mockReturnValue(chain),
       execute: jest.fn().mockResolvedValue([]),
     };
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeKbAuth([]) as never,
