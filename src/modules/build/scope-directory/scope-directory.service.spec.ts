@@ -1,8 +1,6 @@
 import {
   managedProductMemberships,
   managedProducts,
-  projectMembers,
-  projectTeamAssignments,
   projects,
 } from "../../../db/schema";
 import { resolveScopeDirectorySchema } from "./dto/scope-directory.schemas";
@@ -342,8 +340,6 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
   it("search includes project results with correct parentPath derived from product ancestor", async () => {
     const { db } = makeDb(makeResponses([
       [managedProductMemberships, [[]]],
-      [projectMembers, [[{ projectId: 20 }]]],
-      [projectTeamAssignments, [[]]],
       [projects, [[PROJ_ROW]]],
       [managedProducts, [[PROD_ROW]]],
     ]));
@@ -358,20 +354,17 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
     });
   });
 
-  it("search project results require auth: project membership table is queried when build:manage is not all", async () => {
+  it("search project results require auth: reachability predicate is embedded in the project WHERE clause when build:manage is not all", async () => {
     const { db, calls } = makeDb(makeResponses([
       [managedProductMemberships, [[]]],
-      [projectMembers, [[{ projectId: 20 }]]],
-      [projectTeamAssignments, [[]]],
       [projects, [[PROJ_ROW]]],
-      [managedProducts, [[PROD_ROW]]],
     ]));
 
     await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Lau", 25, undefined);
 
-    const membershipCall = calls.find((c) => c.table === projectMembers);
-    expect(membershipCall).toBeDefined();
-    expect(renderParams(membershipCall?.condition)).toContain(MEMBERSHIP_ID);
+    const projectCall = calls.find((c) => c.table === projects);
+    expect(projectCall).toBeDefined();
+    expect(renderParams(projectCall?.condition)).toContain(MEMBERSHIP_ID);
   });
 
   it("nextCursor is null when results fit on one page", async () => {
@@ -406,11 +399,8 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
   it("orgId is bound in ALL membership and data queries issued by search", async () => {
     const { db, calls } = makeDb(makeResponses([
       [managedProductMemberships, [[{ managedProductId: 10 }]]],
-      [projectMembers, [[{ projectId: 20 }]]],
-      [projectTeamAssignments, [[]]],
       [managedProducts, [[PROD_ROW]]],
       [projects, [[PROJ_ROW]]],
-      [managedProducts, [[PROD_ROW]]],
     ]));
 
     await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "a", 25, undefined);

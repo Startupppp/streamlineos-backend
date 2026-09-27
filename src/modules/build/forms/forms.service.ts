@@ -79,6 +79,9 @@ export class FormsService {
           isNull(projectForms.deletedAt),
           query.type !== undefined ? eq(projectForms.type, query.type) : undefined,
           query.isActive !== undefined ? eq(projectForms.isActive, query.isActive) : undefined,
+          query.q
+            ? sql`to_tsvector('english', coalesce(${projectForms.name}, '') || ' ' || coalesce(${projectForms.description}, '')) @@ plainto_tsquery('english', ${query.q})`
+            : undefined,
           cursor
             ? or(
                 lt(projectForms.createdAt, cursor.createdAt),

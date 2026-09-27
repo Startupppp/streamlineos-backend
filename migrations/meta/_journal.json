@@ -7015,6 +7015,41 @@
       "when": 1803093618725,
       "tag": "1374_remediate_ticket_inbox_watermarks",
       "breakpoints": true
+    },
+    {
+      "idx": 1130,
+      "version": "7",
+      "when": 1803093619725,
+      "tag": "1393_build_qa_bug_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 1131,
+      "version": "7",
+      "when": 1803093620725,
+      "tag": "1394_build_cycle_scope_events_rename",
+      "breakpoints": true
+    },
+    {
+      "idx": 1132,
+      "version": "7",
+      "when": 1803093621725,
+      "tag": "1390_rls_project_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 1133,
+      "version": "7",
+      "when": 1803093622725,
+      "tag": "1391_rls_project_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 1134,
+      "version": "7",
+      "when": 1803093623725,
+      "tag": "1392_rls_managed_product_memberships",
+      "breakpoints": true
     }
   ]
 }

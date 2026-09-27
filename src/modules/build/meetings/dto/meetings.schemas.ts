@@ -84,6 +84,7 @@ export const listMeetingsQuerySchema = z.object({
   hasUnresolvedActionItems: queryBoolean.optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(25),
+  q: z.string().max(200).optional(),
 }).strict();
 
 export const addAttendeeSchema = z.object({

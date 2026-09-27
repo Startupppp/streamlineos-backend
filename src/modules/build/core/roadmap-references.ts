@@ -1,26 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { projects, roadmapItems, tickets } from "../../../db/schema";
+import { roadmapItems, tickets } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.types";
-
-export async function assertProjectInOrg(
-  db: Db,
-  orgId: string,
-  projectId: number,
-): Promise<void> {
-  const [row] = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(
-      and(
-        eq(projects.id, projectId),
-        eq(projects.orgId, orgId),
-        isNull(projects.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!row) throw new NotFoundException("Project not found");
-}
+import { assertProjectInOrg } from "./project-access";
 
 export async function assertTicketInOrg(
   db: Db,

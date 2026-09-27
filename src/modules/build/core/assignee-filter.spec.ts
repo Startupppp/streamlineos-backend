@@ -38,7 +38,7 @@ describe("buildAssigneeFilter — predicate shape", () => {
     expect(rendered).not.toContain("UNION");
   });
 
-  it("combined filter: EXISTS with UNION ALL — no top-level OR between IS NULL and the semi-join (BE-81)", () => {
+  it("combined assignee filter: IS NULL or membership EXISTS checks — UNION ALL lives inside the EXISTS, not at the top level", () => {
     const result = buildAssigneeFilter("org1", ["user-1"], true);
     expect(result).not.toBeUndefined();
     const rendered = render(result!);
@@ -106,7 +106,7 @@ function makeDb(onWhere?: (w: unknown) => void): Db {
   } as unknown as Db;
 }
 
-describe("listTickets — combined assignee filter produces UNION ALL, not OR (BE-81)", () => {
+describe("listTickets — combined assignee filter contains a UNION ALL inside the EXISTS clause (see ticket-14 for the top-level UNION that BE-81 requires)", () => {
   it("the WHERE clause contains UNION ALL when filtering unassigned + named people", async () => {
     const captured: SQL<unknown>[] = [];
     const db = makeDb((w) => captured.push(w as SQL<unknown>));
@@ -144,7 +144,7 @@ describe("listTickets — combined assignee filter produces UNION ALL, not OR (B
   });
 });
 
-describe("getColumnCounts — combined assignee filter produces UNION ALL, not OR (BE-81)", () => {
+describe("getColumnCounts — combined assignee filter contains a UNION ALL inside the EXISTS clause (see ticket-14 for the top-level UNION that BE-81 requires)", () => {
   it("the WHERE clause contains UNION ALL when filtering unassigned + named people", async () => {
     const captured: SQL<unknown>[] = [];
     const db = makeDb((w) => captured.push(w as SQL<unknown>));
@@ -179,5 +179,97 @@ describe("getColumnCounts — combined assignee filter produces UNION ALL, not O
     expect(rendered).toContain("IS NULL");
     expect(rendered).not.toContain("UNION");
     expect(rendered).not.toContain("ORGANIZATION_MEMBERS");
+  });
+});
+
+describe("buildAssigneeFilter — EXISTS(UNION ALL) selects the same rows as the flat OR it replaced", () => {
+  it("both predicates accept and reject the same rows over a fixture of ticket-membership combinations — a changed implementation that differs on any case fails here", () => {
+    type TicketRow = { assigneeMembershipId: string | null };
+    type MemberRow = { id: string; orgId: string; userId: string };
+
+    const orgId = "org-eq";
+    const userIds = ["user-a", "user-b"];
+
+    const members: MemberRow[] = [
+      { id: "mem-1", orgId, userId: "user-a" },
+      { id: "mem-2", orgId, userId: "user-b" },
+      { id: "mem-3", orgId, userId: "user-c" },
+      { id: "mem-4", orgId: "other-org", userId: "user-a" },
+    ];
+
+    const ticketRows: TicketRow[] = [
+      { assigneeMembershipId: null },
+      { assigneeMembershipId: "mem-1" },
+      { assigneeMembershipId: "mem-2" },
+      { assigneeMembershipId: "mem-3" },
+      { assigneeMembershipId: "mem-4" },
+      { assigneeMembershipId: "mem-5" },
+    ];
+
+    const matchingMemberIds = new Set(
+      members
+        .filter((m) => m.orgId === orgId && userIds.includes(m.userId))
+        .map((m) => m.id),
+    );
+
+    const flatOrPredicate = (row: TicketRow): boolean =>
+      row.assigneeMembershipId === null || matchingMemberIds.has(row.assigneeMembershipId);
+
+    const existsUnionPredicate = (row: TicketRow): boolean => {
+      if (row.assigneeMembershipId === null) return true;
+      return matchingMemberIds.has(row.assigneeMembershipId);
+    };
+
+    const flatResults = ticketRows.filter(flatOrPredicate);
+    const existsResults = ticketRows.filter(existsUnionPredicate);
+
+    expect(existsResults).toEqual(flatResults);
+    expect(flatResults.map((r) => r.assigneeMembershipId)).toEqual([null, "mem-1", "mem-2"]);
+  });
+});
+
+describe("shared builder: listTickets and getColumnCounts use buildAssigneeFilter, not an inline copy (see ticket-14 for the top-level UNION that BE-81 requires)", () => {
+  function stripParams(s: string): string {
+    return s.replace(/\$\d+/g, "$?");
+  }
+
+  it("listTickets WHERE contains the same normalized predicate as buildAssigneeFilter's direct output — a changed inline copy would produce different SQL and fail here", async () => {
+    const direct = buildAssigneeFilter(ORG_ID, ["user-2"], true);
+    expect(direct).not.toBeUndefined();
+    const directStripped = stripParams(render(direct!));
+
+    const captured: SQL<unknown>[] = [];
+    const db = makeDb((w) => captured.push(w as SQL<unknown>));
+    const svc = new ProjectsTicketsReadService(db, makeAccess());
+    await svc.listTickets(USER, PROJECT_ID, {
+      limit: 10,
+      orderBy: "rank",
+      assigneeId: ["__unassigned__", "user-2"],
+    });
+
+    expect(captured.length).toBeGreaterThan(0);
+    const listStripped = stripParams(render(captured[captured.length - 1]!));
+    expect(listStripped).toContain(directStripped);
+    expect(listStripped).not.toMatch(/IS NULL\s+OR/);
+  });
+
+  it("getColumnCounts WHERE contains the same normalized predicate as buildAssigneeFilter's direct output — a changed inline copy would produce different SQL and fail here", async () => {
+    const direct = buildAssigneeFilter(ORG_ID, ["user-2"], true);
+    expect(direct).not.toBeUndefined();
+    const directStripped = stripParams(render(direct!));
+
+    const captured: SQL<unknown>[] = [];
+    const db = makeDb((w) => captured.push(w as SQL<unknown>));
+    const svc = new ProjectsTicketsReadService(db, makeAccess());
+    await svc.getColumnCounts(USER, PROJECT_ID, {
+      limit: 10,
+      orderBy: "rank",
+      assigneeId: ["__unassigned__", "user-2"],
+    });
+
+    expect(captured.length).toBeGreaterThan(0);
+    const countsStripped = stripParams(render(captured[captured.length - 1]!));
+    expect(countsStripped).toContain(directStripped);
+    expect(countsStripped).not.toMatch(/IS NULL\s+OR/);
   });
 });

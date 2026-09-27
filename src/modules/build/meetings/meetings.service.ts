@@ -112,6 +112,9 @@ export class MeetingsService {
           query.hasUnresolvedActionItems === true
             ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${u.orgId} AND ${meetingActionItems.deletedAt} IS NULL AND ${meetingActionItems.status} NOT IN ('done', 'converted', 'cancelled'))`
             : undefined,
+          query.q
+            ? sql`to_tsvector('english', coalesce(${projectMeetings.title}, '')) @@ plainto_tsquery('english', ${query.q})`
+            : undefined,
           pos
             ? (() => {
                 const posId = keysetInteger(pos.id);

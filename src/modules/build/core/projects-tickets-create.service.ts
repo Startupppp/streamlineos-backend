@@ -34,7 +34,7 @@ import { normalizeTicketType } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { AccessService } from "../../access/access.service";
-import { resolveProjectAssignableMemberships } from "./project-access";
+import { resolveProjectAccess, resolveProjectAssignableMemberships } from "./project-access";
 
 @Injectable()
 export class ProjectsTicketsCreateService {
@@ -55,11 +55,7 @@ export class ProjectsTicketsCreateService {
     projectId: number,
     body: CreateTicketInput,
   ) {
-    const { hasAccess } = await this.read.checkProjectAccess(
-      u.orgId,
-      u.userId,
-      projectId,
-    );
+    const { hasAccess } = await resolveProjectAccess(this.db, this.access, u, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     if (body.status !== undefined)

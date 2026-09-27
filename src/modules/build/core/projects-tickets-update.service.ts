@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -21,11 +20,11 @@ import { systemJobCovers } from "../../../common/auth/principal";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
-import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
-import { ProjectsTicketConflictException } from "../../../common/http/api-exceptions";
+import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
+import { resolveProjectAccess } from "./project-access";
 import type { UpdateTicketInput } from "./dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
 import { computeNextRunAt } from "./projects-recurrence.util";
@@ -45,7 +44,6 @@ export class ProjectsTicketsUpdateService {
     private readonly dispatch: NotificationDispatchService,
     private readonly activity: ProjectsActivityService,
     private readonly query: ProjectsTicketsQueryService,
-    private readonly read: ProjectsTicketsReadService,
     private readonly transfer: ProjectsTicketsTransferService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly automationRunner: BuildAutomationRunnerService,
@@ -239,12 +237,12 @@ export class ProjectsTicketsUpdateService {
     const beforeAssigneeMembershipId = before.assigneeMembershipId;
 
     if (input.version !== undefined && input.version !== before.version)
-      throw new ProjectsTicketConflictException();
+      throw new TicketVersionConflictException(before.version);
 
     if (input.expectedUpdatedAt !== undefined) {
       const expected = new Date(input.expectedUpdatedAt);
       if (before.updatedAt.getTime() !== expected.getTime()) {
-        throw new ProjectsTicketConflictException();
+        throw new TicketVersionConflictException(before.version);
       }
     }
 
@@ -256,15 +254,12 @@ export class ProjectsTicketsUpdateService {
     const accessResult =
       u.isOrgOwner || systemJobCovers(u.principal, "build:tickets:update")
         ? { hasAccess: true, role: "OWNER" as string | null }
-        : await this.read.checkProjectAccess(
-            orgId,
-            actingUserId,
-            ticketProjectId,
-          );
+        : await resolveProjectAccess(this.db, this.access, u, ticketProjectId);
     if (!accessResult.hasAccess)
       throw new ForbiddenException("Not authorized to update this ticket");
 
     const newAssignee = resolveAssigneeId(input.assigneeId);
+    let updatedVersion: number = before.version;
     await this.db.transaction(async (tx) => {
       if (systemJobCovers(u.principal, "build:tickets:update"))
         await lockProjectTicketMutation(tx, orgId, ticketProjectId);
@@ -294,8 +289,15 @@ export class ProjectsTicketsUpdateService {
         .set(updateData)
         .where(versionCondition)
         .returning({ id: tickets.id, version: tickets.version });
-      if (affected.length === 0)
-        throw new ConflictException("Ticket was modified by another request — refresh and retry");
+      if (affected.length === 0) {
+        const [current] = await tx
+          .select({ version: tickets.version })
+          .from(tickets)
+          .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+          .limit(1);
+        throw new TicketVersionConflictException(current?.version ?? before.version);
+      }
+      updatedVersion = affected[0]!.version;
 
       if (input.status && input.status !== before.status) {
         await OutboxWriter.emit(tx, {
@@ -410,7 +412,7 @@ export class ProjectsTicketsUpdateService {
       .invalidateNamespace(`build:analytics:${orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: ticketProjectId }));
 
-    return { updated: true, updatedAt: now.toISOString() };
+    return { updated: true as const, updatedAt: now.toISOString(), version: updatedVersion };
   }
 
   private async syncAssignees(

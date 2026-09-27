@@ -16,7 +16,9 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AccessService } from "../../access/access.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { resolveProjectAccess } from "./project-access";
 import { resolveTicketsScope, ticketScope } from "./tickets-scope";
+import type { ScopedWhere } from "../../access/scoped-read";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
@@ -40,7 +42,7 @@ export class ProjectsTicketsTransferService {
 
   async exportTickets(u: CurrentUserContext, projectId: number, ticketIds?: number[]) {
     const [{ hasAccess }, read] = await Promise.all([
-      this.read.checkProjectAccess(u.orgId, u.userId, projectId),
+      resolveProjectAccess(this.db, this.access, u, projectId),
       resolveTicketsScope(this.access, u),
     ]);
     if (!hasAccess) throw new NotFoundException("Not found");
@@ -57,7 +59,7 @@ export class ProjectsTicketsTransferService {
         scope: ticketScope(read.orgId, read.actorId),
         and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...ticketIdFilter],
       },
-      ({ sql: where }) => this.db
+      ({ sql: where }: ScopedWhere) => this.db
         .select({
           number: tickets.ticketNumber,
           title: tickets.title,
@@ -103,7 +105,7 @@ export class ProjectsTicketsTransferService {
   }
 
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
-    const { hasAccess } = await this.read.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await resolveProjectAccess(this.db, this.access, u, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
     if (
       body.rows.some((row) => row.assigneeEmail !== undefined) &&

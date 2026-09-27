@@ -235,6 +235,7 @@ describe("RisksService — project-membership gate (BOLA)", () => {
     mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     mockDb.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
 
@@ -324,6 +325,7 @@ describe("DecisionsService — project-membership gate (BOLA)", () => {
     mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     mockDb.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
 
@@ -532,8 +534,10 @@ describe("RisksService.listRisks — page 2 cursor returned by page 1 excludes a
 
     mockDb.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain(page1DbRows))
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain(page2DbRows));
 
     const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
@@ -558,6 +562,7 @@ describe("RisksService.listRisks — page 2 cursor returned by page 1 excludes a
 
     mockDb.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([makeRiskRow(1)]));
 
     const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
@@ -590,8 +595,10 @@ describe("DecisionsService.listDecisions — page 2 cursor returned by page 1 ex
 
     mockDb.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain(page1DbRows))
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain(page2DbRows));
 
     const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);

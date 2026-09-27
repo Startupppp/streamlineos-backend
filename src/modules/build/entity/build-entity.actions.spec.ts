@@ -137,7 +137,7 @@ describe("BuildEntityActions", () => {
 
     it("returns forbidden when the actor is not a project member", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue(null);
+      mockDb.query.projects.findFirst.mockResolvedValue(null);
 
       const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" });
 
@@ -151,14 +151,14 @@ describe("BuildEntityActions", () => {
       const result = await service.run(OWNER, TICKET_REF, "status", { status: "IN_PROGRESS" });
 
       expect(result).toMatchObject({ ok: true });
-      expect(mockDb.query.projectMembers.findFirst).not.toHaveBeenCalled();
+      expect(mockDb.query.projects.findFirst).not.toHaveBeenCalled();
     });
   });
 
   describe("routing", () => {
     it("returns invalid for an unknown actionId on a ticket", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "delete", {});
 
@@ -171,7 +171,7 @@ describe("BuildEntityActions", () => {
     });
 
     it("routes project + create-ticket to ticket creation without touching the ticket table", async () => {
-      mockDb.query.projectMembers.findFirst.mockResolvedValue(null);
+      mockDb.query.projects.findFirst.mockResolvedValue(null);
 
       const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" });
 
@@ -183,7 +183,7 @@ describe("BuildEntityActions", () => {
   describe("changeStatus", () => {
     it("returns ok with null message when the status is unchanged", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "status", { status: "TODO" });
 
@@ -197,7 +197,7 @@ describe("BuildEntityActions", () => {
 
     it("returns invalid when the target status is not in the project's valid set", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "DONE"]));
 
       const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_REVIEW" });
@@ -207,7 +207,7 @@ describe("BuildEntityActions", () => {
 
     it("returns invalid when the status input is absent", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "status", {});
 
@@ -223,9 +223,8 @@ describe("BuildEntityActions", () => {
      */
     it("accepts an assignee who is a member of the ticket's project", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst
-        .mockResolvedValueOnce({ projectId: 7 })
-        .mockResolvedValueOnce({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValueOnce({ projectId: 7 });
+      mockDb.query.projectMembers.findFirst.mockResolvedValueOnce({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", {
         assigneeId: "user_2",
@@ -236,9 +235,8 @@ describe("BuildEntityActions", () => {
 
     it("refuses an assignee the option source would never have offered", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst
-        .mockResolvedValueOnce({ projectId: 7 })
-        .mockResolvedValueOnce(null);
+      mockDb.query.projects.findFirst.mockResolvedValueOnce({ projectId: 7 });
+      mockDb.query.projectMembers.findFirst.mockResolvedValueOnce(null);
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", {
         assigneeId: "someone-outside-the-project",
@@ -250,7 +248,7 @@ describe("BuildEntityActions", () => {
 
     it("executes the ticket update and activity-log insert inside the same transaction", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
 
       const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" });
@@ -269,7 +267,7 @@ describe("BuildEntityActions", () => {
   describe("assign", () => {
     it("returns invalid when assigneeId is absent from input", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", {});
 
@@ -278,7 +276,7 @@ describe("BuildEntityActions", () => {
 
     it("returns invalid when assigneeId is an empty string", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "" });
 
@@ -287,6 +285,7 @@ describe("BuildEntityActions", () => {
 
     it("executes the ticket update and activity-log insert inside the same transaction", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "user_2" });
@@ -301,7 +300,7 @@ describe("BuildEntityActions", () => {
   describe("setDueDate", () => {
     it("returns invalid when dueDate is absent from input", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "due-date", {});
 
@@ -310,7 +309,7 @@ describe("BuildEntityActions", () => {
 
     it("returns invalid when dueDate is an empty string", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "" });
 
@@ -319,7 +318,7 @@ describe("BuildEntityActions", () => {
 
     it("executes the ticket update and activity-log insert inside the same transaction", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "2026-12-31" });
 
@@ -332,7 +331,7 @@ describe("BuildEntityActions", () => {
 
   describe("createTicket (project + create-ticket)", () => {
     it("returns forbidden when the actor is not a project member", async () => {
-      mockDb.query.projectMembers.findFirst.mockResolvedValue(null);
+      mockDb.query.projects.findFirst.mockResolvedValue(null);
 
       const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" });
 
@@ -340,7 +339,7 @@ describe("BuildEntityActions", () => {
     });
 
     it("returns invalid when the ticket type is not in the allowed set", async () => {
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "EPIC" });
 
@@ -348,7 +347,7 @@ describe("BuildEntityActions", () => {
     });
 
     it("returns forbidden when the project does not exist in the org", async () => {
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockDb.query.projects.findFirst.mockResolvedValue(null);
 
       const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" });
@@ -357,7 +356,7 @@ describe("BuildEntityActions", () => {
     });
 
     it("creates a ticket inside a transaction and returns the ticket data", async () => {
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockDb.query.projects.findFirst.mockResolvedValue(STUB_PROJECT);
 
       const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", {
@@ -380,7 +379,7 @@ describe("BuildEntityActions", () => {
     });
 
     it("uses description as title fallback when title is absent", async () => {
-      mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockDb.query.projects.findFirst.mockResolvedValue(STUB_PROJECT);
       mockTx.returning.mockResolvedValue([{ ...STUB_CREATED_TICKET, title: "Fix login bug" }]);
 

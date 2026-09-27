@@ -171,7 +171,7 @@ export const updateTicketSchema = z
     dueDate: z.iso.date().nullable().optional(),
     cycleId: z.number().nullable().optional(),
     expectedUpdatedAt: z.string().optional(),
-    version: z.number().int().positive().optional(),
+    version: z.number().int().positive(),
     isRecurring: z.boolean().optional(),
     recurrenceRule: recurrenceRuleSchema.nullable().optional(),
     customerId: z.number().int().positive().nullable().optional(),

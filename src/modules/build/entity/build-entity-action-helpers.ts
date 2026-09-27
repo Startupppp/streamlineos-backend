@@ -15,17 +15,14 @@ export async function isProjectMember(
   projectId: number,
 ): Promise<boolean> {
   if (actor.isOrgOwner) return true;
-  if (actor.membershipId === undefined) return false;
-  const rows = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(
-      and(
-        eq(projects.id, projectId),
-        eq(projects.orgId, actor.orgId),
-        reachableProjectsSql(actor.orgId, actor.membershipId),
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
+  const membershipId = actor.membershipId ?? -1;
+  const row = await db.query.projects.findFirst({
+    where: and(
+      eq(projects.id, projectId),
+      eq(projects.orgId, actor.orgId),
+      reachableProjectsSql(actor.orgId, membershipId),
+    ),
+    columns: { id: true },
+  });
+  return Boolean(row);
 }

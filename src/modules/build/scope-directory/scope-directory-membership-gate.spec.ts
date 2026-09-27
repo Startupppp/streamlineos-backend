@@ -1,8 +1,6 @@
 import {
   managedProductMemberships,
   managedProducts,
-  projectMembers,
-  projectTeamAssignments,
   projects,
 } from "../../../db/schema";
 import {
@@ -45,29 +43,23 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     expect(projectCall).toBeUndefined();
   });
 
-  it("binds the actor's membershipId in the membership queries when build:manage is below all", async () => {
+  it("binds the actor's membershipId in the project WHERE clause when build:manage is below all (reachability predicate)", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [projectMembers, [[{ projectId: 20 }]]],
-      [projectTeamAssignments, [[]]],
       [projects, [[PROJ_ROW]]],
-      [managedProducts, [[PROD_ROW]]],
     ]));
 
     await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
       ORG, USER, MEMBERSHIP_ID, ["project:20"],
     );
 
-    const memberCall = calls.find((c) => c.table === projectMembers);
-    expect(memberCall).toBeDefined();
-    expect(renderParams(memberCall?.condition)).toContain(MEMBERSHIP_ID);
+    const projectCall = calls.find((c) => c.table === projects);
+    expect(projectCall).toBeDefined();
+    expect(renderParams(projectCall?.condition)).toContain(MEMBERSHIP_ID);
   });
 
-  it("resolves project via direct project membership when build:manage is not all", async () => {
+  it("resolves project via reachability predicate in the project WHERE when build:manage is not all", async () => {
     const { db } = makeDb(makeResponses([
-      [projectMembers, [[{ projectId: 20 }]]],
-      [projectTeamAssignments, [[]]],
       [projects, [[PROJ_ROW]]],
-      [managedProducts, [[PROD_ROW]]],
     ]));
 
     const result = await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
@@ -78,10 +70,8 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     expect(result[0]?.id).toBe("20");
   });
 
-  it("project membership gate: guard bites — removing the membershipId filter would allow a non-member through, but the DB honours the predicate and returns nothing", async () => {
+  it("project membership gate: guard bites — the reachability predicate in the project WHERE ensures non-members get no rows, and the DB returns nothing", async () => {
     const { db, calls } = makeDb(makeResponses([
-      [projectMembers, [[]]],
-      [projectTeamAssignments, [[]]],
       [projects, [[]]],
     ]));
 
@@ -90,9 +80,6 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     );
 
     expect(result).toEqual([]);
-    const memberCall = calls.find((c) => c.table === projectMembers);
-    expect(memberCall).toBeDefined();
-    expect(renderParams(memberCall?.condition)).toContain(MEMBERSHIP_ID);
     const projectCall = calls.find((c) => c.table === projects);
     expect(projectCall).toBeDefined();
     expect(renderParams(projectCall?.condition)).toContain(MEMBERSHIP_ID);
@@ -186,11 +173,9 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
 });
 
 describe("ScopeDirectoryService — product and project gates run independently (workspace type removed)", () => {
-  it("product membership and project membership lookups both run when both types are requested together", async () => {
+  it("product membership and project reachability checks both run when both types are requested together", async () => {
     const { db, calls } = makeDb(makeResponses([
       [managedProductMemberships, [[{ managedProductId: 10 }]]],
-      [projectMembers, [[{ projectId: 20 }]]],
-      [projectTeamAssignments, [[]]],
       [managedProducts, [[PROD_ROW]]],
       [projects, [[PROJ_ROW]]],
     ]));
@@ -201,6 +186,8 @@ describe("ScopeDirectoryService — product and project gates run independently 
 
     expect(result).toHaveLength(2);
     expect(calls.find((c) => c.table === managedProductMemberships)).toBeDefined();
-    expect(calls.find((c) => c.table === projectMembers)).toBeDefined();
+    const projectCall = calls.find((c) => c.table === projects);
+    expect(projectCall).toBeDefined();
+    expect(renderParams(projectCall?.condition)).toContain(MEMBERSHIP_ID);
   });
 });

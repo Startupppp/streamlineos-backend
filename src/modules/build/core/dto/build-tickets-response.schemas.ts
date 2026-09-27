@@ -370,6 +370,7 @@ export const rankTicketResultSchema = z.object({
 export const ticketUpdateResultSchema = z.object({
   updated: z.literal(true),
   updatedAt: z.string(),
+  version: z.number().int(),
 });
 
 export const exportTicketsResultSchema = z.object({
