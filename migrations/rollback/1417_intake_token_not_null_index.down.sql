@@ -15,13 +15,17 @@ END $$;
 DROP INDEX IF EXISTS "build"."uniq_projects_org_intake_token";
 --> statement-breakpoint
 
-DROP INDEX IF EXISTS "build"."idx_projects_intake_token";
+DROP INDEX IF EXISTS "build"."uniq_projects_intake_token";
 --> statement-breakpoint
 
 DROP FUNCTION IF EXISTS app.resolve_project_org_id_by_intake_token(text);
 --> statement-breakpoint
 
 ALTER TABLE "build"."projects" ALTER COLUMN "intake_token" DROP NOT NULL;
+--> statement-breakpoint
+
+ALTER TABLE "build"."projects"
+  DROP CONSTRAINT IF EXISTS "chk_projects_intake_token_not_null";
 --> statement-breakpoint
 
 DO $$
@@ -31,4 +35,10 @@ BEGIN
     WHERE table_schema = 'build' AND table_name = 'projects'
       AND column_name = 'intake_token' AND is_nullable = 'YES'
   ), '1417-rollback post-check: intake_token is still NOT NULL on build.projects';
+
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'app' AND p.proname = 'resolve_project_org_id_by_intake_token'
+  ), '1417-rollback post-check: the intake token resolver function still exists';
 END $$;

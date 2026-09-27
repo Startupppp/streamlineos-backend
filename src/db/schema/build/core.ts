@@ -65,7 +65,9 @@ export const projects = build.table(
     }>(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     intakePublishedAt: timestamp("intake_published_at", { withTimezone: true }),
-    intakeToken: text("intake_token").notNull(),
+    intakeToken: text("intake_token")
+      .notNull()
+      .default(sql`encode(gen_random_bytes(24), 'hex')`),
     portalPublishedAt: timestamp("portal_published_at", { withTimezone: true }),
     reportRevision: bigint("report_revision", { mode: "number" }).default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -78,6 +80,8 @@ export const projects = build.table(
   foreignKey({ columns: [table.orgId, table.managedProductId], foreignColumns: [managedProducts.orgId, managedProducts.id], name: "fk_projects_org_product" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.dealId], foreignColumns: [deals.orgId, deals.id], name: "fk_projects_deal_id_org" }).onDelete("set null"),
     uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key).where(sql`deleted_at IS NULL`),
+    uniqueIndex("uniq_projects_org_intake_token").on(table.orgId, table.intakeToken).where(sql`deleted_at IS NULL`),
+    uniqueIndex("uniq_projects_intake_token").on(table.intakeToken).where(sql`deleted_at IS NULL`),
     index("idx_projects_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     index("idx_projects_manager").on(table.orgId, table.managerMembershipId),
     index("idx_projects_org_client_membership").on(table.orgId, table.clientMembershipId),

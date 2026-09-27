@@ -1,22 +1,3 @@
-/**
- * IntakeService — response shape must not expose internal identifiers, and intake
- * must be published before anonymous submissions are accepted.
- *
- * The public intake endpoint (`POST /public/intake/:projectId`) is addressed by a sequential
- * integer and has two open oracle hazards that cannot be closed without a migration:
- *
- *   1. The `projectId` parameter itself is a sequential integer (platform-wide enumeration oracle).
- *   2. 201 vs 400 distinguishes existing from non-existing projects for an unauthenticated caller.
- *
- * Both require the migration that adds an opaque `intake_token` UUID column to `build.projects` and
- * the corresponding route rename. Until that migration ships, neither hazard can be closed.
- *
- * What this spec guards:
- *   - The success response must not carry the sequential intake item `id`.
- *   - An unpublished project (`intake_published_at IS NULL`) must be refused with the same
- *     error body and status as a non-existent project, so the two are indistinguishable.
- *   - A published project (`intake_published_at IS NOT NULL`) still accepts submissions.
- */
 import "reflect-metadata";
 import { BadRequestException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
