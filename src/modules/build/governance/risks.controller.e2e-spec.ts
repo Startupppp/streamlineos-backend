@@ -167,7 +167,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/risks with build:risks:view — stub returns list without a DB connection", async () => {
-    risksSvc.listRisks.mockResolvedValue({ items: [], nextCursor: null });
+    risksSvc.listRisks.mockResolvedValue({ data: [], hasMore: false, nextCursor: null });
     const token = await signToken({
       permissions: ["build:risks:view"],
       enabledModules: ["build"],
@@ -194,7 +194,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   });
 
   it("200 on GET /build/1/decisions with build:decisions:view — stub returns list without a DB connection", async () => {
-    decisionsSvc.listDecisions.mockResolvedValue({ items: [], nextCursor: null });
+    decisionsSvc.listDecisions.mockResolvedValue({ data: [], hasMore: false, nextCursor: null });
     const token = await signToken({
       permissions: ["build:decisions:view"],
       enabledModules: ["build"],
