@@ -236,6 +236,15 @@ export class NotificationDispatchService {
       const routingResult = routingResults.get(userId);
       if (!routingResult) return;
 
+      const membershipId = memberIdByUser.get(userId);
+      if (membershipId === undefined) {
+        result.suppressed += 1;
+        this.logger.warn(
+          `notification fanout skipped recipient ${userId} (${input.eventKey}, org ${input.orgId}): active membership disappeared between the recipient filter and fanout`,
+        );
+        return;
+      }
+
       // PIPE-003: re-check object-level visibility immediately before render, per
       // recipient. Membership was checked at enqueue; access can be revoked between
       // enqueue and here, and under queue lag that window widens exactly when the
@@ -248,7 +257,7 @@ export class NotificationDispatchService {
           input.entityId,
         );
         if (!visible) {
-          result.suppressed += await this.persistence.recordAccessSuppression(input, definition, userId, memberIdByUser.get(userId) ?? null, routingResult.priority);
+          result.suppressed += await this.persistence.recordAccessSuppression(input, definition, userId, membershipId, routingResult.priority);
           return;
         }
       }
@@ -259,8 +268,7 @@ export class NotificationDispatchService {
       const digestWindowMs = definition.mandatory
         ? null
         : NotificationDigestService.windowMsFor(digestModeByUser.get(userId));
-      const membershipId = memberIdByUser.get(userId);
-      if (digestWindowMs !== null && membershipId !== undefined) {
+      if (digestWindowMs !== null) {
         await this.digest.enqueue({
           orgId: input.orgId,
           membershipId,
@@ -279,7 +287,7 @@ export class NotificationDispatchService {
         input,
         definition,
         userId,
-        membershipId ?? null,
+        membershipId,
         routingResult,
         emailMap.get(userId) ?? null,
         templatesByLocale.get(localeByUser.get(userId) ?? "en") ?? new Map(),

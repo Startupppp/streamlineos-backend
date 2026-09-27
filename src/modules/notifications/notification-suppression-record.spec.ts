@@ -53,10 +53,11 @@ describe("NotificationDispatchService — suppression recorded, not silently dro
   const db: MockDb = {
     transaction: jest.fn((fn: (t: MockDb) => Promise<unknown>) => fn(db)),
     execute: jest.fn().mockResolvedValue([]),
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
-      }),
+    select: jest.fn().mockImplementation((projection?: Record<string, unknown>) => {
+      const keys = projection ? Object.keys(projection) : [];
+      const rows =
+        keys.includes("userId") && keys.includes("id") ? [{ userId: USER, id: 1 }] : [];
+      return { from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) }) };
     }),
     insert: jest.fn().mockImplementation(() => ({
       values: jest.fn().mockImplementation((v: Record<string, unknown>) => {

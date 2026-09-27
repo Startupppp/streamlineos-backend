@@ -67,6 +67,7 @@ const DEFINITION = {
 describe("notification fanout — one recipient cannot take the chunk down", () => {
   let dispatch: NotificationDispatchService;
   const persistForUser = jest.fn();
+  let membershipIdByUser: Map<string, number>;
 
   /**
    * A query builder that answers `[]` however far it is chained and wherever it is
@@ -75,17 +76,39 @@ describe("notification fanout — one recipient cannot take the chunk down", () 
    * about, and a chain stubbed one shape at a time breaks whenever an unrelated
    * lookup is added.
    */
-  function emptyQuery(): unknown {
+  function queryResolving(rows: readonly unknown[]): unknown {
     const handler: ProxyHandler<Record<string, unknown>> = {
       get(_target, prop) {
-        if (prop === "then") return (resolve: (rows: unknown[]) => unknown) => resolve([]);
+        if (prop === "then")
+          return (resolve: (r: readonly unknown[]) => unknown) => resolve(rows);
         return () => new Proxy({}, handler);
       },
     };
     return new Proxy({}, handler);
   }
 
+  /**
+   * Only the membership lookup projects both `userId` and `id`; the email, locale
+   * and digest lookups each project a different pair. Answering every select with
+   * `[]` modelled a state the database cannot produce — an ACTIVE member with no
+   * membership row — and the fanout now refuses that state rather than writing a
+   * notification nobody can read.
+   */
+  function selectFor(projection?: Record<string, unknown>): unknown {
+    const keys = projection ? Object.keys(projection) : [];
+    if (keys.includes("userId") && keys.includes("id")) {
+      return queryResolving(
+        TARGETS.filter((u) => membershipIdByUser.has(u)).map((u) => ({
+          userId: u,
+          id: membershipIdByUser.get(u),
+        })),
+      );
+    }
+    return queryResolving([]);
+  }
+
   beforeEach(async () => {
+    membershipIdByUser = new Map(TARGETS.map((u, i) => [u, 100 + i]));
     persistForUser.mockReset();
     persistForUser.mockImplementation((_input: unknown, _def: unknown, userId: string) => {
       if (userId === POISON) return Promise.reject(new Error("membership row is gone"));
@@ -95,7 +118,7 @@ describe("notification fanout — one recipient cannot take the chunk down", () 
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationDispatchService,
-        { provide: DRIZZLE, useValue: { select: jest.fn(() => emptyQuery()) } },
+        { provide: DRIZZLE, useValue: { select: jest.fn(selectFor) } },
         {
           provide: NotificationEventRegistryService,
           useValue: { resolveDefinition: jest.fn().mockResolvedValue({ definition: DEFINITION, enabled: true }) },
@@ -119,6 +142,7 @@ describe("notification fanout — one recipient cannot take the chunk down", () 
 
     dispatch = moduleRef.get(NotificationDispatchService);
     jest.spyOn(dispatch["logger"], "error").mockImplementation(() => undefined);
+    jest.spyOn(dispatch["logger"], "warn").mockImplementation(() => undefined);
   });
 
   it("materialises every healthy recipient and counts the failure instead of throwing", async () => {
@@ -146,6 +170,70 @@ describe("notification fanout — one recipient cannot take the chunk down", () 
     const logged = jest.mocked(dispatch["logger"].error).mock.calls.map(String).join("\n");
     expect(logged).toContain(POISON);
     expect(logged).toContain("membership row is gone");
+  });
+
+  it("skips a recipient whose active membership disappeared between the filter and the fanout, rather than persisting a notification with no membership", async () => {
+    persistForUser.mockResolvedValue({ createdInApp: true, queued: 1, suppressed: 0, deduped: false, announce: null, pushHandledByEngine: false });
+    membershipIdByUser.delete("user-2");
+
+    const result = await dispatch.emitNow({
+      eventKey: EVENT_KEY,
+      orgId: "org-1",
+      targetUserIds: TARGETS,
+      notifySelf: true,
+    });
+
+    const persisted = persistForUser.mock.calls.map((call) => call[2] as string);
+    expect(persisted).not.toContain("user-2");
+    expect(persisted).toHaveLength(TARGETS.length - 1);
+    expect(result.notified).toBe(TARGETS.length - 1);
+    expect(result.suppressed).toBe(1);
+    expect(result.failedRecipients).toBe(0);
+  });
+
+  it("never hands persistForUser a null membership, because the notifications table cannot store one", async () => {
+    persistForUser.mockResolvedValue({ createdInApp: true, queued: 1, suppressed: 0, deduped: false, announce: null, pushHandledByEngine: false });
+    membershipIdByUser.delete("user-4");
+
+    await dispatch.emitNow({
+      eventKey: EVENT_KEY,
+      orgId: "org-1",
+      targetUserIds: TARGETS,
+      notifySelf: true,
+    });
+
+    for (const call of persistForUser.mock.calls) {
+      expect(typeof call[3]).toBe("number");
+    }
+  });
+
+  it("logs the skipped recipient, so a revoked membership mid-fanout is not silent", async () => {
+    persistForUser.mockResolvedValue({ createdInApp: true, queued: 1, suppressed: 0, deduped: false, announce: null, pushHandledByEngine: false });
+    membershipIdByUser.delete("user-5");
+
+    await dispatch.emitNow({
+      eventKey: EVENT_KEY,
+      orgId: "org-1",
+      targetUserIds: TARGETS,
+      notifySelf: true,
+    });
+
+    const warned = jest.mocked(dispatch["logger"].warn).mock.calls.map(String).join("\n");
+    expect(warned).toContain("user-5");
+  });
+
+  it("CONTROL: every recipient keeps its membership, so none is skipped and none is suppressed", async () => {
+    persistForUser.mockResolvedValue({ createdInApp: true, queued: 1, suppressed: 0, deduped: false, announce: null, pushHandledByEngine: false });
+
+    const result = await dispatch.emitNow({
+      eventKey: EVENT_KEY,
+      orgId: "org-1",
+      targetUserIds: TARGETS,
+      notifySelf: true,
+    });
+
+    expect(persistForUser).toHaveBeenCalledTimes(TARGETS.length);
+    expect(result.suppressed).toBe(0);
   });
 
   it("a wholly healthy fanout reports no failures", async () => {

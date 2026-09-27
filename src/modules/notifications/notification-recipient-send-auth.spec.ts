@@ -58,13 +58,18 @@ describe("NotificationDispatchService — recipient authorization at send time",
     update: jest.Mock;
   }
 
+  let activeMemberships = new Map<string, number>();
+
   const db: MockDb = {
     transaction: jest.fn((fn: (t: MockDb) => Promise<unknown>) => fn(db)),
     execute: jest.fn().mockResolvedValue([]),
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
-      }),
+    select: jest.fn().mockImplementation((projection?: Record<string, unknown>) => {
+      const keys = projection ? Object.keys(projection) : [];
+      const rows =
+        keys.includes("userId") && keys.includes("id")
+          ? [...activeMemberships].map(([userId, id]) => ({ userId, id }))
+          : [];
+      return { from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) }) };
     }),
     insert: jest.fn().mockImplementation(() => ({
       values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
@@ -87,6 +92,7 @@ describe("NotificationDispatchService — recipient authorization at send time",
   beforeEach(async () => {
     jest.clearAllMocks();
     insertedRows.length = 0;
+    activeMemberships = new Map([[MEMBER, 1]]);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -176,8 +182,24 @@ describe("NotificationDispatchService — recipient authorization at send time",
     expect(strangerRow).toBeUndefined();
   });
 
-  it("bites: if filterOrgMemberIds is stubbed to include the stranger, the stranger row appears — proving the gate bites", async () => {
+  it("bypassing filterOrgMemberIds alone is not enough — the membership lookup is a second gate and still blocks the stranger", async () => {
     filterOrgMemberIds.mockResolvedValue([MEMBER, STRANGER]);
+
+    await svc.emitNow({
+      eventKey: "build.ticket.assigned",
+      orgId: ORG,
+      targetUserIds: [MEMBER, STRANGER],
+    });
+
+    const strangerRow = insertedRows.find((r) => r["userId"] === STRANGER);
+    expect(strangerRow).toBeUndefined();
+    const memberRow = insertedRows.find((r) => r["userId"] === MEMBER);
+    expect(memberRow).toBeDefined();
+  });
+
+  it("bites: bypassing both the member filter and the membership lookup produces the stranger row, so neither gate is inert", async () => {
+    filterOrgMemberIds.mockResolvedValue([MEMBER, STRANGER]);
+    activeMemberships.set(STRANGER, 2);
 
     await svc.emitNow({
       eventKey: "build.ticket.assigned",

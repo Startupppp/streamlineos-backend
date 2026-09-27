@@ -40,7 +40,7 @@ export class NotificationDispatchPersistenceService {
     input: DispatchEventInput,
     definition: NotificationEventDefinition,
     userId: string,
-    membershipId: number | null,
+    membershipId: number,
     priority: NotificationPriority,
   ): Promise<number> {
     const [row] = await this.db
@@ -71,7 +71,7 @@ export class NotificationDispatchPersistenceService {
     input: DispatchEventInput,
     definition: NotificationEventDefinition,
     userId: string,
-    membershipId: number | null,
+    membershipId: number,
     routingResult: Awaited<ReturnType<NotificationRoutingService["route"]>>,
     email: string | null,
     templateMap: TemplateMap,
