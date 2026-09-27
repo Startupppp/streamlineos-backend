@@ -7,18 +7,10 @@ import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
 
 export interface KbPageChunkState {
   contentHash: string | null;
-  pageVisibility: string | null;
-  pageProjectId: number | null;
-  pageCreatedById: string | null;
-  pageCreatedByMembershipId: number | null;
   aclRevision: number | null;
 }
 
 export interface KbPageChunkAcl {
-  pageVisibility: string;
-  pageProjectId: number | null;
-  pageCreatedById: string | null;
-  pageCreatedByMembershipId: number | null;
   aclRevision: number;
 }
 
@@ -39,10 +31,6 @@ export async function loadPageChunkState(
     tx
       .select({
         contentHash: kbArticleChunks.contentHash,
-        pageVisibility: kbArticleChunks.pageVisibility,
-        pageProjectId: kbArticleChunks.pageProjectId,
-        pageCreatedById: kbArticleChunks.pageCreatedById,
-        pageCreatedByMembershipId: kbArticleChunks.pageCreatedByMembershipId,
         aclRevision: kbArticleChunks.aclRevision,
       })
       .from(kbArticleChunks)
@@ -62,7 +50,7 @@ export async function updatePageChunkAcl(
   await runInTenantTransaction(db, async (tx) =>
     tx
       .update(kbArticleChunks)
-      .set({ ...acl, aclSyncedAt: new Date() })
+      .set({ aclRevision: acl.aclRevision, aclSyncedAt: new Date() })
       .where(pageBodyChunks(orgId, pageId)),
   { orgId });
 }
@@ -93,10 +81,6 @@ export async function replacePageBodyChunks(
         tokens: estimateTokens(chunk),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
-        pageVisibility: meta.pageVisibility,
-        pageProjectId: meta.pageProjectId,
-        pageCreatedById: meta.pageCreatedById,
-        pageCreatedByMembershipId: meta.pageCreatedByMembershipId,
         aclRevision: meta.aclRevision,
         contentRevision: meta.contentRevision,
         aclSyncedAt: new Date(),

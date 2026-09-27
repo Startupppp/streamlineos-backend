@@ -305,10 +305,6 @@ export class KbAttachmentIndexingService {
         isNull(kbPages.deletedAt),
       ),
       columns: {
-        visibility: true,
-        projectId: true,
-        createdById: true,
-        createdByMembershipId: true,
         aclRevision: true,
       },
     });
@@ -366,10 +362,6 @@ export class KbAttachmentIndexingService {
       {
         contentHash,
         aclRevision: page.aclRevision,
-        pageProjectId: page.projectId,
-        pageVisibility: page.visibility,
-        pageCreatedById: page.createdById,
-        pageCreatedByMembershipId: page.createdByMembershipId,
       },
     );
 

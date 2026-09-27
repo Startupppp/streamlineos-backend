@@ -142,10 +142,6 @@ export async function replacePageDocumentChunks(
   embeddings: number[][],
   meta: {
     contentHash: string;
-    pageVisibility: string;
-    pageProjectId: number | null;
-    pageCreatedById: string | null;
-    pageCreatedByMembershipId: number | null;
     aclRevision: number;
   },
 ): Promise<void> {
@@ -157,10 +153,6 @@ export async function replacePageDocumentChunks(
         pageId,
         attachmentId: null,
         ...derivedChunkRow(chunk, embeddings[index], index, meta.contentHash),
-        pageVisibility: meta.pageVisibility,
-        pageProjectId: meta.pageProjectId,
-        pageCreatedById: meta.pageCreatedById,
-        pageCreatedByMembershipId: meta.pageCreatedByMembershipId,
         aclRevision: meta.aclRevision,
         aclSyncedAt: new Date(),
       })),

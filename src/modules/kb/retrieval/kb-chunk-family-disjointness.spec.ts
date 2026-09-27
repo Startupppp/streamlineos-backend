@@ -98,10 +98,6 @@ describe("a derived chunk is reachable from retrieval only if it carries its pag
       [[0.2]],
       {
         contentHash: "hash-b",
-        pageVisibility: "org",
-        pageProjectId: null,
-        pageCreatedById: "user-1",
-        pageCreatedByMembershipId: 5,
         aclRevision: 3,
       },
     );
@@ -110,7 +106,7 @@ describe("a derived chunk is reachable from retrieval only if it carries its pag
     expect(rows).toHaveLength(1);
     expect(rows[0]?.["pageId"]).toBe(PAGE_ID);
     expect(rows[0]?.["attachmentId"]).toBeNull();
-    expect(rows[0]?.["pageVisibility"]).toBe("org");
+    expect(rows[0]).not.toHaveProperty("pageVisibility");
     expect(rows[0]).not.toHaveProperty("articleId");
   });
 
@@ -125,10 +121,6 @@ describe("a derived chunk is reachable from retrieval only if it carries its pag
       [[0.3]],
       {
         contentHash: "hash-c",
-        pageVisibility: "org",
-        pageProjectId: null,
-        pageCreatedById: null,
-        pageCreatedByMembershipId: null,
         aclRevision: 1,
       },
     );

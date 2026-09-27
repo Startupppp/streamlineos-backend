@@ -269,8 +269,8 @@ describe("Fix 3 — embedInBatches: batched calls, order preserved across bounda
   });
 });
 
-describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL columns populated", () => {
-  it("runs delete and insert inside one transaction and populates pageVisibility and aclRevision", async () => {
+describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, dead ACL columns absent so chunkVisibleTo remains the sole ACL predicate", () => {
+  it("runs delete and insert inside one transaction and omits pageVisibility, pageCreatedById, pageCreatedByMembershipId from every inserted row", async () => {
     const callOrder: string[] = [];
     const deleteWhere = jest.fn().mockImplementation(() => { callOrder.push("delete"); return Promise.resolve([]); });
     const capturedInsertValues: unknown[] = [];
@@ -283,13 +283,7 @@ describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL 
       delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       insert: jest.fn().mockReturnValue({ values: insertValues }),
     };
-    const pageRow = {
-      visibility: "org",
-      projectId: null,
-      createdById: "user-42",
-      createdByMembershipId: 10,
-      aclRevision: 3,
-    };
+    const pageRow = { aclRevision: 3 };
     const db = {
       transaction: jest.fn().mockImplementation(async (fn: (client: typeof tx) => unknown) => fn(tx)),
       select: jest.fn().mockReturnValue({
@@ -321,17 +315,12 @@ describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL 
     expect(db.transaction).toHaveBeenCalled();
     expect(callOrder).toEqual(["delete", "insert"]);
 
-    const rows = capturedInsertValues[0] as Array<{
-      pageVisibility: string;
-      pageCreatedById: string;
-      pageCreatedByMembershipId: number;
-      aclRevision: number;
-    }>;
+    const rows = capturedInsertValues[0] as Array<Record<string, unknown>>;
     expect(rows).toBeDefined();
-    expect(rows[0]?.pageVisibility).toBe("org");
-    expect(rows[0]?.pageCreatedById).toBe("user-42");
-    expect(rows[0]?.pageCreatedByMembershipId).toBe(10);
-    expect(rows[0]?.aclRevision).toBe(3);
+    expect(rows[0]).not.toHaveProperty("pageVisibility");
+    expect(rows[0]).not.toHaveProperty("pageCreatedById");
+    expect(rows[0]).not.toHaveProperty("pageCreatedByMembershipId");
+    expect(rows[0]?.["aclRevision"]).toBe(3);
   });
 
   it("does not insert when page is not found for the given orgId", async () => {

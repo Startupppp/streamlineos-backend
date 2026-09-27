@@ -23,10 +23,6 @@ const makeCheckpoint = () => ({
 
 interface StoredChunk {
   contentHash: string;
-  pageVisibility: string;
-  pageProjectId: number | null;
-  pageCreatedById: string | null;
-  pageCreatedByMembershipId: number | null;
   aclRevision: number;
 }
 
@@ -65,10 +61,6 @@ const TEXT = "an article whose body did not change";
 
 const STORED: StoredChunk = {
   contentHash: sha256(TEXT),
-  pageVisibility: "org",
-  pageProjectId: null,
-  pageCreatedById: "user-1",
-  pageCreatedByMembershipId: 1,
   aclRevision: 3,
 };
 
@@ -101,10 +93,6 @@ describe("KbIndexingService.indexArticle — a help-centre article is a kb_pages
     expect(embeddings.embedBatchWithCredit).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledTimes(1);
     expect(setSpy).toHaveBeenCalledWith({
-      pageVisibility: "org",
-      pageProjectId: null,
-      pageCreatedById: "user-1",
-      pageCreatedByMembershipId: 1,
       aclRevision: 4,
       aclSyncedAt: expect.any(Date),
     });
@@ -125,8 +113,8 @@ describe("KbIndexingService.indexArticle — a help-centre article is a kb_pages
     expect(written.aclRevision).not.toBe(3);
   });
 
-  it("a visibility change with no revision bump is carried too", async () => {
-    const { db, setSpy } = makeDb(STORED);
+  it("writes no chunk row for a visibility change that did not bump the revision, because the chunk predicate resolves visibility by semi-join to kb_pages at query time and no longer carries a copy of it", async () => {
+    const { db, update } = makeDb(STORED);
     (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue(
       articleRow({ visibility: "public" }),
     );
@@ -134,12 +122,21 @@ describe("KbIndexingService.indexArticle — a help-centre article is a kb_pages
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
 
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("still writes when the revision moved, so the reused fast path cannot swallow a real ACL change", async () => {
+    const { db, update, setSpy } = makeDb(STORED);
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue(
+      articleRow({ visibility: "public", aclRevision: 4 }),
+    );
+
+    const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
+    await svc.indexArticle("org-1", 1);
+
+    expect(update).toHaveBeenCalledTimes(1);
     expect(setSpy).toHaveBeenCalledWith({
-      pageVisibility: "public",
-      pageProjectId: null,
-      pageCreatedById: "user-1",
-      pageCreatedByMembershipId: 1,
-      aclRevision: 3,
+      aclRevision: 4,
       aclSyncedAt: expect.any(Date),
     });
   });

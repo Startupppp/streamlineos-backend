@@ -147,22 +147,11 @@ export class KbIndexingService {
 
     const stored = await loadPageChunkState(this.db, orgId, pageId);
     const contentHash = sha256(page.contentText);
-    const acl = {
-      pageVisibility: page.visibility,
-      pageProjectId: page.projectId,
-      pageCreatedById: page.createdById,
-      pageCreatedByMembershipId: page.createdByMembershipId,
-      aclRevision: page.aclRevision,
-    };
+    const acl = { aclRevision: page.aclRevision };
     const contentRevision = page.contentRevision;
 
     if (stored !== null && stored.contentHash === contentHash) {
-      const aclChanged =
-        stored.pageVisibility !== acl.pageVisibility ||
-        stored.pageProjectId !== acl.pageProjectId ||
-        stored.pageCreatedById !== acl.pageCreatedById ||
-        stored.pageCreatedByMembershipId !== acl.pageCreatedByMembershipId ||
-        stored.aclRevision !== acl.aclRevision;
+      const aclChanged = stored.aclRevision !== acl.aclRevision;
 
       if (!aclChanged) {
         metrics.finish("reused", { reused: true });
