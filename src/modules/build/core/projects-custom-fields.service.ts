@@ -7,7 +7,7 @@ import { ticketCustomFieldValues } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/custom-fields.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectInOrg } from "./project-access";
+import { assertProjectInOrg } from "./project-crud/project-access";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,

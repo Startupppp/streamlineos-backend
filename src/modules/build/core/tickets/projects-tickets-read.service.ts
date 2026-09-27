@@ -26,7 +26,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { TicketsListQuery } from "../dto/projects.schemas";
 import { queryTickets } from "./projects-tickets-read.query";
-import { resolveProjectAccess } from "../project-access";
+import { resolveProjectAccess } from "../project-crud/project-access";
 import { ProjectAccessCache } from "../../reachability/project-access-cache";
 
 const TRIGRAM_MIN_TERM_LENGTH = 3;

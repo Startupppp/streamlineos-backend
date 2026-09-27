@@ -565,8 +565,8 @@ export default [
       "None: a cycleId belonging to a different project 404s directly at the UPDATE's own WHERE clause.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 185, anchor: /updateCycle\(/, note: "handler binds both projectId and cycleId and forwards both" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 127, anchor: /async updateCycle\(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 155, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\), eq\(cycles\.version, before\.version\)\)\)/, note: "UPDATE's own WHERE binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 129, anchor: /async updateCycle\(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 157, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\), eq\(cycles\.version, before\.version\)\)\)/, note: "UPDATE's own WHERE binds id+projectId+orgId" },
     ],
   },
   {
@@ -579,8 +579,8 @@ export default [
       "None: a cycleId belonging to a different project 404s directly at the DELETE's own WHERE clause.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 199, anchor: /deleteCycle\(/, note: "handler binds both projectId and cycleId and forwards both" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 172, anchor: /async deleteCycle\(orgId: string, projectId: number, cycleId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/cycles.service.ts", line: 178, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "DELETE's own WHERE binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 174, anchor: /async deleteCycle\(orgId: string, projectId: number, cycleId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/cycles.service.ts", line: 180, anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\)\)\)/, note: "DELETE's own WHERE binds id+projectId+orgId" },
     ],
   },
   {
@@ -593,8 +593,8 @@ export default [
       "None: an epicId belonging to a different project 404s directly at the UPDATE's own WHERE clause.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 300, anchor: /updateEpic\(/, note: "handler binds both projectId and epicId and forwards both" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 61, anchor: /async updateEpic\(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 63, anchor: /eq\(tickets\.id, epicId\),/, note: "UPDATE's own WHERE binds id+orgId+projectId+type" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 94, anchor: /async updateEpic\(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 108, anchor: /eq\(tickets\.id, epicId\),/, note: "UPDATE's own WHERE binds id+orgId+projectId+type" },
     ],
   },
   {
@@ -607,8 +607,8 @@ export default [
       "None: an epicId belonging to a different project 404s at the existence check before the DELETE runs.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 314, anchor: /deleteEpic\(/, note: "handler binds both projectId and epicId and forwards both" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 91, anchor: /async deleteEpic\(orgId: string, projectId: number, epicId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 94, anchor: /eq\(tickets\.id, epicId\),/, note: "existence check binds id+orgId+projectId+type; 404 on mismatch" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 124, anchor: /async deleteEpic\(orgId: string, projectId: number, epicId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 127, anchor: /eq\(tickets\.id, epicId\),/, note: "existence check binds id+orgId+projectId+type; 404 on mismatch" },
     ],
   },
 

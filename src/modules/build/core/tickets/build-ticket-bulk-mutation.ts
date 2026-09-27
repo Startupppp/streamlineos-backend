@@ -24,9 +24,9 @@ import {
   emitBatchStatusChanges,
   validateBatchTransition,
 } from "./build-ticket-batch-workflow";
-import type { TicketEventPayload } from "../build-automation-runner.service";
+import type { TicketEventPayload } from "../automation/build-automation-runner.service";
 import { resolveAssigneeId } from "./tickets-helpers";
-import { resolveProjectAssignableMemberships } from "../project-access";
+import { resolveProjectAssignableMemberships } from "../project-crud/project-access";
 
 export interface BulkTicketEffectDeps {
   readonly webhooksDispatch: {

@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { ProjectsWorkQueryService } from "./work-query/projects-work-query.service";
 import type { Db } from "../../../db/drizzle.module";
 
 const ORG_ID = "org-r7";

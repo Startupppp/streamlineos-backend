@@ -527,8 +527,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign updateId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/updates/updates.controller.ts", line: 94, anchor: /return this\.svc\.softDeleteUpdate\(u, projectId, updateId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/updates/updates.service.ts", line: 150, anchor: /const update = await this\.loadUpdate\(u\.orgId, projectId, updateId\);/, note: "binds updateId to projectId via loadUpdate before deleting" },
-      { file: "src/modules/build/updates/updates.service.ts", line: 160, anchor: /\.where\(and\(eq\(projectUpdates\.id, updateId\), eq\(projectUpdates\.orgId, u\.orgId\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/updates/updates.service.ts", line: 223, anchor: /const update = await this\.loadUpdate\(u\.orgId, projectId, updateId\);/, note: "binds updateId to projectId via loadUpdate before deleting" },
+      { file: "src/modules/build/updates/updates.service.ts", line: 233, anchor: /\.where\(and\(eq\(projectUpdates\.id, updateId\), eq\(projectUpdates\.orgId, u\.orgId\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
     ],
   },
   {

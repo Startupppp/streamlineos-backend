@@ -18,7 +18,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketsTransferService } from "./tickets/projects-tickets-transfer.service";
 import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
-import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { BuildAutomationRunnerService } from "./automation/build-automation-runner.service";
 import type { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { NotificationsService } from "../../notifications/notifications.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -26,7 +26,7 @@ import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { resolveValidTicketStatuses } from "./tickets/ticket-status.util";
-import { resolveProjectAccess } from "./project-access";
+import { resolveProjectAccess } from "./project-crud/project-access";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];

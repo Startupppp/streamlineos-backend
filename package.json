@@ -206,6 +206,8 @@
     "check:list-projections:self-test": "node scripts/check-list-response-projections.mjs --self-test",
     "check:ticket-write-module": "node src/scripts/check-ticket-write-module.mjs",
     "check:ticket-write-module:self-test": "node src/scripts/check-ticket-write-module.mjs --self-test",
+    "check:build-core-surface": "node src/scripts/check-build-core-surface.mjs",
+    "check:build-core-surface:self-test": "node src/scripts/check-build-core-surface.mjs --self-test",
     "check:distinct-order-by": "node src/scripts/check-distinct-order-by.mjs",
     "check:distinct-order-by:self-test": "node src/scripts/check-distinct-order-by.mjs --self-test",
     "check:relation-hydration": "node src/scripts/check-relation-hydration.mjs",

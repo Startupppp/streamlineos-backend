@@ -9,7 +9,7 @@ import { ProjectsActivityService } from "../projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
-import { BuildAutomationRunnerService } from "../build-automation-runner.service";
+import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { AccessService } from "../../../access/access.service";
 import { updateTicketSchema } from "../dto/projects.schemas";
 

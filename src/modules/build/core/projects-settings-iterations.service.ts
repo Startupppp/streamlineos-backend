@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { assertProjectInOrg } from "./project-access";
+import { assertProjectInOrg } from "./project-crud/project-access";
 import type { UpdateIterationSettingsInput } from "./dto/iterations-settings.schemas";
 
 export interface IterationSettings {

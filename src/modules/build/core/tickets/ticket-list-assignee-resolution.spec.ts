@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { WORK_ROW_SELECTION } from "../projects-work-query-helpers";
+import { WORK_ROW_SELECTION } from "../work-query/projects-work-query-helpers";
 
 const dialect = new PgDialect();
 

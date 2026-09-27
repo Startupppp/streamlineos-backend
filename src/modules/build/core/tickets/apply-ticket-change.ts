@@ -14,9 +14,9 @@ import type { NotificationDispatchService } from "../../../notifications/notific
 import type { ProjectsActivityService } from "../projects-activity.service";
 import type { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import type { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
-import type { BuildAutomationRunnerService } from "../build-automation-runner.service";
+import type { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
-import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-access";
+import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
 import type { UpdateTicketInput } from "../dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
 import { computeNextRunAt } from "../projects-recurrence.util";

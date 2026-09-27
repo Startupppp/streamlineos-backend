@@ -7,7 +7,7 @@ import { AccessService } from "../../../access/access.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { resolveTicketsScope, ticketScope } from "./tickets-scope";
-import { resolveProjectAccess } from "../project-access";
+import { resolveProjectAccess } from "../project-crud/project-access";
 import {
   ProjectsForbiddenTicketException,
   ProjectsTicketNotFoundException,

@@ -5,7 +5,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { AccessService } from "../../access/access.service";
 import { humanSessionPrincipal, systemJobPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectInOrg, resolveProjectAccess } from "./project-access";
+import { assertProjectInOrg, resolveProjectAccess } from "./project-crud/project-access";
 import { assertProjectAggregateAccess } from "./build-project-aggregate-access";
 
 jest.mock("./project-access", () => ({ resolveProjectAccess: jest.fn(), assertProjectInOrg: jest.fn() }));

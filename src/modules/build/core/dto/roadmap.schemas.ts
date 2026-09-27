@@ -10,7 +10,7 @@ import {
   RICE_IMPACT_MIN,
   RICE_REACH_MAX,
   RICE_REACH_MIN,
-} from "../roadmap-prioritization";
+} from "../roadmap/roadmap-prioritization";
 
 const riceReachField = z.number().int().min(RICE_REACH_MIN).max(RICE_REACH_MAX);
 const riceImpactField = z.number().int().min(RICE_IMPACT_MIN).max(RICE_IMPACT_MAX);

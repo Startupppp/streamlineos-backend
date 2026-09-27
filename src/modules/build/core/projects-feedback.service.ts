@@ -4,8 +4,8 @@ import { feedbackPosts, feedbackVotes } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { assertLinkedRoadmapItemInOrg } from "./roadmap-references";
-import { loadCrmAccountSnapshot } from "./roadmap-accounts";
+import { assertLinkedRoadmapItemInOrg } from "./roadmap/roadmap-references";
+import { loadCrmAccountSnapshot } from "./roadmap/roadmap-accounts";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import type {
   CreateFeedbackInput,

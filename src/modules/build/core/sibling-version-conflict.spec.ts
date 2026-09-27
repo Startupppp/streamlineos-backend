@@ -3,7 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { TicketVersionConflictException } from "./tickets/ticket-version-conflict.exception";
 import { MilestonesService } from "../execution/workspace.service";
 import { ProjectsReleasesService } from "./projects-releases.service";
-import { ProjectsRoadmapService } from "./projects-roadmap.service";
+import { ProjectsRoadmapService } from "./roadmap/projects-roadmap.service";
 import { AccessService } from "../../access/access.service";
 import { systemActor } from "../../../common/auth/system-actor";
 

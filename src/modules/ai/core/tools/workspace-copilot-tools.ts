@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { CalendarService } from "../../../calendar/calendar.service";
 import { ChatSearchService } from "../../../chat/chat-search.service";
-import { ProjectsWorkQueryService } from "../../../build/core/projects-work-query.service";
+import { ProjectsWorkQueryService } from "../../../build/core";
 import { resolvePeopleByName } from "../../../directory/person-seam";
 import {
   defineTool,

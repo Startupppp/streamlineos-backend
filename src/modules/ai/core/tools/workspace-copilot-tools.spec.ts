@@ -10,7 +10,7 @@ import type { AskOsToolDefinition, AskOsToolRunContext } from "../registry/ask-o
 import { ScopedRead } from "../../../access/scoped-read";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import type { ProjectsWorkQueryService } from "../../../build/core/projects-work-query.service";
+import type { ProjectsWorkQueryService } from "../../../build/core";
 import { resolvePeopleByName, type PersonNameResolution } from "../../../directory/person-seam";
 
 const resolveNames = jest.mocked(resolvePeopleByName);

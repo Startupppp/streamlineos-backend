@@ -16,7 +16,7 @@ import { NotificationsService } from "../../../notifications/notifications.servi
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { AccessService } from "../../../access/access.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
-import { resolveProjectAccess } from "../project-access";
+import { resolveProjectAccess } from "../project-crud/project-access";
 import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { ScopedWhere } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";

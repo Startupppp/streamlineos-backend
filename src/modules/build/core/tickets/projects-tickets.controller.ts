@@ -24,8 +24,8 @@ import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
-import { ProjectsSearchService } from "../projects-search.service";
-import { ProjectsWorkQueryService } from "../projects-work-query.service";
+import { ProjectsSearchService } from "../project-crud/projects-search.service";
+import { ProjectsWorkQueryService } from "../work-query/projects-work-query.service";
 import {
   allWorkQuerySchema,
   bulkUpdateSchema,

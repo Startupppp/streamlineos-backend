@@ -4,7 +4,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { Db } from "../../../../db/drizzle.types";
 import { tickets } from "../../../../db/schema";
 import type { AccessService } from "../../../access/access.service";
-import { resolveProjectAccess } from "../project-access";
+import { resolveProjectAccess } from "../project-crud/project-access";
 import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 
 export async function lockProjectTicketMutation(db: Db, orgId: string, projectId: number) {

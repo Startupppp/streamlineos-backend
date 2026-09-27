@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import * as schema from "../../../db/schema";
 import { projects, tickets } from "../../../db/schema";
-import { allCountByStatusQuery, ProjectsWorkQueryService } from "./projects-work-query.service";
+import { allCountByStatusQuery, ProjectsWorkQueryService } from "./work-query/projects-work-query.service";
 import { mineCountByStatusSql } from "./work-scope-union";
 import { reachableProjectsSql } from "../reachability/project-reachability";
 import type { Db } from "../../../db/drizzle.module";

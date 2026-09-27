@@ -9,7 +9,7 @@ export default [
       "None: a changeRequestId belonging to a different project 404s at getChangeRequest before any affected-item row is read.",
     evidence: [
       { file: "src/modules/build/client-portal/change-request-affected-items.service.ts", line: 68, anchor: /await this\.changeRequests\.getChangeRequest\(u, projectId, changeRequestId\);/, note: "binds the change request to id+orgId+projectId; 404 on mismatch" },
-      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 165, anchor: /eq\(changeRequests\.projectId, projectId\),/, note: "getChangeRequest's own WHERE re-binds projectId" },
+      { file: "src/modules/build/client-portal/change-requests.service.ts", line: 166, anchor: /eq\(changeRequests\.projectId, projectId\),/, note: "getChangeRequest's own WHERE re-binds projectId" },
     ],
   },
   {

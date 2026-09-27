@@ -6,7 +6,7 @@ import type { SQL } from "drizzle-orm";
 import { SelfWorkTools } from "./self-work-tools";
 import { REFERRAL_CAP } from "./lib/tool-read-caps";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { ProjectsWorkQueryService } from "../../../build/core/projects-work-query.service";
+import { ProjectsWorkQueryService } from "../../../build/core";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { AskOsActor } from "../services/ask-os-actor";

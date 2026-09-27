@@ -542,7 +542,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
   it("turns red against a route whose tenant binding has been removed", async () => {
     await refreshTokens();
     const { ProjectsQueryService } = (await import(
-      "src/modules/build/core/projects-query.service"
+      "src/modules/build/core"
     )) as { ProjectsQueryService: new (...args: never[]) => { getProject: unknown } };
     const service = seeded.app.get(ProjectsQueryService);
     const original = service.getProject;

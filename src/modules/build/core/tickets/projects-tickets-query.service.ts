@@ -12,7 +12,7 @@ import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils
 import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
 import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "./build-ticket-mutation-policy";
 import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
-import { BuildAutomationRunnerService } from "../build-automation-runner.service";
+import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 
 @Injectable()
 export class ProjectsTicketsQueryService {

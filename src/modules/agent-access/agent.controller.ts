@@ -6,13 +6,17 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Public } from "../../common/auth/public.decorator";
 import { AgentTokenGuard } from "./agent-token.guard";
 import { AgentAccessService } from "./agent-access.service";
-import { ProjectsQueryService } from "../build/core/projects-query.service";
-import { ProjectsProvisionService } from "../build/core/projects-provision.service";
-import { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
-import { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
-import { ProjectsTicketsReadService } from "../build/core/tickets/projects-tickets-read.service";
-import { ProjectsWorkQueryService } from "../build/core/projects-work-query.service";
-import { ProjectsTicketSubresourcesService } from "../build/core/tickets/projects-ticket-subresources.service";
+import {
+  ProjectsProvisionService,
+  ProjectsQueryService,
+  ProjectsWorkQueryService,
+} from "../build/core";
+import {
+  ProjectsTicketsCreateService,
+  ProjectsTicketsReadService,
+  ProjectsTicketsService,
+  ProjectsTicketSubresourcesService,
+} from "../build/core/tickets";
 import {
   listProjectsSchema,
   createProjectSchema,

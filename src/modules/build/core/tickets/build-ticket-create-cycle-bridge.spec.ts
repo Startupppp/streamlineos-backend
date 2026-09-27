@@ -3,7 +3,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import { createTicketSchema } from "../dto/ticket.schemas";
 import * as actorSeam from "../../../../common/organization/organization-actor";
-import * as projectAccessSeam from "../project-access";
+import * as projectAccessSeam from "../project-crud/project-access";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";

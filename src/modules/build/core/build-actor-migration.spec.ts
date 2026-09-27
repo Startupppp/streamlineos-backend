@@ -12,7 +12,7 @@ import type { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import * as projectAccessSeam from "./project-access";
+import * as projectAccessSeam from "./project-crud/project-access";
 
 jest.mock("../../../common/organization/organization-actor", () => ({
   assertOrganizationActor: jest.fn(),
@@ -344,7 +344,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
 
 describe("project-scope read — filter unchanged by actor expansion", () => {
   it("resolveProjectsScope still uses the build:manage permission key", async () => {
-    const { resolveProjectsScope, PROJECTS_MANAGE_PERMISSION } = await import("./projects-scope");
+    const { resolveProjectsScope, PROJECTS_MANAGE_PERMISSION } = await import("./project-crud/projects-scope");
     const mockAccess = { scopeFor: jest.fn().mockResolvedValue("all") } as unknown as AccessService;
     await resolveProjectsScope(mockAccess, makeUser({ isOrgOwner: false }));
     expect(mockAccess.scopeFor).toHaveBeenCalledWith(

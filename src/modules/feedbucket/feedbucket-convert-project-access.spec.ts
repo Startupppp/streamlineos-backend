@@ -5,12 +5,12 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
 
-jest.mock("../build/core/project-access", () => ({
+jest.mock("../build/core", () => ({
   assertProjectAccess: jest.fn(),
   assertProjectInOrg: jest.fn(),
 }));
 
-import { assertProjectAccess } from "../build/core/project-access";
+import { assertProjectAccess } from "../build/core";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 
 const ORG = "org-1";

@@ -9,7 +9,7 @@ import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
-import { BuildAutomationRunnerService } from "../build-automation-runner.service";
+import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { AccessService } from "../../../access/access.service";
 
 it.each(["parentTicketId", "epicId"] as const)("rejects an inverse %s edge committed while the request awaited serialization", async field => {

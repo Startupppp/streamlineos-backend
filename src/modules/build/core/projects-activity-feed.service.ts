@@ -11,7 +11,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectInOrg } from "./project-access";
+import { assertProjectInOrg } from "./project-crud/project-access";
 import {
   buildCursorPage,
   decodeCursor,

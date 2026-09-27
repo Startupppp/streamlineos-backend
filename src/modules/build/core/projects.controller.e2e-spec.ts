@@ -3,7 +3,7 @@ import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 import { DRIZZLE } from "src/db/drizzle.constants";
-import { ProjectsQueryService } from "./projects-query.service";
+import { ProjectsQueryService } from "./project-crud/projects-query.service";
 
 const projectsQuerySvc = {
   listProjects: jest.fn(),

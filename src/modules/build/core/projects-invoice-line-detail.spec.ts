@@ -1,6 +1,6 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
-import { ProjectsWriteService } from "./projects-write.service";
+import { ProjectsWriteService } from "./project-crud/projects-write.service";
 import { ProjectsController } from "./projects.controller";
 import { REQUIRE_PERMISSION } from "../../../common/rbac/require-permission-key";
 import { VALIDATION_SCHEMAS } from "../../../common/validation/validate.decorator";

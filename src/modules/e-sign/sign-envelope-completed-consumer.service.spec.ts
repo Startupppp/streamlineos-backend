@@ -5,7 +5,7 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
 import { QuotesLifecycleService } from "../quotes/quotes-lifecycle.service";
-import { ProjectsProvisionService } from "../build/core/projects-provision.service";
+import { ProjectsProvisionService } from "../build/core";
 
 const ORG_ID = "org-sign-1";
 const EVENT_ID = "evt-sign-aaa";

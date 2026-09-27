@@ -8,7 +8,7 @@ import { ProjectsActivityService } from "../projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
-import { BuildAutomationRunnerService } from "../build-automation-runner.service";
+import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { AccessService } from "../../../access/access.service";
 import type { UpdateTicketInput } from "../dto/projects.schemas";
 import { applyTicketChange } from "./apply-ticket-change";

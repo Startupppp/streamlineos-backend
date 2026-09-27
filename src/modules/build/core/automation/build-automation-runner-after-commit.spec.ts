@@ -1,0 +1,140 @@
+import { Test, type TestingModule } from "@nestjs/testing";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
+import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
+import { RateLimitService } from "../../../../common/ratelimit/rate-limit.service";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import {
+  runWithTenantContext,
+  type AfterCommitHook,
+  type TenantContext,
+} from "../../../../common/tenant/tenant-context";
+import type { TenantTx } from "../../../../db/drizzle.types";
+
+const noopHistory = { recordRun: jest.fn().mockResolvedValue(null), recordRunActions: jest.fn().mockResolvedValue(undefined) };
+const allowAllRateLimiter = { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) };
+
+const TICKET = {
+  ticketId: 10,
+  projectId: 1,
+  orgId: "org-1",
+  status: "TODO",
+  priority: "MEDIUM",
+  assigneeId: null,
+  title: "Fix bug",
+  type: "TASK",
+};
+
+const RULE = {
+  id: 1,
+  conditions: [],
+  actions: [{ type: "set_status", value: "IN_PROGRESS" }],
+  createdBy: "user-1",
+};
+
+function flush(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 20));
+}
+
+describe("BuildAutomationRunnerService — automations are deferred past the request commit", () => {
+  let service: BuildAutomationRunnerService;
+
+  const dbSelect = { from: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue([RULE]) };
+  const updateWhere = jest.fn().mockResolvedValue(undefined);
+  const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+  const mockDb = {
+    transaction: jest.fn(),
+    execute: jest.fn(),
+    select: jest.fn().mockReturnValue(dbSelect),
+    update: jest.fn().mockReturnValue({ set: updateSet }),
+    insert: jest.fn(),
+    query: {
+      ticketLabels: { findFirst: jest.fn().mockResolvedValue(null) },
+      projectStatuses: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
+    },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockDb.transaction.mockImplementation(async (work: (tx: typeof mockDb) => Promise<unknown>) => work(mockDb));
+    mockDb.execute.mockResolvedValue([]);
+    mockDb.select.mockReturnValue(dbSelect);
+    dbSelect.from.mockReturnThis();
+    dbSelect.where.mockResolvedValue([RULE]);
+    mockDb.update.mockReturnValue({ set: updateSet });
+    updateSet.mockReturnValue({ where: updateWhere });
+    updateWhere.mockResolvedValue(undefined);
+    mockDb.query.projectStatuses.findFirst.mockResolvedValue({ id: 7 });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BuildAutomationRunnerService,
+        BuildAutomationActionExecutor,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: BuildAutomationRunHistoryService, useValue: noopHistory },
+        { provide: RateLimitService, useValue: allowAllRateLimiter },
+      ],
+    }).compile();
+    service = module.get(BuildAutomationRunnerService);
+  });
+
+  /**
+   * The defect: `void this.execute(...)` started the automation on the request's own
+   * transaction and let it race the COMMIT. Whatever had not finished by then ran
+   * against a committed handle with no tenant GUC and died 42501 — the rule silently
+   * did not apply. The fix registers the work as an after-commit hook, which the
+   * interceptor drains inside a fresh tenant transaction.
+   */
+  it("does not touch the database while the request transaction is still open", async () => {
+    const afterCommit: AfterCommitHook[] = [];
+    const context: TenantContext = {
+      orgId: "org-1",
+      audience: "INTERNAL",
+      tx: {} as TenantTx,
+      afterCommit,
+    };
+
+    await runWithTenantContext(context, async () => {
+      service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
+      await flush();
+    });
+
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(mockDb.update).not.toHaveBeenCalled();
+    expect(afterCommit).toHaveLength(1);
+  });
+
+  it("applies the rule once the registered hook is drained after the commit", async () => {
+    const afterCommit: AfterCommitHook[] = [];
+    const context: TenantContext = {
+      orgId: "org-1",
+      audience: "INTERNAL",
+      tx: {} as TenantTx,
+      afterCommit,
+    };
+
+    await runWithTenantContext(context, async () => {
+      service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
+      await flush();
+    });
+
+    for (const hook of afterCommit) await hook();
+
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "IN_PROGRESS" }));
+  });
+
+  /**
+   * Background sweeps run under `forEachOrg`, whose context carries no `afterCommit`
+   * array, so `registerAfterCommit` returns false there. CLAUDE.md §4 requires the
+   * work to run inline in that case rather than being dropped.
+   */
+  it("runs inline when there is no ambient context to defer into", async () => {
+    service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
+    await flush();
+
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+  });
+});

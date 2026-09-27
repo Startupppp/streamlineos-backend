@@ -5,7 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { projectWebhooks, webhookDeliveries } from "../../../db/schema/build/tasks";
 import type { CreateWebhookInput, ListWebhooksQuery, UpdateWebhookInput } from "./dto/webhook.schemas";
 import { generateWebhookSecret } from "./projects-webhooks-dispatch.service";
-import { assertProjectInOrg } from "./project-access";
+import { assertProjectInOrg } from "./project-crud/project-access";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 
 const PAGE_SIZE = 50;

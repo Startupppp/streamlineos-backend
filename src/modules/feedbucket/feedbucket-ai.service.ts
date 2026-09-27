@@ -20,7 +20,7 @@ import { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tic
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { StorageService } from "../storage/storage.service";
 import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
-import { assertProjectAccess } from "../build/core/project-access";
+import { assertProjectAccess } from "../build/core";
 import { AccessService } from "../access/access.service";
 import { resolveFeedbucketTicketTarget } from "./feedbucket-ticket-routing";
 import type { ConvertToTicketInput } from "./feedbucket.schemas";

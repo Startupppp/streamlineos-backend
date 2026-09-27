@@ -23,7 +23,7 @@ import { CacheService } from "../../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NotificationsService } from "../../../notifications/notifications.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
-import { BuildAutomationRunnerService } from "../build-automation-runner.service";
+import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
@@ -34,7 +34,7 @@ import { normalizeTicketType } from "./tickets-helpers";
 import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { AccessService } from "../../../access/access.service";
-import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-access";
+import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
 
 @Injectable()
 export class ProjectsTicketsCreateService {

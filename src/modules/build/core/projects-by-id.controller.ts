@@ -17,8 +17,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ParseResourceIdPipe } from "../../../common/pipes/parse-resource-id.pipe";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { ProjectsQueryService } from "./projects-query.service";
-import { ProjectsWriteService } from "./projects-write.service";
+import { ProjectsQueryService } from "./project-crud/projects-query.service";
+import { ProjectsWriteService } from "./project-crud/projects-write.service";
 import {
   linkManagedProductSchema,
   updateProjectSchema,

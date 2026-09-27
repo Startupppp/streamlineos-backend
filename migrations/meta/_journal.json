@@ -6373,13 +6373,6 @@
       "breakpoints": true
     },
     {
-      "idx": 1140,
-      "version": "7",
-      "when": 1803000010495,
-      "tag": "1396_build_sprint_cycle_chain_repair",
-      "breakpoints": true
-    },
-    {
       "idx": 1038,
       "version": "7",
       "when": 1803000010500,
@@ -7091,6 +7084,13 @@
       "version": "7",
       "when": 1803093628725,
       "tag": "1360_retire_app_search_kb_chunk_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 1140,
+      "version": "7",
+      "when": 1803093629225,
+      "tag": "1396_build_sprint_cycle_chain_repair",
       "breakpoints": true
     },
     {

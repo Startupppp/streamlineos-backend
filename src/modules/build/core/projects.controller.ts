@@ -18,9 +18,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ParseResourceIdPipe } from "../../../common/pipes/parse-resource-id.pipe";
-import { ProjectsQueryService } from "./projects-query.service";
-import { ProjectsProvisionService } from "./projects-provision.service";
-import { ProjectsWriteService } from "./projects-write.service";
+import { ProjectsQueryService } from "./project-crud/projects-query.service";
+import { ProjectsProvisionService } from "./project-crud/projects-provision.service";
+import { ProjectsWriteService } from "./project-crud/projects-write.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import {
   createLabelSchema,

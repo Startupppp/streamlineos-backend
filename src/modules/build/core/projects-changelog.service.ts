@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { ChangelogListQuery, CreateChangelogInput, UpdateChangelogInput } from "./dto/projects.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { assertLinkedRoadmapItemInOrg } from "./roadmap-references";
+import { assertLinkedRoadmapItemInOrg } from "./roadmap/roadmap-references";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 @Injectable()

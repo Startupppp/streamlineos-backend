@@ -42,7 +42,7 @@ import {
   deriveFeedbackTicketTitle,
   resolveFeedbucketTicketTarget,
 } from "./feedbucket-ticket-routing";
-import { assertProjectAccess } from "../build/core/project-access";
+import { assertProjectAccess } from "../build/core";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 

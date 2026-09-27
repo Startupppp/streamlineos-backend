@@ -10,7 +10,7 @@
  */
 
 import { NotFoundException } from "@nestjs/common";
-import { ProjectsProvisionService } from "../projects-provision.service";
+import { ProjectsProvisionService } from "../project-crud/projects-provision.service";
 
 const OWNER_ORG = "org-owner-projects";
 const ATTACKER_ORG = "org-attacker-projects";

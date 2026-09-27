@@ -9,7 +9,7 @@ import type { AskOsActor } from "../services/ask-os-actor";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.module";
-import type { ProjectsWorkQueryService } from "../../../build/core/projects-work-query.service";
+import type { ProjectsWorkQueryService } from "../../../build/core";
 import type { KbDocumentQueryService } from "../../../kb/document-query/kb-document-query.service";
 
 const ACTOR: AskOsActor = {

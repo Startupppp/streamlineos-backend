@@ -14,7 +14,7 @@ import {
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { QuotesLifecycleService } from "../quotes/quotes-lifecycle.service";
-import { ProjectsProvisionService } from "../build/core/projects-provision.service";
+import { ProjectsProvisionService } from "../build/core";
 
 const payloadSchema = z.object({
   envelopeId: z.number().int(),

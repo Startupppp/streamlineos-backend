@@ -20,7 +20,7 @@ import {
   emitBatchStatusChanges,
   validateBatchTransition,
 } from "./build-ticket-batch-workflow";
-import type { TicketEventPayload } from "../build-automation-runner.service";
+import type { TicketEventPayload } from "../automation/build-automation-runner.service";
 
 export interface RankTicketEffectDeps {
   readonly webhooksDispatch: {

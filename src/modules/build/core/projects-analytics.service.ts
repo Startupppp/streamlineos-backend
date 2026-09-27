@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
-import { assertProjectInOrg } from "./project-access";
+import { assertProjectInOrg } from "./project-crud/project-access";
 import {
   type ProjectAnalyticsQuery,
 } from "./dto/analytics.schemas";

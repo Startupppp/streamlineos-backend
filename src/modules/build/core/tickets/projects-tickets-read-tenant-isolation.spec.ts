@@ -1,6 +1,6 @@
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { resolveProjectAccess } from "../project-access";
+import { resolveProjectAccess } from "../project-crud/project-access";
 
 function memberThenTeamChain(memberRows: unknown[], teamRows: unknown[]): jest.Mock {
   const memberChain = {
