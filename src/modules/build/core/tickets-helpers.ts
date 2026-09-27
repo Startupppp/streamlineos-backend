@@ -1,21 +1,12 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { NotFoundException } from "@nestjs/common";
 import { ticketTypeEnum, tickets } from "../../../db/schema";
+import type { Db } from "../../../db/drizzle.types";
 
 type TicketType = (typeof ticketTypeEnum.enumValues)[number];
 
-export interface TicketVersionSource {
-  select(columns: Record<string, unknown>): {
-    from(table: unknown): {
-      where(condition: unknown): {
-        limit(count: number): PromiseLike<Array<{ version: number }>>;
-      };
-    };
-  };
-}
-
 export async function readTicketVersionForSystemWrite(
-  db: TicketVersionSource,
+  db: Db,
   orgId: string,
   ticketId: number,
 ): Promise<number> {

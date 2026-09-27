@@ -1,63 +1,80 @@
 import { NotFoundException } from "@nestjs/common";
-import {
-  readTicketVersionForSystemWrite,
-  type TicketVersionSource,
-} from "./tickets-helpers";
 
-type Row = { version: number };
+jest.mock("./tickets-helpers", () => ({
+  ...jest.requireActual("./tickets-helpers"),
+  readTicketVersionForSystemWrite: jest.fn(),
+}));
 
-function dbReturning(rows: Row[]): {
-  chain: TicketVersionSource;
-  calls: { limit: number | null };
-} {
-  const calls: { limit: number | null } = { limit: null };
-  const chain = {
-    select: () => chain,
-    from: () => chain,
-    where: () => chain,
-    limit: (n: number) => {
-      calls.limit = n;
-      return Promise.resolve(rows);
+import { readTicketVersionForSystemWrite } from "./tickets-helpers";
+import { ProjectsTicketsService } from "./projects-tickets.service";
+
+const readVersion = jest.mocked(readTicketVersionForSystemWrite);
+
+type UpdateCall = {
+  projectId: number | null;
+  ticketId: number;
+  input: { version?: number; status?: string };
+};
+
+function serviceWithRecordingUpdate() {
+  const calls: UpdateCall[] = [];
+  const update = {
+    updateTicket: (
+      _u: unknown,
+      projectId: number | null,
+      ticketId: number,
+      input: { version?: number; status?: string },
+    ) => {
+      calls.push({ projectId, ticketId, input });
+      return Promise.resolve({ updated: true });
     },
   };
-  return { chain, calls };
+  const service = Object.create(ProjectsTicketsService.prototype);
+  Object.assign(service, { update, db: {} });
+  return { service, calls };
 }
 
-describe("a system actor with no client token reads the current version rather than skipping the compare-and-swap", () => {
-  it("returns the row's current version so the caller can supply it to the compare-and-swap", async () => {
-    const { chain } = dbReturning([{ version: 7 }]);
-    const version = await readTicketVersionForSystemWrite(
-      chain,
-      "org-1",
-      42,
-    );
-    expect(version).toBe(7);
+const ACTOR = { orgId: "org-1", userId: "user-1" };
+
+describe("a system actor with no client token takes the ticket's current version instead of bypassing the compare-and-swap", () => {
+  beforeEach(() => readVersion.mockReset());
+
+  it("passes the version it read straight into the single update path, so system writes use the same compare-and-swap as a client write", async () => {
+    readVersion.mockResolvedValue(7);
+    const { service, calls } = serviceWithRecordingUpdate();
+
+    await service.updateTicketFromSystem(ACTOR, null, 42, { status: "DONE" });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].input.version).toBe(7);
+    expect(calls[0].ticketId).toBe(42);
   });
 
-  it("reads exactly one row, so a system write cannot fan out across a project", async () => {
-    const { chain, calls } = dbReturning([{ version: 3 }]);
-    await readTicketVersionForSystemWrite(chain, "org-1", 42);
-    expect(calls.limit).toBe(1);
+  it("preserves the caller's own fields rather than replacing the body with just the version", async () => {
+    readVersion.mockResolvedValue(3);
+    const { service, calls } = serviceWithRecordingUpdate();
+
+    await service.updateTicketFromSystem(ACTOR, null, 42, { status: "DONE" });
+
+    expect(calls[0].input.status).toBe("DONE");
   });
 
-  it("throws NotFound rather than returning a default version when the ticket is absent or soft-deleted", async () => {
-    const { chain } = dbReturning([]);
+  it("does not write at all when the version read rejects, so an absent or deleted ticket cannot be overwritten", async () => {
+    readVersion.mockRejectedValue(new NotFoundException("Ticket not found"));
+    const { service, calls } = serviceWithRecordingUpdate();
+
     await expect(
-      readTicketVersionForSystemWrite(chain, "org-1", 42),
+      service.updateTicketFromSystem(ACTOR, null, 42, { status: "DONE" }),
     ).rejects.toBeInstanceOf(NotFoundException);
+    expect(calls).toHaveLength(0);
   });
 
-  it("does not coerce a missing row into version zero, which would silently overwrite a live ticket", async () => {
-    const { chain } = dbReturning([]);
-    const outcome = await readTicketVersionForSystemWrite(
-      chain,
-      "org-1",
-      42,
-    ).then(
-      (v) => ({ resolved: v }),
-      (e: unknown) => ({ rejected: e }),
-    );
-    expect(outcome).not.toHaveProperty("resolved");
-    expect(outcome).toHaveProperty("rejected");
+  it("reads the version for the same ticket it is about to write, not a different one", async () => {
+    readVersion.mockResolvedValue(5);
+    const { service } = serviceWithRecordingUpdate();
+
+    await service.updateTicketFromSystem(ACTOR, null, 99, { status: "DONE" });
+
+    expect(readVersion).toHaveBeenCalledWith(expect.anything(), "org-1", 99);
   });
 });
