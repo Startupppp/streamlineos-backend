@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { sql } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { cycles } from "../../../db/schema";
 import { cycleScopeEvents } from "../../../db/schema/build/cycle-events";
@@ -55,22 +56,36 @@ describe("build.cycles is shaped for soft delete", () => {
     expect(columns).toContain("deleted_at");
   });
 
-  it("has no unique index a tombstoned row could collide on, because every unique it declares includes the primary key", () => {
+  it("has no unique index a tombstoned row could collide on: each unique either carries the primary key or excludes deleted rows by predicate", () => {
     const config = getTableConfig(cycles);
     const uniques = [
       ...config.uniqueConstraints.map((u) => ({
         name: u.name,
         columns: u.columns.map((c) => c.name),
+        where: undefined,
       })),
       ...config.indexes
         .filter((index) => index.config.unique)
         .map((index) => ({
           name: index.config.name,
           columns: (index.config.columns ?? []).map((c) => ("name" in c ? c.name : String(c))),
+          where: index.config.where,
         })),
     ];
     expect(uniques.length).toBeGreaterThan(0);
-    for (const unique of uniques) expect(unique.columns).toContain("id");
+    const unsafe = uniques
+      .filter((u) => !u.columns.includes("id") && !predicateExcludesTombstones(u.where))
+      .map((u) => u.name);
+    expect(unsafe).toEqual([]);
+  });
+
+  it("bite proof: the predicate arm is a real check, not a rubber stamp — a partial unique whose predicate ignores the tombstone is still unsafe", () => {
+    expect(predicateExcludesTombstones(undefined)).toBe(false);
+    expect(predicateExcludesTombstones(sql`${cycles.status} = 'active'`)).toBe(false);
+    expect(predicateExcludesTombstones(sql`${cycles.deletedAt} IS NOT NULL`)).toBe(false);
+    expect(
+      predicateExcludesTombstones(sql`${cycles.status} = 'active' AND ${cycles.deletedAt} IS NULL`),
+    ).toBe(true);
   });
 
   it("bite proof: a unique on (org_id, project_id, name) would raise 23505 the second time a name were reused after a soft delete", () => {
