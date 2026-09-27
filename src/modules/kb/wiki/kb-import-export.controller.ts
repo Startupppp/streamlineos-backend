@@ -15,6 +15,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { KbImportExportService } from "./kb-import-export.service";
+import { KbExportService } from "./kb-export.service";
 import {
   exportPageSchema,
   importPagesSchema,
@@ -36,6 +37,7 @@ import {
   kbExportJobListSchema,
   kbExportDownloadSchema,
 } from "./dto/kb-space-response.schemas";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -46,7 +48,10 @@ const jobListQuery = z.object({ cursor: z.string().optional() }).strict();
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbImportExportController {
-  constructor(private readonly importExport: KbImportExportService) {}
+  constructor(
+    private readonly importExport: KbImportExportService,
+    private readonly exportSvc: KbExportService,
+  ) {}
 
   @Post("pages/import")
   @Idempotent("kb:pages.import")
@@ -117,6 +122,7 @@ export class KbImportExportController {
   }
 
   @Post("pages/:pageId/export")
+  @NoTenantTransaction()
   @RequirePermission("kb:pages:export")
   @Validate({ params: pageIdParams, body: exportPageSchema })
   @ResponseSchema(kbExportResultSchema)
@@ -125,7 +131,7 @@ export class KbImportExportController {
     @Body() body: ExportPageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.importExport.exportPage(u, pageId, body);
+    return this.exportSvc.exportPage(u, pageId, body);
   }
 
   @Get("export-jobs")
@@ -136,7 +142,7 @@ export class KbImportExportController {
     @Query("cursor") cursor: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.importExport.listExportJobs(u.orgId, cursor);
+    return this.exportSvc.listExportJobs(u.orgId, cursor);
   }
 
   @Get("export-jobs/:exportJobId/download")
@@ -147,6 +153,6 @@ export class KbImportExportController {
     @Param("exportJobId", ParseIntPipe) exportJobId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.importExport.getExportJobDownload(u.orgId, exportJobId);
+    return this.exportSvc.getExportJobDownload(u.orgId, exportJobId);
   }
 }

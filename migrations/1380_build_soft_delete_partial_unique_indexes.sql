@@ -1,39 +1,68 @@
--- 1380 — Build: Restrict seven unique indexes to undeleted rows only
+-- 1380 — Build: Convert seven full unique indexes to live-only partial indexes
 --
--- Without a WHERE predicate these indexes covered deleted rows, so a soft-
--- deleted team keyed PLAT permanently blocked creating a new PLAT team, a
--- soft-deleted widget burned its public key forever (dead embed endpoint), and
--- so on for risk/decision/CR/form numbers.  The correct form already exists for
--- projects: uniq_projects_org_key uses WHERE deleted_at IS NULL (core.ts:79).
--- This migration copies that pattern seven times.
+-- Production survey 2026-09-27 (rolled-back READ ONLY transaction):
+--   uniq_tickets_project_number          — 14 burned keys (live problem)
+--   uniq_project_teams_org_key           — 0 burned keys (preventive)
+--   uq_project_risks_project_number      — 0 burned keys (preventive)
+--   uq_project_decisions_project_number  — 0 burned keys (preventive)
+--   uq_change_requests_project_number    — 0 burned keys (preventive)
+--   uq_project_forms_project_number      — 0 burned keys (preventive)
+--   uniq_feedbucket_widgets_public_key   — 0 burned keys (preventive)
 --
--- Going from a full unique index to a partial one is strictly weaker: any two
--- rows that collide under the old index are both undeleted (a deleted row has
--- no duplicate relationship with a live row under a live-only index).  The new
--- index cannot fail to build on data satisfying the current one.  No pre-
--- migration survey is needed.
+-- Per-index decision rationale:
 --
--- This migration satisfies both ticket 63 (partial uniqueness for all seven
--- indexes) and ticket 64 (the shared uniq_tickets_project_number index), which
--- both required changes to that one index.  It is the single authoritative
--- migration for uniq_tickets_project_number; migration 1381 handles only the
--- NOT NULL constraint for ticket 64 and does not touch any index.
+--   project_teams (org_id, key) — team key is a display label; restructuring a team
+--   and reassigning its key to a new one is the product use case.  Reuse approved.
+--
+--   tickets (project_id, ticket_number) — 14 keys burned.  Practical number recycling
+--   is still prevented: allocate-ticket-number.ts uses a persistent counter with
+--   GREATEST, plus an all-row MAX(ticket_number) scan.  The partial index removes a
+--   hard uniqueness violation that cannot be healed by any application action.
+--
+--   project_risks, project_decisions, change_requests, project_forms — number
+--   allocators use COALESCE(MAX(col), 0) + 1 over ALL rows including deleted (see
+--   risks.service.ts:155, decisions.service.ts:81, change-requests.service.ts:184,
+--   forms.service.ts:108).  Numbers increase monotonically; practical recycling is
+--   prevented.  Partial uniqueness removes a hard violation that would otherwise fire
+--   if a deleted row were ever restored with an explicit number.
+--
+--   feedbucket_widgets (public_key) — keys are generated as
+--   "fb_" + randomBytes(24).toString("base64url") (feedbucket-widgets.service.ts:49).
+--   Collision probability is ~1/2^144, which is negligible in practice.  Furthermore,
+--   feedbucket-public.service.ts:15 already filters WHERE deleted_at IS NULL and
+--   WHERE is_active = true, so a deleted widget is never resolved; a reissued key
+--   would not send new submissions to the old widget's context.  Preventive only.
+--
+-- Strictly-weaker theorem
+-- Going from a full unique index to a partial one restricted to WHERE deleted_at IS
+-- NULL is strictly weaker: any two rows that would collide under the old index are
+-- both undeleted (a deleted row has no duplicate relationship with a live row under
+-- a live-only index).  The new index cannot fail to build on data satisfying the
+-- current one.  No pre-migration duplicate survey is needed.
+--
+-- This migration satisfies both ticket 63 (partial uniqueness for all seven indexes)
+-- and ticket 64 (the shared uniq_tickets_project_number index).  It is the single
+-- authoritative migration for that index; migration 1381 handles only the NOT NULL
+-- constraint for ticket 64 and does not touch any index.
+--
+-- 3-step swap strategy
+-- Each index conversion uses CREATE-under-temp-name / DROP-canonical / RENAME.
+-- This means there is never a moment with no uniqueness guard:
+--   step 1 (CREATE _new) — both old and new guard exist simultaneously
+--   step 2 (DROP canonical) — new guard (_new) remains active
+--   step 3 (RENAME _new → canonical) — canonical name restored, partial
 --
 -- CONCURRENTLY advisory for the tickets table
--- No CONCURRENTLY keyword appears in this file.  build.tickets is the primary
--- work-item table and is likely the largest in the build schema.  Non-concurrent
--- DROP + CREATE takes a brief ShareLock that blocks writes.  For zero-downtime
--- deployment, run the following pair manually outside a transaction before
--- applying this migration — the IF EXISTS / IF NOT EXISTS guards below then
--- make the pair a no-op:
+-- Step 1 for the tickets index (uniq_tickets_project_number_new) can be pre-built
+-- outside a transaction using CONCURRENTLY.  The IF NOT EXISTS guard makes step 1
+-- here a no-op when that index already exists:
 --
---   DROP INDEX CONCURRENTLY build.uniq_tickets_project_number;
---   CREATE UNIQUE INDEX CONCURRENTLY uniq_tickets_project_number
+--   CREATE UNIQUE INDEX CONCURRENTLY uniq_tickets_project_number_new
 --     ON build.tickets (project_id, ticket_number) WHERE deleted_at IS NULL;
 --
--- All other six tables (project_teams, project_risks, project_decisions,
--- change_requests, project_forms, feedbucket_widgets) are judged small enough
--- that a brief non-concurrent lock is acceptable.
+-- After the manual pre-build, apply this migration as normal.  Steps 2 and 3
+-- complete the swap atomically from the application's perspective.
+-- All other six tables are small enough that a brief non-concurrent lock is safe.
 
 SET lock_timeout = '5s';
 --> statement-breakpoint
@@ -64,53 +93,82 @@ BEGIN
 END $$;
 --> statement-breakpoint
 
-DROP INDEX IF EXISTS build.uniq_project_teams_org_key;
---> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_project_teams_org_key
+-- ====== 1. project_teams: (org_id, key) — 0 burned, preventive ======
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_project_teams_org_key_new
   ON build.project_teams (org_id, key)
   WHERE deleted_at IS NULL;
 --> statement-breakpoint
-
-DROP INDEX IF EXISTS build.uniq_tickets_project_number;
+DROP INDEX IF EXISTS build.uniq_project_teams_org_key;
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_tickets_project_number
+ALTER INDEX IF EXISTS build.uniq_project_teams_org_key_new RENAME TO uniq_project_teams_org_key;
+--> statement-breakpoint
+
+-- ====== 2. tickets: (project_id, ticket_number) — 14 burned, live problem ======
+-- Pre-build step 1 with CONCURRENTLY (see advisory above) before applying.
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_tickets_project_number_new
   ON build.tickets (project_id, ticket_number)
   WHERE deleted_at IS NULL;
 --> statement-breakpoint
-
-DROP INDEX IF EXISTS build.uq_project_risks_project_number;
+DROP INDEX IF EXISTS build.uniq_tickets_project_number;
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS uq_project_risks_project_number
+ALTER INDEX IF EXISTS build.uniq_tickets_project_number_new RENAME TO uniq_tickets_project_number;
+--> statement-breakpoint
+
+-- ====== 3. project_risks: (project_id, risk_number) — 0 burned, preventive ======
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_risks_project_number_new
   ON build.project_risks (project_id, risk_number)
   WHERE deleted_at IS NULL;
 --> statement-breakpoint
-
-DROP INDEX IF EXISTS build.uq_project_decisions_project_number;
+DROP INDEX IF EXISTS build.uq_project_risks_project_number;
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS uq_project_decisions_project_number
+ALTER INDEX IF EXISTS build.uq_project_risks_project_number_new RENAME TO uq_project_risks_project_number;
+--> statement-breakpoint
+
+-- ====== 4. project_decisions: (project_id, decision_number) — 0 burned, preventive ======
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_decisions_project_number_new
   ON build.project_decisions (project_id, decision_number)
   WHERE deleted_at IS NULL;
 --> statement-breakpoint
-
-DROP INDEX IF EXISTS build.uq_change_requests_project_number;
+DROP INDEX IF EXISTS build.uq_project_decisions_project_number;
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS uq_change_requests_project_number
+ALTER INDEX IF EXISTS build.uq_project_decisions_project_number_new RENAME TO uq_project_decisions_project_number;
+--> statement-breakpoint
+
+-- ====== 5. change_requests: (project_id, cr_number) — 0 burned, preventive ======
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_change_requests_project_number_new
   ON build.change_requests (project_id, cr_number)
   WHERE deleted_at IS NULL;
 --> statement-breakpoint
-
-DROP INDEX IF EXISTS build.uq_project_forms_project_number;
+DROP INDEX IF EXISTS build.uq_change_requests_project_number;
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS uq_project_forms_project_number
+ALTER INDEX IF EXISTS build.uq_change_requests_project_number_new RENAME TO uq_change_requests_project_number;
+--> statement-breakpoint
+
+-- ====== 6. project_forms: (project_id, form_number) — 0 burned, preventive ======
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_forms_project_number_new
   ON build.project_forms (project_id, form_number)
   WHERE deleted_at IS NULL;
 --> statement-breakpoint
-
-DROP INDEX IF EXISTS build.uniq_feedbucket_widgets_public_key;
+DROP INDEX IF EXISTS build.uq_project_forms_project_number;
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_feedbucket_widgets_public_key
+ALTER INDEX IF EXISTS build.uq_project_forms_project_number_new RENAME TO uq_project_forms_project_number;
+--> statement-breakpoint
+
+-- ====== 7. feedbucket_widgets: (public_key) — 0 burned, preventive ======
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_feedbucket_widgets_public_key_new
   ON build.feedbucket_widgets (public_key)
   WHERE deleted_at IS NULL;
+--> statement-breakpoint
+DROP INDEX IF EXISTS build.uniq_feedbucket_widgets_public_key;
+--> statement-breakpoint
+ALTER INDEX IF EXISTS build.uniq_feedbucket_widgets_public_key_new RENAME TO uniq_feedbucket_widgets_public_key;
 --> statement-breakpoint
 
 DO $$
@@ -123,6 +181,11 @@ BEGIN
       AND indexdef LIKE '%deleted_at IS NULL%'
   ), '1380 post-check: uniq_project_teams_org_key is not partial';
 
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'build' AND indexname = 'uniq_project_teams_org_key_new'
+  ), '1380 post-check: temp index uniq_project_teams_org_key_new still exists';
+
   ASSERT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE schemaname = 'build'
@@ -130,6 +193,11 @@ BEGIN
       AND indexname = 'uniq_tickets_project_number'
       AND indexdef LIKE '%deleted_at IS NULL%'
   ), '1380 post-check: uniq_tickets_project_number is not partial';
+
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'build' AND indexname = 'uniq_tickets_project_number_new'
+  ), '1380 post-check: temp index uniq_tickets_project_number_new still exists';
 
   ASSERT EXISTS (
     SELECT 1 FROM pg_indexes

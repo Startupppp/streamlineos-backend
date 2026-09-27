@@ -14,12 +14,10 @@ const user: CurrentUserContext = {
 
 const auditMock = { log: jest.fn() };
 const planLimitsMock = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never;
-const authMock = {} as never;
-const storageMock = {} as never;
 
 const FAILED_ITEMS = [
-  { title: "Page A", contentText: "content a", parentPageId: null, externalId: null, externalSource: null },
-  { title: "Page B", contentText: null, parentPageId: null, externalId: "ext-1", externalSource: "confluence" },
+  { title: "Page A", contentText: "content a" },
+  { title: "Page B", externalId: "ext-1", externalSource: "confluence" },
 ];
 
 function makeDb(
@@ -50,17 +48,17 @@ function makeDb(
 }
 
 function service(db: Db): KbImportExportService {
-  return new KbImportExportService(db, auditMock as never, planLimitsMock, authMock, storageMock);
+  return new KbImportExportService(db, auditMock as never, planLimitsMock);
 }
 
 describe("KbImportExportService.retryImportJob — replays only the failed items from a prior run", () => {
-  it("returns a new pending job when the prior job has failed items stored in errorReport.failedItems, so the caller can track the retry separately", async () => {
+  it("returns a new pending job when the prior job has failed items stored in errorReport.retryItems, so the caller can track the retry separately", async () => {
     const db = makeDb({
       id: JOB_ID,
       orgId: ORG,
       status: "completed",
       sourceType: "markdown",
-      errorReport: { failedItems: FAILED_ITEMS },
+      errorReport: { retryItems: FAILED_ITEMS },
     });
     const svc = service(db);
 
@@ -77,7 +75,7 @@ describe("KbImportExportService.retryImportJob — replays only the failed items
     await expect(svc.retryImportJob(user, JOB_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("throws ConflictException when the job has no failedItems in errorReport, because there is nothing to retry", async () => {
+  it("throws ConflictException when the job has no retryItems in errorReport, because there is nothing to retry", async () => {
     const db = makeDb({
       id: JOB_ID,
       orgId: ORG,
@@ -96,7 +94,20 @@ describe("KbImportExportService.retryImportJob — replays only the failed items
       orgId: ORG,
       status: "pending",
       sourceType: "markdown",
-      errorReport: { failedItems: FAILED_ITEMS },
+      errorReport: { retryItems: FAILED_ITEMS },
+    });
+    const svc = service(db);
+
+    await expect(svc.retryImportJob(user, JOB_ID)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("throws ConflictException when the original job had sourceType support_kb, because importPagesSchema only accepts markdown/html/zip and an unretryable sourceType must not create a job", async () => {
+    const db = makeDb({
+      id: JOB_ID,
+      orgId: ORG,
+      status: "failed",
+      sourceType: "support_kb",
+      errorReport: { retryItems: FAILED_ITEMS },
     });
     const svc = service(db);
 

@@ -26,10 +26,6 @@ const sharedAudit = { log: jest.fn() } as unknown as AuditService;
 const sharedPlanLimits = {
   assertWithinLimit: jest.fn().mockResolvedValue(undefined),
 } as unknown as PlanLimitsService;
-const sharedAuth = {
-  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
-  assertPageAccess: jest.fn().mockResolvedValue(undefined),
-};
 
 function makeSelectChain(rows: unknown[] = []) {
   const chain = Object.assign(Promise.resolve(rows), {
@@ -81,7 +77,7 @@ describe("KbImportExportService.importPages — async handoff", () => {
 
   it("creates a pending job, emits kb.import.process, and returns { jobId, status: 'pending' }", async () => {
     const { db, getEventType } = makeAsyncDb();
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
 
     const input: ImportPagesInput = {
       sourceType: "markdown",
@@ -100,7 +96,7 @@ describe("KbImportExportService.importPages — async handoff", () => {
   it("does not insert kb_pages rows — all page inserts happen in the consumer", async () => {
     const { db } = makeAsyncDb();
     const insertMock = db.insert as jest.Mock;
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
 
     const input: ImportPagesInput = {
       sourceType: "markdown",
@@ -128,7 +124,7 @@ describe("KbImportExportService.importPages — pre-flight validation", () => {
       query: { kbSpaces: { findFirst: jest.fn() }, kbPages: { findFirst: jest.fn() } },
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
     const input: ImportPagesInput = {
       sourceType: "markdown",
       items: [{ title: "Bad", contentText: "bin\0ary" }],
@@ -149,7 +145,7 @@ describe("KbImportExportService.importPages — pre-flight validation", () => {
       query: { kbSpaces: { findFirst: jest.fn() }, kbPages: { findFirst: jest.fn() } },
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
     const input: ImportPagesInput = {
       sourceType: "markdown",
       items: [{ title: "X", contentText: "y", parentPageId: 999 }],
@@ -184,7 +180,7 @@ describe("KbImportExportService.getImportJob", () => {
       select: jest.fn().mockReturnValue(makeSelectChain([jobRow])),
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
     const result = await service.getImportJob("org-A", 3);
     expect(result.id).toBe(3);
     expect(result.status).toBe("completed");
@@ -195,7 +191,7 @@ describe("KbImportExportService.getImportJob", () => {
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
     await expect(service.getImportJob("org-A", 999)).rejects.toBeInstanceOf(NotFoundException);
   });
 });
@@ -211,7 +207,7 @@ describe("KbImportExportService.cancelImportJob", () => {
       update: jest.fn().mockReturnValue({ set: updateSet }),
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
     const result = await service.cancelImportJob("org-A", 1);
     expect(result.status).toBe("cancelled");
     expect(updateSetWhere).toHaveBeenCalledTimes(1);
@@ -225,7 +221,7 @@ describe("KbImportExportService.cancelImportJob", () => {
       }),
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
     const result = await service.cancelImportJob("org-A", 1);
     expect(result.status).toBe("cancelled");
     expect(result.message).toContain("processing has already begun");
@@ -236,7 +232,7 @@ describe("KbImportExportService.cancelImportJob", () => {
       select: jest.fn().mockReturnValue(makeSelectChain([{ status: "completed" }])),
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
     await expect(service.cancelImportJob("org-A", 1)).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -245,7 +241,7 @@ describe("KbImportExportService.cancelImportJob", () => {
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits, sharedAuth as never);
+    const service = new KbImportExportService(db, sharedAudit, sharedPlanLimits);
     await expect(service.cancelImportJob("org-A", 999)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

@@ -66,7 +66,7 @@ describe("KbImportExportService.importPages — split transactions (BE-84 connec
       transaction: transactionSpy,
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, audit, planLimits, {} as never);
+    const service = new KbImportExportService(db, audit, planLimits);
 
     const input: ImportPagesInput = {
       sourceType: "markdown",
@@ -109,7 +109,7 @@ describe("KbImportExportService.importPages — split transactions (BE-84 connec
       transaction: transactionSpy,
     } as unknown as Db;
 
-    const service = new KbImportExportService(db, audit, planLimits, {} as never);
+    const service = new KbImportExportService(db, audit, planLimits);
 
     const input: ImportPagesInput = {
       sourceType: "markdown",

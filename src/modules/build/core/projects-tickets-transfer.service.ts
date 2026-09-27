@@ -194,15 +194,17 @@ export class ProjectsTicketsTransferService {
 
       for (let i = 0; i < rowsWithNumbers.length; i += CHUNK_SIZE) {
         const chunk = rowsWithNumbers.slice(i, i + CHUNK_SIZE);
-        try {
-          await tx.insert(tickets).values(chunk.map((r) => r.values));
-          createdCount += chunk.length;
-        } catch (error) {
+        const n = await tx.transaction(async (sp) => {
+          await sp.insert(tickets).values(chunk.map((r) => r.values));
+          return chunk.length;
+        }).catch((error: unknown) => {
           const msg = error instanceof Error ? error.message : "Unknown error";
           for (const r of chunk) {
             skipped.push({ row: r.rowIndex, reason: msg });
           }
-        }
+          return 0;
+        });
+        createdCount += n;
       }
     });
 

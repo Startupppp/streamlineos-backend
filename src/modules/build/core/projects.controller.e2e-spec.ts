@@ -2,13 +2,39 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { ProjectsQueryService } from "./projects-query.service";
+
+const projectsQuerySvc = {
+  listProjects: jest.fn(),
+  getProject: jest.fn(),
+  getProjectLabels: jest.fn(),
+  listLabels: jest.fn(),
+  getResourceAllocation: jest.fn(),
+  getRoadmap: jest.fn(),
+  listTemplates: jest.fn(),
+  getAnalytics: jest.fn(),
+  getBurnup: jest.fn(),
+  getCfd: jest.fn(),
+  getCriticalPath: jest.fn(),
+  getVelocity: jest.fn(),
+  getBudget: jest.fn(),
+  listFeedback: jest.fn(),
+  listChangelog: jest.fn(),
+};
 
 describe("Projects auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: ProjectsQueryService, useValue: projectsQuerySvc },
+      ],
+    });
   });
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -131,10 +157,11 @@ describe("Projects auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("passes the ability gate on GET /build with build:view permission", async () => {
+  it("200 on GET /build with build:view — stub returns list without a DB connection", async () => {
+    projectsQuerySvc.listProjects.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({ permissions: ["build:view"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer()).get("/build").set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(projectsQuerySvc.listProjects).toHaveBeenCalled();
   });
 });

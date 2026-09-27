@@ -94,7 +94,42 @@ describe("KbImportProcessConsumer — failedTitles and errorReport", () => {
 
     const last = updateCalls[updateCalls.length - 1];
     expect(last?.["failedItems"]).toBe(1);
-    expect(last?.["errorReport"]).toEqual({ failedTitles: ["Will Fail"] });
+    expect(last?.["errorReport"]).toMatchObject({ failedTitles: ["Will Fail"] });
+    expect(last?.["errorReport"]).toHaveProperty("retryItems");
+  });
+
+  it("does not store contentText in retryItems when job has fileKey, because the source file can be re-read on retry rather than duplicating its content in the job row", async () => {
+    const updateCalls: Array<Record<string, unknown>> = [];
+    let selectCount = 0;
+    const tx = {
+      select: jest.fn().mockImplementation(() => {
+        selectCount++;
+        return makeSelectChain(selectCount === 1 ? [{ status: "pending", fileKey: "uploads/org-A/import.zip" }] : []);
+      }),
+      update: jest.fn().mockImplementation(() => ({
+        set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+          updateCalls.push(vals);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoNothing: jest.fn().mockReturnValue({
+            returning: jest.fn().mockRejectedValue(new Error("constraint violation")),
+          }),
+        }),
+      }),
+    };
+    rint().mockImplementation((_: unknown, __: string, fn: (t: unknown) => Promise<unknown>) => fn(tx));
+
+    const consumer = new KbImportProcessConsumer({} as Db, sharedRegistry, sharedAudit, { commitManyPageChanges: jest.fn().mockResolvedValue(undefined), commitPageChange: jest.fn().mockResolvedValue(undefined) } as never);
+    await consumer.handle(makeEvent([{ title: "Will Fail", contentText: "body text" }]));
+
+    const last = updateCalls[updateCalls.length - 1];
+    const retryItems = (last?.["errorReport"] as Record<string, unknown>)?.["retryItems"] as Array<Record<string, unknown>>;
+    expect(Array.isArray(retryItems)).toBe(true);
+    expect(retryItems[0]).not.toHaveProperty("contentText");
+    expect(retryItems[0]).toHaveProperty("title", "Will Fail");
   });
 
   it("returns an empty failedTitles array when every item succeeds", async () => {

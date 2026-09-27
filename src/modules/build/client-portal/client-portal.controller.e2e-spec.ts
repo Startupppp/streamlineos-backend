@@ -2,15 +2,50 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { ClientPortalService } from "./client-portal.service";
+import { ChangeRequestsService } from "./change-requests.service";
+import { ClientVisibilityService } from "./client-visibility.service";
+
+const clientPortalSvc = {
+  listPortalProjects: jest.fn(),
+  getProjectOverview: jest.fn(),
+  listPortalChangeRequests: jest.fn(),
+  createPortalChangeRequest: jest.fn(),
+};
+
+const changeRequestsSvc = {
+  listChangeRequests: jest.fn(),
+  getChangeRequest: jest.fn(),
+  createChangeRequest: jest.fn(),
+  updateChangeRequest: jest.fn(),
+  deleteChangeRequest: jest.fn(),
+};
+
+const clientVisibilitySvc = {
+  getVisibilitySummary: jest.fn(),
+  toggleTicketVisibility: jest.fn(),
+  toggleMilestoneVisibility: jest.fn(),
+  toggleCommentVisibility: jest.fn(),
+  toggleAttachmentVisibility: jest.fn(),
+};
 
 describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: ClientPortalService, useValue: clientPortalSvc },
+        { provide: ChangeRequestsService, useValue: changeRequestsSvc },
+        { provide: ClientVisibilityService, useValue: clientVisibilitySvc },
+      ],
+    });
   });
 
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -126,7 +161,8 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT 401/403 on GET /projects/portal/projects with projects:portal:view ability", async () => {
+  it("200 on GET /build/portal/projects with build:portal:view — stub returns list without a DB connection", async () => {
+    clientPortalSvc.listPortalProjects.mockResolvedValue([]);
     const token = await signToken({
       permissions: ["build:portal:view"],
       enabledModules: ["build"],
@@ -134,24 +170,25 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
     const res = await request(app.getHttpServer())
       .get("/build/portal/projects")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(clientPortalSvc.listPortalProjects).toHaveBeenCalled();
   });
 
-  it("does NOT 401/403 on POST /projects/1/change-requests with projects:changerequests:create ability", async () => {
+  it("200 on GET /build/1/change-requests with build:changerequests:view — stub returns list without a DB connection", async () => {
+    changeRequestsSvc.listChangeRequests.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
-      permissions: ["build:changerequests:create"],
+      permissions: ["build:changerequests:view"],
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .post("/build/1/change-requests")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Add OAuth" });
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+      .get("/build/1/change-requests")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(changeRequestsSvc.listChangeRequests).toHaveBeenCalled();
   });
 
-  it("does NOT 401/403 on GET /projects/1/client-visibility with projects:clientvisibility:manage ability", async () => {
+  it("200 on GET /build/1/client-visibility with build:clientvisibility:manage — stub returns summary without a DB connection", async () => {
+    clientVisibilitySvc.getVisibilitySummary.mockResolvedValue({ tickets: [], milestones: [], comments: [], attachments: [] });
     const token = await signToken({
       permissions: ["build:clientvisibility:manage"],
       enabledModules: ["build"],
@@ -159,7 +196,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
     const res = await request(app.getHttpServer())
       .get("/build/1/client-visibility")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(clientVisibilitySvc.getVisibilitySummary).toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import { KbImportExportService } from "./kb-import-export.service";
+import { KbExportService } from "./kb-export.service";
 import type { Db } from "../../../db/drizzle.module";
 
 const ORG = "org-1";
@@ -10,8 +10,6 @@ const PAST_EXPIRES = new Date(Date.now() - 1000);
 const SIGNED_URL = "https://r2.example.com/signed?token=abc";
 
 const auditMock = { log: jest.fn() };
-const planLimitsMock = {} as never;
-const authMock = {} as never;
 const storageMock = {
   getFileUrl: jest.fn().mockResolvedValue(SIGNED_URL),
 };
@@ -28,11 +26,11 @@ function makeDb(jobRow: Record<string, unknown> | null): Db {
   } as unknown as Db;
 }
 
-function service(db: Db): KbImportExportService {
-  return new KbImportExportService(db, auditMock as never, planLimitsMock, authMock, storageMock as never);
+function service(db: Db): KbExportService {
+  return new KbExportService(db, auditMock as never, {} as never, storageMock as never);
 }
 
-describe("KbImportExportService.getExportJobDownload — presigned URL for a completed export file", () => {
+describe("KbExportService.getExportJobDownload — presigned URL for a completed export file", () => {
   it("returns a signed URL that expires when the job expires, not a fresh maximum-lifetime URL", async () => {
     const db = makeDb({
       id: JOB_ID,

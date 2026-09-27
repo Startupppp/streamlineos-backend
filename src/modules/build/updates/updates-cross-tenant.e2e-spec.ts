@@ -3,6 +3,7 @@ import { NotFoundException } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
 import { UpdatesService } from "./updates.service";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
 
@@ -10,6 +11,7 @@ const updatesMock = {
   listUpdates: jest.fn(),
   createUpdate: jest.fn(),
   softDeleteUpdate: jest.fn(),
+  editUpdate: jest.fn(),
 };
 
 describe("ProjectUpdates cross-tenant and no-membership denial (e2e)", () => {
@@ -17,7 +19,10 @@ describe("ProjectUpdates cross-tenant and no-membership denial (e2e)", () => {
 
   beforeAll(async () => {
     app = await createE2eApp({
-      overrides: [{ provide: UpdatesService, useValue: updatesMock }],
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: UpdatesService, useValue: updatesMock },
+      ],
     });
   });
 
@@ -53,12 +58,26 @@ describe("ProjectUpdates cross-tenant and no-membership denial (e2e)", () => {
     expect(res.status).not.toBe(403);
   });
 
+  it("200 on GET /build/1/updates for an authorized caller — stub returns list without a DB connection", async () => {
+    updatesMock.listUpdates.mockResolvedValue({ items: [], nextCursor: null });
+    const token = await signToken({
+      permissions: ["build:updates:view"],
+      enabledModules: ALL_MODULES,
+    });
+    const res = await request(app.getHttpServer())
+      .get("/build/1/updates")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(updatesMock.listUpdates).toHaveBeenCalled();
+  });
+
   describe("when the caller's org membership is inactive", () => {
     let inactiveApp: INestApplication;
 
     beforeAll(async () => {
       inactiveApp = await createE2eApp({
         overrides: [
+          { provide: DRIZZLE, useValue: {} },
           {
             provide: MembershipStateService,
             useValue: {

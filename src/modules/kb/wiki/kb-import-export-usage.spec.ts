@@ -108,7 +108,7 @@ describe("KbImportExportService.importPages — target space validation", () => 
 
   it("throws NotFoundException when the requested space does not belong to the caller's org", async () => {
     const db = makeDb({ spaceRow: null });
-    const service = new KbImportExportService(db, audit, planLimits, {} as never);
+    const service = new KbImportExportService(db, audit, planLimits);
     const input: ImportPagesInput = {
       sourceType: "markdown",
       items: [{ title: "X", contentText: "y" }],

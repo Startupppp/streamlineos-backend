@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import { KbImportExportService } from "./kb-import-export.service";
+import { KbExportService } from "./kb-export.service";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -11,16 +11,9 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
-describe("KbImportExportService — cross-tenant isolation", () => {
+describe("KbExportService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-
-  const audit = {} as never;
-  const planLimits = {} as never;
-  const authMock = {
-    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
-    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
-  };
 
   function makeDb() {
     const wheres: unknown[] = [];
@@ -47,7 +40,7 @@ describe("KbImportExportService — cross-tenant isolation", () => {
 
   it("scopes export job list to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbImportExportService(db, audit, planLimits, authMock as never);
+    const svc = new KbExportService(db, {} as never, {} as never, {} as never);
 
     await svc.listExportJobs(ATTACKER);
 
@@ -59,7 +52,7 @@ describe("KbImportExportService — cross-tenant isolation", () => {
 
   it("returns a cursor page for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbImportExportService(db, audit, planLimits, authMock as never);
+    const svc = new KbExportService(db, {} as never, {} as never, {} as never);
 
     const result = await svc.listExportJobs(OWNER);
 

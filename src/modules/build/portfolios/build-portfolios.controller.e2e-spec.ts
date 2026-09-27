@@ -2,13 +2,43 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { PortfoliosService } from "./portfolios.service";
+import { ProgramsService } from "./programs.service";
+
+const portfoliosSvc = {
+  listPortfolios: jest.fn(),
+  getPortfolio: jest.fn(),
+  createPortfolio: jest.fn(),
+  updatePortfolio: jest.fn(),
+  deletePortfolio: jest.fn(),
+  linkProject: jest.fn(),
+  unlinkProject: jest.fn(),
+};
+
+const programsSvc = {
+  listPrograms: jest.fn(),
+  getProgram: jest.fn(),
+  createProgram: jest.fn(),
+  updateProgram: jest.fn(),
+  deleteProgram: jest.fn(),
+  linkProject: jest.fn(),
+  unlinkProject: jest.fn(),
+};
 
 describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: PortfoliosService, useValue: portfoliosSvc },
+        { provide: ProgramsService, useValue: programsSvc },
+      ],
+    });
   });
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -107,7 +137,8 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT enforce manage gate on GET /projects/portfolios with view ability", async () => {
+  it("200 on GET /build/portfolios with build:portfolios:view — stub returns list without a DB connection", async () => {
+    portfoliosSvc.listPortfolios.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
       permissions: ["build:portfolios:view"],
       enabledModules: ["build"],
@@ -115,7 +146,20 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/portfolios")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(portfoliosSvc.listPortfolios).toHaveBeenCalled();
+  });
+
+  it("200 on GET /build/programs with build:programs:view — stub returns list without a DB connection", async () => {
+    programsSvc.listPrograms.mockResolvedValue({ items: [], nextCursor: null });
+    const token = await signToken({
+      permissions: ["build:programs:view"],
+      enabledModules: ["build"],
+    });
+    const res = await request(app.getHttpServer())
+      .get("/build/programs")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(programsSvc.listPrograms).toHaveBeenCalled();
   });
 });

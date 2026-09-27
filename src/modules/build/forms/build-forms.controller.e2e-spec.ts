@@ -2,13 +2,37 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { FormsService } from "./forms.service";
+import { SubmissionsService } from "./submissions.service";
+
+const formsSvc = {
+  listForms: jest.fn(),
+  getForm: jest.fn(),
+  createForm: jest.fn(),
+  updateForm: jest.fn(),
+  deleteForm: jest.fn(),
+};
+
+const submissionsSvc = {
+  listSubmissions: jest.fn(),
+  createSubmission: jest.fn(),
+  updateSubmission: jest.fn(),
+};
 
 describe("ProjectsForms auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: FormsService, useValue: formsSvc },
+        { provide: SubmissionsService, useValue: submissionsSvc },
+      ],
+    });
   });
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -81,13 +105,14 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT enforce an ability gate on GET /projects/1/forms with projects:forms:view (auth-only pass-through check)", async () => {
+  it("200 on GET /build/1/forms with build:forms:view — stub returns list without a DB connection", async () => {
+    formsSvc.listForms.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({ permissions: ["build:forms:view"], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/build/1/forms")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(formsSvc.listForms).toHaveBeenCalled();
   });
 
   it("400 on POST /build/1/forms with a direct cycle in conditional logic (A depends on B, B depends on A)", async () => {

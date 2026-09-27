@@ -24,45 +24,52 @@ describe("ticket-63 soft-delete partial unique indexes", () => {
     expect(total).toBeGreaterThan(7);
   });
 
-  it("uniq_project_teams_org_key has a WHERE predicate restricting it to undeleted rows", () => {
+  it("uniq_project_teams_org_key is unique and has a WHERE predicate restricting it to undeleted rows", () => {
     const idx = findIndex(getTableConfig(projectTeams).indexes, "uniq_project_teams_org_key");
     expect(idx).toBeDefined();
+    expect(idx?.config.unique).toBe(true);
     expect(idx?.config.where).toBeDefined();
   });
 
-  it("uniq_tickets_project_number has a WHERE predicate restricting it to undeleted rows", () => {
+  it("uniq_tickets_project_number is unique and has a WHERE predicate restricting it to undeleted rows", () => {
     const idx = findIndex(getTableConfig(tickets).indexes, "uniq_tickets_project_number");
     expect(idx).toBeDefined();
+    expect(idx?.config.unique).toBe(true);
     expect(idx?.config.where).toBeDefined();
   });
 
-  it("uq_project_risks_project_number has a WHERE predicate restricting it to undeleted rows", () => {
+  it("uq_project_risks_project_number is unique and has a WHERE predicate restricting it to undeleted rows", () => {
     const idx = findIndex(getTableConfig(projectRisks).indexes, "uq_project_risks_project_number");
     expect(idx).toBeDefined();
+    expect(idx?.config.unique).toBe(true);
     expect(idx?.config.where).toBeDefined();
   });
 
-  it("uq_project_decisions_project_number has a WHERE predicate restricting it to undeleted rows", () => {
+  it("uq_project_decisions_project_number is unique and has a WHERE predicate restricting it to undeleted rows", () => {
     const idx = findIndex(getTableConfig(projectDecisions).indexes, "uq_project_decisions_project_number");
     expect(idx).toBeDefined();
+    expect(idx?.config.unique).toBe(true);
     expect(idx?.config.where).toBeDefined();
   });
 
-  it("uq_change_requests_project_number has a WHERE predicate restricting it to undeleted rows", () => {
+  it("uq_change_requests_project_number is unique and has a WHERE predicate restricting it to undeleted rows", () => {
     const idx = findIndex(getTableConfig(changeRequests).indexes, "uq_change_requests_project_number");
     expect(idx).toBeDefined();
+    expect(idx?.config.unique).toBe(true);
     expect(idx?.config.where).toBeDefined();
   });
 
-  it("uq_project_forms_project_number has a WHERE predicate restricting it to undeleted rows", () => {
+  it("uq_project_forms_project_number is unique and has a WHERE predicate restricting it to undeleted rows", () => {
     const idx = findIndex(getTableConfig(projectForms).indexes, "uq_project_forms_project_number");
     expect(idx).toBeDefined();
+    expect(idx?.config.unique).toBe(true);
     expect(idx?.config.where).toBeDefined();
   });
 
-  it("uniq_feedbucket_widgets_public_key has a WHERE predicate restricting it to undeleted rows", () => {
+  it("uniq_feedbucket_widgets_public_key is unique and has a WHERE predicate restricting it to undeleted rows", () => {
     const idx = findIndex(getTableConfig(feedbucketWidgets).indexes, "uniq_feedbucket_widgets_public_key");
     expect(idx).toBeDefined();
+    expect(idx?.config.unique).toBe(true);
     expect(idx?.config.where).toBeDefined();
   });
 });

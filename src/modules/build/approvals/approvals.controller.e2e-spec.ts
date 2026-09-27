@@ -2,13 +2,42 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { ApprovalsService } from "./approvals.service";
+import { ApprovalsReadService } from "./approvals-read.service";
+import { BuildInboxCountService } from "./build-inbox-count.service";
+
+const approvalsReadSvc = {
+  listApprovals: jest.fn(),
+  getApproval: jest.fn(),
+  getInbox: jest.fn(),
+};
+
+const approvalsWriteSvc = {
+  createApproval: jest.fn(),
+  decideApproval: jest.fn(),
+  updateApproval: jest.fn(),
+  deleteApproval: jest.fn(),
+};
+
+const inboxCountSvc = {
+  countPending: jest.fn(),
+};
 
 describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: ApprovalsReadService, useValue: approvalsReadSvc },
+        { provide: ApprovalsService, useValue: approvalsWriteSvc },
+        { provide: BuildInboxCountService, useValue: inboxCountSvc },
+      ],
+    });
   });
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -109,7 +138,8 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("passes the auth/RBAC gate and returns 404 (project not found) on GET /build/1/approvals with build:approvals:view ability", async () => {
+  it("200 on GET /build/1/approvals with build:approvals:view — stub returns list without a DB connection", async () => {
+    approvalsReadSvc.listApprovals.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
       permissions: ["build:approvals:view"],
       enabledModules: ["build"],
@@ -117,10 +147,12 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/approvals")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(approvalsReadSvc.listApprovals).toHaveBeenCalled();
   });
 
-  it("passes the auth/RBAC gate and returns 404 (project not found) on POST /build/1/approvals with build:approvals:request ability", async () => {
+  it("201 on POST /build/1/approvals with build:approvals:request and Idempotency-Key — stub returns item without a DB connection", async () => {
+    approvalsWriteSvc.createApproval.mockResolvedValue({ id: 1, projectId: 1, orgId: "org_1" });
     const token = await signToken({
       permissions: ["build:approvals:request"],
       enabledModules: ["build"],
@@ -128,9 +160,10 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/build/1/approvals")
       .set("Authorization", `Bearer ${token}`)
-      .set("Idempotency-Key", "e2e-approval-create-1")
+      .set("Idempotency-Key", "e2e-approval-create-success-1")
       .send({ entityType: "task", entityId: 1, title: "Review", approverId: "user-2" });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(201);
+    expect(approvalsWriteSvc.createApproval).toHaveBeenCalled();
   });
 
   it("rejects a create without an Idempotency-Key with 400 because build.approval.create is a required fence", async () => {

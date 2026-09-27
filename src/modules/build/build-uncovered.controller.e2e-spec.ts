@@ -2,20 +2,37 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { TeamsService } from "./teams/teams.service";
 
 const PROJECT_ID = "1";
 const TEAM_ID = "1";
+
+const teamsSvc = {
+  listTeams: jest.fn(),
+  getTeam: jest.fn(),
+  createTeam: jest.fn(),
+  updateTeam: jest.fn(),
+  deleteTeam: jest.fn(),
+};
 
 describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: TeamsService, useValue: teamsSvc },
+      ],
+    });
   });
 
   afterAll(async () => {
     await app.close();
   });
+
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -93,5 +110,18 @@ describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
       .send({ title: "Crash on login" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("200 on GET /build/teams with build:teams:view — stub returns list without a DB connection", async () => {
+    teamsSvc.listTeams.mockResolvedValue({ items: [], nextCursor: null });
+    const token = await signToken({
+      permissions: ["build:teams:view"],
+      enabledModules: ALL_MODULES,
+    });
+    const res = await request(app.getHttpServer())
+      .get("/build/teams")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(teamsSvc.listTeams).toHaveBeenCalled();
   });
 });

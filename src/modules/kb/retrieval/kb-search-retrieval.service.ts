@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
-import { createHash } from "node:crypto";
 import {
   and,
   asc,
@@ -16,11 +15,8 @@ import { kbArticleChunks, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { KbCandidateService } from "./kb-candidate.service";
 import { supportArticlePredicate, wikiPagePredicate } from "../help-centre/kb-article-page-scope";
@@ -39,6 +35,9 @@ import {
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
   type KbContextPassage,
 } from "./kb-ask-context";
+import { KbEmbeddingCache, normalizeEmbeddableQuery } from "./kb-embedding-cache";
+
+export { normalizeEmbeddableQuery };
 
 export const KB_DOCUMENT_PASSAGE_ROWS =
   KB_ASK_MAX_CONTEXT_DOCUMENTS * KB_ASK_CONTEXT_BUDGET.maxPassagesPerDocument;
@@ -77,15 +76,10 @@ export interface QueryEmbedding {
   readonly vectorLiteral: string | null;
 }
 
-export function normalizeEmbeddableQuery(text: string): string {
-  return text.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-const KB_SEARCH_FEATURE = "kb.search";
-
 @Injectable()
 export class KbSearchRetrievalService {
   private readonly logger = new Logger(KbSearchRetrievalService.name);
+  private readonly embeddingCache: KbEmbeddingCache;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -96,28 +90,8 @@ export class KbSearchRetrievalService {
     @Optional()
     @Inject(CacheService)
     private readonly cache: CacheService | null = null,
-  ) {}
-
-  private queryEmbeddingCacheKey(text: string): string {
-    return CACHE_KEYS.kbQueryEmbedding(
-      EMBEDDING_MODEL,
-      createHash("sha256").update(normalizeEmbeddableQuery(text)).digest("hex"),
-    );
-  }
-
-  private async embedOrDegrade(
-    text: string,
-    orgId: string,
-  ): Promise<string | null> {
-    const cache = this.cache;
-    if (cache === null) return this.embedCharged(text, orgId);
-    const key = this.queryEmbeddingCacheKey(text);
-    const hit = await cache.get<string>(key);
-    if (hit !== null) return hit;
-    const vectorLiteral = await this.embedCharged(text, orgId);
-    if (vectorLiteral !== null)
-      await cache.set(key, vectorLiteral, CACHE_TTL.WEEK);
-    return vectorLiteral;
+  ) {
+    this.embeddingCache = new KbEmbeddingCache(aiGateway, cache);
   }
 
   async resolveQueryEmbedding(
@@ -127,7 +101,7 @@ export class KbSearchRetrievalService {
     const q = query.trim();
     if (q.length === 0 || !this.aiGateway.isEmbeddingConfigured())
       return { vectorLiteral: null };
-    return { vectorLiteral: await this.embedOrDegrade(q, orgId) };
+    return { vectorLiteral: await this.embeddingCache.embedOrDegrade(q, orgId) };
   }
 
   private async vectorFor(
@@ -137,33 +111,7 @@ export class KbSearchRetrievalService {
   ): Promise<string | null> {
     if (embedding !== undefined) return embedding.vectorLiteral;
     if (!this.aiGateway.isEmbeddingConfigured()) return null;
-    return this.embedOrDegrade(query, orgId);
-  }
-
-  private async embedCharged(
-    text: string,
-    orgId: string,
-  ): Promise<string | null> {
-    try {
-      const embedResult = await this.aiGateway.embedQueryWithCredit({
-        text,
-        orgId,
-        feature: KB_SEARCH_FEATURE,
-        charge: true,
-      });
-      if (embedResult.ok) return embedResult.vectorLiteral;
-      this.logger.warn(
-        "KB semantic search embedding unavailable — keyword only",
-        {
-          orgId,
-          kind: embedResult.kind,
-        },
-      );
-      return null;
-    } catch (err: unknown) {
-      logSideEffectFailure("kb semantic search embedding", { orgId })(err);
-      return null;
-    }
+    return this.embeddingCache.embedOrDegrade(query, orgId);
   }
 
   async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL> {

@@ -17,6 +17,7 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 import { buildTicketHref, buildTicketKey } from "./build-app-paths";
+import { withSavepoint } from "../../data-quality/savepoint";
 
 type TicketActivityAction =
   (typeof ticketActivityLog.action.enumValues)[number];
@@ -426,17 +427,19 @@ export class ProjectsActivityService {
     const membershipByUserId = new Map(memberRows.map((r) => [r.userId, r.id]));
 
     try {
-      await this.db
-        .insert(ticketCommentMentions)
-        .values(
-          mentioned.map((user) => ({
-            orgId: input.orgId,
-            commentId: input.commentId,
-            mentionedUserId: user.id,
-            mentionedUserMembershipId: membershipByUserId.get(user.id) ?? null,
-          })),
-        )
-        .onConflictDoNothing();
+      await withSavepoint(() =>
+        this.db
+          .insert(ticketCommentMentions)
+          .values(
+            mentioned.map((user) => ({
+              orgId: input.orgId,
+              commentId: input.commentId,
+              mentionedUserId: user.id,
+              mentionedUserMembershipId: membershipByUserId.get(user.id) ?? null,
+            })),
+          )
+          .onConflictDoNothing(),
+      );
     } catch (error) {
       logger.error("Failed to insert ticket comment mentions", { error });
       return;

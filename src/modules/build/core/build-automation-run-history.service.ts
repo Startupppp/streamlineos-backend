@@ -4,6 +4,7 @@ import { projectAutomationRuns, projectAutomationRunActions, projectAutomations 
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import { withSavepoint } from "../../data-quality/savepoint";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsMembersService } from "./projects-members.service";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
@@ -73,46 +74,48 @@ export class BuildAutomationRunHistoryService {
     errorMessage: string | null;
   }): Promise<number | null> {
     try {
-      const [row] = await this.db
-        .insert(projectAutomationRuns)
-        .values({
-          orgId: params.orgId,
-          projectId: params.projectId,
-          automationId: params.automationId,
-          ticketId: params.ticketId,
-          triggerEvent: params.triggerEvent,
-          matched: params.matched,
-          outcome: params.outcome,
-          errorMessage: params.errorMessage,
-        })
-        .returning({ id: projectAutomationRuns.id });
+      return await withSavepoint(async () => {
+        const [row] = await this.db
+          .insert(projectAutomationRuns)
+          .values({
+            orgId: params.orgId,
+            projectId: params.projectId,
+            automationId: params.automationId,
+            ticketId: params.ticketId,
+            triggerEvent: params.triggerEvent,
+            matched: params.matched,
+            outcome: params.outcome,
+            errorMessage: params.errorMessage,
+          })
+          .returning({ id: projectAutomationRuns.id });
 
-      if (
-        params.automationId !== null &&
-        (params.outcome === "matched_success" ||
-          params.outcome === "matched_partial_failure" ||
-          params.outcome === "matched_failed" ||
-          params.outcome === "error")
-      ) {
-        const now = new Date();
-        const stamp =
-          params.outcome === "matched_success" || params.outcome === "matched_partial_failure"
-            ? { lastRunAt: now }
-            : params.outcome === "matched_failed"
-              ? { lastRunAt: now, lastFailureAt: now }
-              : { lastFailureAt: now };
-        await this.db
-          .update(projectAutomations)
-          .set(stamp)
-          .where(
-            and(
-              eq(projectAutomations.id, params.automationId),
-              eq(projectAutomations.orgId, params.orgId),
-            ),
-          );
-      }
+        if (
+          params.automationId !== null &&
+          (params.outcome === "matched_success" ||
+            params.outcome === "matched_partial_failure" ||
+            params.outcome === "matched_failed" ||
+            params.outcome === "error")
+        ) {
+          const now = new Date();
+          const stamp =
+            params.outcome === "matched_success" || params.outcome === "matched_partial_failure"
+              ? { lastRunAt: now }
+              : params.outcome === "matched_failed"
+                ? { lastRunAt: now, lastFailureAt: now }
+                : { lastFailureAt: now };
+          await this.db
+            .update(projectAutomations)
+            .set(stamp)
+            .where(
+              and(
+                eq(projectAutomations.id, params.automationId),
+                eq(projectAutomations.orgId, params.orgId),
+              ),
+            );
+        }
 
-      return row?.id ?? null;
+        return row?.id ?? null;
+      });
     } catch (error) {
       logger.error("BuildAutomationRunHistory: failed to record run history", {
         orgId: params.orgId,
@@ -127,15 +130,17 @@ export class BuildAutomationRunHistoryService {
   async recordRunActions(orgId: string, runId: number, results: AutomationActionRunResult[]): Promise<void> {
     if (results.length === 0) return;
     try {
-      await this.db.insert(projectAutomationRunActions).values(
-        results.map((r) => ({
-          orgId,
-          runId,
-          actionIndex: r.index,
-          actionType: r.type,
-          outcome: r.outcome,
-          errorMessage: r.errorMessage,
-        })),
+      await withSavepoint(() =>
+        this.db.insert(projectAutomationRunActions).values(
+          results.map((r) => ({
+            orgId,
+            runId,
+            actionIndex: r.index,
+            actionType: r.type,
+            outcome: r.outcome,
+            errorMessage: r.errorMessage,
+          })),
+        ),
       );
     } catch (error) {
       logger.error("BuildAutomationRunHistory: failed to record run action history", {

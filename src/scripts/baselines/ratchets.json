@@ -848,10 +848,10 @@
     },
     "check-build-swallowed-writes.mjs": {
       "SWALLOWED_BASELINE": {
-        "value": 6,
+        "value": 2,
         "direction": "ratchet",
-        "owner": "build lane 11",
-        "reason": "Pre-existing swallowed-write sites outside ticket-38 territory, measured 2026-09-27 after the five ticket-38 sites were fixed with withSavepoint. Six confirmed hits: build-automation-run-history.service.ts (lines 75, 129), projects-activity.service.ts (line 428), projects-tickets-transfer.service.ts (line 197), ticket-import.service.ts (lines 201, 239). The initial baseline of 4 was WRONG — it was set before the census walked ticket-import.service.ts, which added two sites. 6 is the correct measured count of pre-existing violations outside ticket-38 scope; no violation was raised to paper over unfixed code. May only decrease."
+        "owner": "build lane 14",
+        "reason": "Lowered 6 -> 2 on 2026-09-27 by lane 14 (ticket 38). Four sites fixed: build-automation-run-history.service.ts (lines 75, 129) wrapped in withSavepoint; projects-activity.service.ts (line 428) wrapped in withSavepoint; projects-tickets-transfer.service.ts (line 197) converted to tx.transaction().catch() per-chunk savepoint. Two sites confirmed safe without change: ticket-import.service.ts (lines 201, 239) — both wrap this.db.transaction() whose callback throws on failure; Drizzle calls ROLLBACK TO SAVEPOINT and rethrows; outer ambient tx is intact; catch converts to ROLLED_BACK/FAILED application outcomes. Previous value 6 was the first accurate measurement (4 was wrong — set before ticket-import.service.ts was scanned)."
       },
       "MIN_SERVICE_FILES": {
         "value": 30,

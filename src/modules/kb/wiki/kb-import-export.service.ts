@@ -8,18 +8,15 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, max, or, sql, type SQL } from "drizzle-orm";
-import { kbPages, kbSpaces, kbImportJobs, kbExportJobs } from "../../../db/schema";
+import { kbPages, kbSpaces, kbImportJobs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { StorageService } from "../../storage/storage.service";
-import type { ExportPageInput, ImportPagesInput } from "./dto/kb-import-export.schemas";
-import { importItemSchema } from "./dto/kb-import-export.schemas";
-import { toMarkdown, toHtml } from "./kb-export-serializer";
-import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import type { ImportPagesInput } from "./dto/kb-import-export.schemas";
+import { importItemSchema, importPagesSchema } from "./dto/kb-import-export.schemas";
 import {
   buildCursorPage,
   decodeTimestampCursor,
@@ -32,15 +29,7 @@ import {
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 type ImportJobRow = typeof kbImportJobs.$inferSelect;
-type ExportJobRow = typeof kbExportJobs.$inferSelect;
 type ImportJobPage = CursorPage<ImportJobRow>;
-type ExportJobPage = CursorPage<ExportJobRow>;
-
-type ExportResult = {
-  jobId: number;
-  format: "markdown" | "html";
-  content: string;
-};
 
 type ImportAccepted = {
   jobId: number;
@@ -65,108 +54,7 @@ export class KbImportExportService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
-    private readonly auth: KnowledgeAuthorizationService,
-    private readonly storage: StorageService,
   ) {}
-
-  async exportPage(
-    user: CurrentUserContext,
-    pageId: number,
-    input: ExportPageInput,
-  ): Promise<ExportResult> {
-    await this.auth.assertPageAccess(user, pageId, "view");
-    const page = await this.db.query.kbPages.findFirst({
-      where: and(
-        eq(kbPages.id, pageId),
-        eq(kbPages.orgId, user.orgId),
-        isNull(kbPages.deletedAt),
-      ),
-      columns: { id: true, title: true, contentText: true },
-    });
-    if (!page) throw new NotFoundException("Page not found");
-
-    const content =
-      input.format === "markdown"
-        ? toMarkdown(page.title, page.contentText)
-        : toHtml(page.title, page.contentText);
-
-    const [job] = await this.db
-      .insert(kbExportJobs)
-      .values({
-        orgId: user.orgId,
-        scopeType: "page",
-        scopeId: pageId,
-        format: input.format,
-        status: "completed",
-        createdById: user.userId,
-      })
-      .returning();
-    if (!job) throw new InternalServerErrorException("Failed to create export job");
-
-    this.audit.log({
-      action: "kb.page.exported",
-      userId: user.userId,
-      orgId: user.orgId,
-      resourceType: "kb_page",
-      resourceId: String(pageId),
-      metadata: { format: input.format, jobId: job.id },
-    });
-
-    return { jobId: job.id, format: input.format, content };
-  }
-
-  async listExportJobs(orgId: string, cursor?: string): Promise<ExportJobPage> {
-    const position = decodeTimestampCursor(cursor);
-    const filters: SQL[] = [eq(kbExportJobs.orgId, orgId)];
-    if (position)
-      filters.push(keysetBeforeMicros(kbExportJobs.createdAt, kbExportJobs.id, position));
-    const rows = await this.db
-      .select({
-        id: kbExportJobs.id,
-        orgId: kbExportJobs.orgId,
-        scopeType: kbExportJobs.scopeType,
-        scopeId: kbExportJobs.scopeId,
-        format: kbExportJobs.format,
-        status: kbExportJobs.status,
-        fileKey: kbExportJobs.fileKey,
-        expiresAt: kbExportJobs.expiresAt,
-        createdById: kbExportJobs.createdById,
-        createdAt: kbExportJobs.createdAt,
-        updatedAt: kbExportJobs.updatedAt,
-        createdAtText: microsecondCursorValue(kbExportJobs.createdAt),
-      })
-      .from(kbExportJobs)
-      .where(and(...filters))
-      .orderBy(desc(kbExportJobs.createdAt), desc(kbExportJobs.id))
-      .limit(PAGE_SIZE_CAP + 1);
-    return buildCursorPage(rows, PAGE_SIZE_CAP, (row) => ({
-      sortValue: row.createdAtText ?? "",
-      id: String(row.id),
-    }));
-  }
-
-  async getExportJobDownload(
-    orgId: string,
-    jobId: number,
-  ): Promise<{ downloadUrl: string }> {
-    const rows = await this.db
-      .select({
-        id: kbExportJobs.id,
-        fileKey: kbExportJobs.fileKey,
-        expiresAt: kbExportJobs.expiresAt,
-      })
-      .from(kbExportJobs)
-      .where(and(eq(kbExportJobs.orgId, orgId), eq(kbExportJobs.id, jobId)))
-      .limit(1);
-    const job = rows[0];
-    if (!job) throw new NotFoundException("Export job not found");
-    if (!job.fileKey) throw new NotFoundException("Export file not available");
-    if (!job.expiresAt || job.expiresAt <= new Date())
-      throw new NotFoundException("Export has expired");
-    const expiresIn = Math.floor((job.expiresAt.getTime() - Date.now()) / 1000);
-    const downloadUrl = await this.storage.getFileUrl(orgId, job.fileKey, expiresIn);
-    return { downloadUrl };
-  }
 
   async importPages(
     user: CurrentUserContext,
@@ -384,7 +272,7 @@ export class KbImportExportService {
       .limit(1);
     const job = rows[0];
     if (!job) throw new NotFoundException("Import job not found");
-    return job as ImportJobRow;
+    return job;
   }
 
   async cancelImportJob(orgId: string, jobId: number): Promise<CancelResult> {
@@ -437,7 +325,13 @@ export class KbImportExportService {
     if (job.status === "pending" || job.status === "processing") {
       throw new ConflictException("Import job is still in progress");
     }
-    const report = job.errorReport as Record<string, unknown> | null;
+
+    const retryableSourceType = importPagesSchema.shape.sourceType.safeParse(job.sourceType);
+    if (!retryableSourceType.success) {
+      throw new ConflictException("Source type of original job cannot be retried");
+    }
+
+    const report: Record<string, unknown> | null = job.errorReport ?? null;
     const rawFailedItems = Array.isArray(report?.["failedItems"]) ? report["failedItems"] : [];
     const failedItems = rawFailedItems.flatMap((raw) => {
       const parsed = importItemSchema.safeParse(raw);
@@ -451,7 +345,7 @@ export class KbImportExportService {
         .insert(kbImportJobs)
         .values({
           orgId,
-          sourceType: job.sourceType,
+          sourceType: retryableSourceType.data,
           status: "pending",
           totalItems: failedItems.length,
           processedItems: 0,
@@ -475,7 +369,7 @@ export class KbImportExportService {
           userId: user.userId,
           orgId,
           input: {
-            sourceType: job.sourceType as "markdown" | "html" | "zip",
+            sourceType: retryableSourceType.data,
             items: failedItems,
             visibility: "org",
             duplicatePolicy: "skip",

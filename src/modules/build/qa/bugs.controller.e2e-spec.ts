@@ -2,13 +2,55 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { BugsService } from "./bugs.service";
+import { TestManagementService } from "./test-management.service";
+import { TestRunsService } from "./test-runs.service";
+
+const bugsSvc = {
+  listBugs: jest.fn(),
+  getBug: jest.fn(),
+  createBug: jest.fn(),
+  updateBug: jest.fn(),
+  deleteBug: jest.fn(),
+};
+
+const testMgmtSvc = {
+  listTestSuites: jest.fn(),
+  createTestSuite: jest.fn(),
+  updateTestSuite: jest.fn(),
+  deleteTestSuite: jest.fn(),
+  listTestCases: jest.fn(),
+  getTestCase: jest.fn(),
+  createTestCase: jest.fn(),
+  updateTestCase: jest.fn(),
+  deleteTestCase: jest.fn(),
+};
+
+const testRunsSvc = {
+  listTestRuns: jest.fn(),
+  getTestRun: jest.fn(),
+  createTestRun: jest.fn(),
+  updateTestRun: jest.fn(),
+  deleteTestRun: jest.fn(),
+  updateResult: jest.fn(),
+  attachBugToResult: jest.fn(),
+};
 
 describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: BugsService, useValue: bugsSvc },
+        { provide: TestManagementService, useValue: testMgmtSvc },
+        { provide: TestRunsService, useValue: testRunsSvc },
+      ],
+    });
   });
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -161,7 +203,8 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("passes auth and permission gate on GET /build/1/bugs with build:bugs:view ability (returns 404 from business layer, not 401/403)", async () => {
+  it("200 on GET /build/1/bugs with build:bugs:view — stub returns list without a DB connection", async () => {
+    bugsSvc.listBugs.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
       permissions: ["build:bugs:view"],
       enabledModules: ["build"],
@@ -169,10 +212,12 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/bugs")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(bugsSvc.listBugs).toHaveBeenCalled();
   });
 
-  it("passes auth and permission gate on GET /build/1/test-suites with build:qa:view ability (returns 404 from business layer, not 401/403)", async () => {
+  it("200 on GET /build/1/test-suites with build:qa:view — stub returns list without a DB connection", async () => {
+    testMgmtSvc.listTestSuites.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
       permissions: ["build:qa:view"],
       enabledModules: ["build"],
@@ -180,6 +225,7 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/test-suites")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(testMgmtSvc.listTestSuites).toHaveBeenCalled();
   });
 });

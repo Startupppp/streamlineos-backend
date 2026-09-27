@@ -2,15 +2,32 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { IncidentsService } from "./incidents.service";
+
+const incidentsSvc = {
+  listIncidents: jest.fn(),
+  getIncident: jest.fn(),
+  createIncident: jest.fn(),
+  updateIncident: jest.fn(),
+  deleteIncident: jest.fn(),
+  addIncidentUpdate: jest.fn(),
+};
 
 describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: IncidentsService, useValue: incidentsSvc },
+      ],
+    });
   });
 
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -100,7 +117,8 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT 401/403 on GET /projects/1/incidents with projects:incidents:view ability", async () => {
+  it("200 on GET /build/1/incidents with build:incidents:view — stub returns list without a DB connection", async () => {
+    incidentsSvc.listIncidents.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
       permissions: ["build:incidents:view"],
       enabledModules: ["build"],
@@ -108,11 +126,12 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/incidents")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(incidentsSvc.listIncidents).toHaveBeenCalled();
   });
 
-  it("does NOT 401/403 on POST /projects/1/incidents with projects:incidents:manage ability", async () => {
+  it("201 on POST /build/1/incidents with build:incidents:manage — stub returns item without a DB connection", async () => {
+    incidentsSvc.createIncident.mockResolvedValue({ id: 1, title: "DB replication lag", projectId: 1 });
     const token = await signToken({
       permissions: ["build:incidents:manage"],
       enabledModules: ["build"],
@@ -121,7 +140,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
       .post("/build/1/incidents")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "DB replication lag" });
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(201);
+    expect(incidentsSvc.createIncident).toHaveBeenCalled();
   });
 });

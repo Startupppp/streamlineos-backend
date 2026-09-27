@@ -2,15 +2,43 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { MeetingsService } from "./meetings.service";
+import { ActionItemsService } from "./action-items.service";
+
+const meetingsSvc = {
+  listMeetings: jest.fn(),
+  getMeeting: jest.fn(),
+  createMeeting: jest.fn(),
+  updateMeeting: jest.fn(),
+  deleteMeeting: jest.fn(),
+  addAttendee: jest.fn(),
+  removeAttendee: jest.fn(),
+  upsertStandup: jest.fn(),
+};
+
+const actionItemsSvc = {
+  createActionItem: jest.fn(),
+  updateActionItem: jest.fn(),
+  deleteActionItem: jest.fn(),
+  convertToTask: jest.fn(),
+};
 
 describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: MeetingsService, useValue: meetingsSvc },
+        { provide: ActionItemsService, useValue: actionItemsSvc },
+      ],
+    });
   });
 
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete" | "put";
 
@@ -118,7 +146,8 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT 401/403 on GET /projects/1/meetings with projects:meetings:view ability", async () => {
+  it("200 on GET /build/1/meetings with build:meetings:view — stub returns list without a DB connection", async () => {
+    meetingsSvc.listMeetings.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
       permissions: ["build:meetings:view"],
       enabledModules: ["build"],
@@ -126,11 +155,12 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/meetings")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(meetingsSvc.listMeetings).toHaveBeenCalled();
   });
 
-  it("does NOT 401/403 on POST /projects/1/meetings with projects:meetings:manage ability", async () => {
+  it("201 on POST /build/1/meetings with build:meetings:manage — stub returns item without a DB connection", async () => {
+    meetingsSvc.createMeeting.mockResolvedValue({ id: 2, title: "Sprint Review", projectId: 1 });
     const token = await signToken({
       permissions: ["build:meetings:manage"],
       enabledModules: ["build"],
@@ -139,7 +169,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
       .post("/build/1/meetings")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Sprint Review" });
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(201);
+    expect(meetingsSvc.createMeeting).toHaveBeenCalled();
   });
 });

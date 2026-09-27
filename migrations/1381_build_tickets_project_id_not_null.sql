@@ -14,20 +14,27 @@
 --  • The uniqueness index covers all surviving rows (project_id can no longer
 --    be NULL, so the NULL != NULL escape is eliminated).
 --
--- PREREQUISITE — orchestrator must run and evaluate before applying:
+-- Production survey 2026-09-27 (rolled-back READ ONLY transaction against production):
+--   SELECT count(*) FROM build.tickets WHERE project_id IS NULL;  -- includes deleted
+--   Result: 0 rows.  NOT NULL is safe: no existing row (live or soft-deleted) has a
+--   null project_id.  The justification is "no such rows exist", not "we decided to
+--   break them".
 --
---   SELECT count(*) FROM build.tickets WHERE project_id IS NULL AND deleted_at IS NULL;
+-- PREREQUISITE — orchestrator must verify before applying (query counts ALL rows):
+--
+--   SELECT count(*) FROM build.tickets WHERE project_id IS NULL;
 --
 -- Decision tree:
 --   count = 0  — apply this migration as written.  VALIDATE CONSTRAINT will
 --                succeed, SET NOT NULL will be instantaneous (the CHECK proves
 --                no nulls), and the FK becomes always-enforced.
 --
---   count > 0  — VALIDATE will fail.  Application must first assign or delete
---                all project-less active tickets.  As an interim, you may run
---                only the ADD CONSTRAINT NOT VALID step (skip VALIDATE and SET
---                NOT NULL) to express intent without a blocking scan; re-run
---                the full migration once the rows are clear.
+--   count > 0  — VALIDATE will fail.  NOT NULL covers the whole column including
+--                soft-deleted rows; a deleted row with project_id IS NULL is still
+--                a violation.  Application must first fix or hard-delete all null
+--                rows.  As an interim, you may run only the ADD CONSTRAINT NOT VALID
+--                step (skip VALIDATE and SET NOT NULL) to express intent without a
+--                blocking scan; re-run the full migration once the rows are clear.
 --
 -- Re migration 0371 check constraint
 -- 0371 deliberately excluded tickets.status, citing trust in the FK.  That
@@ -42,9 +49,15 @@ SET statement_timeout = 0;
 --> statement-breakpoint
 
 DO $$
+DECLARE
+  null_count bigint;
 BEGIN
   IF to_regclass('build.tickets') IS NULL THEN
     RAISE EXCEPTION '1381 precondition: build.tickets is absent';
+  END IF;
+  SELECT count(*) INTO null_count FROM build.tickets WHERE project_id IS NULL;
+  IF null_count > 0 THEN
+    RAISE EXCEPTION '1381 precondition: % row(s) with project_id IS NULL (including soft-deleted rows); all must be resolved before applying NOT NULL', null_count;
   END IF;
 END $$;
 --> statement-breakpoint

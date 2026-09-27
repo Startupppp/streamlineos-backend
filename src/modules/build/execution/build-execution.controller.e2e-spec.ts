@@ -2,13 +2,29 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { CyclesService } from "./cycles.service";
+
+const cyclesSvc = {
+  listCycles: jest.fn(),
+  getCycle: jest.fn(),
+  createCycle: jest.fn(),
+  updateCycle: jest.fn(),
+  deleteCycle: jest.fn(),
+};
 
 describe("ProjectsExecution auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: CyclesService, useValue: cyclesSvc },
+      ],
+    });
   });
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -110,5 +126,18 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+
+  it("200 on GET /build/1/cycles with build:cycles:view — stub returns list without a DB connection", async () => {
+    cyclesSvc.listCycles.mockResolvedValue({ items: [], nextCursor: null });
+    const token = await signToken({
+      permissions: ["build:cycles:view"],
+      enabledModules: ["build"],
+    });
+    const res = await request(app.getHttpServer())
+      .get("/build/1/cycles")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(cyclesSvc.listCycles).toHaveBeenCalled();
   });
 });

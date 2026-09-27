@@ -2,13 +2,28 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { UpdatesService } from "./updates.service";
+
+const updatesSvc = {
+  listUpdates: jest.fn(),
+  createUpdate: jest.fn(),
+  editUpdate: jest.fn(),
+  softDeleteUpdate: jest.fn(),
+};
 
 describe("ProjectUpdates auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: UpdatesService, useValue: updatesSvc },
+      ],
+    });
   });
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "delete" | "patch";
 
@@ -67,18 +82,6 @@ describe("ProjectUpdates auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT block GET /build/1/updates with build:updates:view", async () => {
-    const token = await signToken({
-      permissions: ["build:updates:view"],
-      enabledModules: ["build"],
-    });
-    const res = await request(app.getHttpServer())
-      .get("/build/1/updates")
-      .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
-  });
-
   it("403 on PATCH /build/1/updates/2 without build:updates:manage", async () => {
     const token = await signToken({ permissions: ["build:updates:view"], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
@@ -89,7 +92,21 @@ describe("ProjectUpdates auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT block PATCH /build/1/updates/2 with build:updates:manage", async () => {
+  it("200 on GET /build/1/updates with build:updates:view — stub returns list without a DB connection", async () => {
+    updatesSvc.listUpdates.mockResolvedValue({ items: [], nextCursor: null });
+    const token = await signToken({
+      permissions: ["build:updates:view"],
+      enabledModules: ["build"],
+    });
+    const res = await request(app.getHttpServer())
+      .get("/build/1/updates")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(updatesSvc.listUpdates).toHaveBeenCalled();
+  });
+
+  it("200 on PATCH /build/1/updates/2 with build:updates:manage — stub returns item without a DB connection", async () => {
+    updatesSvc.editUpdate.mockResolvedValue({ id: 2, body: "Patched update.", projectId: 1 });
     const token = await signToken({
       permissions: ["build:updates:manage"],
       enabledModules: ["build"],
@@ -98,7 +115,7 @@ describe("ProjectUpdates auth/RBAC (e2e)", () => {
       .patch("/build/1/updates/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ body: "Patched update." });
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(updatesSvc.editUpdate).toHaveBeenCalled();
   });
 });

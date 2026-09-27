@@ -39,6 +39,7 @@ import { chargeKbAskOrgBudget } from "./kb-ask-rate-limit";
 import type { RetrievedSource, RetrievedSourceDocument } from "./kb-search-retrieval.service";
 
 export type { AskCitation, KbAskOptions };
+export { KB_ASK_ORG_TIER } from "./kb-ask-rate-limit";
 
 @Injectable()
 export class KbAskService {

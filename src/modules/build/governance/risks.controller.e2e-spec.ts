@@ -2,13 +2,39 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import { RisksService } from "./risks.service";
+import { DecisionsService } from "./decisions.service";
+
+const risksSvc = {
+  listRisks: jest.fn(),
+  getRisk: jest.fn(),
+  createRisk: jest.fn(),
+  updateRisk: jest.fn(),
+  deleteRisk: jest.fn(),
+};
+
+const decisionsSvc = {
+  listDecisions: jest.fn(),
+  getDecision: jest.fn(),
+  createDecision: jest.fn(),
+  updateDecision: jest.fn(),
+  deleteDecision: jest.fn(),
+};
 
 describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [
+        { provide: DRIZZLE, useValue: {} },
+        { provide: RisksService, useValue: risksSvc },
+        { provide: DecisionsService, useValue: decisionsSvc },
+      ],
+    });
   });
   afterAll(async () => app.close());
+  beforeEach(() => jest.clearAllMocks());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -139,7 +165,8 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT enforce a gate on GET /projects/1/risks with projects:risks:view ability", async () => {
+  it("200 on GET /build/1/risks with build:risks:view — stub returns list without a DB connection", async () => {
+    risksSvc.listRisks.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
       permissions: ["build:risks:view"],
       enabledModules: ["build"],
@@ -147,11 +174,12 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/risks")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(risksSvc.listRisks).toHaveBeenCalled();
   });
 
-  it("does NOT enforce a gate on GET /projects/1/decisions with projects:decisions:view ability", async () => {
+  it("200 on GET /build/1/decisions with build:decisions:view — stub returns list without a DB connection", async () => {
+    decisionsSvc.listDecisions.mockResolvedValue({ items: [], nextCursor: null });
     const token = await signToken({
       permissions: ["build:decisions:view"],
       enabledModules: ["build"],
@@ -159,7 +187,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/decisions")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(decisionsSvc.listDecisions).toHaveBeenCalled();
   });
 });

@@ -64,26 +64,27 @@ const BUILD_ROOT = join(BACKEND_ROOT, "src/modules/build");
 const MIN_SERVICE_FILES = 30;
 
 /**
- * Pre-existing violations outside ticket-38 territory confirmed after the five
- * ticket-38 sites were fixed. These files are outside this lane's edit territory;
- * the gate ratchet holds them at this count rather than forcing an immediate fix.
+ * Confirmed remaining hits (file : line):
+ *   src/modules/build/import-export/ticket-import.service.ts:201   — safe: the callback passed to
+ *     this.db.transaction() throws on any failure; Drizzle calls ROLLBACK TO SAVEPOINT and rethrows;
+ *     the outer catch converts the error to ROLLED_BACK outcomes; the ambient request tx is intact.
+ *   src/modules/build/import-export/ticket-import.service.ts:239   — safe: same mechanism; per-batch
+ *     try wraps this.db.transaction() whose callback throws; each batch's SAVEPOINT is rolled back
+ *     cleanly; failing batches become FAILED rows; subsequent batches succeed; outer tx intact.
  *
- * Confirmed hits (file : line):
- *   src/modules/build/core/build-automation-run-history.service.ts:75
- *   src/modules/build/core/build-automation-run-history.service.ts:129
- *   src/modules/build/core/projects-activity.service.ts:428
- *   src/modules/build/core/projects-tickets-transfer.service.ts:197
- *   src/modules/build/import-export/ticket-import.service.ts:201   ← unexpected; missed in initial census
- *   src/modules/build/import-export/ticket-import.service.ts:239   ← unexpected; missed in initial census
+ * Fixed by lane 14 (ticket 38, 2026-09-27):
+ *   src/modules/build/core/build-automation-run-history.service.ts:75   — withSavepoint wraps insert+update
+ *   src/modules/build/core/build-automation-run-history.service.ts:129  — withSavepoint wraps insert
+ *   src/modules/build/core/projects-activity.service.ts:428             — withSavepoint wraps insert
+ *   src/modules/build/core/projects-tickets-transfer.service.ts:197     — tx.transaction().catch() per chunk
+ *
+ * Previous baseline of 6 (measured 2026-09-27) is superseded — not wrong, but now fixed.
+ * The earlier value of 4 was wrong; 6 was the first accurate measurement.
  *
  * Indirect swallowed writes (gate cannot see):
  *   src/modules/build/core/projects-tickets-update.service.ts:343  ← indirect call; not caught by DB_WRITE_RE
- *
- * NOTE: The initial baseline of 4 was WRONG — it was set before scanning
- * ticket-import.service.ts, which added 2 more sites. 6 is the correct measured
- * count of pre-existing violations outside this ticket's scope.
  */
-const SWALLOWED_BASELINE = 6;
+const SWALLOWED_BASELINE = 2;
 
 function walk(dir, out) {
   if (!existsSync(dir)) return out;
