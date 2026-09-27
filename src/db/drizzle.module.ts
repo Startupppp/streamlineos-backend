@@ -24,6 +24,7 @@ import { configurePoolAdmission, poolAdmission } from "./pool-admission";
 import { instrumentPostgresClient } from "./query-telemetry";
 import { resolvePoolConfig, type ResolvedPoolConfig } from "./pool.config";
 import { ReplicaRouter, type PoolHandle } from "./replica-router";
+import { NullReplicaHealthProbe, PostgresReplicaLagProbe } from "./replica-lag-probe";
 import * as schema from "./schema";
 
 export type { Db } from "./drizzle.types";
@@ -84,8 +85,8 @@ export type { Db } from "./drizzle.types";
     },
     {
       provide: REPLICA_ROUTER,
-      inject: [DB_POOL_CONFIG],
-      useFactory: (config: ResolvedPoolConfig): ReplicaRouter => {
+      inject: [DB_POOL_CONFIG, DRIZZLE_REPLICA],
+      useFactory: (config: ResolvedPoolConfig, replicaDb: DbWithClient): ReplicaRouter => {
         const primary: PoolHandle = {
           id: "primary",
           connectionString: config.connectionString,
@@ -93,7 +94,10 @@ export type { Db } from "./drizzle.types";
         const replica: PoolHandle | null = config.replicaConnectionString
           ? { id: "replica", connectionString: config.replicaConnectionString }
           : null;
-        return new ReplicaRouter(primary, replica);
+        const probe = config.replicaConnectionString
+          ? new PostgresReplicaLagProbe(replicaDb)
+          : new NullReplicaHealthProbe();
+        return new ReplicaRouter(primary, replica, probe);
       },
     },
   ],
@@ -108,11 +112,26 @@ export class DrizzleModule
     @Inject(DRIZZLE) private readonly db: DbWithClient,
     @Inject(DRIZZLE_REPLICA) private readonly replicaDb: DbWithClient,
     @Inject(DB_POOL_CONFIG) private readonly config: ResolvedPoolConfig,
+    @Inject(REPLICA_ROUTER) private readonly replicaRouter: ReplicaRouter,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     this.reportPool();
     await this.assertRlsIsEnforced();
+    await this.reportReplicaRouting();
+  }
+
+  private async reportReplicaRouting(): Promise<void> {
+    try {
+      const pool = await this.replicaRouter.route("search-freshness");
+      this.logger.log(
+        `Replica router: search-freshness → pool "${pool.id}"`,
+      );
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Replica router: search-freshness shed — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private reportPool(): void {

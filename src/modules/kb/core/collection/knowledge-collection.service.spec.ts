@@ -12,6 +12,7 @@ import type { KnowledgeAuthorizationService } from "../authorization/knowledge-a
 import type { KbActorStanding } from "../authorization/knowledge-authorization.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { KbPageCollectionQuery } from "./knowledge-collection.types";
+import { KB_PAGE_COLLECTION_COUNT_CAP } from "./knowledge-collection.types";
 import { kbPageCollectionPageSchema } from "../dto/kb-core-response.schemas";
 
 const ORG = "org-collection";
@@ -55,7 +56,11 @@ interface Capture {
   selections: CollectionSelection[];
 }
 
-function makeChain(rows: Record<string, unknown>[], capture: Capture): Record<string, unknown> {
+function makeChain(
+  rows: Record<string, unknown>[],
+  capture: Capture,
+  countRows?: Record<string, unknown>[],
+): Record<string, unknown> {
   const chain: Record<string, unknown> = {};
   chain.orderBy = jest.fn((...terms: unknown[]) => {
     capture.orderBys.push(terms);
@@ -63,7 +68,8 @@ function makeChain(rows: Record<string, unknown>[], capture: Capture): Record<st
   });
   chain.limit = jest.fn((n: number) => {
     capture.limits.push(n);
-    return Object.assign(Promise.resolve(rows), chain);
+    const result = n === KB_PAGE_COLLECTION_COUNT_CAP + 1 ? (countRows ?? rows) : rows;
+    return Object.assign(Promise.resolve(result), chain);
   });
   chain.groupBy = jest.fn(() => {
     capture.groupBys += 1;
@@ -71,7 +77,7 @@ function makeChain(rows: Record<string, unknown>[], capture: Capture): Record<st
   });
   chain.union = jest.fn(() => {
     capture.unions += 1;
-    return makeChain(rows, capture);
+    return makeChain(rows, capture, countRows);
   });
   return chain;
 }
@@ -79,6 +85,7 @@ function makeChain(rows: Record<string, unknown>[], capture: Capture): Record<st
 function makeHarness(options: {
   rows?: Record<string, unknown>[];
   grantRows?: Record<string, unknown>[];
+  countRows?: Record<string, unknown>[];
   actor?: KbActorStanding;
 }) {
   const capture: Capture = {
@@ -92,6 +99,7 @@ function makeHarness(options: {
   };
   const rows = options.rows ?? [];
   const grantRows = options.grantRows ?? [];
+  const countRows = options.countRows ?? rows;
 
   const db = {
     select: jest.fn((selection: CollectionSelection) => {
@@ -101,7 +109,7 @@ function makeHarness(options: {
       node.from = jest.fn(() => node);
       node.where = jest.fn((clause: SQL) => {
         capture.wheres.push(clause);
-        return Object.assign(Promise.resolve(grantRows), makeChain(rows, capture));
+        return Object.assign(Promise.resolve(grantRows), makeChain(rows, capture, countRows));
       });
       return node;
     }),
@@ -359,7 +367,7 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
 
     await h.svc.listPages(user(), query({ sharedWithMe: true }));
 
-    const grantWhere = render(h.capture.wheres[1]);
+    const grantWhere = render(h.capture.wheres[2]);
     expect(grantWhere.params).toContain(ORG);
     expect(grantWhere.params).not.toContain(OTHER_ORG);
     expect(grantWhere.sql).toContain('"revoked_at" is null');
@@ -428,6 +436,35 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
     expect(h.capture.selectCalls).toBe(0);
   });
 
+  it("wraps the count in a query limited to KB_PAGE_COLLECTION_COUNT_CAP + 1 rows so BE-132 is satisfied — the limit appears in the captured call list", async () => {
+    const h = makeHarness({ rows: [pageRow()], actor: standing({ isOrgOwner: true }) });
+
+    await h.svc.listPages(user(), query());
+
+    expect(h.capture.limits).toContain(KB_PAGE_COLLECTION_COUNT_CAP + 1);
+  });
+
+  it("sets isExact false and caps the count when the probe returns KB_PAGE_COLLECTION_COUNT_CAP + 1 rows, and true with the exact figure when fewer rows are returned", async () => {
+    const capProbe = Array.from({ length: KB_PAGE_COLLECTION_COUNT_CAP + 1 }, () => ({}));
+    const atCap = makeHarness({
+      rows: [pageRow()],
+      countRows: capProbe,
+      actor: standing({ isOrgOwner: true }),
+    });
+    const atCapPage = await atCap.svc.listPages(user(), query());
+    expect(atCapPage.boundedCount.isExact).toBe(false);
+    expect(atCapPage.boundedCount.count).toBe(KB_PAGE_COLLECTION_COUNT_CAP);
+
+    const belowCap = makeHarness({
+      rows: [pageRow()],
+      countRows: [pageRow({ id: 1 }), pageRow({ id: 2 }), pageRow({ id: 3 })],
+      actor: standing({ isOrgOwner: true }),
+    });
+    const belowCapPage = await belowCap.svc.listPages(user(), query());
+    expect(belowCapPage.boundedCount.isExact).toBe(true);
+    expect(belowCapPage.boundedCount.count).toBe(3);
+  });
+
   it("resolves the actor's standing once per request, not once per predicate", async () => {
     const h = makeHarness({ rows: [pageRow()] });
 
@@ -444,7 +481,7 @@ describe("KnowledgeCollectionService — BE-81 OR-to-UNION split", () => {
     await h.svc.listPages(user(), query());
 
     expect(h.capture.unions).toBe(1);
-    expect(h.capture.selectCalls).toBe(2);
+    expect(h.capture.selectCalls).toBe(3);
     const branch1 = render(h.capture.wheres[0]).sql;
     const branch2 = render(h.capture.wheres[1]).sql;
     expect(branch1).not.toContain("kb_page_grants");
@@ -460,7 +497,7 @@ describe("KnowledgeCollectionService — BE-81 OR-to-UNION split", () => {
     await h.svc.listPages(user(), query());
 
     expect(h.capture.unions).toBe(0);
-    expect(h.capture.selectCalls).toBe(1);
+    expect(h.capture.selectCalls).toBe(2);
     expect(render(h.capture.wheres[0]).sql).not.toContain("kb_page_grants");
   });
 
@@ -473,7 +510,7 @@ describe("KnowledgeCollectionService — BE-81 OR-to-UNION split", () => {
     await h.svc.listPages(user(), query());
 
     expect(h.capture.unions).toBe(0);
-    expect(h.capture.selectCalls).toBe(1);
+    expect(h.capture.selectCalls).toBe(2);
   });
 
   it("issues a single branch, no UNION, for sharedWithMe — the grant EXISTS is already the sole branch, nothing to split", async () => {
@@ -505,7 +542,7 @@ describe("KnowledgeCollectionService — BE-81 OR-to-UNION split", () => {
 
     await h.svc.listPages(user(), query({ limit: 50 }));
 
-    expect(h.capture.limits).toEqual([51, 51, 51]);
+    expect(h.capture.limits).toEqual([51, 51, 51, KB_PAGE_COLLECTION_COUNT_CAP + 1]);
     expect(h.capture.orderBys).toHaveLength(3);
   });
 
@@ -528,7 +565,7 @@ describe("KnowledgeCollectionService — BE-81 OR-to-UNION split", () => {
 
     await h.svc.listPages(user(), query({ limit: 50 }));
 
-    expect(h.capture.limits).toEqual([51]);
+    expect(h.capture.limits).toEqual([51, KB_PAGE_COLLECTION_COUNT_CAP + 1]);
     expect(h.capture.orderBys).toHaveLength(1);
   });
 

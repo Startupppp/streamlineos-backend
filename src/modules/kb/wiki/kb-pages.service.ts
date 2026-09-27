@@ -36,6 +36,7 @@ import { KbPageWriterService } from "./kb-page-writer.service";
 import { withoutUnsharedToken } from "./kb-page-share-visibility";
 import { resolveProjectAccess } from "../../build/core/project-access";
 import { KbReadMetrics } from "../analytics/kb-read-metrics";
+import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 
 type PageRow = KbPageRow;
 
@@ -194,6 +195,7 @@ export class KbPagesService {
       await this.writer.commitPageChange(tx, {
         orgId,
         actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        action: "kb.page.created",
         page,
         changed: {},
         writeOutcome: "created",
@@ -214,7 +216,11 @@ export class KbPagesService {
       canEdit: boolean;
     }
   > {
-    const metrics = KbReadMetrics.begin({ orgId: user.orgId });
+    const metrics = KbReadMetrics.begin({
+      orgId: user.orgId,
+      actorStanding: user.isOrgOwner ? "owner" : "member",
+      orgCell: PROCESS_CELL_ID,
+    });
     try {
       const orgId = user.orgId;
       const predicate = await this.auth.visiblePagePredicate(user, "view");
@@ -383,6 +389,7 @@ export class KbPagesService {
         await this.writer.commitPageChange(tx, {
           orgId,
           actor: { userId: user.userId, membershipId: this.membershipId(user) },
+          action: "kb.page.updated",
           page: updated,
           changed: contentChanged
             ? {

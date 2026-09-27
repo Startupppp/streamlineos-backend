@@ -106,7 +106,7 @@ function makeAuth() {
 }
 
 function makeWriter() {
-  return new KbPageWriterService({} as never);
+  return new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
 }
 
 describe("structural invariant: every injectable page-mutating service routes its index event through KbPageWriterService", () => {
@@ -365,7 +365,7 @@ describe("KbPageTreeService.move — writer delegation", () => {
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = new KbPageTreeService(
       softDeleteDb as never,
-      { log: jest.fn() } as never,
+      { log: jest.fn(), logCritical: jest.fn().mockResolvedValue(undefined) } as never,
       { assertPageAccess: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       writer,

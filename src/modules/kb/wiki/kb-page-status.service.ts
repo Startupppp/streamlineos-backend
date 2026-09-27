@@ -78,6 +78,7 @@ export class KbPageStatusService {
       await this.writer.commitPageChange(tx, {
         orgId,
         actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        action: "kb.page.published",
         page: updated,
         changed: {},
       });
@@ -103,6 +104,7 @@ export class KbPageStatusService {
       await this.writer.commitPageChange(tx, {
         orgId,
         actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        action: "kb.page.archived",
         page: updated,
         changed: {},
       });
@@ -128,6 +130,7 @@ export class KbPageStatusService {
       await this.writer.commitPageChange(tx, {
         orgId,
         actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        action: "kb.page.unarchived",
         page: updated,
         changed: {},
       });

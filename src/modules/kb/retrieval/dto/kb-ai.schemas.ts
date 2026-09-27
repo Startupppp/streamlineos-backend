@@ -67,10 +67,13 @@ export const kbConversationRenameSchema = z
   })
   .strict();
 
-export const kbConversationsListQuerySchema = z.object({
-  cursor: z.coerce.number().int().positive().optional(),
-  limit: pageSizeField(20, 50),
-});
+export const kbConversationsListQuerySchema = z
+  .object({
+    cursor: z.coerce.number().int().positive().optional(),
+    limit: pageSizeField(20, 50),
+    q: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
 
 export const kbConversationMessagesQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),

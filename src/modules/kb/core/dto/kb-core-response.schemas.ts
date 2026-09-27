@@ -101,4 +101,8 @@ export const kbPageCollectionPageSchema = z.object({
       ),
     })
     .nullable(),
+  boundedCount: z.object({
+    count: z.number().int(),
+    isExact: z.boolean(),
+  }),
 });

@@ -98,4 +98,59 @@ describe("KbResearchBriefHandler — denial-of-wallet guard (BE-94)", () => {
     const terminal = updates.find((u) => u.set["status"] === "completed");
     expect(terminal).toBeDefined();
   });
+
+  it("AV-04: completed brief update carries provider and model read from aggregated kb_ai_interactions rows", async () => {
+    executeResult = [{ one: 1 }];
+    mockRunResearchBrief.mockResolvedValue({ report: "Brief", citations: [] });
+
+    let selectCallCount = 0;
+    const customDb = {
+      execute: jest.fn().mockImplementation(() => Promise.resolve(executeResult)),
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        if (selectCallCount === 1) {
+          const p = Promise.resolve([{ totalCredits: "5" }]);
+          return {
+            from: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            limit: jest.fn().mockResolvedValue([{ totalCredits: "5" }]),
+            then: p.then.bind(p),
+            catch: p.catch.bind(p),
+            finally: p.finally.bind(p),
+          };
+        }
+        const p = Promise.resolve([{ provider: "openai", model: "gpt-4o" }]);
+        return {
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([{ provider: "openai", model: "gpt-4o" }]),
+          then: p.then.bind(p),
+          catch: p.catch.bind(p),
+          finally: p.finally.bind(p),
+        };
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockImplementation((set: Record<string, unknown>) => ({
+          where: jest.fn().mockImplementation(() => {
+            updates.push({ set });
+            return Promise.resolve();
+          }),
+        })),
+      }),
+      query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) } },
+    };
+
+    const handler = makeHandler(customDb);
+    await handler.handle({
+      id: 1,
+      orgId: "org1",
+      userId: "user1",
+      payload: { briefId: 5, topic: "onboarding" },
+    });
+
+    const completedUpdate = updates.find((u) => u.set["status"] === "completed");
+    expect(completedUpdate).toBeDefined();
+    expect(completedUpdate?.set["provider"]).toBe("openai");
+    expect(completedUpdate?.set["model"]).toBe("gpt-4o");
+  });
 });

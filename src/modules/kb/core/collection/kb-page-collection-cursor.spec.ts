@@ -1,9 +1,12 @@
 import * as fc from "fast-check";
+import { PgDialect } from "drizzle-orm/pg-core";
 import {
   collectionScopeTag,
   decodeCollectionCursor,
   encodeCollectionCursor,
 } from "./kb-page-collection-cursor";
+import { keysetBeforeMicros, keysetAfterValue } from "../../../../common/pagination/keyset";
+import { kbPages } from "../../../../db/schema";
 import type { KbPageCollectionQuery } from "./knowledge-collection.types";
 
 const FINGERPRINT = "org-1|7|42|0|view|writer|1.2|3";
@@ -135,6 +138,62 @@ describe("KB collection cursor", () => {
   it("treats an absent cursor as page one", () => {
     const tag = collectionScopeTag(query(), FINGERPRINT);
     expect(decodeCollectionCursor(undefined, tag, "updated_desc")).toBeNull();
+  });
+});
+
+describe("KB collection cursor — keyset predicate strictness and total ordering", () => {
+  it("re-encoding a decoded cursor is a fixed point, so a cursor token is stable across page-boundary reconstructions", () => {
+    const tag = collectionScopeTag(query(), FINGERPRINT);
+    const pos = { sortValue: "2026-09-23T10:00:00.123456", id: 91 };
+    const cursor = encodeCollectionCursor(tag, pos);
+    const decoded = decodeCollectionCursor(cursor, tag, "updated_desc");
+    expect(decoded).not.toBeNull();
+    if (decoded === null) throw new Error("unreachable");
+    expect(encodeCollectionCursor(tag, decoded)).toBe(cursor);
+  });
+
+  it("two rows differing only in id produce different cursors, proving id is a genuine tiebreaker that makes the ordering total under any duplicate sort value", () => {
+    const tag = collectionScopeTag(query(), FINGERPRINT);
+    const sharedSortValue = "2026-09-23T10:00:00.123456";
+    const cursorA = encodeCollectionCursor(tag, { sortValue: sharedSortValue, id: 10 });
+    const cursorB = encodeCollectionCursor(tag, { sortValue: sharedSortValue, id: 11 });
+    expect(cursorA).not.toBe(cursorB);
+    const decodedA = decodeCollectionCursor(cursorA, tag, "updated_desc");
+    const decodedB = decodeCollectionCursor(cursorB, tag, "updated_desc");
+    expect(decodedA?.id).toBe(10);
+    expect(decodedB?.id).toBe(11);
+  });
+
+  it("every sort variant encodes the id into the cursor position, so the ordering is total under any sort and a cursor change on sort change is caught", () => {
+    for (const sort of ["updated_desc", "created_desc", "title_asc"] as const) {
+      const tag = collectionScopeTag(query({ sort }), FINGERPRINT);
+      const sortValue = sort === "title_asc" ? "Onboarding" : "2026-09-23T10:00:00.123456";
+      const cursor = encodeCollectionCursor(tag, { sortValue, id: 42 });
+      const decoded = decodeCollectionCursor(cursor, tag, sort);
+      expect(decoded?.id).toBe(42);
+    }
+  });
+
+  it("the timestamp keyset predicate is a strict row tuple < comparison, so the boundary row is excluded and the walk cannot double-count", () => {
+    const bound = keysetBeforeMicros(kbPages.updatedAt, kbPages.id, {
+      sortValue: "2026-09-23T10:00:00.123456",
+      id: 91,
+    });
+    const { sql: rendered } = new PgDialect().sqlToQuery(bound);
+    expect(rendered).toContain("<");
+    expect(rendered).not.toMatch(/<=/);
+    expect(rendered).toContain('"kb_pages"."id"');
+  });
+
+  it("the title keyset predicate is a strict row tuple > comparison, so the boundary row is excluded on an ascending title walk", () => {
+    const bound = keysetAfterValue(kbPages.title, kbPages.id, {
+      sortValue: "Onboarding",
+      id: 91,
+    });
+    const { sql: rendered } = new PgDialect().sqlToQuery(bound);
+    expect(rendered).toContain(">");
+    expect(rendered).not.toMatch(/>=/);
+    expect(rendered).toContain('"kb_pages"."id"');
   });
 });
 

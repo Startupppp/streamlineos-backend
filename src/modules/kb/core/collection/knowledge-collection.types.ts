@@ -1,4 +1,5 @@
 import type { KbPageGrantAccess } from "../../../../db/schema/kb/page-grants";
+import { PAGE_SIZE_CAP } from "../../../../common/pagination/list-query.schema";
 
 export const KB_PAGE_COLLECTION_SORTS = [
   "updated_desc",
@@ -18,6 +19,8 @@ export const KB_PAGE_STATUSES = [
 export type KbPageStatus = (typeof KB_PAGE_STATUSES)[number];
 
 export const KB_PAGE_COLLECTION_DEFAULT_LIMIT = 50;
+
+export const KB_PAGE_COLLECTION_COUNT_CAP = PAGE_SIZE_CAP * 5;
 
 export const KB_PAGE_COLLECTION_QUERY_FIELDS = [
   "q",
@@ -99,4 +102,5 @@ export interface KbPageCollectionPage {
     readonly nextCursor: string | null;
   };
   readonly facets: KbPageCollectionFacets | null;
+  readonly boundedCount: { readonly count: number; readonly isExact: boolean };
 }

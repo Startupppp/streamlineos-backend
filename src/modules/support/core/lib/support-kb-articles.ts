@@ -196,6 +196,7 @@ export async function updateArticle(
     if (updated.status === "published" && (contentChanged || aclChanged)) {
       await writer.commitPageChange(tx, {
         orgId,
+        action: "kb.support.page.updated",
         actor: { userId: authorId ?? "", membershipId: null },
         page: {
           id: updated.id,

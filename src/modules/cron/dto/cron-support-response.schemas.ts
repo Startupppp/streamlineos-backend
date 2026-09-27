@@ -91,6 +91,17 @@ export const kbChatHistoryPurgeResponseSchema = z.union([
   }),
 ]);
 
+export const kbContradictionScanResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    orgsProcessed: z.number().int().nonnegative(),
+    orgsFailed: z.number().int().nonnegative(),
+    detected: z.number().int().nonnegative(),
+  }),
+]);
+
 export const sessionRevocationPruneResponseSchema = z.union([
   cronSkippedSchema,
   z.object({

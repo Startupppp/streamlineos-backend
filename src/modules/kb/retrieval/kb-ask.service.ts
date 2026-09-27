@@ -341,6 +341,7 @@ export class KbAskService {
             actorMembershipId: actingMembershipId(user.principal) ?? null,
             resultState: "answered",
             model: aiUsage.model,
+            provider: aiUsage.provider,
             promptTokens: aiUsage.promptTokens,
             completionTokens: aiUsage.completionTokens,
             totalTokens: aiUsage.totalTokens,

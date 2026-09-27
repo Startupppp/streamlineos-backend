@@ -50,6 +50,7 @@ export class KbConversationsController {
     return this.history.listConversations(u, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
+      q: parsed.data.q,
     });
   }
 

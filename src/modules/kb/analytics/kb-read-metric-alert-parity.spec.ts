@@ -160,6 +160,16 @@ describe("the KB Read span carries no tenant content and survives redaction", ()
     expect(blanked).toEqual([]);
   });
 
+  it("(anti-vacuous bite) the runtime redaction gate catches a hypothetical tenant-content attribute added to the read span", () => {
+    const normalise = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const blanked = ["kb.read.page_filename"].filter(
+      (key) =>
+        SENSITIVE_EXACT.has(normalise(key)) ||
+        SENSITIVE_SUBSTRINGS.some((needle) => normalise(key).includes(needle)),
+    );
+    expect(blanked).toContain("kb.read.page_filename");
+  });
+
   it("declares no attribute whose value could be page title or body text", () => {
     const declared = [...metricsSource.matchAll(/this\.attributes\["([^"]+)"\]/g)].map(
       (match) => match[1] as string,

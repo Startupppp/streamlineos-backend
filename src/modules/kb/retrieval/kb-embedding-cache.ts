@@ -29,12 +29,13 @@ export class KbEmbeddingCache {
   }
 
   async embedOrDegrade(text: string, orgId: string): Promise<string | null> {
+    const normalized = normalizeEmbeddableQuery(text);
     const cache = this.cache;
-    if (cache === null) return this.embedCharged(text, orgId);
-    const key = this.queryEmbeddingCacheKey(orgId, text);
+    if (cache === null) return this.embedCharged(normalized, orgId);
+    const key = this.queryEmbeddingCacheKey(orgId, normalized);
     const hit = await cache.get<string>(key);
     if (hit !== null) return hit;
-    const vectorLiteral = await this.embedCharged(text, orgId);
+    const vectorLiteral = await this.embedCharged(normalized, orgId);
     if (vectorLiteral !== null)
       await cache.set(key, vectorLiteral, CACHE_TTL.WEEK);
     return vectorLiteral;

@@ -211,16 +211,15 @@ export class KbPageTreeService {
               inArray(kbArticleChunks.pageId, ids),
             ),
           );
+      await this.audit.logCritical({
+        action: "kb.page.deleted",
+        userId: user.userId,
+        orgId,
+        resourceType: "kb_page",
+        resourceId: String(pageId),
+        metadata: { pageTitle: page.title, subtreeSize: ids.length },
+      });
       return ids.length;
-    });
-
-    this.audit.log({
-      action: "kb.page.deleted",
-      userId: user.userId,
-      orgId,
-      resourceType: "kb_page",
-      resourceId: String(pageId),
-      metadata: { pageTitle: page.title, subtreeSize: deleted },
     });
 
     return { deletedCount: deleted };
@@ -285,16 +284,17 @@ export class KbPageTreeService {
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)));
       if (!restoredPage)
         throw new NotFoundException("Page not found after restore");
-      return restoredPage;
-    });
 
-    this.audit.log({
-      action: "kb.page.restored",
-      userId: user.userId,
-      orgId,
-      resourceType: "kb_page",
-      resourceId: String(pageId),
-      metadata: { pageTitle: page.title },
+      await this.audit.logCritical({
+        action: "kb.page.restored",
+        userId: user.userId,
+        orgId,
+        resourceType: "kb_page",
+        resourceId: String(pageId),
+        metadata: { pageTitle: page.title },
+      });
+
+      return restoredPage;
     });
 
     return restored;
@@ -404,6 +404,7 @@ export class KbPageTreeService {
           userId: user.userId,
           membershipId: user.principal !== undefined ? actingMembershipId(user.principal) : null,
         },
+        action: "kb.page.moved",
         page: updated,
         changed: {},
       });

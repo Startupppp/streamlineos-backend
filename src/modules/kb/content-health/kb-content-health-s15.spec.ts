@@ -2,7 +2,9 @@ import { NotFoundException } from "@nestjs/common";
 import { sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
+import type { TenantTx } from "../../../db/drizzle.types";
 import { KbContentHealthService } from "./kb-content-health.service";
+import { KbContradictionScannerService } from "./kb-contradiction-scanner.service";
 import type { ContentHealthSignalsQuery } from "./dto/kb-content-health.schemas";
 
 const dialect = new PgDialect();
@@ -296,6 +298,168 @@ describe("KbContentHealthService — bulkRepair cannot publish a page", () => {
       const r = bulkRepairBodySchema.safeParse({ pageIds: [1], kind: "unowned", repairAction: action });
       expect(r.success).toBe(false);
     }
+  });
+});
+
+function makeContradictionScanDb(options: {
+  candidates?: Array<{ page_a_id: number; page_b_id: number; shared_title: string }>;
+  existingItems?: Array<{ pageId: number; state: string; dismissalExpiresAt: Date | null }>;
+}): {
+  db: TenantTx;
+  ambient: Db;
+  execute: jest.Mock;
+  insertValues: jest.Mock;
+} {
+  const { candidates = [], existingItems = [] } = options;
+  const insertValues = jest.fn().mockResolvedValue([]);
+  const execute = jest.fn().mockResolvedValue(candidates);
+  const handle = {
+    execute,
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(existingItems),
+      }),
+    }),
+    insert: jest.fn().mockReturnValue({ values: insertValues }),
+  };
+  return {
+    db: handle as unknown as TenantTx,
+    ambient: handle as unknown as Db,
+    execute,
+    insertValues,
+  };
+}
+
+function makeScanner(db: Db): KbContradictionScannerService {
+  return new KbContradictionScannerService(db);
+}
+
+describe("KbContradictionScannerService — runContradictionScanForOrg", () => {
+  afterEach(() => jest.resetAllMocks());
+
+  it("returns 0 and does not insert when no duplicate-title pairs are found", async () => {
+    const { db: tx, ambient, insertValues } = makeContradictionScanDb({ candidates: [] });
+    const svc = makeScanner(ambient);
+
+    const count = await svc.runContradictionScanForOrg(tx, "org-1");
+
+    expect(count).toBe(0);
+    expect(insertValues).not.toHaveBeenCalled();
+  });
+
+  it("inserts one health item per page in a duplicate-title pair when neither has an active item", async () => {
+    const { db: tx, ambient, insertValues } = makeContradictionScanDb({
+      candidates: [{ page_a_id: 10, page_b_id: 20, shared_title: "Getting started" }],
+      existingItems: [],
+    });
+    const svc = makeScanner(ambient);
+
+    const count = await svc.runContradictionScanForOrg(tx, "org-1");
+
+    expect(count).toBe(2);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    const inserted = insertValues.mock.calls[0]?.[0] as Array<{ pageId: number; kind: string }>;
+    expect(inserted).toHaveLength(2);
+    const pageIds = inserted.map((r) => r.pageId).sort((a, b) => a - b);
+    expect(pageIds).toEqual([10, 20]);
+    expect(inserted.every((r) => r.kind === "contradictory_claim")).toBe(true);
+  });
+
+  it("skips a page that already has an open contradictory_claim item, preventing duplicate health items", async () => {
+    const { db: tx, ambient, insertValues } = makeContradictionScanDb({
+      candidates: [{ page_a_id: 10, page_b_id: 20, shared_title: "Getting started" }],
+      existingItems: [{ pageId: 10, state: "open", dismissalExpiresAt: null }],
+    });
+    const svc = makeScanner(ambient);
+
+    const count = await svc.runContradictionScanForOrg(tx, "org-1");
+
+    expect(count).toBe(1);
+    const inserted = insertValues.mock.calls[0]?.[0] as Array<{ pageId: number }>;
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.pageId).toBe(20);
+  });
+
+  it("skips a page with a non-expired dismissed item, so an active dismissal is respected", async () => {
+    const futureExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const { db: tx, ambient, insertValues } = makeContradictionScanDb({
+      candidates: [{ page_a_id: 10, page_b_id: 20, shared_title: "Getting started" }],
+      existingItems: [{ pageId: 10, state: "dismissed", dismissalExpiresAt: futureExpiry }],
+    });
+    const svc = makeScanner(ambient);
+
+    await svc.runContradictionScanForOrg(tx, "org-1");
+
+    const inserted = insertValues.mock.calls[0]?.[0] as Array<{ pageId: number }>;
+    expect(inserted?.find((r) => r.pageId === 10)).toBeUndefined();
+  });
+
+  it("creates a new item for a page with an expired dismissal, so the signal resurfaces after the snooze window", async () => {
+    const pastExpiry = new Date(Date.now() - 1);
+    const { db: tx, ambient, insertValues } = makeContradictionScanDb({
+      candidates: [{ page_a_id: 10, page_b_id: 20, shared_title: "Getting started" }],
+      existingItems: [{ pageId: 10, state: "dismissed", dismissalExpiresAt: pastExpiry }],
+    });
+    const svc = makeScanner(ambient);
+
+    await svc.runContradictionScanForOrg(tx, "org-1");
+
+    const inserted = insertValues.mock.calls[0]?.[0] as Array<{ pageId: number }>;
+    expect(inserted?.find((r) => r.pageId === 10)).toBeDefined();
+  });
+
+  it("stores each page's conflicting page id and shared title as evidence", async () => {
+    const { db: tx, ambient, insertValues } = makeContradictionScanDb({
+      candidates: [{ page_a_id: 10, page_b_id: 20, shared_title: "Policy" }],
+      existingItems: [],
+    });
+    const svc = makeScanner(ambient);
+
+    await svc.runContradictionScanForOrg(tx, "org-1");
+
+    const inserted = insertValues.mock.calls[0]?.[0] as Array<{
+      pageId: number;
+      evidence: { conflictingPageId: number; sharedTitle: string };
+    }>;
+    const itemForPageA = inserted?.find((r) => r.pageId === 10);
+    const itemForPageB = inserted?.find((r) => r.pageId === 20);
+    expect(itemForPageA?.evidence).toEqual({ conflictingPageId: 20, sharedTitle: "Policy" });
+    expect(itemForPageB?.evidence).toEqual({ conflictingPageId: 10, sharedTitle: "Policy" });
+  });
+
+  it("reads and writes through the supplied tenant transaction, never the ambient handle, so the sweep carries a tenant GUC instead of raising 42501", async () => {
+    const { db: tx, execute, insertValues } = makeContradictionScanDb({
+      candidates: [{ page_a_id: 10, page_b_id: 20, shared_title: "Policy" }],
+      existingItems: [],
+    });
+    const ambientExecute = jest.fn().mockResolvedValue([]);
+    const ambientInsertValues = jest.fn().mockResolvedValue([]);
+    const ambient = {
+      execute: ambientExecute,
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      }),
+      insert: jest.fn().mockReturnValue({ values: ambientInsertValues }),
+    } as unknown as Db;
+    const svc = makeScanner(ambient);
+
+    await svc.runContradictionScanForOrg(tx, "org-1");
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    expect(ambientExecute).not.toHaveBeenCalled();
+    expect(ambientInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("excludes same-title pages whose content is identical, so the signal does not restate duplicate_candidate", async () => {
+    const { db: tx, ambient, execute } = makeContradictionScanDb({ candidates: [] });
+    const svc = makeScanner(ambient);
+
+    await svc.runContradictionScanForOrg(tx, "org-1");
+
+    const rendered = render(execute.mock.calls[0]?.[0]);
+    expect(rendered).toContain("md5");
+    expect(rendered).toContain("IS DISTINCT FROM");
   });
 });
 

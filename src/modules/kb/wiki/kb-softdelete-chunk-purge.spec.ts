@@ -44,7 +44,7 @@ function makeDb(subtreeIds: number[]) {
   return { db, txDelete, txUpdate, txExecute, chunkDeleteWhere };
 }
 
-const makeAudit = () => ({ log: jest.fn() });
+const makeAudit = () => ({ log: jest.fn(), logCritical: jest.fn().mockResolvedValue(undefined) });
 const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "manage", via: "admin" }),

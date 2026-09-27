@@ -8,6 +8,7 @@ import { KbAnalyticsService } from "./kb-analytics.service";
 import { KbContentGapService } from "./kb-content-gap.service";
 import {
   rangeSchema,
+  rangeWithSpaceSchema,
   overviewQuerySchema,
   pageAnalyticsQuerySchema,
   gapsQuerySchema,
@@ -16,6 +17,7 @@ import {
   gapDismissBodySchema,
   gapCreateFixBodySchema,
   type RangeInput,
+  type RangeWithSpaceInput,
   type OverviewQueryInput,
   type PageAnalyticsQueryInput,
   type GapsQueryInput,
@@ -60,10 +62,10 @@ export class KbAnalyticsController {
 
   @Get("analytics/no-results")
   @RequirePermission("kb:analytics:view")
-  @Validate({ query: rangeSchema })
+  @Validate({ query: rangeWithSpaceSchema })
   @ResponseSchema(kbAnalyticsNoResultsSchema)
   async noResults(
-    @Query() query: RangeInput,
+    @Query() query: RangeWithSpaceInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.contentGap.noResults(u.orgId, query);
@@ -115,10 +117,10 @@ export class KbAnalyticsController {
 
   @Get("analytics/citation-reuse")
   @RequirePermission("kb:analytics:view")
-  @Validate({ query: rangeSchema })
+  @Validate({ query: rangeWithSpaceSchema })
   @ResponseSchema(kbAnalyticsCitationReuseSchema)
   async citationReuse(
-    @Query() query: RangeInput,
+    @Query() query: RangeWithSpaceInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.citationReuse(u, query);
@@ -126,10 +128,10 @@ export class KbAnalyticsController {
 
   @Get("analytics/review-sla")
   @RequirePermission("kb:analytics:view")
-  @Validate({ query: rangeSchema })
+  @Validate({ query: rangeWithSpaceSchema })
   @ResponseSchema(kbAnalyticsReviewSlaSchema)
   async reviewSla(
-    @Query() query: RangeInput,
+    @Query() query: RangeWithSpaceInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.reviewSla(u.orgId, query);

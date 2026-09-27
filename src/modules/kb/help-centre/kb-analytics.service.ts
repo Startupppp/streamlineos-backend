@@ -25,7 +25,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type {
   OverviewQueryInput,
   PageAnalyticsQueryInput,
-  RangeInput,
+  RangeWithSpaceInput,
 } from "./dto/kb-analytics.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -111,6 +111,12 @@ export class KbAnalyticsService {
       eventConditions.push(gte(kbEvents.occurredAt, new Date(range.from)));
     if (range.to)
       eventConditions.push(lte(kbEvents.occurredAt, new Date(range.to)));
+    if (range.spaceId !== undefined) {
+      const spaceId = range.spaceId;
+      eventConditions.push(
+        sql`${kbEvents.articleId} IN (SELECT ${kbPages.id} FROM ${kbPages} WHERE ${kbPages.orgId} = ${orgId} AND ${kbPages.spaceId} = ${spaceId} AND ${kbPages.deletedAt} IS NULL)`,
+      );
+    }
 
     const pageConditions: SQL[] = [
       eq(kbPages.orgId, orgId),
@@ -261,7 +267,7 @@ export class KbAnalyticsService {
 
   async citationReuse(
     user: CurrentUserContext,
-    range: RangeInput,
+    range: RangeWithSpaceInput,
   ): Promise<CitationReuseRow[]> {
     const orgId = user.orgId;
     const visiblePage = await this.auth.visiblePagePredicate(user, "view");
@@ -316,6 +322,7 @@ export class KbAnalyticsService {
               AND ${kbPages.id} = cited.ref_id
               AND ${kbPages.deletedAt} IS NULL
               AND ${visiblePage}
+              ${range.spaceId !== undefined ? sql`AND ${kbPages.spaceId} = ${range.spaceId}` : sql``}
           )
         )
       GROUP BY kind, ref_id
@@ -332,7 +339,7 @@ export class KbAnalyticsService {
     }));
   }
 
-  async reviewSla(orgId: string, range: RangeInput): Promise<ReviewSlaResult> {
+  async reviewSla(orgId: string, range: RangeWithSpaceInput): Promise<ReviewSlaResult> {
     const decidedConditions: SQL[] = [
       eq(kbPageReviews.orgId, orgId),
       sql`${kbPageReviews.status} != 'pending'`,
@@ -345,6 +352,22 @@ export class KbAnalyticsService {
     if (range.to)
       decidedConditions.push(lte(kbPageReviews.decidedAt, new Date(range.to)));
 
+    const overdueConditions: SQL[] = [
+      eq(kbPageReviews.orgId, orgId),
+      eq(kbPageReviews.status, "pending"),
+      lt(kbPageReviews.dueAt, new Date()),
+    ];
+
+    if (range.spaceId !== undefined) {
+      const spaceId = range.spaceId;
+      decidedConditions.push(
+        sql`${kbPageReviews.pageId} IN (SELECT ${kbPages.id} FROM ${kbPages} WHERE ${kbPages.orgId} = ${orgId} AND ${kbPages.spaceId} = ${spaceId} AND ${kbPages.deletedAt} IS NULL)`,
+      );
+      overdueConditions.push(
+        sql`${kbPageReviews.pageId} IN (SELECT ${kbPages.id} FROM ${kbPages} WHERE ${kbPages.orgId} = ${orgId} AND ${kbPages.spaceId} = ${spaceId} AND ${kbPages.deletedAt} IS NULL)`,
+      );
+    }
+
     const [[decidedStats], [overdueStats]] = await Promise.all([
       this.db
         .select({
@@ -356,13 +379,7 @@ export class KbAnalyticsService {
       this.db
         .select({ overdueOpen: sql<number>`count(*)::int` })
         .from(kbPageReviews)
-        .where(
-          and(
-            eq(kbPageReviews.orgId, orgId),
-            eq(kbPageReviews.status, "pending"),
-            lt(kbPageReviews.dueAt, new Date()),
-          ),
-        ),
+        .where(and(...overdueConditions)),
     ]);
 
     const decided = decidedStats?.decided ?? 0;

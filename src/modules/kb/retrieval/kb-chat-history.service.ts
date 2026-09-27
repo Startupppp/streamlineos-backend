@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -145,7 +145,7 @@ export class KbChatHistoryService {
 
   async listConversations(
     user: CurrentUserContext,
-    opts: { cursor?: number; limit: number },
+    opts: { cursor?: number; limit: number; q?: string },
   ): Promise<KbConversationListPage> {
     const { orgId } = user;
     const membershipId = actingMembershipId(user.principal) ?? 0;
@@ -170,6 +170,38 @@ export class KbChatHistoryService {
       cursorRow = found;
     }
 
+    const baseConditions: SQL[] = [
+      eq(kbChatConversations.orgId, orgId),
+      eq(kbChatConversations.userMembershipId, membershipId),
+    ];
+
+    if (opts.q) {
+      const words = opts.q
+        .trim()
+        .split(/\s+/)
+        .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
+        .filter((w) => w.length > 0)
+        .slice(0, 8);
+      if (words.length > 0) {
+        const prefixQuery = words.map((w) => `${w}:*`).join(" & ");
+        baseConditions.push(
+          sql`to_tsvector('english', COALESCE(${kbChatConversations.title}, '')) @@ to_tsquery('english', ${prefixQuery})`,
+        );
+      }
+    }
+
+    if (cursorRow) {
+      baseConditions.push(
+        or(
+          lt(kbChatConversations.updatedAt, cursorRow.updatedAt),
+          and(
+            eq(kbChatConversations.updatedAt, cursorRow.updatedAt),
+            lt(kbChatConversations.id, cursorRow.id),
+          ),
+        ) as SQL,
+      );
+    }
+
     const rows = await this.db
       .select({
         id: kbChatConversations.id,
@@ -178,24 +210,7 @@ export class KbChatHistoryService {
         updatedAt: kbChatConversations.updatedAt,
       })
       .from(kbChatConversations)
-      .where(
-        cursorRow
-          ? and(
-              eq(kbChatConversations.orgId, orgId),
-              eq(kbChatConversations.userMembershipId, membershipId),
-              or(
-                lt(kbChatConversations.updatedAt, cursorRow.updatedAt),
-                and(
-                  eq(kbChatConversations.updatedAt, cursorRow.updatedAt),
-                  lt(kbChatConversations.id, cursorRow.id),
-                ),
-              ),
-            )
-          : and(
-              eq(kbChatConversations.orgId, orgId),
-              eq(kbChatConversations.userMembershipId, membershipId),
-            ),
-      )
+      .where(and(...baseConditions))
       .orderBy(
         desc(kbChatConversations.updatedAt),
         desc(kbChatConversations.id),

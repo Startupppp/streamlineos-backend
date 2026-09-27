@@ -147,6 +147,7 @@ export class KbPageVersionsService {
       await this.writer.commitPageChange(tx, {
         orgId,
         actor: { userId: user.userId, membershipId },
+        action: "kb.page.version_restored",
         page: updated,
         changed: version.content
           ? {

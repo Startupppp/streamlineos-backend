@@ -152,6 +152,18 @@ describe("the KB Search span carries no tenant content and survives redaction", 
     expect(metricsSource).not.toContain("query");
     expect(metricsSource).not.toContain("title");
   });
+
+  it("(anti-vacuous bite) the runtime redaction gate catches a hypothetical tenant-content attribute added to the span", () => {
+    const attributes: Record<string, string | number | boolean> = {};
+    attributes["kb.search.user_email_address"] = "user@example.com";
+    const normalise = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const blanked = Object.keys(attributes).filter(
+      (key) =>
+        SENSITIVE_EXACT.has(normalise(key)) ||
+        SENSITIVE_SUBSTRINGS.some((needle) => normalise(key).includes(needle)),
+    );
+    expect(blanked).toContain("kb.search.user_email_address");
+  });
 });
 
 describe("the KB Search emitter is wired at the search service's real decision points", () => {

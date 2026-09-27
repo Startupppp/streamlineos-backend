@@ -6373,7 +6373,7 @@
       "breakpoints": true
     },
     {
-      "idx": 1136,
+      "idx": 1138,
       "version": "7",
       "when": 1803093625725,
       "tag": "1396_build_sprint_cycle_chain_repair",
@@ -7077,6 +7077,20 @@
       "version": "7",
       "when": 1803093626725,
       "tag": "1370_kb_chunk_acl_dead_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1138,
+      "version": "7",
+      "when": 1803093627725,
+      "tag": "1350_kb_acl_branch_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1139,
+      "version": "7",
+      "when": 1803093628725,
+      "tag": "1360_retire_app_search_kb_chunk_ids",
       "breakpoints": true
     }
   ]

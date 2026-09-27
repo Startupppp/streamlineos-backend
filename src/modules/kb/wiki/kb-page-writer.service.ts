@@ -2,6 +2,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 import {
   snapshotIfNeeded,
   resyncPageLinks,
@@ -27,6 +29,7 @@ export type KbPageChangedContent = {
 export type CommitPageChangeInput = {
   orgId: string;
   actor: KbPageChangeActor;
+  action: string;
   page: {
     id: number;
     title: string;
@@ -54,15 +57,18 @@ export type CommitManyPageChangesInput = {
 export class KbPageWriterService {
   private readonly logger = new Logger(KbPageWriterService.name);
 
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly audit: AuditService,
+  ) {}
 
   async commitPageChange(
     tx: KbTransaction,
     input: CommitPageChangeInput,
   ): Promise<void> {
-    const metrics = KbWriteMetrics.begin({ orgId: input.orgId });
+    const metrics = KbWriteMetrics.begin({ orgId: input.orgId, orgCell: PROCESS_CELL_ID });
     try {
-      const { orgId, actor, page, changed } = input;
+      const { orgId, actor, page, changed, action } = input;
 
       if (changed.content !== undefined) {
         const {
@@ -103,6 +109,16 @@ export class KbPageWriterService {
           });
         }
       }
+
+      await this.audit.logCritical({
+        action,
+        userId: actor.userId,
+        orgId,
+        resourceType: "kb_page",
+        resourceId: String(page.id),
+        actorMembershipId: actor.membershipId ?? undefined,
+        metadata: { pageTitle: page.title },
+      });
 
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),

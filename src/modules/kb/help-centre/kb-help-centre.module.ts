@@ -14,6 +14,7 @@ import { KbVerificationService } from "./kb-verification.service";
 import { KbFromTicketService } from "./kb-from-ticket.service";
 import { KbAnalyticsService } from "./kb-analytics.service";
 import { KbContentGapService } from "./kb-content-gap.service";
+import { KbContradictionScannerService } from "../content-health/kb-contradiction-scanner.service";
 import { KbArticleAiController } from "./kb-article-ai.controller";
 import { KbAiFeedbackController } from "./kb-ai-feedback.controller";
 import { KbFromTicketController } from "./kb-from-ticket.controller";
@@ -41,7 +42,8 @@ import { KbWidgetController } from "./kb-widget.controller";
     KbFromTicketService,
     KbAnalyticsService,
     KbContentGapService,
+    KbContradictionScannerService,
   ],
-  exports: [KbArticlesService],
+  exports: [KbArticlesService, KbContradictionScannerService],
 })
 export class KbHelpCentreModule {}

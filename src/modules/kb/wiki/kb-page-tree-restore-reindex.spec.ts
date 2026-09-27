@@ -73,7 +73,7 @@ function makeDb(subtreeIds: number[], pagesToIndexRows: typeof RESTORED_PAGE[]) 
   return { db, txInsert, tx };
 }
 
-const makeAudit = () => ({ log: jest.fn() });
+const makeAudit = () => ({ log: jest.fn(), logCritical: jest.fn().mockResolvedValue(undefined) });
 const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "edit", via: "admin" }),
@@ -90,7 +90,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never),
     );
 
     await svc.restore(makeUser(), 10);
@@ -111,7 +111,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never),
     );
 
     await svc.restore(makeUser(), 10);
@@ -129,7 +129,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never),
     );
 
     await svc.restore(makeUser(), 10);
@@ -149,7 +149,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeAuth() as never,
       {} as never,
-      new KbPageWriterService({} as never),
+      new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never),
     );
 
     await svc.restore(makeUser(), 10);

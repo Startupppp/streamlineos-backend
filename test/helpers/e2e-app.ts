@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { generateKeyPairSync } from "node:crypto";
 import { seedOrg } from "./e2e-seed";
 import type { INestApplication } from "@nestjs/common";
 import { VERSION_NEUTRAL, VersioningType } from "@nestjs/common";
@@ -380,12 +381,54 @@ function layerOverStub(stub: object, override: Record<string, unknown>): object 
   return merged;
 }
 
+function selectResultChain(): Record<string, unknown> {
+  const chain: Record<string, unknown> = {};
+  const self = () => chain;
+  chain.from = self;
+  chain.where = self;
+  chain.limit = self;
+  chain.innerJoin = self;
+  chain.leftJoin = self;
+  chain.fullJoin = self;
+  chain.orderBy = self;
+  chain.having = self;
+  chain.groupBy = self;
+  chain.then = (
+    onfulfilled: (value: never[]) => unknown,
+    onrejected?: (reason: unknown) => unknown,
+  ) => Promise.resolve([] as never[]).then(onfulfilled, onrejected);
+  chain.catch = (onrejected: (reason: unknown) => unknown) =>
+    Promise.resolve([]).catch(onrejected);
+  chain.finally = (onfinally: () => void) => Promise.resolve([]).finally(onfinally);
+  return chain;
+}
+
+function makeTxDouble(): Record<string, unknown> {
+  const tx: Record<string, unknown> = {};
+  tx.execute = () => Promise.resolve([]);
+  tx.select = () => selectResultChain();
+  tx.insert = () => ({ values: () => ({ onConflictDoNothing: () => Promise.resolve([]) }) });
+  tx.update = () => ({ set: () => ({ where: () => Promise.resolve([]) }) });
+  tx.delete = () => ({ where: () => Promise.resolve([]) });
+  tx.transaction = async (innerCb: (tx2: object) => Promise<unknown>) => innerCb(tx);
+  return tx;
+}
+
 export function withBootSweepExecute(double: object): object {
   const missing: PropertyDescriptorMap = {};
   if (!("execute" in double))
     missing.execute = { value: () => Promise.resolve([]), enumerable: true };
   if (!("__client" in double))
     missing.__client = { value: { end: () => Promise.resolve() }, enumerable: true };
+  if (!("select" in double))
+    missing.select = { value: () => selectResultChain(), enumerable: true };
+  if (!("transaction" in double)) {
+    const tx = makeTxDouble();
+    missing.transaction = {
+      value: async (cb: (tx: object) => Promise<unknown>) => cb(tx),
+      enumerable: true,
+    };
+  }
   if (Object.keys(missing).length === 0) return double;
   return Object.create(double, missing);
 }
@@ -422,6 +465,14 @@ function withDerivedScope(stub: object, override: Record<string, unknown>): obje
 export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestApplication> {
   process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
+  if (!process.env.AUTH_SIGNING_KEYS) {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    process.env.AUTH_SIGNING_KEYS = JSON.stringify([{
+      kid: "e2e-harness",
+      privateKey: privateKey.export({ format: "jwk" }),
+      publicKey: publicKey.export({ format: "jwk" }),
+    }]);
+  }
   // Admission control leaks in-flight counters when a downstream guard rejects
   // (the interceptor that releases never runs). After orgMaxConcurrent (50)
   // leaked requests for the same org, AdmissionGuard starts returning 503 for

@@ -145,6 +145,7 @@ export class KbPagePublicService {
       await this.writer.commitPageChange(tx, {
         orgId,
         actor: { userId: user.userId, membershipId: this.membershipId(user) },
+        action: "kb.page.visibility_changed",
         page: updated,
         changed: {},
       });

@@ -26,7 +26,7 @@ import type {
   GapAssignBody,
   GapDismissBody,
   GapCreateFixBody,
-  RangeInput,
+  RangeWithSpaceInput,
 } from "./dto/kb-analytics.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -149,7 +149,7 @@ export class KbContentGapService {
     ]);
   }
 
-  async noResults(orgId: string, range: RangeInput): Promise<NoResultsRow[]> {
+  async noResults(orgId: string, range: RangeWithSpaceInput): Promise<NoResultsRow[]> {
     const conditions: SQL[] = [
       eq(kbEvents.orgId, orgId),
       eq(kbEvents.eventType, "search_no_results"),
@@ -157,6 +157,12 @@ export class KbContentGapService {
     if (range.from)
       conditions.push(gte(kbEvents.occurredAt, new Date(range.from)));
     if (range.to) conditions.push(lte(kbEvents.occurredAt, new Date(range.to)));
+    if (range.spaceId !== undefined) {
+      const spaceId = range.spaceId;
+      conditions.push(
+        sql`${kbEvents.articleId} IN (SELECT ${kbPages.id} FROM ${kbPages} WHERE ${kbPages.orgId} = ${orgId} AND ${kbPages.spaceId} = ${spaceId} AND ${kbPages.deletedAt} IS NULL)`,
+      );
+    }
 
     return this.db
       .select({

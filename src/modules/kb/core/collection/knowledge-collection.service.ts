@@ -47,6 +47,7 @@ import type {
   KbPageSharedBy,
   KbPageStatus,
 } from "./knowledge-collection.types";
+import { KB_PAGE_COLLECTION_COUNT_CAP } from "./knowledge-collection.types";
 
 const COLLECTION_PROJECTION = {
   id: kbPages.id,
@@ -89,6 +90,7 @@ function emptyPage(limit: number): KbPageCollectionPage {
     data: [],
     pagination: { limit, hasMore: false, nextCursor: null },
     facets: null,
+    boundedCount: { count: 0, isExact: true },
   };
 }
 
@@ -194,6 +196,18 @@ export class KnowledgeCollectionService {
     const kept = hasMore ? rows.slice(0, query.limit) : rows;
     const last = kept[kept.length - 1];
 
+    const countScope = and(
+      shared !== null ? shared.predicate : scope.predicate,
+      ...filterConditions,
+    );
+    const countProbe = await this.db
+      .select({ _: sql`1` })
+      .from(kbPages)
+      .where(countScope)
+      .limit(KB_PAGE_COLLECTION_COUNT_CAP + 1);
+    const rawCount = countProbe.length;
+    const countIsExact = rawCount <= KB_PAGE_COLLECTION_COUNT_CAP;
+
     const sharedBy =
       query.sharedWithMe === true
         ? await this.loadSharedBy(
@@ -229,6 +243,10 @@ export class KnowledgeCollectionService {
               ),
             )
           : null,
+      boundedCount: {
+        count: countIsExact ? rawCount : KB_PAGE_COLLECTION_COUNT_CAP,
+        isExact: countIsExact,
+      },
     };
   }
 

@@ -16,7 +16,13 @@ function build() {
   const trash = { purgeExpired: jest.fn().mockResolvedValue(0) };
   const settings = { getOrgSettings: jest.fn().mockResolvedValue({ trashRetentionDays: 30 }) };
   const audit = { logCritical: jest.fn().mockResolvedValue(undefined) };
-  const service = new CronKbService({} as unknown as Db, trash as never, settings as never, audit as never);
+  const service = new CronKbService(
+    {} as unknown as Db,
+    trash as never,
+    settings as never,
+    audit as never,
+    { runContradictionScanAllOrgs: jest.fn() } as never,
+  );
   const tx = {};
   mockedForEachOrg.mockImplementation(async (_db, _name, fn) => {
     await fn(tx as never, ORG_A);

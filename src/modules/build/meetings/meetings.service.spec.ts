@@ -274,6 +274,116 @@ describe("ActionItemsService.convertToTask", () => {
   });
 });
 
+describe("MeetingsService.listMeetings — server-side full-text search predicate", () => {
+  const u = makeU("org-1");
+
+  function makeChain(rows: unknown[]) {
+    const chain = {
+      from: jest.fn(),
+      innerJoin: jest.fn(),
+      where: jest.fn(),
+      orderBy: jest.fn(),
+      limit: jest.fn().mockResolvedValue(rows),
+    };
+    chain.from.mockReturnValue(chain);
+    chain.innerJoin.mockReturnValue(chain);
+    chain.where.mockReturnValue(chain);
+    chain.orderBy.mockReturnValue(chain);
+    return chain;
+  }
+
+  function hasOwnPropStr<K extends string>(obj: object, key: K): obj is Record<K, unknown> {
+    return key in obj;
+  }
+
+  function collectParamValues(node: unknown, acc: unknown[] = []): unknown[] {
+    if (node === null || node === undefined) return acc;
+    if (typeof node === "string" || typeof node === "number" || typeof node === "boolean") {
+      acc.push(node);
+      return acc;
+    }
+    if (typeof node !== "object") return acc;
+    if (Array.isArray(node)) {
+      for (const item of node) collectParamValues(item, acc);
+      return acc;
+    }
+    if (hasOwnPropStr(node, "encoder") && hasOwnPropStr(node, "value")) {
+      acc.push(node.value);
+      return acc;
+    }
+    if (hasOwnPropStr(node, "queryChunks")) {
+      const qc = node.queryChunks;
+      if (Array.isArray(qc)) {
+        for (const chunk of qc) collectParamValues(chunk, acc);
+      }
+    }
+    return acc;
+  }
+
+  function makeMeetingsMockDb() {
+    return {
+      query: { projects: { findFirst: jest.fn() } },
+      select: jest.fn().mockReturnValue(makeChain([{ role: "MEMBER" }])),
+    };
+  }
+
+  function makeSearchAccessService(): AccessService {
+    return {
+      resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+    } as unknown as AccessService;
+  }
+
+  function setupSearchMocks(
+    mockDb: ReturnType<typeof makeMeetingsMockDb>,
+    meetingChain: ReturnType<typeof makeChain>,
+  ) {
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(meetingChain);
+  }
+
+  it("includes the search term as a WHERE param so the DB filters rather than the caller", async () => {
+    const mockDb = makeMeetingsMockDb();
+    const meetingChain = makeChain([]);
+    setupSearchMocks(mockDb, meetingChain);
+    const svc = new MeetingsService(mockDb as unknown as Db, makeSearchAccessService(), mockAudit);
+
+    await svc.listMeetings(u, 1, { limit: 25, q: "standup-keyword" });
+
+    const whereArg: unknown = meetingChain.where.mock.calls[0]?.[0];
+    expect(collectParamValues(whereArg)).toContain("standup-keyword");
+  });
+
+  it("does not include a search param for 'standup-keyword' in WHERE when no search is provided", async () => {
+    const mockDb = makeMeetingsMockDb();
+    const meetingChain = makeChain([]);
+    setupSearchMocks(mockDb, meetingChain);
+    const svc = new MeetingsService(mockDb as unknown as Db, makeSearchAccessService(), mockAudit);
+
+    await svc.listMeetings(u, 1, { limit: 25 });
+
+    const whereArg: unknown = meetingChain.where.mock.calls[0]?.[0];
+    expect(collectParamValues(whereArg)).not.toContain("standup-keyword");
+  });
+
+  it("keeps orgId and projectId in WHERE beside the search term, which is the only reason the measured cost of search is a heap filter over one project's rows: a GIN index on the title expression is never chosen under RLS because ts_match_vq is not leakproof and so cannot be evaluated before the tenant qual (BE-80)", async () => {
+    const mockDb = makeMeetingsMockDb();
+    const meetingChain = makeChain([]);
+    setupSearchMocks(mockDb, meetingChain);
+    const svc = new MeetingsService(mockDb as unknown as Db, makeSearchAccessService(), mockAudit);
+
+    await svc.listMeetings(u, 4242, { limit: 25, q: "quarterly-review" });
+
+    const whereArg: unknown = meetingChain.where.mock.calls[0]?.[0];
+    const params = collectParamValues(whereArg);
+    expect(params).toContain("quarterly-review");
+    expect(params).toContain("org-1");
+    expect(params).toContain(4242);
+  });
+});
+
 describe("MeetingsService — project membership gate (assertProjectAccess)", () => {
   function makeNonMemberDb() {
     const limit = jest.fn().mockResolvedValue([]);
@@ -311,7 +421,9 @@ describe("MeetingsService — project membership gate (assertProjectAccess)", ()
       },
       select: jest.fn().mockImplementation(() => {
         callCount++;
-        return callCount === 1 ? makeLimitChain([{ role: "MEMBER" }]) : meetingsChain;
+        if (callCount === 1) return makeLimitChain([{ role: "MEMBER" }]);
+        if (callCount === 2) return makeLimitChain([]);
+        return meetingsChain;
       }),
     } as unknown as Db;
   }

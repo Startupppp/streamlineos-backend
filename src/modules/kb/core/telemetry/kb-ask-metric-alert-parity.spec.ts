@@ -234,6 +234,8 @@ describe("the KB Ask span carries no tenant content and survives redaction", () 
       "kb.ask.citations",
       "kb.ask.candidates",
       "kb.ask.degraded",
+      "kb.ask.rerank_latency_ms",
+      "kb.ask.is_no_answer",
       "kb.ask.queue_lane",
       "kb.ask.source_kind",
       "kb.ask.cache_outcome",
@@ -246,6 +248,18 @@ describe("the KB Ask span carries no tenant content and survives redaction", () 
     expect(metricsSource).not.toMatch(/this\.attributes\[[^\]]+\]\s*=\s*`/);
     expect(metricsSource).not.toContain("contentText");
     expect(metricsSource).not.toContain("title");
+  });
+
+  it("(anti-vacuous bite) the runtime redaction gate catches a hypothetical prompt-text attribute added to the span", () => {
+    const attributes: Record<string, string | number | boolean> = {};
+    attributes["kb.ask.retrieval_prompt"] = "what is the onboarding process";
+    const normalise = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const blanked = Object.keys(attributes).filter(
+      (key) =>
+        SENSITIVE_EXACT.has(normalise(key)) ||
+        SENSITIVE_SUBSTRINGS.some((needle) => normalise(key).includes(needle)),
+    );
+    expect(blanked).toContain("kb.ask.retrieval_prompt");
   });
 });
 

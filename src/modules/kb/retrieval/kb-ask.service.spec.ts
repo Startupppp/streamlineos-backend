@@ -665,4 +665,30 @@ describe("KbAskService", () => {
     expect(row?.costCredits).toBe(1);
     expect(row?.gatewayCorrelationId).toBe("gw-corr-1");
   });
+
+  it("AV-04: answered interaction row carries the provider name supplied by the gateway so every kb_ai_interactions row has provenance", async () => {
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce({
+      ok: true as const,
+      data: "Provider provenance answer",
+      correlationId: "gw-corr-prov",
+      aiUsage: {
+        model: "gpt-4o-mini",
+        provider: "openai",
+        promptTokens: 10,
+        completionTokens: 5,
+        totalTokens: 15,
+        credits: 1,
+        costUsd: 0.001,
+      },
+    });
+
+    await service.ask(user, input);
+
+    const row = insertedRows.find(
+      (r): r is Record<string, unknown> =>
+        typeof r === "object" && r !== null && "resultState" in r && r["resultState"] === "answered",
+    );
+    expect(row).toBeDefined();
+    expect(row?.provider).toBe("openai");
+  });
 });

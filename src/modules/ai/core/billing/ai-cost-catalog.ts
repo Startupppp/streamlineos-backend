@@ -1,3 +1,5 @@
+export const KB_INDEXING_PER_CHUNK_CREDITS = 0.005;
+
 export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "crm.score-lead": 1,
   // Ticket 12: one small-model call per inbound activity, reading a capped
@@ -57,11 +59,8 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "kb.ask": 1,
   "kb.public-ask": 1,
   "kb.public-embedding": 1,
-  // Embedding ceilings are fractional because the settled charge is tiny: a query
-  // embed lands on the 10-milli floor, and `chunkText` caps a document at 400
-  // chunks, whose worst case settles near 450 milli.
   "kb.search": 0.05,
-  "kb.indexing": 1,
+  "kb.indexing": KB_INDEXING_PER_CHUNK_CREDITS,
   "support.embedding": 0.05,
   "support.kb-search": 0.05,
   "chat.message": 1,

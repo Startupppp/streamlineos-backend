@@ -13,7 +13,7 @@ export class NullReplicaHealthProbe implements ReplicaHealthProbe {
 const DEFAULT_MAX_LAG_MS = 5_000;
 
 export interface ReplicaLagProbeDb {
-  execute(query: ReturnType<typeof sql>): Promise<Array<Record<string, unknown>>>;
+  execute(query: ReturnType<typeof sql>): Promise<ReadonlyArray<Record<string, unknown>>>;
 }
 
 export class PostgresReplicaLagProbe implements ReplicaHealthProbe {

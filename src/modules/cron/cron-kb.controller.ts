@@ -21,6 +21,7 @@ import {
   kbTelemetryRetentionSweepResponseSchema,
   kbChatHistoryPurgeResponseSchema,
   kbStuckSourceReapResponseSchema,
+  kbContradictionScanResponseSchema,
 } from "./dto/cron-support-response.schemas";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
@@ -104,6 +105,40 @@ export class CronKbController {
   @ResponseSchema(kbStuckSourceReapResponseSchema)
   postKbStuckSourceReap(@Headers("authorization") authorization?: string) {
     return this.runKbStuckSourceReap(authorization);
+  }
+
+  @Get("kb-contradiction-scan")
+  @ResponseSchema(kbContradictionScanResponseSchema)
+  getKbContradictionScan(@Headers("authorization") authorization?: string) {
+    return this.runKbContradictionScan(authorization);
+  }
+
+  @Post("kb-contradiction-scan")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(kbContradictionScanResponseSchema)
+  postKbContradictionScan(@Headers("authorization") authorization?: string) {
+    return this.runKbContradictionScan(authorization);
+  }
+
+  private async runKbContradictionScan(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("kb-contradiction-scan", 600, () =>
+        this.kb.scanContradictions(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "kb-contradiction-scan already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `KB contradiction scan: detected ${result.detected} item(s) across ${result.orgsProcessed} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("KB contradiction scan cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
   }
 
   private async runKbStuckSourceReap(authorization?: string) {

@@ -26,7 +26,7 @@ function makePage(over: Partial<{ id: number; title: string; contentRevision: nu
 }
 
 function makeWriter() {
-  return new KbPageWriterService({} as never);
+  return new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
 }
 
 describe("KbPageWriterService.commitPageChange — index event", () => {

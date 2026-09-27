@@ -118,7 +118,7 @@ describe("KbPageStatusService — writer delegation for status transitions", () 
 
   it("publish calls writer.commitPageChange so a published page is immediately visible in search and Ask", async () => {
     const db = makeStatusDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeStatusService(db, writer);
 
@@ -133,7 +133,7 @@ describe("KbPageStatusService — writer delegation for status transitions", () 
 
   it("archive calls writer.commitPageChange so an archived page status change propagates to the index", async () => {
     const db = makeStatusDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeStatusService(db, writer);
 
@@ -144,7 +144,7 @@ describe("KbPageStatusService — writer delegation for status transitions", () 
 
   it("unarchive calls writer.commitPageChange so a restored page re-enters search without waiting for backfill", async () => {
     const db = makeStatusDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeStatusService(db, writer);
 
@@ -158,7 +158,7 @@ describe("KbPageStatusService — writer delegation for status transitions", () 
       query: { kbPages: { findFirst: jest.fn().mockResolvedValue({ id: PAGE_ID }) } },
       update: makeUpdateChain(),
     };
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeStatusService(db as never, writer);
 
@@ -210,7 +210,7 @@ describe("KbPagePublicService — writer delegation for visibility changes", () 
 
   it("setVisibility calls writer.commitPageChange so ACL revision change in the index reflects the new audience immediately", async () => {
     const db = makePublicDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makePublicService(db, writer);
 
@@ -292,7 +292,7 @@ describe("KbPageVersionsService — writer delegation for version restore", () =
 
   it("restoreVersion calls writer.commitPageChange so the restored content is immediately searchable without a manual backfill run", async () => {
     const db = makeVersionsDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeVersionsService(db, writer);
 
@@ -323,7 +323,7 @@ describe("KbPageVersionsService — writer delegation for version restore", () =
         }),
       }),
     };
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeVersionsService(versionsDb as never, writer);
 
@@ -390,7 +390,7 @@ describe("KbPageTreeService — writer delegation for restore", () => {
   ) {
     return new KbPageTreeService(
       db as never,
-      { log: jest.fn() } as never,
+      { log: jest.fn(), logCritical: jest.fn().mockResolvedValue(undefined) } as never,
       makeAuth(),
       {} as never,
       writer,
@@ -399,7 +399,7 @@ describe("KbPageTreeService — writer delegation for restore", () => {
 
   it("restore calls writer.commitManyPageChanges so a restored subtree is re-indexed atomically and does not disappear from search until backfill catches it", async () => {
     const db = makeRestoreDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
     const spy = jest.spyOn(writer, "commitManyPageChanges").mockResolvedValue(undefined);
     const svc = makeRestoreService(db, writer);
 

@@ -8,6 +8,11 @@ export const rangeSchema = z.object({
 }).strict();
 export type RangeInput = z.infer<typeof rangeSchema>;
 
+export const rangeWithSpaceSchema = rangeSchema.extend({
+  spaceId: z.coerce.number().int().positive().optional(),
+}).strict();
+export type RangeWithSpaceInput = z.infer<typeof rangeWithSpaceSchema>;
+
 export const overviewQuerySchema = rangeSchema.extend({
   spaceId: z.coerce.number().int().positive().optional(),
 }).strict();

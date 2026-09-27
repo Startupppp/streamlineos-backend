@@ -8,6 +8,7 @@ export interface AiTokenUsage {
 
 export interface AiUsageMeta {
   model: string;
+  provider?: string;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;

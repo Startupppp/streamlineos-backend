@@ -112,7 +112,7 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
 
     await svc.overview("org-1", { spaceId: 42 });
 
-    const pageWheres = wheres.filter((w) => w.sql.includes(`"kb_pages"`));
+    const pageWheres = wheres.filter((w) => w.sql.includes(`"kb_pages"`) && !w.sql.includes(`"kb_events"`));
     expect(pageWheres).toHaveLength(1);
     for (const w of pageWheres) {
       expect(w.sql).toContain(`"kb_pages"."space_id"`);
@@ -126,11 +126,32 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
 
     await svc.overview("org-1", {});
 
-    const pageWheres = wheres.filter((w) => w.sql.includes(`"kb_pages"`));
-    expect(pageWheres).toHaveLength(1);
-    for (const w of pageWheres) {
-      expect(w.sql).not.toContain(`"kb_pages"."space_id"`);
-    }
+    const eventWheres = wheres.filter((w) => w.sql.includes(`"kb_events"`));
+    expect(eventWheres).toHaveLength(1);
+    expect(eventWheres[0]?.sql).not.toContain(`"kb_pages"."space_id"`);
+  });
+
+  it("scopes the kb_events statistics query to pages in the given space", async () => {
+    const { db, wheres } = overviewHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.overview("org-1", { spaceId: 42 });
+
+    const eventWheres = wheres.filter((w) => w.sql.includes(`"kb_events"`));
+    expect(eventWheres).toHaveLength(1);
+    expect(eventWheres[0]?.sql).toContain(`"kb_events"."article_id"`);
+    expect(eventWheres[0]?.params).toContain(42);
+  });
+
+  it("does not scope event statistics by space when spaceId is omitted", async () => {
+    const { db, wheres } = overviewHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.overview("org-1", {});
+
+    const eventWheres = wheres.filter((w) => w.sql.includes(`"kb_events"`));
+    expect(eventWheres).toHaveLength(1);
+    expect(eventWheres[0]?.sql).not.toContain(`"kb_events"."article_id"`);
   });
 
   it("projects a ticketsDeflected count filtered to the ticket_deflected event", async () => {
@@ -387,5 +408,142 @@ describe("KbAnalyticsService.citationReuse", () => {
 
     const rendered = render(executed[0]);
     expect(rendered.sql.toLowerCase()).toContain("kind <> 'page'");
+  });
+
+  it("scopes the page-existence check to the given space when spaceId is provided", async () => {
+    const { db, executed } = citationHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.citationReuse(USER, { spaceId: 7 });
+
+    const rendered = render(executed[0]);
+    expect(rendered.sql).toContain(`"kb_pages"."space_id"`);
+    expect(rendered.params).toContain(7);
+  });
+
+  it("does not add a space filter when spaceId is absent, so org-wide citations are returned without a space predicate", async () => {
+    const { db, executed } = citationHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.citationReuse(USER, {});
+
+    const rendered = render(executed[0]);
+    expect(rendered.sql).not.toContain(`"kb_pages"."space_id"`);
+  });
+
+  it("maps the raw row into the CitationReuseRow shape so the caller receives camelCase fields", async () => {
+    const { db } = citationHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    const result = await svc.citationReuse(USER, {});
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: "page", refId: 4, title: "Refund policy", reuseCount: 3 });
+  });
+});
+
+function reviewsWithSpaceHarness() {
+  const wheres: Rendered[] = [];
+  const db = {
+    select: jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn((clause: unknown) => {
+          wheres.push(render(clause));
+          return Promise.resolve([{ decided: 0, metSla: 0, overdueOpen: 0 }]);
+        }),
+      })),
+    })),
+  } as unknown as Db;
+  return { db, wheres };
+}
+
+describe("KbAnalyticsService.reviewSla — space filter", () => {
+  it("scopes both the decided and overdue counts to pages in the given space", async () => {
+    const { db, wheres } = reviewsWithSpaceHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.reviewSla("org-1", { spaceId: 5 });
+
+    expect(wheres).toHaveLength(2);
+    for (const w of wheres) {
+      expect(w.sql).toContain(`"kb_pages"."space_id"`);
+      expect(w.params).toContain(5);
+    }
+  });
+
+  it("does not add a space filter to either query when spaceId is absent", async () => {
+    const { db, wheres } = reviewsWithSpaceHarness();
+    const svc = new KbAnalyticsService(db, auth);
+
+    await svc.reviewSla("org-1", {});
+
+    for (const w of wheres) {
+      expect(w.sql).not.toContain(`"kb_pages"."space_id"`);
+    }
+  });
+});
+
+describe("KbContentGapService.noResults — space filter", () => {
+  it("scopes the no-results query to events linked to pages in the given space", async () => {
+    const { db, havings } = eventGroupHarness();
+    const capturedWheres: unknown[] = [];
+    const db2 = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn((clause: unknown) => {
+            capturedWheres.push(clause);
+            return {
+              groupBy: jest.fn(() => ({
+                having: jest.fn((h: unknown) => {
+                  havings.push(h);
+                  return {
+                    orderBy: jest.fn(() => ({
+                      limit: jest.fn().mockResolvedValue([]),
+                    })),
+                  };
+                }),
+              })),
+            };
+          }),
+        })),
+      })),
+    } as unknown as Db;
+    const svc = new KbContentGapService(db2, auth);
+
+    await svc.noResults("org-1", { spaceId: 9 });
+
+    const whereRendered = capturedWheres.map((c) => render(c));
+    const withSpace = whereRendered.find((r) => r.sql.includes(`"kb_pages"."space_id"`));
+    expect(withSpace).toBeDefined();
+    expect(withSpace?.params).toContain(9);
+  });
+
+  it("does not add a space filter when spaceId is absent", async () => {
+    const capturedWheres: unknown[] = [];
+    const db2 = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn((clause: unknown) => {
+            capturedWheres.push(clause);
+            return {
+              groupBy: jest.fn(() => ({
+                having: jest.fn(() => ({
+                  orderBy: jest.fn(() => ({
+                    limit: jest.fn().mockResolvedValue([]),
+                  })),
+                })),
+              })),
+            };
+          }),
+        })),
+      })),
+    } as unknown as Db;
+    const svc = new KbContentGapService(db2, auth);
+
+    await svc.noResults("org-1", {});
+
+    const whereRendered = capturedWheres.map((c) => render(c));
+    const withSpace = whereRendered.find((r) => r.sql.includes(`"kb_pages"."space_id"`));
+    expect(withSpace).toBeUndefined();
   });
 });
