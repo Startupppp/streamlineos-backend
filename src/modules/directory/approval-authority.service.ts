@@ -10,6 +10,7 @@ import {
   userDelegations,
   users,
 } from "../../db/schema";
+import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { AccessService } from "../access/access.service";
 import { EmploymentFactsService } from "./employment-facts.service";
 import { ReportingLineService } from "./reporting-line.service";
@@ -124,9 +125,18 @@ export class ApprovalAuthorityService {
       .filter((member) => member.userId !== subjectUserId);
     if (queueMembers.length === 0) skipped.push({ rung: "queue", userId: null, reason: "queue-empty" });
 
+    // A sole founder otherwise dead-ends: they are the only person who could
+    // approve, and the queue drops the requester so they cannot approve themselves.
+    let ownerSelfUserId: string | null = null;
+    if (viable.length === 0 && queueMembers.length === 0) {
+      const owner = await isStructuralOrgAdmin(this.db, { orgId, userId: subjectUserId, isOrgOwner: false });
+      if (owner) ownerSelfUserId = subjectUserId;
+    }
+
     const people = await this.people(orgId, [
       ...viable.map((answer) => answer.userId),
       ...queueMembers.map((member) => member.userId),
+      ...(ownerSelfUserId ? [ownerSelfUserId] : []),
     ]);
     const facts = await this.employment.getFactsBatch(orgId, [...people.keys()]);
     const candidateOf = (userId: string): ApprovalCandidate | null => {
@@ -144,7 +154,7 @@ export class ApprovalAuthorityService {
           members: queueMembers.map((member) => candidateOf(member.userId)).filter((candidate): candidate is ApprovalCandidate => candidate !== null),
         };
 
-    const first = viable[0] ?? null;
+    const first = viable[0] ?? (ownerSelfUserId ? { rung: "queue" as const, userId: ownerSelfUserId } : null);
     const assignedTo = first ? candidateOf(first.userId) : null;
     const rung: ApprovalRung | null = first ? first.rung : queue ? "queue" : null;
 
@@ -153,6 +163,12 @@ export class ApprovalAuthorityService {
 
     const escalation = this.escalationAfter(rung, viable, candidateOf, queue);
     const dueAt = new Date(at.getTime() + policy.slaHours * 3_600_000).toISOString();
+    const approverNow = approver ?? assignedTo;
+    const ownerSelf =
+      ownerSelfUserId !== null && viable.length === 0 && assignedTo?.userId === ownerSelfUserId;
+    const explanation = ownerSelf && assignedTo
+      ? `${displayName(assignedTo)} approves their own ${policy.label} request as the organisation owner. Assign a reporting manager when someone else should decide.`
+      : this.explain(rung, assignedTo, approverNow, delegation, queue, skipped, queuePolicy);
 
     return {
       kind,
@@ -161,14 +177,14 @@ export class ApprovalAuthorityService {
       resolvedAt: at.toISOString(),
       rung,
       assignedTo,
-      approver: approver ?? assignedTo,
+      approver: approverNow,
       delegation: approver ? delegation : null,
-      queue: rung === "queue" ? queue : null,
+      queue: ownerSelf ? null : rung === "queue" ? queue : null,
       skipped,
       slaHours: policy.slaHours,
       dueAt,
       escalation,
-      explanation: this.explain(rung, assignedTo, approver ?? assignedTo, delegation, queue, skipped, queuePolicy),
+      explanation,
     };
   }
 

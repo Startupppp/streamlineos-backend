@@ -98,6 +98,7 @@ export const hrPolicyScopes = pgTable(
       .notNull(),
     scopeType: hrPolicyScopeTypeEnum("scope_type").notNull(),
     scopeValue: text("scope_value").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
   foreignKey({ columns: [table.orgId, table.policyId], foreignColumns: [hrPolicies.orgId, hrPolicies.id], name: "fk_hr_policy_scopes_org_policy" }).onDelete("cascade"),

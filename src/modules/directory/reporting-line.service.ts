@@ -280,7 +280,7 @@ export class ReportingLineService {
           label: row.label,
           manager: {
             userId: row.managerUserId,
-            name: row.managerName,
+            name: row.managerName?.trim() || row.managerEmail || "Manager",
             email: row.managerEmail,
             designation: row.managerDesignation,
             state: managerState,

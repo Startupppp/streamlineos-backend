@@ -11,7 +11,7 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { expenseImportResultSchema } from "./dto/expenses-response.schemas";
 
-@RequireModule("accounting")
+@RequireModule("hr")
 @Controller("hr/expenses/import")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ExpensesImportController {
