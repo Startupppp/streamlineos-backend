@@ -252,7 +252,7 @@ describe("CyclesService — cross-project scope within one org — updateCycle",
     } as unknown as Db;
     const svc = new CyclesService(db);
 
-    await expect(svc.updateCycle(ATTACKER_ORG, 7, 99, { name: "Renamed" })).rejects.toThrow(NotFoundException);
+    await expect(svc.updateCycle(ATTACKER_ORG, 7, 99, { name: "Renamed", version: 1 })).rejects.toThrow(NotFoundException);
     expect(db.update).not.toHaveBeenCalled();
   });
 });

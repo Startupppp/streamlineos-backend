@@ -111,6 +111,7 @@ export class CyclesService {
           orgId,
           name: input.name,
           description: input.description,
+          capacity: input.capacity,
           startDate: input.startDate,
           endDate: input.endDate,
           createdBy: userId,
