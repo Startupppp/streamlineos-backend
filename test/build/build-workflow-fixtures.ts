@@ -7,7 +7,7 @@ import { createSeededE2eApp, signSeededToken } from "test/helpers/seeded-e2e-app
 const permissions = [
   "build:view", "build:create", "build:update", "build:delete", "build:manage",
   "build:tickets:view", "build:tickets:create", "build:tickets:update", "build:tickets:delete",
-  "build:sprints:view", "build:sprints:manage", "build:workspace:manage",
+  "build:cycles:view", "build:cycles:manage", "build:workspace:manage",
 ];
 
 export async function createBuildWorkflowFixture() {

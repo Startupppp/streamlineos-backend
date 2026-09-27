@@ -148,6 +148,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 **BE-109.** Keep durable per-person capability in `user_permission_grants`. It survives a role change.
 **BE-110.** Never delegate the `billing:` namespace, including the org owner's own.
 **BE-111.** Widen a role template and let `RoleGrantReconcilerService` converge at boot. Never backfill grants by migration. *Why:* the new key violates the FK until catalog sync runs.
+**BE-111a.** One applied migration breaks BE-111: `1197_build_cycle_permissions.sql` rewrote `build:sprints:*` to `build:cycles:*` in place across `role_permission_grants`, `user_permission_grants`, `permission_supported_scopes` and `user_delegation_permissions`. It also cannot replay on an empty database — its own precondition `RAISE EXCEPTION`s when the legacy rows are absent, which BE-66 requires it to survive. It is applied and its result is correct; it is not precedent. See `docs/build-module/MIGRATION-RUNBOOK.md`.
 **BE-112.** Add a key to the backend catalog and the frontend catalog together, or `useCan` is false forever. (gate: check:permission-keys)
 **BE-113.** Apply DataScope from `req.rbacScope` — `own` → `assignedToId = actor.userId`; `none` → deny.
 **BE-114.** Call `bumpPermissionsVersion(tx, orgId)` in the same transaction as every role or permission mutation.
