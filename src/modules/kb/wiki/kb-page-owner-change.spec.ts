@@ -94,7 +94,7 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
     const pageRow = makePageRow();
     const { db } = makeDb(pageRow, { ...pageRow, ownerUserId: NEW_OWNER_USER_ID });
     const auth = makeAuth();
-    const audit = { log: jest.fn() };
+    const audit = { log: jest.fn(), logCritical: jest.fn() };
     const svc = new KbPagesService(
       db,
       planLimits,
@@ -108,10 +108,11 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
       svc.update(makeUser(), PAGE_ID, { ownerUserId: NEW_OWNER_USER_ID }, false),
     ).rejects.toThrow(ForbiddenException);
 
+    expect(audit.logCritical).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
   });
 
-  it("allows an ownership change from a manager, bumps acl_revision, reindexes, and audits it", async () => {
+  it("allows an ownership change from a manager, bumps acl_revision, reindexes, and records the audit through logCritical so it commits or rolls back with the mutation rather than best-effort", async () => {
     const pageRow = makePageRow();
     const updatedRow = {
       ...pageRow,
@@ -122,7 +123,7 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
     };
     const { db, setCalls } = makeDb(pageRow, updatedRow);
     const auth = makeAuth();
-    const audit = { log: jest.fn() };
+    const audit = { log: jest.fn(), logCritical: jest.fn() };
     const svc = new KbPagesService(
       db,
       planLimits,
@@ -151,13 +152,14 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
       expect.objectContaining({ eventType: "kb.content.index" }),
     );
 
-    expect(audit.log).toHaveBeenCalledWith(
+    expect(audit.logCritical).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "kb.page.owner_changed",
         resourceType: "kb_page",
         resourceId: String(PAGE_ID),
       }),
     );
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
   it("does not touch acl_revision or fire a reindex for an update with no ownerUserId or spaceId field", async () => {
@@ -165,7 +167,7 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
     const updatedRow = { ...pageRow, title: "New title" };
     const { db, setCalls } = makeDb(pageRow, updatedRow);
     const auth = makeAuth();
-    const audit = { log: jest.fn() };
+    const audit = { log: jest.fn(), logCritical: jest.fn() };
     const svc = new KbPagesService(
       db,
       planLimits,
@@ -180,6 +182,7 @@ describe("KbPagesService.update — ownerUserId reassignment", () => {
     const setValues = setCalls[0] as Record<string, unknown>;
     expect(setValues).not.toHaveProperty("aclRevision");
     expect(emitMock).not.toHaveBeenCalled();
+    expect(audit.logCritical).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
   });
 });

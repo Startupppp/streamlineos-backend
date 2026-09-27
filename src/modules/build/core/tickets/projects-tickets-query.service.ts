@@ -1,0 +1,73 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import type { Db } from "../../../../db/drizzle.types";
+import { CacheService } from "../../../../common/cache/cache.service";
+import { logSideEffectFailure } from "../../../../common/logger/side-effect";
+import { AccessService } from "../../../access/access.service";
+import { resolveValidTicketStatuses } from "./ticket-status.util";
+import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import type { BulkUpdateInput, RankTicketInput } from "../dto/projects.schemas";
+import { assertTransitionAllowed, assertWipLimit, enforceWipLimitForStatus, type PrefetchedWorkflow } from "./projects-tickets-workflow-utils";
+import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils";
+import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
+import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "./build-ticket-mutation-policy";
+import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
+import { BuildAutomationRunnerService } from "../build-automation-runner.service";
+
+@Injectable()
+export class ProjectsTicketsQueryService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+    private readonly access: AccessService,
+    private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
+    private readonly automationRunner: BuildAutomationRunnerService,
+  ) {}
+
+  async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
+    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId);
+    if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
+  }
+
+  async assertTransitionAllowed(orgId: string, projectId: number, fromText: string, toText: string,
+    context: { userId: string; userProjectRole: string | null; isOrgOwner: boolean; ticketId: number }, prefetched?: PrefetchedWorkflow,
+  ): Promise<void> {
+    return assertTransitionAllowed(this.db, orgId, projectId, fromText, toText, context, prefetched);
+  }
+
+  async assertWipLimit(orgId: string, projectId: number, statusName: string, wipLimit: number, excludeTicketId?: number): Promise<void> {
+    return assertWipLimit(this.db, orgId, projectId, statusName, wipLimit, excludeTicketId);
+  }
+
+  async enforceWipLimitForStatus(orgId: string, projectId: number, statusName: string, excludeTicketId: number): Promise<void> {
+    return enforceWipLimitForStatus(this.db, orgId, projectId, statusName, excludeTicketId);
+  }
+
+  async bulkUpdate(actor: CurrentUserContext, projectId: number, body: BulkUpdateInput) {
+    const result = await bulkMutateTickets(this.db, this.access, actor, projectId, body, {
+      webhooksDispatch: this.webhooksDispatch,
+      automationRunner: this.automationRunner,
+    });
+    await this.cache.invalidateNamespace(`build:analytics:${actor.orgId}`)
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId }));
+    return result;
+  }
+
+  async authorizeMutation(tx: Db, actor: CurrentUserContext, projectId: number, ticketIds: number[]) {
+    const policy = await authorizeTicketMutation(tx, this.access, actor, projectId);
+    await lockProjectTicketMutation(tx, actor.orgId, projectId);
+    return readMutationTickets(tx, actor, projectId, ticketIds, policy);
+  }
+
+  async rankTicket(actor: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput) {
+    return rankTicket(this.db, this.cache, this.access, actor, projectId, ticketId, body, {
+      webhooksDispatch: this.webhooksDispatch,
+      automationRunner: this.automationRunner,
+    });
+  }
+
+  async rebalanceProjectRanks(orgId: string, projectId: number): Promise<void> {
+    return rebalanceProjectRanks(this.db, orgId, projectId);
+  }
+}

@@ -22,7 +22,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
-import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
+import { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import {

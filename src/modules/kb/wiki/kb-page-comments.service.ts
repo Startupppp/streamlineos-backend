@@ -16,11 +16,11 @@ import { keysetAfterId } from "../../../common/pagination/keyset";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AccessService } from "../../access/access.service";
+import { buildCursorPage, type CursorPage } from "../../../common/pagination/cursor";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 type CommentRow = typeof kbPageComments.$inferSelect;
 type CommentWithAuthor = CommentRow & { authorName: string | null };
-
-const PAGE_SIZE = 50;
 
 @Injectable()
 export class KbPageCommentsService {
@@ -35,9 +35,11 @@ export class KbPageCommentsService {
     user: CurrentUserContext,
     pageId: number,
     cursor?: KeysetPosition,
-  ): Promise<CommentWithAuthor[]> {
+    limit = 50,
+  ): Promise<CursorPage<CommentWithAuthor>> {
     const orgId = user.orgId;
     await this.assertPageExists(user, pageId);
+    const pageSize = Math.min(Math.max(1, limit), PAGE_SIZE_CAP);
     const conditions = [eq(kbPageComments.orgId, orgId), eq(kbPageComments.pageId, pageId)];
     if (cursor) conditions.push(keysetAfterId(kbPageComments.createdAt, kbPageComments.id, cursor));
     const rows = await this.db
@@ -50,10 +52,14 @@ export class KbPageCommentsService {
       .leftJoin(users, eq(users.id, kbPageComments.authorId))
       .where(and(...conditions))
       .orderBy(asc(kbPageComments.createdAt), asc(kbPageComments.id))
-      .limit(PAGE_SIZE);
-    return rows.map(function toCommentWithAuthor(row) {
+      .limit(pageSize + 1);
+    const items: CommentWithAuthor[] = rows.map(function toCommentWithAuthor(row) {
       return { ...row.comment, authorName: row.authorName ?? row.authorEmail };
     });
+    return buildCursorPage(items, pageSize, (item) => ({
+      sortValue: item.createdAt.toISOString(),
+      id: String(item.id),
+    }));
   }
 
   async create(user: CurrentUserContext, pageId: number, input: CreatePageCommentInput): Promise<CommentWithAuthor> {

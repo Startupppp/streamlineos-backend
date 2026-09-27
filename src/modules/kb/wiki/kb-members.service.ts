@@ -14,6 +14,8 @@ import { orgRoleSlugExists } from "../core/authorization/knowledge-space-scope";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { PG_UNIQUE_VIOLATION, getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
+import { buildCursorPage, decodeIntegerCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 
 type MemberRow = typeof kbSpaceMembers.$inferSelect;
@@ -45,9 +47,14 @@ export class KbMembersService {
     if (!space) throw new NotFoundException("Space not found");
   }
 
-  async list(orgId: string, spaceId: number): Promise<MemberListItem[]> {
+  async list(orgId: string, spaceId: number, cursor?: string, limit = 50): Promise<CursorPage<MemberListItem>> {
     await this.assertSpaceExists(orgId, spaceId);
-    return this.db
+    const pageSize = Math.min(Math.max(1, limit), PAGE_SIZE_CAP);
+    const position = decodeIntegerCursor(cursor);
+    const afterMember = position
+      ? sql`${kbSpaceMembers.id} > ${sql.param(position.id, kbSpaceMembers.id)}`
+      : undefined;
+    const rows = await this.db
       .select({
         id: kbSpaceMembers.id,
         orgId: kbSpaceMembers.orgId,
@@ -71,9 +78,13 @@ export class KbMembersService {
         ),
       )
       .leftJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(kbSpaceMembers.orgId, orgId), eq(kbSpaceMembers.spaceId, spaceId)))
-      .orderBy(asc(kbSpaceMembers.spaceRole), asc(kbSpaceMembers.createdAt))
-      .limit(500);
+      .where(and(eq(kbSpaceMembers.orgId, orgId), eq(kbSpaceMembers.spaceId, spaceId), afterMember))
+      .orderBy(asc(kbSpaceMembers.id))
+      .limit(pageSize + 1);
+    return buildCursorPage(rows, pageSize, (row) => ({
+      sortValue: String(row.id),
+      id: String(row.id),
+    }));
   }
 
   async add(orgId: string, spaceId: number, input: AddMemberInput): Promise<MemberListItem> {

@@ -88,7 +88,7 @@ const ALLOWLIST = [
     file: "modules/build/core/dto/build-tickets-response.schemas.ts",
     prop: "ticketIds",
     reason:
-      "`bulkUpdateResultSchema`, declared at modules/build/core/projects-tickets.controller.ts:161. It echoes the ids the server actually updated. The caller-supplied id list is bounded on the REQUEST schema; capping the echo would only make a successful bulk update fail to describe itself.",
+      "`bulkUpdateResultSchema`, declared at modules/build/core/tickets/projects-tickets.controller.ts:161. It echoes the ids the server actually updated. The caller-supplied id list is bounded on the REQUEST schema; capping the echo would only make a successful bulk update fail to describe itself.",
   },
   {
     file: "modules/build/forms/dto/forms-response.schemas.ts",

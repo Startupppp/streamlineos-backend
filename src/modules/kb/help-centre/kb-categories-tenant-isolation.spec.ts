@@ -29,9 +29,11 @@ describe("KbCategoriesService — cross-tenant isolation", () => {
           from: jest.fn().mockReturnValue({
             where: jest.fn().mockImplementation((w: unknown) => {
               wheres.push(w);
-              return Object.assign(Promise.resolve([]), {
-                orderBy: jest.fn().mockResolvedValue([]),
-              });
+              return {
+                orderBy: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockResolvedValue([]),
+                }),
+              };
             }),
           }),
         })),

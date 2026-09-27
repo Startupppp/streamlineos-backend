@@ -7,7 +7,7 @@ import type {
   EntityActor,
 } from "../../entity-reference/entity-reference.types";
 import { isProjectMember, text } from "./build-entity-action-helpers";
-import { reserveTicketCapacity } from "../core/build-ticket-capacity";
+import { reserveTicketCapacity } from "../core/tickets";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 
 const TICKET_TYPES = ["TASK", "BUG"] as const;

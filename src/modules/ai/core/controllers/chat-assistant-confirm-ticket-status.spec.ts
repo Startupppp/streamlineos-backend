@@ -43,7 +43,7 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 
 import { BadRequestException } from "@nestjs/common";
 import { ChatAssistantController } from "./chat-assistant.controller";
-import { ProjectsTicketsService } from "../../../build/core/projects-tickets.service";
+import { ProjectsTicketsService } from "../../../build/core/tickets/projects-tickets.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 

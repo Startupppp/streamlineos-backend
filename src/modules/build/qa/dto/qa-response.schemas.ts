@@ -101,8 +101,16 @@ export const testRunResultPageSchema = z.object({
   nextCursor: z.number().int().nullable(),
 });
 
+export const testRunDetailResultSchema = testRunResultRowSchema.extend({
+  testCase: z.object({
+    caseNumber: z.number().int(),
+    title: z.string(),
+    priority: z.enum(["low", "medium", "high"]),
+  }),
+});
+
 export const testRunDetailSchema = testRunRowSchema.extend({
-  results: z.array(testRunResultRowSchema),
+  results: z.array(testRunDetailResultSchema),
 });
 
 export const bugRowSchema = z.object({

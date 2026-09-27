@@ -74,8 +74,17 @@ function makeSearch(embedResult: QueryEmbedding = { vectorLiteral: VECTOR }) {
   return {
     resolveQueryEmbedding: jest.fn().mockResolvedValue(embedResult),
     retrieveTopArticles: jest.fn().mockResolvedValue([ARTICLE]),
+    retrieveTopArticlesWithOutcome: jest
+      .fn()
+      .mockResolvedValue({ kind: "ok", results: [ARTICLE] }),
     retrieveTopSources: jest.fn().mockResolvedValue([SOURCE]),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([PASSAGE]),
+    retrieveTopSourcesWithOutcome: jest
+      .fn()
+      .mockResolvedValue({ kind: "ok", results: [SOURCE] }),
+    retrieveDocumentPassagesWithOutcome: jest
+      .fn()
+      .mockResolvedValue({ kind: "ok", results: [PASSAGE] }),
   };
 }
 
@@ -88,9 +97,9 @@ describe("KbRetrievalService.retrieve — one embedding per call", () => {
     await service.retrieve(makeUser(), QUESTION);
 
     expect(search.resolveQueryEmbedding).toHaveBeenCalledTimes(1);
-    expect(search.retrieveTopArticles).toHaveBeenCalledTimes(1);
-    expect(search.retrieveTopSources).toHaveBeenCalledTimes(1);
-    expect(search.retrieveDocumentPassages).toHaveBeenCalledTimes(1);
+    expect(search.retrieveTopArticlesWithOutcome).toHaveBeenCalledTimes(1);
+    expect(search.retrieveTopSourcesWithOutcome).toHaveBeenCalledTimes(1);
+    expect(search.retrieveDocumentPassagesWithOutcome).toHaveBeenCalledTimes(1);
   });
 
   it("hands the same embedding object to all three retrieval paths so one charge is not the signature of a service that retrieved nothing", async () => {
@@ -103,25 +112,25 @@ describe("KbRetrievalService.retrieve — one embedding per call", () => {
     } = {};
 
     jest
-      .spyOn(search, "retrieveTopArticles")
+      .spyOn(search, "retrieveTopArticlesWithOutcome")
       .mockImplementation(
         (_user, _query, _limit, _spaceId, _verifiedOnly, embedding) => {
           seen.articles = embedding;
-          return Promise.resolve([ARTICLE]);
+          return Promise.resolve({ kind: "ok" as const, results: [ARTICLE] });
         },
       );
     jest
-      .spyOn(search, "retrieveTopSources")
+      .spyOn(search, "retrieveTopSourcesWithOutcome")
       .mockImplementation((_user, _query, _limit, _sourceIds, embedding) => {
         seen.sources = embedding;
-        return Promise.resolve([SOURCE]);
+        return Promise.resolve({ kind: "ok" as const, results: [SOURCE] });
       });
     jest
-      .spyOn(search, "retrieveDocumentPassages")
+      .spyOn(search, "retrieveDocumentPassagesWithOutcome")
       .mockImplementation(
         (_user, _query, _articleIds, _pageIds, embedding) => {
           seen.passages = embedding;
-          return Promise.resolve([PASSAGE]);
+          return Promise.resolve({ kind: "ok" as const, results: [PASSAGE] });
         },
       );
 
@@ -189,9 +198,10 @@ describe("KbRetrievalService.retrieve — degraded flag distinguishes outage fro
   it("marks sources degraded when individual source items carry the degraded flag even when embedding succeeds — passages and documents remain non-degraded", async () => {
     const db = makeDb(true);
     const search = makeSearch();
-    jest.spyOn(search, "retrieveTopSources").mockResolvedValue([
-      { ...SOURCE, degraded: true as const },
-    ]);
+    jest.spyOn(search, "retrieveTopSourcesWithOutcome").mockResolvedValue({
+      kind: "ok" as const,
+      results: [{ ...SOURCE, degraded: true as const }],
+    });
     const service = new KbRetrievalService(db as never, search as never, null);
 
     const result = await service.retrieve(makeUser(), QUESTION);
@@ -242,12 +252,12 @@ describe("KbRetrievalService.retrieve — result shape", () => {
   it("skips retrieveDocumentPassages when there are no documents to retrieve passages for", async () => {
     const db = makeDb(true);
     const search = makeSearch();
-    jest.spyOn(search, "retrieveTopArticles").mockResolvedValue([]);
+    jest.spyOn(search, "retrieveTopArticlesWithOutcome").mockResolvedValue({ kind: "empty" as const, results: [] });
     const service = new KbRetrievalService(db as never, search as never, null);
 
     await service.retrieve(makeUser(), QUESTION);
 
-    expect(search.retrieveDocumentPassages).not.toHaveBeenCalled();
+    expect(search.retrieveDocumentPassagesWithOutcome).not.toHaveBeenCalled();
   });
 
   it("does not call resolveQueryEmbedding when the corpus is empty, avoiding a paid round-trip for orgs with no content", async () => {

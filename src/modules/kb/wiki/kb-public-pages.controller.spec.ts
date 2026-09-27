@@ -1,7 +1,7 @@
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { NotFoundException } from "@nestjs/common";
+import { HttpException, NotFoundException } from "@nestjs/common";
 import { KbPublicPagesController } from "./kb-public-pages.controller";
 import { KbPagePublicService } from "./kb-page-public.service";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
@@ -94,5 +94,95 @@ describe("KbPublicPagesController (e2e)", () => {
     expect(res.body).toMatchObject({ title: "Test Page", icon: null, coverImage: null, content: null });
     expect(res.body).not.toHaveProperty("publicToken");
     expect(res.body).not.toHaveProperty("publicTokenHash");
+  });
+});
+
+describe("KbPublicPagesController.getPublicMedia", () => {
+  const R2_BASE = "https://cdn.example.com";
+  const VALID_TOKEN = "pagetokenA";
+  const FILE_A_KEY = "org1/fileA.png";
+
+  let mockValidateAttachment: jest.Mock;
+  let mockRateLimitCheck: jest.Mock;
+  let controller: KbPublicPagesController;
+
+  beforeEach(() => {
+    mockValidateAttachment = jest.fn(async () => FILE_A_KEY);
+    mockRateLimitCheck = jest.fn(async () => ({ allowed: true }));
+    controller = new KbPublicPagesController(
+      { validatePublicAttachment: mockValidateAttachment } as never,
+      { check: mockRateLimitCheck } as never,
+      { NEXT_PUBLIC_R2_PUBLIC_URL: R2_BASE } as never,
+    );
+  });
+
+  const fakeReq = () => ({ ip: "1.2.3.4", headers: {} as Record<string, string> });
+
+  it("issues a 302 redirect to the R2 base URL with the file key validated by the service", async () => {
+    const redirect = jest.fn();
+    await controller.getPublicMedia(VALID_TOKEN, FILE_A_KEY, fakeReq(), { redirect } as never);
+    expect(redirect).toHaveBeenCalledWith(302, `${R2_BASE}/${FILE_A_KEY}`);
+  });
+
+  it("throws NotFoundException without redirecting when the service rejects the key — positive control is the preceding test", async () => {
+    mockValidateAttachment.mockRejectedValue(new NotFoundException("Attachment not found"));
+    const redirect = jest.fn();
+    await expect(
+      controller.getPublicMedia(VALID_TOKEN, "other/file.png", fakeReq(), { redirect } as never),
+    ).rejects.toThrow(NotFoundException);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("throws NotFoundException without calling the service when the token fails the alphanumeric-hyphen format check", async () => {
+    const redirect = jest.fn();
+    await expect(
+      controller.getPublicMedia("bad$token!", FILE_A_KEY, fakeReq(), { redirect } as never),
+    ).rejects.toThrow(NotFoundException);
+    expect(mockValidateAttachment).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("throws NotFoundException without calling the service when the token exceeds 64 characters", async () => {
+    const redirect = jest.fn();
+    await expect(
+      controller.getPublicMedia("a".repeat(65), FILE_A_KEY, fakeReq(), { redirect } as never),
+    ).rejects.toThrow(NotFoundException);
+    expect(mockValidateAttachment).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("throws HttpException with status 429 when the rate limit is exhausted before the service is called", async () => {
+    mockRateLimitCheck.mockResolvedValue({ allowed: false });
+    const redirect = jest.fn();
+    let thrown: unknown;
+    try {
+      await controller.getPublicMedia(VALID_TOKEN, FILE_A_KEY, fakeReq(), { redirect } as never);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(HttpException);
+    expect((thrown as HttpException).getStatus()).toBe(429);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("throws NotFoundException without redirecting when the R2 base URL is absent from configuration", async () => {
+    const noR2 = new KbPublicPagesController(
+      { validatePublicAttachment: mockValidateAttachment } as never,
+      { check: mockRateLimitCheck } as never,
+      { NEXT_PUBLIC_R2_PUBLIC_URL: "" } as never,
+    );
+    const redirect = jest.fn();
+    await expect(
+      noR2.getPublicMedia(VALID_TOKEN, FILE_A_KEY, fakeReq(), { redirect } as never),
+    ).rejects.toThrow(NotFoundException);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("uses the file key returned by the service in the redirect URL, not the raw client-supplied key", async () => {
+    const dbKey = "org1/canonical-db-key.png";
+    mockValidateAttachment.mockResolvedValue(dbKey);
+    const redirect = jest.fn();
+    await controller.getPublicMedia(VALID_TOKEN, "any-client-value", fakeReq(), { redirect } as never);
+    expect(redirect).toHaveBeenCalledWith(302, `${R2_BASE}/${dbKey}`);
   });
 });

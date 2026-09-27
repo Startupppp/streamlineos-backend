@@ -13,9 +13,9 @@ const SELF_TEST = process.argv.includes("--self-test");
 const WRITE_PATTERN = /\.update\(\s*tickets\s*\)/;
 
 const CHANGE_MODULE = new Set([
-  "src/modules/build/core/apply-ticket-change.ts",
-  "src/modules/build/core/projects-tickets-rank-utils.ts",
-  "src/modules/build/core/build-ticket-bulk-mutation.ts",
+  "src/modules/build/core/tickets/apply-ticket-change.ts",
+  "src/modules/build/core/tickets/projects-tickets-rank-utils.ts",
+  "src/modules/build/core/tickets/build-ticket-bulk-mutation.ts",
 ]);
 
 const MIN_SCANNED = 60;

@@ -74,12 +74,13 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
     expect(vals).not.toContain(OWNER);
   });
 
-  it("returns comments for a page in the owning org (same-tenant control)", async () => {
+  it("returns a CursorPage for a page in the owning org (same-tenant control)", async () => {
     const { db } = makeDb({ id: PAGE_ID, orgId: OWNER });
     const svc = new KbPageCommentsService(db, dispatch, access, authMock as never);
 
     const result = await svc.list(makeUser(OWNER), PAGE_ID);
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveProperty("data");
+    expect(Array.isArray((result as { data: unknown }).data)).toBe(true);
   });
 });

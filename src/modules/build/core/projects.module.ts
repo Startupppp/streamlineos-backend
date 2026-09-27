@@ -4,10 +4,25 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { UsersModule } from "../../users/users.module";
 import { ProjectsController } from "./projects.controller";
 import { ProjectResourcesController } from "./project-resources.controller";
-import { ProjectsTicketsController } from "./projects-tickets.controller";
-import { ProjectsTicketCommentsController } from "./projects-ticket-comments.controller";
-import { ProjectsTicketChecklistsController } from "./projects-ticket-checklists.controller";
-import { ProjectsTicketAssociationsController } from "./projects-ticket-associations.controller";
+import {
+  ProjectsTicketsController,
+  ProjectsTicketCommentsController,
+  ProjectsTicketChecklistsController,
+  ProjectsTicketAssociationsController,
+  ProjectsTicketsService,
+  ProjectsTicketsCreateService,
+  ProjectsTicketsUpdateService,
+  ProjectsTicketsQueryService,
+  ProjectsTicketsReadService,
+  ProjectsTicketsDetailService,
+  ProjectsTicketsTransferService,
+  ProjectsTicketSubresourcesService,
+  ProjectsTicketCommentsService,
+  ProjectsTicketChecklistsService,
+  ProjectsTicketLinksService,
+  ProjectsTicketRelationsService,
+  BuildTicketStatusChangedConsumerService,
+} from "./tickets";
 import { ProjectsReportsController } from "./projects-reports.controller";
 import { ProjectsBudgetController } from "./projects-budget.controller";
 import { ProjectsTemplatesController } from "./projects-templates.controller";
@@ -27,17 +42,8 @@ import { ProjectsMembersService } from "./projects-members.service";
 import { BuildDueSweepService } from "./build-due-sweep.service";
 import { BuildNotificationVisibility } from "./build-notification-visibility";
 import { BuildNotificationContextService } from "./build-notification-context.service";
-import { ProjectsTicketsService } from "./projects-tickets.service";
-import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
-import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
-import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
 import { ProjectsSearchService } from "./projects-search.service";
-import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
-import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
-import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
-import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
-import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { ProjectsReportsService } from "./projects-reports.service";
@@ -53,15 +59,11 @@ import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.se
 import { ProjectsAutomationsService } from "./projects-automations.service";
 import { ProjectsCustomStatesService } from "./projects-custom-states.service";
 import { ProjectsLabelsService } from "./projects-labels.service";
-import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
-import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
-import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
 import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { BuildReleasePublishedConsumerService } from "./build-release-published-consumer.service";
-import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
 import { ProjectsSettingsIterationsController } from "./projects-settings-iterations.controller";
 import { ProjectsSettingsIterationsService } from "./projects-settings-iterations.service";
 import { ProjectsActivityFeedController } from "./projects-activity-feed.controller";

@@ -45,6 +45,13 @@ import {
 
 export { normalizeEmbeddableQuery };
 
+export type RetrievalChannelKind = "ok" | "empty" | "disabled" | "degraded" | "failed";
+
+export interface RetrievalChannelOutcome<T> {
+  kind: RetrievalChannelKind;
+  results: T[];
+}
+
 export const KB_DOCUMENT_PASSAGE_ROWS =
   KB_ASK_MAX_CONTEXT_DOCUMENTS * KB_ASK_CONTEXT_BUDGET.maxPassagesPerDocument;
 
@@ -146,166 +153,200 @@ export class KbSearchRetrievalService {
     embedding?: QueryEmbedding,
     pageIds?: number[],
   ): Promise<RetrievedSource[]> {
-    const standing = await this.auth.resolveStanding(user);
-    const ids = standing.accessibleSpaceIds;
+    const { results } = await this.retrieveTopArticlesWithOutcome(
+      user,
+      query,
+      limit,
+      spaceId,
+      verifiedOnly,
+      embedding,
+      pageIds,
+    );
+    return results;
+  }
+
+  async retrieveTopArticlesWithOutcome(
+    user: CurrentUserContext,
+    query: string,
+    limit: number,
+    spaceId?: number,
+    verifiedOnly?: boolean,
+    embedding?: QueryEmbedding,
+    pageIds?: number[],
+  ): Promise<RetrievalChannelOutcome<RetrievedSource>> {
     const q = query.trim();
-    if (!q) return [];
+    if (!q) return { kind: "disabled", results: [] };
 
-    const principal = {
-      userId: standing.userId,
-      membershipId: standing.membershipId,
-      roleSlugs: standing.roleSlugs,
-    };
-    const ownerFilter = await this.articleOwnerFilterFor(user);
+    try {
+      const standing = await this.auth.resolveStanding(user);
+      const ids = standing.accessibleSpaceIds;
 
-    const pool = Math.max(limit * 3, limit);
-    const hasSpaces = ids.length > 0;
+      const principal = {
+        userId: standing.userId,
+        membershipId: standing.membershipId,
+        roleSlugs: standing.roleSlugs,
+      };
+      const ownerFilter = await this.articleOwnerFilterFor(user);
 
-    let vectorLiteral: string | null = null;
-    if (
-      this.aiGateway.isEmbeddingConfigured() &&
-      (await this.candidates.hasEmbeddedChunks(user.orgId))
-    ) {
-      vectorLiteral = await this.vectorFor(q, user.orgId, embedding);
-    }
+      const pool = Math.max(limit * 3, limit);
+      const hasSpaces = ids.length > 0;
 
-    const pageVisibility = buildVisiblePageScope(standing, "view").predicate;
+      let vectorLiteral: string | null = null;
+      if (
+        this.aiGateway.isEmbeddingConfigured() &&
+        (await this.candidates.hasEmbeddedChunks(user.orgId))
+      ) {
+        vectorLiteral = await this.vectorFor(q, user.orgId, embedding);
+      }
 
-    const [articleKeyword, articleVector, pageKeyword, pageVector] =
-      await Promise.all([
-        hasSpaces
-          ? this.candidates.articleKeywordCandidates(
-              user.orgId,
-              ids,
-              q,
-              pool,
-              principal,
-              ownerFilter,
-              spaceId,
-            )
-          : Promise.resolve<number[]>([]),
-        hasSpaces && vectorLiteral
-          ? this.candidates.articleVectorCandidates(
-              user.orgId,
-              ids,
-              vectorLiteral,
-              pool,
-              principal,
-              ownerFilter,
-              spaceId,
-            )
-          : Promise.resolve<number[]>([]),
-        this.candidates.pageKeywordCandidates(
-          user.orgId,
-          q,
-          pool,
+      const pageVisibility = buildVisiblePageScope(standing, "view").predicate;
+
+      const [articleKeyword, articleVector, pageKeyword, pageVector] =
+        await Promise.all([
+          hasSpaces
+            ? this.candidates.articleKeywordCandidates(
+                user.orgId,
+                ids,
+                q,
+                pool,
+                principal,
+                ownerFilter,
+                spaceId,
+              )
+            : Promise.resolve<number[]>([]),
+          hasSpaces && vectorLiteral
+            ? this.candidates.articleVectorCandidates(
+                user.orgId,
+                ids,
+                vectorLiteral,
+                pool,
+                principal,
+                ownerFilter,
+                spaceId,
+              )
+            : Promise.resolve<number[]>([]),
+          this.candidates.pageKeywordCandidates(
+            user.orgId,
+            q,
+            pool,
+            pageVisibility,
+            verifiedOnly,
+            pageIds,
+            spaceId,
+          ),
+          vectorLiteral
+            ? this.candidates.pageVectorCandidates(
+                user.orgId,
+                vectorLiteral,
+                pool,
+                chunkVisibleTo(standing),
+                verifiedOnly,
+                pageIds,
+                spaceId,
+              )
+            : Promise.resolve<number[]>([]),
+        ]);
+
+      const lists: string[][] = [];
+      if (articleKeyword.length > 0)
+        lists.push(articleKeyword.map((id) => `a:${id}`));
+      if (articleVector.length > 0)
+        lists.push(articleVector.map((id) => `a:${id}`));
+      if (pageKeyword.length > 0) lists.push(pageKeyword.map((id) => `p:${id}`));
+      if (pageVector.length > 0) lists.push(pageVector.map((id) => `p:${id}`));
+
+      const fused = this.candidates.fuseKeys(lists).slice(0, limit);
+      if (fused.length === 0) return { kind: "empty", results: [] };
+
+      const articleIds = fused
+        .filter((k) => k.startsWith("a:"))
+        .map((k) => parseInt(k.slice(2), 10));
+      const fusedPageIds = fused
+        .filter((k) => k.startsWith("p:"))
+        .map((k) => parseInt(k.slice(2), 10));
+
+      const results: RetrievedSource[] = [];
+
+      if (articleIds.length > 0) {
+        const articleConditions: SQL[] = [
+          eq(kbPages.orgId, user.orgId),
+          inArray(kbPages.id, articleIds),
+          supportArticlePredicate(),
+          eq(kbPages.status, "published"),
+        ];
+        if (spaceId) articleConditions.push(eq(kbPages.spaceId, spaceId));
+        if (ownerFilter) articleConditions.push(ownerFilter);
+        const articleRestriction =
+          await this.auth.articleRestrictionPredicate(user);
+        if (articleRestriction) articleConditions.push(articleRestriction);
+        const articleRows = await this.db
+          .select({
+            id: kbPages.id,
+            title: kbPages.title,
+            slug: kbPages.slug,
+            spaceId: kbPages.spaceId,
+            contentText: kbPages.contentText,
+            updatedAt: kbPages.updatedAt,
+            aclRevision: kbPages.aclRevision,
+          })
+          .from(kbPages)
+          .where(and(...articleConditions));
+        for (const row of articleRows) {
+          results.push({
+            kind: "article",
+            ...row,
+            slug: row.slug ?? "",
+            contentText: row.contentText ?? "",
+          });
+        }
+      }
+
+      if (fusedPageIds.length > 0) {
+        const pageConditions: SQL[] = [
+          eq(kbPages.orgId, user.orgId),
+          inArray(kbPages.id, fusedPageIds),
+          wikiPagePredicate(),
+          ne(kbPages.status, "archived"),
           pageVisibility,
-          verifiedOnly,
-          pageIds,
-          spaceId,
-        ),
-        vectorLiteral
-          ? this.candidates.pageVectorCandidates(
-              user.orgId,
-              vectorLiteral,
-              pool,
-              chunkVisibleTo(standing),
-              verifiedOnly,
-              pageIds,
-              spaceId,
-            )
-          : Promise.resolve<number[]>([]),
-      ]);
-
-    const lists: string[][] = [];
-    if (articleKeyword.length > 0)
-      lists.push(articleKeyword.map((id) => `a:${id}`));
-    if (articleVector.length > 0)
-      lists.push(articleVector.map((id) => `a:${id}`));
-    if (pageKeyword.length > 0) lists.push(pageKeyword.map((id) => `p:${id}`));
-    if (pageVector.length > 0) lists.push(pageVector.map((id) => `p:${id}`));
-
-    const fused = this.candidates.fuseKeys(lists).slice(0, limit);
-    if (fused.length === 0) return [];
-
-    const articleIds = fused
-      .filter((k) => k.startsWith("a:"))
-      .map((k) => parseInt(k.slice(2), 10));
-    const fusedPageIds = fused
-      .filter((k) => k.startsWith("p:"))
-      .map((k) => parseInt(k.slice(2), 10));
-
-    const results: RetrievedSource[] = [];
-
-    if (articleIds.length > 0) {
-      const articleConditions: SQL[] = [
-        eq(kbPages.orgId, user.orgId),
-        inArray(kbPages.id, articleIds),
-        supportArticlePredicate(),
-        eq(kbPages.status, "published"),
-      ];
-      if (spaceId) articleConditions.push(eq(kbPages.spaceId, spaceId));
-      if (ownerFilter) articleConditions.push(ownerFilter);
-      const articleRestriction =
-        await this.auth.articleRestrictionPredicate(user);
-      if (articleRestriction) articleConditions.push(articleRestriction);
-      const articleRows = await this.db
-        .select({
-          id: kbPages.id,
-          title: kbPages.title,
-          slug: kbPages.slug,
-          spaceId: kbPages.spaceId,
-          contentText: kbPages.contentText,
-          updatedAt: kbPages.updatedAt,
-          aclRevision: kbPages.aclRevision,
-        })
-        .from(kbPages)
-        .where(and(...articleConditions));
-      for (const row of articleRows) {
-        results.push({
-          kind: "article",
-          ...row,
-          slug: row.slug ?? "",
-          contentText: row.contentText ?? "",
-        });
+        ];
+        if (spaceId) pageConditions.push(eq(kbPages.spaceId, spaceId));
+        const pageRows = await this.db
+          .select({
+            id: kbPages.id,
+            title: kbPages.title,
+            spaceId: kbPages.spaceId,
+            contentText: kbPages.contentText,
+            updatedAt: kbPages.updatedAt,
+            aclRevision: kbPages.aclRevision,
+          })
+          .from(kbPages)
+          .where(and(...pageConditions));
+        for (const row of pageRows) {
+          results.push({
+            kind: "page",
+            ...row,
+            contentText: row.contentText ?? "",
+          });
+        }
       }
-    }
 
-    if (fusedPageIds.length > 0) {
-      const pageConditions: SQL[] = [
-        eq(kbPages.orgId, user.orgId),
-        inArray(kbPages.id, fusedPageIds),
-        wikiPagePredicate(),
-        ne(kbPages.status, "archived"),
-        pageVisibility,
-      ];
-      if (spaceId) pageConditions.push(eq(kbPages.spaceId, spaceId));
-      const pageRows = await this.db
-        .select({
-          id: kbPages.id,
-          title: kbPages.title,
-          spaceId: kbPages.spaceId,
-          contentText: kbPages.contentText,
-          updatedAt: kbPages.updatedAt,
-          aclRevision: kbPages.aclRevision,
-        })
-        .from(kbPages)
-        .where(and(...pageConditions));
-      for (const row of pageRows) {
-        results.push({
-          kind: "page",
-          ...row,
-          contentText: row.contentText ?? "",
-        });
-      }
-    }
+      const order = new Map(fused.map((key, index) => [key, index]));
+      const sorted = results.sort((a, b) => {
+        const ka = a.kind === "article" ? `a:${a.id}` : `p:${a.id}`;
+        const kb = b.kind === "article" ? `a:${b.id}` : `p:${b.id}`;
+        return (order.get(ka) ?? 0) - (order.get(kb) ?? 0);
+      });
 
-    const order = new Map(fused.map((key, index) => [key, index]));
-    return results.sort((a, b) => {
-      const ka = a.kind === "article" ? `a:${a.id}` : `p:${a.id}`;
-      const kb = b.kind === "article" ? `a:${b.id}` : `p:${b.id}`;
-      return (order.get(ka) ?? 0) - (order.get(kb) ?? 0);
-    });
+      if (sorted.length === 0) return { kind: "empty", results: [] };
+      if (vectorLiteral === null) return { kind: "degraded", results: sorted };
+      return { kind: "ok", results: sorted };
+    } catch (err) {
+      this.logger.warn("KB top-article retrieval failed", {
+        orgId: user.orgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { kind: "failed", results: [] };
+    }
   }
 
   private async articlePassageScope(
@@ -333,7 +374,26 @@ export class KbSearchRetrievalService {
     pageIds: number[] = [],
     embedding?: QueryEmbedding,
   ): Promise<DegradableContextPassage[]> {
-    if (articleIds.length === 0 && pageIds.length === 0) return [];
+    const { results } = await this.retrieveDocumentPassagesWithOutcome(
+      user,
+      query,
+      articleIds,
+      pageIds,
+      embedding,
+    );
+    return results;
+  }
+
+  async retrieveDocumentPassagesWithOutcome(
+    user: CurrentUserContext,
+    query: string,
+    articleIds: number[],
+    pageIds: number[] = [],
+    embedding?: QueryEmbedding,
+  ): Promise<RetrievalChannelOutcome<DegradableContextPassage>> {
+    if (articleIds.length === 0 && pageIds.length === 0) {
+      return { kind: "disabled", results: [] };
+    }
     try {
       const vector = await this.vectorFor(query, user.orgId, embedding);
       const ordering: SQL[] =
@@ -381,9 +441,9 @@ export class KbSearchRetrievalService {
         .where(and(eq(kbArticleChunks.orgId, user.orgId), or(...scope)))
         .orderBy(...ordering)
         .limit(Math.min(KB_DOCUMENT_PASSAGE_ROWS, PAGE_SIZE_CAP));
-      const degraded = vector === null ? { degraded: true as const } : {};
+      const degradedFlag = vector === null ? { degraded: true as const } : {};
       const askedAsArticle = new Set(articleIds);
-      return rows.flatMap<DegradableContextPassage>((row) => {
+      const results = rows.flatMap<DegradableContextPassage>((row) => {
         if (row.pageId === null) return [];
         return [
           {
@@ -394,16 +454,19 @@ export class KbSearchRetrievalService {
             documentTitle: row.title,
             passageIndex: row.chunkIndex,
             text: row.content,
-            ...degraded,
+            ...degradedFlag,
           },
         ];
       });
+      if (vector === null) return { kind: "degraded", results };
+      if (results.length === 0) return { kind: "empty", results: [] };
+      return { kind: "ok", results };
     } catch (err) {
       this.logger.warn("KB document passage retrieval failed", {
         orgId: user.orgId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return [];
+      return { kind: "failed", results: [] };
     }
   }
 
@@ -415,9 +478,30 @@ export class KbSearchRetrievalService {
     embedding?: QueryEmbedding,
     spaceId?: number,
   ): Promise<RetrievedSourceDocument[]> {
+    const { results } = await this.retrieveTopSourcesWithOutcome(
+      user,
+      query,
+      limit,
+      sourceIds,
+      embedding,
+      spaceId,
+    );
+    return results;
+  }
+
+  async retrieveTopSourcesWithOutcome(
+    user: CurrentUserContext,
+    query: string,
+    limit: number,
+    sourceIds?: number[],
+    embedding?: QueryEmbedding,
+    spaceId?: number,
+  ): Promise<RetrievalChannelOutcome<RetrievedSourceDocument>> {
     const q = query.trim();
-    if (!q) return [];
-    if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
+    if (!q) return { kind: "disabled", results: [] };
+    if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) {
+      return { kind: "disabled", results: [] };
+    }
     try {
       const accessibleSpaceIds = (await this.auth.resolveStanding(user))
         .accessibleSpaceIds;
@@ -428,7 +512,9 @@ export class KbSearchRetrievalService {
         vector === null
           ? []
           : await this.candidates.vectorChunkIds(user.orgId, vector, cap);
-      if (vector !== null && chunkIds.length === 0) return [];
+      if (vector !== null && chunkIds.length === 0) {
+        return { kind: "empty", results: [] };
+      }
 
       const spaceFilter =
         accessibleSpaceIds.length > 0
@@ -446,7 +532,13 @@ export class KbSearchRetrievalService {
         eq(kbSources.orgId, user.orgId),
       ];
       if (spaceFilter) conditions.push(spaceFilter);
-      if (spaceId) conditions.push(or(isNull(kbSources.spaceId), eq(kbSources.spaceId, spaceId)));
+      if (spaceId) {
+        const spaceOrGlobal = or(
+          isNull(kbSources.spaceId),
+          eq(kbSources.spaceId, spaceId),
+        );
+        if (spaceOrGlobal) conditions.push(spaceOrGlobal);
+      }
       if (sourceIds && sourceIds.length > 0)
         conditions.push(inArray(kbSources.id, sourceIds));
       if (vector === null) conditions.push(this.chunkKeywordMatch(q));
@@ -472,7 +564,7 @@ export class KbSearchRetrievalService {
         .orderBy(ordering)
         .limit(cap);
 
-      const degraded = vector === null ? { degraded: true as const } : {};
+      const degradedFlag = vector === null ? { degraded: true as const } : {};
       const byId = new Map<number, RetrievedSourceDocument>();
       for (const row of rows) {
         const existing = byId.get(row.sourceId);
@@ -483,7 +575,7 @@ export class KbSearchRetrievalService {
           spaceId: row.spaceId,
           updatedAt: row.updatedAt,
           passages: [],
-          ...degraded,
+          ...degradedFlag,
         };
         document.passages.push({
           documentKey: kbDocumentKey("source", row.sourceId),
@@ -493,13 +585,16 @@ export class KbSearchRetrievalService {
         });
         if (existing === undefined) byId.set(row.sourceId, document);
       }
-      return [...byId.values()];
+      const results = [...byId.values()];
+      if (vector === null) return { kind: "degraded", results };
+      if (results.length === 0) return { kind: "empty", results: [] };
+      return { kind: "ok", results };
     } catch (err) {
       this.logger.warn("KB top-source retrieval failed", {
         orgId: user.orgId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return [];
+      return { kind: "failed", results: [] };
     }
   }
 }

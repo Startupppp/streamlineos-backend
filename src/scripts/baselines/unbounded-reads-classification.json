@@ -64,7 +64,7 @@
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
     },
-    "/build/core/projects-tickets-read.service.ts": {
+    "/build/core/tickets/projects-tickets-read.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "Cursor mode exists for board view (paging=cursor); default offset path retained until frontend useTickets hook is coordinated to consume CursorPaginatedResponse â€” deadline 2026-12-31"
     },
@@ -1062,12 +1062,12 @@
       "note": "listRuns first keyset-paginates run ids, then loads actions for only that bounded page in one grouped query",
       "justification": "The primary read uses .limit(limit + 1), and listAutomationRunsQuerySchema clamps limit to PAGE_SIZE_CAP=100. The flagged action read filters with inArray(runId, runIds), where runIds comes from page.data and is therefore at most 100 ids. Each automation stores at most 50 actions because createAutomationSchema caps actions at 50 and updateAutomationSchema is its partial form; recordRunActions receives exactly the runner results for that validated action array. The query is one batched page sub-read, not an org-wide scan or N+1. 2026-09-24"
     },
-    "/build/core/build-ticket-mutation-policy.ts": {
+    "/build/core/tickets/build-ticket-mutation-policy.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "readMutationTickets:25 selects inArray(tickets.id, ids) FOR UPDATE over a caller-supplied id list, then throws NotFoundException unless rows.length === ids.length. It is an exact-id read, not a scan; the row count is ids.length by construction.",
       "justification": "Three call paths, each bounded before the read. build-ticket-bulk-mutation.ts:13-14 deduplicates through a Set and rejects outside 1..100 with BadRequestException, so <=100. projects-tickets-rank-utils.ts:33 builds [ticketId, beforeTicketId?, afterTicketId?], so <=3. projects-tickets-query.service.ts:50 authorizeMutation has exactly one caller, projects-tickets-update.service.ts:234, which passes the single-element [ticketId]. The 100 cap is load-bearing rather than cosmetic: the select takes FOR UPDATE row locks inside the mutation transaction, so an uncapped list would escalate lock footprint as well as row count. Pinned by build-ticket-mutation-bounds.spec.ts 2026-09-09"
     },
-    "/build/core/build-ticket-status-changed-consumer.service.ts": {
+    "/build/core/tickets/build-ticket-status-changed-consumer.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Contains only count/sum/groupBy aggregates for status-change analytics; no row-returning unbounded scan",
       "justification": "all flagged selects are aggregate-only projections (count, groupBy); gate window missed the aggregate pattern in sql template literals 2026-09-01"
@@ -1112,51 +1112,51 @@
       "note": "All reads are groupBy/count/avg aggregates for time-series reports; no unbounded row-returning scan",
       "justification": "L82 sprint scope events bounded by sprintId (one sprint); L217 daily snapshots bounded by date-range window (query.days rows); L262 sprint velocity bounded by sprint count; L450/L462 grouped per-sprint ticket aggregates 2026-09-01"
     },
-    "/build/core/projects-ticket-comments.service.ts": {
+    "/build/core/tickets/projects-ticket-comments.service.ts": {
       "verdict": "BOUNDED",
       "note": "Has explicit .limit() on comment reads; per-ticket comments are a small dataset",
       "justification": "L285 reads comments for a single ticket to resolve @mentions; bounded by comment count per ticket; not a list endpoint 2026-09-01"
     },
-    "/build/core/projects-ticket-links.service.ts": {
+    "/build/core/tickets/projects-ticket-links.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 3 explicit .limit() calls; ticket links per ticket are a small config set",
       "justification": "has 3 explicit .limit() calls; flagged violations are per-ticket link sub-reads bounded by ticket graph density; gate window saw .select() before the .limit() in the chain 2026-09-01"
     },
-    "/build/core/projects-ticket-relations.service.ts": {
+    "/build/core/tickets/projects-ticket-relations.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has explicit .limit(); ticket relations per ticket are bounded by project scope",
       "justification": "per-ticket relation reads bounded by project ticket graph; re-scan shows 0 actual violations; gate window missed the limit in prior scan 2026-09-01"
     },
-    "/build/core/projects-ticket-subresources.service.ts": {
+    "/build/core/tickets/projects-ticket-subresources.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 2 explicit .limit() calls; subresources (checklist items, attachments) are bounded per ticket",
       "justification": "has explicit .limit() calls; flagged violations are per-ticket sub-reads (checklist/attachments) bounded by ticket scope; re-scan shows 0 actual violations 2026-09-01"
     },
-    "/build/core/projects-tickets-query.service.ts": {
+    "/build/core/tickets/projects-tickets-query.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Uses cursor limit+1 sentinel and aggregate count; all row-returning paths are capped",
       "justification": "cursor pagination with limit+1 sentinel; flagged selects are aggregate counts or bounded sub-reads; gate window missed limit placement 2026-09-01"
     },
-    "/build/core/projects-tickets-read.query.ts": {
+    "/build/core/tickets/projects-tickets-read.query.ts": {
       "verdict": "BOUNDED",
       "note": "Shared ticket query receives a caller-enforced page limit and is not an unbounded endpoint"
     },
-    "/build/core/projects-tickets-read.service.ts": {
+    "/build/core/tickets/projects-tickets-read.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Gate detected unbounded reads used for column-count aggregates and rank-update helpers; all paginated paths are handled in the offset section",
       "justification": "has 4 explicit .limit() + 4 aggregates; flagged violations are per-ticket rank-update helpers bounded by ticket count in status column (small); cursor pagination on list paths 2026-09-01"
     },
-    "/build/core/projects-tickets-transfer.service.ts": {
+    "/build/core/tickets/projects-tickets-transfer.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 2 explicit .limit() calls; transfer operations are scoped to a single project",
       "justification": "has 2 explicit .limit(); violations are single-project existence checks; bounded by project scope 2026-09-01"
     },
-    "/build/core/projects-tickets-workflow-utils.ts": {
+    "/build/core/tickets/projects-tickets-workflow-utils.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 2 explicit .limit() calls and aggregate counts; workflow utility reads are scoped to a single ticket",
       "justification": "has 2 explicit .limit() + aggregate; violations are per-ticket state helpers bounded by project status count (<20) 2026-09-01"
     },
-    "/build/core/projects-tickets.service.ts": {
+    "/build/core/tickets/projects-tickets.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "findMany for blocking relations on pre-delete check; blocking relation count is small per ticket in practice",
       "justification": "findMany workItemRelations without take; pre-delete check for blocking tickets bounded by ticket graph density per project; used only to report count in error message 2026-09-01"
@@ -1186,7 +1186,7 @@
       "note": "Has 2 explicit .limit() calls; write-path lookups are existence checks with limits",
       "justification": "has 2 explicit .limit(); violations are write-path existence checks with inArray bounded by ticket IDs from request; gate missed limit past 120 lines 2026-09-01"
     },
-    "/build/core/ticket-status.util.ts": {
+    "/build/core/tickets/ticket-status.util.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Reads project statuses â€” a small per-project config set (canonical statuses + custom overrides, typically <15)",
       "justification": "project status config bounded at <20 per project; utility reads all statuses for a specific project to map name->id; small config set 2026-09-01"

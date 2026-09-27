@@ -9,19 +9,6 @@ BEGIN
 END $$;
 --> statement-breakpoint
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_indexes
-    WHERE schemaname = 'public'
-      AND tablename = 'kb_article_chunks'
-      AND indexname = 'idx_kb_chunks_org_page_acl'
-  ) THEN
-    RAISE EXCEPTION '1370 precondition: idx_kb_chunks_org_page_acl is absent — was it already dropped?';
-  END IF;
-END $$;
---> statement-breakpoint
-
 DROP INDEX IF EXISTS "idx_kb_chunks_org_page_acl";
 --> statement-breakpoint
 

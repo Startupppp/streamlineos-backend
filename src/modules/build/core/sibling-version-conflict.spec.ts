@@ -1,6 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "./tickets/ticket-version-conflict.exception";
 import { MilestonesService } from "../execution/workspace.service";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";

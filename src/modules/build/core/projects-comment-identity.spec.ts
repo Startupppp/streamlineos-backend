@@ -1,9 +1,9 @@
 import { HttpException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
-import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { ProjectsTicketCommentsService } from "./tickets/projects-ticket-comments.service";
+import { assertTicketReadAccess } from "./tickets/build-ticket-read-access";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("./tickets/build-ticket-read-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

@@ -2,10 +2,10 @@ import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
-import { ProjectsTicketsService } from "./projects-tickets.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { ProjectsTicketsService } from "./tickets/projects-tickets.service";
+import { assertTicketReadAccess } from "./tickets/build-ticket-read-access";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("./tickets/build-ticket-read-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

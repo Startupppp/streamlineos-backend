@@ -39,7 +39,7 @@ import type {
 } from "./dto/kb-sources.schemas";
 import {
   buildCursorPage,
-  decodeCursor,
+  decodeIntegerCursor,
   type CursorPage,
 } from "../../../common/pagination/cursor";
 import {
@@ -117,11 +117,11 @@ export class KbSourcesService {
     orgId: string,
     query: KbSourcesListQuery,
   ): Promise<CursorPage<KbSourceListItem>> {
-    const position = decodeCursor(query.cursor);
+    const position = decodeIntegerCursor(query.cursor);
     const after = position
       ? keysetBeforeMicros(kbSources.createdAt, kbSources.id, {
           sortValue: String(position.sortValue),
-          id: Number(position.id),
+          id: position.id,
         })
       : undefined;
 

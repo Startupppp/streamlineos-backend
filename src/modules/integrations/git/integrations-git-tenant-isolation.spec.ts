@@ -1,6 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { stubService } from "../../../test/service-stub.spec-fixtures";
-import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
+import type { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
 import type { WebhookRequest } from "./git.types";
 import { IntegrationsGitService } from "./integrations-git.service";
 

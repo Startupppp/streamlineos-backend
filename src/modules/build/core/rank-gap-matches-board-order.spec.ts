@@ -4,7 +4,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { Db } from "../../../db/drizzle.types";
-import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils";
+import { rankTicket, rebalanceProjectRanks } from "./tickets/projects-tickets-rank-utils";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111",

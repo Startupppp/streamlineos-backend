@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";

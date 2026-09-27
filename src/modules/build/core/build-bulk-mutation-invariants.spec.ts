@@ -5,7 +5,9 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AccessService } from "../../access/access.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111", userId: "owner", role: "OWNER",
@@ -46,6 +48,8 @@ async function harness() {
     { provide: DRIZZLE, useValue: db },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: { scopeFor } },
+    { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
+    { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   return { module, db, set, scopeFor, service: module.get(ProjectsTicketsQueryService) };
 }
@@ -83,6 +87,8 @@ async function archiveHarness(childRows: Array<{ parentTicketId: number | null; 
     { provide: DRIZZLE, useValue: db },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: { scopeFor } },
+    { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
+    { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   return { module, db, set, scopeFor, service: module.get(ProjectsTicketsQueryService) };
 }

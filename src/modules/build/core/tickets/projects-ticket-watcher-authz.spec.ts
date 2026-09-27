@@ -1,0 +1,183 @@
+import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import type { Db } from "../../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import { assertTicketReadAccess } from "./build-ticket-read-access";
+
+jest.mock("./build-ticket-read-access", () => ({
+  assertTicketReadAccess: jest.fn(),
+}));
+
+const CALLER_ORG = "org-a";
+const CALLER_ID = "user-caller";
+const OTHER_MEMBER_ID = "user-teammate";
+const PROJECT_ID = 5;
+
+const dialect = new PgDialect();
+
+function makeUser(orgId = CALLER_ORG, userId = CALLER_ID): CurrentUserContext {
+  return {
+    orgId,
+    userId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "sess-1",
+    tokenScopes: null,
+    principal: null as never,
+  };
+}
+
+function makeDb(opts: { ticket: object | null; member: { id: number } | null }): {
+  db: Db;
+  lookups: SQL[];
+} {
+  const lookups: SQL[] = [];
+  const selectChain = {
+    from: jest.fn(),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue(opts.member ? [opts.member] : []),
+  };
+  selectChain.from.mockReturnValue(selectChain);
+  selectChain.where.mockImplementation((predicate: SQL) => {
+    lookups.push(predicate);
+    return selectChain;
+  });
+
+  const valuesChain = { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
+  const insertChain = { values: jest.fn().mockReturnValue(valuesChain) };
+
+  const db = {
+    query: {
+      tickets: { findFirst: jest.fn().mockResolvedValue(opts.ticket) },
+      ticketWatchers: { findMany: jest.fn().mockResolvedValue([]) },
+    },
+    select: jest.fn().mockReturnValue(selectChain),
+    insert: jest.fn().mockReturnValue(insertChain),
+  } as unknown as Db;
+
+  return { db, lookups };
+}
+
+function makeSvc(db: Db) {
+  return new ProjectsTicketSubresourcesService(
+    db,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+  );
+}
+
+function boundParams(lookups: SQL[]): unknown[] {
+  return lookups.flatMap((predicate) => dialect.sqlToQuery(predicate).params);
+}
+
+beforeEach(() => {
+  jest.mocked(assertTicketReadAccess).mockImplementation(async (db) => {
+    const ticket = await db.query.tickets.findFirst();
+    if (!ticket) throw new NotFoundException("Ticket not found");
+  });
+});
+
+describe("ProjectsTicketSubresourcesService — addWatcher", () => {
+  it("watches the caller when the body omits userId, so self-watch needs no id from the client", async () => {
+    const { db, lookups } = makeDb({ ticket: { id: 1 }, member: { id: 42 } });
+
+    const result = await makeSvc(db).addWatcher(makeUser(), PROJECT_ID, 1, {});
+
+    expect(result).toEqual({ userId: CALLER_ID, name: null, image: null, membershipId: 42 });
+    expect(boundParams(lookups)).toContain(CALLER_ID);
+  });
+
+  it("watches the named teammate when the body carries their userId", async () => {
+    const { db, lookups } = makeDb({ ticket: { id: 1 }, member: { id: 43 } });
+
+    const result = await makeSvc(db).addWatcher(makeUser(), PROJECT_ID, 1, { userId: OTHER_MEMBER_ID });
+
+    expect(result).toEqual({ userId: OTHER_MEMBER_ID, name: null, image: null, membershipId: 43 });
+    const params = boundParams(lookups);
+    expect(params).toContain(OTHER_MEMBER_ID);
+    expect(params).not.toContain(CALLER_ID);
+  });
+
+  it("resolves the watcher inside the caller's org, so a foreign id cannot be attached", async () => {
+    const { db, lookups } = makeDb({ ticket: { id: 1 }, member: { id: 43 } });
+
+    await makeSvc(db).addWatcher(makeUser(), PROJECT_ID, 1, { userId: OTHER_MEMBER_ID });
+
+    expect(boundParams(lookups)).toContain(CALLER_ORG);
+  });
+
+  it("returns 404 rather than 403 for a ticket in another organisation", async () => {
+    const { db } = makeDb({ ticket: null, member: { id: 42 } });
+
+    await expect(makeSvc(db).addWatcher(makeUser("org-attacker"), PROJECT_ID, 99, {})).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it("rejects a watcher who is not an active member of the organisation", async () => {
+    const { db } = makeDb({ ticket: { id: 1 }, member: null });
+
+    await expect(
+      makeSvc(db).addWatcher(makeUser(), PROJECT_ID, 1, { userId: OTHER_MEMBER_ID }),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("ProjectsTicketSubresourcesService — addWatcher bite proof", () => {
+  it("the ticket lookup is load-bearing: it alone separates a foreign ticket from a watchable one", async () => {
+    const withTicket = makeDb({ ticket: { id: 99 }, member: { id: 42 } });
+    await expect(
+      makeSvc(withTicket.db).addWatcher(makeUser("org-attacker"), PROJECT_ID, 99, {}),
+    ).resolves.toEqual({ userId: CALLER_ID, name: null, image: null, membershipId: 42 });
+
+    const withoutTicket = makeDb({ ticket: null, member: { id: 42 } });
+    await expect(
+      makeSvc(withoutTicket.db).addWatcher(makeUser("org-attacker"), PROJECT_ID, 99, {}),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("ProjectsTicketSubresourcesService — removeWatcher", () => {
+  function makeRemoveDb(opts: { ticket: object | null; member: { id: number } | null }) {
+    const selectChain = {
+      from: jest.fn(),
+      where: jest.fn(),
+      limit: jest.fn().mockResolvedValue(opts.member ? [opts.member] : []),
+    };
+    selectChain.from.mockReturnValue(selectChain);
+    selectChain.where.mockReturnValue(selectChain);
+    const deleteChain = { where: jest.fn().mockResolvedValue([]) };
+    return {
+      query: {
+        tickets: { findFirst: jest.fn().mockResolvedValue(opts.ticket) },
+        ticketWatchers: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn().mockReturnValue(selectChain),
+      delete: jest.fn().mockReturnValue(deleteChain),
+    } as unknown as Db;
+  }
+
+  it("throws NotFoundException for a ticket not in the caller's org, rather than silently deleting from another tenant", async () => {
+    const db = makeRemoveDb({ ticket: null, member: { id: 42 } });
+    await expect(makeSvc(db).removeWatcher(makeUser("org-attacker"), PROJECT_ID, 99)).rejects.toThrow(NotFoundException);
+  });
+
+  it("succeeds when the ticket is in the caller's org", async () => {
+    const db = makeRemoveDb({ ticket: { id: 7 }, member: { id: 42 } });
+    const result = await makeSvc(db).removeWatcher(makeUser(), PROJECT_ID, 7);
+    expect(result).toEqual({ success: true });
+  });
+
+  it("succeeds when the caller has no membership row, without touching the delete path", async () => {
+    const db = makeRemoveDb({ ticket: { id: 7 }, member: null });
+    const result = await makeSvc(db).removeWatcher(makeUser(), PROJECT_ID, 7);
+    expect(result).toEqual({ success: true });
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+});

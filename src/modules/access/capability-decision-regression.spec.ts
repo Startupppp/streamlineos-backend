@@ -8,7 +8,7 @@ import { resolve } from "node:path";
  */
 const migratedProductionFiles = [
   "build/core/projects-scope.ts",
-  "build/core/tickets-scope.ts",
+  "build/core/tickets/tickets-scope.ts",
   "build/execution/timesheets-scope.ts",
   "build/execution/timesheets.service.ts",
   "build/execution/whiteboards.service.ts",

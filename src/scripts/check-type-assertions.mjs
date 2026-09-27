@@ -247,7 +247,8 @@ const RAW_ROW_LEDGER = new Map([
   ["src/modules/inventory/stock-engine/costing-context.ts", { count: 1, seam: "external", invariant: "SELECT DISTINCT ON (product_variant_id) product_variant_id, unit_cost FROM inv_standard_costs — a DISTINCT ON that Drizzle\u2019s query builder cannot express. Both declared keys are selected verbatim; cross-checked by rule 3b." }],
   ["src/modules/inventory/stock-engine/reservation.service.ts", { count: 1, seam: "external", invariant: "the `SELECT ... FOR UPDATE OF sl` row lock that reserves stock: inv_stock_levels joined to inv_locations, under a `committedGrainPredicate` the query builder cannot express. Every declared key is a snake_case column selected verbatim (including `ownership`, whose absence made a consigned row compute as if it were ours) and cross-checked by rule 3b. Lowered 4 -> 1 on 2026-09-12: the other three locks were absorbed into the shared stock-engine reads." }],
   ["src/modules/inventory/stock-engine/valuation.service.ts", { count: 1, seam: "external", invariant: "the FIFO layer read over inv_valuation_layers (id, remaining_quantity, quantity) that a reversal locks before it unwinds a layer — `FOR UPDATE` ordering the query builder cannot express. All three keys are selected verbatim; cross-checked by rule 3b. Lowered 2 -> 1 on 2026-09-12: the second read is gone." }],
-  ["src/modules/build/core/projects-tickets-update.service.ts", { count: 1, seam: "external", invariant: "a `WITH RECURSIVE chain(id, next_id, project_id, depth)` walk that detects a cycle in the ticket next/previous chain before a reorder commits. A recursive CTE is not expressible in the Drizzle query builder. All four declared keys are the CTE column list itself and are selected verbatim; cross-checked by rule 3b." }],
+  ["src/modules/build/core/tickets/apply-ticket-change.ts", { count: 1, seam: "external", invariant: "a `WITH RECURSIVE chain(id, next_id, project_id, depth)` walk that detects a cycle in the ticket parent/epic chain before a reparent commits. A recursive CTE is not expressible in the Drizzle query builder. All four declared keys are the CTE column list itself and are selected verbatim; cross-checked by rule 3b. Moved here from projects-tickets-update.service.ts when the ticket write path was consolidated." }],
+  ["src/modules/build/core/tickets/projects-tickets-read.service.ts", { count: 2, seam: "external", invariant: "two `UNION ALL` reads over one table, which the Drizzle query builder cannot express in a single call because an assignee filter that must match both `assignee_id IS NULL` and `assignee_id IN (...)` degenerates into an OR the planner cannot push into either index (BE-81). The first is the keyset cursor page: its four keys are the aliases of a `sql` projection fragment shared by both branches. The second is the per-status count roll-up, whose two keys are aliased verbatim. Both cross-checked by rule 3b, which sees the shared fragment's aliases since it resolves a same-file `const x = sql`...``." }],
   ["src/modules/organization/hierarchy/org-hierarchy-dependencies.service.ts", { count: 2, seam: "external", invariant: "one catalog probe (cross-checked), and one whose SQL is composed with `sql.join(this.buildQueries(...))` and whose type is the named alias `DependencyCountRow` — neither the keys nor the SQL is statically readable at the call, so it is ledgered. Its consumer reads `row.key` and `row.count` and coerces the count with Number()." }],
   ["src/scripts/backfill-financial-actors.ts", { count: 1, seam: "external", invariant: "a one-shot backfill script; snake_case keys selected verbatim, cross-checked by rule 3b." }],
   ["src/scripts/backfill-workflow-secrets.ts", { count: 1, seam: "external", invariant: "the type argument is the named alias `PlaintextRow`, so rule 3b cannot read its members. A one-shot backfill script that never runs in the application." }],
@@ -348,10 +349,55 @@ const RAW_ROW_LEDGER = new Map([
  * and the SQL template it must be compared against is a second argument. This
  * is the one place in this gate where an AST is required rather than tidier.
  */
+/**
+ * A projection is often built once into a `const` and interpolated into both
+ * halves of a UNION. Replacing every `${...}` with `?` makes those aliases
+ * invisible, so a site whose declaration the SQL does satisfy is reported as
+ * MISSING - which is how this gate reported four false positives against one
+ * correct call site in `projects-tickets-read.service.ts`. Resolving a
+ * same-file `const x = sql`...`` is strictly more accurate than dropping it:
+ * the substituted text is what Postgres receives.
+ */
+function collectSqlFragmentConsts(sf) {
+  const fragments = new Map();
+  const visit = (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isTaggedTemplateExpression(node.initializer) &&
+      node.initializer.tag.getText(sf) === "sql"
+    ) {
+      const t = node.initializer.template;
+      fragments.set(
+        node.name.getText(sf),
+        ts.isNoSubstitutionTemplateLiteral(t)
+          ? t.text
+          : [t.head.text, ...t.templateSpans.map((s) => s.literal.text)].join(" ? "),
+      );
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sf, visit);
+  return fragments;
+}
+
+function flattenSqlTemplate(t, sf, fragments) {
+  if (ts.isNoSubstitutionTemplateLiteral(t)) return t.text;
+  const parts = [t.head.text];
+  for (const span of t.templateSpans) {
+    const expr = span.expression;
+    const resolved = ts.isIdentifier(expr) ? fragments.get(expr.getText(sf)) : undefined;
+    parts.push(resolved ?? "?", span.literal.text);
+  }
+  return parts.join(" ");
+}
+
 export function findRawRowGenerics(fileName, source) {
   if (!source.includes("execute<")) return [];
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   const found = [];
+  const fragments = collectSqlFragmentConsts(sf);
   const visit = (node) => {
     if (
       ts.isCallExpression(node) &&
@@ -366,10 +412,7 @@ export function findRawRowGenerics(fileName, source) {
       const arg = node.arguments[0];
       let sqlText = null;
       if (arg && ts.isTaggedTemplateExpression(arg) && arg.tag.getText(sf) === "sql") {
-        const t = arg.template;
-        sqlText = ts.isNoSubstitutionTemplateLiteral(t)
-          ? t.text
-          : [t.head.text, ...t.templateSpans.map((s) => s.literal.text)].join(" ? ");
+        sqlText = flattenSqlTemplate(arg.template, sf, fragments);
       }
       found.push({ line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, keys, sqlText });
     }

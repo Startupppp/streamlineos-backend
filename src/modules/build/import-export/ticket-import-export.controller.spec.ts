@@ -18,7 +18,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import type { Db } from "../../../db/drizzle.types";
-import { TICKETS_PERMISSION } from "../core/tickets-scope";
+import { TICKETS_PERMISSION } from "../core/tickets/tickets-scope";
 import { IMPORT_PERMISSION } from "./import-export.constants";
 import { TicketImportService } from "./ticket-import.service";
 import { TicketExportService } from "./ticket-export.service";

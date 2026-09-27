@@ -42,7 +42,7 @@ import type {
 } from "../core/dto/kb.schemas";
 import {
   buildCursorPage,
-  decodeCursor,
+  decodeIntegerCursor,
   type CursorPage,
 } from "../../../common/pagination/cursor";
 import {
@@ -101,7 +101,7 @@ export class KbSpacesService {
     }
 
     const membershipId = actingMembershipId(user.principal) ?? 0;
-    const position = decodeCursor(query.cursor);
+    const position = decodeIntegerCursor(query.cursor);
 
     const domain = [
       inArray(kbSpaces.id, ids),
@@ -118,7 +118,7 @@ export class KbSpacesService {
       position
         ? keysetBeforeMicros(kbSpaces.updatedAt, kbSpaces.id, {
             sortValue: String(position.sortValue),
-            id: Number(position.id),
+            id: position.id,
           })
         : undefined,
     ].filter((c): c is NonNullable<typeof c> => c !== undefined);

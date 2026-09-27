@@ -6,8 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CreateEpicInput, UpdateEpicInput } from "./dto/iterations.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { assertProjectInOrg } from "../core/project-access";
-import { reserveTicketCapacity } from "../core/build-ticket-capacity";
-import { TicketVersionConflictException } from "../core/ticket-version-conflict.exception";
+import { reserveTicketCapacity, TicketVersionConflictException } from "../core/tickets";
 
 @Injectable()
 export class EpicsService {

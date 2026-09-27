@@ -50,7 +50,6 @@ export class KbDocumentQueryService {
     limit: number,
   ): Promise<KbDocumentHit[]> {
     const cap = Math.min(limit, KB_DOCUMENT_QUERY_CAP);
-    const term = `%${query}%`;
 
     const [articleRead, spaceIds, predicate, restrictionPredicate] = await Promise.all([
       resolveKbArticlesViewScope(this.access, user),
@@ -68,7 +67,7 @@ export class KbDocumentQueryService {
         supportArticlePredicate(),
         inArray(kbPages.spaceId, spaceIds),
         ne(kbPages.status, "archived"),
-        sql`${kbPages.title} ILIKE ${term}`,
+        sql`to_tsvector('english', ${kbPages.title}) @@ websearch_to_tsquery('english', ${query})`,
       ];
       if (restrictionPredicate !== null) domain.push(restrictionPredicate);
 
@@ -111,7 +110,7 @@ export class KbDocumentQueryService {
           isNull(kbPages.deletedAt),
           ne(kbPages.contentType, SUPPORT_ARTICLE_CONTENT_TYPE),
           ne(kbPages.status, "archived"),
-          sql`${kbPages.title} ILIKE ${term}`,
+          sql`to_tsvector('english', ${kbPages.title}) @@ websearch_to_tsquery('english', ${query})`,
           predicate,
         ),
       )
@@ -120,6 +119,6 @@ export class KbDocumentQueryService {
 
     for (const row of pageRows) results.push({ kind: "page", ...row });
 
-    return results;
+    return results.slice(0, cap);
   }
 }

@@ -9,7 +9,7 @@ import { NotFoundException } from "@nestjs/common";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { ProjectsLabelsService } from "./projects-labels.service";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
-import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
+import { ProjectsTicketChecklistsService } from "./tickets/projects-ticket-checklists.service";
 import { ProjectsCustomStatesService } from "./projects-custom-states.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";

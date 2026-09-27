@@ -3,7 +3,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import type { ProjectsTicketsService } from "../build/core/projects-tickets.service";
+import type { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
 
 jest.mock("../build/core/project-access", () => ({
   assertProjectAccess: jest.fn(),

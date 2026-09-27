@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "./tickets/ticket-version-conflict.exception";
 import {
   and,
   asc,

@@ -1,5 +1,5 @@
 jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }));
-jest.mock("../../build/core/projects-tickets.service");
+jest.mock("../../build/core/tickets/projects-tickets.service");
 
 import { HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
@@ -8,7 +8,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
-import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
+import type { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { AccessService } from "../../access/access.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
