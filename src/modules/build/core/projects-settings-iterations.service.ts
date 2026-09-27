@@ -49,12 +49,11 @@ export class ProjectsSettingsIterationsService {
     if (!project) throw new NotFoundException("Project not found");
 
     const existing = project.settings ?? { modules: { sprints: false, epics: false, timeTracking: false, wiki: false } };
-    const existingIterations = existing.iterations ?? {};
-    const nextIterations = {
+    const nextIterations: IterationSettings = {
       defaultDurationWeeks:
-        input.defaultDurationWeeks ?? existingIterations.defaultDurationWeeks ?? DEFAULTS.defaultDurationWeeks,
+        input.defaultDurationWeeks ?? existing.iterations?.defaultDurationWeeks ?? DEFAULTS.defaultDurationWeeks,
       namingPrefix:
-        input.namingPrefix ?? existingIterations.namingPrefix ?? DEFAULTS.namingPrefix,
+        input.namingPrefix ?? existing.iterations?.namingPrefix ?? DEFAULTS.namingPrefix,
     };
 
     await this.db

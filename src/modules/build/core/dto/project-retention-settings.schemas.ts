@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 const RETENTION_DAYS_PRESET = [30, 60, 90, 180, 365] as const;
-type RetentionDaysPreset = (typeof RETENTION_DAYS_PRESET)[number];
+export type RetentionDaysPreset = (typeof RETENTION_DAYS_PRESET)[number];
 
-function isRetentionDaysPreset(v: number): v is RetentionDaysPreset {
+export function isRetentionDaysPreset(v: number): v is RetentionDaysPreset {
   return (RETENTION_DAYS_PRESET as readonly number[]).includes(v);
 }
 
@@ -45,7 +45,9 @@ export const setLegalHoldSchema = z
   })
   .strict();
 
-export type UpdateRetentionPolicyInput = z.infer<typeof updateRetentionPolicySchema>;
+export type UpdateRetentionPolicyInput = z.infer<
+  typeof updateRetentionPolicySchema
+>;
 export type SetLegalHoldInput = z.infer<typeof setLegalHoldSchema>;
 export type ProjectRetentionSettingsRow = z.infer<
   typeof projectRetentionSettingsResponseSchema

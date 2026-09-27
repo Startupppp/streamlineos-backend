@@ -8,10 +8,18 @@ import type {
   UpdateRetentionPolicyInput,
   SetLegalHoldInput,
   ProjectRetentionSettingsRow,
+  RetentionDaysPreset,
 } from "./dto/project-retention-settings.schemas";
+import { isRetentionDaysPreset } from "./dto/project-retention-settings.schemas";
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function toRetentionPreset(v: number | null): RetentionDaysPreset | null {
+  if (v === null) return null;
+  if (isRetentionDaysPreset(v)) return v;
+  throw new Error(`Unexpected retention days value: ${v}`);
 }
 
 const DEFAULT_PROJECTION = {
@@ -42,9 +50,9 @@ function toResponse(projectId: number, row: SettingsRow): ProjectRetentionSettin
   return {
     projectId,
     inheritOrgPolicy: row.inheritOrgPolicy,
-    closedTicketRetentionDays: row.closedTicketRetentionDays,
-    attachmentRetentionDays: row.attachmentRetentionDays,
-    auditLogRetentionDays: row.auditLogRetentionDays,
+    closedTicketRetentionDays: toRetentionPreset(row.closedTicketRetentionDays),
+    attachmentRetentionDays: toRetentionPreset(row.attachmentRetentionDays),
+    auditLogRetentionDays: toRetentionPreset(row.auditLogRetentionDays),
     legalHold: row.legalHold,
     legalHoldReason: row.legalHoldReason,
     legalHoldSetAt: row.legalHoldSetAt?.toISOString() ?? null,

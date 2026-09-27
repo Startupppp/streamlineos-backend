@@ -5,10 +5,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/common/auth/jwt-keyring.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/common/auth/record-route-classification.ts": {
       "as": 1,
       "nonNull": 0
@@ -26,6 +22,10 @@
       "nonNull": 0
     },
     "src/common/cache/in-memory-redis.test-double.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/db/postgres-error.ts": {
       "as": 1,
       "nonNull": 0
     },
@@ -137,9 +137,109 @@
       "as": 2,
       "nonNull": 0
     },
+    "src/modules/accounting/adapters/reconciliation/unposted-movements.service.ts": {
+      "as": 3,
+      "nonNull": 1
+    },
+    "src/modules/accounting/adapters/stock-movement-bridge.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/ap/ap-document-pdf.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/ap/lib/ap-document-journal.ts": {
+      "as": 0,
+      "nonNull": 4
+    },
+    "src/modules/accounting/ap/lib/ap-payment-post.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/accounting/ap/withholding/withholding.registry.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/accounting/ar/ar-document-pdf.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/ar/lib/ar-document-draft-values.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/ar/lib/ar-document-header.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/accounting/ar/lib/ar-document-tax.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/accounting/ar/lib/ar-receipt-posting.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/accounting/ar/lib/ar-receipt-settlement.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/accounting/ar/lib/invoice-pdf-canvas.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/ar/lib/invoice-pdf-table.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/attachments/attachments.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/banking/bank-accounts.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/banking/explain-line.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/banking/pg-errors.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/kernel/pg-errors.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/kernel/system-tag-roles.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/accounting/parties/lib/party-reads.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/accounting/reports/aging.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/accounting/reports/report-csv.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/accounting/tax/tax.service.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
     "src/modules/ai/core/persona-registry.ts": {
       "as": 1,
       "nonNull": 0
+    },
+    "src/modules/ai/core/tools/work-actions-tools.ts": {
+      "as": 0,
+      "nonNull": 1
     },
     "src/modules/audit-log/audit-log.service.ts": {
       "as": 0,
@@ -169,6 +269,10 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/autonomy/autonomy-repair.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/autonomy/autonomy-review.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -181,8 +285,48 @@
       "as": 3,
       "nonNull": 0
     },
+    "src/modules/autonomy/cold-outbound-admin.service.ts": {
+      "as": 1,
+      "nonNull": 2
+    },
     "src/modules/autonomy/decision-record.ts": {
       "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/lib/hold-in-flight.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/lib/outbound-cold-track.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/lib/outbound-compose-draft.ts": {
+      "as": 6,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/lib/outbound-hold-placement.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/lib/outbound-hold-state.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/billing/core/proration.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/billing/core/tax/tax-determination.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/build/core/build-ticket-bulk-mutation.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/build/core/dto/project-retention-settings.schemas.ts": {
+      "as": 1,
       "nonNull": 0
     },
     "src/modules/build/core/projects-changelog.service.ts": {
@@ -213,8 +357,72 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/build/execution/workload-capacity.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/build/import-export/dto/ticket-import.schemas.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/build/import-export/import-source.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/build/import-export/ticket-export.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/build/import-export/ticket-import-preview.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/build/import-export/ticket-import.service.ts": {
+      "as": 4,
+      "nonNull": 0
+    },
+    "src/modules/build/managed-products/managed-products.service.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/build/qa/bugs.service.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/build/qa/phase-2/bug-consolidation-mapping.ts": {
+      "as": 3,
+      "nonNull": 1
+    },
+    "src/modules/build/qa/test-runs.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/build/scope-directory/scope-directory.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/build/teams/team-members.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
     "src/modules/calendar/external-event-normalizers.ts": {
       "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/calls/call-coaching.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/calls/call-recording-consent.controller.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/calls/lib/call-recording-consent-snapshot.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/chat/chat-channel-cursor.ts": {
+      "as": 3,
       "nonNull": 0
     },
     "src/modules/chat/chat-fanout-outbox.ts": {
@@ -233,6 +441,18 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/commission/lib/clawback.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/commission/lib/plan-admin.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/commission/lib/plan-versions.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
     "src/modules/contacts/contact-roles.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -245,8 +465,16 @@
       "as": 0,
       "nonNull": 1
     },
+    "src/modules/crm/automation-studio/lib/automation-actions.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/crm/import/import-pump.ts": {
       "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/crm/mcp/lib/crm-mcp-audit-arguments.ts": {
+      "as": 2,
       "nonNull": 0
     },
     "src/modules/crm/metadata/crm-metadata.service.ts": {
@@ -261,7 +489,19 @@
       "as": 7,
       "nonNull": 0
     },
+    "src/modules/crm/metadata/lib/data-quality-deals.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/crm/metadata/lib/data-quality-leads.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
     "src/modules/cron/cron-announcements-retention.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/cron/cron-billing.service.ts": {
       "as": 1,
       "nonNull": 0
     },
@@ -278,6 +518,10 @@
       "nonNull": 0
     },
     "src/modules/cron/cron-mail-retention.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/cron/cron-recruitment-sla.service.ts": {
       "as": 1,
       "nonNull": 0
     },
@@ -305,6 +549,10 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/data-quality/lib/finding-selection.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/deals/deal-activity-kind.ts": {
       "as": 1,
       "nonNull": 0
@@ -312,6 +560,22 @@
     "src/modules/deals/deals.service.ts": {
       "as": 1,
       "nonNull": 1
+    },
+    "src/modules/deals/forecast/logistic-regression.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/deals/forecast/training-examples.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/deals/lib/deal-bulk-ops.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/delegations/lib/delegation-listing.ts": {
+      "as": 0,
+      "nonNull": 2
     },
     "src/modules/directory/directory-identity.service.ts": {
       "as": 0,
@@ -324,6 +588,30 @@
     "src/modules/directory/worker-engagements.service.ts": {
       "as": 0,
       "nonNull": 3
+    },
+    "src/modules/e-sign/lib/bulk-send-pass.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/e-sign/lib/recipient-identity.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/e-sign/sign-audit.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/e-sign/sign-bulk-send.consumer.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/e-sign/sign-bulk-send.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/e-sign/sign-templates.service.ts": {
+      "as": 1,
+      "nonNull": 0
     },
     "src/modules/email/dispatch/twilio.gateway.ts": {
       "as": 1,
@@ -341,9 +629,17 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/expenses/expenses-import-contract.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/expenses/expenses.service.ts": {
       "as": 0,
       "nonNull": 1
+    },
+    "src/modules/feedbucket/feedbucket-bulk-test-doubles.ts": {
+      "as": 2,
+      "nonNull": 0
     },
     "src/modules/gdpr/gdpr-export-fetchers-generic.ts": {
       "as": 3,
@@ -370,6 +666,10 @@
       "nonNull": 1
     },
     "src/modules/hr/directory/dto/hr-directory.schemas.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/directory/employee-mutations.service.ts": {
       "as": 1,
       "nonNull": 0
     },
@@ -409,7 +709,15 @@
       "as": 0,
       "nonNull": 2
     },
+    "src/modules/hr/helpdesk/lib/support-queues.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/hr/hub/hr-hub.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/import/hr-export-columns.ts": {
       "as": 1,
       "nonNull": 0
     },
@@ -417,9 +725,17 @@
       "as": 0,
       "nonNull": 2
     },
+    "src/modules/hr/interviews/calendar/interview-availability.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/hr/interviews/hr-scorecards.service.ts": {
       "as": 0,
       "nonNull": 1
+    },
+    "src/modules/hr/lifecycle/dto/exit-checklist.schemas.ts": {
+      "as": 1,
+      "nonNull": 0
     },
     "src/modules/hr/lifecycle/exit-write.service.ts": {
       "as": 1,
@@ -457,6 +773,10 @@
       "as": 0,
       "nonNull": 1
     },
+    "src/modules/hr/performance/document-pii-scan.ts": {
+      "as": 0,
+      "nonNull": 4
+    },
     "src/modules/hr/performance/engagement-communities-campaigns.service.ts": {
       "as": 0,
       "nonNull": 1
@@ -469,6 +789,62 @@
       "as": 1,
       "nonNull": 1
     },
+    "src/modules/hr/recruitment/assessments/assessment.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/ats-remaining.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/bgv/bgv.service.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/boards/board-apply-payload.ts": {
+      "as": 2,
+      "nonNull": 1
+    },
+    "src/modules/hr/recruitment/boards/job-board-adapters.ts": {
+      "as": 5,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/boards/job-board-outbox.consumer.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/boards/job-board-publisher.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/recruitment/consent/candidate-consent.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/developer/ats-sandbox.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/developer/sandbox-events.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/disposition/rejection-reasons.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/identity/identity.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/integrations/ats-sync/linkedin-rsc.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/nurture/nurture-metrics.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/hr/recruitment/recruitment-candidate-ops.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -477,9 +853,41 @@
       "as": 0,
       "nonNull": 2
     },
+    "src/modules/hr/recruitment/recruitment-hire-completion.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/recruitment-requisitions.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/hr/recruitment/recruitment-sourcing.service.ts": {
       "as": 0,
       "nonNull": 2
+    },
+    "src/modules/hr/recruitment/voice-screen/voice-screen.service.ts": {
+      "as": 4,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/voice-screen/voice-screen.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/webhooks/recruitment-outbox-consumer.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/whatsapp/whatsapp-consent.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/whatsapp/whatsapp.controller.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/whatsapp/whatsapp.service.ts": {
+      "as": 1,
+      "nonNull": 0
     },
     "src/modules/hr/time/attendance-clock.service.ts": {
       "as": 0,
@@ -509,6 +917,10 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/hr/workflows/hr-workflow-engine.types.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
     "src/modules/ingress/adapters/crm-mailbox.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -521,6 +933,14 @@
       "as": 2,
       "nonNull": 0
     },
+    "src/modules/ingress/adapters/whatsapp-channels.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/ingress/adapters/whatsapp-ingress.controller.ts": {
+      "as": 4,
+      "nonNull": 0
+    },
     "src/modules/integrations/core/composio.gateway.ts": {
       "as": 1,
       "nonNull": 0
@@ -528,6 +948,90 @@
     "src/modules/integrations/git/git-event-parser.ts": {
       "as": 1,
       "nonNull": 0
+    },
+    "src/modules/inventory/ai/copilot/inv-copilot-tools.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/ai/demand-risk/inv-demand-risk.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/ai/evals/inv-ai-eval-harness.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/inventory/ai/inv-ai-confirm-authority.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/ai/inv-ai.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/ai/proposals/inv-ai-proposal.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/inventory/ai/reports/inv-report-builder.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/ai/reports/inv-report-catalog.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/ai/reports/inv-report-planner.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/barcode/gs1.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/barcode/inv-barcode.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/inventory/channels/channel-adapter.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/inventory/channels/lib/channel-snapshot-context.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/inventory/channels/lib/channel-snapshot-delivery.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/inventory/channels/lib/channel-snapshot-worker.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/channels/quick-commerce/lib/quick-commerce-accept.ts": {
+      "as": 1,
+      "nonNull": 6
+    },
+    "src/modules/inventory/channels/quick-commerce/lib/quick-commerce-asn.ts": {
+      "as": 1,
+      "nonNull": 3
+    },
+    "src/modules/inventory/channels/quick-commerce/lib/quick-commerce-ingest.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/inventory/channels/quick-commerce/quick-commerce-inbound.ts": {
+      "as": 1,
+      "nonNull": 5
+    },
+    "src/modules/inventory/dock/dock.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/handling-units/handling-unit.service.ts": {
+      "as": 3,
+      "nonNull": 2
     },
     "src/modules/inventory/import-export/export.service.ts": {
       "as": 1,
@@ -537,13 +1041,149 @@
       "as": 0,
       "nonNull": 3
     },
+    "src/modules/inventory/kitting/kit-math.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/kitting/kit.service.ts": {
+      "as": 4,
+      "nonNull": 0
+    },
+    "src/modules/inventory/kitting/lib/kit-build.ts": {
+      "as": 2,
+      "nonNull": 1
+    },
+    "src/modules/inventory/labels/lib/document-builder.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/landed-cost/landed-cost-apply.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/landed-cost/landed-cost.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/landed-cost/lib/apportion.ts": {
+      "as": 0,
+      "nonNull": 4
+    },
+    "src/modules/inventory/ops/lib/attention-probes.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/picking/pick-exception-policy.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/picking/pick-line.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/picking/pick-substitution.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/picking/pick-wave.service.ts": {
+      "as": 0,
+      "nonNull": 6
+    },
+    "src/modules/inventory/products/lib/product-pack-visibility.ts": {
+      "as": 5,
+      "nonNull": 0
+    },
+    "src/modules/inventory/projects/inv-projects.service.ts": {
+      "as": 0,
+      "nonNull": 7
+    },
+    "src/modules/inventory/projects/lib/project-list.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/projects/lib/project-reads.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
     "src/modules/inventory/purchase-orders/grn-receive.service.ts": {
       "as": 0,
       "nonNull": 1
     },
+    "src/modules/inventory/purchase-orders/lib/grn-post-tx.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/putaway/putaway-complete.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/quality/lib/recall-executed.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/inventory/reconciliation/gl/inv-gl-recon.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/replenishment/forecast/accuracy.ts": {
+      "as": 0,
+      "nonNull": 4
+    },
+    "src/modules/inventory/replenishment/forecast/backtest.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/replenishment/forecast/baselines.ts": {
+      "as": 0,
+      "nonNull": 7
+    },
+    "src/modules/inventory/replenishment/forecast/demand-baseline.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/replenishment/forecast/demand-shape.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/replenishment/forecast/forecast-drift.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/replenishment/forecast/lead-time.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/replenishment/forecast/po-batch.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/replenishment/forecast/transfer-approval.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/replenishment/inv-replenishment.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/sales-orders/lib/so-pack.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/sales-orders/lib/so-pick-pack.ts": {
+      "as": 1,
+      "nonNull": 2
+    },
+    "src/modules/inventory/sales-orders/so-ship.ts": {
+      "as": 1,
+      "nonNull": 5
+    },
     "src/modules/inventory/shipments/carriers.service.ts": {
       "as": 0,
       "nonNull": 1
+    },
+    "src/modules/inventory/shipments/cartonization.service.ts": {
+      "as": 0,
+      "nonNull": 11
     },
     "src/modules/inventory/shipments/loads.service.ts": {
       "as": 2,
@@ -557,6 +1197,18 @@
       "as": 0,
       "nonNull": 3
     },
+    "src/modules/inventory/slotting/dto/slotting.schemas.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/slotting/slotting.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/stock-engine/accounting-bridge.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/inventory/stock-engine/cost-visibility.ts": {
       "as": 2,
       "nonNull": 0
@@ -569,6 +1221,14 @@
       "as": 3,
       "nonNull": 0
     },
+    "src/modules/inventory/stock-engine/lib/reservation-unwind.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/stock-engine/movement-apply.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
     "src/modules/inventory/stock-engine/reservation.service.ts": {
       "as": 0,
       "nonNull": 1
@@ -577,11 +1237,47 @@
       "as": 1,
       "nonNull": 1
     },
+    "src/modules/inventory/stock-types/ownership.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/stock/lib/adjustment-approval.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/stock/lib/transfer-commands.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/stock/lib/transit-exit-lines.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/stock/lib/write-off.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/sync/sync-batch.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/traceability/lib/genealogy-csv.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/traceability/lib/genealogy-receipts.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
     "src/modules/inventory/traceability/traceability-chain.service.ts": {
       "as": 0,
       "nonNull": 4
     },
-    "src/modules/invoices/invoices-write.service.ts": {
+    "src/modules/inventory/warehouses/warehouse-assignments.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/webhooks/inventory-outbox-consumer.ts": {
       "as": 1,
       "nonNull": 0
     },
@@ -601,6 +1297,30 @@
       "as": 3,
       "nonNull": 0
     },
+    "src/modules/kb/content-health/kb-content-health.service.ts": {
+      "as": 0,
+      "nonNull": 4
+    },
+    "src/modules/kb/core/collection/knowledge-collection.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/kb/help-centre/kb-analytics.service.ts": {
+      "as": 0,
+      "nonNull": 4
+    },
+    "src/modules/kb/retrieval/kb-ask.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/kb/wiki/kb-import-export.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/kb/wiki/kb-pages.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
     "src/modules/leads/lead-status.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -613,9 +1333,37 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/leads/lib/lead-analytics-report.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/lifecycle/health-score.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/lifecycle/lib/customer-health-persist.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/lifecycle/lib/lifecycle-term-changes.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/lifecycle/lifecycle-origin.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/lifecycle/lifecycle-terms.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/mail/mail-metadata.service.ts": {
       "as": 0,
       "nonNull": 1
+    },
+    "src/modules/mail/providers/lib/mail-cursor.ts": {
+      "as": 4,
+      "nonNull": 0
     },
     "src/modules/mail/providers/mail-metadata-cursor.ts": {
       "as": 2,
@@ -641,6 +1389,10 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/notifications/unified-inbox.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/offer-fulfillment/deal-closed-consumer.service.ts": {
       "as": 4,
       "nonNull": 1
@@ -657,6 +1409,30 @@
       "as": 6,
       "nonNull": 0
     },
+    "src/modules/party/legacy-shapes.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/party/party-legacy-clients.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/party/party-legacy-contacts-helpers.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/party/party-legacy-leads.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/party/party-legacy-orgs-helpers.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/payroll/runs/runs-generate-command.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/payroll/runs/runs.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -669,6 +1445,22 @@
       "as": 0,
       "nonNull": 3
     },
+    "src/modules/public/careers-resume-intake.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/public/portal/candidate-portal-view.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/public/pricing.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/public/public-offers.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
     "src/modules/rbac/rbac.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -678,6 +1470,50 @@
       "nonNull": 0
     },
     "src/modules/rbac/seed-system-roles.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/reporting/compiler/lib/compile-resolution.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/reporting/compiler/lib/compile-select.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/reporting/compiler/lib/compile-window.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/reporting/compiler/scope.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/reporting/dto/reporting.schemas.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/reporting/report-schedule-cadence.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/reporting/report-schedule.consumer.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/reporting/report-schedules.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/reporting/reporting-definitions.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/reporting/reporting.service.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/sales/lib/sales-commissions.ts": {
       "as": 3,
       "nonNull": 0
     },
@@ -713,11 +1549,31 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/support/kb-gap/lib/gap-detection.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
     "src/modules/support/kb-gap/support-kb-gap.service.ts": {
       "as": 0,
       "nonNull": 1
     },
     "src/modules/tasks/task-sequences.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/timesheets/core/attendance/lib/clock-segments.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/timesheets/core/lib/billing-export.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/timesheets/core/reminders-sweep.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/timesheets/payroll/handoff/payroll-handoff.consumer.ts": {
       "as": 1,
       "nonNull": 0
     },
@@ -749,11 +1605,23 @@
       "as": 0,
       "nonNull": 2
     },
-    "src/scripts/convert-kb-articles.ts": {
-      "as": 1,
-      "nonNull": 2
+    "src/scripts/check-schema-drift.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/scripts/check-set-null-migration-text.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/scripts/declaration-constraint-drift/declared.ts": {
+      "as": 6,
+      "nonNull": 0
     },
     "src/scripts/hrms-partition-planner/partition-error.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/scripts/probe-ask-os-live.ts": {
       "as": 1,
       "nonNull": 0
     },
@@ -773,8 +1641,24 @@
       "as": 2,
       "nonNull": 0
     },
+    "src/test/db-spec-crm-fixture.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/test/db-spec-fixture.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
     "src/test/sql-predicate.ts": {
       "as": 9,
+      "nonNull": 0
+    },
+    "src/test/tenant-recorder-sql.ts": {
+      "as": 1,
+      "nonNull": 3
+    },
+    "src/test/tenant-recorder.ts": {
+      "as": 5,
       "nonNull": 0
     }
   }

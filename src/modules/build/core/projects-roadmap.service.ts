@@ -15,7 +15,7 @@ import type {
   UpdateFeedbackInput,
   UpdateRoadmapInput,
 } from "./dto/projects.schemas";
-import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
+import { buildTupleCursorPage, decodeTupleCursor, decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { ProjectsChangelogService } from "./projects-changelog.service";
 import { ProjectsFeedbackService } from "./projects-feedback.service";

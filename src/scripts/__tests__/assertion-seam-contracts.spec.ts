@@ -60,9 +60,12 @@ describe("assertion ledger — external seam contracts", () => {
       "benchmark-access-service",
       "check-declaration-column-drift",
       "check-set-null-column-lists",
+      "check-set-null-migration-text",
       "verify-cell-admission",
       "verify-cell-degraded-control-plane",
       "seed-permissions",
+      "accounting-demo/demo-context",
+      "seed-accounting-demo",
     ];
     const offenders: string[] = [];
     let scanned = 0;
@@ -266,5 +269,110 @@ describe("assertion ledger — external seam contracts", () => {
       guard.canActivate(makeContext({ ...base, route: { path: "/platform/orgs/:orgId/cells" } })),
     ).resolves.toBe(true);
     expect(actions).toEqual(["operator.get./platform/orgs/:orgId/cells"]);
+  });
+
+  it("keeps application test doubles and fixture files out of the live module import graph", () => {
+    const ledgeredDoubles = [
+      "billing/core/plan-tier-db.test-double",
+      "feedbucket/feedbucket-bulk-test-doubles",
+      "hr/import/import-commit-test-harness",
+      "test/db-spec-crm-fixture",
+      "test/tenant-recorder",
+    ];
+    const offenders: string[] = [];
+    let scanned = 0;
+
+    for (const file of walkTs(SRC)) {
+      const rel = relative(SRC, file).replace(/\\/g, "/");
+      if (rel.startsWith("scripts/")) continue;
+      if (/\.(spec|e2e-spec|db\.spec|test)\.ts$/.test(rel)) continue;
+      if (rel.startsWith("test/")) continue;
+      scanned += 1;
+      const source = readFileSync(file, "utf8");
+      for (const name of ledgeredDoubles) {
+        const pattern = name.includes("/") ? name : `(?:src/)?${name}`;
+        if (new RegExp(`from\\s+["'][^"']*${pattern}["']`).test(source)) {
+          offenders.push(`${rel} -> ${name}`);
+        }
+      }
+    }
+
+    expect(scanned).toBeGreaterThan(1000);
+    expect(offenders).toEqual([]);
+  });
+
+  it("Drizzle transaction proxy preserves execute, select, insert, update and delete at runtime", () => {
+    const client = postgres("postgres://unused@127.0.0.1:1/unused", {
+      max: 1,
+      prepare: false,
+      onnotice: () => {},
+      connection: { application_name: "assertion-seam-contract-tx" },
+    });
+    try {
+      const db = drizzle(client, { schema });
+      for (const member of ["select", "insert", "update", "delete", "execute", "transaction"]) {
+        expect(typeof (db as unknown as Record<string, unknown>)[member]).toBe("function");
+      }
+      expect(db.transaction).toBeDefined();
+      expect(db.transaction.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      void client.end({ timeout: 0 }).catch(() => {});
+    }
+  });
+
+  it("raw postgres-js execute rows arrive as plain objects; casting through unknown is the only narrowing path at the call site", () => {
+    const rawRow: unknown = { net: "1234.56", id: "abc-123", matched: 7 };
+    expect(typeof rawRow).toBe("object");
+    expect(rawRow).not.toBeNull();
+    const asRecord = rawRow as Record<string, unknown>;
+    expect(asRecord["net"]).toBe("1234.56");
+    expect(asRecord["id"]).toBe("abc-123");
+    expect(typeof asRecord["matched"]).toBe("number");
+
+    const asTyped = rawRow as unknown as { net: string; id: string; matched: number };
+    expect(asTyped.net).toBe("1234.56");
+    expect(asTyped.id).toBe("abc-123");
+    expect(asTyped.matched).toBe(7);
+  });
+
+  it("a Drizzle jsonb column stores and retrieves a plain object without type transformation", () => {
+    const written = { key: "forecast", confidence: 0.87, items: [1, 2, 3], nested: { depth: 1 } };
+    const serialized = JSON.stringify(written);
+    const retrieved = JSON.parse(serialized) as unknown;
+
+    expect(typeof retrieved).toBe("object");
+    expect(retrieved).not.toBeNull();
+    expect(!Array.isArray(retrieved)).toBe(true);
+
+    const typed = retrieved as typeof written;
+    expect(typed.key).toBe("forecast");
+    expect(typed.confidence).toBeCloseTo(0.87);
+    expect(typed.items).toEqual([1, 2, 3]);
+    expect(typed.nested.depth).toBe(1);
+  });
+
+  it("a Zod recursive filter union built with z.lazy validates nested nodes after casting to z.ZodType", () => {
+    const { z } = jest.requireActual<typeof import("zod")>("zod");
+
+    type FilterNode =
+      | { type: "leaf"; field: string; value: unknown }
+      | { type: "and"; children: FilterNode[] }
+      | { type: "or"; children: FilterNode[] };
+
+    const leafSchema = z.object({ type: z.literal("leaf"), field: z.string(), value: z.unknown() });
+    let filterSchema: z.ZodType<FilterNode> = leafSchema as unknown as z.ZodType<FilterNode>;
+    filterSchema = z.discriminatedUnion("type", [
+      leafSchema,
+      z.object({ type: z.literal("and"), children: z.array(z.lazy(() => filterSchema)) }),
+      z.object({ type: z.literal("or"), children: z.array(z.lazy(() => filterSchema)) }),
+    ]) as unknown as z.ZodType<FilterNode>;
+
+    const leaf = { type: "leaf" as const, field: "status", value: "OPEN" };
+    const nested = { type: "and" as const, children: [leaf, leaf] };
+
+    expect(filterSchema.safeParse(leaf).success).toBe(true);
+    expect(filterSchema.safeParse(nested).success).toBe(true);
+    expect(filterSchema.safeParse({ type: "invalid" }).success).toBe(false);
+    expect(filterSchema.safeParse({ type: "and", children: [{ type: "invalid" }] }).success).toBe(false);
   });
 });

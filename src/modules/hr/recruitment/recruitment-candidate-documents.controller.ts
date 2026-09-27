@@ -32,6 +32,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { z } from "zod";
 import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { vaultDocumentSchema } from "./dto/recruitment-candidate-records-response.schemas";
+import { addVaultDocumentSchema } from "./dto/candidate-records.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = [
@@ -154,7 +155,7 @@ export class RecruitmentCandidateDocumentsController {
       fileUrl: await this.storage.getFileUrl(orgId, key, 3600),
       fileType: file.mimetype,
       fileSize: file.size,
-      documentType: documentType as any,
+      documentType: addVaultDocumentSchema.shape.documentType.parse(documentType),
     });
 
     this.audit.log({

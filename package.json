@@ -485,7 +485,13 @@
     "check:request-txn-outbound": "node src/scripts/check-request-txn-outbound.mjs",
     "check:request-txn-outbound:self-test": "node src/scripts/check-request-txn-outbound.mjs --self-test",
     "check:sweep-budget": "node src/scripts/check-sweep-budget.mjs",
-    "check:sweep-budget:self-test": "node src/scripts/check-sweep-budget.mjs --self-test"
+    "check:sweep-budget:self-test": "node src/scripts/check-sweep-budget.mjs --self-test",
+    "perf:benchmark-manifest:self-test": "node test/perf/measure-benchmark-manifest.mjs --self-test",
+    "perf:heavy-query-plans:self-test": "node test/perf/measure-heavy-query-plans.mjs --self-test",
+    "perf:index-redundancy:self-test": "node test/perf/measure-index-redundancy.mjs --self-test",
+    "perf:projection-bytes:self-test": "node test/perf/measure-projection-bytes.mjs --self-test",
+    "perf:seed-heavy-query:self-test": "node test/perf/seed-heavy-query-load.mjs --self-test",
+    "perf:benchmark-environment:self-test": "node test/perf/benchmark-environment.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

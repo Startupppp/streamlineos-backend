@@ -6,6 +6,7 @@ import { PartiesService } from '../parties/parties.service';
 import { TaxService } from '../tax/tax.service';
 import { StorageService } from '../../storage/storage.service';
 import { DRIZZLE } from '../../../db/drizzle.constants';
+import type { ApDocumentDetail } from './ap.types';
 
 describe('ApDocumentPdfService', () => {
   let service: ApDocumentPdfService;
@@ -28,12 +29,12 @@ describe('ApDocumentPdfService', () => {
   });
 
   it('should throw ConflictException if document is DRAFT', async () => {
-    jest.spyOn(documentsService, 'get').mockResolvedValue({ status: 'DRAFT' } as any);
+    jest.spyOn(documentsService, 'get').mockResolvedValue({ status: 'DRAFT' } as unknown as ApDocumentDetail);
     await expect(service.render('org1', 'doc1')).rejects.toThrow(ConflictException);
   });
 
   it('should throw ConflictException if documentNumber is missing', async () => {
-    jest.spyOn(documentsService, 'get').mockResolvedValue({ status: 'POSTED', documentNumber: null } as any);
+    jest.spyOn(documentsService, 'get').mockResolvedValue({ status: 'POSTED', documentNumber: null } as unknown as ApDocumentDetail);
     await expect(service.render('org1', 'doc1')).rejects.toThrow(ConflictException);
   });
 
@@ -47,7 +48,7 @@ describe('ApDocumentPdfService', () => {
     });
 
     it('allows document access for the owning org — reaches DRAFT check proving same-tenant lookup succeeds (same-tenant positive control)', async () => {
-      jest.spyOn(documentsService, 'get').mockResolvedValue({ status: 'DRAFT', documentNumber: null } as any);
+      jest.spyOn(documentsService, 'get').mockResolvedValue({ status: 'DRAFT', documentNumber: null } as unknown as ApDocumentDetail);
 
       await expect(service.render('org-owner', 'doc-1')).rejects.toThrow(ConflictException);
 

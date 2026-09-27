@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
+import { getTableName } from "drizzle-orm";
 import { SupportKbGapService } from "./support-kb-gap.service";
 import { SupportKbGapDetectionService } from "./support-kb-gap-detection.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -8,9 +9,11 @@ import { KbArticlesService } from "../../kb/help-centre/kb-articles.service";
 import { KbEventsService } from "../../kb/core/kb-events.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { kbEvents, kbPages, supportKnowledgeGaps } from "../../../db/schema";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { makeFakeDb, type TableRows } from "../../../test/fake-select-db";
 
 const makeGatewayOk = <T>(data: T) => ({
   ok: true as const,
@@ -505,6 +508,119 @@ describe("SupportKbGapService", () => {
         expect.not.objectContaining({ dismissalReason: expect.anything() }),
       );
     });
+  });
+});
+
+const GAP_TABLE = getTableName(supportKnowledgeGaps);
+const KB_PAGES_TABLE = getTableName(kbPages);
+const KB_EVENTS_TABLE = getTableName(kbEvents);
+
+function baseGapRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 1,
+    org_id: "org1",
+    cluster_key: "cluster:1",
+    representative_question: "How do I reset?",
+    ticket_count: 5,
+    sample_ticket_ids: [],
+    status: SupportKnowledgeGapStatus.OPEN,
+    proposed_article_id: null,
+    drafted_by: null,
+    reviewed_by: null,
+    dismissal_reason: null,
+    evidence: { searchQueries: [], relatedTicketIds: [] },
+    created_at: new Date(),
+    updated_at: new Date(),
+    ...overrides,
+  };
+}
+
+function validArticleRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 42,
+    org_id: "org1",
+    title: "Reset Password Guide",
+    content_type: "support_article",
+    deleted_at: null,
+    archived_at: null,
+    ...overrides,
+  };
+}
+
+async function makeListGapsService(tables: TableRows) {
+  const fakeDb = makeFakeDb(tables);
+  const module = await Test.createTestingModule({
+    providers: [
+      SupportKbGapService,
+      { provide: DRIZZLE, useValue: fakeDb },
+      { provide: AiGatewayService, useValue: mockGateway },
+      { provide: KbArticlesService, useValue: mockKbArticles },
+      { provide: KbEventsService, useValue: mockKbEvents },
+      { provide: NotificationDispatchService, useValue: mockNotifications },
+    ],
+  }).compile();
+  return module.get(SupportKbGapService);
+}
+
+describe("listGaps", () => {
+  it("returns the article title when the proposed Document exists and matches the scope predicate", async () => {
+    const tables: TableRows = {
+      [GAP_TABLE]: [baseGapRow({ proposed_article_id: 42 })],
+      [KB_PAGES_TABLE]: [validArticleRow()],
+      [KB_EVENTS_TABLE]: [],
+    };
+    const service = await makeListGapsService(tables);
+    const { gaps } = await service.listGaps("org1");
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.proposedArticleTitle).toBe("Reset Password Guide");
+  });
+
+  it("returns null title for a gap whose proposed article is soft-deleted, preserving the gap row in the list because a leftJoin must not become a silent drop", async () => {
+    const tables: TableRows = {
+      [GAP_TABLE]: [baseGapRow({ proposed_article_id: 42 })],
+      [KB_PAGES_TABLE]: [validArticleRow({ deleted_at: new Date("2024-01-01") })],
+      [KB_EVENTS_TABLE]: [],
+    };
+    const service = await makeListGapsService(tables);
+    const { gaps } = await service.listGaps("org1");
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.proposedArticleTitle).toBeNull();
+  });
+
+  it("returns null title for a gap whose proposed article is archived, preserving the gap row in the list", async () => {
+    const tables: TableRows = {
+      [GAP_TABLE]: [baseGapRow({ proposed_article_id: 42 })],
+      [KB_PAGES_TABLE]: [validArticleRow({ archived_at: new Date("2024-01-01") })],
+      [KB_EVENTS_TABLE]: [],
+    };
+    const service = await makeListGapsService(tables);
+    const { gaps } = await service.listGaps("org1");
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.proposedArticleTitle).toBeNull();
+  });
+
+  it("returns null title for a gap whose proposed article is the wrong Variant, preserving the gap row in the list", async () => {
+    const tables: TableRows = {
+      [GAP_TABLE]: [baseGapRow({ proposed_article_id: 42 })],
+      [KB_PAGES_TABLE]: [validArticleRow({ content_type: "wiki_page" })],
+      [KB_EVENTS_TABLE]: [],
+    };
+    const service = await makeListGapsService(tables);
+    const { gaps } = await service.listGaps("org1");
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.proposedArticleTitle).toBeNull();
+  });
+
+  it("returns null title and does not drop the gap row when proposedArticleId is null, because a gap with no draft is still a gap", async () => {
+    const tables: TableRows = {
+      [GAP_TABLE]: [baseGapRow({ proposed_article_id: null })],
+      [KB_PAGES_TABLE]: [],
+      [KB_EVENTS_TABLE]: [],
+    };
+    const service = await makeListGapsService(tables);
+    const { gaps } = await service.listGaps("org1");
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.proposedArticleTitle).toBeNull();
   });
 });
 

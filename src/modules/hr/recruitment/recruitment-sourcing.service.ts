@@ -202,7 +202,8 @@ export class RecruitmentSourcingService {
     orgId: string,
     referral: typeof candidateReferrals.$inferSelect,
   ): Promise<void> {
-    if (!this.notifications) return;
+    const notifications = this.notifications;
+    if (!notifications) return;
     const candidate = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.id, referral.candidateId), eq(candidates.orgId, orgId)),
       columns: { firstName: true, lastName: true },
@@ -222,7 +223,7 @@ export class RecruitmentSourcingService {
     await Promise.all(
       [...targets].map(async ([userId, link]) => {
         try {
-          await this.notifications!.create({
+          await notifications.create({
             orgId,
             userId,
             type: "INFO",

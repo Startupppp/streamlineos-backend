@@ -50,7 +50,7 @@ describe("RecruitmentWebhooksService — cross-tenant isolation", () => {
     const { db, capturedWheres } = makeDb([]);
     const service = new RecruitmentWebhooksService(db);
 
-    await (service as any).run(ATTACKER_ORG, EVENT, PAYLOAD);
+    await (service as unknown as { run(orgId: string, event: RecruitmentEvent, payload: Record<string, unknown>): Promise<void> }).run(ATTACKER_ORG, EVENT, PAYLOAD);
 
     expect(capturedWheres.length).toBeGreaterThan(0);
     expect(sqlValues(capturedWheres[0])).toContain(ATTACKER_ORG);
@@ -62,7 +62,7 @@ describe("RecruitmentWebhooksService — cross-tenant isolation", () => {
     const { db, values } = makeDb([sub]);
     const service = new RecruitmentWebhooksService(db);
 
-    await (service as any).run(OWNER_ORG, EVENT, PAYLOAD);
+    await (service as unknown as { run(orgId: string, event: RecruitmentEvent, payload: Record<string, unknown>): Promise<void> }).run(OWNER_ORG, EVENT, PAYLOAD);
 
     expect(values).toHaveBeenCalledWith(
       expect.arrayContaining([

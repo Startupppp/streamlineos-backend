@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ticketTypeEnum } from "../../../../db/schema";
 
 const ticketId = z.coerce.number().int().positive();
 const userId = z.string().min(1).max(120);
@@ -9,7 +10,7 @@ export const ticketCreatePayloadSchema = z.object({
   projectId: z.coerce.number().int().positive(),
   title: z.string().min(1).max(300),
   description: z.string().max(10_000).optional(),
-  type: z.enum(["TASK", "BUG", "STORY", "EPIC", "SUBTASK"]).default("TASK"),
+  type: z.enum(ticketTypeEnum.enumValues).default("TASK"),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
   assigneeId: userId.optional(),
 });

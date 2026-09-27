@@ -46,7 +46,7 @@ describe('RecruitmentRequisitionsService - Headcount Link', () => {
         const mockRequisition = { id: 1, status: 'APPROVED', linkedJobId: null, headcount: 1, headcountId: null, title: 'Test Job' };
 
         // Mock findOrThrow
-        jest.spyOn(service as any, 'findOrThrow').mockResolvedValue(mockRequisition);
+        jest.spyOn(service as unknown as { findOrThrow: (...args: unknown[]) => Promise<unknown> }, 'findOrThrow').mockResolvedValue(mockRequisition);
 
         // Mock transaction
         db.transaction.mockImplementation((cb: any) => cb({

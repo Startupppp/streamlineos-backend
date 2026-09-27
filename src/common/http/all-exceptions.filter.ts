@@ -146,9 +146,10 @@ const CONSTRAINT_DETAIL_MESSAGE: Partial<Record<string, string>> = {
 function driverFieldOf(exception: unknown, field: string): string | undefined {
   let current: unknown = exception;
   for (let depth = 0; current != null && depth < 6; depth += 1) {
-    const value = (current as Record<string, unknown>)[field];
+    if (!isRecord(current)) break;
+    const value = current[field];
     if (typeof value === "string" && value.length > 0) return value;
-    current = (current as { cause?: unknown }).cause;
+    current = current["cause"];
   }
   return undefined;
 }
