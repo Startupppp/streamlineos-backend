@@ -1,4 +1,4 @@
-import { KbAnalyticsService } from "./kb-analytics.service";
+import { KbContentGapService } from "./kb-content-gap.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { sql } from "drizzle-orm";
 
@@ -10,8 +10,8 @@ const mockAuth = {
   visiblePagePredicate: jest.fn(),
 };
 
-function makeService(): KbAnalyticsService {
-  return new KbAnalyticsService(mockDb as never, mockAuth as unknown as KnowledgeAuthorizationService);
+function makeService(): KbContentGapService {
+  return new KbContentGapService(mockDb as never, mockAuth as unknown as KnowledgeAuthorizationService);
 }
 
 const baseUser = { orgId: "org-1", userId: "u-1", membershipId: "m-1" } as never;

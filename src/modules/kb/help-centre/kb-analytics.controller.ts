@@ -5,6 +5,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAnalyticsService } from "./kb-analytics.service";
+import { KbContentGapService } from "./kb-content-gap.service";
 import {
   rangeSchema,
   overviewQuerySchema,
@@ -41,7 +42,10 @@ import {
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbAnalyticsController {
-  constructor(private readonly analytics: KbAnalyticsService) {}
+  constructor(
+    private readonly analytics: KbAnalyticsService,
+    private readonly contentGap: KbContentGapService,
+  ) {}
 
   @Get("analytics/overview")
   @RequirePermission("kb:analytics:view")
@@ -62,7 +66,7 @@ export class KbAnalyticsController {
     @Query() query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.noResults(u.orgId, query);
+    return await this.contentGap.noResults(u.orgId, query);
   }
 
   @Get("analytics/pages")
@@ -84,7 +88,7 @@ export class KbAnalyticsController {
     @Query() query: GapsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.gaps(u, query);
+    return await this.contentGap.gaps(u, query);
   }
 
   @Get("analytics/gaps/related-pages")
@@ -95,7 +99,7 @@ export class KbAnalyticsController {
     @Query() query: GapRelatedPagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.gapRelatedPages(u, query);
+    return await this.contentGap.gapRelatedPages(u, query);
   }
 
   @Get("analytics/content-gaps")
@@ -106,7 +110,7 @@ export class KbAnalyticsController {
     @Query() query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.contentGaps(u.orgId, query);
+    return await this.contentGap.contentGaps(u.orgId, query);
   }
 
   @Get("analytics/citation-reuse")
@@ -139,7 +143,7 @@ export class KbAnalyticsController {
     @Body() body: GapAssignBody,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.assignGap(u, body);
+    return await this.contentGap.assignGap(u, body);
   }
 
   @Post("analytics/gaps/dismiss")
@@ -150,7 +154,7 @@ export class KbAnalyticsController {
     @Body() body: GapDismissBody,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.dismissGap(u, body);
+    return await this.contentGap.dismissGap(u, body);
   }
 
   @Post("analytics/gaps/create-fix")
@@ -162,6 +166,6 @@ export class KbAnalyticsController {
     @Body() body: GapCreateFixBody,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.analytics.createFix(u, body);
+    return await this.contentGap.createFix(u, body);
   }
 }

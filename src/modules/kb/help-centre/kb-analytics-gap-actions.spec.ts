@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { KbAnalyticsService } from "./kb-analytics.service";
+import { KbContentGapService } from "./kb-content-gap.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
@@ -25,8 +25,8 @@ function makeUser(orgId = "org-1"): CurrentUserContext {
   };
 }
 
-describe("KbAnalyticsService — gap actions", () => {
-  let service: KbAnalyticsService;
+describe("KbContentGapService — gap actions", () => {
+  let service: KbContentGapService;
   let mockDb: {
     transaction: jest.Mock;
     insert: jest.Mock;
@@ -70,7 +70,7 @@ describe("KbAnalyticsService — gap actions", () => {
 
     const module = await Test.createTestingModule({
       providers: [
-        KbAnalyticsService,
+        KbContentGapService,
         { provide: DRIZZLE, useValue: mockDb },
         {
           provide: KnowledgeAuthorizationService,
@@ -79,7 +79,7 @@ describe("KbAnalyticsService — gap actions", () => {
       ],
     }).compile();
 
-    service = module.get(KbAnalyticsService);
+    service = module.get(KbContentGapService);
   });
 
   describe("assignGap", () => {

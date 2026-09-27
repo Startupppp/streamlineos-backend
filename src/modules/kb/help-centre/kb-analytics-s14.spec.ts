@@ -5,6 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { encodeTupleCursor } from "../../../common/pagination/cursor";
 import { KbAnalyticsService } from "./kb-analytics.service";
+import { KbContentGapService } from "./kb-content-gap.service";
 
 const dialect = new PgDialect();
 
@@ -44,10 +45,10 @@ function eventGroupHarness(rows: Record<string, unknown>[] = []) {
   return { db, havings };
 }
 
-describe("KbAnalyticsService — minimum-cohort privacy threshold", () => {
+describe("KbContentGapService — minimum-cohort privacy threshold", () => {
   it("gaps() floors the search-gap aggregate at a minimum cohort size", async () => {
     const { db, havings } = eventGroupHarness();
-    const svc = new KbAnalyticsService(db, auth);
+    const svc = new KbContentGapService(db, auth);
 
     await svc.gaps(USER, { limit: 50 });
 
@@ -59,7 +60,7 @@ describe("KbAnalyticsService — minimum-cohort privacy threshold", () => {
 
   it("noResults() floors the zero-result aggregate at a minimum cohort size", async () => {
     const { db, havings } = eventGroupHarness();
-    const svc = new KbAnalyticsService(db, auth);
+    const svc = new KbContentGapService(db, auth);
 
     await svc.noResults("org-1", {});
 
@@ -71,7 +72,7 @@ describe("KbAnalyticsService — minimum-cohort privacy threshold", () => {
 
   it("contentGaps() floors the content-gap aggregate at a minimum cohort size", async () => {
     const { db, havings } = eventGroupHarness();
-    const svc = new KbAnalyticsService(db, auth);
+    const svc = new KbContentGapService(db, auth);
 
     await svc.contentGaps("org-1", {});
 
