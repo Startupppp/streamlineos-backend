@@ -87,6 +87,7 @@ function makeService(subtree: number[]): KbPageTrashService {
   const tx = {
     execute: jest.fn(async () => subtree.map((id) => ({ id }))),
     delete: jest.fn(() => ({ where: jest.fn(async () => []) })),
+    select: jest.fn(() => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) })),
   };
   const db = {
     query: {
@@ -95,6 +96,7 @@ function makeService(subtree: number[]): KbPageTrashService {
       },
     },
     transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
+    select: jest.fn(() => ({ from: () => ({ where: () => Promise.resolve([]) }) })),
   };
   return new KbPageTrashService(
     db as never,

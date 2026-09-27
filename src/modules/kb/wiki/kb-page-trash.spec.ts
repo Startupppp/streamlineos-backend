@@ -327,6 +327,7 @@ describe("legal hold — blocks all three purge paths", () => {
               }),
             }),
             update: () => ({ set: () => ({ where: jest.fn().mockResolvedValue([]) }) }),
+            select: () => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) }),
           }),
       ),
       select: jest.fn().mockReturnValue({
@@ -402,11 +403,17 @@ describe("legal hold — blocks all three purge paths", () => {
 describe("DELETE /kb/pages/trash/purge — bulk purge", () => {
   it("a hidden page returns notFound; a visible page returns succeeded", async () => {
     const db = {
-      select: jest.fn().mockImplementation(() => ({
-        from: () => ({
-          where: () => Promise.resolve([{ id: 3 }]),
-        }),
-      })),
+      select: jest.fn()
+        .mockImplementationOnce(() => ({
+          from: () => ({
+            where: () => Promise.resolve([{ id: 3 }]),
+          }),
+        }))
+        .mockImplementation(() => ({
+          from: () => ({
+            where: () => Promise.resolve([]),
+          }),
+        })),
       query: {
         kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 3, title: "P3" }) },
         kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -422,6 +429,7 @@ describe("DELETE /kb/pages/trash/purge — bulk purge", () => {
             }),
           }),
           update: () => ({ set: () => ({ where: jest.fn().mockResolvedValue([]) }) }),
+          select: () => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) }),
         })
       ),
     } as unknown as Db;

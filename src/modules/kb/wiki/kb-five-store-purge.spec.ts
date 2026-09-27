@@ -102,6 +102,7 @@ function makeTreeDb() {
         return [];
       }),
     })),
+    select: jest.fn(() => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) })),
   };
   const db = {
     query: {
@@ -109,6 +110,7 @@ function makeTreeDb() {
       kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
     },
     transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
+    select: jest.fn(() => ({ from: () => ({ where: () => Promise.resolve([]) }) })),
   };
   return { db, deleted };
 }

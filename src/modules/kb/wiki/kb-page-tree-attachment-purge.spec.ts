@@ -94,6 +94,7 @@ function makeTreeDb(options: {
   const tx = {
     execute: jest.fn().mockResolvedValue((options.subtreeIds ?? []).map((id) => ({ id }))),
     delete: deleteFrom,
+    select: jest.fn(() => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) })),
   };
 
   return {

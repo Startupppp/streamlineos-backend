@@ -285,6 +285,7 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
     const tx = {
       execute: jest.fn().mockResolvedValue([{ id: 10 }]),
       delete: jest.fn(() => ({ where: async () => [] })),
+      select: jest.fn(() => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) })),
     };
     const treeDb = {
       query: {
@@ -292,7 +293,9 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
         kbPagePurgeLedger: { findFirst: async () => undefined },
       },
       transaction: async (fn: (t: unknown) => unknown) => fn(tx),
-      select: () => ({ from: () => ({ where: () => attachmentRows([{ fileKey: put.key }]) }) }),
+      select: jest.fn()
+        .mockImplementationOnce(() => ({ from: () => ({ where: () => Promise.resolve([]) }) }))
+        .mockImplementation(() => ({ from: () => ({ where: () => attachmentRows([{ fileKey: put.key }]) }) })),
       insert: () => ({
         values: () => ({
           onConflictDoUpdate: async () => undefined,

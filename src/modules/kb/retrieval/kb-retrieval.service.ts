@@ -108,6 +108,7 @@ export class KbRetrievalService {
             opts.sourcesLimit ?? 4,
             opts.sourceIds,
             embedding,
+            opts.spaceId,
           ),
         ]);
 

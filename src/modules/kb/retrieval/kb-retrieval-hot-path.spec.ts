@@ -388,8 +388,8 @@ describe("KB prompt-text join carries the ACL revision fence", () => {
   });
 });
 
-describe("KB query embedding cache — a vector is a pure function of model and text", () => {
-  it("embeds a repeated question once, so the second ask pays no provider round trip", async () => {
+describe("KB query embedding cache — a vector is a pure function of tenant, model and text", () => {
+  it("embeds a repeated question once for the same tenant even when spacing and case differ, so normalisation and not exact spelling decides the hit", async () => {
     const cache = makeCache();
     const embeddings = makeEmbeddings();
     const { db } = makeDb([{ id: 1 }]);
@@ -398,11 +398,23 @@ describe("KB query embedding cache — a vector is a pure function of model and 
     const first = await svc.resolveQueryEmbedding("How do I reset my password", "org-1");
     const second = await svc.resolveQueryEmbedding(
       "  how   do I RESET my password ",
-      "org-2",
+      "org-1",
     );
 
     expect(embeddings.embedQueryWithCredit).toHaveBeenCalledTimes(1);
     expect(second.vectorLiteral).toBe(first.vectorLiteral);
+  });
+
+  it("embeds the same normalised question again for a second tenant, because sharing the entry would spend one org's credits on another's search and skip the credit reservation entirely (BE-123)", async () => {
+    const cache = makeCache();
+    const embeddings = makeEmbeddings();
+    const { db } = makeDb([{ id: 1 }]);
+    const svc = makeSearchRetrieval(db, embeddings, new KbCandidateService(db as never), cache);
+
+    await svc.resolveQueryEmbedding("How do I reset my password", "org-1");
+    await svc.resolveQueryEmbedding("How do I reset my password", "org-2");
+
+    expect(embeddings.embedQueryWithCredit).toHaveBeenCalledTimes(2);
   });
 
   it("CONTROL: with no cache the same question is embedded twice, so the single call above is the cache and not an inert assertion", async () => {
