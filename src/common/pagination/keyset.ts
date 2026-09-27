@@ -46,6 +46,14 @@ export function keysetAfterIntValue(
   return sql`(${sortColumn}, ${idColumn}) > (${sql.param(integerSortValue(position), sortColumn)}, ${sql.param(numericId(position), idColumn)})`;
 }
 
+export function keysetBeforeIntValue(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(integerSortValue(position), sortColumn)}, ${sql.param(numericId(position), idColumn)})`;
+}
+
 // For a sort column that is already text and totally ordered with its id — a lexorank, a code — where `at()` must not coerce.
 export function keysetAfterValue(
   sortColumn: PgColumn,
