@@ -70,6 +70,41 @@ export class KbPageTrashService {
     private readonly cache: CacheService,
   ) {}
 
+  private async assertNoLegalHoldInSubtree(
+    orgId: string,
+    subtreeIds: number[],
+  ): Promise<void> {
+    if (subtreeIds.length === 0) return;
+
+    const held = await this.db
+      .select({
+        id: kbPages.id,
+        title: kbPages.title,
+        legalHoldReason: kbPages.legalHoldReason,
+      })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          inArray(kbPages.id, subtreeIds),
+          eq(kbPages.legalHold, true),
+        ),
+      );
+
+    if (held.length === 0) return;
+
+    const named = held
+      .map((row) => {
+        const reason = row.legalHoldReason ? `: ${row.legalHoldReason}` : "";
+        return `"${row.title}"${reason}`;
+      })
+      .join(", ");
+
+    throw new ConflictException(
+      `This page cannot be permanently deleted because ${held.length} page(s) beneath it are under a legal hold — ${named}.`,
+    );
+  }
+
   async hardDelete(user: CurrentUserContext, pageId: number): Promise<void> {
     const orgId = user.orgId;
     const predicate = await this.auth.visiblePagePredicate(user, "view");
@@ -91,6 +126,8 @@ export class KbPageTrashService {
       collectSubtreeIds(tx, orgId, pageId),
     );
 
+    await this.assertNoLegalHoldInSubtree(orgId, subtreeIds);
+
     await openMultiStoreLedger(this.db, orgId, subtreeIds);
     const purgeKeys = await recordPageAttachmentPurge(
       this.db,
@@ -101,9 +138,28 @@ export class KbPageTrashService {
     await this.executePreDeleteStores(orgId, subtreeIds);
 
     await this.db.transaction(async (tx) => {
+      const heldNow = await tx
+        .select({ id: kbPages.id })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            inArray(kbPages.id, subtreeIds),
+            eq(kbPages.legalHold, true),
+          ),
+        )
+        .for("update");
+
+      if (heldNow.length > 0) {
+        throw new ConflictException(
+          `A legal hold was placed on ${heldNow.length} page(s) in this subtree while the deletion was in progress; nothing was removed from the page table.`,
+        );
+      }
+
       await tx.delete(kbPages).where(
         and(
           eq(kbPages.orgId, orgId),
+          eq(kbPages.legalHold, false),
           sql`${kbPages.id} = ANY(ARRAY[${sql.join(
             subtreeIds.map((id) => sql`${id}`),
             sql`, `,
