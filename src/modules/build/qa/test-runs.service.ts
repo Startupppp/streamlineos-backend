@@ -15,7 +15,7 @@ import type {
   UpdateTestResultInput,
   UpdateTestRunInput,
 } from "./dto/qa.schemas";
-import { resolveWorkItemStatus, resolveTicketPriority } from "./phase-2/bug-consolidation-mapping";
+import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
 
 const RUN_PAGE = 50;
 

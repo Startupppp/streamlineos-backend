@@ -145,13 +145,23 @@ describe("CronProjectsService — project_id set on spawned activity log (ticket
     );
 
     const outerSelect = outerTx.select as jest.Mock;
-    outerSelect.mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([TEMPLATE_ROW]),
+    outerSelect
+      .mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([TEMPLATE_ROW]),
+          }),
         }),
-      }),
-    });
+      })
+      .mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            groupBy: jest.fn().mockResolvedValue([
+              { projectId: PROJECT_ID, maxNumber: 1 },
+            ]),
+          }),
+        }),
+      });
 
     await service.spawnDueRecurringTickets();
 

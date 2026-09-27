@@ -68,8 +68,10 @@ describe("KbPageTrashService — cross-tenant isolation", () => {
             cb({
               execute: jest.fn().mockResolvedValue([]),
               delete: () => ({ where: jest.fn().mockResolvedValue([]) }),
+              select: () => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) }),
             }),
         ),
+      select: jest.fn(() => ({ from: () => ({ where: () => Promise.resolve([]) }) })),
     } as unknown as Db;
     return { db, findFirstWhereArgs };
   }

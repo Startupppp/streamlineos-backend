@@ -26,6 +26,8 @@ import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { articleOwnerScope, articleOwnerScopeFilter } from "./kb-article-owner-scope";
 
+export const KB_SNIPPET_CONTENT_CAP = 500;
+
 @Injectable()
 export class KbSearchService {
   constructor(
@@ -163,7 +165,7 @@ export class KbSearchService {
         excerpt: kbPages.excerpt,
         status: kbPages.status,
         updatedAt: kbPages.updatedAt,
-        contentText: kbPages.contentText,
+        contentText: sql<string | null>`left(${kbPages.contentText}, ${KB_SNIPPET_CONTENT_CAP})`,
       })
       .from(kbPages)
       .where(where)

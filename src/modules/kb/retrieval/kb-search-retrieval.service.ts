@@ -202,6 +202,7 @@ export class KbSearchRetrievalService {
           pageVisibility,
           verifiedOnly,
           pageIds,
+          spaceId,
         ),
         vectorLiteral
           ? this.candidates.pageVectorCandidates(
@@ -211,6 +212,7 @@ export class KbSearchRetrievalService {
               chunkVisibleTo(standing),
               verifiedOnly,
               pageIds,
+              spaceId,
             )
           : Promise.resolve<number[]>([]),
       ]);
@@ -270,6 +272,14 @@ export class KbSearchRetrievalService {
     }
 
     if (fusedPageIds.length > 0) {
+      const pageConditions: SQL[] = [
+        eq(kbPages.orgId, user.orgId),
+        inArray(kbPages.id, fusedPageIds),
+        wikiPagePredicate(),
+        ne(kbPages.status, "archived"),
+        pageVisibility,
+      ];
+      if (spaceId) pageConditions.push(eq(kbPages.spaceId, spaceId));
       const pageRows = await this.db
         .select({
           id: kbPages.id,
@@ -280,15 +290,7 @@ export class KbSearchRetrievalService {
           aclRevision: kbPages.aclRevision,
         })
         .from(kbPages)
-        .where(
-          and(
-            eq(kbPages.orgId, user.orgId),
-            inArray(kbPages.id, fusedPageIds),
-            wikiPagePredicate(),
-            ne(kbPages.status, "archived"),
-            pageVisibility,
-          ),
-        );
+        .where(and(...pageConditions));
       for (const row of pageRows) {
         results.push({
           kind: "page",
@@ -411,6 +413,7 @@ export class KbSearchRetrievalService {
     limit: number,
     sourceIds?: number[],
     embedding?: QueryEmbedding,
+    spaceId?: number,
   ): Promise<RetrievedSourceDocument[]> {
     const q = query.trim();
     if (!q) return [];
@@ -443,6 +446,7 @@ export class KbSearchRetrievalService {
         eq(kbSources.orgId, user.orgId),
       ];
       if (spaceFilter) conditions.push(spaceFilter);
+      if (spaceId) conditions.push(or(isNull(kbSources.spaceId), eq(kbSources.spaceId, spaceId)));
       if (sourceIds && sourceIds.length > 0)
         conditions.push(inArray(kbSources.id, sourceIds));
       if (vector === null) conditions.push(this.chunkKeywordMatch(q));
