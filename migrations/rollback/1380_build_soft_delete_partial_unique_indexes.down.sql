@@ -14,6 +14,44 @@ BEGIN
 END $$;
 --> statement-breakpoint
 
+DO $$
+DECLARE
+  rec record;
+  report text := '';
+  groups integer := 0;
+BEGIN
+  FOR rec IN
+    SELECT 'build.project_teams (org_id, key)' AS ident, org_id::text AS a, key::text AS b, count(*) AS n
+      FROM build.project_teams GROUP BY org_id, key HAVING count(*) > 1
+    UNION ALL
+    SELECT 'build.tickets (project_id, ticket_number)', project_id::text, ticket_number::text, count(*)
+      FROM build.tickets GROUP BY project_id, ticket_number HAVING count(*) > 1
+    UNION ALL
+    SELECT 'build.project_risks (project_id, risk_number)', project_id::text, risk_number::text, count(*)
+      FROM build.project_risks GROUP BY project_id, risk_number HAVING count(*) > 1
+    UNION ALL
+    SELECT 'build.project_decisions (project_id, decision_number)', project_id::text, decision_number::text, count(*)
+      FROM build.project_decisions GROUP BY project_id, decision_number HAVING count(*) > 1
+    UNION ALL
+    SELECT 'build.change_requests (project_id, cr_number)', project_id::text, cr_number::text, count(*)
+      FROM build.change_requests GROUP BY project_id, cr_number HAVING count(*) > 1
+    UNION ALL
+    SELECT 'build.project_forms (project_id, form_number)', project_id::text, form_number::text, count(*)
+      FROM build.project_forms GROUP BY project_id, form_number HAVING count(*) > 1
+    UNION ALL
+    SELECT 'build.feedbucket_widgets (public_key)', public_key::text, '', count(*)
+      FROM build.feedbucket_widgets GROUP BY public_key HAVING count(*) > 1
+  LOOP
+    groups := groups + 1;
+    report := report || format('%s -> (%s,%s) x%s | ', rec.ident, rec.a, rec.b, rec.n);
+  END LOOP;
+
+  IF groups > 0 THEN
+    RAISE EXCEPTION '1380-rollback refuses to restore full uniqueness: % reused key group(s) exist once soft-deleted rows are counted. Resolve or hard-delete these before rolling back. Collisions: %', groups, report;
+  END IF;
+END $$;
+--> statement-breakpoint
+
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_project_teams_org_key_old
   ON build.project_teams (org_id, key);
 --> statement-breakpoint

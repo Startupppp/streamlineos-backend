@@ -58,8 +58,9 @@
  *   2   broken filesystem walk (vacuity check failed)
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
@@ -504,6 +505,19 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "journal-order:0466_drop_legacy_accounting.sql", // after 1096_: applied on crm ledgers; 1096_ on Neon
 ]);
 
+const BASELINE_STRAY_SUBDIRECTORY = new Set([
+  "pending/0373_build_money_contract.down.sql",
+  "pending/0373_build_money_contract.sql",
+  "pending/0380_subscription_status_suspended.down.sql",
+  "pending/0380_subscription_status_suspended.sql",
+  "pending/0381_dunning_attempts_table.down.sql",
+  "pending/0381_dunning_attempts_table.sql",
+  "pending/0382_dunning_attempts_backfill.down.sql",
+  "pending/0382_dunning_attempts_backfill.sql",
+  "pending/0827_kb_chunk_search_iterative_scan.WITHDRAWN.sql",
+  "verify/1173_kb_articles_cutover_parity.sql",
+]);
+
 // ─── check functions ──────────────────────────────────────────────────────────
 // Each returns null (clean) or a non-empty string (violation message).
 
@@ -693,6 +707,25 @@ function checkJournalIntegrity(migrationsDir, sqlFiles) {
   return out;
 }
 
+function checkStraySubdirectories(migrationsDir) {
+  const violations = [];
+  const entries = readdirSync(migrationsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name === "rollback" || entry.name === "meta") continue;
+    const subDir = join(migrationsDir, entry.name);
+    const sqlFiles = readdirSync(subDir).filter((f) => f.endsWith(".sql"));
+    for (const f of sqlFiles) {
+      violations.push({
+        filename: `${entry.name}/${f}`,
+        label: "stray-subdirectory",
+        msg: `SQL file in subdirectory "${entry.name}" — all migration SQL must live at the top level of migrations/`,
+      });
+    }
+  }
+  return violations;
+}
+
 function scanMigrations(migrationsDir) {
   if (!existsSync(migrationsDir)) {
     console.error(`ERROR: migrations dir not found: ${migrationsDir}`);
@@ -768,6 +801,12 @@ function runScan(migrationsDir, { printBaseline = true } = {}) {
       continue;
     }
     violations.push(v);
+  }
+
+  for (const v of checkStraySubdirectories(migrationsDir)) {
+    if (!BASELINE_STRAY_SUBDIRECTORY.has(v.filename)) {
+      violations.push(v);
+    }
   }
 
   return { sqlFiles, violations, notes };
@@ -1004,6 +1043,38 @@ function selfTest() {
     null,
   );
 
+  // ─── Check 8: stray subdirectory ──────────────────────────────────────────
+  console.log("\nCheck 8: stray subdirectory");
+
+  {
+    const strayDir = join(tmpdir(), `mig-discipline-selftest-${Date.now()}`);
+    const straySubDir = join(strayDir, "sql");
+    mkdirSync(straySubDir, { recursive: true });
+    try {
+      writeFileSync(join(straySubDir, "stray.sql"), "SELECT 1;");
+      const violations8 = checkStraySubdirectories(strayDir);
+      assert(
+        "SQL file in unrecognized subdirectory sql/ is caught",
+        violations8.length > 0 ? violations8[0].msg : null,
+        "violation",
+      );
+
+      const rollbackSubDir = join(strayDir, "rollback");
+      mkdirSync(rollbackSubDir);
+      writeFileSync(join(rollbackSubDir, "0001_foo.down.sql"), "SELECT 1;");
+      const rollbackViolations = checkStraySubdirectories(strayDir).filter((v) =>
+        v.filename.startsWith("rollback/"),
+      );
+      assert(
+        "SQL file in rollback/ subdirectory does not trigger stray check",
+        rollbackViolations.length === 0 ? null : rollbackViolations[0].msg,
+        null,
+      );
+    } finally {
+      rmSync(strayDir, { recursive: true, force: true });
+    }
+  }
+
   // ─── Self-test anti-vacuity: verify each check actually fails on bad input ─
   console.log("\nAnti-vacuity: checks must never silently pass on unparseable input");
 
@@ -1031,7 +1102,7 @@ function selfTest() {
     console.log("SELF-TEST FAILED — one or more checks did not behave as expected");
     process.exit(1);
   }
-  console.log("SELF-TEST PASSED — all seven check shapes are caught");
+  console.log("SELF-TEST PASSED — all eight check shapes are caught");
   process.exit(0);
 }
 
