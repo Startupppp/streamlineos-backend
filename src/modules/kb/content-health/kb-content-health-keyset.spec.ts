@@ -52,13 +52,10 @@ function sortRows(rows: FixtureRow[], keys: SortKey[]): FixtureRow[] {
   });
 }
 
-/**
- * Stands in for Postgres: it applies the predicate the service actually built,
- * choosing its filter from the rendered SQL rather than from what the test
- * wishes the service had done. A reverted fix renders the id-only shape and
- * takes the id-only branch, which is what makes the paging tests below bite.
- */
-function applyCursorPredicate(rows: FixtureRow[], where: unknown): FixtureRow[] {
+function applyCursorPredicateFromRenderedSql(
+  rows: FixtureRow[],
+  where: unknown,
+): FixtureRow[] {
   const query = dialect.sqlToQuery(where as SQL);
   const text = query.sql;
   const anchorId = Number(query.params[query.params.length - 1]);
@@ -81,7 +78,7 @@ function applyCursorPredicate(rows: FixtureRow[], where: unknown): FixtureRow[] 
 }
 
 function runQuery(where: unknown, orderBy: unknown[], limit: number): FixtureRow[] {
-  const filtered = applyCursorPredicate(FIXTURE, where);
+  const filtered = applyCursorPredicateFromRenderedSql(FIXTURE, where);
   return sortRows(filtered, readSortKeys(orderBy)).slice(0, limit);
 }
 

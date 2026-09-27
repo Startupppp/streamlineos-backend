@@ -126,7 +126,15 @@ describeDb("linked documents: schema, guard and tenant isolation — real databa
 
       await link(a, documentId);
       expect((await violation(link(a, documentId))).code).toBe("23505");
-      await link(a, documentId, { status: "unpublished" }); // history does not count against "one live link"
+    });
+
+    it("admits a second unpublished link for a document that already has a live one, because the one-live-link unique index is partial and history must not count against it", async () => {
+      const documentId = await doc(a);
+
+      await link(a, documentId);
+      expect((await violation(link(a, documentId))).code).toBe("23505");
+
+      await expect(link(a, documentId, { status: "unpublished" })).resolves.toBeDefined();
     });
 
     it("a link cannot point at another organisation's document", async () => {
@@ -253,7 +261,7 @@ describeDb("linked documents: schema, guard and tenant isolation — real databa
       expect(after.status).toBe("active");
     });
 
-    it("lets an organisation be purged with links, audiences, versions and settings in it", async () => {
+    it("lets an organisation be purged with links, audiences, versions, settings and a classification-change audit row in it", async () => {
       const doomed = await seed.org("doomed", ["hr"]);
       const documentId = await doc(doomed);
       const linkId = await link(doomed, documentId);
@@ -261,7 +269,7 @@ describeDb("linked documents: schema, guard and tenant isolation — real databa
       await sql`insert into document_audiences (org_id, document_id, kind) values (${doomed.orgId}, ${documentId}, 'ALL_EMPLOYEES')`;
       await sql`insert into document_versions (org_id, document_id, version, file_url) values (${doomed.orgId}, ${documentId}, 2, 'k/2.pdf')`;
       await sql`insert into kb_settings (org_id) values (${doomed.orgId})`;
-      await sql`update documents set classification = 'CONFIDENTIAL' where id = ${documentId}`; // leaves an audit row behind
+      await sql`update documents set classification = 'CONFIDENTIAL' where id = ${documentId}`;
 
       await seed.dispose();
 

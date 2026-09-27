@@ -15,19 +15,6 @@ function hasWriterInjected(ServiceClass: Function): boolean {
   return paramTypes?.some((t) => t === KbPageWriterService) ?? false;
 }
 
-// These six injectable services hand-roll kb.content.index events today.
-// Lane 9 migrates them one at a time: add KbPageWriterService to the constructor,
-// then remove the service's entry from this set.
-// When this set is empty, every injectable page-mutating service has been migrated.
-// Removing a service from the set flips its test from "not yet migrated" to
-// "must have writer injected" — the test goes red immediately if the injection
-// was not actually added, catching an incomplete migration.
-const NOT_YET_MIGRATED = new Set<Function>();
-
-// Full list of injectable services that own page mutations.
-// Add here when a new page-mutating service is introduced.
-// A service added here but not in NOT_YET_MIGRATED must inject the writer
-// or the test fails immediately.
 const PAGE_MUTATING_SERVICES: Function[] = [
   KbPagesService,
   KbPagePublicService,
@@ -38,24 +25,18 @@ const PAGE_MUTATING_SERVICES: Function[] = [
   KbImportProcessConsumer,
 ];
 
-describe("structural invariant: every injectable page-mutating service migrates to KbPageWriterService", () => {
+describe("structural invariant: every injectable page-mutating service routes its index event through KbPageWriterService", () => {
   for (const ServiceClass of PAGE_MUTATING_SERVICES) {
-    if (NOT_YET_MIGRATED.has(ServiceClass)) {
-      it(`${ServiceClass.name} — not yet migrated (remove from NOT_YET_MIGRATED after Lane 9 adds the injection)`, () => {
-        expect(hasWriterInjected(ServiceClass)).toBe(false);
-      });
-    } else {
-      it(`${ServiceClass.name} injects KbPageWriterService`, () => {
-        expect(hasWriterInjected(ServiceClass)).toBe(true);
-      });
-    }
+    it(`${ServiceClass.name} injects KbPageWriterService, without which it would hand-roll its own kb.content.index event and drift from the others`, () => {
+      expect(hasWriterInjected(ServiceClass)).toBe(true);
+    });
   }
-});
 
-// BLIND SPOT: support/core/lib/support-kb-articles.ts::updateArticle
-// This file is a module of plain exported async functions, not an @Injectable() class.
-// Reflect.getMetadata cannot see it. It emits kb.content.index for aggregateType "kb_page"
-// directly via OutboxWriter.emit (confirmed at line 340–355).
-// Lane 9 must migrate it separately: refactor updateArticle to accept a KbPageWriterService
-// parameter, then add a behavioral test asserting it calls writer.commitPageChange rather
-// than OutboxWriter.emit directly.
+  it("CONTROL: a page-mutating service that does not take the writer is reported as uninjected, proving the assertions above are not true of every class", () => {
+    class ServiceWithoutWriter {
+      constructor(readonly unrelated: string) {}
+    }
+
+    expect(hasWriterInjected(ServiceWithoutWriter)).toBe(false);
+  });
+});
