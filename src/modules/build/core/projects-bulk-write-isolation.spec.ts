@@ -7,6 +7,8 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { organizationMembers, projectMembers, projectStatuses, tickets, workflowTransitions } from "../../../db/schema";
 import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111", userId: "owner", role: "OWNER",
@@ -51,6 +53,8 @@ async function harness(size = 1, allowed = true, missingProject = false) {
   const module = await Test.createTestingModule({ providers: [ProjectsTicketsQueryService,
     { provide: DRIZZLE, useValue: db }, { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all"), resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
+    { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
+    { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   return { module, db, rows, statuses, occupancy, transitions, set, values, service: module.get(ProjectsTicketsQueryService) };
 }

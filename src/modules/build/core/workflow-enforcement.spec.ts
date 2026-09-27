@@ -1,6 +1,8 @@
 import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
@@ -48,6 +50,8 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn() } },
         { provide: AccessService, useValue: {} },
+        { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
+        { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     svc = module.get(ProjectsTicketsQueryService);
