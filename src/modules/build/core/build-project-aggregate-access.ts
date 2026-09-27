@@ -4,7 +4,7 @@ import { systemJobCovers } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.types";
 import type { AccessService } from "../../access/access.service";
 import { assertProjectInOrg, resolveProjectAccess } from "./project-access";
-import { ticketsScopeIsUnrestricted } from "./tickets-scope";
+import { ticketsScopeIsUnrestricted } from "./tickets/tickets-scope";
 
 export async function assertProjectAggregateAccess(db: Db, access: AccessService, actor: CurrentUserContext, projectId: number): Promise<void> {
   if (actor.principal.kind === "system-job") {

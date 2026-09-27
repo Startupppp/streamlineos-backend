@@ -321,7 +321,7 @@
       "as": 0,
       "nonNull": 3
     },
-    "src/modules/build/core/build-ticket-bulk-mutation.ts": {
+    "src/modules/build/core/tickets/build-ticket-bulk-mutation.ts": {
       "as": 0,
       "nonNull": 1
     },
@@ -341,7 +341,7 @@
       "as": 0,
       "nonNull": 1
     },
-    "src/modules/build/core/projects-tickets-create.service.ts": {
+    "src/modules/build/core/tickets/projects-tickets-create.service.ts": {
       "as": 0,
       "nonNull": 3
     },

@@ -10,7 +10,7 @@ import {
 import { logger } from "../../../common/logger/logger.service";
 import { verifyGithubSignature, verifyGitlabToken } from "./git-signature";
 import { asRecord, extractTicketRefs, parseEvent } from "./git-event-parser";
-import { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
+import { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
 import type {
   GitLinkInput,
   GitProvider,

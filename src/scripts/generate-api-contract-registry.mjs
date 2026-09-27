@@ -531,7 +531,7 @@ if (IS_DIRECT_RUN && process.argv.includes("--self-test")) {
       'import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";\n' +
       'this.webhooksDispatch.dispatch(orgId, "deal.won", { id });\n' +
       'this.webhooksDispatch.dispatch(orgId, "deal.lost", { id });\n',
-    "/src/modules/build/core/projects-tickets-create.service.ts":
+    "/src/modules/build/core/tickets/projects-tickets-create.service.ts":
       'import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";\n' +
       'await this.webhooksDispatch.enqueue(tx, u.orgId, projectId, "ticket.created", { id });\n',
     "/src/modules/deals/deals.spec.ts":

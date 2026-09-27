@@ -114,14 +114,14 @@ const RELATION_BASELINE = new Map([
   [
     "workItem",
     {
-      files: ["modules/build/core/projects-ticket-relations.service.ts"],
+      files: ["modules/build/core/tickets/projects-ticket-relations.service.ts"],
       reason: "collapsed into relatedTicket before it reaches the wire.",
     },
   ],
   [
     "relatedWorkItem",
     {
-      files: ["modules/build/core/projects-ticket-relations.service.ts"],
+      files: ["modules/build/core/tickets/projects-ticket-relations.service.ts"],
       reason: "collapsed into relatedTicket before it reaches the wire.",
     },
   ],
@@ -203,7 +203,7 @@ const EMPTY_COLUMNS_BASELINE = new Map([
     },
   ],
   [
-    "modules/build/core/projects-tickets-read.query.ts",
+    "modules/build/core/tickets/projects-tickets-read.query.ts",
     {
       sites: 2,
       reason:

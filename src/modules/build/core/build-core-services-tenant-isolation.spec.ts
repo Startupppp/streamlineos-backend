@@ -2,7 +2,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: jest.fn(),
 }));
 
-jest.mock("./ticket-status.util", () => ({
+jest.mock("./tickets/ticket-status.util", () => ({
   resolveValidTicketStatuses: jest.fn(),
 }));
 
@@ -15,15 +15,15 @@ import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
-import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
-import type { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsTransferService } from "./tickets/projects-tickets-transfer.service";
+import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
+import type { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { NotificationsService } from "../../notifications/notifications.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
-import { resolveValidTicketStatuses } from "./ticket-status.util";
+import { resolveValidTicketStatuses } from "./tickets/ticket-status.util";
 import { resolveProjectAccess } from "./project-access";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {

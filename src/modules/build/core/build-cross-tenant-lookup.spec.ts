@@ -2,11 +2,11 @@ import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { ProjectsTicketsService } from "./projects-tickets.service";
+import { ProjectsTicketsService } from "./tickets/projects-tickets.service";
 import { ProjectsActivityService } from "./projects-activity.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess } from "./tickets/build-ticket-read-access";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("./tickets/build-ticket-read-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

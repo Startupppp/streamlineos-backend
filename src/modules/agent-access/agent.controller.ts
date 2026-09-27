@@ -8,9 +8,9 @@ import { AgentTokenGuard } from "./agent-token.guard";
 import { AgentAccessService } from "./agent-access.service";
 import { ProjectsQueryService } from "../build/core/projects-query.service";
 import { ProjectsProvisionService } from "../build/core/projects-provision.service";
-import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
+import { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
 import { ProjectsWorkQueryService } from "../build/core/projects-work-query.service";
-import { ProjectsTicketSubresourcesService } from "../build/core/projects-ticket-subresources.service";
+import { ProjectsTicketSubresourcesService } from "../build/core/tickets/projects-ticket-subresources.service";
 import {
   listProjectsSchema,
   createProjectSchema,

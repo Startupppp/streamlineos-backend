@@ -16,8 +16,8 @@ import {
   parseProposedPayload,
 } from "./confirmable-action.types";
 import { PERMISSIONS } from "../../../rbac/permissions";
-import { ProjectsTicketsService } from "../../../build/core/projects-tickets.service";
-import { ProjectsTicketCommentsService } from "../../../build/core/projects-ticket-comments.service";
+import { ProjectsTicketsService } from "../../../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketCommentsService } from "../../../build/core/tickets/projects-ticket-comments.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { Db } from "../../../../db/drizzle.module";
 

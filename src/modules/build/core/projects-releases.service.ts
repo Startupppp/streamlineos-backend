@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
-import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "./tickets/ticket-version-conflict.exception";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";

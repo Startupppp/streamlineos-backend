@@ -1,7 +1,7 @@
 import { PERMISSIONS } from "../rbac/permissions/catalog";
 import { isScopable } from "../rbac/permissions";
 import { PROJECTS_MANAGE_PERMISSION } from "./core/projects-scope";
-import { TICKETS_PERMISSION } from "./core/tickets-scope";
+import { TICKETS_PERMISSION } from "./core/tickets/tickets-scope";
 import {
   TIMESHEETS_MANAGE_PERMISSION,
   TIMESHEETS_VIEW_PERMISSION,

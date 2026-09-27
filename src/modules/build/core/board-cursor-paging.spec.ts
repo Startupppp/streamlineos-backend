@@ -1,12 +1,12 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
-import { TICKETS_PERMISSION } from "./tickets-scope";
+import { TICKETS_PERMISSION } from "./tickets/tickets-scope";
 
 // The board is an infinite scroll over a table the whole team writes to; by page number a ticket created mid-scroll duplicates one row and hides another.
 

@@ -1,9 +1,9 @@
 import type { Db } from "../../../db/drizzle.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { rankTicket } from "./projects-tickets-rank-utils";
-import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
+import { rankTicket } from "./tickets/projects-tickets-rank-utils";
+import { bulkMutateTickets } from "./tickets/build-ticket-bulk-mutation";
 
-jest.mock("./build-ticket-mutation-policy", () => ({
+jest.mock("./tickets/build-ticket-mutation-policy", () => ({
   authorizeTicketMutation: jest.fn().mockResolvedValue({ role: "MEMBER", predicate: {} }),
   lockProjectTicketMutation: jest.fn().mockResolvedValue(undefined),
   readMutationTickets: jest.fn().mockImplementation(
@@ -25,12 +25,12 @@ jest.mock("./build-ticket-mutation-policy", () => ({
   ),
 }));
 
-jest.mock("./build-ticket-batch-workflow", () => ({
+jest.mock("./tickets/build-ticket-batch-workflow", () => ({
   validateBatchTransition: jest.fn().mockResolvedValue(undefined),
   emitBatchStatusChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("./tickets-helpers", () => ({
+jest.mock("./tickets/tickets-helpers", () => ({
   resolveAssigneeId: jest.fn().mockReturnValue(undefined),
 }));
 

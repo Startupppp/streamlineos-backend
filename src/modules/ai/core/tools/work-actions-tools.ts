@@ -9,7 +9,7 @@ import { resolveAnyMailConnection } from "./lib/mail-connection";
 import { resolvePeopleByName } from "../../../directory/person-seam";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadIdIs } from "../../../leads/lead-party-reader";
-import { ticketScope } from "../../../build/core/tickets-scope";
+import { ticketScope } from "../../../build/core/tickets/tickets-scope";
 import {
   defineTool,
   ambiguous,

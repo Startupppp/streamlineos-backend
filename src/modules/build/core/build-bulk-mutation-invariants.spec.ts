@@ -5,7 +5,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AccessService } from "../../access/access.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111", userId: "owner", role: "OWNER",

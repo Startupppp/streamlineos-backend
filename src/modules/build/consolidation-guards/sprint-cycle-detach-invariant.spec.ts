@@ -107,7 +107,7 @@ describe("phase-04 detach invariant: sprintId column-selection form (relational 
   const KNOWN_COLUMN_SELECT_REMAINING: readonly string[] = [];
 
   it("projects-tickets-read.query selects no sprintId and derives no sprintId, because the response contract no longer carries one", () => {
-    const content = src("modules/build/core/projects-tickets-read.query.ts");
+    const content = src("modules/build/core/tickets/projects-tickets-read.query.ts");
     expect(content).not.toMatch(/sprintId\s*:\s*true/);
     expect(content).not.toContain("legacySprintId");
     expect(content).not.toContain("sprintId");
@@ -116,8 +116,8 @@ describe("phase-04 detach invariant: sprintId column-selection form (relational 
 
   it("the ticket-update path resolves cycleId straight from the request with no sprintId branch, wherever that path now lives", () => {
     const content =
-      src("modules/build/core/projects-tickets-update.service.ts") +
-      src("modules/build/core/apply-ticket-change.ts");
+      src("modules/build/core/tickets/projects-tickets-update.service.ts") +
+      src("modules/build/core/tickets/apply-ticket-change.ts");
     expect(content).not.toMatch(/sprintId\s*:\s*true/);
     expect(content).not.toContain("sprintId");
     expect(content).toContain("updateData.cycleId");
@@ -189,7 +189,7 @@ describe("phase-04 detach invariant: sprintId object-literal WRITE form (the bli
   });
 
   it("projects-tickets-create.service takes cycleId straight from the request and mentions no sprint at all", () => {
-    const content = src("modules/build/core/projects-tickets-create.service.ts");
+    const content = src("modules/build/core/tickets/projects-tickets-create.service.ts");
     expect(hasSprintIdWriteForm(content)).toBe(false);
     expect(content).not.toContain("sprintId");
     expect(content).toContain("cycleId: resolvedCycleId");

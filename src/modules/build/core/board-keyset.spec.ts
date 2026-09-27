@@ -1,11 +1,11 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { TICKETS_PERMISSION } from "./tickets-scope";
+import { TICKETS_PERMISSION } from "./tickets/tickets-scope";
 import { encodeCursor } from "../../../common/pagination/cursor";
 
 const dialect = new PgDialect();

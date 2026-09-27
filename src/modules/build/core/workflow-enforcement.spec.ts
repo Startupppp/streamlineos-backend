@@ -1,6 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";

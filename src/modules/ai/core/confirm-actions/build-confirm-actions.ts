@@ -1,5 +1,5 @@
-import { ProjectsTicketsService } from "../../../build/core/projects-tickets.service";
-import { ProjectsTicketCommentsService } from "../../../build/core/projects-ticket-comments.service";
+import { ProjectsTicketsService } from "../../../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketCommentsService } from "../../../build/core/tickets/projects-ticket-comments.service";
 import {
   ticketAssignPayloadSchema,
   ticketCommentPayloadSchema,

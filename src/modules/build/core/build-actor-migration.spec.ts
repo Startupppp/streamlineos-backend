@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ProjectsMembersService } from "./projects-members.service";
-import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
+import { ProjectsTicketsCreateService } from "./tickets/projects-tickets-create.service";
 import * as actorSeam from "../../../common/organization/organization-actor";
 import type { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.module";

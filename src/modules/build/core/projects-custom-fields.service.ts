@@ -11,7 +11,7 @@ import { assertProjectInOrg } from "./project-access";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
-} from "./build-ticket-read-access";
+} from "./tickets/build-ticket-read-access";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const BUILD_ENTITY_TYPE = "build_ticket" as const;

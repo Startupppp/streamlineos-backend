@@ -8,7 +8,7 @@ import { accountableMembershipId, humanSessionPrincipal, type Principal } from "
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AccessService } from "../../access/access.service";
 import type { NotificationTicketContext } from "../../notifications/notifications.types";
-import { resolveTicketsScope, ticketScope } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets/tickets-scope";
 
 @Injectable()
 export class BuildNotificationContextService {

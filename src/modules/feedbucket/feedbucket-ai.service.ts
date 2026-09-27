@@ -16,7 +16,7 @@ import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { sanitizeHtml } from "../hr/templates/html-sanitizer";
-import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
+import { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { StorageService } from "../storage/storage.service";
 import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";

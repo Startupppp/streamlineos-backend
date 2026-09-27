@@ -4,10 +4,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess } from "./tickets/build-ticket-read-access";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("./tickets/build-ticket-read-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

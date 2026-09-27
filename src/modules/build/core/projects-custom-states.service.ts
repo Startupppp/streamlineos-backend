@@ -16,8 +16,8 @@ import {
 } from "../../../db/schema";
 import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
-import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { lockProjectTicketMutation } from "./tickets/build-ticket-mutation-policy";
+import { reserveTicketCapacity } from "./tickets/build-ticket-capacity";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";

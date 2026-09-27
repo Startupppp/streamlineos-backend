@@ -1,5 +1,5 @@
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
-import { ProjectsTicketCommentsController } from "./core/projects-ticket-comments.controller";
+import { ProjectsTicketCommentsController } from "./core/tickets/projects-ticket-comments.controller";
 import { AgentPulseController } from "./agent-pulse/agent-pulse.controller";
 import { CommentDraftsController } from "./comment-drafts/comment-drafts.controller";
 

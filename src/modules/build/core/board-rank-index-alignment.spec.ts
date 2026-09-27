@@ -25,13 +25,13 @@
 import { SQL } from "drizzle-orm";
 import { PgDialect, getTableConfig } from "drizzle-orm/pg-core";
 import { tickets } from "../../../db/schema";
-import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { TICKETS_PERMISSION } from "./tickets-scope";
+import { TICKETS_PERMISSION } from "./tickets/tickets-scope";
 
 const dialect = new PgDialect();
 const ORG = "org-rank-index";

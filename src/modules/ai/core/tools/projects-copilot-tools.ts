@@ -6,7 +6,7 @@ import { tickets } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
-import { ticketScope } from "../../../build/core/tickets-scope";
+import { ticketScope } from "../../../build/core/tickets/tickets-scope";
 import {
   type AskOsToolDefinition,
   type AskOsToolProvider,

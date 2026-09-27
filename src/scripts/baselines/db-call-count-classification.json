@@ -103,7 +103,7 @@
       "verdict": "N+1-FIXED",
       "note": "ensureUniqueSlug: replaced per-iteration findFirst with single findMany on slug = root OR slug LIKE root-%; compute next suffix in memory"
     },
-    "/build/core/build-ticket-batch-workflow.ts": {
+    "/build/core/tickets/build-ticket-batch-workflow.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "First seen 2026-09-09. The detector matches `for (const row of changed) await assertTransitionAllowed(db, ...)` at :20-23 because the callee takes a `db` handle, but that call issues ZERO statements on this path. `validateBatchTransition` reads the workflow ONCE at :13 via `fetchTransitionsAndStatuses`, then builds `prefetched` at :19 carrying `{ ...workflow, ticketFields: new Map(rows.map(row => [row.id, row])), wipAlreadyChecked: true }` and passes it as the last argument. `assertTransitionAllowed` (projects-tickets-workflow-utils.ts:93) destructures `prefetched ?? await fetchTransitionsAndStatuses(...)`, so the workflow read is skipped, and its only other query — `readTicketRequiredFields` at :120 — is reached at :163 only when `prefetched?.ticketFields?.get(context.ticketId)` misses. The Map is keyed by every row `readMutationTickets` returned, and `changed` is a subset of those rows, so it never misses. The one remaining round trip is the capacity reservation at :18, which is hoisted ABOVE the loop and runs once for the whole batch. Statement count is therefore independent of batch size; pinned by build-ticket-mutation-bounds.spec.ts, which asserts one read for a 100-ticket batch."
     },
@@ -111,19 +111,19 @@
       "verdict": "N+1-FIXED",
       "note": "N+1 removed: the reorder is one UPDATE ... FROM (VALUES (id, order), ...) via common/db/bulk-update.ts. Executed against a real database (build.project_statuses, schema-qualified, reserved-word column) and asserted at one statement in projects-custom-states-bulk-reorder.spec.ts"
     },
-    "/build/core/projects-tickets-rank-utils.ts": {
+    "/build/core/tickets/projects-tickets-rank-utils.ts": {
       "verdict": "N+1-FIXED",
       "note": "First seen 2026-09-03, reclassified FALSE-POSITIVE -> N+1-FIXED on 2026-09-09 because the detector no longer matches this file and a still-detected verdict would read as stale. The substance is unchanged and still true: `rows.map((r, i) => sql`WHEN ... THEN ...`)` builds CASE branches joined into ONE `tx.update(tickets).set({ rank: sql`(CASE ... END)` })`, and `rebalanceProjectRanks` (:13-24) is a single `UPDATE ... FROM (SELECT row_number() OVER (...))`. Zero round trips inside any loop — this is the bulk rank rewrite, not an N+1."
     },
-    "/build/core/projects-tickets-transfer.service.ts": {
+    "/build/core/tickets/projects-tickets-transfer.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "per-row membership lookup replaced by a Map built from the existing memberEmails join; the loop still detected is a CHUNK_SIZE=100 bounded batch insert"
     },
-    "/build/core/projects-tickets-update.service.ts": {
+    "/build/core/tickets/projects-tickets-update.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "the up-to-100-hop ancestor walk is one WITH RECURSIVE CTE; cycle, project and depth checks read from its rows"
     },
-    "/build/core/projects-tickets-workflow-utils.ts": {
+    "/build/core/tickets/projects-tickets-workflow-utils.ts": {
       "verdict": "N+1-FIXED",
       "note": "Ticket 21 third pass, verified by reading: the ticket read is memoized in `ticketRows` above the loop and runs at most once for any number of matching transitions. The inner `for (const field of transition.requiredFields)` touches nothing but the row already in hand."
     },
@@ -141,7 +141,7 @@
     },
     "/build/import-export/ticket-import.service.ts": {
       "verdict": "BATCHED",
-      "note": "First seen 2026-09-23. Both detected sites are `for (const batch of batches)` over `chunkRows(preview.rows, IMPORT_BATCH_SIZE=100)` — the same CHUNK_SIZE=100 bounded batch insert shape as /build/core/projects-tickets-transfer.service.ts. Site 1, runAtomic (:207-208): `insertTicketBatch(tx, actor, projectId, number, batch)` issues exactly ONE `tx.insert(tickets).values(values).returning(...)` multi-row statement per call (ticket-import-batches.ts:26-58) — statement count is O(rows / 100), never O(rows), and the whole loop already runs inside one outer `this.db.transaction` (:203) for atomic-mode all-or-nothing semantics. Site 2, runPartial (:237-239): the same `insertTicketBatch` call, but each batch gets its OWN `this.db.transaction`, which is deliberate: partial mode's contract is that one bad batch fails independently while the rest still import (see the FAILED-row handling in the catch block, :251-260), so batch-level transaction isolation cannot be collapsed into the single grouped statement atomic mode uses. Neither site issues a per-row round trip."
+      "note": "First seen 2026-09-23. Both detected sites are `for (const batch of batches)` over `chunkRows(preview.rows, IMPORT_BATCH_SIZE=100)` — the same CHUNK_SIZE=100 bounded batch insert shape as /build/core/tickets/projects-tickets-transfer.service.ts. Site 1, runAtomic (:207-208): `insertTicketBatch(tx, actor, projectId, number, batch)` issues exactly ONE `tx.insert(tickets).values(values).returning(...)` multi-row statement per call (ticket-import-batches.ts:26-58) — statement count is O(rows / 100), never O(rows), and the whole loop already runs inside one outer `this.db.transaction` (:203) for atomic-mode all-or-nothing semantics. Site 2, runPartial (:237-239): the same `insertTicketBatch` call, but each batch gets its OWN `this.db.transaction`, which is deliberate: partial mode's contract is that one bad batch fails independently while the rest still import (see the FAILED-row handling in the catch block, :251-260), so batch-level transaction isolation cannot be collapsed into the single grouped statement atomic mode uses. Neither site issues a per-row round trip."
     },
     "/build/qa/test-runs.service.ts": {
       "verdict": "N+1-FIXED",

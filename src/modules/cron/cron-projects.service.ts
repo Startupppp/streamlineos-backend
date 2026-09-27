@@ -7,7 +7,7 @@ import { logger } from "../../common/logger/logger.service";
 import { computeNextRunAt } from "../build/core/projects-recurrence.util";
 import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
 import { forEachOrg, type TenantTx } from "../../common/tenant";
-import { reserveTicketCapacity } from "../build/core/build-ticket-capacity";
+import { reserveTicketCapacity } from "../build/core/tickets/build-ticket-capacity";
 
 const BATCH_SIZE = 50;
 

@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CreateCycleInput, CycleListQuery, UpdateCycleInput } from "./dto/iterations.schemas";
 import { assertProjectInOrg } from "../core/project-access";
 import { sqlstateOf } from "../../../common/observability/error-classification";
-import { TicketVersionConflictException } from "../core/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
 
 @Injectable()
 export class CyclesService {

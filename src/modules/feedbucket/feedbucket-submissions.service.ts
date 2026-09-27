@@ -36,7 +36,7 @@ import {
 } from "./feedbucket.schemas";
 import { decodeIntegerCursor, buildCursorPage } from "../../common/pagination/cursor";
 import { keysetBeforeId } from "../../common/pagination/keyset";
-import type { ProjectsTicketsService } from "../build/core/projects-tickets.service";
+import type { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
 import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
 import {
   deriveFeedbackTicketTitle,

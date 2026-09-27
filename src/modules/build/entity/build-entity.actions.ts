@@ -15,10 +15,10 @@ import type {
   EntityActor,
   EntityReference,
 } from "../../entity-reference/entity-reference.types";
-import { resolveValidTicketStatuses } from "../core/ticket-status.util";
+import { resolveValidTicketStatuses } from "../core/tickets/ticket-status.util";
 import { isProjectMember, text } from "./build-entity-action-helpers";
 import { createTicketFromAction } from "./build-entity-ticket-create";
-import { reserveTicketCapacity } from "../core/build-ticket-capacity";
+import { reserveTicketCapacity } from "../core/tickets/build-ticket-capacity";
 import { CacheService } from "../../../common/cache/cache.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 

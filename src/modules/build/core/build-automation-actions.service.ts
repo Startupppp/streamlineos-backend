@@ -12,7 +12,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { reserveTicketCapacity } from "./tickets/build-ticket-capacity";
 
 export type StoredAction = NonNullable<typeof projectAutomations.$inferSelect>["actions"][number];
 
