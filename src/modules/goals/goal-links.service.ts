@@ -1,7 +1,8 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { okrGoals, okrLinks, projects, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { isCheckViolation, isUniqueViolation } from "../../common/db/postgres-error";
 import type { Db } from "../../db/drizzle.types";
 import type { CreateLinkInput } from "./dto/goal.schemas";
 
@@ -107,17 +108,22 @@ export class GoalLinksService {
       if (!project) return { error: "project_not_found" as const };
     }
 
-    const [link] = await this.db
-      .insert(okrLinks)
-      .values({
-        orgId,
-        goalId,
-        ticketId: input.ticketId ?? null,
-        projectId: input.projectId ?? null,
-      })
-      .returning();
-
-    return link;
+    try {
+      const [link] = await this.db
+        .insert(okrLinks)
+        .values({
+          orgId,
+          goalId,
+          ticketId: input.ticketId ?? null,
+          projectId: input.projectId ?? null,
+        })
+        .returning();
+      return link;
+    } catch (err: unknown) {
+      if (isCheckViolation(err)) throw new ConflictException("A link must reference exactly one item");
+      if (isUniqueViolation(err)) throw new ConflictException("This link already exists");
+      throw err;
+    }
   }
 
   async removeLink(orgId: string, goalId: number, linkId: number): Promise<{ success: true } | null> {

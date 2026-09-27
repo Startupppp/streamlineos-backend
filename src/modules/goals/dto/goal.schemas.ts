@@ -93,6 +93,9 @@ export const createLinkSchema = z
   }).strict()
   .refine((data) => data.ticketId !== undefined || data.projectId !== undefined, {
     message: "Provide a ticketId or projectId",
+  })
+  .refine((data) => !(data.ticketId !== undefined && data.projectId !== undefined), {
+    message: "Provide either ticketId or projectId, not both",
   });
 
 export const deleteLinkSchema = z.object({
