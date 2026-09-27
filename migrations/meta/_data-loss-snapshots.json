@@ -1,0 +1,29 @@
+{
+  "1046_t15f_support_ticket_watchers_actor_contract": {
+    "status": "undetermined",
+    "note": "No snapshot noted in the migration or surrounding documentation. The migration measured 0 deletable rows in the test environments used at authoring time (0 rows total on scratch_perf_seed; 1 row on scratch_t15_500d, which was mappable and was not deleted). No snapshot policy was in place when this migration was authored."
+  },
+  "1052_t07_roster_entries_natural_key": {
+    "status": "undetermined",
+    "note": "No snapshot noted in the migration or surrounding documentation. The migration measured 0 rows in roster_entries across all 8 organizations at journal head (migration comment at line 101), making actual deletion risk zero in the measured environments. No snapshot policy was in place when this migration was authored."
+  },
+  "1053_t03_inv_user_warehouse_grant_cascade": {
+    "status": "undetermined",
+    "note": "No snapshot noted in the migration or surrounding documentation. The migration reports the orphan row count via RAISE NOTICE before deleting (line 46) but no named snapshot was recorded. No snapshot policy was in place when this migration was authored."
+  },
+  "1170_kb_page_reviews_derive_overdue": {
+    "status": "undetermined",
+    "note": "No snapshot noted in the migration or surrounding documentation. The migration collapses rows whose status is 'expired' to 'pending' and then adds a CHECK constraint excluding 'expired' permanently (lines 13-24). No rows are deleted but the 'expired' status distinction is irreversibly lost. No snapshot policy was in place when this migration was authored."
+  },
+  "1174_kb_articles_cutover_contract": {
+    "status": "no_snapshot",
+    "reason": "No pre-cutover snapshot was taken because the pre-flight window closed when 1174 ran.",
+    "nearest_restore_point": "streamlineos-pre-1164-1167-20260923",
+    "nearest_restore_point_at": "2026-09-23T16:30:18Z",
+    "blast_radius": "Zero: all eight dropped tables held 0 rows, proven by 1174's own preflight RAISE at lines 116-128."
+  },
+  "1226_kb_pages_drop_source_article_bridge": {
+    "status": "not_needed",
+    "justification": "The column kb_pages.source_article_id was already absent when 1226 ran; the migration executed its idempotent early-exit at lines 19-31 and dropped nothing. The migration refuses to run at all while source_article_id still carries a value, enforced at lines 43-45."
+  }
+}

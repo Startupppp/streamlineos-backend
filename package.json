@@ -247,6 +247,8 @@
     "check:log-secrets:self-test": "node src/scripts/check-log-secrets.mjs --self-test",
     "check:drop-column-safety": "node src/scripts/check-drop-column-safety.mjs",
     "check:drop-column-safety:self-test": "node src/scripts/check-drop-column-safety.mjs --self-test",
+    "check:data-loss-snapshot": "node src/scripts/check-data-loss-snapshot.mjs",
+    "check:data-loss-snapshot:self-test": "node src/scripts/check-data-loss-snapshot.mjs --self-test",
     "check:migration-discipline": "node src/scripts/check-migration-discipline.mjs",
     "check:migration-discipline:self-test": "node src/scripts/check-migration-discipline.mjs --self-test",
     "check:migration-immutability": "node src/scripts/check-migration-immutability.mjs",
