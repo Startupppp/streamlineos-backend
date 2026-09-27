@@ -115,13 +115,13 @@ export function buildIndexedBranch(
 
   if (containerGrantsAction && standing.accessibleSpaceIds.length > 0) {
     clauses.push(
-      sql`(${kbPages.spaceId} IS NOT NULL AND ${kbPages.spaceId} = ANY(${intArray(standing.accessibleSpaceIds)}))`,
+      sql`(${kbPages.visibility} IN ('org', 'public') AND ${kbPages.spaceId} IS NOT NULL AND ${kbPages.spaceId} = ANY(${intArray(standing.accessibleSpaceIds)}))`,
     );
   }
 
   if (containerGrantsAction && standing.accessibleProjectIds.length > 0) {
     clauses.push(
-      sql`(${kbPages.projectId} IS NOT NULL AND ${kbPages.projectId} = ANY(${intArray(standing.accessibleProjectIds)}))`,
+      sql`(${kbPages.visibility} IN ('org', 'public') AND ${kbPages.projectId} IS NOT NULL AND ${kbPages.projectId} = ANY(${intArray(standing.accessibleProjectIds)}))`,
     );
   }
 
@@ -183,7 +183,9 @@ export function buildVisiblePageScope(
   return {
     predicate: sql`(${tenant} AND ${reachable} AND ${restriction})`,
     grantBranch:
-      grantBranch === null ? null : sql`(${tenant} AND ${grantBranch} AND ${restriction})`,
+      grantBranch === null
+        ? null
+        : sql`(${tenant} AND ${grantBranch} AND ${restriction})`,
     indexedBranch: sql`(${tenant} AND ${indexedBranch} AND ${restriction})`,
     fingerprint,
   };

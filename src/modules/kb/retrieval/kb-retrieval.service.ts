@@ -94,12 +94,12 @@ export class KbRetrievalService {
 
     const embedding = await this.search.resolveQueryEmbedding(query, user.orgId);
 
-    const { documents, sources, passages, sourcesKind, passagesKind } =
+    const { documents, sources, passages, documentsKind, sourcesKind, passagesKind } =
       await runInTenantTransaction(
       this.db,
       async () => {
-        const [docs, srcOutcome] = await Promise.all([
-          this.search.retrieveTopArticles(
+        const [docsOutcome, srcOutcome] = await Promise.all([
+          this.search.retrieveTopArticlesWithOutcome(
             user,
             query,
             documentsLimit,
@@ -118,6 +118,7 @@ export class KbRetrievalService {
           ),
         ]);
 
+        const docs = docsOutcome.results;
         const articleIds = docs.filter((d) => d.kind === "article").map((d) => d.id);
         const pageIds = docs.filter((d) => d.kind === "page").map((d) => d.id);
 
@@ -136,6 +137,7 @@ export class KbRetrievalService {
           documents: docs,
           sources: srcOutcome.results,
           passages: psgOutcome.results,
+          documentsKind: docsOutcome.kind,
           sourcesKind: srcOutcome.kind,
           passagesKind: psgOutcome.kind,
         };
@@ -145,7 +147,7 @@ export class KbRetrievalService {
 
     const embeddingFailed = embedding.vectorLiteral === null;
     const degraded: KbRetrievalDegradation = {
-      documents: embeddingFailed,
+      documents: embeddingFailed || channelSignalsDegradation(documentsKind),
       sources:
         embeddingFailed ||
         channelSignalsDegradation(sourcesKind) ||

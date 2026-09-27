@@ -230,6 +230,9 @@ describe("KbRetrievalService.retrieve — spaceId is forwarded to retrieveTopSou
     const search = {
       resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: VECTOR }),
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
+      retrieveTopArticlesWithOutcome: jest
+        .fn()
+        .mockResolvedValue({ kind: "ok", results: [] }),
       retrieveTopSources: jest.fn().mockResolvedValue([]),
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
       retrieveTopSourcesWithOutcome: jest
@@ -260,6 +263,9 @@ describe("KbRetrievalService.retrieve — spaceId is forwarded to retrieveTopSou
     const search = {
       resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: VECTOR }),
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
+      retrieveTopArticlesWithOutcome: jest
+        .fn()
+        .mockResolvedValue({ kind: "ok", results: [] }),
       retrieveTopSources: jest.fn().mockResolvedValue([]),
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
       retrieveTopSourcesWithOutcome: jest

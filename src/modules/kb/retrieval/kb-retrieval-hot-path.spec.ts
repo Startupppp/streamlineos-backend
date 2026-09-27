@@ -232,10 +232,10 @@ async function runAsk() {
   } = {};
 
   jest
-    .spyOn(searchRetrieval, "retrieveTopArticles")
+    .spyOn(searchRetrieval, "retrieveTopArticlesWithOutcome")
     .mockImplementation((_user, _query, _limit, _spaceId, _verifiedOnly, embedding) => {
       seen.top = embedding;
-      return Promise.resolve([ARTICLE]);
+      return Promise.resolve({ kind: "ok" as const, results: [ARTICLE] });
     });
   jest
     .spyOn(searchRetrieval, "retrieveTopSourcesWithOutcome")

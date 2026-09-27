@@ -74,6 +74,9 @@ function makeSearch(embedResult: QueryEmbedding = { vectorLiteral: VECTOR }) {
   return {
     resolveQueryEmbedding: jest.fn().mockResolvedValue(embedResult),
     retrieveTopArticles: jest.fn().mockResolvedValue([ARTICLE]),
+    retrieveTopArticlesWithOutcome: jest
+      .fn()
+      .mockResolvedValue({ kind: "ok", results: [ARTICLE] }),
     retrieveTopSources: jest.fn().mockResolvedValue([SOURCE]),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([PASSAGE]),
     retrieveTopSourcesWithOutcome: jest
@@ -94,7 +97,7 @@ describe("KbRetrievalService.retrieve — one embedding per call", () => {
     await service.retrieve(makeUser(), QUESTION);
 
     expect(search.resolveQueryEmbedding).toHaveBeenCalledTimes(1);
-    expect(search.retrieveTopArticles).toHaveBeenCalledTimes(1);
+    expect(search.retrieveTopArticlesWithOutcome).toHaveBeenCalledTimes(1);
     expect(search.retrieveTopSourcesWithOutcome).toHaveBeenCalledTimes(1);
     expect(search.retrieveDocumentPassagesWithOutcome).toHaveBeenCalledTimes(1);
   });
@@ -109,11 +112,11 @@ describe("KbRetrievalService.retrieve — one embedding per call", () => {
     } = {};
 
     jest
-      .spyOn(search, "retrieveTopArticles")
+      .spyOn(search, "retrieveTopArticlesWithOutcome")
       .mockImplementation(
         (_user, _query, _limit, _spaceId, _verifiedOnly, embedding) => {
           seen.articles = embedding;
-          return Promise.resolve([ARTICLE]);
+          return Promise.resolve({ kind: "ok" as const, results: [ARTICLE] });
         },
       );
     jest
@@ -249,7 +252,7 @@ describe("KbRetrievalService.retrieve — result shape", () => {
   it("skips retrieveDocumentPassages when there are no documents to retrieve passages for", async () => {
     const db = makeDb(true);
     const search = makeSearch();
-    jest.spyOn(search, "retrieveTopArticles").mockResolvedValue([]);
+    jest.spyOn(search, "retrieveTopArticlesWithOutcome").mockResolvedValue({ kind: "empty" as const, results: [] });
     const service = new KbRetrievalService(db as never, search as never, null);
 
     await service.retrieve(makeUser(), QUESTION);

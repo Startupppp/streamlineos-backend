@@ -396,19 +396,19 @@ export class KbPagesService {
         });
       }
 
+      if (ownerChanged) {
+        await this.audit.logCritical({
+          action: "kb.page.owner_changed",
+          userId: user.userId,
+          orgId,
+          resourceType: "kb_page",
+          resourceId: String(pageId),
+          metadata: { pageId, ownerUserId: input.ownerUserId },
+        });
+      }
+
       return updated;
     });
-
-    if (ownerChanged) {
-      this.audit.log({
-        action: "kb.page.owner_changed",
-        userId: user.userId,
-        orgId,
-        resourceType: "kb_page",
-        resourceId: String(pageId),
-        metadata: { pageId, ownerUserId: input.ownerUserId },
-      });
-    }
 
     return withoutUnsharedToken(
       user,

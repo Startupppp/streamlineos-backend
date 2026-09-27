@@ -52,6 +52,9 @@ function makeSearch(overrides: Record<string, unknown> = {}) {
   return {
     resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: VECTOR }),
     retrieveTopArticles: jest.fn().mockResolvedValue([ARTICLE]),
+    retrieveTopArticlesWithOutcome: jest
+      .fn()
+      .mockResolvedValue({ kind: "ok", results: [ARTICLE] }),
     retrieveTopSources: jest.fn().mockResolvedValue([]),
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
     retrieveTopSourcesWithOutcome: jest
@@ -149,5 +152,40 @@ describe("the retrieval facade separates a channel that failed from one that fou
 
     expect(search.retrieveTopSourcesWithOutcome).toHaveBeenCalled();
     expect(search.retrieveTopSources).not.toHaveBeenCalled();
+  });
+
+  it("reports documents degraded when the documents channel FAILED, because a thrown article query must not read as an authorized empty corpus", async () => {
+    const result = await retrieveWith(
+      makeSearch({
+        retrieveTopArticlesWithOutcome: jest
+          .fn()
+          .mockResolvedValue({ kind: "failed", results: [] }),
+      }),
+    );
+
+    expect(result.documents).toEqual([]);
+    expect(result.degraded.documents).toBe(true);
+  });
+
+  it("CONTROL: reports documents NOT degraded when the documents channel genuinely returned nothing, so the failure assertion reads the outcome kind rather than merely an empty array", async () => {
+    const result = await retrieveWith(
+      makeSearch({
+        retrieveTopArticlesWithOutcome: jest
+          .fn()
+          .mockResolvedValue({ kind: "empty", results: [] }),
+      }),
+    );
+
+    expect(result.documents).toEqual([]);
+    expect(result.degraded.documents).toBe(false);
+  });
+
+  it("consumes the outcome-returning articles method, because the unwrapping one discards the kind that separates failed from empty", async () => {
+    const search = makeSearch();
+
+    await retrieveWith(search);
+
+    expect(search.retrieveTopArticlesWithOutcome).toHaveBeenCalled();
+    expect(search.retrieveTopArticles).not.toHaveBeenCalled();
   });
 });

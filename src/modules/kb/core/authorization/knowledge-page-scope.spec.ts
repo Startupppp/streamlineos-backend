@@ -874,3 +874,114 @@ describe("Item 431 guard — restriction predicate wrapper does not exist", () =
     expect(fs.existsSync(wrapperPath)).toBe(false);
   });
 });
+
+describe("AV-02 private-space/project rule — container branches must not reach private pages (REQUIREMENT-LEDGER S02 line 550)", () => {
+  it("the space membership clause in the indexed view branch carries a visibility restriction so a private page in an accessible space owned by a different member cannot match it", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ membershipId: 1, accessibleSpaceIds: [42] }),
+      "view",
+    ).indexedBranch;
+
+    const rendered = text(branch);
+
+    expect(rendered).toContain('"owner_membership_id"');
+    expect(rendered).toContain("space_id");
+    expect(boundParams(branch)).toContain(42);
+
+    const visibilityGuardCount = (rendered.match(/'org', 'public'/g) ?? []).length;
+    expect(visibilityGuardCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("the project membership clause in the indexed view branch carries a visibility restriction so a private page in an accessible project owned by a different member cannot match it", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ membershipId: 1, accessibleProjectIds: [7] }),
+      "view",
+    ).indexedBranch;
+
+    const rendered = text(branch);
+
+    expect(rendered).toContain('"owner_membership_id"');
+    expect(rendered).toContain("project_id");
+    expect(boundParams(branch)).toContain(7);
+
+    const visibilityGuardCount = (rendered.match(/'org', 'public'/g) ?? []).length;
+    expect(visibilityGuardCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("POSITIVE CONTROL: org-visible pages in accessible spaces are still reachable after the visibility restriction is applied to the space membership branch", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleSpaceIds: [5] }),
+      "view",
+    ).indexedBranch;
+
+    expect(text(branch)).toContain("space_id");
+    expect(boundParams(branch)).toContain(5);
+  });
+
+  it("POSITIVE CONTROL: org-visible pages in accessible projects are still reachable after the visibility restriction is applied to the project membership branch", () => {
+    const branch = buildVisiblePageScope(
+      makeStanding({ accessibleProjectIds: [9] }),
+      "view",
+    ).indexedBranch;
+
+    expect(text(branch)).toContain("project_id");
+    expect(boundParams(branch)).toContain(9);
+  });
+
+  it("BITE: adding a space to the actor's reach increases the visibility guard count by exactly one, proving the guard is in the space clause and not coincidental from another clause", () => {
+    const noSpaces = buildVisiblePageScope(makeStanding({ accessibleSpaceIds: [] }), "view").indexedBranch;
+    const withSpaces = buildVisiblePageScope(makeStanding({ accessibleSpaceIds: [42] }), "view").indexedBranch;
+
+    const countNoSpaces = (text(noSpaces).match(/'org', 'public'/g) ?? []).length;
+    const countWithSpaces = (text(withSpaces).match(/'org', 'public'/g) ?? []).length;
+
+    expect(countWithSpaces).toBe(countNoSpaces + 1);
+  });
+
+  it("BITE: adding a project to the actor's reach increases the visibility guard count by exactly one, proving the guard is in the project clause", () => {
+    const noProjects = buildVisiblePageScope(makeStanding({ accessibleProjectIds: [] }), "view").indexedBranch;
+    const withProjects = buildVisiblePageScope(makeStanding({ accessibleProjectIds: [7] }), "view").indexedBranch;
+
+    const countNoProjects = (text(noProjects).match(/'org', 'public'/g) ?? []).length;
+    const countWithProjects = (text(withProjects).match(/'org', 'public'/g) ?? []).length;
+
+    expect(countWithProjects).toBe(countNoProjects + 1);
+  });
+});
+
+describe("AV-02 private-visibility rule — sharedWithMe scope excludes org-visible pages that have no explicit grant (REQUIREMENT-LEDGER S03 line 581)", () => {
+  it("the sharedWithMe predicate does not reference the visibility column so an org-visible page authored by another user cannot satisfy it without an explicit grant", () => {
+    const ACTOR = 42;
+    const scope = buildSharedWithMeScope(makeStanding({ membershipId: ACTOR }));
+    expect(scope).not.toBeNull();
+
+    const rendered = text(scope!.predicate);
+    const params = boundParams(scope!.predicate);
+
+    expect(rendered).toContain("kb_page_grants");
+    expect(params).toContain(ACTOR);
+    expect(params).toContain("view");
+
+    expect(rendered).not.toContain('"kb_pages"."visibility"');
+  });
+
+  it("POSITIVE CONTROL: the sharedWithMe predicate contains an EXISTS clause that is satisfiable when a kb_page_grants row names the actor, so the scope is not vacuously empty", () => {
+    const scope = buildSharedWithMeScope(makeStanding({ membershipId: 42 }));
+    expect(scope).not.toBeNull();
+
+    const rendered = text(scope!.predicate);
+    expect(rendered).toContain("EXISTS");
+    expect(rendered).toContain('"kb_page_grants"');
+  });
+
+  it("BITE: the sharedWithMe predicate for a role-only actor (no membershipId) does not bind a membershipId in params, proving the grant check is the real gate and not a no-op", () => {
+    const withMembership = buildSharedWithMeScope(makeStanding({ membershipId: 42, roleSlugs: [] }));
+    const roleOnly = buildSharedWithMeScope(makeStanding({ membershipId: null, roleSlugs: ["editor"] }));
+
+    expect(withMembership).not.toBeNull();
+    expect(boundParams(withMembership!.predicate)).toContain(42);
+
+    expect(roleOnly).not.toBeNull();
+    expect(boundParams(roleOnly!.predicate)).not.toContain(42);
+  });
+});
