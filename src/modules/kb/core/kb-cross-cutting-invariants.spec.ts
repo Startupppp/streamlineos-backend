@@ -116,7 +116,7 @@ describe("Box 1 — canonical KnowledgeAuthorization is the only access decision
       "core/kb-helpdesk-documents.ts",
       "retrieval/kb-page-search-query.service.ts",
       "retrieval/kb-chunk-visibility.ts",
-      "retrieval/kb-search.service.ts",
+      "retrieval/kb-search-retrieval.service.ts",
     ];
 
     const callers = allKbSources()
