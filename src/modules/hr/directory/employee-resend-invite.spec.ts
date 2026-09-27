@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import {
   EMPLOYEE_NOT_FOUND_MESSAGE,
   SUSPENDED_ACCOUNT_MESSAGE,
@@ -12,6 +12,7 @@ import {
 
 const ORG_ID = "org-resend";
 const ACTOR = { orgId: ORG_ID, userId: "actor-1", isOrgOwner: true };
+const NON_OWNER_ACTOR = { orgId: ORG_ID, userId: "actor-2", isOrgOwner: false };
 const TARGET = "user-target-1";
 
 function memberRow(overrides: Record<string, unknown> = {}) {
@@ -145,5 +146,44 @@ describe("EmployeeOnboardingService.resendInvite", () => {
     expect(harness.updated).toEqual([
       { table: "magic_link_tokens", set: expect.objectContaining({ usedAt: expect.any(Date) }) },
     ]);
+  });
+});
+
+describe("EmployeeOnboardingService.resendInvite — a resend link is a redeemable credential, so minting one for the owner is an escalation", () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function ownerMemberRow() {
+    return memberRow({ isOwner: true });
+  }
+
+  it("refuses a non-owner actor minting a resend credential for the organization owner", async () => {
+    const harness = harnessWith([ownerMemberRow()]);
+    const { service } = buildService(harness.db);
+
+    await expect(
+      service.resendInvite(NON_OWNER_ACTOR as never, TARGET),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(harness.inserted).toEqual([]);
+  });
+
+  it("names the org owner rank in the refusal", async () => {
+    const harness = harnessWith([ownerMemberRow()]);
+    const { service } = buildService(harness.db);
+
+    await expect(
+      service.resendInvite(NON_OWNER_ACTOR as never, TARGET),
+    ).rejects.toThrow(/organization owner/i);
+  });
+
+  it("allows the organization owner to mint a resend link for themselves", async () => {
+    const harness = harnessWith([ownerMemberRow()]);
+    const { service } = buildService(harness.db);
+
+    await expect(
+      service.resendInvite(ACTOR as never, TARGET),
+    ).resolves.toMatchObject({ success: true });
   });
 });

@@ -491,7 +491,7 @@ export class UsersController {
   @Validate({ params: userIdParams })
   @BodylessAction()
   sendSigninLink(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.userOps.sendSigninLink(u.orgId, userId, u.userId);
+    return this.userOps.sendSigninLink(u.orgId, userId, u);
   }
 
   @RequirePermission("settings:organization:manage")

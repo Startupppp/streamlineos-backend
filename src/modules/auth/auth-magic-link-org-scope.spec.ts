@@ -123,3 +123,41 @@ describe("an org-neutral link keeps resolving through the user's preferred org",
     });
   });
 });
+
+describe("minting org is an assertion not a preference — parameterized to prevent tautology", () => {
+  it.each([
+    { mintingOrg: "org-alpha", otherOrg: "org-beta" },
+    { mintingOrg: "org-beta", otherOrg: "org-alpha" },
+  ])(
+    "token minted for $mintingOrg redeems into $mintingOrg even when the user prefers $otherOrg",
+    async ({ mintingOrg, otherOrg }) => {
+      const { svc } = makeService(
+        { id: "tok-param", userId: "user-1", orgId: mintingOrg, usedAt: null },
+        [otherOrg, mintingOrg],
+        otherOrg,
+      );
+
+      await expect(svc.verifyMagicLink("raw-token", context)).resolves.toMatchObject({
+        orgId: mintingOrg,
+      });
+    },
+  );
+
+  it.each([
+    { mintingOrg: "org-alpha", otherOrg: "org-beta" },
+    { mintingOrg: "org-beta", otherOrg: "org-alpha" },
+  ])(
+    "refuses the link rather than landing in $otherOrg when the user is no longer a member of $mintingOrg",
+    async ({ mintingOrg, otherOrg }) => {
+      const { svc } = makeService(
+        { id: "tok-param-refuse", userId: "user-1", orgId: mintingOrg, usedAt: null },
+        [otherOrg],
+        otherOrg,
+      );
+
+      await expect(svc.verifyMagicLink("raw-token", context)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    },
+  );
+});

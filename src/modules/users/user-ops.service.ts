@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   Inject,
   Injectable,
@@ -284,11 +285,21 @@ export class UserOpsService {
     return { success: true, updated: scopedIds.length };
   }
 
-  async sendSigninLink(orgId: string, userId: string, actorUserId: string) {
+  async sendSigninLink(
+    orgId: string,
+    userId: string,
+    actor: { userId: string; isOrgOwner: boolean },
+  ) {
     const member = await this.usersSvc.getUser(orgId, userId);
     if (member.userStatus !== "active") {
       throw new BadRequestException(
         "Sign-in links can only be sent to active members",
+      );
+    }
+
+    if (member.isOwner && !actor.isOrgOwner) {
+      throw new ForbiddenException(
+        "Only the organization owner may take a sign-in link for the organization owner",
       );
     }
 
@@ -313,7 +324,7 @@ export class UserOpsService {
 
     this.audit.log({
       action: "user.signin_link_sent",
-      userId: actorUserId,
+      userId: actor.userId,
       orgId,
       targetId: userId,
       targetType: "user",
