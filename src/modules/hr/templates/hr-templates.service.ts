@@ -228,6 +228,14 @@ export class HrTemplatesService {
       input.extraContext,
       input.includeSensitive,
     );
+    // A template preview with nobody selected used to print ⟦missing:employee.firstName⟧
+    // and "reach out to us at .". Sample values fill only the holes.
+    if (input.employeeId === undefined) {
+      const samples = this.renderService.buildPreviewContext();
+      for (const [key, value] of Object.entries(samples)) {
+        if (!ctx[key]) ctx[key] = value;
+      }
+    }
 
     const outputHtml = body ? this.renderService.renderHtml(body, ctx) : "";
     const renderedSubject = subject ? this.renderService.renderHtml(subject, ctx) : undefined;

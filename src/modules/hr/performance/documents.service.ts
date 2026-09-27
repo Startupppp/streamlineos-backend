@@ -256,7 +256,9 @@ export class DocumentsService {
   ) {
     const orgId = read.orgId;
     const userId = read.actorId;
-    const targetUserId = input.userId ?? userId;
+    // A blank picker value is not a person. Treating it as a lookup 404'd the
+    // whole upload (Start here step 4) instead of filing the document with the admin.
+    const targetUserId = input.userId?.trim() ? input.userId.trim() : userId;
     assertPublicFlagEligible(input.isPublic ?? false, {
       type: input.type,
       userId: targetUserId,
