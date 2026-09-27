@@ -1,3 +1,4 @@
+import type { ZodType } from "zod";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -360,12 +361,12 @@ describe("assertion ledger — external seam contracts", () => {
       | { type: "or"; children: FilterNode[] };
 
     const leafSchema = z.object({ type: z.literal("leaf"), field: z.string(), value: z.unknown() });
-    let filterSchema: z.ZodType<FilterNode> = leafSchema as unknown as z.ZodType<FilterNode>;
+    let filterSchema: ZodType<FilterNode> = leafSchema as unknown as ZodType<FilterNode>;
     filterSchema = z.discriminatedUnion("type", [
       leafSchema,
       z.object({ type: z.literal("and"), children: z.array(z.lazy(() => filterSchema)) }),
       z.object({ type: z.literal("or"), children: z.array(z.lazy(() => filterSchema)) }),
-    ]) as unknown as z.ZodType<FilterNode>;
+    ]) as unknown as ZodType<FilterNode>;
 
     const leaf = { type: "leaf" as const, field: "status", value: "OPEN" };
     const nested = { type: "and" as const, children: [leaf, leaf] };
