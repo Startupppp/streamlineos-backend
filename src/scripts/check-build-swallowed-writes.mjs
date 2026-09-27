@@ -69,12 +69,21 @@ const MIN_SERVICE_FILES = 30;
  * the gate ratchet holds them at this count rather than forcing an immediate fix.
  *
  * Confirmed hits (file : line):
- *   src/modules/build/core/projects-activity.service.ts : 404
- *   src/modules/build/core/build-automation-run-history.service.ts : ~83 (try wrapping db.update at ~104)
- *   src/modules/build/core/build-automation-run-history.service.ts : ~129 (try wrapping db.insert at ~130)
- *   src/modules/build/core/projects-tickets-transfer.service.ts : ~197 (try wrapping tx.insert at ~198)
+ *   src/modules/build/core/build-automation-run-history.service.ts:75
+ *   src/modules/build/core/build-automation-run-history.service.ts:129
+ *   src/modules/build/core/projects-activity.service.ts:428
+ *   src/modules/build/core/projects-tickets-transfer.service.ts:197
+ *   src/modules/build/import-export/ticket-import.service.ts:201   ← unexpected; missed in initial census
+ *   src/modules/build/import-export/ticket-import.service.ts:239   ← unexpected; missed in initial census
+ *
+ * Indirect swallowed writes (gate cannot see):
+ *   src/modules/build/core/projects-tickets-update.service.ts:343  ← indirect call; not caught by DB_WRITE_RE
+ *
+ * NOTE: The initial baseline of 4 was WRONG — it was set before scanning
+ * ticket-import.service.ts, which added 2 more sites. 6 is the correct measured
+ * count of pre-existing violations outside this ticket's scope.
  */
-const SWALLOWED_BASELINE = 4;
+const SWALLOWED_BASELINE = 6;
 
 function walk(dir, out) {
   if (!existsSync(dir)) return out;
@@ -243,6 +252,20 @@ function runSelfTest() {
   assert(
     "try { await this.db.update } catch without throw is detected",
     scanFile(dbUpdate).length === 1,
+  );
+
+  const promiseCatchWrite = `
+    async stampAutomation(orgId, automationId) {
+      await this.db
+        .update(projectAutomations)
+        .set({ lastRunAt: new Date() })
+        .where(eq(projectAutomations.id, automationId))
+        .catch((error) => logger.error("failed", { error }));
+    }
+  `;
+  assert(
+    "a .catch() on a db write is NOT flagged — promise-catch is outside try/catch structure",
+    scanFile(promiseCatchWrite).length === 0,
   );
 
   if (failures > 0) {

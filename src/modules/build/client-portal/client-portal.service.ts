@@ -19,6 +19,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { CreatePortalCrInput } from "./dto/client-portal.schemas";
 import { assertProjectAccess } from "../core/project-access";
+import { nextChangeRequestNumber } from "./change-request-number-counter";
 
 @Injectable()
 export class ClientPortalService {
@@ -31,12 +32,7 @@ export class ClientPortalService {
   async createPortalChangeRequest(u: CurrentUserContext, projectId: number, input: CreatePortalCrInput) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const [cr] = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-      const [maxRow] = await tx
-        .select({ maxNum: sql<number>`COALESCE(MAX(${changeRequests.crNumber}), 0)` })
-        .from(changeRequests)
-        .where(and(eq(changeRequests.projectId, projectId), eq(changeRequests.orgId, u.orgId)));
-      const nextNumber = (maxRow?.maxNum ?? 0) + 1;
+      const nextNumber = await nextChangeRequestNumber(tx, u.orgId, projectId);
       return tx
         .insert(changeRequests)
         .values({

@@ -846,6 +846,20 @@
         "reason": "Lowered 20 -> 19 on 2026-09-11 after removing the vacuous tenant-integrity describe.skip selector. The AI-project mocked controller suite no longer needs a DB URL, and its three TODOs now execute. This retains the prior 29 -> 20 reduction from separating explicitly selected .db.spec.ts suites: unconfigured selected DB suites fail rather than silently skip. Current measured conditional sites plus aliases total 19; no suppression budget was raised."
       }
     },
+    "check-build-swallowed-writes.mjs": {
+      "SWALLOWED_BASELINE": {
+        "value": 6,
+        "direction": "ratchet",
+        "owner": "build lane 11",
+        "reason": "Pre-existing swallowed-write sites outside ticket-38 territory, measured 2026-09-27 after the five ticket-38 sites were fixed with withSavepoint. Six confirmed hits: build-automation-run-history.service.ts (lines 75, 129), projects-activity.service.ts (line 428), projects-tickets-transfer.service.ts (line 197), ticket-import.service.ts (lines 201, 239). The initial baseline of 4 was WRONG — it was set before the census walked ticket-import.service.ts, which added two sites. 6 is the correct measured count of pre-existing violations outside ticket-38 scope; no violation was raised to paper over unfixed code. May only decrease."
+      },
+      "MIN_SERVICE_FILES": {
+        "value": 30,
+        "direction": "floor",
+        "owner": "build lane 11",
+        "reason": "Anti-vacuity floor: the walk must find at least this many *.service.ts files under src/modules/build or the scan is broken. Measured 36 at 2026-09-27."
+      }
+    },
     "check-transaction-callbacks.mjs": {
       "MIN_SPEC_FILES": {
         "value": 200,
@@ -856,10 +870,10 @@
         "direction": "floor"
       },
       "VOID_FILE_BASELINE": {
-        "value": 2,
+        "value": 8,
         "direction": "ratchet",
         "owner": "CRM/inventory release owner",
-        "reason": "inv-replenishment.service.spec.ts and lead-status-tenant-isolation.spec.ts. Accepted residual R-9, blocker SCOPE. Lowered 9 -> 2 by 6ba5080ca."
+        "reason": "RAISED from 2 to 8 on 2026-09-27 because the old value of 2 was WRONG, not improved. The gate's fileVerdict was testing UNREACHED_RE against the entire file text, so one expect(db.transaction).not.toHaveBeenCalled() anywhere in a 570-line spec promoted every bare double in that file to DECLARED-UNREACHED. Six files were misclassified: they had the not-called assertion in one describe block but bare doubles in other describe blocks. After ticket-58 tightened the unit to per describe-block, those six re-classified as VOID. The two genuine residuals are inv-replenishment.service.spec.ts and lead-status-tenant-isolation.spec.ts (accepted residual R-9, blocker SCOPE, lowered 9->2 by 6ba5080ca). Previous value 2 is the WRONG number; 8 is the first honest measurement. May only decrease."
       }
     },
     "check-type-assertions.mjs": {

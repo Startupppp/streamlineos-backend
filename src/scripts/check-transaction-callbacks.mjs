@@ -22,8 +22,8 @@
  * leaves the rest to review, rather than pretending to measure coverage it
  * cannot see.
  *
- * VERDICTS, per spec FILE (a file is the unit because one invoking double is
- * enough to exercise the transactional path the file is about):
+ * VERDICTS, per test BLOCK (a describe block is the unit; an exemption
+ * assertion in one block does not cover doubles in a different block):
  *   INVOKES            some double calls its callback argument. Covered.
  *   REJECTS            every double rejects or throws. A deliberate
  *                      failure-branch test; the callback is not meant to run.
@@ -91,9 +91,16 @@ const MIN_DOUBLES = 100;
  * Both were fixed BEFORE the ratchet was lowered, so the new number is a real
  * measurement and not the detector going quiet.
  *
- * It may only go down, and a NEW void file fails immediately.
+ * RAISED 2 -> 8 (ticket 58, 2026-09-27). The value of 2 was WRONG — the verdict
+ * function tested UNREACHED_RE against the entire file text, so one
+ * `expect(db.transaction).not.toHaveBeenCalled()` anywhere in a spec promoted
+ * every bare double in that file to DECLARED-UNREACHED. Six files were
+ * misclassified: they had the not-called assertion in one describe block but bare
+ * doubles in other describe blocks. After the fix tightened the unit to per
+ * describe-block, those six re-classified as VOID. 8 is the first honest
+ * measurement. It may only go down.
  */
-const VOID_FILE_BASELINE = 2;
+const VOID_FILE_BASELINE = 8;
 
 const UNREACHED_RE = /transaction\s*\)?[^\n]{0,40}\.not\s*\.\s*toHaveBeenCalled|not\s*\.\s*toHaveBeenCalled[^\n]{0,40}transaction/;
 
@@ -240,6 +247,7 @@ export function scanFile(text) {
       continue;
     doubles.push({
       line: text.slice(0, m.index).split("\n").length,
+      charIndex: m.index,
       verdict: classifyDouble(expr),
     });
   }
@@ -249,6 +257,7 @@ export function scanFile(text) {
     const expr = `${m[1]}${text.slice(open, balance(text, open) + 1)}`;
     doubles.push({
       line: text.slice(0, m.index).split("\n").length,
+      charIndex: m.index,
       verdict: classifyDouble(expr),
     });
   }
@@ -259,17 +268,92 @@ export function scanFile(text) {
       continue;
     doubles.push({
       line: text.slice(0, m.index).split("\n").length,
+      charIndex: m.index,
       verdict: classifyDouble(expr),
     });
   }
   return doubles;
 }
 
+/**
+ * Returns the text of the describe block that contains the character at `charIndex`,
+ * or the full file text if no enclosing describe is found.
+ */
+function enclosingDescribeText(text, charIndex) {
+  const before = text.slice(0, charIndex);
+  const describeRe = /\bdescribe\s*\(/g;
+  let lastDescribeIndex = -1;
+  let dm;
+  while ((dm = describeRe.exec(before)) !== null) {
+    lastDescribeIndex = dm.index;
+  }
+  if (lastDescribeIndex === -1) return text;
+
+  const afterDescribeKw = text.indexOf("(", lastDescribeIndex);
+  if (afterDescribeKw === -1) return text;
+
+  let depth = 0;
+  let i = afterDescribeKw;
+  let callbackBrace = -1;
+  while (i < text.length && i < charIndex + 2000) {
+    const ch = text[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) break;
+    } else if (ch === "{" && depth === 1) {
+      callbackBrace = i;
+      break;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const q = ch;
+      i++;
+      while (i < text.length) {
+        if (text[i] === "\\") { i += 2; continue; }
+        if (text[i] === q) break;
+        i++;
+      }
+    }
+    i++;
+  }
+  if (callbackBrace === -1) return text;
+
+  let bdepth = 0;
+  let j = callbackBrace;
+  while (j < text.length) {
+    const ch = text[j];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const q = ch;
+      j++;
+      while (j < text.length) {
+        if (text[j] === "\\") { j += 2; continue; }
+        if (text[j] === q) break;
+        j++;
+      }
+    } else if (ch === "{") bdepth++;
+    else if (ch === "}") {
+      bdepth--;
+      if (bdepth === 0) { j++; break; }
+    }
+    j++;
+  }
+  return text.slice(callbackBrace, j);
+}
+
 export function fileVerdict(doubles, text) {
   if (doubles.length === 0) return "NONE";
   if (doubles.some((d) => d.verdict === "INVOKES")) return "INVOKES";
-  if (UNREACHED_RE.test(text)) return "DECLARED-UNREACHED";
-  if (doubles.every((d) => d.verdict === "REJECTS")) return "REJECTS";
+  const isCovered = (d) => {
+    if (d.verdict === "REJECTS") return true;
+    const blockText = enclosingDescribeText(text, d.charIndex ?? 0);
+    return UNREACHED_RE.test(blockText);
+  };
+  if (doubles.every(isCovered)) {
+    if (doubles.some((d) => UNREACHED_RE.test(enclosingDescribeText(text, d.charIndex ?? 0)))) {
+      return "DECLARED-UNREACHED";
+    }
+    return "REJECTS";
+  }
   return "VOID";
 }
 
@@ -337,6 +421,26 @@ function runSelfTest() {
   assert(
     "a file that asserts the transaction is never reached is DECLARED-UNREACHED",
     fileVerdict(scanFile(unreachedFile), unreachedFile) === "DECLARED-UNREACHED",
+  );
+
+  const crossBlockFile = `
+    describe("block A — asserts transaction is never called", () => {
+      const db = { transaction: jest.fn() };
+      it("rejects before reaching the write", async () => {
+        await expect(svc.update("other", 1)).rejects.toThrow();
+        expect(db.transaction).not.toHaveBeenCalled();
+      });
+    });
+    describe("block B — bare double, no exemption", () => {
+      const db2 = { transaction: jest.fn() };
+      it("inserts a record", async () => {
+        await svc.create();
+      });
+    });
+  `;
+  assert(
+    "an exemption assertion in block A does not exempt the bare double in block B — file verdict is VOID not DECLARED-UNREACHED",
+    fileVerdict(scanFile(crossBlockFile), crossBlockFile) === "VOID",
   );
 
   const rejectFile = `const db = { transaction: jest.fn().mockRejectedValue(new Error("boom")) };`;
