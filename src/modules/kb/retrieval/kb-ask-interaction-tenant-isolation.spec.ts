@@ -47,10 +47,12 @@ describe("KbAiInteractions — cross-tenant write isolation", () => {
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
       articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
     };
-    const citationVisibility = {
-      visibleArticles: jest.fn().mockResolvedValue(new Set([1])),
-      visiblePages: jest.fn().mockResolvedValue(new Set<number>()),
-      visibleSources: jest.fn().mockResolvedValue(new Set<number>()),
+    const citationsService = {
+      resolveCitations: jest.fn().mockResolvedValue([{
+        kind: "article" as const, articleId: 1, title: "t",
+        slug: "t", spaceId: 1, updatedAt: new Date(),
+      }]),
+      stillCitableDocuments: jest.fn().mockResolvedValue([]),
     };
     const gateway = {
       invokeTextWithUsage: jest.fn().mockResolvedValue({
@@ -59,13 +61,28 @@ describe("KbAiInteractions — cross-tenant write isolation", () => {
       }),
     };
 
+    const retrieval = {
+      retrieve: jest.fn().mockResolvedValue({
+        documents: [{
+          kind: "article" as const, id: 1, title: "t",
+          slug: "t", spaceId: 1, contentText: "text",
+          updatedAt: new Date(),
+        }],
+        sources: [],
+        passages: [],
+        degraded: { kind: "none" as const },
+        strategy: { kind: "exact" as const },
+      }),
+    };
+
     const svc = new KbAskService(
       db as unknown as Db,
       gateway as never,
       events as never,
       search as never,
-      citationVisibility as never,
+      citationsService as never,
       NO_LINKED_DOCUMENTS, null,
+      retrieval as never,
     );
 
     return { svc, db, events, allInsertValues };

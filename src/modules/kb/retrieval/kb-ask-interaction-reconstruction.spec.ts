@@ -70,11 +70,31 @@ function buildSearch(article = articleResult) {
   };
 }
 
-function buildCitationVisibility(articleIds: number[]) {
+function buildRetrieval(article = articleResult) {
   return {
-    visibleArticles: jest.fn().mockResolvedValue(new Set(articleIds)),
-    visiblePages: jest.fn().mockResolvedValue(new Set<number>()),
-    visibleSources: jest.fn().mockResolvedValue(new Set<number>()),
+    retrieve: jest.fn().mockResolvedValue({
+      documents: [article],
+      sources: [],
+      passages: [],
+      degraded: { kind: "none" as const },
+      strategy: { kind: "exact" as const },
+    }),
+  };
+}
+
+function buildCitationsService(articleIds: number[]) {
+  return {
+    resolveCitations: jest.fn().mockResolvedValue(
+      articleIds.map((articleId) => ({
+        kind: "article" as const,
+        articleId,
+        title: articleResult.title,
+        slug: articleResult.slug,
+        spaceId: articleResult.spaceId,
+        updatedAt: articleResult.updatedAt,
+      })),
+    ),
+    stillCitableDocuments: jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -102,8 +122,9 @@ describe("Ask observability — interaction row reconstruction", () => {
       gateway as never,
       events as never,
       buildSearch() as never,
-      buildCitationVisibility([42]) as never,
+      buildCitationsService([42]) as never,
       NO_LINKED_DOCUMENTS, null,
+      buildRetrieval() as never,
     );
 
     await svc.ask(user, { question: "What is the acme doc?" });
@@ -149,8 +170,9 @@ describe("Ask observability — interaction row reconstruction", () => {
       gateway as never,
       events as never,
       buildSearch() as never,
-      buildCitationVisibility([42]) as never,
+      buildCitationsService([42]) as never,
       NO_LINKED_DOCUMENTS, null,
+      buildRetrieval() as never,
     );
 
     const result = await svc.ask(user, { question: "What is this?" });
@@ -180,8 +202,9 @@ describe("Ask observability — interaction row reconstruction", () => {
       gateway as never,
       events as never,
       buildSearch() as never,
-      buildCitationVisibility([42]) as never,
+      buildCitationsService([42]) as never,
       NO_LINKED_DOCUMENTS, null,
+      buildRetrieval() as never,
     );
 
     await expect(svc.ask(user, { question: "test?" })).rejects.toThrow(InsufficientAiCreditsException);
@@ -209,8 +232,9 @@ describe("Ask observability — interaction row reconstruction", () => {
       gateway as never,
       events as never,
       buildSearch() as never,
-      buildCitationVisibility([42]) as never,
+      buildCitationsService([42]) as never,
       NO_LINKED_DOCUMENTS, null,
+      buildRetrieval() as never,
     );
 
     await Promise.all([
