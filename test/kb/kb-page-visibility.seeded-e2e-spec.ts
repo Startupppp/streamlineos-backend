@@ -1,7 +1,8 @@
 import { eq, inArray } from "drizzle-orm";
 import { kbArticleChunks, kbPages } from "src/db/schema";
 import { KbPagesService } from "src/modules/kb/wiki/kb-pages.service";
-import { KbSearchService } from "src/modules/kb/retrieval/kb-search.service";
+import { KbSearchRetrievalService } from "src/modules/kb/retrieval/kb-search-retrieval.service";
+import { KbPageSearchQueryService } from "src/modules/kb/retrieval/kb-page-search-query.service";
 import { EmbeddingsService } from "src/modules/ai/core/providers/embeddings.service";
 import { KB_EMBEDDING_DIMENSIONS } from "src/db/schema/support/kb-chunks";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
@@ -166,7 +167,8 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
 
       const db = seededApp.seedDb;
       const pages = seededApp.app.get(KbPagesService);
-      const search = seededApp.app.get(KbSearchService);
+      const pageSearch = seededApp.app.get(KbPageSearchQueryService);
+      const search = seededApp.app.get(KbSearchRetrievalService);
       const embeddings = seededApp.app.get(EmbeddingsService);
       const insider = fixture.members["insider"];
       const outsider = fixture.members["outsider"];
@@ -222,7 +224,7 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
         const read = await asReader(fixture.orgId, () => pages.get(insiderCtx, page.id, false));
         expect(read.id).toBe(page.id);
 
-        const keyword = await asReader(fixture.orgId, () => pages.search(insiderCtx, query));
+        const keyword = await asReader(fixture.orgId, () => pageSearch.search(insiderCtx, { q: query, limit: 20, facets: false }));
         expect(keyword.items.map((row) => row.id)).toContain(page.id);
         expect(keyword.hasMore).toBe(false);
 
@@ -235,7 +237,7 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
           asReader(fixture.orgId, () => pages.get(outsiderCtx, page.id, false)),
         ).rejects.toMatchObject({ status: 404 });
 
-        const outsiderKeyword = await asReader(fixture.orgId, () => pages.search(outsiderCtx, query));
+        const outsiderKeyword = await asReader(fixture.orgId, () => pageSearch.search(outsiderCtx, { q: query, limit: 20, facets: false }));
         expect(outsiderKeyword.items.map((row) => row.id)).not.toContain(page.id);
 
         const outsiderVector = await asReader(fixture.orgId, () =>

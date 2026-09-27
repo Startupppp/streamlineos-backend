@@ -82,7 +82,7 @@ describe("public write routes — N+1 returns 429 with retry metadata", () => {
   it("public:job-apply blocks the 4th request from the same IP within an hour", async () => {
     const svc = new RateLimitServiceClass(null);
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue("public:job-apply") } as unknown as Reflector;
-    const guard = new RateLimitGuard(reflector, svc);
+    const guard = new RateLimitGuard(reflector, svc, null as never, null as never);
     const ctx = makeContext("public:job-apply", "10.0.0.1");
 
     for (let i = 0; i < 3; i++) await expect(guard.canActivate(ctx)).resolves.toBe(true);
@@ -106,7 +106,7 @@ describe("public write routes — N+1 returns 429 with retry metadata", () => {
   it("public:nps-submit blocks the 6th request from the same IP within an hour", async () => {
     const svc = new RateLimitServiceClass(null);
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue("public:nps-submit") } as unknown as Reflector;
-    const guard = new RateLimitGuard(reflector, svc);
+    const guard = new RateLimitGuard(reflector, svc, null as never, null as never);
     const ctx = makeContext("public:nps-submit", "10.0.0.2");
 
     for (let i = 0; i < 5; i++) await expect(guard.canActivate(ctx)).resolves.toBe(true);
@@ -137,7 +137,7 @@ describe("public write routes — N+1 returns 429 with retry metadata", () => {
       switchToHttp: () => ({ getRequest: () => req, getResponse: () => res }),
     } as unknown as ExecutionContext;
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue("public:kb-feedback") } as unknown as Reflector;
-    const guard = new RateLimitGuard(reflector, svc);
+    const guard = new RateLimitGuard(reflector, svc, null as never, null as never);
 
     for (let i = 0; i < 10; i++) await guard.canActivate(ctx);
 
@@ -152,7 +152,7 @@ describe("public write routes — N+1 returns 429 with retry metadata", () => {
   it("different IPs are rate-limited independently", async () => {
     const svc = new RateLimitServiceClass(null);
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue("public:job-apply") } as unknown as Reflector;
-    const guard = new RateLimitGuard(reflector, svc);
+    const guard = new RateLimitGuard(reflector, svc, null as never, null as never);
 
     const ipA = "10.1.0.1";
     const ipB = "10.1.0.2";

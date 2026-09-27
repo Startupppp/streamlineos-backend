@@ -6,6 +6,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { kbPages } from "../../../src/db/schema";
 import { KbSearchService } from "../../../src/modules/kb/retrieval/kb-search.service";
+import { KbSearchRetrievalService } from "../../../src/modules/kb/retrieval/kb-search-retrieval.service";
 import { KbCandidateService } from "../../../src/modules/kb/retrieval/kb-candidate.service";
 import { KbAskService } from "../../../src/modules/kb/retrieval/kb-ask.service";
 import { KbCitationVisibilityService } from "../../../src/modules/kb/retrieval/kb-citation-visibility.service";
@@ -129,15 +130,22 @@ function buildSearch(scope: DataScope) {
   const events = makeEvents();
   const access = makeKbAccess();
   const scopes = { scopeFor: jest.fn().mockResolvedValue(scope) };
+  const auth = makeKbAuth();
   const search = new KbSearchService(
     db as never,
-    gateway as never,
     events as never,
     new KbCandidateService(db as never),
     scopes as never,
-    makeKbAuth() as never,
+    auth as never,
   );
-  return { search, db, recorded, executed, inserted, gateway, events, access, scopes };
+  const retrieval = new KbSearchRetrievalService(
+    db as never,
+    gateway as never,
+    new KbCandidateService(db as never),
+    scopes as never,
+    auth as never,
+  );
+  return { search, retrieval, db, recorded, executed, inserted, gateway, events, access, scopes };
 }
 
 const articleQueries = (recorded: RecordedQuery[]): RecordedQuery[] =>
@@ -149,25 +157,25 @@ const articleQueries = (recorded: RecordedQuery[]): RecordedQuery[] =>
 
 describe("BOLA sweep — RAG retrieval binds the direct read's object-level scope", () => {
   it("an asker scoped to 'own' receives no chunk from an article they do not own", async () => {
-    const { search } = buildSearch("own");
+    const { retrieval } = buildSearch("own");
 
-    const results = await search.retrieveTopArticles(asker(), "compensation", 6);
+    const results = await retrieval.retrieveTopArticles(asker(), "compensation", 6);
 
     expect(results.map((r) => r.id)).toEqual([OWNED_ARTICLE.id]);
     for (const result of results) expect(result.contentText).not.toContain(VICTIM_SECRET);
   });
 
   it("the same asker at scope 'all' still receives both — the guard is not a blanket denial", async () => {
-    const { search } = buildSearch("all");
+    const { retrieval } = buildSearch("all");
 
-    const results = await search.retrieveTopArticles(asker(), "compensation", 6);
+    const results = await retrieval.retrieveTopArticles(asker(), "compensation", 6);
 
     expect(results.map((r) => r.id).sort()).toEqual([OWNED_ARTICLE.id, VICTIM_ARTICLE.id]);
   });
 
   it("every article-touching predicate binds the asker's membership and never the owner's", async () => {
-    const { search, recorded } = buildSearch("own");
-    await search.retrieveTopArticles(asker(), "compensation", 6);
+    const { retrieval, recorded } = buildSearch("own");
+    await retrieval.retrieveTopArticles(asker(), "compensation", 6);
 
     const touching = articleQueries(recorded);
     expect(touching.length).toBeGreaterThanOrEqual(3);
@@ -178,8 +186,8 @@ describe("BOLA sweep — RAG retrieval binds the direct read's object-level scop
   });
 
   it("the candidate queries carry the predicate, so the victim's chunk is never a candidate", async () => {
-    const { search, recorded } = buildSearch("own");
-    await search.retrieveTopArticles(asker(), "compensation", 6);
+    const { retrieval, recorded } = buildSearch("own");
+    await retrieval.retrieveTopArticles(asker(), "compensation", 6);
 
     const vector = recorded.find(
       (q) => q.table === "kb_article_chunks" && q.joins.includes("kb_pages"),
@@ -189,9 +197,9 @@ describe("BOLA sweep — RAG retrieval binds the direct read's object-level scop
   });
 
   it("scope 'none' refuses in SQL rather than after retrieval", async () => {
-    const { search, recorded } = buildSearch("none");
+    const { retrieval, recorded } = buildSearch("none");
 
-    const results = await search.retrieveTopArticles(asker(), "compensation", 6);
+    const results = await retrieval.retrieveTopArticles(asker(), "compensation", 6);
 
     expect(results).toEqual([]);
     for (const query of articleQueries(recorded)) expect(refusesEverything(query)).toBe(true);
@@ -284,8 +292,8 @@ describe("BOLA sweep — the RAG fix keeps the measured retrieval shape", () => 
   });
 
   it("the guard actually executes on the retrieval path", async () => {
-    const { search, executed } = buildSearch("own");
-    await search.retrieveTopArticles(asker(), "compensation", 6);
+    const { retrieval, executed } = buildSearch("own");
+    await retrieval.retrieveTopArticles(asker(), "compensation", 6);
     expect(executed.some((s) => s.includes("hnsw.iterative_scan"))).toBe(true);
   });
 
