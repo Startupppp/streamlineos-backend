@@ -28,73 +28,100 @@ const conditionalLogicSchema = z
   })
   .strict();
 
-const fieldSchema = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  type: z.string().min(1),
-  required: z.boolean(),
-  options: z.array(z.string()).optional(),
-  conditionalLogic: conditionalLogicSchema.optional(),
-});
+const fieldSchema = z
+  .object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    type: z.string().min(1),
+    required: z.boolean(),
+    options: z.array(z.string()).optional(),
+    conditionalLogic: conditionalLogicSchema.optional(),
+  })
+  .strict();
 
-const actionSchema = z.object({
-  type: z.string().min(1),
-  config: z.record(z.string(), z.unknown()).optional(),
-});
+const actionSchema = z
+  .object({
+    type: z.string().min(1),
+    config: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
 
 type FormField = z.infer<typeof fieldSchema>;
 
 const NUMERIC_CONDITION_OPERATORS: ReadonlySet<string> = new Set(["gt", "lt"]);
-const NUMERIC_FIELD_TYPES: ReadonlySet<string> = new Set(["number", "rating", "scale"]);
+const NUMERIC_FIELD_TYPES: ReadonlySet<string> = new Set([
+  "number",
+  "rating",
+  "scale",
+]);
 
-const fieldsSchema = z.array(fieldSchema).superRefine((fields: FormField[], ctx) => {
-  const fieldMap = new Map<string, FormField>(fields.map((field) => [field.key, field]));
-  const dependencies = new Map<string, string[]>();
+const fieldsSchema = z
+  .array(fieldSchema)
+  .superRefine((fields: FormField[], ctx) => {
+    const fieldMap = new Map<string, FormField>(
+      fields.map((field) => [field.key, field]),
+    );
+    const dependencies = new Map<string, string[]>();
 
-  for (const field of fields) {
-    if (!field.conditionalLogic) continue;
-    const referencedKeys: string[] = [];
-    for (const condition of field.conditionalLogic.conditions) {
-      const referenced = fieldMap.get(condition.fieldKey);
-      if (!referenced) {
-        ctx.addIssue({ code: "custom", message: `Condition references unknown field key "${condition.fieldKey}"` });
+    for (const field of fields) {
+      if (!field.conditionalLogic) continue;
+      const referencedKeys: string[] = [];
+      for (const condition of field.conditionalLogic.conditions) {
+        const referenced = fieldMap.get(condition.fieldKey);
+        if (!referenced) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Condition references unknown field key "${condition.fieldKey}"`,
+          });
+          return;
+        }
+        if (condition.fieldKey === field.key) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Field "${field.key}" cannot reference itself in conditional logic`,
+          });
+          return;
+        }
+        if (
+          NUMERIC_CONDITION_OPERATORS.has(condition.operator) &&
+          !NUMERIC_FIELD_TYPES.has(referenced.type)
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Operator "${condition.operator}" requires a numeric field but "${condition.fieldKey}" is type "${referenced.type}"`,
+          });
+          return;
+        }
+        referencedKeys.push(condition.fieldKey);
+      }
+      dependencies.set(field.key, referencedKeys);
+    }
+
+    const settled = new Set<string>();
+    const inProgress = new Set<string>();
+
+    const reachesCycle = (key: string): boolean => {
+      if (inProgress.has(key)) return true;
+      if (settled.has(key)) return false;
+      settled.add(key);
+      inProgress.add(key);
+      for (const dependency of dependencies.get(key) ?? []) {
+        if (reachesCycle(dependency)) return true;
+      }
+      inProgress.delete(key);
+      return false;
+    };
+
+    for (const key of fieldMap.keys()) {
+      if (reachesCycle(key)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Conditional logic contains a cycle",
+        });
         return;
       }
-      if (condition.fieldKey === field.key) {
-        ctx.addIssue({ code: "custom", message: `Field "${field.key}" cannot reference itself in conditional logic` });
-        return;
-      }
-      if (NUMERIC_CONDITION_OPERATORS.has(condition.operator) && !NUMERIC_FIELD_TYPES.has(referenced.type)) {
-        ctx.addIssue({ code: "custom", message: `Operator "${condition.operator}" requires a numeric field but "${condition.fieldKey}" is type "${referenced.type}"` });
-        return;
-      }
-      referencedKeys.push(condition.fieldKey);
     }
-    dependencies.set(field.key, referencedKeys);
-  }
-
-  const settled = new Set<string>();
-  const inProgress = new Set<string>();
-
-  const reachesCycle = (key: string): boolean => {
-    if (inProgress.has(key)) return true;
-    if (settled.has(key)) return false;
-    settled.add(key);
-    inProgress.add(key);
-    for (const dependency of dependencies.get(key) ?? []) {
-      if (reachesCycle(dependency)) return true;
-    }
-    inProgress.delete(key);
-    return false;
-  };
-
-  for (const key of fieldMap.keys()) {
-    if (reachesCycle(key)) {
-      ctx.addIssue({ code: "custom", message: "Conditional logic contains a cycle" });
-      return;
-    }
-  }
-});
+  });
 
 export const listFormsQuerySchema = z
   .object({

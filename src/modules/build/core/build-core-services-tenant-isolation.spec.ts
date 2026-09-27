@@ -6,6 +6,11 @@ jest.mock("./ticket-status.util", () => ({
   resolveValidTicketStatuses: jest.fn(),
 }));
 
+jest.mock("./project-access", () => ({
+  ...jest.requireActual("./project-access"),
+  resolveProjectAccess: jest.fn(),
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -19,6 +24,7 @@ import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
+import { resolveProjectAccess } from "./project-access";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -37,6 +43,9 @@ const OWNER_ORG = "org-owner";
 
 const mockResolveValidTicketStatuses = resolveValidTicketStatuses as jest.MockedFunction<
   typeof resolveValidTicketStatuses
+>;
+const mockResolveProjectAccess = resolveProjectAccess as jest.MockedFunction<
+  typeof resolveProjectAccess
 >;
 
 beforeEach(() => {
@@ -66,13 +75,9 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
   }
 
   it("rejects import assignment without build:tickets:assign", async () => {
+    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: null });
     const holds = jest.fn().mockResolvedValue(false);
-    const svc = makeTransferSvc(
-      { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true }) },
-      {} as Db,
-      undefined,
-      holds,
-    );
+    const svc = makeTransferSvc({} as Partial<ProjectsTicketsReadService>, {} as Db, undefined, holds);
     await expect(
       svc.importTickets(
         { orgId: OWNER_ORG, userId: "u-owner" } as Parameters<typeof svc.importTickets>[0],
@@ -85,31 +90,32 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
 
   describe("exportTickets", () => {
     it("throws NotFoundException when project is inaccessible to the caller (DENY)", async () => {
-      const read = {
-        checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: false }),
-      };
+      mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
       const db = {} as unknown as Db;
-      const svc = makeTransferSvc(read, db);
+      const svc = makeTransferSvc({} as Partial<ProjectsTicketsReadService>, db);
       await expect(
         svc.exportTickets({ orgId: ATTACKER_ORG, userId: "u-attacker" } as Parameters<typeof svc.exportTickets>[0], 42),
       ).rejects.toThrow(NotFoundException);
     });
 
-    it("passes the caller orgId to checkProjectAccess (predicate check — DENY)", async () => {
-      const checkProjectAccess = jest.fn().mockResolvedValue({ hasAccess: false });
-      const read = { checkProjectAccess };
+    it("passes the caller orgId to resolveProjectAccess (predicate check — DENY)", async () => {
+      mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
       const db = {} as unknown as Db;
-      const svc = makeTransferSvc(read, db);
+      const svc = makeTransferSvc({} as Partial<ProjectsTicketsReadService>, db);
       await expect(
         svc.exportTickets({ orgId: ATTACKER_ORG, userId: "u-attacker" } as Parameters<typeof svc.exportTickets>[0], 42),
       ).rejects.toThrow(NotFoundException);
-      expect(checkProjectAccess).toHaveBeenCalledWith(ATTACKER_ORG, "u-attacker", 42);
+      expect(mockResolveProjectAccess).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ orgId: ATTACKER_ORG, userId: "u-attacker" }),
+        42,
+      );
     });
 
     it("returns ticket rows scoped to the owning org (CONTROL)", async () => {
-      const read = {
-        checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true }),
-      };
+      mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "OWNER" });
+      const read = {};
       const ticketRow = {
         number: 1,
         title: "Fix bug",

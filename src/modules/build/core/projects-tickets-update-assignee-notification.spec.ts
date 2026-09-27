@@ -25,6 +25,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
     reporterId: "u1",
     assignees: [],
     title: "Ticket",
+    version: 1,
   };
 
   function makeDb() {
@@ -54,7 +55,6 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) } as never;
   const activity = { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never;
   const query = { authorizeMutation: jest.fn().mockResolvedValue([]), validateTicketStatus: jest.fn().mockResolvedValue(undefined) } as never;
-  const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "ADMIN" }) } as never;
   const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { runForTicketEvent: jest.fn() } as never;
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;
@@ -74,7 +74,6 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
       dispatch,
       activity,
       query,
-      read,
       transfer,
       webhooksDispatch,
       automationRunner,
@@ -83,7 +82,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
     );
     const u = { orgId: ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
 
-    await svc.updateTicket(u, 1, 1, { title: "Renamed" });
+    await svc.updateTicket(u, 1, 1, { version: 1, title: "Renamed" });
 
     expect(settled).toBe(true);
   });

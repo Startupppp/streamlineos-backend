@@ -17,6 +17,11 @@ jest.mock("./build-ticket-read-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 
+jest.mock("./project-access", () => ({
+  ...jest.requireActual("./project-access"),
+  resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }),
+}));
+
 const ORG = "org-1";
 const OTHER_ORG = "org-2";
 const MEMBERSHIP_ID = 7;
@@ -196,7 +201,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
       {} as never,
       {} as never,
       {} as never,
-      { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }) } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -207,7 +212,6 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
         {} as never,
         { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never,
         { authorizeMutation: jest.fn().mockResolvedValue(undefined) } as never,
-        { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }) } as never,
         { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never,
         { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
         { runForTicketEvent: jest.fn() } as never,
@@ -222,7 +226,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
   it("answers 404 for a same-org ticket that belongs to another project", async () => {
     const { svc, transaction } = makeUpdate(makeTickets());
 
-    await expect(svc.updateTicket(makeU(), PROJECT_A, TICKET_B, { title: "hijacked" })).rejects.toThrow(
+    await expect(svc.updateTicket(makeU(), PROJECT_A, TICKET_B, { version: 1, title: "hijacked" })).rejects.toThrow(
       NotFoundException,
     );
     expect(transaction).not.toHaveBeenCalled();
@@ -241,7 +245,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
     );
 
     await expect(
-      svc.updateTicket(makeU(), PROJECT_A, TICKET_A, { title: "renamed" }),
+      svc.updateTicket(makeU(), PROJECT_A, TICKET_A, { version: 1, title: "renamed" }),
     ).resolves.toMatchObject({ updated: true });
     expect(transaction).toHaveBeenCalledTimes(1);
   });

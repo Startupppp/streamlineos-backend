@@ -66,11 +66,12 @@ it("stale token carries the current version in the 409 response (ticket-12 box-2
 });
 
 it("passes the conflict check and proceeds when the token matches — positive pair for stale-token test (BE-141)", async () => {
-  const { module, service } = await createService({ projectId: 1, version: 7 });
+  const { module, service, transaction } = await createService({ projectId: 1, version: 7 });
   const error = await service.updateTicket(
     systemActor("integrations.git.webhook", "org-a"), 1, 99, { version: 7, title: "x x x" },
   ).catch((e: unknown) => e);
   expect(error).not.toBeInstanceOf(TicketVersionConflictException);
+  expect(transaction).toHaveBeenCalled();
   await module.close();
 });
 

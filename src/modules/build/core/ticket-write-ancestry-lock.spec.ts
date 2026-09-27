@@ -5,6 +5,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 
+jest.mock("./project-access", () => ({
+  ...jest.requireActual("./project-access"),
+  resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "MEMBER" }),
+}));
+
 const TICKET_ID = 1;
 const PROPOSED_PARENT_ID = 2;
 const PROJECT_ID = 1;
@@ -87,7 +92,6 @@ function makeActor(): CurrentUserContext {
 const dispatch = { emit: jest.fn().mockResolvedValue(undefined) } as never;
 const activity = { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never;
 const query = { authorizeMutation: jest.fn().mockResolvedValue(undefined) } as never;
-const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "MEMBER" }) } as never;
 const transfer = { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never;
 const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
 const automationRunner = { runForTicketEvent: jest.fn() } as never;
@@ -102,7 +106,6 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
       dispatch,
       activity,
       query,
-      read,
       transfer,
       webhooksDispatch,
       automationRunner,
@@ -110,7 +113,7 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
       access,
     );
 
-    await svc.updateTicket(makeActor(), PROJECT_ID, TICKET_ID, { parentTicketId: PROPOSED_PARENT_ID });
+    await svc.updateTicket(makeActor(), PROJECT_ID, TICKET_ID, { version: 1, parentTicketId: PROPOSED_PARENT_ID });
 
     const advisoryLockCalled = capturedExecuteValues.some((v) =>
       v.includes(`build:tickets:${ORG}:${PROJECT_ID}`),
@@ -125,7 +128,6 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
       dispatch,
       activity,
       query,
-      read,
       transfer,
       webhooksDispatch,
       automationRunner,
@@ -133,7 +135,7 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
       access,
     );
 
-    await svc.updateTicket(makeActor(), PROJECT_ID, TICKET_ID, { epicId: PROPOSED_PARENT_ID });
+    await svc.updateTicket(makeActor(), PROJECT_ID, TICKET_ID, { version: 1, epicId: PROPOSED_PARENT_ID });
 
     const advisoryLockCalled = capturedExecuteValues.some((v) =>
       v.includes(`build:tickets:${ORG}:${PROJECT_ID}`),
@@ -148,7 +150,6 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
       dispatch,
       activity,
       query,
-      read,
       transfer,
       webhooksDispatch,
       automationRunner,
@@ -158,7 +159,7 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
 
     const systemU = systemActor("integrations.git.webhook", ORG);
 
-    await svc.updateTicket(systemU, PROJECT_ID, TICKET_ID, { parentTicketId: PROPOSED_PARENT_ID });
+    await svc.updateTicket(systemU, PROJECT_ID, TICKET_ID, { version: 1, parentTicketId: PROPOSED_PARENT_ID });
 
     const lockHits = capturedExecuteValues.filter((v) =>
       v.includes(`build:tickets:${ORG}:${PROJECT_ID}`),

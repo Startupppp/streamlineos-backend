@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { eq, ilike, isNull } from "drizzle-orm";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 import { tickets } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
@@ -28,7 +29,8 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
     return [
       defineTool({
         key: "readTicket",
-        description: "Read a specific ticket by its numeric ID. Returns ticket details if found within the org.",
+        description:
+          "Read a specific ticket by its numeric ID. Returns ticket details if found within the org.",
         input: z.object({
           ticketId: z.number().int().positive().describe("Numeric ticket ID"),
         }),
@@ -68,12 +70,27 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
 
       defineTool({
         key: "searchTickets",
-        description: "Search tickets by title within the org. Optionally filter by projectId or status.",
+        description:
+          "Search tickets by title within the org. Optionally filter by projectId or status.",
         input: z.object({
           query: z.string().min(1).describe("Search query for ticket title"),
-          projectId: z.number().int().positive().optional().describe("Filter by project ID"),
-          status: z.string().optional().describe("Filter by status (e.g. OPEN, IN_PROGRESS, DONE)"),
-          limit: z.number().int().min(1).max(10).default(5).describe("Max results to return"),
+          projectId: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Filter by project ID"),
+          status: z
+            .string()
+            .optional()
+            .describe("Filter by status (e.g. OPEN, IN_PROGRESS, DONE)"),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(10)
+            .default(5)
+            .describe("Max results to return"),
         }),
         permission: "build:tickets:view",
         module: "build",
@@ -86,7 +103,9 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
               and: [
                 ilike(tickets.title, `%${query}%`),
                 isNull(tickets.deletedAt),
-                projectId !== undefined ? eq(tickets.projectId, projectId) : undefined,
+                projectId !== undefined
+                  ? eq(tickets.projectId, projectId)
+                  : undefined,
                 status !== undefined ? eq(tickets.status, status) : undefined,
               ],
             },
@@ -105,7 +124,11 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
                 .limit(limit),
             () => [],
           );
-          return data({ results, returned: results.length, truncated: results.length === limit });
+          return data({
+            results,
+            returned: results.length,
+            truncated: results.length === limit,
+          });
         },
       }),
 
@@ -113,27 +136,49 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
         key: "createTicket",
         description: "Create a new ticket in a project.",
         input: z.object({
-          projectId: z.number().int().positive().describe("Project ID to create the ticket in"),
+          projectId: z
+            .number()
+            .int()
+            .positive()
+            .describe("Project ID to create the ticket in"),
           title: z.string().min(1).max(300).describe("Ticket title"),
           description: z.string().optional().describe("Ticket description"),
-          type: z.enum(["TASK", "STORY", "BUG", "EPIC", "SUBTASK"]).default("TASK").describe("Ticket type"),
-          priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM").describe("Ticket priority"),
-          assigneeId: z.string().optional().describe("User ID to assign the ticket to"),
+          type: z
+            .enum(DB_ENUMS.ticket_type)
+            .default("TASK")
+            .describe("Ticket type"),
+          priority: z
+            .enum(["LOW", "MEDIUM", "HIGH", "URGENT"])
+            .default("MEDIUM")
+            .describe("Ticket priority"),
+          assigneeId: z
+            .string()
+            .optional()
+            .describe("User ID to assign the ticket to"),
         }),
         confirms: "ticket.create",
         module: "build",
-        run: async ({ projectId, title, description, type, priority, assigneeId }, ctx) => {
+        run: async (
+          { projectId, title, description, type, priority, assigneeId },
+          ctx,
+        ) => {
           const { orgId, userId } = ctx.actor;
-          const payload: Record<string, unknown> = { projectId, title, type, priority };
+          const payload: Record<string, unknown> = {
+            projectId,
+            title,
+            type,
+            priority,
+          };
           if (description !== undefined) payload.description = description;
           if (assigneeId !== undefined) payload.assigneeId = assigneeId;
 
-          const { proposalId, token, expiresAt } = await this.confirmation.propose({
-            orgId,
-            userId,
-            action: "ticket.create",
-            payload,
-          });
+          const { proposalId, token, expiresAt } =
+            await this.confirmation.propose({
+              orgId,
+              userId,
+              action: "ticket.create",
+              payload,
+            });
 
           return needsConfirmation({
             proposalId,
@@ -152,7 +197,10 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
         input: z.object({
           ticketId: z.number().int().positive().describe("Numeric ticket ID"),
           status: z.string().min(1).describe("New status value"),
-          reason: z.string().optional().describe("Reason for the status change"),
+          reason: z
+            .string()
+            .optional()
+            .describe("Reason for the status change"),
         }),
         confirms: "ticket.updateStatus",
         module: "build",
@@ -173,17 +221,23 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
             () => [],
           );
 
-          if (!existing[0]) return empty("ticket", "Ticket not found in this org.");
+          if (!existing[0])
+            return empty("ticket", "Ticket not found in this org.");
 
-          const payload: Record<string, unknown> = { ticketId, status, title: existing[0].title };
+          const payload: Record<string, unknown> = {
+            ticketId,
+            status,
+            title: existing[0].title,
+          };
           if (reason !== undefined) payload.reason = reason;
 
-          const { proposalId, token, expiresAt } = await this.confirmation.propose({
-            orgId,
-            userId,
-            action: "ticket.updateStatus",
-            payload,
-          });
+          const { proposalId, token, expiresAt } =
+            await this.confirmation.propose({
+              orgId,
+              userId,
+              action: "ticket.updateStatus",
+              payload,
+            });
 
           return needsConfirmation({
             proposalId,
@@ -191,7 +245,12 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
             expiresAt,
             action: "ticket.updateStatus",
             summary: `Update ticket #${ticketId} status to ${status}`,
-            preview: { ticketId, title: existing[0].title, newStatus: status, reason },
+            preview: {
+              ticketId,
+              title: existing[0].title,
+              newStatus: status,
+              reason,
+            },
           });
         },
       }),
@@ -222,14 +281,16 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
             () => [],
           );
 
-          if (!existing[0]) return empty("ticket", "Ticket not found in this org.");
+          if (!existing[0])
+            return empty("ticket", "Ticket not found in this org.");
 
-          const { proposalId, token, expiresAt } = await this.confirmation.propose({
-            orgId,
-            userId,
-            action: "ticket.addComment",
-            payload: { ticketId, comment },
-          });
+          const { proposalId, token, expiresAt } =
+            await this.confirmation.propose({
+              orgId,
+              userId,
+              action: "ticket.addComment",
+              payload: { ticketId, comment },
+            });
 
           return needsConfirmation({
             proposalId,
@@ -249,23 +310,40 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
           title: z.string().min(1).max(200).describe("Reminder title"),
           startDate: z.string().describe("ISO 8601 start datetime"),
           endDate: z.string().describe("ISO 8601 end datetime"),
-          description: z.string().optional().describe("Reminder description or notes"),
-          fromTicketId: z.number().int().positive().optional().describe("Optional ticket ID this reminder is linked to"),
+          description: z
+            .string()
+            .optional()
+            .describe("Reminder description or notes"),
+          fromTicketId: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Optional ticket ID this reminder is linked to"),
         }),
         confirms: "calendar.createReminder",
         module: "calendar",
-        run: async ({ title, startDate, endDate, description, fromTicketId }, ctx) => {
+        run: async (
+          { title, startDate, endDate, description, fromTicketId },
+          ctx,
+        ) => {
           const { orgId, userId, timezone } = ctx.actor;
-          const payload: Record<string, unknown> = { title, startDate, endDate, timezone };
+          const payload: Record<string, unknown> = {
+            title,
+            startDate,
+            endDate,
+            timezone,
+          };
           if (description !== undefined) payload.description = description;
           if (fromTicketId !== undefined) payload.fromTicketId = fromTicketId;
 
-          const { proposalId, token, expiresAt } = await this.confirmation.propose({
-            orgId,
-            userId,
-            action: "calendar.createReminder",
-            payload,
-          });
+          const { proposalId, token, expiresAt } =
+            await this.confirmation.propose({
+              orgId,
+              userId,
+              action: "calendar.createReminder",
+              payload,
+            });
 
           return needsConfirmation({
             proposalId,
@@ -273,7 +351,14 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
             expiresAt,
             action: "calendar.createReminder",
             summary: `Create reminder: ${title}`,
-            preview: { title, startDate, endDate, description, fromTicketId, timezone },
+            preview: {
+              title,
+              startDate,
+              endDate,
+              description,
+              fromTicketId,
+              timezone,
+            },
           });
         },
       }),
