@@ -10,6 +10,15 @@ import type { RankTicketInput } from "./dto/projects.schemas";
 import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "./build-ticket-mutation-policy";
 import { emitBatchStatusChanges, validateBatchTransition } from "./build-ticket-batch-workflow";
 
+export interface RankTicketEffectDeps {
+  readonly webhooksDispatch: {
+    enqueue(tx: unknown, orgId: string, projectId: number, event: string, payload: Record<string, unknown>): Promise<void>;
+  };
+  readonly automationRunner: {
+    runForTicketEvent(orgId: string, projectId: number, event: string, payload: Record<string, unknown>): void;
+  };
+}
+
 export async function rebalanceProjectRanks(db: Db, orgId: string, projectId: number): Promise<void> {
   await db.transaction(async (tx) => {
     await lockProjectTicketMutation(tx, orgId, projectId);
@@ -23,10 +32,20 @@ export async function rebalanceProjectRanks(db: Db, orgId: string, projectId: nu
   });
 }
 
-export async function rankTicket(db: Db, cache: CacheService, access: AccessService, actor: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput) {
+export async function rankTicket(
+  db: Db,
+  cache: CacheService,
+  access: AccessService,
+  actor: CurrentUserContext,
+  projectId: number,
+  ticketId: number,
+  body: RankTicketInput,
+  effectDeps?: RankTicketEffectDeps,
+) {
   if (body.beforeTicketId === ticketId || body.afterTicketId === ticketId ||
       (body.beforeTicketId != null && body.beforeTicketId === body.afterTicketId))
     throw new BadRequestException("Rank neighbours must be distinct from the target and each other");
+  let previousStatus: string | undefined;
   const result = await db.transaction(async (tx) => {
     const policy = await authorizeTicketMutation(tx, access, actor, projectId);
     await lockProjectTicketMutation(tx, actor.orgId, projectId);
@@ -71,8 +90,31 @@ export async function rankTicket(db: Db, cache: CacheService, access: AccessServ
       .returning({ id: tickets.id, rank: tickets.rank, status: tickets.status, version: tickets.version });
     if (!updated) throw new NotFoundException("Ticket not found");
     if (body.status !== undefined) await emitBatchStatusChanges(tx, actor, projectId, [target], status, now, new Map([[updated.id, updated.version]]));
+    if (effectDeps) {
+      await effectDeps.webhooksDispatch.enqueue(tx, actor.orgId, projectId, "ticket.updated", {
+        id: ticketId, projectId, status, priority: target.priority ?? "MEDIUM",
+        actor: actor.userId, timestamp: now.toISOString(),
+      });
+      if (body.status !== undefined && body.status !== target.status) {
+        await effectDeps.webhooksDispatch.enqueue(tx, actor.orgId, projectId, "ticket.status_changed", {
+          id: ticketId, projectId, previousStatus: target.status, newStatus: status,
+          actor: actor.userId, timestamp: now.toISOString(),
+        });
+      }
+    }
+    previousStatus = target.status;
     return updated;
   });
+  if (effectDeps) {
+    const afterPayload = {
+      ticketId, projectId, orgId: actor.orgId, status: result.status,
+      actor: actor.userId,
+    };
+    effectDeps.automationRunner.runForTicketEvent(actor.orgId, projectId, "ticket.updated", afterPayload);
+    if (body.status !== undefined && result.status !== previousStatus) {
+      effectDeps.automationRunner.runForTicketEvent(actor.orgId, projectId, "ticket.status_changed", afterPayload);
+    }
+  }
   await cache.invalidateNamespace(`build:analytics:${actor.orgId}`)
     .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId }));
   return result;
