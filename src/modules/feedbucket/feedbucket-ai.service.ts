@@ -16,7 +16,7 @@ import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { sanitizeHtml } from "../hr/templates/html-sanitizer";
-import { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { StorageService } from "../storage/storage.service";
 import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
@@ -109,7 +109,7 @@ export class FeedbucketAiService {
     private readonly gateway: AiGatewayService,
     private readonly audit: AuditService,
     private readonly rateLimiter: RateLimitService,
-    private readonly ticketsService: ProjectsTicketsService,
+    private readonly ticketsService: ProjectsTicketsCreateService,
     private readonly planLimits: PlanLimitsService,
     private readonly storage: StorageService,
     private readonly access: AccessService,

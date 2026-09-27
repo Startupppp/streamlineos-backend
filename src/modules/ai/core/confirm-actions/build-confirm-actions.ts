@@ -1,4 +1,5 @@
 import { ProjectsTicketsService } from "../../../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketsCreateService } from "../../../build/core/tickets/projects-tickets-create.service";
 import { ProjectsTicketCommentsService } from "../../../build/core/tickets/projects-ticket-comments.service";
 import {
   ticketAssignPayloadSchema,
@@ -16,7 +17,7 @@ export const BUILD_CONFIRM_ACTIONS = [
     permission: "build:tickets:create",
     payload: ticketCreatePayloadSchema,
     resolve: (moduleRef) =>
-      moduleRef.get(ProjectsTicketsService, { strict: false }),
+      moduleRef.get(ProjectsTicketsCreateService, { strict: false }),
     execute: async (payload, { actor }, tickets) => {
       const ticket = await tickets.createTicket(actor, payload.projectId, {
         title: payload.title,

@@ -26,7 +26,7 @@ import {
   type PlannedMedia,
 } from "../feedbucket-media-transforms";
 import type { NotificationsService } from "../../notifications/notifications.service";
-import type { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
+import type { ProjectsTicketsCreateService } from "../../build/core/tickets/projects-tickets-create.service";
 import {
   runInTenantTransaction,
   runInNewTenantTransaction,
@@ -49,7 +49,7 @@ export interface FeedbucketSubmitDeps {
   /** Encodes planned media after commit, so the public request never waits on ffmpeg. */
   readonly transforms: MediaTransformRunner;
   readonly notifications: NotificationsService;
-  readonly ticketsService: ProjectsTicketsService;
+  readonly ticketsService: ProjectsTicketsCreateService;
   readonly logger: Logger;
   /**
    * Bound `FeedbucketPublicService.createSubmission`. Passed as a closure so the

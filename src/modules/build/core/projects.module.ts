@@ -143,6 +143,9 @@ import { ProjectsActivityFeedService } from "./projects-activity-feed.service";
   exports: [
     BuildDueSweepService,
     ProjectsTicketsService,
+    ProjectsTicketsCreateService,
+    ProjectsTicketsReadService,
+    ProjectsTicketsUpdateService,
     ProjectsWebhooksDispatchService,
     ProjectsQueryService,
     ProjectsProvisionService,

@@ -36,7 +36,7 @@ import {
 } from "./feedbucket.schemas";
 import { decodeIntegerCursor, buildCursorPage } from "../../common/pagination/cursor";
 import { keysetBeforeId } from "../../common/pagination/keyset";
-import type { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
+import type { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
 import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
 import {
   deriveFeedbackTicketTitle,
@@ -364,7 +364,7 @@ export class FeedbucketSubmissionsService {
   async convertToTicket(
     u: CurrentUserContext,
     submissionId: number,
-    ticketsService: ProjectsTicketsService,
+    ticketsService: ProjectsTicketsCreateService,
     override?: ConvertToTicketInput,
   ) {
     const orgId = u.orgId;

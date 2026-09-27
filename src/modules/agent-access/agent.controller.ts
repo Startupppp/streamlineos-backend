@@ -9,6 +9,8 @@ import { AgentAccessService } from "./agent-access.service";
 import { ProjectsQueryService } from "../build/core/projects-query.service";
 import { ProjectsProvisionService } from "../build/core/projects-provision.service";
 import { ProjectsTicketsService } from "../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
+import { ProjectsTicketsReadService } from "../build/core/tickets/projects-tickets-read.service";
 import { ProjectsWorkQueryService } from "../build/core/projects-work-query.service";
 import { ProjectsTicketSubresourcesService } from "../build/core/tickets/projects-ticket-subresources.service";
 import {
@@ -51,6 +53,8 @@ export class AgentController {
     private readonly projectsQuery: ProjectsQueryService,
     private readonly projectsProvision: ProjectsProvisionService,
     private readonly ticketsSvc: ProjectsTicketsService,
+    private readonly ticketsCreateSvc: ProjectsTicketsCreateService,
+    private readonly ticketsReadSvc: ProjectsTicketsReadService,
     private readonly workQuerySvc: ProjectsWorkQueryService,
     private readonly subresourcesSvc: ProjectsTicketSubresourcesService,
   ) {}
@@ -95,7 +99,7 @@ export class AgentController {
     @Body() body: CreateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ticketsSvc.createTicket(u, projectId, body);
+    return this.ticketsCreateSvc.createTicket(u, projectId, body);
   }
 
   @Get("work")
@@ -118,7 +122,7 @@ export class AgentController {
     @Query() query: TicketsListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ticketsSvc.listTickets(u, projectId, query);
+    return this.ticketsReadSvc.listTickets(u, projectId, query);
   }
 
   @Get("tickets/:ticketId")

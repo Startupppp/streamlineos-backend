@@ -10,7 +10,7 @@ import {
 import { logger } from "../../../common/logger/logger.service";
 import { verifyGithubSignature, verifyGitlabToken } from "./git-signature";
 import { asRecord, extractTicketRefs, parseEvent } from "./git-event-parser";
-import { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketsUpdateService } from "../../build/core/tickets/projects-tickets-update.service";
 import type {
   GitLinkInput,
   GitProvider,
@@ -25,7 +25,7 @@ import { systemActor } from "../../../common/auth/system-actor";
 export class IntegrationsGitService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly projectsTickets: ProjectsTicketsService,
+    private readonly projectsTickets: ProjectsTicketsUpdateService,
   ) {}
 
   async processWebhook(req: WebhookRequest): Promise<void> {

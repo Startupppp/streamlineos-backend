@@ -8,7 +8,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
-import type { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
+import type { ProjectsTicketsCreateService } from "../../build/core/tickets/projects-tickets-create.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { AccessService } from "../../access/access.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
@@ -155,10 +155,10 @@ function makeAudit(): jest.Mocked<AuditService> {
   return { log: jest.fn() } as unknown as jest.Mocked<AuditService>;
 }
 
-function makeTickets(ticketId = 77): jest.Mocked<ProjectsTicketsService> {
+function makeTickets(ticketId = 77): jest.Mocked<ProjectsTicketsCreateService> {
   return {
     createFromFeedback: jest.fn().mockResolvedValue({ id: ticketId }),
-  } as unknown as jest.Mocked<ProjectsTicketsService>;
+  } as unknown as jest.Mocked<ProjectsTicketsCreateService>;
 }
 
 function makePlanLimits(): jest.Mocked<PlanLimitsService> {
@@ -173,7 +173,7 @@ function buildService(opts: {
   projectFound?: boolean;
   gateway?: ReturnType<typeof makeGateway>;
   rateLimit?: jest.Mocked<RateLimitService>;
-  tickets?: jest.Mocked<ProjectsTicketsService>;
+  tickets?: jest.Mocked<ProjectsTicketsCreateService>;
 }) {
   const db = makeDb(
     opts.notFound ? undefined : (opts.submission ?? makeSubmission()),
