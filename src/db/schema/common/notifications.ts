@@ -16,7 +16,7 @@ export const notifications = pgTable("notifications", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   // Historical delivery address projection. membershipId is the recipient authority.
   userId: text("user_id"),
-  membershipId: integer("membership_id"),
+  membershipId: integer("membership_id").notNull(),
   type: notificationTypeEnum("type").default("INFO").notNull(),
   priority: notificationPriorityEnum("priority").default("NORMAL").notNull(),
   category: notificationCategoryEnum("category").default("SYSTEM").notNull(),
