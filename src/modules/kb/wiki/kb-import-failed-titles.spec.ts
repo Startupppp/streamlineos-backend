@@ -98,7 +98,7 @@ describe("KbImportProcessConsumer — failedTitles and errorReport", () => {
     expect(last?.["errorReport"]).toHaveProperty("retryItems");
   });
 
-  it("does not store contentText in retryItems when job has fileKey, because the source file can be re-read on retry rather than duplicating its content in the job row", async () => {
+  it("stores contentText in retryItems for all jobs including file-sourced ones, because a retry that silently produces pages with no body is worse than carrying the payload in the job row", async () => {
     const updateCalls: Array<Record<string, unknown>> = [];
     let selectCount = 0;
     const tx = {
@@ -128,7 +128,7 @@ describe("KbImportProcessConsumer — failedTitles and errorReport", () => {
     const last = updateCalls[updateCalls.length - 1];
     const retryItems = (last?.["errorReport"] as Record<string, unknown>)?.["retryItems"] as Array<Record<string, unknown>>;
     expect(Array.isArray(retryItems)).toBe(true);
-    expect(retryItems[0]).not.toHaveProperty("contentText");
+    expect(retryItems[0]).toHaveProperty("contentText", "body text");
     expect(retryItems[0]).toHaveProperty("title", "Will Fail");
   });
 

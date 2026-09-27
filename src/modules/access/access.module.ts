@@ -35,6 +35,7 @@ import { MFA_POLICY } from "../../common/auth/mfa-policy.token";
     { provide: MFA_POLICY, useExisting: MfaPolicyService },
   ],
   exports: [
+    DiscoveryModule,
     AccessService,
     AccessExplainResolver,
     EntitlementsService,

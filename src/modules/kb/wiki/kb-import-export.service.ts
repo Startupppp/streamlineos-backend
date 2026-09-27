@@ -332,12 +332,12 @@ export class KbImportExportService {
     }
 
     const report: Record<string, unknown> | null = job.errorReport ?? null;
-    const rawFailedItems = Array.isArray(report?.["failedItems"]) ? report["failedItems"] : [];
-    const failedItems = rawFailedItems.flatMap((raw) => {
+    const rawRetryItems = Array.isArray(report?.["retryItems"]) ? report["retryItems"] : [];
+    const retryItems = rawRetryItems.flatMap((raw) => {
       const parsed = importItemSchema.safeParse(raw);
       return parsed.success ? [parsed.data] : [];
     });
-    if (failedItems.length === 0) {
+    if (retryItems.length === 0) {
       throw new ConflictException("No retryable failed items in this job");
     }
     const [newJob] = await this.db.transaction(async (tx) => {
@@ -347,7 +347,7 @@ export class KbImportExportService {
           orgId,
           sourceType: retryableSourceType.data,
           status: "pending",
-          totalItems: failedItems.length,
+          totalItems: retryItems.length,
           processedItems: 0,
           succeededItems: 0,
           failedItems: 0,
@@ -370,7 +370,7 @@ export class KbImportExportService {
           orgId,
           input: {
             sourceType: retryableSourceType.data,
-            items: failedItems,
+            items: retryItems,
             visibility: "org",
             duplicatePolicy: "skip",
           },
@@ -384,7 +384,7 @@ export class KbImportExportService {
       action: "kb.pages.import.retried",
       userId: user.userId,
       orgId,
-      metadata: { originalJobId: jobId, retryJobId: newJob.id, itemCount: failedItems.length },
+      metadata: { originalJobId: jobId, retryJobId: newJob.id, itemCount: retryItems.length },
     });
     return { jobId: newJob.id, status: "pending" };
   }

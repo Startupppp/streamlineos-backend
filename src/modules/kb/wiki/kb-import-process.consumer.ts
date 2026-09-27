@@ -61,7 +61,7 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
     let failed = 0;
     let duplicates = 0;
     const failedTitles: string[] = [];
-    const failedItems: typeof input.items = [];
+    const retryItems: typeof input.items = [];
     let processError: unknown = null;
 
     try {
@@ -186,7 +186,7 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
             } catch {
               failed += toUpsert.length;
               failedTitles.push(...toUpsert.map((v) => v.title));
-              failedItems.push(
+              retryItems.push(
                 ...toUpsert.map((v) => ({
                   title: v.title,
                   contentText: v.contentText ?? undefined,
@@ -236,7 +236,7 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
             } catch {
               failed += toInsert.length;
               failedTitles.push(...toInsert.map((v) => v.title));
-              failedItems.push(
+              retryItems.push(
                 ...toInsert.map((v) => ({
                   title: v.title,
                   contentText: v.contentText ?? undefined,
@@ -261,7 +261,7 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
           duplicateItems: duplicates,
           processedItems: input.items.length,
           totalItems: input.items.length,
-          errorReport: failedTitles.length > 0 ? { failedTitles, failedItems } : null,
+          errorReport: failedTitles.length > 0 ? { failedTitles, retryItems } : null,
         })
         .where(
           and(

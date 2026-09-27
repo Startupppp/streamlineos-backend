@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
@@ -41,7 +41,6 @@ const makeAccess = () => ({
   getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-1", roleSlugs: [] }),
 });
 
-const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
 const makeAuth = () => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
@@ -71,10 +70,9 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
   it("does not embed the question when the org has no indexed chunks", async () => {
     const embeddings = makeEmbeddings();
     const db = makeDb([]);
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       embeddings as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeAuth() as never,
@@ -88,10 +86,9 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
   it("returns nothing from retrieveTopSources without embedding when there are no chunks", async () => {
     const embeddings = makeEmbeddings();
     const db = makeDb([]);
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       embeddings as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeAuth() as never,
@@ -106,10 +103,9 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
   it("does embed once the org has at least one indexed chunk", async () => {
     const embeddings = makeEmbeddings();
     const db = makeDb([{ id: 1 }]);
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       embeddings as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeAuth() as never,
@@ -124,10 +120,9 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
     const embeddings = makeEmbeddings();
     const db = makeDb([{ id: 1 }]);
     const auth = makeAuth();
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       embeddings as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       auth as never,

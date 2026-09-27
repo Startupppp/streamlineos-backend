@@ -6959,6 +6959,13 @@
       "when": 1803093610725,
       "tag": "1378_activity_log_project_column",
       "breakpoints": true
+    },
+    {
+      "idx": 1122,
+      "version": "7",
+      "when": 1803093611725,
+      "tag": "1382_notifications_membership_id_not_null",
+      "breakpoints": true
     }
   ]
 }

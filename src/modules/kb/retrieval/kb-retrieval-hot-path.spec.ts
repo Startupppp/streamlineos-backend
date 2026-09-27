@@ -19,9 +19,10 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { KbAskService } from "./kb-ask.service";
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService, type QueryEmbedding } from "./kb-search.service";
+import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService, type QueryEmbedding } from "./kb-search-retrieval.service";
+import { KbRetrievalService } from "./kb-retrieval.service";
 import { kbDocumentKey } from "./kb-ask-context";
 
 const VECTOR = "[0.1,0.2]";
@@ -157,20 +158,32 @@ function makeCache() {
   };
 }
 
-function makeSearch(
+function makeSearchRetrieval(
   db: unknown,
   embeddings: unknown,
   candidates: KbCandidateService,
   cache: unknown = null,
-): KbSearchService {
-  return new KbSearchService(
+): KbSearchRetrievalService {
+  return new KbSearchRetrievalService(
     db as never,
     embeddings as never,
-    makeEvents() as never,
     candidates,
     makeScopes() as never,
     makeAuth() as never,
     cache as never,
+  );
+}
+
+function makeSearchSvc(
+  db: unknown,
+  candidates: KbCandidateService,
+): KbSearchService {
+  return new KbSearchService(
+    db as never,
+    makeEvents() as never,
+    candidates,
+    makeScopes() as never,
+    makeAuth() as never,
   );
 }
 
@@ -210,7 +223,7 @@ async function runAsk() {
   const depths: number[] = [];
   const embeddings = makeEmbeddings(depths);
   const { db } = makeDb([{ id: 1 }]);
-  const search = makeSearch(db, embeddings, new KbCandidateService(db as never));
+  const searchRetrieval = makeSearchRetrieval(db, embeddings, new KbCandidateService(db as never));
 
   const seen: {
     top?: QueryEmbedding;
@@ -219,62 +232,26 @@ async function runAsk() {
   } = {};
 
   jest
-    .spyOn(search, "retrieveTopArticles")
+    .spyOn(searchRetrieval, "retrieveTopArticles")
     .mockImplementation((_user, _query, _limit, _spaceId, _verifiedOnly, embedding) => {
       seen.top = embedding;
       return Promise.resolve([ARTICLE]);
     });
   jest
-    .spyOn(search, "retrieveTopSources")
+    .spyOn(searchRetrieval, "retrieveTopSources")
     .mockImplementation((_user, _query, _limit, _sourceIds, embedding) => {
       seen.sources = embedding;
       return Promise.resolve([SOURCE_DOCUMENT]);
     });
   jest
-    .spyOn(search, "retrieveDocumentPassages")
+    .spyOn(searchRetrieval, "retrieveDocumentPassages")
     .mockImplementation((_user, _query, _articleIds, _pageIds, embedding) => {
       seen.passages = embedding;
       return Promise.resolve([DOCUMENT_PASSAGE]);
     });
 
-  const gateway = {
-    invokeTextWithUsage: jest.fn().mockResolvedValue({
-      ok: true,
-      data: "Open settings and choose reset.",
-      correlationId: "gw-1",
-      aiUsage: {
-        model: "gpt-4o-mini",
-        promptTokens: 10,
-        completionTokens: 5,
-        totalTokens: 15,
-        credits: 1,
-        costUsd: 0.001,
-      },
-    }),
-  };
-  const citationVisibility = {
-    visibleArticles: jest.fn().mockResolvedValue(new Set([1])),
-    visiblePages: jest.fn().mockResolvedValue(new Set<number>()),
-    visibleSources: jest.fn().mockResolvedValue(new Set([5])),
-  };
-  const linkedDocuments = {
-    retrieve: jest.fn().mockResolvedValue([]),
-    stillCitable: jest.fn().mockResolvedValue(new Set<number>()),
-    citationOf: jest.fn(),
-    passageOf: jest.fn(),
-  };
-
-  const ask = new KbAskService(
-    db as never,
-    gateway as never,
-    makeEvents() as never,
-    search,
-    citationVisibility as never,
-    linkedDocuments as never,
-    null,
-  );
-
-  const result = await ask.ask(makeUser(), { question: QUESTION });
+  const retrieval = new KbRetrievalService(db as never, searchRetrieval, null);
+  const result = await retrieval.retrieve(makeUser(), QUESTION);
   return { result, embeddings, depths, seen };
 }
 
@@ -287,7 +264,7 @@ describe("KB ask hot path — one question buys one embedding, outside the trans
     const { result, embeddings } = await runAsk();
 
     expect(embeddings.embedQueryWithCredit).toHaveBeenCalledTimes(1);
-    expect(result.hasContext).toBe(true);
+    expect(result.documents).toEqual([ARTICLE]);
   });
 
   it("hands the same vector to all three retrieval paths, so one charge is not the signature of a service that retrieved nothing", async () => {
@@ -319,7 +296,7 @@ describe("KB retrieval reuses a precomputed vector instead of embedding again", 
     jest.spyOn(candidates, "articleKeywordCandidates").mockResolvedValue([]);
     jest.spyOn(candidates, "pageKeywordCandidates").mockResolvedValue([]);
     const embeddings = makeEmbeddings();
-    const svc = makeSearch(db, embeddings, candidates);
+    const svc = makeSearchRetrieval(db, embeddings, candidates);
 
     await svc.retrieveTopArticles(makeUser(), QUESTION, 4, undefined, undefined, {
       vectorLiteral: VECTOR,
@@ -346,7 +323,7 @@ describe("KB retrieval reuses a precomputed vector instead of embedding again", 
       .spyOn(candidates, "vectorChunkIds")
       .mockResolvedValue([7]);
     const embeddings = makeEmbeddings();
-    const svc = makeSearch(db, embeddings, candidates);
+    const svc = makeSearchRetrieval(db, embeddings, candidates);
 
     await svc.retrieveTopSources(makeUser(), QUESTION, 4, undefined, {
       vectorLiteral: VECTOR,
@@ -359,7 +336,7 @@ describe("KB retrieval reuses a precomputed vector instead of embedding again", 
   it("retrieveDocumentPassages orders by the handed vector and does not re-embed", async () => {
     const { db, capture } = makeDb([{ id: 1 }]);
     const embeddings = makeEmbeddings();
-    const svc = makeSearch(db, embeddings, new KbCandidateService(db as never));
+    const svc = makeSearchRetrieval(db, embeddings, new KbCandidateService(db as never));
 
     await svc.retrieveDocumentPassages(makeUser(), QUESTION, [1], [], {
       vectorLiteral: VECTOR,
@@ -374,7 +351,7 @@ describe("KB retrieval reuses a precomputed vector instead of embedding again", 
   it("a null vector from a failed embedding still orders lexically, so the degraded path is unchanged", async () => {
     const { db, capture } = makeDb([{ id: 1 }]);
     const embeddings = makeEmbeddings();
-    const svc = makeSearch(db, embeddings, new KbCandidateService(db as never));
+    const svc = makeSearchRetrieval(db, embeddings, new KbCandidateService(db as never));
 
     await svc.retrieveDocumentPassages(makeUser(), QUESTION, [1], [], {
       vectorLiteral: null,
@@ -390,7 +367,7 @@ describe("KB retrieval reuses a precomputed vector instead of embedding again", 
 describe("KB prompt-text join carries the ACL revision fence", () => {
   it("retrieveDocumentPassages joins chunks to pages on a plain acl_revision equality, so a stale chunk cannot reach the prompt", async () => {
     const { db, capture } = makeDb([{ id: 1 }]);
-    const svc = makeSearch(db, makeEmbeddings(), new KbCandidateService(db as never));
+    const svc = makeSearchRetrieval(db, makeEmbeddings(), new KbCandidateService(db as never));
 
     await svc.retrieveDocumentPassages(makeUser(), QUESTION, [1], [], {
       vectorLiteral: VECTOR,
@@ -416,7 +393,7 @@ describe("KB query embedding cache — a vector is a pure function of model and 
     const cache = makeCache();
     const embeddings = makeEmbeddings();
     const { db } = makeDb([{ id: 1 }]);
-    const svc = makeSearch(db, embeddings, new KbCandidateService(db as never), cache);
+    const svc = makeSearchRetrieval(db, embeddings, new KbCandidateService(db as never), cache);
 
     const first = await svc.resolveQueryEmbedding("How do I reset my password", "org-1");
     const second = await svc.resolveQueryEmbedding(
@@ -431,7 +408,7 @@ describe("KB query embedding cache — a vector is a pure function of model and 
   it("CONTROL: with no cache the same question is embedded twice, so the single call above is the cache and not an inert assertion", async () => {
     const embeddings = makeEmbeddings();
     const { db } = makeDb([{ id: 1 }]);
-    const svc = makeSearch(db, embeddings, new KbCandidateService(db as never));
+    const svc = makeSearchRetrieval(db, embeddings, new KbCandidateService(db as never));
 
     await svc.resolveQueryEmbedding("How do I reset my password", "org-1");
     await svc.resolveQueryEmbedding("How do I reset my password", "org-1");
@@ -443,14 +420,14 @@ describe("KB query embedding cache — a vector is a pure function of model and 
     const cache = makeCache();
     const embeddings = makeEmbeddings();
     const { db } = makeDb([{ id: 1 }]);
-    const svc = makeSearch(db, embeddings, new KbCandidateService(db as never), cache);
+    const svc = makeSearchRetrieval(db, embeddings, new KbCandidateService(db as never), cache);
 
     await svc.resolveQueryEmbedding(QUESTION, "org-1");
 
     expect(cache.set).toHaveBeenCalledWith(
       expect.stringMatching(/^kb:qembed:text-embedding-3-small:[0-9a-f]{64}$/),
       VECTOR,
-      CACHE_TTL.HOUR,
+      CACHE_TTL.WEEK,
     );
     expect(cache.set.mock.calls[0]?.[0]).not.toContain("org-1");
   });
@@ -464,7 +441,7 @@ describe("KB query embedding cache — a vector is a pure function of model and 
         .mockResolvedValue({ ok: false, kind: "provider_unavailable" }),
     };
     const { db } = makeDb([{ id: 1 }]);
-    const svc = makeSearch(db, embeddings, new KbCandidateService(db as never), cache);
+    const svc = makeSearchRetrieval(db, embeddings, new KbCandidateService(db as never), cache);
 
     const resolved = await svc.resolveQueryEmbedding(QUESTION, "org-1");
 
@@ -476,8 +453,9 @@ describe("KB query embedding cache — a vector is a pure function of model and 
 describe("GET /kb/search", () => {
   it("ranks lexically and calls no embedding provider, so its request transaction spans no provider round trip", async () => {
     const { db } = makeDb([], []);
-    const embeddings = makeEmbeddings();
-    const svc = makeSearch(db, embeddings, new KbCandidateService(db as never));
+    const candidates = new KbCandidateService(db as never);
+    const vectorSpy = jest.spyOn(candidates, "articleVectorCandidates").mockResolvedValue([]);
+    const svc = makeSearchSvc(db, candidates);
     const scope = {
       denied: false,
       compose: (_spec: unknown, onScoped: (token: { sql: SQL }) => SQL) =>
@@ -490,7 +468,7 @@ describe("GET /kb/search", () => {
       scope as never,
     );
 
-    expect(embeddings.embedQueryWithCredit).not.toHaveBeenCalled();
+    expect(vectorSpy).not.toHaveBeenCalled();
     expect(result.page).toBe(1);
   });
 });

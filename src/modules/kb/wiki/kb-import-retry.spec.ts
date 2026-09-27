@@ -3,6 +3,10 @@ import { KbImportExportService } from "./kb-import-export.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
+jest.mock("../../../common/outbox/outbox-writer", () => ({
+  OutboxWriter: { emit: jest.fn().mockResolvedValue(undefined) },
+}));
+
 const ORG = "org-1";
 const JOB_ID = 7;
 
@@ -112,5 +116,40 @@ describe("KbImportExportService.retryImportJob — replays only the failed items
     const svc = service(db);
 
     await expect(svc.retryImportJob(user, JOB_ID)).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe("KbImportExportService.retryImportJob — payload integrity", () => {
+  beforeEach(() => {
+    const { OutboxWriter } = jest.requireMock("../../../common/outbox/outbox-writer") as {
+      OutboxWriter: { emit: jest.Mock };
+    };
+    OutboxWriter.emit.mockClear();
+  });
+  afterEach(() => jest.resetAllMocks());
+
+  it("passes contentText from errorReport.retryItems to the outbox payload, so the consumer never receives items with a null body and silently creates empty documents", async () => {
+    const ITEMS_WITH_CONTENT = [
+      { title: "Page A", contentText: "original body content" },
+    ];
+    const db = makeDb({
+      id: JOB_ID,
+      orgId: ORG,
+      status: "completed",
+      sourceType: "markdown",
+      errorReport: { retryItems: ITEMS_WITH_CONTENT },
+    });
+    const svc = service(db);
+
+    const { OutboxWriter } = jest.requireMock("../../../common/outbox/outbox-writer") as {
+      OutboxWriter: { emit: jest.Mock };
+    };
+
+    await svc.retryImportJob(user, JOB_ID);
+
+    expect(OutboxWriter.emit).toHaveBeenCalledTimes(1);
+    const emitCall = OutboxWriter.emit.mock.calls[0];
+    const emittedEvent = emitCall[1] as { payload: { input: { items: Array<{ contentText?: string }> } } };
+    expect(emittedEvent.payload.input.items[0].contentText).toBe("original body content");
   });
 });

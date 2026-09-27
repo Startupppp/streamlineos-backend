@@ -144,7 +144,6 @@ describe("KbSearchService.search is the help-centre surface, not the whole knowl
   function makeSearch(db: unknown, candidates: KbCandidateService): KbSearchService {
     return new KbSearchService(
       db as never,
-      { isEmbeddingConfigured: jest.fn().mockReturnValue(false) } as never,
       { recordDetached: jest.fn().mockResolvedValue(undefined) } as never,
       candidates,
       { scopeFor: jest.fn().mockResolvedValue("all") } as never,
@@ -171,9 +170,12 @@ describe("KbSearchService.search is the help-centre surface, not the whole knowl
       scope as never,
     );
 
-    const composed = wheres.map((where) => render(where).text).join("\u0000");
+    const rendered = wheres.map(render);
+    const composed = rendered.map((r) => r.text).join("\u0000");
+    const params = rendered.flatMap((r) => r.params);
     expect(composed).toContain(ARTICLE_ALLOW_LIST);
     expect(composed).toContain(SOFT_DELETE);
     expect(composed).not.toContain(WIKI_DENY_OF_ARTICLES);
+    expect(params).toContain("support_article");
   });
 });
