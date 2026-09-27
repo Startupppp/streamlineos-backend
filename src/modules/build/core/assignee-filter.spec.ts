@@ -18,19 +18,21 @@ describe("buildAssigneeFilter — predicate shape", () => {
     expect(buildAssigneeFilter("org1", [], false)).toBeUndefined();
   });
 
-  it("returns a bare IS NULL predicate for an unassigned-only filter", () => {
+  it("returns kind=single with a bare IS NULL clause for an unassigned-only filter", () => {
     const result = buildAssigneeFilter("org1", [], true);
-    expect(result).not.toBeUndefined();
-    const rendered = render(result!);
+    expect(result?.kind).toBe("single");
+    if (result?.kind !== "single") return;
+    const rendered = render(result.clause);
     expect(rendered).toContain("IS NULL");
     expect(rendered).not.toContain(" IN (");
     expect(rendered).not.toContain("UNION");
   });
 
-  it("returns an IN (subquery) predicate for a named-only filter — no IS NULL, no UNION", () => {
+  it("returns kind=single with an IN (subquery) clause for a named-only filter — no IS NULL, no UNION", () => {
     const result = buildAssigneeFilter("org1", ["user-1", "user-2"], false);
-    expect(result).not.toBeUndefined();
-    const rendered = render(result!);
+    expect(result?.kind).toBe("single");
+    if (result?.kind !== "single") return;
+    const rendered = render(result.clause);
     expect(rendered).toContain(" IN (");
     expect(rendered).toContain("ORGANIZATION_MEMBERS");
     expect(rendered).toContain("USER_ID");
@@ -38,26 +40,25 @@ describe("buildAssigneeFilter — predicate shape", () => {
     expect(rendered).not.toContain("UNION");
   });
 
-  it("combined assignee filter: IS NULL or membership EXISTS checks — UNION ALL lives inside the EXISTS, not at the top level", () => {
+  it("combined filter: returns kind=union — two independently indexable branches, not a correlated EXISTS (ticket-14 box 2)", () => {
     const result = buildAssigneeFilter("org1", ["user-1"], true);
     expect(result).not.toBeUndefined();
-    const rendered = render(result!);
-    expect(rendered).toContain("UNION ALL");
-    expect(rendered).toContain("EXISTS");
-    expect(rendered).toContain("IS NULL");
-    expect(rendered).toContain("ORGANIZATION_MEMBERS");
-    expect(rendered).not.toMatch(/IS NULL\s+OR/);
-    expect(rendered).not.toMatch(/OR\s+.*IS NULL/);
+    expect(result?.kind).toBe("union");
+    expect(result).not.toHaveProperty("clause");
   });
 
-  it("combined filter: EXISTS (UNION ALL) is semantically equivalent to OR (IS NULL, IN subquery) — both branches present", () => {
+  it("combined filter: nullBranch renders IS NULL and inBranch renders organization_members — each branch is independently indexable (ticket-14 box 2)", () => {
     const result = buildAssigneeFilter("org1", ["user-1"], true);
-    expect(result).not.toBeUndefined();
-    const rendered = render(result!);
-    expect(rendered).toContain("IS NULL");
-    expect(rendered).toContain("OM.ID");
-    expect(rendered).toContain("USER_ID");
-    expect(rendered).toContain("OM.ORG_ID");
+    expect(result?.kind).toBe("union");
+    if (result?.kind !== "union") return;
+    const nullRendered = render(result.nullBranch);
+    const inRendered = render(result.inBranch);
+    expect(nullRendered).toContain("IS NULL");
+    expect(nullRendered).not.toContain("ORGANIZATION_MEMBERS");
+    expect(inRendered).toContain("ORGANIZATION_MEMBERS");
+    expect(inRendered).toContain("USER_ID");
+    expect(inRendered).not.toContain("IS NULL");
+    expect(inRendered).not.toContain("UNION");
   });
 });
 
@@ -106,26 +107,90 @@ function makeDb(onWhere?: (w: unknown) => void): Db {
   } as unknown as Db;
 }
 
-describe("listTickets — combined assignee filter contains a UNION ALL inside the EXISTS clause (see ticket-14 for the top-level UNION that BE-81 requires)", () => {
-  it("the WHERE clause contains UNION ALL when filtering unassigned + named people", async () => {
-    const captured: SQL<unknown>[] = [];
-    const db = makeDb((w) => captured.push(w as SQL<unknown>));
-
+describe("ticket-14 box 2: combined filter is a top-level UNION ALL, not a correlated EXISTS — BE-81", () => {
+  it("listTickets: combined filter issues a UNION ALL query via db.execute — not a single WHERE with EXISTS(UNION ALL)", async () => {
+    const db = makeDb();
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.listTickets(USER, PROJECT_ID, {
       limit: 10,
       orderBy: "rank",
       assigneeId: ["__unassigned__", "user-2"],
     });
-
-    expect(captured.length).toBeGreaterThan(0);
-    const rendered = render(captured[captured.length - 1]!);
-    expect(rendered).toContain("UNION ALL");
-    expect(rendered).not.toMatch(/IS NULL\s+OR/);
-    expect(rendered).not.toMatch(/OR\s+.*IS NULL/);
+    const executeSqls = (db.execute as jest.Mock).mock.calls.map(
+      (c) => render(c[0] as SQL<unknown>),
+    );
+    expect(executeSqls.some((r) => r.includes("UNION ALL") && !r.includes("EXISTS"))).toBe(true);
   });
 
-  it("the WHERE clause uses IS NULL alone when only unassigned is requested", async () => {
+  it("listTickets: UNION ALL query has IS NULL branch and ORGANIZATION_MEMBERS branch — positive counterpart to the NOT EXISTS assertion", async () => {
+    const db = makeDb();
+    const svc = new ProjectsTicketsReadService(db, makeAccess());
+    await svc.listTickets(USER, PROJECT_ID, {
+      limit: 10,
+      orderBy: "rank",
+      assigneeId: ["__unassigned__", "user-2"],
+    });
+    const executeSqls = (db.execute as jest.Mock).mock.calls.map(
+      (c) => render(c[0] as SQL<unknown>),
+    );
+    const unionSql = executeSqls.find((r) => r.includes("UNION ALL"));
+    expect(unionSql).toBeDefined();
+    expect(unionSql).toContain("IS NULL");
+    expect(unionSql).toContain("ORGANIZATION_MEMBERS");
+  });
+
+  it("getColumnCounts: combined filter issues a UNION ALL query via db.execute — not a single WHERE with EXISTS(UNION ALL)", async () => {
+    const db = makeDb();
+    const svc = new ProjectsTicketsReadService(db, makeAccess());
+    await svc.getColumnCounts(USER, PROJECT_ID, {
+      limit: 10,
+      orderBy: "rank",
+      assigneeId: ["__unassigned__", "user-2"],
+    });
+    const executeSqls = (db.execute as jest.Mock).mock.calls.map(
+      (c) => render(c[0] as SQL<unknown>),
+    );
+    expect(executeSqls.some((r) => r.includes("UNION ALL") && !r.includes("EXISTS"))).toBe(true);
+  });
+
+  it("getColumnCounts: UNION ALL query has IS NULL branch and ORGANIZATION_MEMBERS branch — positive counterpart to the NOT EXISTS assertion", async () => {
+    const db = makeDb();
+    const svc = new ProjectsTicketsReadService(db, makeAccess());
+    await svc.getColumnCounts(USER, PROJECT_ID, {
+      limit: 10,
+      orderBy: "rank",
+      assigneeId: ["__unassigned__", "user-2"],
+    });
+    const executeSqls = (db.execute as jest.Mock).mock.calls.map(
+      (c) => render(c[0] as SQL<unknown>),
+    );
+    const unionSql = executeSqls.find((r) => r.includes("UNION ALL"));
+    expect(unionSql).toBeDefined();
+    expect(unionSql).toContain("IS NULL");
+    expect(unionSql).toContain("ORGANIZATION_MEMBERS");
+  });
+});
+
+describe("listTickets — combined filter uses top-level UNION ALL (BE-81, ticket-14 box 2)", () => {
+  it("UNION ALL query is issued via db.execute when filtering unassigned + named people", async () => {
+    const db = makeDb();
+    const svc = new ProjectsTicketsReadService(db, makeAccess());
+    await svc.listTickets(USER, PROJECT_ID, {
+      limit: 10,
+      orderBy: "rank",
+      assigneeId: ["__unassigned__", "user-2"],
+    });
+    const executeSqls = (db.execute as jest.Mock).mock.calls.map(
+      (c) => render(c[0] as SQL<unknown>),
+    );
+    const unionSql = executeSqls.find((r) => r.includes("UNION ALL"));
+    expect(unionSql).toBeDefined();
+    expect(unionSql).not.toContain("EXISTS");
+    expect(unionSql).toContain("IS NULL");
+    expect(unionSql).toContain("ORGANIZATION_MEMBERS");
+  });
+
+  it("IS NULL predicate is used directly in the WHERE clause when only unassigned is requested", async () => {
     const captured: SQL<unknown>[] = [];
     const db = makeDb((w) => captured.push(w as SQL<unknown>));
 
@@ -144,26 +209,26 @@ describe("listTickets — combined assignee filter contains a UNION ALL inside t
   });
 });
 
-describe("getColumnCounts — combined assignee filter contains a UNION ALL inside the EXISTS clause (see ticket-14 for the top-level UNION that BE-81 requires)", () => {
-  it("the WHERE clause contains UNION ALL when filtering unassigned + named people", async () => {
-    const captured: SQL<unknown>[] = [];
-    const db = makeDb((w) => captured.push(w as SQL<unknown>));
-
+describe("getColumnCounts — combined filter uses top-level UNION ALL (BE-81, ticket-14 box 2)", () => {
+  it("UNION ALL query is issued via db.execute when filtering unassigned + named people", async () => {
+    const db = makeDb();
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.getColumnCounts(USER, PROJECT_ID, {
       limit: 10,
       orderBy: "rank",
       assigneeId: ["__unassigned__", "user-2"],
     });
-
-    expect(captured.length).toBeGreaterThan(0);
-    const rendered = render(captured[captured.length - 1]!);
-    expect(rendered).toContain("UNION ALL");
-    expect(rendered).not.toMatch(/IS NULL\s+OR/);
-    expect(rendered).not.toMatch(/OR\s+.*IS NULL/);
+    const executeSqls = (db.execute as jest.Mock).mock.calls.map(
+      (c) => render(c[0] as SQL<unknown>),
+    );
+    const unionSql = executeSqls.find((r) => r.includes("UNION ALL"));
+    expect(unionSql).toBeDefined();
+    expect(unionSql).not.toContain("EXISTS");
+    expect(unionSql).toContain("IS NULL");
+    expect(unionSql).toContain("ORGANIZATION_MEMBERS");
   });
 
-  it("the WHERE clause uses IS NULL alone when only unassigned is requested", async () => {
+  it("IS NULL predicate is used directly in the WHERE clause when only unassigned is requested", async () => {
     const captured: SQL<unknown>[] = [];
     const db = makeDb((w) => captured.push(w as SQL<unknown>));
 
@@ -182,7 +247,7 @@ describe("getColumnCounts — combined assignee filter contains a UNION ALL insi
   });
 });
 
-describe("buildAssigneeFilter — EXISTS(UNION ALL) selects the same rows as the flat OR it replaced", () => {
+describe("buildAssigneeFilter — top-level UNION ALL selects the same rows as the flat OR it replaced", () => {
   it("both predicates accept and reject the same rows over a fixture of ticket-membership combinations — a changed implementation that differs on any case fails here", () => {
     type TicketRow = { assigneeMembershipId: string | null };
     type MemberRow = { id: string; orgId: string; userId: string };
@@ -215,31 +280,32 @@ describe("buildAssigneeFilter — EXISTS(UNION ALL) selects the same rows as the
     const flatOrPredicate = (row: TicketRow): boolean =>
       row.assigneeMembershipId === null || matchingMemberIds.has(row.assigneeMembershipId);
 
-    const existsUnionPredicate = (row: TicketRow): boolean => {
+    const unionBranchPredicate = (row: TicketRow): boolean => {
       if (row.assigneeMembershipId === null) return true;
       return matchingMemberIds.has(row.assigneeMembershipId);
     };
 
     const flatResults = ticketRows.filter(flatOrPredicate);
-    const existsResults = ticketRows.filter(existsUnionPredicate);
+    const unionResults = ticketRows.filter(unionBranchPredicate);
 
-    expect(existsResults).toEqual(flatResults);
+    expect(unionResults).toEqual(flatResults);
     expect(flatResults.map((r) => r.assigneeMembershipId)).toEqual([null, "mem-1", "mem-2"]);
   });
 });
 
-describe("shared builder: listTickets and getColumnCounts use buildAssigneeFilter, not an inline copy (see ticket-14 for the top-level UNION that BE-81 requires)", () => {
+describe("shared builder: listTickets and getColumnCounts use buildAssigneeFilter, not an inline copy (ticket-14 box 4)", () => {
   function stripParams(s: string): string {
     return s.replace(/\$\d+/g, "$?");
   }
 
-  it("listTickets WHERE contains the same normalized predicate as buildAssigneeFilter's direct output — a changed inline copy would produce different SQL and fail here", async () => {
-    const direct = buildAssigneeFilter(ORG_ID, ["user-2"], true);
-    expect(direct).not.toBeUndefined();
-    const directStripped = stripParams(render(direct!));
+  it("listTickets union path: execute SQL contains both branches from buildAssigneeFilter — an inline copy would differ and fail here", async () => {
+    const filter = buildAssigneeFilter(ORG_ID, ["user-2"], true);
+    expect(filter?.kind).toBe("union");
+    if (filter?.kind !== "union") return;
+    const nullBranchStripped = stripParams(render(filter.nullBranch));
+    const inBranchStripped = stripParams(render(filter.inBranch));
 
-    const captured: SQL<unknown>[] = [];
-    const db = makeDb((w) => captured.push(w as SQL<unknown>));
+    const db = makeDb();
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.listTickets(USER, PROJECT_ID, {
       limit: 10,
@@ -247,19 +313,23 @@ describe("shared builder: listTickets and getColumnCounts use buildAssigneeFilte
       assigneeId: ["__unassigned__", "user-2"],
     });
 
-    expect(captured.length).toBeGreaterThan(0);
-    const listStripped = stripParams(render(captured[captured.length - 1]!));
-    expect(listStripped).toContain(directStripped);
-    expect(listStripped).not.toMatch(/IS NULL\s+OR/);
+    const executeSqls = (db.execute as jest.Mock).mock.calls.map(
+      (c) => stripParams(render(c[0] as SQL<unknown>)),
+    );
+    const unionSql = executeSqls.find((r) => r.includes("UNION ALL"));
+    expect(unionSql).toBeDefined();
+    expect(unionSql).toContain(nullBranchStripped);
+    expect(unionSql).toContain(inBranchStripped);
   });
 
-  it("getColumnCounts WHERE contains the same normalized predicate as buildAssigneeFilter's direct output — a changed inline copy would produce different SQL and fail here", async () => {
-    const direct = buildAssigneeFilter(ORG_ID, ["user-2"], true);
-    expect(direct).not.toBeUndefined();
-    const directStripped = stripParams(render(direct!));
+  it("getColumnCounts union path: execute SQL contains both branches from buildAssigneeFilter — an inline copy would differ and fail here", async () => {
+    const filter = buildAssigneeFilter(ORG_ID, ["user-2"], true);
+    expect(filter?.kind).toBe("union");
+    if (filter?.kind !== "union") return;
+    const nullBranchStripped = stripParams(render(filter.nullBranch));
+    const inBranchStripped = stripParams(render(filter.inBranch));
 
-    const captured: SQL<unknown>[] = [];
-    const db = makeDb((w) => captured.push(w as SQL<unknown>));
+    const db = makeDb();
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.getColumnCounts(USER, PROJECT_ID, {
       limit: 10,
@@ -267,9 +337,12 @@ describe("shared builder: listTickets and getColumnCounts use buildAssigneeFilte
       assigneeId: ["__unassigned__", "user-2"],
     });
 
-    expect(captured.length).toBeGreaterThan(0);
-    const countsStripped = stripParams(render(captured[captured.length - 1]!));
-    expect(countsStripped).toContain(directStripped);
-    expect(countsStripped).not.toMatch(/IS NULL\s+OR/);
+    const executeSqls = (db.execute as jest.Mock).mock.calls.map(
+      (c) => stripParams(render(c[0] as SQL<unknown>)),
+    );
+    const unionSql = executeSqls.find((r) => r.includes("UNION ALL"));
+    expect(unionSql).toBeDefined();
+    expect(unionSql).toContain(nullBranchStripped);
+    expect(unionSql).toContain(inBranchStripped);
   });
 });

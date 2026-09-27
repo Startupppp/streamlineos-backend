@@ -1,15 +1,19 @@
 import { isNull, sql, type SQL } from "drizzle-orm";
 import { tickets } from "../../../db/schema";
 
+export type AssigneeFilter =
+  | { kind: "single"; clause: SQL<unknown> }
+  | { kind: "union"; nullBranch: SQL<unknown>; inBranch: SQL<unknown> };
+
 export function buildAssigneeFilter(
   orgId: string,
   userIds: string[],
   includeUnassigned: boolean,
-): SQL<unknown> | undefined {
+): AssigneeFilter | undefined {
   if (!includeUnassigned && userIds.length === 0) return undefined;
 
   if (includeUnassigned && userIds.length === 0) {
-    return isNull(tickets.assigneeMembershipId);
+    return { kind: "single", clause: isNull(tickets.assigneeMembershipId) };
   }
 
   const memberIdList = sql.join(
@@ -17,19 +21,18 @@ export function buildAssigneeFilter(
     sql`, `,
   );
 
+  const inBranch = sql`${tickets.assigneeMembershipId} IN (
+    SELECT id FROM organization_members
+    WHERE org_id = ${orgId} AND user_id IN (${memberIdList})
+  )`;
+
   if (!includeUnassigned) {
-    return sql`${tickets.assigneeMembershipId} IN (
-      SELECT id FROM organization_members
-      WHERE org_id = ${orgId} AND user_id IN (${memberIdList})
-    )`;
+    return { kind: "single", clause: inBranch };
   }
 
-  return sql`EXISTS (
-    SELECT 1 WHERE ${tickets.assigneeMembershipId} IS NULL
-    UNION ALL
-    SELECT 1 FROM organization_members om
-    WHERE om.id = ${tickets.assigneeMembershipId}
-      AND om.org_id = ${orgId}
-      AND om.user_id IN (${memberIdList})
-  )`;
+  return {
+    kind: "union",
+    nullBranch: isNull(tickets.assigneeMembershipId),
+    inBranch,
+  };
 }

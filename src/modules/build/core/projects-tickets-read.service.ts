@@ -194,12 +194,14 @@ export class ProjectsTicketsReadService {
       );
     }
 
+    let assigneeUnion: { nullBranch: SQL<unknown>; inBranch: SQL<unknown> } | undefined;
     if (assigneeId && assigneeId.length > 0) {
       const resolved = assigneeId.map((id) => (id === "@me" ? u.userId : id));
       const includeUnassigned = resolved.includes("__unassigned__");
       const userIds = resolved.filter((id) => id !== "__unassigned__");
-      const condition = buildAssigneeFilter(u.orgId, userIds, includeUnassigned);
-      if (condition) filterConditions.push(condition);
+      const assigneeFilter = buildAssigneeFilter(u.orgId, userIds, includeUnassigned);
+      if (assigneeFilter?.kind === "single") filterConditions.push(assigneeFilter.clause);
+      if (assigneeFilter?.kind === "union") assigneeUnion = assigneeFilter;
     }
 
     if (labelIds && labelIds.length > 0) {
@@ -252,6 +254,7 @@ export class ProjectsTicketsReadService {
       orderBy,
       dir,
       sortExpr,
+      assigneeUnion,
     );
   }
 
@@ -266,6 +269,7 @@ export class ProjectsTicketsReadService {
     orderBy: TicketOrderBy,
     direction: "asc" | "desc",
     sortExpr: SQL<unknown>[],
+    assigneeUnion?: { nullBranch: SQL<unknown>; inBranch: SQL<unknown> },
   ) {
     const position = decodeCursor(cursor);
     const boundary = position
@@ -273,20 +277,57 @@ export class ProjectsTicketsReadService {
         ? keysetAfterValue(tickets.rank, tickets.id, position)
         : ticketCursorBoundary(orderBy, direction, position)
       : undefined;
-    const bounded = and(where, boundary);
     const primaryColumn = TICKET_ORDERBY_COLUMNS[orderBy];
 
-    const rows = await this.db
-      .select({
-        id: tickets.id,
-        cursorPrimaryText: sql<string | null>`${primaryColumn}::text`,
-        rank: tickets.rank,
-        cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
-      })
-      .from(tickets)
-      .where(bounded)
-      .orderBy(...sortExpr)
-      .limit(limit + 1);
+    type CursorRow = {
+      id: number;
+      cursorPrimaryText: string | null;
+      rank: string | null;
+      cursorCreatedAt: string;
+    };
+
+    let rows: CursorRow[];
+
+    if (assigneeUnion) {
+      const branch1Bounded = and(where, assigneeUnion.nullBranch, boundary);
+      const branch2Bounded = and(where, assigneeUnion.inBranch, boundary);
+
+      const selCols = sql`${tickets.id} AS id, ${primaryColumn}::text AS cursor_primary_text, ${tickets.rank}::text AS rank, ${tickets.createdAt}::text AS cursor_created_at, ${primaryColumn} AS primary_col_order, ${tickets.createdAt} AS created_at_order`;
+
+      const unionOrderSql =
+        orderBy === "rank"
+          ? sql`5 ASC, 1 ASC`
+          : direction === "asc"
+            ? sql`5 ASC, 6 DESC, 1 ASC`
+            : sql`5 DESC, 6 DESC, 1 ASC`;
+
+      const rawRows = await this.db.execute<{
+        id: number;
+        cursor_primary_text: string | null;
+        rank: string | null;
+        cursor_created_at: string;
+      }>(sql`(SELECT ${selCols} FROM ${tickets} WHERE ${branch1Bounded}) UNION ALL (SELECT ${selCols} FROM ${tickets} WHERE ${branch2Bounded}) ORDER BY ${unionOrderSql} LIMIT ${limit + 1}`);
+
+      rows = rawRows.map((r) => ({
+        id: r.id,
+        cursorPrimaryText: r.cursor_primary_text,
+        rank: r.rank,
+        cursorCreatedAt: r.cursor_created_at,
+      }));
+    } else {
+      const bounded = and(where, boundary);
+      rows = await this.db
+        .select({
+          id: tickets.id,
+          cursorPrimaryText: sql<string | null>`${primaryColumn}::text`,
+          rank: tickets.rank,
+          cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
+        })
+        .from(tickets)
+        .where(bounded)
+        .orderBy(...sortExpr)
+        .limit(limit + 1);
+    }
 
     const page = buildCursorPage(rows, limit, (row) => ({
       sortValue:
@@ -348,12 +389,14 @@ export class ProjectsTicketsReadService {
         sql`${tickets.type}::text = ANY(ARRAY[${sql.join(query.type.map((value) => sql`${value}`), sql`, `)}])`,
       );
     }
+    let assigneeUnion2: { nullBranch: SQL<unknown>; inBranch: SQL<unknown> } | undefined;
     if (query.assigneeId?.length) {
       const resolved = query.assigneeId.map((id) => (id === "@me" ? u.userId : id));
       const includeUnassigned = resolved.includes("__unassigned__");
       const userIds = resolved.filter((id) => id !== "__unassigned__");
-      const condition = buildAssigneeFilter(u.orgId, userIds, includeUnassigned);
-      if (condition) filterConditions.push(condition);
+      const assigneeFilter = buildAssigneeFilter(u.orgId, userIds, includeUnassigned);
+      if (assigneeFilter?.kind === "single") filterConditions.push(assigneeFilter.clause);
+      if (assigneeFilter?.kind === "union") assigneeUnion2 = assigneeFilter;
     }
     if (query.labelIds?.length) {
       filterConditions.push(sql`EXISTS (
@@ -368,12 +411,39 @@ export class ProjectsTicketsReadService {
     if (query.dueDateFrom) filterConditions.push(gte(tickets.dueDate, query.dueDateFrom));
     if (query.dueDateTo) filterConditions.push(lte(tickets.dueDate, query.dueDateTo));
 
+    const scopeSpec = {
+      tenant: tickets.orgId,
+      scope: ticketScope(read.orgId, read.actorId),
+    };
+    const baseAnd = [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...filterConditions];
+
+    if (assigneeUnion2) {
+      const where1 = read.compose(
+        { ...scopeSpec, and: [...baseAnd, assigneeUnion2.nullBranch] },
+        ({ sql: w }) => w,
+        () => sql`false`,
+      );
+      const where2 = read.compose(
+        { ...scopeSpec, and: [...baseAnd, assigneeUnion2.inBranch] },
+        ({ sql: w }) => w,
+        () => sql`false`,
+      );
+      const countRows = await this.db.execute<{ status: string | null; cnt: string }>(sql`
+        SELECT status, sum(cnt::bigint)::text AS cnt FROM (
+          SELECT ${tickets.status} AS status, count(*)::text AS cnt FROM ${tickets} WHERE ${where1} GROUP BY ${tickets.status}
+          UNION ALL
+          SELECT ${tickets.status} AS status, count(*)::text AS cnt FROM ${tickets} WHERE ${where2} GROUP BY ${tickets.status}
+        ) t GROUP BY status
+      `);
+      const result: Record<string, number> = {};
+      for (const row of countRows) {
+        if (row.status) result[row.status] = Number(row.cnt);
+      }
+      return result;
+    }
+
     const rows = await read.read(
-      {
-        tenant: tickets.orgId,
-        scope: ticketScope(read.orgId, read.actorId),
-        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...filterConditions],
-      },
+      { ...scopeSpec, and: baseAnd },
       ({ sql: where }) => this.db
         .select({ status: tickets.status, cnt: sql<string>`count(*)` })
         .from(tickets)
