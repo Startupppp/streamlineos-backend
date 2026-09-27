@@ -310,7 +310,13 @@ export class KbPageTrashService {
 
       const deleted = await this.db
         .delete(kbPages)
-        .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids)))
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            eq(kbPages.legalHold, false),
+            inArray(kbPages.id, ids),
+          ),
+        )
         .returning({ id: kbPages.id });
 
       await markStoresComplete(this.db, orgId, ids, "page_rows").catch(
