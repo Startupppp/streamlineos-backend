@@ -86,6 +86,7 @@ describe("kb_pages holds help-centre articles and wiki pages, and a read must sa
     expect(text).toContain(ARTICLE_ALLOW_LIST);
     expect(text).not.toContain(WIKI_DENY_OF_ARTICLES);
     expect(params).toContain("support_article");
+    expect(text).toContain('"kb_pages"."space_id" is null');
   });
 
   it("the article keyword surface filters deleted_at, which kb_articles never had", async () => {

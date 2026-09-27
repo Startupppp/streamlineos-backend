@@ -3,7 +3,6 @@ import {
   and,
   desc,
   eq,
-  inArray,
   ne,
   sql,
   type SQL,
@@ -18,7 +17,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
 import type { ScopedRead } from "../../access/scoped-read";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { KbCandidateService } from "./kb-candidate.service";
+import { articleSpacePredicate, KbCandidateService } from "./kb-candidate.service";
 import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { AccessService } from "../../access/access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -121,10 +120,6 @@ export class KbSearchService {
     }
 
     const { spaceIds: ids, cacheOutcome } = await this.auth.resolveAccessibleSpaces(user);
-    if (ids.length === 0) {
-      metrics.finish("not_found", { sourceKind: emptyKind, cacheOutcome, queueLane, dbRole });
-      return empty;
-    }
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
     const keywordCond = await this.candidates.resolveArticleKeywordCondition(
@@ -134,7 +129,7 @@ export class KbSearchService {
     );
     const domain: SQL[] = [
       supportArticlePredicate(),
-      inArray(kbPages.spaceId, ids),
+      articleSpacePredicate(ids),
       ne(kbPages.status, "archived"),
       keywordCond,
     ];

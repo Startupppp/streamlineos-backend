@@ -189,7 +189,6 @@ export class KbSearchRetrievalService {
       const ownerFilter = await this.articleOwnerFilterFor(user);
 
       const pool = Math.max(limit * 3, limit);
-      const hasSpaces = ids.length > 0;
 
       let vectorLiteral: string | null = null;
       if (
@@ -203,18 +202,16 @@ export class KbSearchRetrievalService {
 
       const [articleKeyword, articleVector, pageKeyword, pageVector] =
         await Promise.all([
-          hasSpaces
-            ? this.candidates.articleKeywordCandidates(
-                user.orgId,
-                ids,
-                q,
-                pool,
-                principal,
-                ownerFilter,
-                spaceId,
-              )
-            : Promise.resolve<number[]>([]),
-          hasSpaces && vectorLiteral
+          this.candidates.articleKeywordCandidates(
+            user.orgId,
+            ids,
+            q,
+            pool,
+            principal,
+            ownerFilter,
+            spaceId,
+          ),
+          vectorLiteral
             ? this.candidates.articleVectorCandidates(
                 user.orgId,
                 ids,

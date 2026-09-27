@@ -25,6 +25,13 @@ import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-p
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
 
+/** Help-centre articles often have no wiki space. A space allow-list alone hides them from Ask. */
+export function articleSpacePredicate(spaceIds: readonly number[]): SQL {
+  const unspaced = isNull(kbPages.spaceId);
+  if (spaceIds.length === 0) return unspaced;
+  return sql`(${unspaced} OR ${inArray(kbPages.spaceId, spaceIds)})`;
+}
+
 @Injectable()
 export class KbCandidateService {
   private readonly logger = new Logger(KbCandidateService.name);
@@ -80,7 +87,7 @@ export class KbCandidateService {
     const conditions: SQL[] = [
       eq(kbPages.orgId, orgId),
       supportArticlePredicate(),
-      inArray(kbPages.spaceId, spaceIds),
+      articleSpacePredicate(spaceIds),
       eq(kbPages.status, "published"),
       keywordCond,
       buildArticleRestrictionBranch(orgId, principal),
@@ -111,7 +118,7 @@ export class KbCandidateService {
     spaceId?: number,
   ): Promise<number[]> {
     const conditions: SQL[] = [
-      inArray(kbPages.spaceId, spaceIds),
+      articleSpacePredicate(spaceIds),
       eq(kbPages.status, "published"),
       supportArticlePredicate(),
       buildArticleRestrictionBranch(orgId, principal),
