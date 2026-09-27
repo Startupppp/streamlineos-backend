@@ -141,7 +141,7 @@ describe("claim (a): owner-change audit commits atomically with the page mutatio
       }),
     };
 
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
 
     const svc = new KbPagesService(
@@ -170,7 +170,7 @@ describe("claim (a): owner-change audit commits atomically with the page mutatio
       },
       transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx)),
     };
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
 
     const svc = new KbPagesService(
@@ -206,7 +206,7 @@ describe("claim (a): owner-change audit commits atomically with the page mutatio
       },
       transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(failingTx)),
     };
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
 
     const svc = new KbPagesService(

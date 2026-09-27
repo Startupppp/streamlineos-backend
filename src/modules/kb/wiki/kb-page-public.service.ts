@@ -21,7 +21,7 @@ import {
   publicTokenColumnsFor,
   withoutUnsharedToken,
 } from "./kb-page-share-visibility";
-import { resolveProjectAccess } from "../../build/core/project-access";
+import { resolveProjectAccess } from "../../build/core";
 import { KbPageWriterService } from "./kb-page-writer.service";
 
 export interface KbPageSearchHit {

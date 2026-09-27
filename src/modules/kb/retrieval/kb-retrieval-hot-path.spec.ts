@@ -476,11 +476,11 @@ describe("GET /kb/search", () => {
 
     const result = await svc.search(
       makeUser(),
-      { q: "reset password", page: 1, pageSize: 20 },
+      { q: "reset password", pageSize: 20 },
       scope as never,
     );
 
     expect(vectorSpy).not.toHaveBeenCalled();
-    expect(result.page).toBe(1);
+    expect(result.items).toEqual([]);
   });
 });

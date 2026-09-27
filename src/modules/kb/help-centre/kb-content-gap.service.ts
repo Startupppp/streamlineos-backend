@@ -26,6 +26,7 @@ import type {
   GapAssignBody,
   GapDismissBody,
   GapCreateFixBody,
+  RangeInput,
   RangeWithSpaceInput,
 } from "./dto/kb-analytics.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";

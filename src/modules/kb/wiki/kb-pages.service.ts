@@ -34,7 +34,7 @@ import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-a
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 import { KbPageWriterService } from "./kb-page-writer.service";
 import { withoutUnsharedToken } from "./kb-page-share-visibility";
-import { resolveProjectAccess } from "../../build/core/project-access";
+import { resolveProjectAccess } from "../../build/core";
 import { KbReadMetrics } from "../analytics/kb-read-metrics";
 import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 

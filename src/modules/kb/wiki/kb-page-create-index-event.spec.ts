@@ -5,7 +5,7 @@ import { outboxEvents } from "../../../db/schema/common/outbox";
 import { KbPagesService } from "./kb-pages.service";
 import { KbPageWriterService } from "./kb-page-writer.service";
 
-jest.mock("../../build/core/project-access", () => ({
+jest.mock("../../build/core/project-crud/project-access", () => ({
   resolveProjectAccess: jest
     .fn()
     .mockResolvedValue({ hasAccess: true, role: "MEMBER" }),

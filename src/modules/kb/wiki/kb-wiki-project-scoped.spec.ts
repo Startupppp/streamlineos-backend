@@ -5,11 +5,11 @@ import { KbPagePublicService } from "./kb-page-public.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { KbPageWriterService } from "./kb-page-writer.service";
 
-jest.mock("../../build/core/project-access", () => ({
+jest.mock("../../build/core/project-crud/project-access", () => ({
   resolveProjectAccess: jest.fn(),
 }));
 
-import { resolveProjectAccess } from "../../build/core/project-access";
+import { resolveProjectAccess } from "../../build/core";
 const mockResolveProjectAccess = resolveProjectAccess as jest.Mock;
 
 function makeUser(orgId = "org-a") {
@@ -70,7 +70,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
   it("throws NotFoundException when caller is not a project member (non-member denied)", async () => {
     mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
     const db = makeSearchDb([]);
-    const svc = new KbPagePublicService(db, stubAuth as never, STUB_ACCESS, new KbPageWriterService({} as never));
+    const svc = new KbPagePublicService(db, stubAuth as never, STUB_ACCESS, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await expect(svc.search(makeUser(), "test", 10, 99)).rejects.toThrow(NotFoundException);
   });
@@ -80,7 +80,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
     const db = makeSearchDb([
       { id: 1, title: "Page 1", icon: null, snippet: "match" },
     ]);
-    const svc = new KbPagePublicService(db, stubAuth as never, STUB_ACCESS, new KbPageWriterService({} as never));
+    const svc = new KbPagePublicService(db, stubAuth as never, STUB_ACCESS, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     const result = await svc.search(makeUser(), "test", 10, 99);
 
@@ -90,7 +90,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
 
   it("does not call resolveProjectAccess when projectId is omitted (global search)", async () => {
     const db = makeSearchDb([]);
-    const svc = new KbPagePublicService(db, stubAuth as never, STUB_ACCESS, new KbPageWriterService({} as never));
+    const svc = new KbPagePublicService(db, stubAuth as never, STUB_ACCESS, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await svc.search(makeUser(), "test", 10);
 
@@ -101,7 +101,7 @@ describe("KbPagesService.search — project-scoped membership enforcement", () =
     const ATTACKER_ORG = "org-attacker";
     mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
     const db = makeSearchDb([]);
-    const svc = new KbPagePublicService(db, stubAuth as never, STUB_ACCESS, new KbPageWriterService({} as never));
+    const svc = new KbPagePublicService(db, stubAuth as never, STUB_ACCESS, new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never));
 
     await expect(svc.search(makeUser(ATTACKER_ORG), "test", 10, 99)).rejects.toThrow(NotFoundException);
 

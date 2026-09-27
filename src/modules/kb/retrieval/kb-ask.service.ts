@@ -436,6 +436,7 @@ export class KbAskService {
         promptTokens: number;
         completionTokens: number;
         model: string;
+        provider: string;
         costCredits: number;
         gatewayCorrelationId: string;
       }): Promise<void> => {
@@ -448,6 +449,7 @@ export class KbAskService {
               actorMembershipId: actingMembershipId(user.principal) ?? null,
               resultState: "answered",
               model: result.model,
+              provider: result.provider,
               promptTokens: result.promptTokens,
               completionTokens: result.completionTokens,
               totalTokens: result.promptTokens + result.completionTokens,

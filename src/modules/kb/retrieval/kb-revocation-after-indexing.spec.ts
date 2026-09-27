@@ -130,7 +130,7 @@ describe("Revocation dimension 1 — space membership is re-read per query, not 
     expect(boundValues(wheres)).toEqual(expect.arrayContaining(GRANTED_SPACES));
   });
 
-  it("after revocation neither the keyword nor the vector article path runs at all", async () => {
+  it("after revocation article queries run only for unspaced help-centre content — no space-member-only article can leak", async () => {
     const { wheres, run } = retrieve(makeStanding({ accessibleSpaceIds: [], accessibleProjectIds: GRANTED_PROJECTS, roleSlugs: ["SUPPORT"], membershipId: 5 }));
 
     const results = await run();
@@ -141,9 +141,12 @@ describe("Revocation dimension 1 — space membership is re-read per query, not 
     expect(
       rendered(wheres).filter((t) => t.includes(`"kb_pages"."space_id" IS NULL`)).length,
     ).toBeGreaterThan(0);
-    expect(
-      rendered(wheres).filter((t) => t.includes(`"kb_pages"."content_type" = `)),
-    ).toEqual([]);
+    const articleWheres = rendered(wheres).filter((t) => t.includes(`"kb_pages"."content_type" = `));
+    expect(articleWheres.length).toBeGreaterThan(0);
+    for (const w of articleWheres) {
+      expect(w).toContain(`"kb_pages"."space_id" is null`);
+      expect(w).not.toContain(`"kb_pages"."space_id" = ANY(`);
+    }
     expect(boundValues(wheres)).not.toEqual(expect.arrayContaining(GRANTED_SPACES));
     expect(results.filter((r) => r.kind === "article")).toEqual([]);
   });

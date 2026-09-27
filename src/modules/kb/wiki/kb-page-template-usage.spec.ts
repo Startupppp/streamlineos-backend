@@ -2,7 +2,7 @@ import { KbPagesService } from "./kb-pages.service";
 import { KbPageWriterService } from "./kb-page-writer.service";
 import type { Db } from "../../../db/drizzle.module";
 
-jest.mock("../../build/core/project-access", () => ({
+jest.mock("../../build/core/project-crud/project-access", () => ({
   resolveProjectAccess: jest.fn(),
 }));
 

@@ -23,6 +23,7 @@ interface InsertedRow {
   correlationId?: string;
   resultState?: string;
   model?: string;
+  provider?: string;
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
@@ -95,6 +96,7 @@ function buildEvents() {
 
 const GATEWAY_USAGE = {
   model: "gpt-4o-mini",
+  provider: "openai",
   promptTokens: 20,
   completionTokens: 8,
   totalTokens: 28,
@@ -121,6 +123,7 @@ function buildStreamingGateway() {
         promptTokens: GATEWAY_USAGE.promptTokens,
         completionTokens: GATEWAY_USAGE.completionTokens,
         model: GATEWAY_USAGE.model,
+        provider: GATEWAY_USAGE.provider,
         costCredits: GATEWAY_USAGE.credits,
         gatewayCorrelationId: "gw-stream-corr",
       });
@@ -188,6 +191,11 @@ describe("kb_ai_interactions — streaming vs non-streaming answered-path field 
   it("model carries the same value in both paths for the same provider response", () => {
     expect(streamRow.model).toBeDefined();
     expect(streamRow.model).toBe(askRow.model);
+  });
+
+  it("provider carries the same non-null value in both paths — an always-null provider column would pass field-set parity while recording nothing", () => {
+    expect(streamRow.provider).toBe("openai");
+    expect(streamRow.provider).toBe(askRow.provider);
   });
 
   it("promptTokens carries the same value in both paths for the same provider response", () => {

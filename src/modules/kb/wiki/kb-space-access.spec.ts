@@ -250,6 +250,15 @@ describe("KbSpacesService — space access for move operations (authorization co
       query: {
         kbSpaces: { findFirst: jest.fn().mockResolvedValue(spaceRow) },
       },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          leftJoin: jest.fn().mockReturnValue({
+            leftJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      }),
     } as unknown as Db;
 
     const access = {

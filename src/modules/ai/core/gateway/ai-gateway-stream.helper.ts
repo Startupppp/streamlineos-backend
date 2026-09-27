@@ -14,7 +14,7 @@ import { resolveGatewayTier } from "../routing/model-routing";
 import { classifyLlmError, resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { redactSensitiveData } from "../redaction.util";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
-import { milliToCredits } from "../billing/ai-model-pricing.constants";
+import { milliToCredits, providerOfModelId } from "../billing/ai-model-pricing.constants";
 import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { AiStreamBreaker, type AiStreamBreakerRedis } from "../streaming/ai-stream-breaker";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
@@ -57,7 +57,7 @@ export interface AiStreamTextOpts {
   model?: LanguageModel;
   modelId?: string;
   providerOptions?: ProviderOptions;
-  onCompleted?: (result: { text: string; promptTokens: number; completionTokens: number; model: string; costCredits: number; gatewayCorrelationId: string }) => Promise<void>;
+  onCompleted?: (result: { text: string; promptTokens: number; completionTokens: number; model: string; provider: string; costCredits: number; gatewayCorrelationId: string }) => Promise<void>;
 }
 
 export interface AiTextStream {
@@ -335,7 +335,7 @@ export class AiGatewayStreamHelper {
           }
           if (!opts.onCompleted) return;
           try {
-            await opts.onCompleted({ text, promptTokens, completionTokens, model: modelId, costCredits: milliToCredits(settledMilliCredits), gatewayCorrelationId: call.correlationId });
+            await opts.onCompleted({ text, promptTokens, completionTokens, model: modelId, provider: providerOfModelId(modelId), costCredits: milliToCredits(settledMilliCredits), gatewayCorrelationId: call.correlationId });
           } catch (err) {
             logger.error("AI stream completion hook failed", {
               error: err instanceof Error ? (err.stack ?? err.message) : String(err),

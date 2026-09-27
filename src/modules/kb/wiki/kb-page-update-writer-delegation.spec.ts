@@ -115,7 +115,7 @@ describe("KbPagesService.update — writer delegation", () => {
 
   it("calls writer.commitPageChange when content changes so the updated text is re-indexed and reaches search and Ask", async () => {
     const db = makeDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeService(db, writer);
 
@@ -138,7 +138,7 @@ describe("KbPagesService.update — writer delegation", () => {
 
   it("does not call writer.commitPageChange when only metadata (title) changes, proving the spy would catch a call if one occurred", async () => {
     const db = makeDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeService(db, writer);
 
@@ -149,7 +149,7 @@ describe("KbPagesService.update — writer delegation", () => {
 
   it("calls writer.commitPageChange when spaceId changes so the ACL revision is re-indexed after visibility moves to a new space", async () => {
     const db = makeDb();
-    const writer = new KbPageWriterService({} as never);
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined), log: jest.fn() } as never);
     const spy = jest.spyOn(writer, "commitPageChange").mockResolvedValue(undefined);
     const svc = makeService(db, writer);
 

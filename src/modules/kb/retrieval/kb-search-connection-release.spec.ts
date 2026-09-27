@@ -172,7 +172,7 @@ describe("KbSearchService.search — re-enters the tenant transaction for all DB
     trackingTxn();
 
     const svc = makeSearchService(db);
-    await svc.search(USER, { q: "hello world", page: 1, pageSize: 20 }, makeSearchScope() as never);
+    await svc.search(USER, { q: "hello world", pageSize: 20 }, makeSearchScope() as never);
 
     expect(txnMock()).toHaveBeenCalledWith(
       expect.anything(),
@@ -186,7 +186,7 @@ describe("KbSearchService.search — re-enters the tenant transaction for all DB
     trackingTxn();
 
     const svc = makeSearchService(db);
-    await svc.search(USER, { q: "hello world", page: 1, pageSize: 20 }, makeSearchScope() as never);
+    await svc.search(USER, { q: "hello world", pageSize: 20 }, makeSearchScope() as never);
 
     expect(txnMock()).toHaveBeenCalledTimes(1);
   });

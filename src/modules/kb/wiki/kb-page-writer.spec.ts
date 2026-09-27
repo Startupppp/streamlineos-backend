@@ -20,6 +20,7 @@ const TX = {} as never;
 const ORG_ID = "org-writer-spec";
 const PAGE_ID = 42;
 const ACTOR = { userId: "user-1", membershipId: 5 };
+const ACTION = "kb.page.updated";
 
 function makePage(over: Partial<{ id: number; title: string; contentRevision: number; aclRevision: number; contentText: string | null }> = {}) {
   return { id: PAGE_ID, title: "Test Page", contentRevision: 3, aclRevision: 2, contentText: "content", ...over };
@@ -34,7 +35,7 @@ describe("KbPageWriterService.commitPageChange — index event", () => {
 
   it("emits kb.content.index with the post-mutation revisions for every call, because the caller decides when re-indexing is warranted", async () => {
     const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
-    await makeWriter().commitPageChange(TX, { orgId: ORG_ID, actor: ACTOR, page: makePage(), changed: {} });
+    await makeWriter().commitPageChange(TX, { orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(), changed: {} });
     expect(emitSpy).toHaveBeenCalledWith(TX, expect.objectContaining({
       eventType: "kb.content.index",
       aggregateType: "kb_page",
@@ -45,7 +46,7 @@ describe("KbPageWriterService.commitPageChange — index event", () => {
 
   it("bites: removing OutboxWriter.emit from commitPageChange leaves the spy uncalled, proving the writer is the only path for kb_page index events emitted by create, duplicate, move, publish, archive, restore, and every method Lane 9 migrates", async () => {
     const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
-    await makeWriter().commitPageChange(TX, { orgId: ORG_ID, actor: ACTOR, page: makePage(), changed: {} });
+    await makeWriter().commitPageChange(TX, { orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(), changed: {} });
     expect(emitSpy).toHaveBeenCalled();
   });
 });
@@ -57,7 +58,7 @@ describe("KbPageWriterService.commitPageChange — content-change side effects",
     jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     const newContent = { type: "doc", content: [] };
     await makeWriter().commitPageChange(TX, {
-      orgId: ORG_ID, actor: ACTOR, page: makePage(),
+      orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(),
       changed: { content: { newContent, previousContent: null, changeSummary: "draft" } },
     });
     expect(snapshotIfNeeded).toHaveBeenCalledWith(
@@ -69,7 +70,7 @@ describe("KbPageWriterService.commitPageChange — content-change side effects",
   it("passes forced=true to snapshotIfNeeded when the caller sets it, as version-restore requires capturing the pre-overwrite state", async () => {
     jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     await makeWriter().commitPageChange(TX, {
-      orgId: ORG_ID, actor: ACTOR, page: makePage(),
+      orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(),
       changed: { content: { newContent: { type: "doc" }, previousContent: null, forced: true } },
     });
     expect((snapshotIfNeeded as jest.Mock).mock.calls[0]?.[5]).toBe(true);
@@ -79,7 +80,7 @@ describe("KbPageWriterService.commitPageChange — content-change side effects",
     jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     const newContent = { type: "doc", content: [] };
     await makeWriter().commitPageChange(TX, {
-      orgId: ORG_ID, actor: ACTOR, page: makePage(),
+      orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(),
       changed: { content: { newContent, previousContent: null } },
     });
     expect(resyncPageLinks).toHaveBeenCalledWith(TX, ORG_ID, PAGE_ID, newContent);
@@ -87,7 +88,7 @@ describe("KbPageWriterService.commitPageChange — content-change side effects",
 
   it("does not call snapshotIfNeeded or resyncPageLinks when changed.content is absent", async () => {
     jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
-    await makeWriter().commitPageChange(TX, { orgId: ORG_ID, actor: ACTOR, page: makePage(), changed: {} });
+    await makeWriter().commitPageChange(TX, { orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(), changed: {} });
     expect(snapshotIfNeeded).not.toHaveBeenCalled();
     expect(resyncPageLinks).not.toHaveBeenCalled();
   });
@@ -98,7 +99,7 @@ describe("KbPageWriterService.commitPageChange — content-change side effects",
       .mockReturnValueOnce(["user-existing"])
       .mockReturnValueOnce(["user-existing", "user-added"]);
     await makeWriter().commitPageChange(TX, {
-      orgId: ORG_ID, actor: ACTOR, page: makePage(),
+      orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(),
       changed: { content: { newContent: { type: "doc" }, previousContent: { type: "doc" } } },
     });
     expect(deferKbMentionNotifications).toHaveBeenCalledWith(
@@ -111,7 +112,7 @@ describe("KbPageWriterService.commitPageChange — content-change side effects",
     jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     (extractMentionUserIds as jest.Mock).mockReturnValue([]);
     await makeWriter().commitPageChange(TX, {
-      orgId: ORG_ID, actor: ACTOR, page: makePage(),
+      orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(),
       changed: { content: { newContent: { type: "doc" }, previousContent: null } },
     });
     expect(deferKbMentionNotifications).not.toHaveBeenCalled();
@@ -134,7 +135,7 @@ describe("KbPageWriterService.commitPageChange — covers all call patterns Lane
     if ("skipsCommitPageChange" in pattern) continue;
     it(`emits kb.content.index for: ${pattern.name}`, async () => {
       const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
-      await makeWriter().commitPageChange(TX, { orgId: ORG_ID, actor: ACTOR, page: makePage(), changed: pattern.changed });
+      await makeWriter().commitPageChange(TX, { orgId: ORG_ID, actor: ACTOR, action: ACTION, page: makePage(), changed: pattern.changed });
       expect(emitSpy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ eventType: "kb.content.index" }));
     });
   }

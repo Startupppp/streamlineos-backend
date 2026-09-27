@@ -628,6 +628,7 @@ describe("KbPageVisitsService.recordVisit — engagement does not trigger reinde
     await writer.commitPageChange({} as never, {
       orgId: ORG_ID,
       actor: { userId: "user-1", membershipId: null },
+      action: "kb.page.updated",
       page: {
         id: PAGE_ID,
         title: "T",

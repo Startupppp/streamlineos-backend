@@ -3,7 +3,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { kbHealthItems } from "../../../db/schema/kb/health-items";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { forEachOrg, type ForEachOrgResult } from "../../../common/tenant";
+import { forEachOrg } from "../../../common/tenant";
+import type { ForEachOrgResult } from "../../../common/tenant/for-each-org";
 import { type TenantTx } from "../../../db/drizzle.types";
 
 const RULE_VERSION = 1;

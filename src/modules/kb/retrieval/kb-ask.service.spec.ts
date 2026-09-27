@@ -618,6 +618,7 @@ describe("KbAskService", () => {
           promptTokens: number;
           completionTokens: number;
           model: string;
+          provider: string;
           costCredits: number;
           gatewayCorrelationId: string;
         }) => Promise<void>)
@@ -639,6 +640,7 @@ describe("KbAskService", () => {
       promptTokens: 10,
       completionTokens: 5,
       model: "gpt-4o-mini",
+      provider: "openai",
       costCredits: 1,
       gatewayCorrelationId: "gw-corr-stream-1",
     });

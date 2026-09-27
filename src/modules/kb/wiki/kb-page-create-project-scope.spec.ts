@@ -3,11 +3,11 @@ import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
 import { KbPageWriterService } from "./kb-page-writer.service";
 
-jest.mock("../../build/core/project-access", () => ({
+jest.mock("../../build/core/project-crud/project-access", () => ({
   resolveProjectAccess: jest.fn(),
 }));
 
-import { resolveProjectAccess } from "../../build/core/project-access";
+import { resolveProjectAccess } from "../../build/core";
 const mockResolveProjectAccess = resolveProjectAccess as jest.Mock;
 
 describe("KbPagesService.create — project scoping", () => {

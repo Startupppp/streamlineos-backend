@@ -19,7 +19,7 @@ import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { KbPageWriterService } from "./kb-page-writer.service";
 import { collectSubtreeIds } from "./kb-page-subtree.util";
-import { resolveProjectAccess } from "../../build/core/project-access";
+import { resolveProjectAccess } from "../../build/core";
 import {
   buildCursorPage,
   decodeCursor,
