@@ -1,7 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -116,10 +116,9 @@ function makeHarness(embed: EmbedBehaviour, resultQueue: unknown[][]) {
       buildArticleRestrictionBranch(ORG, { membershipId: MEMBERSHIP, roleSlugs: ["MEMBER"] }),
     ),
   };
-  const service = new KbSearchService(
+  const service = new KbSearchRetrievalService(
     db as never,
     embeddings as never,
-    { recordDetached: jest.fn().mockResolvedValue(undefined) } as never,
     new KbCandidateService(db as never),
     { scopeFor: jest.fn().mockResolvedValue("all") } as never,
     {

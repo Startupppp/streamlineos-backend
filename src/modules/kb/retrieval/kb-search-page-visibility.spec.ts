@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -106,10 +106,9 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
     auth: unknown,
     embeddings = makeEmbeddings(),
   ) =>
-    new KbSearchService(
+    new KbSearchRetrievalService(
       db as never,
       embeddings as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       auth as never,

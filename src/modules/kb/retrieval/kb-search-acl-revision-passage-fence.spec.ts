@@ -2,7 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import { KbCandidateService } from "./kb-candidate.service";
 
 const dialect = new PgDialect();
@@ -143,11 +143,10 @@ function makeEvents() {
   return { recordDetached: jest.fn().mockResolvedValue(undefined) };
 }
 
-function makeSvc(db: Record<string, jest.Mock>): KbSearchService {
-  return new KbSearchService(
+function makeSvc(db: Record<string, jest.Mock>): KbSearchRetrievalService {
+  return new KbSearchRetrievalService(
     db as never,
     makeEmbeddings() as never,
-    makeEvents() as never,
     new KbCandidateService(db as never),
     makeScopes() as never,
     makeAuth() as never,

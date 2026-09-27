@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -65,10 +65,9 @@ describe("KbSearchService — restriction enforcement", () => {
     const db = makeDb();
     const auth = makeAuth([1]);
 
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       auth as never,
@@ -85,10 +84,9 @@ describe("KbSearchService — restriction enforcement", () => {
     const db = makeDb();
     const auth = makeAuth([1]);
 
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       auth as never,
@@ -103,10 +101,9 @@ describe("KbSearchService — restriction enforcement", () => {
   it("asks the SECURITY DEFINER search function for ids before falling back to a scan", async () => {
     const db = makeDb([{ id: 7 }, { id: 9 }]);
 
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeAuth() as never,
@@ -123,10 +120,9 @@ describe("KbSearchService — restriction enforcement", () => {
     const db = makeDb();
     const auth = makeAuth([1]);
 
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       auth as never,
@@ -139,10 +135,9 @@ describe("KbSearchService — restriction enforcement", () => {
   it("skips article queries when space list is empty but still queries pages", async () => {
     const db = makeDb();
 
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeAuth([]) as never,

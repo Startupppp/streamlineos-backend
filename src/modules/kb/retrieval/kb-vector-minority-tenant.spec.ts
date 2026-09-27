@@ -1,5 +1,5 @@
 import { KbCandidateService } from "./kb-candidate.service";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { sql } from "drizzle-orm";
@@ -90,10 +90,9 @@ const makeKbAuth = () => ({
 describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterative scan first", () => {
   it("issues SET LOCAL hnsw.iterative_scan = relaxed_order before any vector query", async () => {
     const { db } = makeDb({ hasChunks: true });
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeKbAuth() as never,
@@ -114,10 +113,9 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
 
   it("primary path uses plain ANN (ORDER BY embedding) not the fence directly", async () => {
     const { db } = makeDb({ hasChunks: true });
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeKbAuth() as never,
@@ -136,10 +134,9 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
 
   it("retrieveTopSources also issues SET LOCAL before the vector query", async () => {
     const { db } = makeDb({ hasChunks: true });
-    const svc = new KbSearchService(
+    const svc = new KbSearchRetrievalService(
       db as never,
       makeEmbeddings() as never,
-      makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
       makeKbAuth() as never,
