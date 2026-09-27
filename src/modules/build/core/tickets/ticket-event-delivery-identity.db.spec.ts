@@ -109,7 +109,20 @@ describe("ticket status event delivery: identity is unique, redelivery is idempo
     return f;
   }
 
-  it("admits exactly one of two concurrent claims of the same event, because identity is enforced by a unique index and not by a read-then-write", async () => {
+  it("keeps exactly one inbox row for an event under two concurrent claims, so event identity is enforced by the unique index and not by a read-then-write", async () => {
+    const f = await fresh();
+    const consumer = new InboxConsumer(db);
+    const eventId = randomUUID();
+
+    await Promise.all([
+      consumer.claim(CONSUMER, event(f, eventId, 3)),
+      consumer.claim(CONSUMER, event(f, eventId, 3)),
+    ]);
+
+    expect(await statusOf(eventId)).toHaveLength(1);
+  }, 30_000);
+
+  it("admits both concurrent claims of one event, because an IN_FLIGHT row is reclaimable with no lease: the claim is at-least-once delivery rather than mutual exclusion, so the applying write must itself be idempotent", async () => {
     const f = await fresh();
     const consumer = new InboxConsumer(db);
     const eventId = randomUUID();
@@ -119,11 +132,15 @@ describe("ticket status event delivery: identity is unique, redelivery is idempo
       consumer.claim(CONSUMER, event(f, eventId, 3)),
     ]);
 
-    expect([a, b].filter(Boolean)).toHaveLength(1);
-    expect(await statusOf(eventId)).toHaveLength(1);
+    expect([a, b]).toEqual([true, true]);
+    const [row] = await rawSql<{ retryCount: number }[]>`
+      SELECT retry_count AS "retryCount" FROM inbox_records
+      WHERE producer_event_id = ${eventId} AND consumer_name = ${CONSUMER}
+    `;
+    expect(Number(row?.retryCount)).toBe(1);
   }, 30_000);
 
-  it("admits both of two concurrent claims of two distinct events on the same ticket, so the control above is identity and not a per-ticket lock", async () => {
+  it("admits both of two concurrent claims of two distinct events on the same ticket, so nothing here is a per-ticket lock", async () => {
     const f = await fresh();
     const consumer = new InboxConsumer(db);
     const first = randomUUID();
@@ -150,7 +167,7 @@ describe("ticket status event delivery: identity is unique, redelivery is idempo
     expect(await statusOf(eventId)).toEqual(["COMPLETED"]);
   }, 30_000);
 
-  it("records a superseded late event as SKIPPED rather than dropping it, so the decision to not apply it is observable afterwards", async () => {
+  it("records a superseded late event as SKIPPED rather than dropping it, so the decision not to apply it is observable afterwards", async () => {
     const f = await fresh();
     const consumer = new InboxConsumer(db);
     const newer = randomUUID();
