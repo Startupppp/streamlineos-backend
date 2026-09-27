@@ -446,7 +446,13 @@ export class KbSearchRetrievalService {
         eq(kbSources.orgId, user.orgId),
       ];
       if (spaceFilter) conditions.push(spaceFilter);
-      if (spaceId) conditions.push(or(isNull(kbSources.spaceId), eq(kbSources.spaceId, spaceId)));
+      if (spaceId) {
+        const spaceOrGlobal = or(
+          isNull(kbSources.spaceId),
+          eq(kbSources.spaceId, spaceId),
+        );
+        if (spaceOrGlobal) conditions.push(spaceOrGlobal);
+      }
       if (sourceIds && sourceIds.length > 0)
         conditions.push(inArray(kbSources.id, sourceIds));
       if (vector === null) conditions.push(this.chunkKeywordMatch(q));
