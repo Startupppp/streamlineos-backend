@@ -238,16 +238,16 @@ async function runAsk() {
       return Promise.resolve([ARTICLE]);
     });
   jest
-    .spyOn(searchRetrieval, "retrieveTopSources")
+    .spyOn(searchRetrieval, "retrieveTopSourcesWithOutcome")
     .mockImplementation((_user, _query, _limit, _sourceIds, embedding) => {
       seen.sources = embedding;
-      return Promise.resolve([SOURCE_DOCUMENT]);
+      return Promise.resolve({ kind: "ok" as const, results: [SOURCE_DOCUMENT] });
     });
   jest
-    .spyOn(searchRetrieval, "retrieveDocumentPassages")
+    .spyOn(searchRetrieval, "retrieveDocumentPassagesWithOutcome")
     .mockImplementation((_user, _query, _articleIds, _pageIds, embedding) => {
       seen.passages = embedding;
-      return Promise.resolve([DOCUMENT_PASSAGE]);
+      return Promise.resolve({ kind: "ok" as const, results: [DOCUMENT_PASSAGE] });
     });
 
   const retrieval = new KbRetrievalService(db as never, searchRetrieval, null);

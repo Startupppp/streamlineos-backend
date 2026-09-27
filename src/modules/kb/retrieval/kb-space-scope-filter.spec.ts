@@ -232,12 +232,18 @@ describe("KbRetrievalService.retrieve — spaceId is forwarded to retrieveTopSou
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
       retrieveTopSources: jest.fn().mockResolvedValue([]),
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
+      retrieveTopSourcesWithOutcome: jest
+        .fn()
+        .mockResolvedValue({ kind: "ok", results: [] }),
+      retrieveDocumentPassagesWithOutcome: jest
+        .fn()
+        .mockResolvedValue({ kind: "ok", results: [] }),
     };
     const service = new KbRetrievalService(db as never, search as never, null);
 
     await service.retrieve(makeUser(), QUERY, { spaceId: TEST_SPACE_ID });
 
-    expect(search.retrieveTopSources).toHaveBeenCalledWith(
+    expect(search.retrieveTopSourcesWithOutcome).toHaveBeenCalledWith(
       expect.anything(),
       QUERY,
       expect.any(Number),
@@ -256,12 +262,18 @@ describe("KbRetrievalService.retrieve — spaceId is forwarded to retrieveTopSou
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
       retrieveTopSources: jest.fn().mockResolvedValue([]),
       retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
+      retrieveTopSourcesWithOutcome: jest
+        .fn()
+        .mockResolvedValue({ kind: "ok", results: [] }),
+      retrieveDocumentPassagesWithOutcome: jest
+        .fn()
+        .mockResolvedValue({ kind: "ok", results: [] }),
     };
     const service = new KbRetrievalService(db as never, search as never, null);
 
     await service.retrieve(makeUser(), QUERY, {});
 
-    expect(search.retrieveTopSources).toHaveBeenCalledWith(
+    expect(search.retrieveTopSourcesWithOutcome).toHaveBeenCalledWith(
       expect.anything(),
       QUERY,
       expect.any(Number),

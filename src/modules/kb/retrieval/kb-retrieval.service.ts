@@ -10,6 +10,7 @@ import type {
   RetrievedSource,
   RetrievedSourceDocument,
   DegradableContextPassage,
+  RetrievalChannelKind,
 } from "./kb-search-retrieval.service";
 import {
   resolveKbRetrievalStrategy,
@@ -34,6 +35,10 @@ export interface KbRetrievalDegradation {
 
 export function isAnyChannelDegraded(d: KbRetrievalDegradation): boolean {
   return d.documents || d.sources || d.passages;
+}
+
+function channelSignalsDegradation(kind: RetrievalChannelKind): boolean {
+  return kind === "failed" || kind === "degraded";
 }
 
 export interface KbRetrievalResult {
@@ -89,10 +94,11 @@ export class KbRetrievalService {
 
     const embedding = await this.search.resolveQueryEmbedding(query, user.orgId);
 
-    const { documents, sources, passages } = await runInTenantTransaction(
+    const { documents, sources, passages, sourcesKind, passagesKind } =
+      await runInTenantTransaction(
       this.db,
       async () => {
-        const [docs, srcs] = await Promise.all([
+        const [docs, srcOutcome] = await Promise.all([
           this.search.retrieveTopArticles(
             user,
             query,
@@ -102,7 +108,7 @@ export class KbRetrievalService {
             embedding,
             opts.pageIds,
           ),
-          this.search.retrieveTopSources(
+          this.search.retrieveTopSourcesWithOutcome(
             user,
             query,
             opts.sourcesLimit ?? 4,
@@ -115,18 +121,24 @@ export class KbRetrievalService {
         const articleIds = docs.filter((d) => d.kind === "article").map((d) => d.id);
         const pageIds = docs.filter((d) => d.kind === "page").map((d) => d.id);
 
-        const psgs =
+        const psgOutcome =
           articleIds.length > 0 || pageIds.length > 0
-            ? await this.search.retrieveDocumentPassages(
+            ? await this.search.retrieveDocumentPassagesWithOutcome(
                 user,
                 query,
                 articleIds,
                 pageIds,
                 embedding,
               )
-            : [];
+            : { kind: "disabled" as const, results: [] };
 
-        return { documents: docs, sources: srcs, passages: psgs };
+        return {
+          documents: docs,
+          sources: srcOutcome.results,
+          passages: psgOutcome.results,
+          sourcesKind: srcOutcome.kind,
+          passagesKind: psgOutcome.kind,
+        };
       },
       { orgId: user.orgId },
     );
@@ -134,8 +146,14 @@ export class KbRetrievalService {
     const embeddingFailed = embedding.vectorLiteral === null;
     const degraded: KbRetrievalDegradation = {
       documents: embeddingFailed,
-      sources: embeddingFailed || sources.some((s) => s.degraded === true),
-      passages: embeddingFailed || passages.some((p) => p.degraded === true),
+      sources:
+        embeddingFailed ||
+        channelSignalsDegradation(sourcesKind) ||
+        sources.some((s) => s.degraded === true),
+      passages:
+        embeddingFailed ||
+        channelSignalsDegradation(passagesKind) ||
+        passages.some((p) => p.degraded === true),
     };
 
     return { documents, sources, passages, degraded, strategy };
