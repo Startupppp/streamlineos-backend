@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { CyclesService } from "./cycles.service";
 import { drizzlePostgresError } from "../../../test/postgres-error-fixture";
 import type { Db } from "../../../db/drizzle.module";
+import { cycleStatusEnum } from "../../../db/schema/common/enums";
 
 const ORG_ID = "org-cycle-62";
 const PROJECT_ID = 9;
@@ -12,14 +13,32 @@ const CREATE_INPUT = { name: "Q4 Sprint", startDate: "2026-10-01", endDate: "202
 const UPDATE_INPUT_ACTIVE = { status: "active" as const };
 const UPDATE_INPUT_DATES = { startDate: "2026-10-01", endDate: "2026-10-14" };
 
-const CYCLE_ROW = {
+type CycleRowStatus = (typeof cycleStatusEnum.enumValues)[number];
+
+type CycleRow = {
+  id: number;
+  orgId: string;
+  projectId: number;
+  name: string;
+  description: string | null;
+  goal: string | null;
+  status: CycleRowStatus;
+  startDate: string;
+  endDate: string;
+  createdBy: string;
+  deletedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const CYCLE_ROW: CycleRow = {
   id: CYCLE_ID,
   orgId: ORG_ID,
   projectId: PROJECT_ID,
   name: "Q4 Sprint",
   description: null,
   goal: null,
-  status: "draft" as const,
+  status: "draft",
   startDate: "2026-10-01",
   endDate: "2026-10-14",
   createdBy: USER_ID,
@@ -72,7 +91,7 @@ function makeUpdateError(error: unknown) {
   }));
 }
 
-function makeUpdateSuccess(rows: (typeof CYCLE_ROW)[] = [CYCLE_ROW]) {
+function makeUpdateSuccess(rows: CycleRow[] = [CYCLE_ROW]) {
   return jest.fn(() => ({
     set: jest.fn(() => ({
       where: jest.fn(() => ({
@@ -151,7 +170,7 @@ describe("CyclesService — constraint violation translation", () => {
     });
 
     it("positive control: a successful activation returns the updated cycle", async () => {
-      const active = { ...CYCLE_ROW, status: "active" as const };
+      const active: CycleRow = { ...CYCLE_ROW, status: "active" };
       const db = {
         select: makeSelectEmpty(),
         update: makeUpdateSuccess([active]),

@@ -21,6 +21,10 @@ const actor: CurrentUserContext = {
 
 type Row = Awaited<ReturnType<typeof readMutationTickets>>[number];
 
+function versionsAfterBump(rows: readonly Row[]): ReadonlyMap<number, number> {
+  return new Map(rows.map((row) => [row.id, row.version + 1]));
+}
+
 function makeRow(id: number, status: string): Row {
   return { id, status, version: 1, assigneeMembershipId: null, dueDate: null, priority: "MEDIUM",
     points: null, epicId: null, cycleId: null, rank: String(id * 1000), allowed: true };
@@ -93,7 +97,7 @@ describe("emitBatchStatusChanges — outbox events emitted only for transitionin
     const insertValues = jest.fn().mockResolvedValue(undefined);
     const db = { insert: jest.fn().mockReturnValue({ values: insertValues }) } as unknown as Db;
 
-    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date());
+    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date(), versionsAfterBump(rows));
 
     expect(insertValues).toHaveBeenCalledTimes(1);
     const emitted: Array<{aggregateId: string; payload: {previousStatus: string}}> =
@@ -110,7 +114,7 @@ describe("emitBatchStatusChanges — outbox events emitted only for transitionin
     const insertValues = jest.fn().mockResolvedValue(undefined);
     const db = { insert: jest.fn().mockReturnValue({ values: insertValues }) } as unknown as Db;
 
-    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date());
+    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date(), versionsAfterBump(rows));
 
     expect(db.insert).not.toHaveBeenCalled();
   });
@@ -120,7 +124,7 @@ describe("emitBatchStatusChanges — outbox events emitted only for transitionin
     const insertValues = jest.fn().mockResolvedValue(undefined);
     const db = { insert: jest.fn().mockReturnValue({ values: insertValues }) } as unknown as Db;
 
-    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date());
+    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date(), versionsAfterBump(rows));
 
     const emitted: Array<{payload: {previousStatus: string; newStatus: string}}> =
       insertValues.mock.calls[0]?.[0] ?? [];
@@ -129,15 +133,28 @@ describe("emitBatchStatusChanges — outbox events emitted only for transitionin
     expect(emitted.every(e => e.payload.newStatus === "DONE")).toBe(true);
   });
 
-  it("increments aggregateVersion beyond the stored row version in each event", async () => {
+  it("carries the version the database returned for the row, not a recomputed one", async () => {
     const rows = [makeRow(1, "TODO")];
     if (rows[0]) rows[0].version = 5;
     const insertValues = jest.fn().mockResolvedValue(undefined);
     const db = { insert: jest.fn().mockReturnValue({ values: insertValues }) } as unknown as Db;
 
-    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date());
+    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date(), versionsAfterBump(rows));
 
     const emitted: Array<{aggregateVersion: number}> = insertValues.mock.calls[0]?.[0] ?? [];
     expect(emitted[0]?.aggregateVersion).toBe(6);
+  });
+
+  it("drops the event for a transitioning row absent from the version map, which is a silent loss worth knowing about", async () => {
+    const rows = [makeRow(1, "TODO"), makeRow(2, "TODO")];
+    const insertValues = jest.fn().mockResolvedValue(undefined);
+    const db = { insert: jest.fn().mockReturnValue({ values: insertValues }) } as unknown as Db;
+    const partial: ReadonlyMap<number, number> = new Map([[1, 2]]);
+
+    await emitBatchStatusChanges(db, actor, PROJECT_ID, rows, "DONE", new Date(), partial);
+
+    const emitted: Array<{aggregateId: string}> = insertValues.mock.calls[0]?.[0] ?? [];
+    expect(emitted.map((e) => e.aggregateId)).toEqual(["1"]);
+    expect(emitted).toHaveLength(1);
   });
 });
