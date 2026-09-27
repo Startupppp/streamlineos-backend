@@ -23,7 +23,7 @@ describe("Expenses import auth/RBAC (e2e)", () => {
     // tier, so a fully-permissioned caller still gets 402 here rather than 200.
     const token = await signToken({
       permissions: ["hr:expenses:manage"],
-      enabledModules: ALL_MODULES.filter((m) => m !== "accounting"),
+      enabledModules: ALL_MODULES.filter((m) => m !== "hr"),
     });
     const res = await request(app.getHttpServer())
       .post("/hr/expenses/import")
@@ -33,21 +33,21 @@ describe("Expenses import auth/RBAC (e2e)", () => {
     expect(res.status).toBe(402);
     expect(res.body).toMatchObject({
       code: "MODULE_NOT_ENABLED",
-      details: { moduleKey: "accounting" },
+      details: { moduleKey: "hr" },
     });
     expect(typeof res.body.message).toBe("string");
     expect(["not-in-plan", "org-disabled", "user-denied"]).toContain(res.body.details.reason);
     // upgradePath is always present; it names the billing page only when the denial is
     // the plan's, which is the branch pinned below (the e2e fixture org has no
-    // org_modules row for accounting, so this request denies as org-disabled).
+    // org_modules row for hr, so this request denies as org-disabled).
     expect(Object.keys(res.body.details)).toContain("upgradePath");
   });
 
   it("the plan-locked denial the route raises carries the billing upgradePath", () => {
-    const body = new ModuleDisabledException("accounting", "not-in-plan").getResponse();
+    const body = new ModuleDisabledException("hr", "not-in-plan").getResponse();
     expect(body).toMatchObject({
       code: "MODULE_NOT_ENABLED",
-      details: { moduleKey: "accounting", reason: "not-in-plan", upgradePath: "/settings/billing" },
+      details: { moduleKey: "hr", reason: "not-in-plan", upgradePath: "/settings/billing" },
     });
   });
 

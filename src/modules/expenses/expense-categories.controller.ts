@@ -15,7 +15,7 @@ import {
 } from "./dto/expenses-response.schemas";
 import { z } from "zod";
 
-@RequireModule("accounting")
+@RequireModule("hr")
 @Controller("hr/expenses/categories")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ExpenseCategoriesController {

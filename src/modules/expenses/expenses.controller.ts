@@ -73,7 +73,7 @@ import { successSchema } from "../../common/openapi/response-envelopes";
 const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
 const jobIdParams = z.object({ jobId: z.string().uuid() }).strict();
 
-@RequireModule("accounting")
+@RequireModule("hr")
 @Controller("hr/expenses")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ExpensesController {
