@@ -88,6 +88,7 @@ export const updateCycleSchema = z
       .string()
       .max(500, "Description must be 500 characters or fewer")
       .optional(),
+    goal: z.string().max(500, "Goal must be 500 characters or fewer").optional(),
     status: z.enum(["draft", "active", "completed"]).optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
