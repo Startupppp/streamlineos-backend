@@ -125,6 +125,7 @@ export const projectMilestones = build.table("project_milestones", {
   status: text("status").notNull().default("PENDING"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   clientVisible: boolean("client_visible").notNull().default(false),
+  version: integer("version").notNull().default(1),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

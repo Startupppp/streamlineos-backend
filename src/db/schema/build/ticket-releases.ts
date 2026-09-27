@@ -22,6 +22,7 @@ export const projectReleases = build.table(
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    rowVersion: integer("row_version").notNull().default(1),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

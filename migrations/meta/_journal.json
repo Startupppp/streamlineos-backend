@@ -7050,6 +7050,13 @@
       "when": 1803093623725,
       "tag": "1392_rls_managed_product_memberships",
       "breakpoints": true
+    },
+    {
+      "idx": 1135,
+      "version": "7",
+      "when": 1803093624725,
+      "tag": "1395_sibling_version_columns",
+      "breakpoints": true
     }
   ]
 }

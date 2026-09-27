@@ -31,6 +31,7 @@ export const createReleaseSchema = z.object({
 }).strict();
 
 export const updateReleaseSchema = z.object({
+  rowVersion: z.number().int().positive(),
   name: releaseNameSchema.optional(),
   version: releaseVersionSchema.optional(),
   description: z.string().max(10000, "Release notes must be 10,000 characters or fewer").optional().nullable(),

@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CreateCycleInput, CycleListQuery, UpdateCycleInput } from "./dto/iterations.schemas";
 import { assertProjectInOrg } from "../core/project-access";
 import { sqlstateOf } from "../../../common/observability/error-classification";
+import { TicketVersionConflictException } from "../core/ticket-version-conflict.exception";
 
 @Injectable()
 export class CyclesService {
@@ -26,6 +27,7 @@ export class CyclesService {
         startDate: cycles.startDate,
         endDate: cycles.endDate,
         status: cycles.status,
+        version: cycles.version,
         createdBy: cycles.createdBy,
         createdAt: cycles.createdAt,
         updatedAt: cycles.updatedAt,
@@ -123,6 +125,13 @@ export class CyclesService {
 
   async updateCycle(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput) {
     await assertProjectInOrg(this.db, orgId, projectId);
+    const before = await this.db.query.cycles.findFirst({
+      where: and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)),
+      columns: { version: true },
+    });
+    if (!before) throw new NotFoundException("Cycle not found");
+    if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
+
     if (input.status === "active") {
       const [existing] = await this.db
         .select({ id: cycles.id })
@@ -136,12 +145,13 @@ export class CyclesService {
         throw new ConflictException("Only one active cycle is allowed at a time per project.");
     }
 
+    const { version: _v, ...rest } = input;
     let updated: (typeof cycles.$inferSelect) | undefined;
     try {
       [updated] = await this.db
         .update(cycles)
-        .set({ ...input, updatedAt: new Date() })
-        .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
+        .set({ ...rest, updatedAt: new Date() })
+        .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), eq(cycles.version, before.version)))
         .returning();
     } catch (error: unknown) {
       if (sqlstateOf(error) === "23505")
@@ -151,7 +161,10 @@ export class CyclesService {
       throw error;
     }
 
-    if (!updated) throw new NotFoundException("Cycle not found");
+    if (!updated) {
+      const [current] = await this.db.select({ version: cycles.version }).from(cycles).where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId))).limit(1);
+      throw new TicketVersionConflictException(current?.version ?? before.version);
+    }
     return updated;
   }
 

@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 import {
   and,
   asc,
@@ -323,18 +324,30 @@ export class ProjectsRoadmapService {
     input: UpdateRoadmapInput,
   ) {
     await assertRoadmapTargetsInOrg(this.db, orgId, input);
+    const before = await this.db.query.roadmapItems.findFirst({
+      where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
+      columns: { version: true },
+    });
+    if (!before) throw new NotFoundException("Roadmap item not found");
+    if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
+
+    const { version: _v, ...rest } = input;
     const [updated] = await this.db
       .update(roadmapItems)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...rest, updatedAt: new Date() })
       .where(
         and(
           eq(roadmapItems.id, itemId),
           eq(roadmapItems.orgId, orgId),
           isNull(roadmapItems.deletedAt),
+          eq(roadmapItems.version, before.version),
         ),
       )
       .returning();
-    if (!updated) throw new NotFoundException("Roadmap item not found");
+    if (!updated) {
+      const [current] = await this.db.select({ version: roadmapItems.version }).from(roadmapItems).where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId))).limit(1);
+      throw new TicketVersionConflictException(current?.version ?? before.version);
+    }
     return withPrioritization(
       updated,
       await this.accountTiersOf(orgId, updated.id),

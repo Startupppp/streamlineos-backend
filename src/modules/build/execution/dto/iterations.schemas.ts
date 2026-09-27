@@ -82,6 +82,7 @@ export const createCycleSchema = z
 
 export const updateCycleSchema = z
   .object({
+    version: z.number().int().positive(),
     name: cycleNameSchema.optional(),
     description: z
       .string()
@@ -157,6 +158,7 @@ export const createModuleSchema = z
 
 export const updateModuleSchema = z
   .object({
+    version: z.number().int().positive(),
     name: moduleNameSchema.optional(),
     description: z
       .string()
@@ -196,6 +198,7 @@ export const createEpicSchema = z.object({
 }).strict();
 
 export const updateEpicSchema = z.object({
+  version: z.number().int().positive(),
   title: z.string().min(1).optional(),
   description: z.string().optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),

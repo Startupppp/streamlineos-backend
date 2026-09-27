@@ -1,4 +1,5 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
+import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -40,6 +41,7 @@ export class ProjectsReleasesService {
         projectId: projectReleases.projectId,
         name: projectReleases.name,
         version: projectReleases.version,
+        rowVersion: projectReleases.rowVersion,
         description: projectReleases.description,
         status: projectReleases.status,
         releaseDate: projectReleases.releaseDate,
@@ -79,6 +81,7 @@ export class ProjectsReleasesService {
         projectId: projectReleases.projectId,
         name: projectReleases.name,
         version: projectReleases.version,
+        rowVersion: projectReleases.rowVersion,
         description: projectReleases.description,
         status: projectReleases.status,
         releaseDate: projectReleases.releaseDate,
@@ -123,11 +126,19 @@ export class ProjectsReleasesService {
   async updateRelease(u: CurrentUserContext, projectId: number, releaseId: number, data: UpdateReleaseInput) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
+    const before = await this.db.query.projectReleases.findFirst({
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
+      columns: { rowVersion: true },
+    });
+    if (!before) throw new NotFoundException("Release not found");
+    if (data.rowVersion !== before.rowVersion) throw new TicketVersionConflictException(before.rowVersion);
+
+    const { rowVersion: _rv, ...rest } = data;
     const rows = await this.db.transaction(async (tx) => {
       const result = await tx
         .update(projectReleases)
-        .set(data)
-        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
+        .set(rest)
+        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt), eq(projectReleases.rowVersion, before.rowVersion)))
         .returning();
       const row = result[0];
       if (row && data.status === "released") {
@@ -151,7 +162,10 @@ export class ProjectsReleasesService {
       return result;
     });
     const updated = rows[0];
-    if (!updated) throw new NotFoundException("Release not found");
+    if (!updated) {
+      const [current] = await this.db.select({ rowVersion: projectReleases.rowVersion }).from(projectReleases).where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId))).limit(1);
+      throw new TicketVersionConflictException(current?.rowVersion ?? before.rowVersion);
+    }
     const [counted] = await this.db
       .select({ ticketCount: sql<number>`CAST(COUNT(*) AS INT)` })
       .from(releaseTickets)

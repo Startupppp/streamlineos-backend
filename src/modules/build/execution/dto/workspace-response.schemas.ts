@@ -12,6 +12,7 @@ export const milestoneRowSchema = z.object({
   status: z.string().nullable(),
   createdBy: z.string().nullable(),
   clientVisible: z.boolean(),
+  version: z.number().int(),
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),

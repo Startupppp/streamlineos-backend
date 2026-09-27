@@ -60,6 +60,7 @@ export const roadmapItems = build.table(
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

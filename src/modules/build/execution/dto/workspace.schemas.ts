@@ -26,6 +26,7 @@ export const createMilestoneSchema = z.object({
 }).strict();
 
 export const updateMilestoneSchema = z.object({
+  version: z.number().int().positive(),
   name: z.string().min(1, "Name is required").trim().max(200).optional(),
   description: z.string().max(1000).optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format").optional(),

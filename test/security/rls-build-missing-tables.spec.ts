@@ -1,23 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 
-/**
- * Validates that migrations 1390, 1391, and 1392 each enable RLS and install a
- * tenant_isolation policy on the three build tables that were identified in CCG-7
- * as running without any policy.
- *
- * These are static content checks on the migration files themselves, not live
- * database probes. Live verification (as the app role, with and without the tenant
- * GUC) must be performed by the orchestrator using db:verify-rls.
- *
- * Each migration must: (a) ENABLE ROW LEVEL SECURITY on the qualified table,
- * (b) define a tenant_isolation policy using org_id = app.current_org_id(), and
- * (c) carry a GRANT to streamline_app.
- *
- * Each rollback must: (a) DROP POLICY IF EXISTS tenant_isolation and
- * (b) DISABLE ROW LEVEL SECURITY.
- */
-
 const MIGRATIONS_DIR = join(__dirname, "..", "..", "migrations");
 
 function readMigration(name: string): string {
@@ -27,21 +10,21 @@ function readMigration(name: string): string {
 const CASES = [
   {
     migration: "1390_rls_project_updates.sql",
-    rollback: "1390_rls_project_updates_rollback.sql",
+    rollback: "rollback/1390_rls_project_updates.down.sql",
     schema: "build",
     table: "project_updates",
     number: "1390",
   },
   {
     migration: "1391_rls_project_attachments.sql",
-    rollback: "1391_rls_project_attachments_rollback.sql",
+    rollback: "rollback/1391_rls_project_attachments.down.sql",
     schema: "build",
     table: "project_attachments",
     number: "1391",
   },
   {
     migration: "1392_rls_managed_product_memberships.sql",
-    rollback: "1392_rls_managed_product_memberships_rollback.sql",
+    rollback: "rollback/1392_rls_managed_product_memberships.down.sql",
     schema: "build",
     table: "managed_product_memberships",
     number: "1392",

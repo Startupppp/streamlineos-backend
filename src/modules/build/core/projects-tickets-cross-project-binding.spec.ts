@@ -254,7 +254,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
     const { svc, transaction } = makeUpdate(makeTickets());
 
     await expect(
-      svc.updateTicket(makeU(OTHER_ORG), null, TICKET_A, { title: "hijacked" }),
+      svc.updateTicket(makeU(OTHER_ORG), null, TICKET_A, { version: 1, title: "hijacked" }),
     ).rejects.toThrow(NotFoundException);
     expect(transaction).not.toHaveBeenCalled();
   });
@@ -271,7 +271,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
     );
 
     await expect(
-      svc.updateTicket(makeU(), null, TICKET_B, { title: "renamed" }),
+      svc.updateTicket(makeU(), null, TICKET_B, { version: 1, title: "renamed" }),
     ).resolves.toMatchObject({ updated: true });
     expect(transaction).toHaveBeenCalledTimes(1);
   });
@@ -308,7 +308,7 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
       {} as never,
       {} as never,
       {} as never,
-      { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }) } as never,
+      {} as never,
       {} as never,
       {} as never,
       { enqueue: jest.fn().mockResolvedValue(undefined) } as never,

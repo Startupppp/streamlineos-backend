@@ -47,6 +47,7 @@ export const createRoadmapSchema = z.object({
 }).strict();
 
 export const updateRoadmapSchema = z.object({
+  version: z.number().int().positive(),
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(5000).nullable().optional(),
   status: z

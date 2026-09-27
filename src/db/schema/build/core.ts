@@ -139,6 +139,7 @@ export const cycles = build.table(
       .references(() => users.id)
       .notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -179,6 +180,7 @@ export const modules = build.table(
     createdBy: text("created_by")
       .references(() => users.id)
       .notNull(),
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

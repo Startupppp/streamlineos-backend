@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { TicketVersionConflictException } from "../core/ticket-version-conflict.exception";
 import { and, asc, desc, eq, gte, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   intakeItems,
@@ -52,6 +53,7 @@ export class MilestonesService {
         status: projectMilestones.status,
         createdBy: projectMilestones.createdBy,
         clientVisible: projectMilestones.clientVisible,
+        version: projectMilestones.version,
         deletedAt: projectMilestones.deletedAt,
         createdAt: projectMilestones.createdAt,
         updatedAt: projectMilestones.updatedAt,
@@ -94,12 +96,23 @@ export class MilestonesService {
   }
 
   async updateMilestone(orgId: string, projectId: number, milestoneId: number, input: UpdateMilestoneInput) {
+    const before = await this.db.query.projectMilestones.findFirst({
+      where: and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
+      columns: { version: true },
+    });
+    if (!before) throw new NotFoundException("Milestone not found");
+    if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
+
+    const { version: _v, ...rest } = input;
     const [updated] = await this.db
       .update(projectMilestones)
-      .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
+      .set({ ...rest, updatedAt: new Date() })
+      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt), eq(projectMilestones.version, before.version)))
       .returning();
-    if (!updated) throw new NotFoundException("Milestone not found");
+    if (!updated) {
+      const [current] = await this.db.select({ version: projectMilestones.version }).from(projectMilestones).where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId))).limit(1);
+      throw new TicketVersionConflictException(current?.version ?? before.version);
+    }
     return updated;
   }
 

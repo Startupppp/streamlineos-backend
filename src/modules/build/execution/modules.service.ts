@@ -19,6 +19,7 @@ import {
   buildTupleCursorPage,
   decodeTupleCursor,
 } from "../../../common/pagination/cursor";
+import { TicketVersionConflictException } from "../core/ticket-version-conflict.exception";
 
 @Injectable()
 export class ModulesService {
@@ -44,6 +45,7 @@ export class ModulesService {
         leadId: modules.leadId,
         endDate: modules.endDate,
         startDate: modules.startDate,
+        version: modules.version,
         createdBy: modules.createdBy,
         projectId: modules.projectId,
         createdAt: modules.createdAt,
@@ -161,19 +163,31 @@ export class ModulesService {
     moduleId: number,
     input: UpdateModuleInput,
   ) {
+    const before = await this.db.query.modules.findFirst({
+      where: and(eq(modules.id, moduleId), eq(modules.projectId, projectId), eq(modules.orgId, orgId)),
+      columns: { version: true },
+    });
+    if (!before) throw new NotFoundException("Module not found");
+    if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
+
+    const { version: _v, ...rest } = input;
     const [updated] = await this.db
       .update(modules)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...rest, updatedAt: new Date() })
       .where(
         and(
           eq(modules.id, moduleId),
           eq(modules.projectId, projectId),
           eq(modules.orgId, orgId),
+          eq(modules.version, before.version),
         ),
       )
       .returning();
 
-    if (!updated) throw new NotFoundException("Module not found");
+    if (!updated) {
+      const [current] = await this.db.select({ version: modules.version }).from(modules).where(and(eq(modules.id, moduleId), eq(modules.orgId, orgId))).limit(1);
+      throw new TicketVersionConflictException(current?.version ?? before.version);
+    }
     return updated;
   }
 

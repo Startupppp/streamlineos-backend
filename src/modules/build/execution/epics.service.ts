@@ -7,6 +7,7 @@ import type { CreateEpicInput, UpdateEpicInput } from "./dto/iterations.schemas"
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { assertProjectInOrg } from "../core/project-access";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
+import { TicketVersionConflictException } from "../core/ticket-version-conflict.exception";
 
 @Injectable()
 export class EpicsService {
@@ -59,9 +60,17 @@ export class EpicsService {
   }
 
   async updateEpic(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput) {
+    const before = await this.db.query.tickets.findFirst({
+      where: and(eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, "EPIC"), isNull(tickets.deletedAt)),
+      columns: { version: true },
+    });
+    if (!before) throw new NotFoundException("Epic not found");
+    if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
+
+    const { version: _v, ...rest } = input;
     const [updated] = await this.db
       .update(tickets)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...rest, updatedAt: new Date() })
       .where(
         and(
           eq(tickets.id, epicId),
@@ -69,10 +78,14 @@ export class EpicsService {
           eq(tickets.projectId, projectId),
           eq(tickets.type, "EPIC"),
           isNull(tickets.deletedAt),
+          eq(tickets.version, before.version),
         ),
       )
       .returning();
-    if (!updated) throw new NotFoundException("Epic not found");
+    if (!updated) {
+      const [current] = await this.db.select({ version: tickets.version }).from(tickets).where(and(eq(tickets.id, epicId), eq(tickets.orgId, orgId))).limit(1);
+      throw new TicketVersionConflictException(current?.version ?? before.version);
+    }
     return updated;
   }
 

@@ -1,55 +1,4 @@
 #!/usr/bin/env node
-/**
- * check-build-swallowed-writes.mjs
- *
- * Detects bare catch blocks that swallow errors from direct database writes inside
- * the Build module's service layer.
- *
- * THE DEFECT THIS CATCHES
- * `runInTenantTransaction` (tenant-context.interceptor.ts) wraps the whole HTTP
- * handler in one PostgreSQL transaction. `this.db` is a Proxy that routes every
- * statement into that ambient transaction. PostgreSQL aborts the WHOLE transaction
- * on any failed statement, so a try/catch around `await this.db.insert(...)` that
- * does not re-throw leaves the outer transaction in an aborted state. Every later
- * statement in the same request also fails, the commit becomes a rollback, and the
- * handler still returns 200. The user sees a change, reloads, and it is gone.
- *
- * WHAT THIS SCAN DETECTS
- * In every *.service.ts file under src/modules/build:
- *   try {
- *     ... await (this.db | tx | savepoint).(insert|update|delete|execute|transaction)(...)
- *   } catch {
- *     // no throw
- *   }
- *
- * WHAT THIS SCAN CANNOT SEE
- * - Indirect DB writes through service method chains. The five sites fixed by
- *   ticket 38 wrapped calls to this.activity.logTicketActivity and
- *   this.activity.processCommentMentions — methods that internally call this.db.
- *   The outer try/catch was the defect; the fix was withSavepoint(), which makes
- *   each effect run in its own SAVEPOINT so a failure rolls back only the savepoint
- *   and leaves the ambient transaction intact. A text scan cannot see the chain
- *   this.activity -> this.db, and the fixed pattern no longer contains a bare
- *   try/catch at all.
- * - DB writes via the .catch() promise method rather than a try/catch block.
- *   projects-activity.service.ts:457 uses .catch() on a notification dispatch.
- *   That site is outside the Build write path and was excluded from this gate.
- * - Runtime-resolved database handles (e.g., this[dbKey]).
- * - Generated or indirect forms that a text scan cannot enumerate.
- *
- * RATCHET
- * SWALLOWED_BASELINE is the number of hits allowed. It starts at the count of
- * pre-existing violations outside the ticket-38 territory that were confirmed
- * after the five ticket-38 sites were fixed. It may only go down.
- *
- * Usage:
- *   node src/scripts/check-build-swallowed-writes.mjs [--self-test] [--list]
- *
- * Exit codes:
- *   0 — no new violations above the baseline
- *   1 — violations above the baseline
- *   2 — scan walked nothing (vacuity guard)
- */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
@@ -63,27 +12,6 @@ const BUILD_ROOT = join(BACKEND_ROOT, "src/modules/build");
 
 const MIN_SERVICE_FILES = 30;
 
-/**
- * Confirmed remaining hits (file : line):
- *   src/modules/build/import-export/ticket-import.service.ts:201   — safe: the callback passed to
- *     this.db.transaction() throws on any failure; Drizzle calls ROLLBACK TO SAVEPOINT and rethrows;
- *     the outer catch converts the error to ROLLED_BACK outcomes; the ambient request tx is intact.
- *   src/modules/build/import-export/ticket-import.service.ts:239   — safe: same mechanism; per-batch
- *     try wraps this.db.transaction() whose callback throws; each batch's SAVEPOINT is rolled back
- *     cleanly; failing batches become FAILED rows; subsequent batches succeed; outer tx intact.
- *
- * Fixed by lane 14 (ticket 38, 2026-09-27):
- *   src/modules/build/core/build-automation-run-history.service.ts:75   — withSavepoint wraps insert+update
- *   src/modules/build/core/build-automation-run-history.service.ts:129  — withSavepoint wraps insert
- *   src/modules/build/core/projects-activity.service.ts:428             — withSavepoint wraps insert
- *   src/modules/build/core/projects-tickets-transfer.service.ts:197     — tx.transaction().catch() per chunk
- *
- * Previous baseline of 6 (measured 2026-09-27) is superseded — not wrong, but now fixed.
- * The earlier value of 4 was wrong; 6 was the first accurate measurement.
- *
- * Indirect swallowed writes (gate cannot see):
- *   src/modules/build/core/projects-tickets-update.service.ts:343  ← indirect call; not caught by DB_WRITE_RE
- */
 const SWALLOWED_BASELINE = 2;
 
 function walk(dir, out) {
@@ -97,7 +25,6 @@ function walk(dir, out) {
   return out;
 }
 
-/** Balance from an opening bracket at `open`, skipping string contents. */
 function balance(text, open) {
   const pairs = { "(": ")", "{": "}", "[": "]" };
   const close = pairs[text[open]];

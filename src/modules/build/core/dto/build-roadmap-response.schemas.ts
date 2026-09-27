@@ -28,6 +28,7 @@ export const roadmapItemSchema = z.object({
   impact: z.number().int().nullable(),
   confidence: z.number().int().nullable(),
   effort: z.number().int().nullable(),
+  version: z.number().int(),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
