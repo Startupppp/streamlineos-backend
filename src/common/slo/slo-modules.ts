@@ -91,12 +91,6 @@ const MODULE_SLO_OWNERSHIP: readonly ModuleOwnership[] = [
     writeSurface: "checkout, verification and credit settlement",
   },
   {
-    module: "kb",
-    owner: "knowledge-team",
-    readSurface: "space, page and retrieval reads",
-    writeSurface: "page authoring, publish and reindex",
-  },
-  {
     module: "blog",
     owner: "knowledge-team",
     readSurface: "public post reads",

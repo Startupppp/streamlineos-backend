@@ -166,8 +166,8 @@ describe("SLO catalogue", () => {
 
     const missing = inScope.filter(
       (id) =>
-        !MODULE_SLOS.some((slo) => slo.subject === id && slo.id.endsWith(":read")) ||
-        !MODULE_SLOS.some((slo) => slo.subject === id && slo.id.endsWith(":write")),
+        !SLO_CATALOGUE.some((slo) => slo.subject === id && slo.id.endsWith(":read")) ||
+        !SLO_CATALOGUE.some((slo) => slo.subject === id && slo.id.endsWith(":write")),
     );
     expect(missing).toEqual([]);
   });
@@ -229,6 +229,8 @@ describe("SLO catalogue", () => {
     const files: Record<string, string> = {
       FAILURE_RUNBOOK:
         "architecture-refactor/prd/completion-plan.md",
+      KB_OBS_RUNBOOK:
+        "docs/specs/knowledge-base/KB-OBSERVABILITY-RUNBOOK.md",
     };
     const base =
       "architecture-refactor/prd/completion-plan.md";

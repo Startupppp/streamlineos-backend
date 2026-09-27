@@ -1,4 +1,4 @@
-import { ALERT_RUNBOOK, type ServiceLevelObjective } from "./slo-types";
+import { KB_ALERT_RUNBOOK, type ServiceLevelObjective } from "./slo-types";
 
 export const KB_ASK_SPAN = "kb.ask.operation";
 
@@ -30,7 +30,7 @@ export const KB_ASK_SLO: ServiceLevelObjective = {
   },
   owner: "knowledge-team",
   alertId: "kb-ask",
-  runbookFile: ALERT_RUNBOOK,
+  runbookFile: KB_ALERT_RUNBOOK,
   runbookAnchor: "#kb-ask",
 };
 

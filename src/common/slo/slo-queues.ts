@@ -191,6 +191,13 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     owner: "platform-reliability",
     channel: "job",
   },
+  {
+    id: "kb-import-process",
+    sourceFile: "src/modules/kb/wiki/kb-import-process.consumer.ts",
+    drains: "outbox_events",
+    owner: "knowledge-team",
+    channel: "outbox",
+  },
 ];
 
 function freshnessObjective(subject: QueueSubject): ServiceLevelObjective {
