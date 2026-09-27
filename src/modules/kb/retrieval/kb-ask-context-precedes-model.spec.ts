@@ -1,4 +1,4 @@
-import { restrictToCited, type AskCitation } from "./kb-ask.service";
+import { restrictToCited, type AskCitation } from "./kb-ask-context";
 
 type Top = { kind: "article" | "page"; id: number; title: string };
 type Source = { sourceId: number; title: string };

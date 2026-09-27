@@ -3,6 +3,7 @@ import { getTableName, type SQL, sql } from "drizzle-orm";
 import { NotFoundException } from "@nestjs/common";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
+import { KbAskCitationService } from "./kb-ask-citations.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbCandidateService } from "./kb-candidate.service";
 import { humanSessionPrincipal, actingMembershipId } from "../../../common/auth/principal";
@@ -179,18 +180,26 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       updatedAt: new Date("2024-01-01"),
     }));
     jest.spyOn(search, "aclCacheOutcome").mockResolvedValue("bypass");
-    jest.spyOn(search, "resolveQueryEmbedding").mockResolvedValue({ vectorLiteral: null });
-    jest.spyOn(search, "retrieveTopArticles").mockResolvedValue(retrieved);
-    jest.spyOn(search, "retrieveTopSources").mockResolvedValue([]);
-    jest.spyOn(search, "retrieveDocumentPassages").mockResolvedValue([]);
     jest.spyOn(search, "articleOwnerFilterFor").mockResolvedValue(sql`true`);
+
+    const retrieval = {
+      retrieve: jest.fn().mockResolvedValue({
+        documents: retrieved,
+        sources: [],
+        passages: [],
+        degraded: { kind: "none" as const },
+        strategy: { kind: "exact" as const },
+      }),
+    };
 
     const ask = new KbAskService(
       db as never,
       gateway as never,
       events as never,
       search as never,
-      new KbCitationVisibilityService(db as never, search as never, auth as never), NO_LINKED_DOCUMENTS, null,
+      new KbAskCitationService(db as never, new KbCitationVisibilityService(db as never, search as never, auth as never), NO_LINKED_DOCUMENTS) as never,
+      NO_LINKED_DOCUMENTS, null,
+      retrieval as never,
     );
     return { ask, access, db };
   };
@@ -309,10 +318,10 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`false`),
       assertPageAccess: jest.fn(),
     };
-    const svc = new KbAskService(
-      db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
-      {} as never,
-      new KbCitationVisibilityService(db as never, {} as never, authRevoked as never), NO_LINKED_DOCUMENTS, null,
+    const svc = new KbAskCitationService(
+      db as never,
+      new KbCitationVisibilityService(db as never, {} as never, authRevoked as never),
+      NO_LINKED_DOCUMENTS,
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).rejects.toThrow(NotFoundException);
@@ -328,10 +337,10 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
       assertPageAccess: jest.fn(),
     };
-    const svc = new KbAskService(
-      db as never, {} as never, { record: jest.fn().mockResolvedValue(undefined) } as never,
-      {} as never,
-      new KbCitationVisibilityService(db as never, {} as never, authGrants as never), NO_LINKED_DOCUMENTS, null,
+    const svc = new KbAskCitationService(
+      db as never,
+      new KbCitationVisibilityService(db as never, {} as never, authGrants as never),
+      NO_LINKED_DOCUMENTS,
     );
 
     await expect(svc.assertReplayCitations(makeUser(), [pageCitation])).resolves.not.toThrow();

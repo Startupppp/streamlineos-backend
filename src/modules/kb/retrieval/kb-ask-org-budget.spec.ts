@@ -9,7 +9,8 @@ import {
 } from "../../../common/ratelimit/rate-limit.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { KbAskService, KB_ASK_ORG_TIER, kbAskOrgKey } from "./kb-ask.service";
+import { KbAskService } from "./kb-ask.service";
+import { KB_ASK_ORG_TIER, kbAskOrgKey } from "./kb-ask-rate-limit";
 
 const ORG = "org-1";
 const QUESTION = "how do I reset my password";
@@ -78,6 +79,15 @@ function makeService(redis: FakeRedis) {
   const events = { record: jest.fn().mockResolvedValue(undefined) };
   const linkedDocuments = { retrieve: jest.fn().mockResolvedValue([]) };
 
+  const retrieval = {
+    retrieve: jest.fn().mockResolvedValue({
+      documents: [],
+      sources: [],
+      passages: [],
+      degraded: { kind: "none" as const },
+      strategy: { kind: "exact" as const },
+    }),
+  };
   const service = new KbAskService(
     db as never,
     gateway as never,
@@ -86,6 +96,7 @@ function makeService(redis: FakeRedis) {
     {} as never,
     linkedDocuments as never,
     redis as never,
+    retrieval as never,
   );
   return { service, gateway };
 }

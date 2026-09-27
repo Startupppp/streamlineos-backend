@@ -5,14 +5,13 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 import { PgDialect } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import { KbSearchService } from "./kb-search.service";
+import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import { KbArticleReindexService } from "./kb-article-reindex.service";
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
 import type { KbAskCitationService } from "./kb-ask-citations.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { KbCandidateService } from "./kb-candidate.service";
 
 const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
 
@@ -63,17 +62,10 @@ describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () =
       select: jest.fn().mockReturnValue(chain),
       execute: jest.fn().mockResolvedValue([]),
     };
-    const access = {
-      getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
-      getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-      isAdmin: jest.fn().mockReturnValue(false),
-      getPrincipalIds: jest.fn().mockResolvedValue({ userId: "u1", roleSlugs: [] }),
-    };
     const embeddings = {
       isEmbeddingConfigured: jest.fn().mockReturnValue(true),
       embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1], vectorLiteral: "[0.1]" }),
     };
-
     const auth = {
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
       resolveStanding: jest.fn().mockResolvedValue({
@@ -89,16 +81,19 @@ describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () =
       }),
       assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
     };
-    const svc = new KbSearchService(
+    const candidates = {
+      hasEmbeddedChunks: jest.fn().mockResolvedValue(true),
+      vectorChunkIds: jest.fn().mockResolvedValue([1]),
+    };
+    const svc = new KbSearchRetrievalService(
       db as never,
       embeddings as never,
-      { record: jest.fn().mockResolvedValue(undefined) } as never,
-      new KbCandidateService(db as never),
-      makeScopes() as never,
+      candidates as never,
+      {} as never,
       auth as never,
     );
 
-    await svc.retrieveTopSources({ userId: "u1", orgId: "org-fix1", isOrgOwner: false, role: "member", sessionId: "s1", tokenScopes: null, principal: undefined } as never, "query", 4);
+    await svc.retrieveTopSources({ userId: "u1", orgId: "org-fix1", isOrgOwner: false, role: "member", sessionId: "s1", tokenScopes: null, principal: undefined } as never, "query", 4, undefined, { vectorLiteral: "[0.1]" });
 
     expect(capturedConditions.length).toBeGreaterThan(0);
 

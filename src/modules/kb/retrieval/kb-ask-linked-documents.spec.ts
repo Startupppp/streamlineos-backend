@@ -4,6 +4,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbLinkedDocumentAskSource } from "../linked-documents/kb-linked-document-ask-source";
 import type { LinkedDocumentItem } from "../linked-documents/dto/kb-linked-documents-response.schemas";
 import { KbAskService, type AskCitation } from "./kb-ask.service";
+import { KbAskCitationService } from "./kb-ask-citations.service";
 
 const user: CurrentUserContext = {
   userId: "user-1",
@@ -65,7 +66,7 @@ function build(opts: { ai: boolean; hasChunks?: boolean; hits?: LinkedDocumentIt
     retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
     aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
   };
-  const citationVisibility = {
+  const citationVisibilityStub = {
     visibleArticles: jest.fn(async (_u: unknown, ids: number[]) => new Set(ids)),
     visiblePages: jest.fn(async (_u: unknown, ids: number[]) => new Set(ids)),
     visibleSources: jest.fn(async (_u: unknown, ids: number[]) => new Set(ids)),
@@ -77,8 +78,18 @@ function build(opts: { ai: boolean; hasChunks?: boolean; hits?: LinkedDocumentIt
     visibleIds: jest.fn().mockResolvedValue(new Set(opts.visible ?? [31])),
   };
   const source = new KbLinkedDocumentAskSource(flags as never, access as never, query as never, { logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined) } as never);
-  const service = new KbAskService(db as never, gateway as never, events as never, search as never, citationVisibility as never, source, null);
-  return { service, gateway, events, search, flags, query, db, insertedRows };
+  const citationsService = new KbAskCitationService(db as never, citationVisibilityStub as never, source);
+  const retrieval = {
+    retrieve: jest.fn().mockResolvedValue({
+      documents: opts.hasChunks === false ? [] : [article],
+      sources: [],
+      passages: [],
+      degraded: { kind: "none" as const },
+      strategy: { kind: "exact" as const },
+    }),
+  };
+  const service = new KbAskService(db as never, gateway as never, events as never, search as never, citationsService as never, source, null, retrieval as never);
+  return { service, citationsService, gateway, events, search, flags, query, db, insertedRows };
 }
 
 const prompt = (gateway: { invokeTextWithUsage: jest.Mock }): string => String(gateway.invokeTextWithUsage.mock.calls[0]?.[0]?.prompt?.user ?? "");
@@ -195,20 +206,20 @@ describe("KbAskService — company documents from HR", () => {
     });
 
     it("refuses to replay a saved answer whose document the asker can no longer open", async () => {
-      const { service, query } = build({ ai: true });
+      const { service, citationsService, query } = build({ ai: true });
       const cited: AskCitation[] = [{ kind: "document", linkedDocumentId: 31, title: "Leave Policy", spaceId: null, updatedAt: new Date() }];
 
-      await expect(service.assertReplayCitations(user, cited)).resolves.toBeUndefined();
+      await expect(citationsService.assertReplayCitations(user, cited)).resolves.toBeUndefined();
 
       query.visibleIds.mockResolvedValue(new Set());
-      await expect(service.assertReplayCitations(user, cited)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(citationsService.assertReplayCitations(user, cited)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("refuses to replay a saved answer citing a document once the switch is off", async () => {
-      const { service } = build({ ai: false });
+      const { service, citationsService } = build({ ai: false });
       const cited: AskCitation[] = [{ kind: "document", linkedDocumentId: 31, title: "Leave Policy", spaceId: null, updatedAt: new Date() }];
 
-      await expect(service.assertReplayCitations(user, cited)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(citationsService.assertReplayCitations(user, cited)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });
