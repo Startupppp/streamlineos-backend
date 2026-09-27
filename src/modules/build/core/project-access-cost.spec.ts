@@ -9,9 +9,9 @@ interface Counter {
   permissionResolutions: number;
 }
 
-function makeCountingDb(counter: Counter, memberRows: unknown[], teamRows: unknown[]) {
+function makeCountingDb(counter: Counter, memberRows: readonly unknown[], teamRows: readonly unknown[]) {
   let selectIndex = 0;
-  const chain = (rows: unknown[]) => {
+  const chain = (rows: readonly unknown[]) => {
     const thenable = {
       from: () => thenable,
       innerJoin: () => thenable,

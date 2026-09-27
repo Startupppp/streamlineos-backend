@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../../test/helpers/sign-token";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 
 // The guard half of the matrix, which needs no database — `projects-tickets-key.e2e-spec.ts` skips without `RBAC_E2E_DATABASE_URL` and keeps the not-found cases.

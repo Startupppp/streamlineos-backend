@@ -12,7 +12,7 @@ import type { TenantTx } from "../../../common/tenant/with-tenant";
 import type { CreateSubmissionInput, ListSubmissionsQuery, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
-import { reserveTicketCapacity } from "../core/tickets/build-ticket-capacity";
+import { reserveTicketCapacity } from "../core/tickets";
 
 type FormRow = typeof projectForms.$inferSelect;
 type SubmissionRow = typeof formSubmissions.$inferSelect;

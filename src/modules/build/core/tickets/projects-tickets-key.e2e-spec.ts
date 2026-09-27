@@ -2,7 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { configureBuildDatabaseAccess } from "test/build/configure-build-database-access";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { signToken } from "../../../../../test/helpers/sign-token";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import {

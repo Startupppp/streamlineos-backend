@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException, reserveTicketCapacity } from "../core/tickets";
 import { and, asc, desc, eq, gte, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   intakeItems,
@@ -14,7 +14,6 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { escapeLike } from "../core/lib/escape-like";
-import { reserveTicketCapacity } from "../core/tickets/build-ticket-capacity";
 import { buildCursorPage, buildTupleCursorPage, decodeCursor, decodeIntegerCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId, keysetBeforeTuple, keysetBoolean, keysetTimestamp, keysetInteger } from "../../../common/pagination/keyset";
 import type {

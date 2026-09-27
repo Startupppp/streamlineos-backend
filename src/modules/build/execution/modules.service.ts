@@ -19,7 +19,7 @@ import {
   buildTupleCursorPage,
   decodeTupleCursor,
 } from "../../../common/pagination/cursor";
-import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../core/tickets";
 
 @Injectable()
 export class ModulesService {

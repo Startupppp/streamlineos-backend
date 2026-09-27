@@ -6,7 +6,7 @@ import { tickets } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
-import { resolveTicketsScope, ticketScope } from "../core/tickets/tickets-scope";
+import { resolveTicketsScope, ticketScope } from "../core/tickets";
 import { EXPORT_MAX_ROWS } from "./import-export.constants";
 import { toCsv } from "./csv-source";
 import { TICKET_IMPORT_FIELDS } from "./dto/ticket-import.schemas";
