@@ -23,10 +23,15 @@ export async function validateBatchTransition(db: Db, actor: CurrentUserContext,
     }, prefetched);
 }
 
-export async function emitBatchStatusChanges(db: Db, actor: CurrentUserContext, projectId: number, rows: MutationRows, status: string, now: Date) {
-  await OutboxWriter.emitMany(db, rows.filter((row) => row.status !== status).map((row) => ({
-    eventId: randomUUID(), organizationId: actor.orgId, aggregateType: "ticket", aggregateId: String(row.id),
-    aggregateVersion: row.version + 1, eventType: "build.ticket.status_changed", occurredAt: now,
-    payload: { ticketId: row.id, projectId, orgId: actor.orgId, previousStatus: row.status, newStatus: status, actorUserId: actor.userId },
-  })));
+export async function emitBatchStatusChanges(db: Db, actor: CurrentUserContext, projectId: number, rows: MutationRows, status: string, now: Date, versionMap: ReadonlyMap<number, number>) {
+  const events = rows.filter((row) => row.status !== status).flatMap((row) => {
+    const newVersion = versionMap.get(row.id);
+    if (newVersion === undefined) return [];
+    return [{
+      eventId: randomUUID(), organizationId: actor.orgId, aggregateType: "ticket", aggregateId: String(row.id),
+      aggregateVersion: newVersion, eventType: "build.ticket.status_changed", occurredAt: now,
+      payload: { ticketId: row.id, projectId, orgId: actor.orgId, previousStatus: row.status, newStatus: status, actorUserId: actor.userId },
+    }];
+  });
+  if (events.length > 0) await OutboxWriter.emitMany(db, events);
 }

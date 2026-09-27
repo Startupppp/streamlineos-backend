@@ -191,6 +191,7 @@ export class ProjectsTicketsCreateService {
       await tx.insert(ticketActivityLog).values({
         orgId: u.orgId,
         ticketId: created.id,
+        projectId,
         userMembershipId: actorMap.get(u.userId)?.membershipId ?? null,
         action: "created",
       });
@@ -304,6 +305,7 @@ export class ProjectsTicketsCreateService {
       await tx.insert(ticketActivityLog).values({
         orgId,
         ticketId: created.id,
+        projectId,
         userMembershipId: feedbackActorMembershipId,
         action: "created",
       });

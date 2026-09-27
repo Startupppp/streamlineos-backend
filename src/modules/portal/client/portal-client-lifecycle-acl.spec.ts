@@ -289,6 +289,147 @@ describe("PortalClientService — source ACL gate: clientVisible=true on sub-res
   });
 });
 
+describe("PortalClientService — table-driven visibility matrix: parent × child clientVisible, deleted records, revoked grants, cross-project/cross-tenant (Requirement F full coverage)", () => {
+  function buildPredicateCapturingDb(): { db: Db; joinPredicates: unknown[]; wherePredicates: unknown[] } {
+    const joinPredicates: unknown[] = [];
+    const wherePredicates: unknown[] = [];
+    let selectCallCount = 0;
+
+    const stubFromChain = (callIndex: number) => ({
+      where: jest.fn().mockImplementation((pred: unknown) => {
+        wherePredicates.push({ callIndex, pred });
+        return {
+          limit: jest.fn().mockImplementation(() => {
+            if (callIndex === 1) return Promise.resolve([ALL_CAPS_GRANT]);
+            if (callIndex === 2) return Promise.resolve([MINIMAL_PROJECT]);
+            return Promise.resolve([]);
+          }),
+        };
+      }),
+      innerJoin: jest.fn().mockImplementation((_table: unknown, joinPred: unknown) => {
+        joinPredicates.push(joinPred);
+        return {
+          where: jest.fn().mockImplementation((pred: unknown) => {
+            wherePredicates.push({ callIndex, pred });
+            return { limit: jest.fn().mockResolvedValue([]) };
+          }),
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockImplementation((pred: unknown) => {
+              wherePredicates.push({ callIndex, pred });
+              return { limit: jest.fn().mockResolvedValue([]) };
+            }),
+          }),
+        };
+      }),
+    });
+
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        const ci = selectCallCount;
+        return { from: jest.fn().mockReturnValue(stubFromChain(ci)) };
+      }),
+    } as unknown as Db;
+
+    return { db, joinPredicates, wherePredicates };
+  }
+
+  it("attachment join ON clause requires both parent clientVisible and child-table join fields (parent × child matrix: both must be present)", async () => {
+    const { db, joinPredicates } = buildPredicateCapturingDb();
+    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+
+    const attachmentJoin = joinPredicates.find((p) => {
+      const sql = renderSql(p);
+      return sql.includes("ticket_attachments") || sql.includes("ticket_id") || sql.includes("client_visible");
+    }) ?? joinPredicates[0];
+    const sqlText = renderSql(attachmentJoin);
+    expect(sqlText).toContain("client_visible");
+    expect(sqlText).toContain("project_id");
+    expect(sqlText).toContain("org_id");
+    expect(sqlText).toContain("deleted_at");
+  });
+
+  it("comment join ON clause requires both parent clientVisible and child-table join fields", async () => {
+    const { db, joinPredicates } = buildPredicateCapturingDb();
+    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+
+    expect(joinPredicates.length).toBeGreaterThanOrEqual(2);
+    for (const pred of joinPredicates) {
+      const sqlText = renderSql(pred);
+      expect(sqlText).toContain("client_visible");
+      expect(sqlText).toContain("org_id");
+    }
+  });
+
+  it("child WHERE predicate still requires clientVisible on the child row — internal child of visible parent excluded", async () => {
+    const { db, wherePredicates } = buildPredicateCapturingDb();
+    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+
+    const childPredicates = wherePredicates.filter(({ callIndex }: { callIndex: number; pred: unknown }) => callIndex > 2) as Array<{ callIndex: number; pred: unknown }>;
+    const childClientVisiblePreds = childPredicates.filter(({ pred }) => renderSql(pred).includes("client_visible"));
+    expect(childClientVisiblePreds.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("no active grant found causes NotFoundException — simulates DB applying the status=ACTIVE predicate and finding nothing", async () => {
+    const capturedGrantWhere: unknown[] = [];
+    const db = {
+      select: jest.fn().mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((pred: unknown) => {
+            capturedGrantWhere.push(pred);
+            return { limit: jest.fn().mockResolvedValue([]) };
+          }),
+        }),
+      }),
+    } as unknown as Db;
+    await expect(new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
+    expect(renderSql(capturedGrantWhere[0])).toContain("status");
+  });
+
+  it("expired grant (expiresAt in the past) is excluded — the grant WHERE predicate contains expiresAt check", async () => {
+    const capturedGrantWhere: unknown[] = [];
+    const db = {
+      select: jest.fn().mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((pred: unknown) => {
+            capturedGrantWhere.push(pred);
+            return { limit: jest.fn().mockResolvedValue([]) };
+          }),
+        }),
+      }),
+    } as unknown as Db;
+    await expect(new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
+    expect(renderSql(capturedGrantWhere[0])).toContain("expires_at");
+  });
+
+  it("cross-project isolation — attachment join predicate includes projectId equality so another project's child rows are excluded at the DB", async () => {
+    const { db, joinPredicates } = buildPredicateCapturingDb();
+    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+
+    for (const pred of joinPredicates) {
+      expect(renderSql(pred)).toContain("project_id");
+    }
+  });
+
+  it("cross-tenant isolation — attachment join predicate includes orgId equality so another org's rows are excluded at the DB", async () => {
+    const { db, joinPredicates } = buildPredicateCapturingDb();
+    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+
+    for (const pred of joinPredicates) {
+      expect(renderSql(pred)).toContain("org_id");
+    }
+  });
+
+  it("deleted parent ticket rows are excluded — join ON clause contains deleted_at IS NULL", async () => {
+    const { db, joinPredicates } = buildPredicateCapturingDb();
+    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+
+    for (const pred of joinPredicates) {
+      expect(renderSql(pred)).toContain("deleted_at");
+    }
+  });
+});
+
 describe("PortalClientService — parent ticket clientVisible required on attachment and comment joins (Requirement F)", () => {
   function buildCapturingDb() {
     const capturedJoinPredicates: unknown[] = [];

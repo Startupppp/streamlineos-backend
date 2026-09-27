@@ -190,7 +190,7 @@ export async function bulkMutateTickets(
           isNull(tickets.deletedAt),
         ),
       )
-      .returning({ id: tickets.id });
+      .returning({ id: tickets.id, version: tickets.version });
     if (assigneeId !== undefined) {
       await tx
         .delete(ticketAssignees)
@@ -229,6 +229,7 @@ export async function bulkMutateTickets(
         rows,
         body.status,
         now,
+        new Map(updated.map((r) => [r.id, r.version])),
       );
     return { updated: updated.length, ticketIds: updated.map((row) => row.id) };
   });

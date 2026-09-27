@@ -179,12 +179,12 @@ export class CronProjectsService {
         const inserted = await innerTx
           .insert(tickets)
           .values(children)
-          .returning({ id: tickets.id, assigneeMembershipId: tickets.assigneeMembershipId });
+          .returning({ id: tickets.id, projectId: tickets.projectId, assigneeMembershipId: tickets.assigneeMembershipId });
 
         const watchers: (typeof ticketWatchers.$inferInsert)[] = [];
         const activity: (typeof ticketActivityLog.$inferInsert)[] = [];
         for (const child of inserted) {
-          activity.push({ orgId, ticketId: child.id, userMembershipId: null, action: "created" });
+          activity.push({ orgId, ticketId: child.id, projectId: child.projectId ?? undefined, userMembershipId: null, action: "created" });
           if (child.assigneeMembershipId !== null)
             watchers.push({
               orgId,

@@ -6952,6 +6952,13 @@
       "when": 1803090011725,
       "tag": "1366_user_sessions_mfa_satisfied_at",
       "breakpoints": true
+    },
+    {
+      "idx": 1121,
+      "version": "7",
+      "when": 1803093610725,
+      "tag": "1378_activity_log_project_column",
+      "breakpoints": true
     }
   ]
 }

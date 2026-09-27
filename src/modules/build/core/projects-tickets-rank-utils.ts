@@ -68,9 +68,9 @@ export async function rankTicket(db: Db, cache: CacheService, access: AccessServ
     const now = new Date();
     const [updated] = await tx.update(tickets).set({ rank: rankValue, status, updatedAt: now })
       .where(and(eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.id, ticketId), isNull(tickets.deletedAt)))
-      .returning({ id: tickets.id, rank: tickets.rank, status: tickets.status });
+      .returning({ id: tickets.id, rank: tickets.rank, status: tickets.status, version: tickets.version });
     if (!updated) throw new NotFoundException("Ticket not found");
-    if (body.status !== undefined) await emitBatchStatusChanges(tx, actor, projectId, [target], status, now);
+    if (body.status !== undefined) await emitBatchStatusChanges(tx, actor, projectId, [target], status, now, new Map([[updated.id, updated.version]]));
     return updated;
   });
   await cache.invalidateNamespace(`build:analytics:${actor.orgId}`)

@@ -13,9 +13,7 @@ CREATE OR REPLACE FUNCTION build.bump_ticket_version()
 RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW.version IS NOT DISTINCT FROM OLD.version THEN
-    NEW.version := OLD.version + 1;
-  END IF;
+  NEW.version := OLD.version + 1;
   RETURN NEW;
 END $$;
 --> statement-breakpoint
