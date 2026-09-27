@@ -8,6 +8,8 @@ import { KbEventsService } from "../core/kb-events.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
+import { KbAskCitationService } from "./kb-ask-citations.service";
+import { KbRetrievalService } from "./kb-retrieval.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CitedRef } from "./kb-citation-visibility.service";
 import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
@@ -151,13 +153,14 @@ describe("KB citation visibility reads are bounded by their caller", () => {
 
 describe("the ask path caps what it can ever hand the visibility reader", () => {
   it("retrieves at most 6 articles and 4 sources per question", async () => {
-    const search = {
-      ...mockSearch,
-      aclCacheOutcome: jest.fn().mockResolvedValue("bypass"),
-      resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
-      retrieveTopArticles: jest.fn().mockResolvedValue([]),
-      retrieveTopSources: jest.fn().mockResolvedValue([]),
-      retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
+    const mockRetrieval = {
+      retrieve: jest.fn().mockResolvedValue({
+        documents: [],
+        sources: [],
+        passages: [],
+        degraded: { documents: false, sources: false, passages: false },
+        strategy: { kind: "exact" as const },
+      }),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -165,10 +168,12 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
         { provide: KbLinkedDocumentAskSource, useValue: NO_LINKED_DOCUMENTS },
         { provide: AiGatewayService, useValue: { invokeTextWithUsage: jest.fn() } },
         { provide: KbEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
-        { provide: KbSearchService, useValue: search },
+        { provide: KbSearchService, useValue: { ...mockSearch, aclCacheOutcome: jest.fn().mockResolvedValue("bypass") } },
         { provide: KbAccessService, useValue: mockAccess },
         { provide: KnowledgeAuthorizationService, useValue: mockAuth },
         KbCitationVisibilityService,
+        KbAskCitationService,
+        { provide: KbRetrievalService, useValue: mockRetrieval },
         { provide: DRIZZLE, useValue: makeDb([]) },
         { provide: REDIS, useValue: null },
       ],
@@ -177,8 +182,11 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
     try {
       await module.get(KbAskService).ask(user, { question: "how do I reset my password?" });
 
-      expect(search.retrieveTopArticles).toHaveBeenCalledWith(user, "how do I reset my password?", 6, undefined, undefined, { vectorLiteral: null });
-      expect(search.retrieveTopSources).toHaveBeenCalledWith(user, "how do I reset my password?", 4, undefined, { vectorLiteral: null });
+      expect(mockRetrieval.retrieve).toHaveBeenCalledWith(
+        user,
+        "how do I reset my password?",
+        expect.objectContaining({ documentsLimit: 6, sourcesLimit: 4 }),
+      );
     } finally {
       await module.close();
     }

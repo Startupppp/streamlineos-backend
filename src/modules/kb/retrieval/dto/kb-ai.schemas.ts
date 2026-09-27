@@ -21,7 +21,11 @@ export const askSchema = z
     question: z.string().trim().min(3).max(1000),
     spaceId: z.coerce.number().int().positive().optional(),
     conversationId: z.coerce.number().int().positive().optional(),
-    sourceIds: z.array(z.coerce.number().int().positive()).max(50).optional(),
+    sourceIds: z
+      .array(z.coerce.number().int().positive())
+      .min(1)
+      .max(50)
+      .optional(),
     verifiedOnly: z.boolean().optional(),
   })
   .strict();

@@ -12,8 +12,10 @@ import { StorageService } from "../../storage/storage.service";
 import { isSensitiveStorageKey } from "../../storage/storage-key";
 import {
   KbIndexingMetrics,
+  KB_INDEXING_QUEUE_LANE,
   kbIndexingOutcomeForError,
 } from "../core/telemetry/kb-indexing-metrics";
+import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 import { embedChunksWithResumption } from "./kb-embedding-resumption";
 import {
@@ -67,17 +69,19 @@ export class KbAttachmentIndexingService {
     sourceId: number,
     text: string,
   ): Promise<number> {
-    const metrics = KbIndexingMetrics.begin({ contentType: "article", orgId });
+    const metrics = KbIndexingMetrics.begin({ contentType: "article", orgId, orgCell: PROCESS_CELL_ID });
+    const dbRole = "primary";
+    const queueLane = KB_INDEXING_QUEUE_LANE;
     try {
       if (!this.aiGateway.isEmbeddingConfigured()) {
-        metrics.finish("embedding_unavailable");
+        metrics.finish("embedding_unavailable", { dbRole, queueLane });
         return 0;
       }
       const chunks = chunkText(text);
 
       if (chunks.length === 0) {
         await this.removeSourceChunks(orgId, sourceId);
-        metrics.finish("skipped_no_content");
+        metrics.finish("skipped_no_content", { dbRole, queueLane });
         return 0;
       }
 
@@ -90,7 +94,7 @@ export class KbAttachmentIndexingService {
           sourceId,
           chunks: stored.chunkCount,
         });
-        metrics.finish("reused", { reused: true });
+        metrics.finish("reused", { reused: true, dbRole, queueLane });
         return stored.chunkCount;
       }
 
@@ -98,7 +102,7 @@ export class KbAttachmentIndexingService {
 
       await replaceSourceChunks(this.db, orgId, sourceId, chunks, embeddings, contentHash);
 
-      metrics.finish("indexed", { chunks: chunks.length, reused: false });
+      metrics.finish("indexed", { chunks: chunks.length, reused: false, dbRole, queueLane });
       return chunks.length;
     } catch (error) {
       metrics.finish(kbIndexingOutcomeForError(error));
@@ -121,7 +125,7 @@ export class KbAttachmentIndexingService {
     orgId: string,
     attachmentId: number,
   ): Promise<{ chunks: number; warning: string | null }> {
-    const metrics = KbIndexingMetrics.begin({ contentType: "attachment", orgId });
+    const metrics = KbIndexingMetrics.begin({ contentType: "attachment", orgId, orgCell: PROCESS_CELL_ID });
     try {
       return await this.indexAttachmentMeasured(orgId, attachmentId, metrics);
     } catch (error) {
@@ -135,6 +139,8 @@ export class KbAttachmentIndexingService {
     attachmentId: number,
     metrics: KbIndexingMetrics,
   ): Promise<{ chunks: number; warning: string | null }> {
+    const dbRole = "primary";
+    const queueLane = KB_INDEXING_QUEUE_LANE;
     const [attachment] = await this.db
       .select({
         pageId: kbPageAttachments.pageId,
@@ -163,12 +169,12 @@ export class KbAttachmentIndexingService {
 
     if (!attachment || attachment.deletedAt !== null || attachment.pageDeletedAt !== null) {
       await this.removeAttachmentChunks(orgId, attachmentId);
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return { chunks: 0, warning: null };
     }
 
     if (isSensitiveStorageKey(attachment.fileKey, orgId)) {
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return {
         chunks: 0,
         warning: `${attachment.fileName}: file is in a protected folder and is not indexed`,
@@ -177,13 +183,13 @@ export class KbAttachmentIndexingService {
 
     if (!this.aiGateway.isEmbeddingConfigured()) {
       await this.removeAttachmentChunks(orgId, attachmentId);
-      metrics.finish("embedding_unavailable");
+      metrics.finish("embedding_unavailable", { dbRole, queueLane });
       return { chunks: 0, warning: null };
     }
 
     if (!isExtractableMime(attachment.mimeType)) {
       await this.removeAttachmentChunks(orgId, attachmentId);
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return {
         chunks: 0,
         warning: `${attachment.fileName}: unsupported file type`,
@@ -197,7 +203,7 @@ export class KbAttachmentIndexingService {
       text = await extractDocumentText(buffer, attachment.mimeType);
     } catch (err) {
       this.logger.error(`Attachment extract failed (${attachmentId}): ${err}`);
-      metrics.finish("error");
+      metrics.finish("error", { dbRole, queueLane });
       return {
         chunks: 0,
         warning: `${attachment.fileName}: could not read file`,
@@ -208,7 +214,7 @@ export class KbAttachmentIndexingService {
 
     if (chunks.length === 0) {
       await this.removeAttachmentChunks(orgId, attachmentId);
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return {
         chunks: 0,
         warning: `${attachment.fileName}: no extractable text`,
@@ -227,9 +233,9 @@ export class KbAttachmentIndexingService {
           aclRevision,
         });
         await updateDerivedChunkAcl(this.db, family, aclRevision);
-        metrics.finish("acl_only", { reused: true });
+        metrics.finish("acl_only", { reused: true, dbRole, queueLane });
       } else {
-        metrics.finish("reused", { reused: true });
+        metrics.finish("reused", { reused: true, dbRole, queueLane });
       }
       return { chunks: stored.chunkCount, warning: null };
     }
@@ -246,7 +252,7 @@ export class KbAttachmentIndexingService {
       { contentHash, aclRevision },
     );
 
-    metrics.finish("indexed", { chunks: chunks.length, reused: false });
+    metrics.finish("indexed", { chunks: chunks.length, reused: false, dbRole, queueLane });
     return { chunks: chunks.length, warning: null };
   }
 
@@ -271,7 +277,7 @@ export class KbAttachmentIndexingService {
     mimeType: string,
     fileName: string,
   ): Promise<{ chunks: number; warning: string | null }> {
-    const metrics = KbIndexingMetrics.begin({ contentType: "attachment", orgId });
+    const metrics = KbIndexingMetrics.begin({ contentType: "attachment", orgId, orgCell: PROCESS_CELL_ID });
     try {
       return await this.indexPageDocumentMeasured(orgId, pageId, buffer, mimeType, fileName, metrics);
     } catch (error) {
@@ -288,13 +294,16 @@ export class KbAttachmentIndexingService {
     fileName: string,
     metrics: KbIndexingMetrics,
   ): Promise<{ chunks: number; warning: string | null }> {
+    const dbRole = "primary";
+    const queueLane = KB_INDEXING_QUEUE_LANE;
+
     if (!this.aiGateway.isEmbeddingConfigured()) {
-      metrics.finish("embedding_unavailable");
+      metrics.finish("embedding_unavailable", { dbRole, queueLane });
       return { chunks: 0, warning: null };
     }
 
     if (!isExtractableMime(mimeType)) {
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return { chunks: 0, warning: null };
     }
 
@@ -310,7 +319,7 @@ export class KbAttachmentIndexingService {
     });
 
     if (!page) {
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return { chunks: 0, warning: null };
     }
 
@@ -324,13 +333,13 @@ export class KbAttachmentIndexingService {
         mimeType,
         error: err instanceof Error ? err.message : String(err),
       });
-      metrics.finish("error");
+      metrics.finish("error", { dbRole, queueLane });
       return { chunks: 0, warning: `${fileName}: could not read file` };
     }
 
     const chunks = chunkText(text);
     if (chunks.length === 0) {
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return { chunks: 0, warning: `${fileName}: no extractable text` };
     }
 
@@ -344,9 +353,9 @@ export class KbAttachmentIndexingService {
           pageId,
         });
         await updateDerivedChunkAcl(this.db, family, page.aclRevision);
-        metrics.finish("acl_only", { reused: true });
+        metrics.finish("acl_only", { reused: true, dbRole, queueLane });
       } else {
-        metrics.finish("reused", { reused: true });
+        metrics.finish("reused", { reused: true, dbRole, queueLane });
       }
       return { chunks: stored.chunkCount, warning: null };
     }
@@ -365,7 +374,7 @@ export class KbAttachmentIndexingService {
       },
     );
 
-    metrics.finish("indexed", { chunks: chunks.length, reused: false });
+    metrics.finish("indexed", { chunks: chunks.length, reused: false, dbRole, queueLane });
     return { chunks: chunks.length, warning: null };
   }
 }

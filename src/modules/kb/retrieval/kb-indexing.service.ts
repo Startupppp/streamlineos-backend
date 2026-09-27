@@ -9,9 +9,11 @@ import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import {
   KbIndexingMetrics,
+  KB_INDEXING_QUEUE_LANE,
   kbIndexingOutcomeForError,
   type KbIndexingContentType,
 } from "../core/telemetry/kb-indexing-metrics";
+import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 import { embedChunksWithResumption } from "./kb-embedding-resumption";
@@ -98,7 +100,7 @@ export class KbIndexingService {
     signal?: AbortSignal,
     contentType: KbIndexingContentType = "page",
   ): Promise<number> {
-    const metrics = KbIndexingMetrics.begin({ contentType, orgId });
+    const metrics = KbIndexingMetrics.begin({ contentType, orgId, orgCell: PROCESS_CELL_ID });
     try {
       return await this.indexPageMeasured(orgId, pageId, metrics, signal);
     } catch (error) {
@@ -133,15 +135,18 @@ export class KbIndexingService {
       { orgId },
     );
 
+    const dbRole = "primary";
+    const queueLane = KB_INDEXING_QUEUE_LANE;
+
     if (!page || !isPageIndexable(page) || !page.contentText?.trim()) {
       await this.removePageChunks(orgId, pageId);
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return 0;
     }
 
     if (!this.aiGateway.isEmbeddingConfigured()) {
       await this.removePageChunks(orgId, pageId);
-      metrics.finish("embedding_unavailable");
+      metrics.finish("embedding_unavailable", { dbRole, queueLane });
       return 0;
     }
 
@@ -154,7 +159,7 @@ export class KbIndexingService {
       const aclChanged = stored.aclRevision !== acl.aclRevision;
 
       if (!aclChanged) {
-        metrics.finish("reused", { reused: true });
+        metrics.finish("reused", { reused: true, dbRole, queueLane });
         return 0;
       }
 
@@ -163,7 +168,7 @@ export class KbIndexingService {
         pageId,
       });
       await updatePageChunkAcl(this.db, orgId, pageId, acl);
-      metrics.finish("acl_only", { reused: true });
+      metrics.finish("acl_only", { reused: true, dbRole, queueLane });
       return 0;
     }
 
@@ -171,7 +176,7 @@ export class KbIndexingService {
 
     if (chunks.length === 0) {
       await this.removePageChunks(orgId, pageId);
-      metrics.finish("skipped_no_content");
+      metrics.finish("skipped_no_content", { dbRole, queueLane });
       return 0;
     }
 
@@ -207,7 +212,7 @@ export class KbIndexingService {
       chunks: chunks.length,
     });
 
-    metrics.finish("indexed", { chunks: chunks.length, reused: false });
+    metrics.finish("indexed", { chunks: chunks.length, reused: false, dbRole, queueLane });
     return chunks.length;
   }
 

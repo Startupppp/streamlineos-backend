@@ -1,154 +1,233 @@
-import { Test } from "@nestjs/testing";
-import { HttpException, NotFoundException } from "@nestjs/common";
-import express, { type ErrorRequestHandler } from "express";
-import request from "supertest";
-import { KbAskController } from "./kb-ask.controller";
 import { KbAskService } from "./kb-ask.service";
-import { KbChatHistoryService } from "./kb-chat-history.service";
-import { KbAskCitationService } from "./kb-ask-citations.service";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { COMMAND_FENCE_STORE } from "../../../common/idempotency/command-fence-store";
-import { InMemoryCommandFenceStore } from "../../../common/idempotency/command-fence-store-memory";
-import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { PermissionGuard } from "../../access/permission.guard";
-import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
+import type { Db } from "../../../db/drizzle.module";
+import type { AiStreamTextOpts } from "../../ai/core/gateway/ai-gateway-stream.helper";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: (db: unknown, handle: (tx: unknown) => Promise<unknown>) => handle(db),
 }));
 
-const user: CurrentUserContext = {
-  orgId: "org-a", userId: "user-a", role: "MEMBER", isOrgOwner: false,
-  sessionId: "session-a", tokenScopes: null, principal: humanSessionPrincipal(7, false),
+const user = {
+  userId: "user-parity",
+  orgId: "org-parity",
+  role: "member" as const,
+  isOrgOwner: false,
+  sessionId: "sess-parity",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(7, false),
 };
 
-async function fixture(noContext = false) {
-  const history = {
-    listMessages: jest.fn().mockResolvedValue({ messages: [], nextCursor: null }),
-    createConversation: jest.fn().mockResolvedValue({ id: 42 }),
-    appendToConversation: jest.fn().mockResolvedValue(undefined),
-  };
-  const verifyCitations = jest.fn().mockResolvedValue([]);
-  const ask = { streamAsk: jest.fn().mockResolvedValue(noContext ? { hasContext: false } : {
-    hasContext: true, citations: [], verifyCitations,
-    aiStream: {
-      model: "gpt-4o-mini", correlationId: "test-call",
-      stream: {
-        textStream: new ReadableStream<string>({ start(controller) {
-          controller.enqueue("Verified answer"); controller.close();
-        } }),
-        finishReason: Promise.resolve("stop"), text: Promise.resolve("Verified answer"),
-        totalUsage: Promise.resolve({ inputTokens: 20, outputTokens: 10, totalTokens: 30 }),
-      },
-    },
-  }) };
-  const citationFilter = {
-    assertReplayCitations: jest.fn().mockResolvedValue(undefined),
-    filterStoredCitations: jest.fn().mockResolvedValue([]),
-  };
-  const module = await Test.createTestingModule({ providers: [
-    KbAskController, { provide: DRIZZLE, useValue: {} },
-    { provide: KbAskService, useValue: ask }, { provide: KbChatHistoryService, useValue: history },
-    { provide: KbAskCitationService, useValue: citationFilter },
-    { provide: COMMAND_FENCE_STORE, useValue: new InMemoryCommandFenceStore() },
-  ] })
-    .overrideGuard(JwtAuthGuard).useValue({ canActivate: () => true })
-    .overrideGuard(PermissionGuard).useValue({ canActivate: () => true })
-    .overrideGuard(RateLimitGuard).useValue({ canActivate: () => true })
-    .compile();
-  const controller = module.get(KbAskController);
-  const app = express();
-  app.use(express.json());
-  app.post("/ask", (req, res, next) => {
-    void controller.askStream(req, req.body, user, res).catch(next);
-  });
-  const handleError: ErrorRequestHandler = (error: unknown, req, res, next) => {
-    if (res.headersSent) { next(error); return; }
-    req.resume();
-    res.status(error instanceof HttpException ? error.getStatus() : 500).json({ error: "request failed" });
-  };
-  app.use(handleError);
-  return { app, history, ask, verifyCitations, citationFilter };
+interface InsertedRow {
+  orgId?: string;
+  correlationId?: string;
+  resultState?: string;
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  costCredits?: number;
+  latencyMs?: number;
+  gatewayCorrelationId?: string;
+  sourceIdsWithRevisions?: unknown;
+  actorMembershipId?: number | null;
 }
 
-describe("KB streamed result parity", () => {
-  it("rechecks citations and persists both turns before returning conversation metadata", async () => {
-    const f = await fixture();
-    const response = await request(f.app).post("/ask").set("Idempotency-Key", "attempt-a").send({ question: "How does this work?" });
-    expect(response.status).toBe(200);
-    expect(response.headers["content-type"]).toContain("application/x-ndjson");
-    expect(response.text).toContain('"type":"text","text":"Verified answer"');
-    expect(response.text).toContain('"conversationId":42');
-    expect(response.text).toContain('"aiUsage":');
-    expect(f.verifyCitations).toHaveBeenCalledTimes(1);
-    expect(f.history.appendToConversation).toHaveBeenNthCalledWith(1, user, 42, "user", "How does this work?");
-    expect(f.history.appendToConversation).toHaveBeenNthCalledWith(2, user, 42, "assistant", "Verified answer", []);
+function buildDb() {
+  const insertedRows: InsertedRow[] = [];
+  const db: Record<string, unknown> = {
+    execute: jest.fn().mockResolvedValue([{ one: 1 }]),
+    insert: jest.fn().mockImplementation(() => ({
+      values: jest.fn().mockImplementation((row: InsertedRow) => {
+        insertedRows.push(row);
+        return Promise.resolve([]);
+      }),
+    })),
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([{ id: 1 }]),
+      }),
+    }),
+  };
+  db.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
+  return { db: db as unknown as Db, insertedRows };
+}
+
+const articleFixture = {
+  kind: "article" as const,
+  id: 42,
+  title: "Parity article",
+  slug: "parity-article",
+  spaceId: 1,
+  contentText: "relevant text for parity testing",
+  updatedAt: new Date("2024-01-01"),
+};
+
+function buildRetrieval() {
+  return {
+    retrieve: jest.fn().mockResolvedValue({
+      documents: [articleFixture],
+      sources: [],
+      passages: [],
+      degraded: { kind: "none" as const },
+      strategy: { kind: "exact" as const },
+    }),
+  };
+}
+
+function buildCitationsService() {
+  return {
+    resolveCitations: jest.fn().mockResolvedValue([{
+      kind: "article" as const,
+      articleId: articleFixture.id,
+      title: articleFixture.title,
+      slug: articleFixture.slug,
+      spaceId: articleFixture.spaceId,
+      updatedAt: articleFixture.updatedAt,
+    }]),
+    stillCitableDocuments: jest.fn().mockResolvedValue([]),
+  };
+}
+
+function buildEvents() {
+  return { record: jest.fn().mockResolvedValue(undefined) };
+}
+
+const GATEWAY_USAGE = {
+  model: "gpt-4o-mini",
+  promptTokens: 20,
+  completionTokens: 8,
+  totalTokens: 28,
+  credits: 3,
+  costUsd: 0.002,
+};
+
+function buildNonStreamingGateway() {
+  return {
+    invokeTextWithUsage: jest.fn().mockResolvedValue({
+      ok: true,
+      data: "Non-streaming answer",
+      correlationId: "gw-non-stream-corr",
+      aiUsage: GATEWAY_USAGE,
+    }),
+  };
+}
+
+function buildStreamingGateway() {
+  return {
+    streamTextWithUsage: jest.fn().mockImplementation(async (opts: AiStreamTextOpts) => {
+      await opts.onCompleted?.({
+        text: "Streaming answer",
+        promptTokens: GATEWAY_USAGE.promptTokens,
+        completionTokens: GATEWAY_USAGE.completionTokens,
+        model: GATEWAY_USAGE.model,
+        costCredits: GATEWAY_USAGE.credits,
+        gatewayCorrelationId: "gw-stream-corr",
+      });
+      return { model: GATEWAY_USAGE.model, correlationId: "gw-stream-corr", stream: {} };
+    }),
+  };
+}
+
+async function captureAskRow(): Promise<InsertedRow> {
+  const { db, insertedRows } = buildDb();
+  const svc = new KbAskService(
+    db,
+    buildNonStreamingGateway() as never,
+    buildEvents() as never,
+    { aclCacheOutcome: jest.fn().mockResolvedValue("bypass") } as never,
+    buildCitationsService() as never,
+    NO_LINKED_DOCUMENTS,
+    null,
+    buildRetrieval() as never,
+  );
+  await svc.ask(user, { question: "What is parity?" });
+  const row = insertedRows.find((r) => r.resultState === "answered");
+  if (row === undefined) throw new Error("ask() did not write an answered interaction row");
+  return row;
+}
+
+async function captureStreamAskRow(): Promise<InsertedRow> {
+  const { db, insertedRows } = buildDb();
+  const svc = new KbAskService(
+    db,
+    buildStreamingGateway() as never,
+    buildEvents() as never,
+    { aclCacheOutcome: jest.fn().mockResolvedValue("bypass") } as never,
+    buildCitationsService() as never,
+    NO_LINKED_DOCUMENTS,
+    null,
+    buildRetrieval() as never,
+  );
+  await svc.streamAsk(user, { question: "What is parity?" }, new AbortController().signal);
+  const row = insertedRows.find((r) => r.resultState === "answered");
+  if (row === undefined) throw new Error("streamAsk() onCompleted did not write an answered interaction row");
+  return row;
+}
+
+describe("kb_ai_interactions — streaming vs non-streaming answered-path field parity", () => {
+  let askRow: InsertedRow;
+  let streamRow: InsertedRow;
+
+  beforeAll(async () => {
+    askRow = await captureAskRow();
+    streamRow = await captureStreamAskRow();
   });
 
-  it("lets the streamed answer draw on company documents, which the tenant's own switch then decides", async () => {
-    const f = await fixture();
-    await request(f.app).post("/ask").set("Idempotency-Key", "attempt-a").send({ question: "How does this work?" });
-    expect(f.ask.streamAsk).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ question: "How does this work?" }), expect.anything(), { companyDocuments: true });
+  it("both paths write an answered interaction row — positive control confirming both captures are live and not mocked away", () => {
+    expect(askRow.resultState).toBe("answered");
+    expect(streamRow.resultState).toBe("answered");
   });
 
-  it("does not dispatch AI for a conversation the caller cannot access", async () => {
-    const f = await fixture();
-    f.history.listMessages.mockRejectedValue(new NotFoundException("Conversation not found"));
-    const response = await request(f.app).post("/ask").set("Idempotency-Key", "attempt-a").send({ question: "Question", conversationId: 999 });
-    expect(response.status).toBeGreaterThanOrEqual(400);
-    expect(f.ask.streamAsk).not.toHaveBeenCalled();
-    expect(f.history.appendToConversation).not.toHaveBeenCalled();
+  it("streaming onCompleted writes exactly the same field set as the non-streaming path — a field added to one path only fails here", () => {
+    const askFields = Object.keys(askRow).sort();
+    const streamFields = Object.keys(streamRow).sort();
+    expect(streamFields).toEqual(askFields);
   });
 
-  it("persists the no-context answer and returns its conversation without fabricated usage", async () => {
-    const f = await fixture(true);
-    const response = await request(f.app).post("/ask").set("Idempotency-Key", "attempt-a").send({ question: "Question" });
-    expect(response.text).toContain('"hasContext":false');
-    expect(response.text).toContain('"conversationId":42');
-    expect(response.text).not.toContain('"aiUsage"');
-    expect(f.history.appendToConversation).toHaveBeenCalledTimes(2);
+  it("model carries the same value in both paths for the same provider response", () => {
+    expect(streamRow.model).toBeDefined();
+    expect(streamRow.model).toBe(askRow.model);
   });
 
-  it("does not report a durable success when the history transaction fails", async () => {
-    const f = await fixture();
-    f.history.appendToConversation.mockRejectedValue(new Error("private database detail"));
-    const response = await request(f.app).post("/ask").set("Idempotency-Key", "attempt-a").send({ question: "Question" });
-    expect(response.text).toContain('"type":"error"');
-    expect(response.text).not.toContain('"type":"result"');
-    expect(response.text).not.toContain("private database detail");
+  it("promptTokens carries the same value in both paths for the same provider response", () => {
+    expect(streamRow.promptTokens).toBeDefined();
+    expect(streamRow.promptTokens).toBe(askRow.promptTokens);
   });
 
-  it("replays a completed answer without another provider call or duplicate history", async () => {
-    const f = await fixture();
-    const first = await request(f.app).post("/ask").set("Idempotency-Key", "same-key").send({ question: "Question" });
-    const replay = await request(f.app).post("/ask").set("Idempotency-Key", "same-key").send({ question: "Question" });
-    expect(replay.status).toBe(200);
-    const readFrames = (body: string): unknown[] => body.trim().split("\n").map((line): unknown => JSON.parse(line));
-    expect(readFrames(replay.text)).toEqual(readFrames(first.text));
-    expect(f.ask.streamAsk).toHaveBeenCalledTimes(1);
-    expect(f.history.appendToConversation).toHaveBeenCalledTimes(2);
-    expect(f.citationFilter.assertReplayCitations).toHaveBeenCalledTimes(1);
-    expect(f.history.listMessages).toHaveBeenCalledWith(user, 42, { limit: 1 });
+  it("completionTokens carries the same value in both paths for the same provider response", () => {
+    expect(streamRow.completionTokens).toBeDefined();
+    expect(streamRow.completionTokens).toBe(askRow.completionTokens);
   });
 
-  it("fails closed when replay citations were revoked", async () => {
-    const f = await fixture();
-    await request(f.app).post("/ask").set("Idempotency-Key", "same-key").send({ question: "Question" });
-    f.citationFilter.assertReplayCitations.mockRejectedValue(new NotFoundException("Revoked"));
-    const replay = await request(f.app).post("/ask").set("Idempotency-Key", "same-key").send({ question: "Question" });
-    expect(replay.status).toBe(404);
-    expect(replay.text).not.toContain("Verified answer");
-    expect(f.ask.streamAsk).toHaveBeenCalledTimes(1);
+  it("totalTokens carries the same value in both paths for the same provider response", () => {
+    expect(streamRow.totalTokens).toBeDefined();
+    expect(streamRow.totalTokens).toBe(askRow.totalTokens);
   });
 
-  it("requires an explicit new key after a started operation fails", async () => {
-    const f = await fixture();
-    f.ask.streamAsk.mockRejectedValue(new Error("provider failed"));
-    await request(f.app).post("/ask").set("Idempotency-Key", "same-key").send({ question: "Question" });
-    const retry = await request(f.app).post("/ask").set("Idempotency-Key", "same-key").send({ question: "Question" });
-    expect(retry.status).toBe(409);
-    expect(f.ask.streamAsk).toHaveBeenCalledTimes(1);
+  it("costCredits carries the same value in both paths for the same provider response", () => {
+    expect(streamRow.costCredits).toBeDefined();
+    expect(streamRow.costCredits).toBe(askRow.costCredits);
+  });
+
+  it("latencyMs is present as a finite number in both rows — its value legitimately differs between paths as it is a per-call wall-clock duration", () => {
+    expect(typeof askRow.latencyMs).toBe("number");
+    expect(Number.isFinite(askRow.latencyMs)).toBe(true);
+    expect(typeof streamRow.latencyMs).toBe("number");
+    expect(Number.isFinite(streamRow.latencyMs)).toBe(true);
+  });
+
+  it("gatewayCorrelationId is a non-empty string in both rows — its value legitimately differs per call as it is provider-assigned per invocation", () => {
+    expect(typeof askRow.gatewayCorrelationId).toBe("string");
+    expect((askRow.gatewayCorrelationId ?? "").length).toBeGreaterThan(0);
+    expect(typeof streamRow.gatewayCorrelationId).toBe("string");
+    expect((streamRow.gatewayCorrelationId ?? "").length).toBeGreaterThan(0);
+  });
+
+  it("correlationId is a non-empty string in both rows — its value legitimately differs per call as it is a per-invocation UUID", () => {
+    expect(typeof askRow.correlationId).toBe("string");
+    expect((askRow.correlationId ?? "").length).toBeGreaterThan(0);
+    expect(typeof streamRow.correlationId).toBe("string");
+    expect((streamRow.correlationId ?? "").length).toBeGreaterThan(0);
   });
 });

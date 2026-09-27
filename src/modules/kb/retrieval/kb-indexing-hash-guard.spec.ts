@@ -52,27 +52,12 @@ const makeTx = (): MockTx => ({
   }),
 });
 
-interface StoredAcl {
-  pageVisibility: string | null;
-  pageProjectId: number | null;
-  pageCreatedById: string | null;
-  pageCreatedByMembershipId?: number | null;
-}
-
-const makeDb = (storedHash: string | null, tx?: MockTx, storedAcl?: StoredAcl) => {
+const makeDb = (storedHash: string | null, tx?: MockTx, storedState?: { aclRevision?: number | null }) => {
   const txObj = tx ?? makeTx();
   const hashRows =
     storedHash === null
       ? []
-      : [
-          {
-            contentHash: storedHash,
-            pageVisibility: storedAcl?.pageVisibility ?? null,
-            pageProjectId: storedAcl?.pageProjectId ?? null,
-            pageCreatedById: storedAcl?.pageCreatedById ?? null,
-            pageCreatedByMembershipId: storedAcl?.pageCreatedByMembershipId ?? null,
-          },
-        ];
+      : [{ contentHash: storedHash, aclRevision: storedState?.aclRevision ?? null }];
 
   (txObj.select as jest.Mock).mockReturnValue({
     from: jest.fn().mockReturnValue({
@@ -214,12 +199,7 @@ describe("KbIndexingService — content-hash guard", () => {
 
   it("skips re-embedding for pages when content and ACL are both unchanged", async () => {
     const text = "page content that has not changed";
-    const { db } = makeDb(sha256(text), undefined, {
-      pageVisibility: "org",
-      pageProjectId: null,
-      pageCreatedById: null,
-      pageCreatedByMembershipId: null,
-    });
+    const { db } = makeDb(sha256(text), undefined, { aclRevision: 5 });
     (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
       visibility: "org",
@@ -228,6 +208,8 @@ describe("KbIndexingService — content-hash guard", () => {
       projectId: null,
       createdById: null,
       createdByMembershipId: null,
+      aclRevision: 5,
+      contentRevision: 1,
     });
 
     const embeddings = makeEmbeddings();
@@ -238,23 +220,20 @@ describe("KbIndexingService — content-hash guard", () => {
     expect(db.update as jest.Mock).not.toHaveBeenCalled();
   });
 
-  it("updates chunk ACL without re-embedding when page moves to a different project", async () => {
+  it("re-syncs chunk aclRevision when the page revision advances without a content change", async () => {
     const text = "unchanged page body";
-    const { db, tx } = makeDb(sha256(text), undefined, {
-      pageVisibility: "org",
-      pageProjectId: 1,
-      pageCreatedById: "user-7",
-      pageCreatedByMembershipId: null,
-    });
+    const { db, tx } = makeDb(sha256(text), undefined, { aclRevision: 3 });
 
     (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
       visibility: "org",
       deletedAt: null,
       contentText: text,
-      projectId: 2,
-      createdById: "user-7",
+      projectId: null,
+      createdById: null,
       createdByMembershipId: null,
+      aclRevision: 4,
+      contentRevision: 1,
     });
 
     const embeddings = makeEmbeddings();
@@ -263,16 +242,16 @@ describe("KbIndexingService — content-hash guard", () => {
 
     expect(embeddings.embedBatchWithCredit).not.toHaveBeenCalled();
     expect(tx.insert as jest.Mock).not.toHaveBeenCalled();
-    expect(db.update as jest.Mock).toHaveBeenCalled();
-    const setMock = ((db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock }).set;
+    expect(tx.update as jest.Mock).toHaveBeenCalled();
+    const setMock = ((tx.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock }).set;
     expect(setMock).toHaveBeenCalledWith(
-      expect.objectContaining({ pageProjectId: 2, pageVisibility: "org", pageCreatedById: "user-7", pageCreatedByMembershipId: null }),
+      expect.objectContaining({ aclRevision: 4 }),
     );
   });
 });
 
 describe("KbIndexingService — a chunk carries the ACL it is filtered by", () => {
-  const indexPageAt = async (projectId: number | null) => {
+  const indexChunkWithRevision = async (aclRevision: number) => {
     const values = jest.fn().mockResolvedValue(undefined);
     const tx = makeTx();
     tx.delete = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
@@ -284,9 +263,11 @@ describe("KbIndexingService — a chunk carries the ACL it is filtered by", () =
       visibility: "org",
       deletedAt: null,
       contentText: "a page with enough words to make one chunk",
-      projectId,
+      projectId: null,
       createdById: "user-7",
       createdByMembershipId: null,
+      aclRevision,
+      contentRevision: 1,
     });
 
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
@@ -294,30 +275,20 @@ describe("KbIndexingService — a chunk carries the ACL it is filtered by", () =
     return values;
   };
 
-  it("writes the page's visibility, project and author onto every chunk", async () => {
-    const values = await indexPageAt(1);
-    const rows = values.mock.calls[0]?.[0] as {
-      pageVisibility: string;
-      pageProjectId: number | null;
-      pageCreatedById: string;
-      pageCreatedByMembershipId: number | null;
-    }[];
+  it("writes aclRevision onto every inserted chunk", async () => {
+    const values = await indexChunkWithRevision(3);
+    const rows = values.mock.calls[0]?.[0] as { aclRevision: number }[];
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row).toMatchObject({
-        pageVisibility: "org",
-        pageProjectId: 1,
-        pageCreatedById: "user-7",
-        pageCreatedByMembershipId: null,
-      });
+      expect(row).toMatchObject({ aclRevision: 3 });
     }
   });
 
-  it("moves the chunk with the page when the page changes project", async () => {
-    const rowsBefore = (await indexPageAt(1)).mock.calls[0]?.[0] as { pageProjectId: number | null }[];
-    const rowsAfter = (await indexPageAt(2)).mock.calls[0]?.[0] as { pageProjectId: number | null }[];
+  it("inserted chunks carry the aclRevision that was current at index time", async () => {
+    const rowsBefore = (await indexChunkWithRevision(2)).mock.calls[0]?.[0] as { aclRevision: number }[];
+    const rowsAfter = (await indexChunkWithRevision(7)).mock.calls[0]?.[0] as { aclRevision: number }[];
 
-    expect(rowsBefore[0]?.pageProjectId).toBe(1);
-    expect(rowsAfter[0]?.pageProjectId).toBe(2);
+    expect(rowsBefore[0]?.aclRevision).toBe(2);
+    expect(rowsAfter[0]?.aclRevision).toBe(7);
   });
 });

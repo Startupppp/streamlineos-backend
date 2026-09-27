@@ -14,6 +14,7 @@ import {
 } from "../../../../common/slo";
 import {
   KB_INDEXING_OUTCOMES,
+  KB_INDEXING_QUEUE_LANE,
   KB_INDEXING_SPAN_NAME,
   KbIndexingMetrics,
   isKbIndexingFault,
@@ -139,6 +140,8 @@ describe("the KB indexing metric reaches the stream the span alerts already read
     expect(line["kb.reused"]).toBe(false);
     expect(typeof line["kb.duration_ms"]).toBe("number");
     expect(line["org.id"]).toBe("org_a");
+    expect(line["kb.indexing.queue_lane"]).toBe("background");
+    expect(line["kb.indexing.db_role"]).toBe("primary");
   });
 
   it("a fault outcome closes the span as an error so the status and the outcome agree", () => {
@@ -216,7 +219,7 @@ describe("the KB indexing span carries no tenant content and survives redaction"
       (match) => match[1] as string,
     );
     expect(declared).toEqual(
-      expect.arrayContaining(["kb.outcome", "kb.chunks", "kb.embedded", "kb.reused"]),
+      expect.arrayContaining(["kb.outcome", "kb.chunks", "kb.embedded", "kb.reused", "kb.indexing.queue_lane", "kb.indexing.db_role"]),
     );
     const allowed = new Set([
       "kb.content_type",
@@ -225,7 +228,10 @@ describe("the KB indexing span carries no tenant content and survives redaction"
       "kb.chunks",
       "kb.embedded",
       "kb.reused",
+      "kb.indexing.queue_lane",
+      "kb.indexing.db_role",
       "org.id",
+      "org.cell",
     ]);
     expect(declared.filter((key) => !allowed.has(key))).toEqual([]);
   });
@@ -348,6 +354,68 @@ describe("the emitter is wired at the indexing service's real decision points", 
   });
 });
 
+describe("the KB indexing span carries org.cell when provided and omits it when absent", () => {
+  it("org.cell is present in the span when orgCell is passed to begin (positive control)", () => {
+    const captured: Array<Record<string, unknown>> = [];
+    setSpanExporter({ export: (span) => captured.push({ ...span.attributes }) });
+    try {
+      const m = KbIndexingMetrics.begin({ contentType: "page", orgId: "org_a", orgCell: "cell-eu-1" });
+      m.finish("indexed", { chunks: 1 });
+    } finally {
+      resetSpanExporter();
+    }
+    expect(captured[0]?.["org.cell"]).toBe("cell-eu-1");
+    expect(captured[0]?.["org.id"]).toBe("org_a");
+  });
+
+  it("org.cell is absent when orgCell is omitted from begin, org.id still emits as a positive control", () => {
+    const captured: Array<Record<string, unknown>> = [];
+    setSpanExporter({ export: (span) => captured.push({ ...span.attributes }) });
+    try {
+      const m = KbIndexingMetrics.begin({ contentType: "page", orgId: "org_b" });
+      m.finish("indexed", { chunks: 1 });
+    } finally {
+      resetSpanExporter();
+    }
+    expect(captured[0]?.["org.cell"]).toBeUndefined();
+    expect(captured[0]?.["org.id"]).toBe("org_b");
+  });
+});
+
+describe("the KB indexing emitter supplies the queue-lane and db-role dimensions", () => {
+  it("KB_INDEXING_QUEUE_LANE is a named constant so adding a second lane has a home", () => {
+    expect(typeof KB_INDEXING_QUEUE_LANE).toBe("string");
+    expect(metricsSource).toContain("KB_INDEXING_QUEUE_LANE");
+  });
+
+  it("a caller-supplied queueLane overrides the default and reaches the emitted line", () => {
+    const line = emitOneLine((m) => m.finish("indexed", { chunks: 1, queueLane: "priority" }));
+    expect(line["kb.indexing.queue_lane"]).toBe("priority");
+    expect(line["kb.indexing.db_role"]).toBe("primary");
+  });
+
+  it("a caller-supplied dbRole overrides the default and reaches the emitted line (positive control)", () => {
+    const line = emitOneLine((m) => m.finish("indexed", { chunks: 1, dbRole: "replica" }));
+    expect(line["kb.indexing.db_role"]).toBe("replica");
+    expect(line["kb.indexing.queue_lane"]).toBe("background");
+  });
+
+  it("wires orgCell from PROCESS_CELL_ID in the indexing service so the tenant-bucket dimension emits", () => {
+    expect(serviceSource).toContain("orgCell");
+    expect(serviceSource).toContain("PROCESS_CELL_ID");
+  });
+
+  it("wires queueLane via KB_INDEXING_QUEUE_LANE in the indexing service so the queue-lane dimension is not hardcoded", () => {
+    expect(serviceSource).toContain("queueLane");
+    expect(serviceSource).toContain("KB_INDEXING_QUEUE_LANE");
+    expect(serviceSource).not.toMatch(/const queueLane\s*=\s*["']/);
+  });
+
+  it("wires dbRole in the indexing service so the primary-replica dimension emits", () => {
+    expect(serviceSource).toContain("dbRole");
+  });
+});
+
 describe("the KB indexing emitter is also wired in the attachment indexing service", () => {
   function outcomesPassedToFinish(source: string): string[] {
     return [...source.matchAll(/metrics\.finish\(([^;]*?)\)\s*;/gs)].flatMap((call) =>
@@ -390,5 +458,19 @@ describe("the KB indexing emitter is also wired in the attachment indexing servi
 
   it("classifies a thrown credit or provider failure rather than reporting a bare error", () => {
     expect(attachmentServiceSource).toContain("kbIndexingOutcomeForError(error)");
+  });
+
+  it("wires orgCell from PROCESS_CELL_ID so the tenant-bucket dimension emits", () => {
+    expect(attachmentServiceSource).toContain("orgCell");
+    expect(attachmentServiceSource).toContain("PROCESS_CELL_ID");
+  });
+
+  it("wires queueLane via KB_INDEXING_QUEUE_LANE so the queue-lane dimension is not hardcoded", () => {
+    expect(attachmentServiceSource).toContain("queueLane");
+    expect(attachmentServiceSource).toContain("KB_INDEXING_QUEUE_LANE");
+  });
+
+  it("wires dbRole in every finish call so the primary-replica dimension emits", () => {
+    expect(attachmentServiceSource).toContain("dbRole");
   });
 });

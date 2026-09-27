@@ -19,7 +19,10 @@ import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { KbCandidateService } from "./kb-candidate.service";
-import { supportArticlePredicate, wikiPagePredicate } from "../help-centre/kb-article-page-scope";
+import {
+  supportArticlePredicate,
+  wikiPagePredicate,
+} from "../help-centre/kb-article-page-scope";
 import { AccessService } from "../../access/access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
@@ -35,7 +38,10 @@ import {
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
   type KbContextPassage,
 } from "./kb-ask-context";
-import { KbEmbeddingCache, normalizeEmbeddableQuery } from "./kb-embedding-cache";
+import {
+  KbEmbeddingCache,
+  normalizeEmbeddableQuery,
+} from "./kb-embedding-cache";
 
 export { normalizeEmbeddableQuery };
 
@@ -51,6 +57,7 @@ export type RetrievedSource =
       spaceId: number | null;
       contentText: string;
       updatedAt: Date;
+      aclRevision?: number;
     }
   | {
       kind: "page";
@@ -59,6 +66,7 @@ export type RetrievedSource =
       spaceId: number | null;
       contentText: string;
       updatedAt: Date;
+      aclRevision?: number;
     };
 
 export interface RetrievedSourceDocument {
@@ -101,7 +109,9 @@ export class KbSearchRetrievalService {
     const q = query.trim();
     if (q.length === 0 || !this.aiGateway.isEmbeddingConfigured())
       return { vectorLiteral: null };
-    return { vectorLiteral: await this.embeddingCache.embedOrDegrade(q, orgId) };
+    return {
+      vectorLiteral: await this.embeddingCache.embedOrDegrade(q, orgId),
+    };
   }
 
   private async vectorFor(
@@ -140,7 +150,11 @@ export class KbSearchRetrievalService {
     const q = query.trim();
     if (!q) return [];
 
-    const principal = { userId: standing.userId, membershipId: standing.membershipId, roleSlugs: standing.roleSlugs };
+    const principal = {
+      userId: standing.userId,
+      membershipId: standing.membershipId,
+      roleSlugs: standing.roleSlugs,
+    };
     const ownerFilter = await this.articleOwnerFilterFor(user);
 
     const pool = Math.max(limit * 3, limit);
@@ -227,7 +241,8 @@ export class KbSearchRetrievalService {
       ];
       if (spaceId) articleConditions.push(eq(kbPages.spaceId, spaceId));
       if (ownerFilter) articleConditions.push(ownerFilter);
-      const articleRestriction = await this.auth.articleRestrictionPredicate(user);
+      const articleRestriction =
+        await this.auth.articleRestrictionPredicate(user);
       if (articleRestriction) articleConditions.push(articleRestriction);
       const articleRows = await this.db
         .select({
@@ -237,6 +252,7 @@ export class KbSearchRetrievalService {
           spaceId: kbPages.spaceId,
           contentText: kbPages.contentText,
           updatedAt: kbPages.updatedAt,
+          aclRevision: kbPages.aclRevision,
         })
         .from(kbPages)
         .where(and(...articleConditions));
@@ -258,6 +274,7 @@ export class KbSearchRetrievalService {
           spaceId: kbPages.spaceId,
           contentText: kbPages.contentText,
           updatedAt: kbPages.updatedAt,
+          aclRevision: kbPages.aclRevision,
         })
         .from(kbPages)
         .where(
@@ -396,7 +413,8 @@ export class KbSearchRetrievalService {
     if (!q) return [];
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
     try {
-      const accessibleSpaceIds = (await this.auth.resolveStanding(user)).accessibleSpaceIds;
+      const accessibleSpaceIds = (await this.auth.resolveStanding(user))
+        .accessibleSpaceIds;
       const vector = await this.vectorFor(q, user.orgId, embedding);
 
       const cap = Math.min(limit * 4, PAGE_SIZE_CAP);
@@ -422,7 +440,8 @@ export class KbSearchRetrievalService {
         eq(kbSources.orgId, user.orgId),
       ];
       if (spaceFilter) conditions.push(spaceFilter);
-      if (sourceIds && sourceIds.length > 0) conditions.push(inArray(kbSources.id, sourceIds));
+      if (sourceIds && sourceIds.length > 0)
+        conditions.push(inArray(kbSources.id, sourceIds));
       if (vector === null) conditions.push(this.chunkKeywordMatch(q));
       else conditions.push(inArray(kbArticleChunks.id, chunkIds));
 

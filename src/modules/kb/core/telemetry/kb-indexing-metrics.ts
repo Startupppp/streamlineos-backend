@@ -4,6 +4,8 @@ import { startSpan, type OpenSpan } from "../../../../common/observability";
 
 export const KB_INDEXING_SPAN_NAME = "kb.indexing.operation";
 
+export const KB_INDEXING_QUEUE_LANE = "background" as const;
+
 export const KB_INDEXING_OUTCOMES = [
   "indexed",
   "reused",
@@ -42,6 +44,8 @@ export interface KbIndexingFacts {
   chunks?: number;
   embedded?: number;
   reused?: boolean;
+  queueLane?: string;
+  dbRole?: string;
 }
 
 export class KbIndexingMetrics {
@@ -51,17 +55,19 @@ export class KbIndexingMetrics {
   private embeddedChunks = 0;
   private finished = false;
 
-  private constructor(contentType: KbIndexingContentType, orgId: string | undefined) {
-    this.attributes["kb.content_type"] = contentType;
-    if (orgId) this.attributes["org.id"] = orgId;
+  private constructor(opts: { contentType: KbIndexingContentType; orgId?: string; orgCell?: string }) {
+    this.attributes["kb.content_type"] = opts.contentType;
+    if (opts.orgId) this.attributes["org.id"] = opts.orgId;
+    if (opts.orgCell) this.attributes["org.cell"] = opts.orgCell;
     this.span = startSpan(KB_INDEXING_SPAN_NAME, { attributes: this.attributes });
   }
 
   static begin(opts: {
     contentType: KbIndexingContentType;
     orgId?: string;
+    orgCell?: string;
   }): KbIndexingMetrics {
-    return new KbIndexingMetrics(opts.contentType, opts.orgId);
+    return new KbIndexingMetrics(opts);
   }
 
   embedded(count: number): void {
@@ -77,6 +83,8 @@ export class KbIndexingMetrics {
     this.attributes["kb.chunks"] = facts.chunks ?? 0;
     this.attributes["kb.embedded"] = facts.embedded ?? this.embeddedChunks;
     this.attributes["kb.reused"] = facts.reused ?? false;
+    this.attributes["kb.indexing.queue_lane"] = facts.queueLane ?? KB_INDEXING_QUEUE_LANE;
+    this.attributes["kb.indexing.db_role"] = facts.dbRole ?? "primary";
 
     this.span.end(NON_FAULT_OUTCOMES.has(outcome) ? "ok" : "error");
   }

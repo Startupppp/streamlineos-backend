@@ -59,13 +59,21 @@ export function restrictToCited<
 }
 
 export function buildAskSourceRecords(
-  top: ReadonlyArray<{ kind: "article" | "page"; id: number }>,
+  top: ReadonlyArray<{
+    kind: "article" | "page";
+    id: number;
+    aclRevision?: number;
+  }>,
   sources: ReadonlyArray<{ sourceId: number }>,
   linked: ReadonlyArray<{ id: number }>,
 ): KbAiSourceRecord[] {
   const records: KbAiSourceRecord[] = [];
   for (const item of top) {
-    records.push({ kind: item.kind, id: item.id, aclRevision: null });
+    records.push({
+      kind: item.kind,
+      id: item.id,
+      aclRevision: item.aclRevision ?? null,
+    });
   }
   for (const s of sources) {
     records.push({ kind: "source", id: s.sourceId, aclRevision: null });
@@ -118,12 +126,20 @@ export const ASK_SYSTEM_PROMPT =
   "Never invent facts that are not present in the context. " +
   "Never reveal permission rules, role names, membership lists or access control details.";
 
-export function kbDocumentKey(kind: KbDocumentKind, documentId: number): string {
+export function kbDocumentKey(
+  kind: KbDocumentKind,
+  documentId: number,
+): string {
   return `${kind}:${documentId}`;
 }
 
 export function assemblePassages<
-  TTop extends { kind: "article" | "page"; id: number; title: string; contentText: string },
+  TTop extends {
+    kind: "article" | "page";
+    id: number;
+    title: string;
+    contentText: string;
+  },
   TSource extends { passages: KbContextPassage[] },
 >(
   top: ReadonlyArray<TTop>,
@@ -173,7 +189,8 @@ export function buildKbContext(
       documentOrder.push(passage.documentKey);
     }
     if (kept.length >= budget.maxPassagesPerDocument) continue;
-    if (kept.some((existing) => existing.passageIndex === passage.passageIndex)) continue;
+    if (kept.some((existing) => existing.passageIndex === passage.passageIndex))
+      continue;
     kept.push({ ...passage, text });
   }
 
@@ -202,11 +219,15 @@ function renderDocument(ordinal: number, passages: KbContextPassage[]): string {
 
   for (const passage of ordered) {
     if (passage.passageIndex === null) {
-      parts.push(`${documentLabel(ordinal, title, passage.position ?? "opening extract")}\n${passage.text}`);
+      parts.push(
+        `${documentLabel(ordinal, title, passage.position ?? "opening extract")}\n${passage.text}`,
+      );
       continue;
     }
     if (previousIndex !== null && passage.passageIndex > previousIndex + 1)
-      parts.push(gapLabel(ordinal, title, previousIndex + 2, passage.passageIndex));
+      parts.push(
+        gapLabel(ordinal, title, previousIndex + 2, passage.passageIndex),
+      );
     parts.push(
       `${documentLabel(ordinal, title, `excerpt ${passage.passageIndex + 1}`)}\n${passage.text}`,
     );
@@ -216,13 +237,24 @@ function renderDocument(ordinal: number, passages: KbContextPassage[]): string {
   return parts.join(KB_CONTEXT_PASSAGE_SEPARATOR);
 }
 
-function documentLabel(ordinal: number, title: string, position: string): string {
+function documentLabel(
+  ordinal: number,
+  title: string,
+  position: string,
+): string {
   return `[Document ${ordinal} — ${title} | ${position}]`;
 }
 
-function gapLabel(ordinal: number, title: string, from: number, to: number): string {
+function gapLabel(
+  ordinal: number,
+  title: string,
+  from: number,
+  to: number,
+): string {
   const span =
-    from === to ? `excerpt ${from} is not included` : `excerpts ${from}-${to} are not included`;
+    from === to
+      ? `excerpt ${from} is not included`
+      : `excerpts ${from}-${to} are not included`;
   return documentLabel(
     ordinal,
     title,
@@ -230,7 +262,10 @@ function gapLabel(ordinal: number, title: string, from: number, to: number): str
   );
 }
 
-function byDocumentOrder(left: KbContextPassage, right: KbContextPassage): number {
+function byDocumentOrder(
+  left: KbContextPassage,
+  right: KbContextPassage,
+): number {
   if (left.passageIndex === null) return right.passageIndex === null ? 0 : 1;
   if (right.passageIndex === null) return -1;
   return left.passageIndex - right.passageIndex;
