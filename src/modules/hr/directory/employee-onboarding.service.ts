@@ -486,7 +486,7 @@ export class EmployeeOnboardingService {
     const tokenId = randomUUID();
     const signInUrl = `${appUrl()}/magic-link?token=${rawToken}`;
 
-    return runInTenantTransaction(
+    const delivery = await runInTenantTransaction(
       this.db,
       async (tx): Promise<InviteDelivery> => {
         await tx
@@ -532,6 +532,10 @@ export class EmployeeOnboardingService {
       },
       { orgId: input.orgId },
     );
+    if (delivery.sent) {
+      await this.email.handoffQueued?.(input.email)?.catch(() => undefined);
+    }
+    return delivery;
   }
 
   private async resolveSubject(

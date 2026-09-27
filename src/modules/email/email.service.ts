@@ -42,6 +42,10 @@ export class EmailService extends EmailSendersBase {
     );
   }
 
+  handoffQueued(toEmail: string): Promise<{ sent: number }> {
+    return this.outbox.dispatchPendingRecipient(toEmail);
+  }
+
   queueWelcomeEmail(input: {
     organizationId: string;
     recipientUserId: string;

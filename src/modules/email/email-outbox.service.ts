@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { emailOutbox } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -176,6 +176,60 @@ export class EmailOutboxService {
       to: toEmail,
       subject: options.subject,
     });
+  }
+
+  /**
+   * Hands already-queued rows to the provider. Invite mail is inserted inside
+   * the token transaction (`enqueueOnly`) so a crash cannot leave a live link
+   * with no outbox row. That insert does not talk to the provider; without this
+   * step the message stays "queued" until a later worker that may never run.
+   */
+  async dispatchPendingRecipient(toEmail: string): Promise<{ sent: number }> {
+    const rows = await this.db
+      .select({
+        id: emailOutbox.id,
+        subject: emailOutbox.subject,
+        html: emailOutbox.html,
+        text: emailOutbox.text,
+        attempts: emailOutbox.attempts,
+      })
+      .from(emailOutbox)
+      .where(and(eq(emailOutbox.toEmail, toEmail), eq(emailOutbox.status, "PENDING")))
+      .orderBy(desc(emailOutbox.createdAt))
+      .limit(5);
+
+    if (this.emailProvider.getEmailProvider() === "none") return { sent: 0 };
+
+    let sent = 0;
+    for (const row of rows) {
+      try {
+        await this.emailProvider.sendEmailOnceDirect(
+          { to: toEmail, subject: row.subject, html: row.html, text: row.text ?? undefined },
+          INLINE_SEND_BUDGET_MS,
+        );
+        await this.db
+          .update(emailOutbox)
+          .set({ status: "SENT", sentAt: new Date(), attempts: row.attempts + 1 })
+          .where(eq(emailOutbox.id, row.id));
+        sent += 1;
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        await this.db
+          .update(emailOutbox)
+          .set({
+            attempts: row.attempts + 1,
+            lastError: errorMessage,
+            nextAttemptAt: new Date(Date.now() + 60_000),
+          })
+          .where(eq(emailOutbox.id, row.id));
+        this.logger.warn("EMAIL_OUTBOX: handoff failed, left queued for retry", {
+          id: row.id,
+          to: toEmail,
+          error: errorMessage,
+        });
+      }
+    }
+    return { sent };
   }
 
   async enqueueAndTry(options: EmailOptions): Promise<void> {
