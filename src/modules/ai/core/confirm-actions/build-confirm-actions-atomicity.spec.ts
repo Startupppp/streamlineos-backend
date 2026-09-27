@@ -38,7 +38,7 @@ describe("ticket.updateStatus confirmable action — atomicity contract", () => 
     compiledModule = await Test.createTestingModule({
       providers: [
         { provide: DRIZZLE, useValue: {} },
-        { provide: ProjectsTicketsService, useValue: { updateTicket: mockUpdateTicket } },
+        { provide: ProjectsTicketsService, useValue: { updateTicketFromSystem: mockUpdateTicket } },
         { provide: ProjectsTicketCommentsService, useValue: { addComment: mockAddComment } },
       ],
     }).compile();

@@ -24,8 +24,29 @@ import {
   emitBatchStatusChanges,
   validateBatchTransition,
 } from "./build-ticket-batch-workflow";
+import type { TicketEventPayload } from "./build-automation-runner.service";
 import { resolveAssigneeId } from "./tickets-helpers";
 import { resolveProjectAssignableMemberships } from "./project-access";
+
+export interface BulkTicketEffectDeps {
+  readonly webhooksDispatch: {
+    enqueue(
+      tx: unknown,
+      orgId: string,
+      projectId: number,
+      event: string,
+      payload: Record<string, unknown>,
+    ): Promise<void>;
+  };
+  readonly automationRunner: {
+    runForTicketEvent(
+      orgId: string,
+      projectId: number,
+      event: string,
+      payload: TicketEventPayload,
+    ): void;
+  };
+}
 
 export async function bulkMutateTickets(
   db: Db,
@@ -33,6 +54,7 @@ export async function bulkMutateTickets(
   actor: CurrentUserContext,
   projectId: number,
   body: BulkUpdateInput,
+  effectDeps?: BulkTicketEffectDeps,
 ) {
   const ids = [...new Set(body.ticketIds)];
   if (!ids.length || ids.length > 100)
@@ -42,7 +64,12 @@ export async function bulkMutateTickets(
     (await access.scopeFor(actor, "build:tickets:assign")) === "none"
   )
     throw new ForbiddenException("Not authorized to assign tickets");
-  return db.transaction(async (tx) => {
+  const effectRows: Array<{
+    id: number;
+    previousStatus: string | undefined;
+    effectiveStatus: string;
+  }> = [];
+  const result = await db.transaction(async (tx) => {
     const policy = await authorizeTicketMutation(tx, access, actor, projectId);
     await lockProjectTicketMutation(tx, actor.orgId, projectId);
     const rows = await readMutationTickets(tx, actor, projectId, ids, policy);
@@ -70,9 +97,17 @@ export async function bulkMutateTickets(
         const [cycleRow] = await tx
           .select({ id: cycles.id })
           .from(cycles)
-          .where(and(eq(cycles.orgId, actor.orgId), eq(cycles.projectId, projectId), eq(cycles.id, body.cycleId), isNull(cycles.deletedAt)))
+          .where(
+            and(
+              eq(cycles.orgId, actor.orgId),
+              eq(cycles.projectId, projectId),
+              eq(cycles.id, body.cycleId),
+              isNull(cycles.deletedAt),
+            ),
+          )
           .limit(1);
-        if (!cycleRow) throw new NotFoundException("Cycle not found in this project");
+        if (!cycleRow)
+          throw new NotFoundException("Cycle not found in this project");
       }
       resolvedCycleId = body.cycleId;
     }
@@ -152,7 +187,8 @@ export async function bulkMutateTickets(
           blocked: Array.from(blockersMap.entries()).map(
             ([ticketId, dependencyCount]) => ({
               ticketId,
-              reason: "Has active sub-tickets that are not included in the selection",
+              reason:
+                "Has active sub-tickets that are not included in the selection",
               dependencyCount,
             }),
           ),
@@ -211,7 +247,11 @@ export async function bulkMutateTickets(
           })),
         );
     }
-    if (body.labelIds !== undefined && body.labelIds.length > 0 && updated.length > 0) {
+    if (
+      body.labelIds !== undefined &&
+      body.labelIds.length > 0 &&
+      updated.length > 0
+    ) {
       const mappings = updated.flatMap(({ id: ticketId }) =>
         body.labelIds!.map((labelId) => ({
           orgId: actor.orgId,
@@ -219,7 +259,10 @@ export async function bulkMutateTickets(
           labelId,
         })),
       );
-      await tx.insert(ticketLabelMappings).values(mappings).onConflictDoNothing();
+      await tx
+        .insert(ticketLabelMappings)
+        .values(mappings)
+        .onConflictDoNothing();
     }
     if (body.status !== undefined)
       await emitBatchStatusChanges(
@@ -231,6 +274,82 @@ export async function bulkMutateTickets(
         now,
         new Map(updated.map((r) => [r.id, r.version])),
       );
+    if (effectDeps) {
+      const nowIso = now.toISOString();
+      for (const row of updated) {
+        const beforeRow = rows.find((r) => r.id === row.id);
+        const effectiveStatus: string =
+          update.status ?? beforeRow?.status ?? "TODO";
+        await effectDeps.webhooksDispatch.enqueue(
+          tx,
+          actor.orgId,
+          projectId,
+          "ticket.updated",
+          {
+            id: row.id,
+            projectId,
+            status: effectiveStatus,
+            priority: update.priority ?? beforeRow?.priority ?? "MEDIUM",
+            actor: actor.userId,
+            timestamp: nowIso,
+          },
+        );
+        if (
+          body.status !== undefined &&
+          beforeRow &&
+          beforeRow.status !== body.status
+        ) {
+          await effectDeps.webhooksDispatch.enqueue(
+            tx,
+            actor.orgId,
+            projectId,
+            "ticket.status_changed",
+            {
+              id: row.id,
+              projectId,
+              previousStatus: beforeRow.status,
+              newStatus: body.status,
+              actor: actor.userId,
+              timestamp: nowIso,
+            },
+          );
+        }
+        effectRows.push({
+          id: row.id,
+          previousStatus: beforeRow?.status,
+          effectiveStatus,
+        });
+      }
+    }
     return { updated: updated.length, ticketIds: updated.map((row) => row.id) };
   });
+  if (effectDeps) {
+    for (const ep of effectRows) {
+      const afterPayload = {
+        ticketId: ep.id,
+        projectId,
+        orgId: actor.orgId,
+        status: ep.effectiveStatus,
+      };
+      effectDeps.automationRunner.runForTicketEvent(
+        actor.orgId,
+        projectId,
+        "ticket.updated",
+        afterPayload,
+      );
+      if (
+        body.status !== undefined &&
+        ep.previousStatus !== undefined &&
+        ep.previousStatus !== body.status
+      ) {
+        effectDeps.automationRunner.runForTicketEvent(
+          actor.orgId,
+          projectId,
+          "ticket.status_changed",
+          afterPayload,
+        );
+      }
+    }
+  }
+  return result;
 }

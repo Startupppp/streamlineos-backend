@@ -29,6 +29,7 @@ import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.serv
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
+import { readTicketVersionForSystemWrite } from "./tickets-helpers";
 import { AccessService } from "../../access/access.service";
 import {
   assertTicketReadAccess,
@@ -110,6 +111,23 @@ export class ProjectsTicketsService {
     input: UpdateTicketInput,
   ) {
     return this.update.updateTicket(u, projectId, ticketId, input);
+  }
+
+  async updateTicketFromSystem(
+    u: CurrentUserContext,
+    projectId: number | null,
+    ticketId: number,
+    input: Omit<UpdateTicketInput, "version">,
+  ) {
+    const version = await readTicketVersionForSystemWrite(
+      this.db,
+      u.orgId,
+      ticketId,
+    );
+    return this.update.updateTicket(u, projectId, ticketId, {
+      ...input,
+      version,
+    });
   }
 
   async deleteTicket(

@@ -6373,6 +6373,13 @@
       "breakpoints": true
     },
     {
+      "idx": 1136,
+      "version": "7",
+      "when": 1803093625725,
+      "tag": "1396_build_sprint_cycle_chain_repair",
+      "breakpoints": true
+    },
+    {
       "idx": 1038,
       "version": "7",
       "when": 1803000010500,

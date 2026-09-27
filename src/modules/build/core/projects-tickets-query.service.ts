@@ -12,6 +12,8 @@ import { assertTransitionAllowed, assertWipLimit, enforceWipLimitForStatus, type
 import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils";
 import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
 import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "./build-ticket-mutation-policy";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 
 @Injectable()
 export class ProjectsTicketsQueryService {
@@ -19,6 +21,8 @@ export class ProjectsTicketsQueryService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
+    private readonly automationRunner: BuildAutomationRunnerService,
   ) {}
 
   async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
@@ -41,7 +45,10 @@ export class ProjectsTicketsQueryService {
   }
 
   async bulkUpdate(actor: CurrentUserContext, projectId: number, body: BulkUpdateInput) {
-    const result = await bulkMutateTickets(this.db, this.access, actor, projectId, body);
+    const result = await bulkMutateTickets(this.db, this.access, actor, projectId, body, {
+      webhooksDispatch: this.webhooksDispatch,
+      automationRunner: this.automationRunner,
+    });
     await this.cache.invalidateNamespace(`build:analytics:${actor.orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId }));
     return result;
@@ -54,7 +61,10 @@ export class ProjectsTicketsQueryService {
   }
 
   async rankTicket(actor: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput) {
-    return rankTicket(this.db, this.cache, this.access, actor, projectId, ticketId, body);
+    return rankTicket(this.db, this.cache, this.access, actor, projectId, ticketId, body, {
+      webhooksDispatch: this.webhooksDispatch,
+      automationRunner: this.automationRunner,
+    });
   }
 
   async rebalanceProjectRanks(orgId: string, projectId: number): Promise<void> {

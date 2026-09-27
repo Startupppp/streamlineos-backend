@@ -1,6 +1,32 @@
-import { ticketTypeEnum } from "../../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { NotFoundException } from "@nestjs/common";
+import { ticketTypeEnum, tickets } from "../../../db/schema";
 
 type TicketType = (typeof ticketTypeEnum.enumValues)[number];
+
+export interface TicketVersionSource {
+  select(columns: Record<string, unknown>): {
+    from(table: unknown): {
+      where(condition: unknown): {
+        limit(count: number): PromiseLike<Array<{ version: number }>>;
+      };
+    };
+  };
+}
+
+export async function readTicketVersionForSystemWrite(
+  db: TicketVersionSource,
+  orgId: string,
+  ticketId: number,
+): Promise<number> {
+  const [row] = await db
+    .select({ version: tickets.version })
+    .from(tickets)
+    .where(and(eq(tickets.orgId, orgId), eq(tickets.id, ticketId), isNull(tickets.deletedAt)))
+    .limit(1);
+  if (!row) throw new NotFoundException("Ticket not found");
+  return row.version;
+}
 
 export function normalizeTicketType(type: string): TicketType {
   const upper = type.toUpperCase();

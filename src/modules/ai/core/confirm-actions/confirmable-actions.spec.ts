@@ -419,7 +419,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
     const mockUpdateTicket = jest.fn().mockResolvedValue({});
     const mockAddComment = jest.fn().mockResolvedValue({ id: 99 });
     const moduleRef = makeModuleRef(
-      { updateTicket: mockUpdateTicket },
+      { updateTicketFromSystem: mockUpdateTicket },
       { addComment: mockAddComment },
     );
     const definition = findConfirmableAction("ticket.updateStatus");
@@ -436,7 +436,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
     const mockUpdateTicket = jest.fn().mockResolvedValue({});
     const mockAddComment = jest.fn();
     const moduleRef = makeModuleRef(
-      { updateTicket: mockUpdateTicket },
+      { updateTicketFromSystem: mockUpdateTicket },
       { addComment: mockAddComment },
     );
     const definition = findConfirmableAction("ticket.updateStatus");
@@ -453,7 +453,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
     const mockUpdateTicket = jest.fn().mockResolvedValue({});
     const mockAddComment = jest.fn();
     const moduleRef = makeModuleRef(
-      { updateTicket: mockUpdateTicket },
+      { updateTicketFromSystem: mockUpdateTicket },
       { addComment: mockAddComment },
     );
     const definition = findConfirmableAction("ticket.updateStatus");
@@ -470,7 +470,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
     const mockUpdateTicket = jest.fn().mockResolvedValue({});
     const mockAddComment = jest.fn().mockResolvedValue({ id: 99 });
     const moduleRef = makeModuleRef(
-      { updateTicket: mockUpdateTicket },
+      { updateTicketFromSystem: mockUpdateTicket },
       { addComment: mockAddComment },
     );
     const definition = findConfirmableAction("ticket.updateStatus");

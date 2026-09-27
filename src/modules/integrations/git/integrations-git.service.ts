@@ -121,7 +121,7 @@ export class IntegrationsGitService {
 
     await runInNewTenantTransaction(this.db, orgId, async (tx) => {
       const ticketRows = await tx
-        .select({ id: tickets.id, projectId: tickets.projectId, status: tickets.status })
+        .select({ id: tickets.id, projectId: tickets.projectId, status: tickets.status, version: tickets.version })
         .from(tickets)
         .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.id, ticketIds)));
 
@@ -156,7 +156,10 @@ export class IntegrationsGitService {
           orgId,
         );
         try {
-          await this.projectsTickets.updateTicket(systemCtx, null, ticket.id, { status: targetStatus });
+          await this.projectsTickets.updateTicket(systemCtx, null, ticket.id, {
+            status: targetStatus,
+            version: ticket.version,
+          });
         } catch (error) {
           logger.warn("[git-webhook] skipped auto-transition", { ticketId: ticket.id, error });
         }

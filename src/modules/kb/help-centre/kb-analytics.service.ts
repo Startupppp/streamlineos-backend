@@ -279,7 +279,12 @@ export class KbAnalyticsService {
           ) AS ref_id,
           elem->>'title' AS title
         FROM ${kbChatMessages} m
-        CROSS JOIN LATERAL jsonb_array_elements(m.citations) AS elem
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(m.citations) = 'array' THEN m.citations
+            ELSE '[]'::jsonb
+          END
+        ) AS elem
         WHERE m.org_id = ${orgId} AND m.citations IS NOT NULL
           ${messageFrom ? sql`AND m.created_at >= ${messageFrom}` : sql``}
           ${messageTo ? sql`AND m.created_at <= ${messageTo}` : sql``}
@@ -289,7 +294,12 @@ export class KbAnalyticsService {
           (c->>'id')::int AS ref_id,
           c->>'title' AS title
         FROM ${kbResearchBriefs} b
-        CROSS JOIN LATERAL jsonb_array_elements(b.citations) AS c
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(b.citations) = 'array' THEN b.citations
+            ELSE '[]'::jsonb
+          END
+        ) AS c
         WHERE b.org_id = ${orgId} AND b.citations IS NOT NULL
           ${messageFrom ? sql`AND b.created_at >= ${messageFrom}` : sql``}
           ${messageTo ? sql`AND b.created_at <= ${messageTo}` : sql``}

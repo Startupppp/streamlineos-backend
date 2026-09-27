@@ -142,7 +142,10 @@ export class AgentController {
     @Body() body: AgentUpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ticketsSvc.updateTicket(u, null, ticketId, { status: body.status, expectedUpdatedAt: body.expectedUpdatedAt });
+    return this.ticketsSvc.updateTicketFromSystem(u, null, ticketId, {
+      status: body.status,
+      expectedUpdatedAt: body.expectedUpdatedAt,
+    });
   }
 
   @Post("tickets/:ticketId/comments")
