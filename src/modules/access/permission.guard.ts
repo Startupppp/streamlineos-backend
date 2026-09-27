@@ -58,7 +58,7 @@ export class PermissionGuard implements CanActivate, OnApplicationBootstrap {
         const hasPermissionGuard = [...classGuards, ...handlerGuards].includes(PermissionGuard);
 
         if (!hasPermissionGuard) {
-          broken.push(`${classRef.name as string}#${methodName}`);
+          broken.push(`${classRef.name}#${methodName}`);
         }
       }
     }

@@ -1,4 +1,5 @@
 import { testAuthContext } from "../../../test/helpers/module-guard-context";
+import type { DiscoveryService, MetadataScanner } from "@nestjs/core";
 import { Reflector } from "@nestjs/core";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { REQUIRE_MODULE } from "../../common/rbac/require-module.decorator";
@@ -137,6 +138,8 @@ describe("c4 production access wiring", () => {
     const permissionGuard = new PermissionGuard(
       permissionContext.reflector,
       wiring.access as never,
+      { getControllers: () => [] } as unknown as DiscoveryService,
+      { getAllMethodNames: () => [] } as unknown as MetadataScanner,
     );
     await expect(permissionGuard.canActivate(permissionContext.context)).resolves.toBe(true);
 

@@ -1,4 +1,5 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import type { DiscoveryService, MetadataScanner } from "@nestjs/core";
 import { Reflector } from "@nestjs/core";
 import { generateKeyPairSync } from "node:crypto";
 import { exportJWK } from "jose";
@@ -194,7 +195,12 @@ function buildStack(options: StackOptions = {}) {
     jwtGuard: new JwtAuthGuard(reflector, db, null, membership, keyring, factory),
     mfaGuard: new MfaGuard(reflector, mfaPolicy),
     moduleGuard: new ModuleGuard(reflector),
-    permissionGuard: new PermissionGuard(reflector, access),
+    permissionGuard: new PermissionGuard(
+      reflector,
+      access,
+      { getControllers: () => [] } as unknown as DiscoveryService,
+      { getAllMethodNames: () => [] } as unknown as MetadataScanner,
+    ),
   };
 }
 

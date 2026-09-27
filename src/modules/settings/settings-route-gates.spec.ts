@@ -1,5 +1,6 @@
 import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import { ForbiddenException, type ExecutionContext } from "@nestjs/common";
+import type { DiscoveryService, MetadataScanner } from "@nestjs/core";
 import { Reflector } from "@nestjs/core";
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -184,7 +185,12 @@ function canActivate(
     getClass: () => controller,
     switchToHttp: () => ({ getRequest: () => ({ user: actor, authContext }) }),
   } as unknown as ExecutionContext;
-  return new PermissionGuard(new Reflector(), accessHolding(keys)).canActivate(context);
+  return new PermissionGuard(
+    new Reflector(),
+    accessHolding(keys),
+    { getControllers: () => [] } as unknown as DiscoveryService,
+    { getAllMethodNames: () => [] } as unknown as MetadataScanner,
+  ).canActivate(context);
 }
 
 const gitConnections = GitConnectionsController.prototype;
