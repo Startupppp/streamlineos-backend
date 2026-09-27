@@ -35,7 +35,7 @@ import type {
   TimeEntryPaginationQuery,
   UpdateEntryInput,
 } from "./dto/timesheets.schemas";
-import { assertProjectInOrg } from "../core/project-access";
+import { assertProjectInOrg } from "../core";
 
 @Injectable()
 export class TimesheetsService {

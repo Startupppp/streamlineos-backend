@@ -14,7 +14,7 @@ import type {
   ModuleListQuery,
   UpdateModuleInput,
 } from "./dto/iterations.schemas";
-import { assertProjectInOrg } from "../core/project-access";
+import { assertProjectInOrg } from "../core";
 import {
   buildTupleCursorPage,
   decodeTupleCursor,

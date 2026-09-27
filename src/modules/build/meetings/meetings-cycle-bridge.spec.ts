@@ -4,7 +4,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import * as projectAccessSeam from "../core/project-access";
+import * as projectAccessSeam from "../core";
 
 jest.mock("../core/project-access", () => ({
   assertProjectAccess: jest.fn().mockResolvedValue(undefined),

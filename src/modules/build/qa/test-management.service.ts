@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type {
   CreateTestCaseInput,

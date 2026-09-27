@@ -1,13 +1,10 @@
 import { GoneException, NotFoundException } from "@nestjs/common";
-import { listReleasesQuerySchema } from "./core/dto/releases.schemas";
-import { ProjectsReleasesService } from "./core/projects-releases.service";
-import { ProjectsWebhooksService } from "./core/projects-webhooks.service";
+import { listReleasesQuerySchema, ProjectsReleasesService, ProjectsWebhooksService } from "./core";
 import { SprintsService } from "./execution/sprints.service";
 import { EpicsService } from "./execution/epics.service";
 import { CyclesService } from "./execution/cycles.service";
 import { ModulesService } from "./execution/modules.service";
-import { ProjectsCustomFieldsService } from "./core/projects-custom-fields.service";
-import { ProjectsAnalyticsService } from "./core/projects-analytics.service";
+import { ProjectsCustomFieldsService, ProjectsAnalyticsService } from "./core";
 import { CacheService } from "../../common/cache/cache.service";
 import type { Db } from "../../db/drizzle.module";
 import type { AccessService } from "../access/access.service";

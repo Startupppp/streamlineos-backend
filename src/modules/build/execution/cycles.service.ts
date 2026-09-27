@@ -4,7 +4,7 @@ import { cycles, projectStatuses, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateCycleInput, CycleListQuery, UpdateCycleInput } from "./dto/iterations.schemas";
-import { assertProjectInOrg } from "../core/project-access";
+import { assertProjectInOrg } from "../core";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 import { TicketVersionConflictException } from "../core/tickets";
 

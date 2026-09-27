@@ -1,4 +1,4 @@
-jest.mock("../core/project-access", () => ({
+jest.mock("../core", () => ({
   assertProjectAccess: jest.fn(),
 }));
 
@@ -12,7 +12,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { projectIncidents } from "../../../db/schema";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import {
   addIncidentUpdateSchema,
   incidentChildrenQuerySchema,

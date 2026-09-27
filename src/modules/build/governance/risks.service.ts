@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import type { CreateRiskInput, ListRisksQuery, UpdateRiskInput } from "./dto/governance.schemas";
 import type { OrgListRisksQuery } from "./dto/org-governance.schemas";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";

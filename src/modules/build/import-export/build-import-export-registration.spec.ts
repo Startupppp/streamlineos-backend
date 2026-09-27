@@ -1,5 +1,5 @@
 import { BUILD_MODULES } from "../build.module";
-import { ProjectsByIdModule } from "../core/projects-by-id.module";
+import { ProjectsByIdModule } from "../core";
 import { BuildImportExportModule } from "./build-import-export.module";
 import { TicketImportExportController } from "./ticket-import-export.controller";
 

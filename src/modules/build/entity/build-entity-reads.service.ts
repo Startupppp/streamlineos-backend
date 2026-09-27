@@ -29,7 +29,7 @@ import {
   buildReleaseListHref,
   buildTicketHref,
   buildTicketKey,
-} from "../core/build-app-paths";
+} from "../core";
 
 const READ_KEY: Record<string, string> = {
   ticket: "build:tickets:view",

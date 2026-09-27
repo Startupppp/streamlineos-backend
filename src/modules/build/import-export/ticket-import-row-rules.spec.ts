@@ -1,4 +1,4 @@
-import { createTicketSchema } from "../core/dto/ticket.schemas";
+import { createTicketSchema } from "../core";
 import { ticketImportRowSchema } from "./dto/ticket-import.schemas";
 
 function importAccepts(row: Record<string, unknown>): boolean {

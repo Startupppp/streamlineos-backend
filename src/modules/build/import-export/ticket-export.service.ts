@@ -5,7 +5,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { tickets } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import { resolveTicketsScope, ticketScope } from "../core/tickets";
 import { EXPORT_MAX_ROWS } from "./import-export.constants";
 import { toCsv } from "./csv-source";

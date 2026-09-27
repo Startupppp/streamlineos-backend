@@ -9,7 +9,7 @@ import {
 } from "../../../db/schema/build/qa";
 import { tickets } from "../../../db/schema/build/ticket-core";
 import { stateGroupEnum, ticketPriorityEnum } from "../../../db/schema/common/enums";
-import { DEFAULT_PROJECT_STATUSES } from "../core/lib/default-statuses";
+import { DEFAULT_PROJECT_STATUSES } from "../core";
 import { BUG_COLUMN_DISPOSITIONS } from "./bug-column-dispositions";
 import {
   BUG_PRIORITY_TO_TICKET_PRIORITY,

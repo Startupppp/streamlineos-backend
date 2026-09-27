@@ -18,7 +18,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { CreatePortalCrInput } from "./dto/client-portal.schemas";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import { nextChangeRequestNumber } from "./change-request-number-counter";
 
 @Injectable()

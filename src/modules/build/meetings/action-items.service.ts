@@ -9,7 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateActionItemInput, UpdateActionItemInput } from "./dto/meetings.schemas";
-import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { allocateTicketNumbers } from "../core";
 import { reserveTicketCapacity } from "../core/tickets";
 
 type ActionItemPatch = Partial<

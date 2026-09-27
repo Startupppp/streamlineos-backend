@@ -6,11 +6,6 @@ import {
   projects,
 } from "../../../db/schema";
 
-export {
-  resolveProjectAccess,
-  assertProjectAccess,
-} from "../core/project-access";
-
 export function reachableProjectsSql(
   orgId: string,
   membershipId: number,

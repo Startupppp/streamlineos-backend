@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { refineDueOnOrAfterStart } from "../../core/dto/project-core.schemas";
+import { refineDueOnOrAfterStart } from "../../core";
 
 export const TICKET_IMPORT_FIELDS = [
   "title",

@@ -10,8 +10,8 @@ const CYCLE_ID = 7;
 const USER_ID = "user-1";
 
 const CREATE_INPUT = { name: "Q4 Sprint", startDate: "2026-10-01", endDate: "2026-10-14" };
-const UPDATE_INPUT_ACTIVE = { status: "active" as const };
-const UPDATE_INPUT_DATES = { startDate: "2026-10-01", endDate: "2026-10-14" };
+const UPDATE_INPUT_ACTIVE = { status: "active" as const, version: 1 };
+const UPDATE_INPUT_DATES = { startDate: "2026-10-01", endDate: "2026-10-14", version: 1 };
 
 type CycleRowStatus = (typeof cycleStatusEnum.enumValues)[number];
 
@@ -105,6 +105,10 @@ function projectOk() {
   return jest.fn().mockResolvedValue({ id: PROJECT_ID });
 }
 
+function cycleOk() {
+  return jest.fn().mockResolvedValue({ version: 1 });
+}
+
 function makeService(db: Db): CyclesService {
   return new CyclesService(db as never);
 }
@@ -157,7 +161,7 @@ describe("CyclesService — constraint violation translation", () => {
       const db = {
         select: makeSelectEmpty(),
         update: makeUpdateError(uniqueViolation()),
-        query: { projects: { findFirst: projectOk() } },
+        query: { projects: { findFirst: projectOk() }, cycles: { findFirst: cycleOk() } },
       } as unknown as Db;
 
       await expect(
@@ -174,7 +178,7 @@ describe("CyclesService — constraint violation translation", () => {
       const db = {
         select: makeSelectEmpty(),
         update: makeUpdateSuccess([active]),
-        query: { projects: { findFirst: projectOk() } },
+        query: { projects: { findFirst: projectOk() }, cycles: { findFirst: cycleOk() } },
       } as unknown as Db;
 
       const result = await makeService(db).updateCycle(ORG_ID, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_ACTIVE);
@@ -187,7 +191,7 @@ describe("CyclesService — constraint violation translation", () => {
       const db = {
         select: makeSelectEmpty(),
         update: makeUpdateError(exclusionViolation()),
-        query: { projects: { findFirst: projectOk() } },
+        query: { projects: { findFirst: projectOk() }, cycles: { findFirst: cycleOk() } },
       } as unknown as Db;
 
       await expect(
@@ -203,7 +207,7 @@ describe("CyclesService — constraint violation translation", () => {
       const db = {
         select: makeSelectEmpty(),
         update: makeUpdateSuccess([]),
-        query: { projects: { findFirst: projectOk() } },
+        query: { projects: { findFirst: projectOk() }, cycles: { findFirst: jest.fn().mockResolvedValue(undefined) } },
       } as unknown as Db;
 
       await expect(
@@ -216,7 +220,7 @@ describe("CyclesService — constraint violation translation", () => {
       const db = {
         select: makeSelectEmpty(),
         update: makeUpdateError(unrelated),
-        query: { projects: { findFirst: projectOk() } },
+        query: { projects: { findFirst: projectOk() }, cycles: { findFirst: cycleOk() } },
       } as unknown as Db;
 
       await expect(

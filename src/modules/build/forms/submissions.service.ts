@@ -6,12 +6,11 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess, allocateTicketNumbers } from "../core";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
 import type { CreateSubmissionInput, ListSubmissionsQuery, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
-import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../core/tickets";
 
 type FormRow = typeof projectForms.$inferSelect;

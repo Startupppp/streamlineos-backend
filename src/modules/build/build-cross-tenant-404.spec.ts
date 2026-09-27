@@ -1,7 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import { CyclesService } from "./execution/cycles.service";
 import { ModulesService } from "./execution/modules.service";
-import { BuildMembersService } from "./core/build-members.service";
+import { BuildMembersService } from "./core";
 import type { Db } from "../../db/drizzle.module";
 
 

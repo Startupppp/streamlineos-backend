@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 
 @Injectable()
 export class ClientPortalManagementService {

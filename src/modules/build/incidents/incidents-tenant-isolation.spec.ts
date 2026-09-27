@@ -1,4 +1,4 @@
-jest.mock("../core/project-access", () => ({
+jest.mock("../core", () => ({
   assertProjectAccess: jest.fn(),
 }));
 
@@ -12,7 +12,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { IncidentsService } from "./incidents.service";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 
 describe("IncidentsService — cross-tenant isolation", () => {

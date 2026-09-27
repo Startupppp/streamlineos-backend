@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import type { CreateTransitionInput, UpdateTransitionInput, WipLimitInput } from "./dto/workflow.schemas";
 
 type TransitionPatch = Partial<Pick<typeof workflowTransitions.$inferInsert,

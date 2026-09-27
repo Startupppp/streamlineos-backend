@@ -11,7 +11,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { computeCapacity } from "./capacity.lib";
-import { assertProjectInOrg } from "../core/project-access";
+import { assertProjectInOrg } from "../core";
 
 @Injectable()
 export class WorkloadCapacityService {

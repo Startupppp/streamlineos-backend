@@ -11,9 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess } from "../core/project-access";
-import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
-import { escapeLike } from "../core/lib/escape-like";
+import { assertProjectAccess, allocateTicketNumbers, escapeLike, assertProjectInOrg } from "../core";
 import { buildCursorPage, buildTupleCursorPage, decodeCursor, decodeIntegerCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId, keysetBeforeTuple, keysetBoolean, keysetTimestamp, keysetInteger } from "../../../common/pagination/keyset";
 import type {
@@ -27,7 +25,6 @@ import type {
   UpdateMilestoneInput,
   UpdateViewInput,
 } from "./dto/workspace.schemas";
-import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class MilestonesService {

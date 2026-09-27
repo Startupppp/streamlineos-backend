@@ -4,8 +4,7 @@ import { tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateEpicInput, UpdateEpicInput } from "./dto/iterations.schemas";
-import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
-import { assertProjectInOrg } from "../core/project-access";
+import { allocateTicketNumbers, assertProjectInOrg } from "../core";
 import { reserveTicketCapacity, TicketVersionConflictException } from "../core/tickets";
 
 @Injectable()

@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
-import { ProjectsModule } from "./core/projects.module";
-import { ProjectsByIdModule } from "./core/projects-by-id.module";
+import {
+  ProjectsModule,
+  ProjectsByIdModule,
+  ProjectsRetentionSettingsModule,
+} from "./core";
 import { BuildApprovalsModule } from "./approvals/build-approvals.module";
 import { BuildClientPortalModule } from "./client-portal/build-client-portal.module";
 import { BuildCommentDraftsModule } from "./comment-drafts/build-comment-drafts.module";
@@ -19,7 +22,6 @@ import { BuildUpdatesModule } from "./updates/build-updates.module";
 import { BuildWorkflowModule } from "./workflow/build-workflow.module";
 import { BuildCalendarModule } from "./build-calendar.module";
 import { ScopeDirectoryModule } from "./scope-directory/scope-directory.module";
-import { ProjectsRetentionSettingsModule } from "./core/projects-retention-settings.module";
 
 export const BUILD_MODULES = [
   BuildCalendarModule,

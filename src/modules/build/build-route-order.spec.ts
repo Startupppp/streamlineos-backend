@@ -1,6 +1,5 @@
 import { BUILD_MODULES } from "./build.module";
-import { ProjectsByIdModule } from "./core/projects-by-id.module";
-import { ProjectResourcesController } from "./core/project-resources.controller";
+import { ProjectsByIdModule, ProjectResourcesController } from "./core";
 
 function handlerNames(controller: { prototype: object }): string[] {
   return Object.getOwnPropertyNames(controller.prototype);

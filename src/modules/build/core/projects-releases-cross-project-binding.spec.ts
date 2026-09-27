@@ -103,6 +103,7 @@ function makeStore(): Store {
         description: null,
         status: "draft",
         releaseDate: null,
+        rowVersion: 1,
         createdBy: "user-7",
         createdAt: new Date(0),
         updatedAt: new Date(0),
@@ -117,6 +118,7 @@ function makeStore(): Store {
         description: null,
         status: "draft",
         releaseDate: null,
+        rowVersion: 1,
         createdBy: "user-9",
         createdAt: new Date(0),
         updatedAt: new Date(0),
@@ -250,7 +252,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc, transaction } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { name: "hijacked" }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { name: "hijacked", rowVersion: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.releases.find((row) => row.id === RELEASE_B)?.name).toBe("release-b");
     expect(transaction).toHaveBeenCalledTimes(1);
@@ -261,7 +263,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { name: "release-a-v2" }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { name: "release-a-v2", rowVersion: 1 }),
     ).resolves.toMatchObject({ id: RELEASE_A, name: "release-a-v2", ticketCount: 1 });
     expect(store.releases.find((row) => row.id === RELEASE_A)?.name).toBe("release-a-v2");
   });
@@ -272,7 +274,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { name: "release-a-v2" }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { name: "release-a-v2", rowVersion: 1 }),
     ).resolves.toMatchObject({ ticketCount: 1 });
   });
 
@@ -281,7 +283,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc, outbox } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { status: "released" }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { status: "released", rowVersion: 1 }),
     ).resolves.toMatchObject({ id: RELEASE_A });
     expect(outbox).toHaveLength(1);
     expect(outbox[0]).toMatchObject({
@@ -296,7 +298,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc, outbox } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { status: "released" }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { status: "released", rowVersion: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(outbox).toHaveLength(0);
   });

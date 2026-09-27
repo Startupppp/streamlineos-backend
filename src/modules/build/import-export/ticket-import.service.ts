@@ -15,7 +15,7 @@ import {
   type CommandFenceStore,
 } from "../../../common/idempotency/command-fence-store";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core/project-access";
+import { assertProjectAccess } from "../core";
 import { lockProjectTicketMutation } from "../core/tickets";
 import { IMPORT_COMMAND_NAME, IMPORT_PERMISSION } from "./import-export.constants";
 import { parseImportSource, type ImportFormat } from "./import-source";

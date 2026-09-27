@@ -122,16 +122,16 @@ function makeStore(): Store {
       { id: CYCLE_B, orgId: ORG, projectId: PROJECT_B, name: "cycle-b", status: "active" },
     ],
     modules: [
-      { id: MODULE_A, orgId: ORG, projectId: PROJECT_A, name: "module-a", status: "backlog" },
-      { id: MODULE_B, orgId: ORG, projectId: PROJECT_B, name: "module-b", status: "backlog" },
+      { id: MODULE_A, orgId: ORG, projectId: PROJECT_A, name: "module-a", status: "backlog", version: 1 },
+      { id: MODULE_B, orgId: ORG, projectId: PROJECT_B, name: "module-b", status: "backlog", version: 1 },
     ],
     tickets: [
       { id: TICKET_A, orgId: ORG, projectId: PROJECT_A, moduleId: MODULE_A, deletedAt: null },
       { id: TICKET_B, orgId: ORG, projectId: PROJECT_B, moduleId: MODULE_B, deletedAt: null },
     ],
     milestones: [
-      { id: MILESTONE_A, orgId: ORG, projectId: PROJECT_A, name: "milestone-a", status: "PENDING", deletedAt: null },
-      { id: MILESTONE_B, orgId: ORG, projectId: PROJECT_B, name: "milestone-b", status: "PENDING", deletedAt: null },
+      { id: MILESTONE_A, orgId: ORG, projectId: PROJECT_A, name: "milestone-a", status: "PENDING", deletedAt: null, version: 1 },
+      { id: MILESTONE_B, orgId: ORG, projectId: PROJECT_B, name: "milestone-b", status: "PENDING", deletedAt: null, version: 1 },
     ],
     intake: [
       { id: INTAKE_A, orgId: ORG, projectId: PROJECT_A, title: "intake-a", description: "a", status: "pending", declineReason: null, linkedWorkItemId: null },
@@ -224,6 +224,8 @@ function makeDb(store: Store): Fixture {
         ),
       },
       projectViews: { findFirst: findFirst(() => store.views) },
+      modules: { findFirst: findFirst(() => store.modules) },
+      projectMilestones: { findFirst: findFirst(() => store.milestones) },
     },
     select: jest.fn(selectBuilder),
     update: updateBuilder,
@@ -278,7 +280,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_B, { name: "hijacked" }),
+      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_B, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_B)?.name).toBe("module-b");
   });
@@ -288,7 +290,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_A, { name: "module-a-v2" }),
+      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1 }),
     ).resolves.toMatchObject({ id: MODULE_A, name: "module-a-v2" });
   });
 
@@ -297,7 +299,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(OTHER_ORG, PROJECT_A, MODULE_A, { name: "hijacked" }),
+      new ModulesService(db).updateModule(OTHER_ORG, PROJECT_A, MODULE_A, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_A)?.name).toBe("module-a");
   });
@@ -341,7 +343,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never).updateMilestone(ORG, PROJECT_A, MILESTONE_B, { name: "hijacked" }),
+      new MilestonesService(db, {} as never).updateMilestone(ORG, PROJECT_A, MILESTONE_B, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_B)?.name).toBe("milestone-b");
   });
@@ -351,7 +353,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never).updateMilestone(ORG, PROJECT_A, MILESTONE_A, { name: "milestone-a-v2" }),
+      new MilestonesService(db, {} as never).updateMilestone(ORG, PROJECT_A, MILESTONE_A, { name: "milestone-a-v2", version: 1 }),
     ).resolves.toMatchObject({ id: MILESTONE_A, name: "milestone-a-v2" });
   });
 
@@ -360,7 +362,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never).updateMilestone(OTHER_ORG, PROJECT_A, MILESTONE_A, { name: "hijacked" }),
+      new MilestonesService(db, {} as never).updateMilestone(OTHER_ORG, PROJECT_A, MILESTONE_A, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_A)?.name).toBe("milestone-a");
   });
