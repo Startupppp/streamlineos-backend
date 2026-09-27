@@ -171,12 +171,12 @@ export const renderLetterResponseSchema = z.object({
 
 export const saveLetterResponseSchema = z.object({
   id: z.number().int(),
-  orgId: z.string(),
   templateId: z.number().int(),
   templateVersion: z.number().int(),
-  renderedForEmployeeId: z.number().int().nullable(),
+  renderedForEmploymentId: z.number().int().nullable(),
   renderedBy: z.string(),
-  contextSnapshot: z.record(z.string(), z.unknown()),
-  outputHtml: z.string(),
   createdAt: wireDate(),
+  templateName: z.string(),
+  templateLetterType: z.string().nullable(),
+  rendererName: z.string().nullable(),
 });

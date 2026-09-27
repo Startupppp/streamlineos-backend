@@ -1,15 +1,19 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
+  hrReportingLines,
   hrTemplateRenders,
   hrTemplates,
+  organizations,
+  orgUnits,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { RenderLetterInput, SaveLetterInput } from "./dto/documents.schemas";
+import { mergeLetterTemplate } from "./letter-merge";
 import { z } from "zod";
 import { liveEmployment, livePersonOfEmployment } from "../../directory/employment-query";
 
@@ -101,21 +105,13 @@ export class LettersService {
     const parsedContent = letterTemplateContentSchema.safeParse(template.content);
     const bodyHtml = parsedContent.success ? (parsedContent.data.bodyHtml ?? "") : "";
     const variables = template.variablesUsed ?? [];
-    const context: Record<string, string> = { ...(input.extraContext ?? {}) };
-
-    for (const variableName of variables) {
-      if (!(variableName in context)) {
-        context[variableName] = `{{${variableName}}}`;
-      }
-    }
-
-    const outputHtml = bodyHtml.replace(
-      /\{\{([^}]+)\}\}/g,
-      (_, variableName: string) =>
-        context[variableName.trim()] ?? `{{${variableName.trim()}}}`,
-    );
-
     const employmentId = await this.resolveEmploymentId(orgId, input);
+    const context: Record<string, string> = {
+      ...(await this.letterFacts(orgId, employmentId)),
+      ...(input.extraContext ?? {}),
+    };
+
+    const outputHtml = mergeLetterTemplate(bodyHtml, context);
 
     return {
       templateId: template.id,
@@ -130,6 +126,9 @@ export class LettersService {
   }
 
   async saveLetter(orgId: string, userId: string, input: SaveLetterInput) {
+    if (/\{\{[^}]+\}\}/.test(input.outputHtml)) {
+      throw new BadRequestException("Fix the letter preview before saving. Some fields are still blank tokens.");
+    }
     const template = await this.db.query.hrTemplates.findFirst({
       where: and(
         eq(hrTemplates.id, input.templateId),
@@ -141,6 +140,9 @@ export class LettersService {
     if (!template) throw new NotFoundException("Template not found.");
 
     const employmentId = await this.resolveEmploymentId(orgId, input);
+    if (employmentId == null) {
+      throw new BadRequestException("Select an employee before saving a letter.");
+    }
     const [record] = await this.db
       .insert(hrTemplateRenders)
       .values({
@@ -152,8 +154,91 @@ export class LettersService {
         contextSnapshot: input.contextSnapshot ?? {},
         outputHtml: input.outputHtml,
       })
-      .returning();
+      .returning({ id: hrTemplateRenders.id });
 
-    return record;
+    const [row] = await this.db
+      .select({
+        id: hrTemplateRenders.id,
+        templateId: hrTemplateRenders.templateId,
+        templateVersion: hrTemplateRenders.templateVersion,
+        renderedForEmploymentId: hrTemplateRenders.renderedForEmployeeId,
+        renderedBy: hrTemplateRenders.renderedBy,
+        createdAt: hrTemplateRenders.createdAt,
+        templateName: hrTemplates.name,
+        templateLetterType: hrTemplates.letterType,
+        rendererName: users.name,
+      })
+      .from(hrTemplateRenders)
+      .innerJoin(hrTemplates, eq(hrTemplateRenders.templateId, hrTemplates.id))
+      .innerJoin(users, eq(hrTemplateRenders.renderedBy, users.id))
+      .where(and(eq(hrTemplateRenders.orgId, orgId), eq(hrTemplateRenders.id, record.id)))
+      .limit(1);
+    if (!row) throw new NotFoundException("Saved letter could not be read back.");
+    return row;
+  }
+
+  private async letterFacts(orgId: string, employmentId: number | null): Promise<Record<string, string>> {
+    const today = new Date().toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const [org] = await this.db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    const facts: Record<string, string> = {
+      today,
+      "company.name": org?.name ?? "",
+      "employee.fullName": "",
+      "employee.firstName": "",
+      "employee.lastName": "",
+      "role.title": "",
+      "department.name": "",
+      "manager.fullName": "",
+    };
+    if (employmentId == null) return facts;
+
+    const [person] = await this.db
+      .select({
+        name: users.name,
+        designation: hrEmployments.designation,
+        department: orgUnits.name,
+      })
+      .from(hrEmployments)
+      .innerJoin(hrPeople, and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, hrEmployments.personId)))
+      .leftJoin(users, eq(users.id, hrPeople.userId))
+      .leftJoin(orgUnits, and(eq(orgUnits.orgId, orgId), eq(orgUnits.id, hrEmployments.departmentId)))
+      .where(and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, employmentId)))
+      .limit(1);
+    const fullName = person?.name?.trim() ?? "";
+    const [firstName, ...rest] = fullName.split(/\s+/).filter(Boolean);
+    facts["employee.fullName"] = fullName;
+    facts["employee.firstName"] = firstName ?? "";
+    facts["employee.lastName"] = rest.join(" ");
+    facts["role.title"] = person?.designation?.trim() ?? "";
+    facts["department.name"] = person?.department?.trim() ?? "";
+
+    const [manager] = await this.db
+      .select({ name: users.name })
+      .from(hrReportingLines)
+      .innerJoin(
+        hrEmployments,
+        and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, hrReportingLines.managerEmploymentId)),
+      )
+      .innerJoin(hrPeople, and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, hrEmployments.personId)))
+      .leftJoin(users, eq(users.id, hrPeople.userId))
+      .where(
+        and(
+          eq(hrReportingLines.orgId, orgId),
+          eq(hrReportingLines.employmentId, employmentId),
+          eq(hrReportingLines.lineType, "primary"),
+          sql`${hrReportingLines.effectiveTo} = 'infinity'::date`,
+        ),
+      )
+      .limit(1);
+    facts["manager.fullName"] = manager?.name?.trim() ?? "";
+    return facts;
   }
 }

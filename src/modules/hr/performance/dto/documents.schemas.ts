@@ -101,6 +101,9 @@ const letterEmployeeTargetSchema = z
   })
   .refine((value) => !(value.employmentId && value.employeeUserId), {
     message: "Choose one employee target",
+  })
+  .refine((value) => Boolean(value.employmentId || value.employeeUserId), {
+    message: "Select an employee",
   });
 
 export const renderLetterSchema = z
