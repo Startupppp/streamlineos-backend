@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as fc from "fast-check";
 import { eq } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -773,5 +775,102 @@ describe("org-visible pages in spaces — space membership required when spaceId
     expect(text(branchReachable)).toContain(`"space_id" IS NULL`);
     expect(text(branchNoSpaces)).toContain(`"space_id" IS NULL`);
     expect(text(branchNoSpaces)).not.toContain("ANY(");
+  });
+});
+
+describe("permissionFingerprintOf — admin bit collapse is safe (Item 326)", () => {
+  it("isOrgOwner=true and isKbAdmin=true produce the same fingerprint because both take the admin fast-path", () => {
+    const ownerFingerprint = permissionFingerprintOf(
+      makeStanding({ isOrgOwner: true, isKbAdmin: false }),
+      "view",
+    );
+    const adminFingerprint = permissionFingerprintOf(
+      makeStanding({ isOrgOwner: false, isKbAdmin: true }),
+      "view",
+    );
+    expect(ownerFingerprint).toBe(adminFingerprint);
+  });
+
+  it("the predicate for isOrgOwner and isKbAdmin is identical, proving the fingerprint collapse is correct and the same cursor scope tag covers both", () => {
+    const scopeOwner = buildVisiblePageScope(
+      makeStanding({ isOrgOwner: true, isKbAdmin: false }),
+      "view",
+    );
+    const scopeAdmin = buildVisiblePageScope(
+      makeStanding({ isOrgOwner: false, isKbAdmin: true }),
+      "view",
+    );
+    expect(text(scopeOwner.predicate)).toBe(text(scopeAdmin.predicate));
+    expect(boundParams(scopeOwner.predicate)).toEqual(boundParams(scopeAdmin.predicate));
+  });
+
+  it("POSITIVE CONTROL: isOrgOwner=false,isKbAdmin=false produces a different fingerprint so non-admin actors cannot inherit an admin cursor position", () => {
+    const memberFingerprint = permissionFingerprintOf(
+      makeStanding({ isOrgOwner: false, isKbAdmin: false }),
+      "view",
+    );
+    const ownerFingerprint = permissionFingerprintOf(
+      makeStanding({ isOrgOwner: true, isKbAdmin: false }),
+      "view",
+    );
+    expect(memberFingerprint).not.toBe(ownerFingerprint);
+  });
+});
+
+describe("permissionFingerprintOf — userId omission is safe at the cursor-scope-tag usage site (Item 326)", () => {
+  it("two actors with different non-null membershipId produce different fingerprints — membershipId alone distinguishes typical actors so userId is not needed", () => {
+    const a = permissionFingerprintOf(
+      makeStanding({ membershipId: 1, userId: "user-A" }),
+      "view",
+    );
+    const b = permissionFingerprintOf(
+      makeStanding({ membershipId: 2, userId: "user-A" }),
+      "view",
+    );
+    expect(a).not.toBe(b);
+  });
+
+  it("POSITIVE CONTROL: two actors with the same non-null membershipId produce the same fingerprint — the cursor scope tag correctly collapses them since their predicates are identical", () => {
+    const a = permissionFingerprintOf(
+      makeStanding({ membershipId: 5, userId: "user-A" }),
+      "view",
+    );
+    const b = permissionFingerprintOf(
+      makeStanding({ membershipId: 5, userId: "user-B" }),
+      "view",
+    );
+    expect(a).toBe(b);
+  });
+
+  it("two actors with membershipId=null and different userId share a fingerprint but their predicates bind different userIds — cursor reuse shifts position only, no data crosses actors", () => {
+    const standingA = makeStanding({ membershipId: null, roleSlugs: [], userId: "user-A" });
+    const standingB = makeStanding({ membershipId: null, roleSlugs: [], userId: "user-B" });
+
+    expect(permissionFingerprintOf(standingA, "view")).toBe(permissionFingerprintOf(standingB, "view"));
+
+    const paramsA = boundParams(buildVisiblePageScope(standingA, "view").predicate);
+    const paramsB = boundParams(buildVisiblePageScope(standingB, "view").predicate);
+    expect(paramsA).toContain("user-A");
+    expect(paramsA).not.toContain("user-B");
+    expect(paramsB).toContain("user-B");
+    expect(paramsB).not.toContain("user-A");
+  });
+});
+
+describe("KbSharedWithMeScope — no fingerprint field (Item 326)", () => {
+  it("does not carry a fingerprint property so a future caching call site cannot silently key by a field that omits userId and principal ceiling", () => {
+    const shared = buildSharedWithMeScope(makeStanding());
+    expect(shared).not.toBeNull();
+    expect(Object.keys(shared!)).not.toContain("fingerprint");
+  });
+});
+
+describe("Item 431 guard — restriction predicate wrapper does not exist", () => {
+  it("retrieval/kb-article-restriction-predicate.ts does not exist; the canonical predicate lives in knowledge-page-scope.ts and callers import it directly", () => {
+    const wrapperPath = path.resolve(
+      __dirname,
+      "../../retrieval/kb-article-restriction-predicate.ts",
+    );
+    expect(fs.existsSync(wrapperPath)).toBe(false);
   });
 });

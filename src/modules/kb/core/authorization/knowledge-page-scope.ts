@@ -83,7 +83,6 @@ export function buildSharedWithMeScope(
     predicate: sql`(${eq(kbPages.orgId, standing.orgId)} AND ${grantBranch} AND ${sql.join(notAlreadyMine, sql` AND `)})`,
     membershipId: standing.membershipId,
     roleSlugs: standing.roleSlugs,
-    fingerprint: permissionFingerprintOf(standing, "view"),
   };
 }
 
