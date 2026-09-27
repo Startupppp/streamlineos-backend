@@ -1,9 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
-import { KbSpacesService } from "./kb-spaces.service";
-import type { KbAccessService } from "../core/kb-access.service";
+import { KbSpaceLifecycleService } from "./kb-space-lifecycle.service";
 import type { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
-import type { KbIndexingService } from "../retrieval/kb-indexing.service";
 
 const ORG = "org-ask-indexed";
 const SPACE_ID = 7;
@@ -47,17 +45,12 @@ function makeDb(pageCounts: {
   } as unknown as Db;
 }
 
-function makeService(db: Db): KbSpacesService {
-  const access = {
-    getAccessibleSpaceIds: jest.fn().mockResolvedValue([SPACE_ID]),
-    assertSpaceAccessible: jest.fn().mockResolvedValue(undefined),
-    invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined),
-  } as unknown as KbAccessService;
+function makeService(db: Db): KbSpaceLifecycleService {
   const authz = { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding: jest.fn().mockResolvedValue({ accessibleSpaceIds: [] }), invalidateSpaceScope: jest.fn().mockResolvedValue(undefined), assertSpaceAccess: jest.fn().mockResolvedValue(undefined),  resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [SPACE_ID], outcome: "hit" }) } as unknown as KnowledgeAuthorizationService;
-  return new KbSpacesService(db, {} as KbIndexingService, authz);
+  return new KbSpaceLifecycleService(db, authz);
 }
 
-describe("KbSpacesService.archiveImpact — askIndexed reflects actual chunk presence", () => {
+describe("KbSpaceLifecycleService.archiveImpact — askIndexed reflects actual chunk presence", () => {
   it("BITE: reports askIndexed false when the space has pages but no indexed sources (pageCount > 0 is not a chunk measurement)", async () => {
     const db = makeDb({ pages: 5, public: 0, records: 0, indexed: 0 });
     const svc = makeService(db);
