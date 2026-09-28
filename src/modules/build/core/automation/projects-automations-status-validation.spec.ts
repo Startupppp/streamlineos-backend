@@ -1,6 +1,7 @@
 import { UnprocessableEntityException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsAutomationsService } from "./projects-automations.service";
+import { createAutomationSchema } from "../dto/automation.schemas";
 import type { CreateAutomationInput } from "../dto/automation.schemas";
 
 const VALID_CREATE: CreateAutomationInput = {
@@ -76,5 +77,22 @@ describe("ProjectsAutomationsService — set_status config-time validation", () 
     await svc.updateAutomation(u, 1, 99, { actions: [{ type: "set_priority", value: "HIGH" }] });
 
     expect(where).not.toHaveBeenCalled();
+  });
+});
+
+describe("createAutomationSchema — triggerEvent allowlist", () => {
+  const BASE = {
+    name: "Test",
+    conditions: [],
+    actions: [{ type: "set_status" as const, value: "DONE" }],
+    isActive: true,
+  };
+
+  it("accepts ticket.created — the positive case that prevents the rejection test from being vacuous", () => {
+    expect(() => createAutomationSchema.parse({ ...BASE, triggerEvent: "ticket.created" })).not.toThrow();
+  });
+
+  it("rejects sprint.started — the only producer of sprint lifecycle events is frozen so the automation would never fire", () => {
+    expect(() => createAutomationSchema.parse({ ...BASE, triggerEvent: "sprint.started" })).toThrow();
   });
 });

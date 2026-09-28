@@ -126,7 +126,7 @@ describe("BuildAutomationRunnerService — loop-prevention guard", () => {
 
   it("blocks once the chain depth reaches the ceiling, even across distinct trigger events", async () => {
     let service!: BuildAutomationRunnerService;
-    const events = ["ticket.created", "ticket.updated", "ticket.assigned", "ticket.status_changed", "sprint.started"];
+    const events = ["ticket.created", "ticket.updated", "ticket.assigned", "ticket.status_changed", "ticket.created"];
     let hop = 0;
     const actionExecutor = {
       execute: jest.fn().mockImplementation(async () => {

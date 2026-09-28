@@ -29,8 +29,6 @@ export const createAutomationSchema = z.object({
     "ticket.updated",
     "ticket.status_changed",
     "ticket.assigned",
-    "sprint.started",
-    "sprint.completed",
   ]),
   conditions: z.array(conditionSchema).max(50).default([]),
   actions: z.array(actionSchema).min(1).max(50),
