@@ -217,7 +217,7 @@ export const kbPageEmptyTrashSchema = z.object({
 
 export const kbPageSuccessSchema = z.object({ success: z.boolean() });
 
-export const kbPageBacklinkSchema = z.array(
+export const kbPageBacklinkSchema = cursorPageSchema(
   z.object({
     id: z.number().int(),
     title: z.string(),
