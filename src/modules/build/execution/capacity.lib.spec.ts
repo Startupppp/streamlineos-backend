@@ -32,6 +32,7 @@ const BASE: CapacityInput = {
   windowEnd: "2026-09-18",
   expectedDailyHours: 8,
   loggedHours: 0,
+  estimateHours: null,
   leaves: [],
 };
 
@@ -217,6 +218,109 @@ describe("computeCapacity — empty window", () => {
     expect(r.workingDaysInWindow).toBe(0);
     expect(r.capacityHours).toBe(0);
     expect(r.isZeroCapacity).toBe(true);
+  });
+});
+
+describe("computeCapacity — estimateHours is passed through untouched so a dead estimate column cannot be laundered into a zero", () => {
+  it("returns null estimateHours when no assigned open ticket carries an original_estimate, so the row renders an em dash rather than a fabricated 0h", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: null });
+    expect(r.estimateHours).toBeNull();
+  });
+
+  it("returns 0 estimateHours when the summed estimate genuinely is zero, which is a different fact from null", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 0 });
+    expect(r.estimateHours).toBe(0);
+  });
+
+  it("returns the summed estimate unchanged when it is present", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 24.5 });
+    expect(r.estimateHours).toBe(24.5);
+  });
+});
+
+describe("computeCapacity — allocationPercent is estimated demand measured against net capacity", () => {
+  it("is 50% when 20 estimated hours sit against a 40-hour net capacity week", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 20 });
+    expect(r.capacityHours).toBe(40);
+    expect(r.allocationPercent).toBe(50);
+  });
+
+  it("exceeds 100% when estimated demand exceeds net capacity, which is the over-allocation the page exists to surface", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 60 });
+    expect(r.allocationPercent).toBe(150);
+  });
+
+  it("drops to a lower capacity base when leave shrinks the window, so allocation rises without the estimate changing", () => {
+    const r = computeCapacity({
+      ...BASE,
+      estimateHours: 32,
+      leaves: [{ startDate: "2026-09-14", endDate: "2026-09-14", isHalfDay: false }],
+    });
+    expect(r.capacityHours).toBe(32);
+    expect(r.allocationPercent).toBe(100);
+  });
+
+  it("is null when estimateHours is null, because a percentage of nothing is not zero", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: null });
+    expect(r.allocationPercent).toBeNull();
+  });
+
+  it("is null when expectedDailyHours is unset so capacityHours has no value to divide by", () => {
+    const r = computeCapacity({ ...BASE, expectedDailyHours: null, estimateHours: 20 });
+    expect(r.allocationPercent).toBeNull();
+  });
+
+  it("is null when net capacity is zero, avoiding a division by zero on a member fully on leave", () => {
+    const r = computeCapacity({
+      ...BASE,
+      estimateHours: 20,
+      leaves: [{ startDate: "2026-09-14", endDate: "2026-09-18", isHalfDay: false }],
+    });
+    expect(r.capacityHours).toBe(0);
+    expect(r.allocationPercent).toBeNull();
+  });
+
+  it("rounds allocationPercent to one decimal place like utilizationPercent does", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 13 });
+    expect(r.allocationPercent).toBe(32.5);
+  });
+});
+
+describe("computeCapacity — varianceHours is logged actual against estimate", () => {
+  it("is positive when more hours were logged than estimated", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 10, loggedHours: 14 });
+    expect(r.varianceHours).toBe(4);
+  });
+
+  it("is negative when fewer hours were logged than estimated", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 10, loggedHours: 6 });
+    expect(r.varianceHours).toBe(-4);
+  });
+
+  it("is zero when logged exactly matches the estimate", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 10, loggedHours: 10 });
+    expect(r.varianceHours).toBe(0);
+  });
+
+  it("is null when there is no estimate to compare against, rather than reporting the logged hours as pure overrun", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: null, loggedHours: 14 });
+    expect(r.varianceHours).toBeNull();
+  });
+
+  it("does not require capacityHours, so variance survives an org with no expectedDailyHours configured", () => {
+    const r = computeCapacity({
+      ...BASE,
+      expectedDailyHours: null,
+      estimateHours: 10,
+      loggedHours: 12,
+    });
+    expect(r.capacityHours).toBeNull();
+    expect(r.varianceHours).toBe(2);
+  });
+
+  it("rounds varianceHours to two decimal places so float subtraction does not leak", () => {
+    const r = computeCapacity({ ...BASE, estimateHours: 0.3, loggedHours: 0.1 });
+    expect(r.varianceHours).toBe(-0.2);
   });
 });
 

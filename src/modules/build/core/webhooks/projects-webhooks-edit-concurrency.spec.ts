@@ -31,7 +31,8 @@ async function webhooksService(
   storedVersion: number | undefined,
   updateReturnRows: Record<string, unknown>[] = [],
 ) {
-  const versionRows = storedVersion === undefined ? [] : [{ version: storedVersion }];
+  const versionRows =
+    storedVersion === undefined ? [] : [returnedRow({ version: storedVersion })];
   const select = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(versionRows) }),
@@ -54,7 +55,7 @@ async function webhooksService(
   const module = await Test.createTestingModule({
     providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }],
   }).compile();
-  return { service: module.get(ProjectsWebhooksService), module, update, set, values, returning, updateReturning };
+  return { service: module.get(ProjectsWebhooksService), module, select, update, set, values, returning, updateReturning };
 }
 
 describe("webhook update concurrency token", () => {
@@ -131,6 +132,26 @@ describe("webhook update concurrency token", () => {
     await module.close();
   });
 
+  it("a body carrying only the token returns the stored row and never builds an empty SET, which Drizzle would throw on", async () => {
+    const { service, module, update } = await webhooksService(4, []);
+    const result = await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 4 });
+    expect(update).not.toHaveBeenCalled();
+    expect(result.version).toBe(4);
+    expect(result.hasSecret).toBe(true);
+    await module.close();
+  });
+
+  it("a token-only body on a stale token is still 409, so the empty-patch shortcut cannot skip the conflict check", async () => {
+    const { service, module, update } = await webhooksService(9, []);
+    const error = await service
+      .updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 4 })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TicketVersionConflictException);
+    expect((error as TicketVersionConflictException).getStatus()).toBe(409);
+    expect(update).not.toHaveBeenCalled();
+    await module.close();
+  });
+
   it("does not let the caller's token overwrite the stored version column", async () => {
     const { service, module, set } = await webhooksService(2, [returnedRow({ version: 3 })]);
     await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 2, isActive: false });
@@ -169,8 +190,9 @@ describe("webhook update validation cannot drift from create", () => {
     expect(updateWebhookSchema.safeParse({ version: 1, isActive: false }).success).toBe(true);
   });
 
-  it("refuses an update that changes nothing", () => {
+  it("refuses a token-only update at the boundary, so the service empty-patch guard is defence in depth rather than the only stop", () => {
     expect(updateWebhookSchema.safeParse({ version: 1 }).success).toBe(false);
+    expect(updateWebhookSchema.safeParse({ version: 1, isActive: true }).success).toBe(true);
   });
 
   it("refuses a secret on update, because there is no rotation path to record its age", () => {
@@ -208,6 +230,15 @@ describe("webhook secret age is expressible without exposing the secret", () => 
     await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 2, isActive: false });
     const projection = Object.keys(updateReturning.mock.calls[0]?.[0] as Record<string, unknown>);
     expect(projection).toEqual(expect.arrayContaining(["hasSecret", "secretSetAt", "version", "updatedAt"]));
+    expect(projection).not.toContain("secret");
+    await module.close();
+  });
+
+  it("never asks for the secret column on the pre-update read that the token-only shortcut returns", async () => {
+    const { service, module, select } = await webhooksService(4, []);
+    await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 4 });
+    const projection = Object.keys(select.mock.calls[0]?.[0] as Record<string, unknown>);
+    expect(projection).toEqual(expect.arrayContaining(["hasSecret", "secretSetAt", "version"]));
     expect(projection).not.toContain("secret");
     await module.close();
   });

@@ -237,6 +237,9 @@ const DEFAULT_POOL_MAX = 20;
 const DEVELOPMENT_POOL_MAX = 5;
 const CONSTRAINED_ENDPOINT_POOL_MAX = 10;
 
+export const BACKGROUND_LANE_FRACTION = 0.25;
+export const MIN_BACKGROUND_LANE_CONNECTIONS = 1;
+
 export function resolvePoolMax(env: NodeJS.ProcessEnv): number {
   const tuning = parsePoolEnv(env);
   if (tuning.DB_POOL_MAX !== undefined) return tuning.DB_POOL_MAX;
@@ -339,8 +342,8 @@ export function resolvePoolConfig(
         tuning.DB_POOL_QUEUE_DEPTH ?? max * DEFAULT_QUEUE_DEPTH_FACTOR,
       acquireTimeoutMs:
         tuning.DB_POOL_ACQUIRE_TIMEOUT_MS ?? DEFAULT_ACQUIRE_TIMEOUT_MS,
-      backgroundLaneMax: Math.max(1, Math.floor(max * 0.25)),
-      primaryLaneMax: max - Math.max(1, Math.floor(max * 0.25)),
+      backgroundLaneMax: Math.max(MIN_BACKGROUND_LANE_CONNECTIONS, Math.floor(max * BACKGROUND_LANE_FRACTION)),
+      primaryLaneMax: max - Math.max(MIN_BACKGROUND_LANE_CONNECTIONS, Math.floor(max * BACKGROUND_LANE_FRACTION)),
     },
     role: env.APP_DATABASE_URL ? "application" : "owner",
     slowAcquireMs: tuning.DB_SLOW_ACQUIRE_MS ?? DEFAULT_SLOW_ACQUIRE_MS,

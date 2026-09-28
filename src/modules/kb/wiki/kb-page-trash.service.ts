@@ -487,23 +487,103 @@ export class KbPageTrashService {
         ),
       );
     const foundSet = new Set(found.map((p) => p.id));
-    const results: BulkPageResult[] = [];
-    for (const pageId of input.pageIds) {
-      if (!foundSet.has(pageId)) {
-        results.push({ pageId, result: "notFound" });
-        continue;
-      }
-      try {
-        await this.hardDelete(user, pageId);
-      } catch (e) {
-        if (e instanceof NotFoundException) {
-          results.push({ pageId, result: "notFound" });
-          continue;
+    const visibleIds = input.pageIds.filter((id) => foundSet.has(id));
+
+    const results: BulkPageResult[] = input.pageIds.map((pageId) => ({
+      pageId,
+      result: foundSet.has(pageId) ? ("succeeded" as const) : ("notFound" as const),
+    }));
+
+    if (visibleIds.length === 0) return { results };
+
+    const subtreeIds = await this.db.transaction((tx) =>
+      collectSubtreeIds(tx, orgId, visibleIds),
+    );
+
+    if (subtreeIds.length === 0) return { results };
+
+    try {
+      await this.assertNoLegalHoldInSubtree(orgId, subtreeIds);
+    } catch (e) {
+      if (e instanceof ConflictException) {
+        for (const r of results) {
+          if (r.result === "succeeded") r.result = "conflict";
         }
-        throw e;
+        return { results };
       }
-      results.push({ pageId, result: "succeeded" });
+      throw e;
     }
+
+    await openMultiStoreLedger(this.db, orgId, subtreeIds);
+    const purgeKeys = await recordPageAttachmentPurge(
+      this.db,
+      orgId,
+      subtreeIds,
+    );
+    await this.executePreDeleteStores(orgId, subtreeIds);
+
+    try {
+      await this.db.transaction(async (tx) => {
+        const heldNow = await tx
+          .select({ id: kbPages.id })
+          .from(kbPages)
+          .where(
+            and(
+              eq(kbPages.orgId, orgId),
+              inArray(kbPages.id, subtreeIds),
+              eq(kbPages.legalHold, true),
+            ),
+          )
+          .for("update");
+
+        if (heldNow.length > 0) {
+          throw new ConflictException(
+            `A legal hold was placed on ${heldNow.length} page(s) in this subtree while the deletion was in progress; nothing was removed from the page table.`,
+          );
+        }
+
+        await tx.delete(kbPages).where(
+          and(
+            eq(kbPages.orgId, orgId),
+            eq(kbPages.legalHold, false),
+            inArray(kbPages.id, subtreeIds),
+          ),
+        );
+      });
+    } catch (e) {
+      if (e instanceof ConflictException) {
+        for (const r of results) {
+          if (r.result === "succeeded") r.result = "conflict";
+        }
+        return { results };
+      }
+      throw e;
+    }
+
+    await markStoresComplete(this.db, orgId, subtreeIds, "page_rows").catch(
+      () => undefined,
+    );
+
+    await attemptPageAttachmentPurge(
+      this.db,
+      this.storage,
+      orgId,
+      purgeKeys,
+      this.config.R2_KB_BUCKET_NAME,
+    );
+
+    await markStoresComplete(this.db, orgId, subtreeIds, "blobs").catch(
+      () => undefined,
+    );
+
+    this.audit.log({
+      action: "kb.page.permanently_deleted",
+      userId: user.userId,
+      orgId,
+      resourceType: "kb_page",
+      metadata: { count: visibleIds.length },
+    });
+
     return { results };
   }
 }

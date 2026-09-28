@@ -63,19 +63,27 @@ function makeBuilder(rows: unknown[]) {
   return { builder, where };
 }
 
+function sqlColumnNames(value: unknown, seen = new Set<object>()): string[] {
+  if (value === null || typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  if (Array.isArray(value)) return value.flatMap((item) => sqlColumnNames(item, seen));
+  const record = value as { name?: unknown };
+  if (typeof record.name === "string") return [record.name];
+  return Object.values(record).flatMap((child) => sqlColumnNames(child, seen));
+}
+
 function makeSequentialDb(perCallRows: unknown[][]) {
   let callIndex = 0;
   const wheresByCall: jest.Mock[] = [];
-  const db = {
-    select: jest.fn().mockImplementation(() => {
-      const rows = perCallRows[callIndex] ?? [];
-      callIndex++;
-      const { builder, where } = makeBuilder(rows);
-      wheresByCall.push(where);
-      return builder;
-    }),
-  } as unknown as Db;
-  return { db, wheresByCall };
+  const select = jest.fn().mockImplementation(() => {
+    const rows = perCallRows[callIndex] ?? [];
+    callIndex++;
+    const { builder, where } = makeBuilder(rows);
+    wheresByCall.push(where);
+    return builder;
+  });
+  const db = { select } as unknown as Db;
+  return { db, wheresByCall, select };
 }
 
 describe("WorkloadCapacityService — teamId filter", () => {
@@ -185,5 +193,96 @@ describe("WorkloadCapacityService — cross-tenant isolation", () => {
     const result = await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14");
     expect(result.members).toHaveLength(1);
     expect(result.members[0].userId).toBe("u-owner-1");
+  });
+});
+
+const MEMBER_ROW = { userId: "u-owner-1", membershipId: 1 };
+const MON_TO_FRI_START = "2026-09-14";
+const MON_TO_FRI_END = "2026-09-18";
+
+function makeEstimateDb(estimateRows: unknown[]) {
+  return makeSequentialDb([
+    [{ expectedDailyHours: "8.0" }],
+    [MEMBER_ROW],
+    [],
+    [],
+    estimateRows,
+  ]);
+}
+
+async function capacityWithEstimates(estimateRows: unknown[]) {
+  const { db, wheresByCall, select } = makeEstimateDb(estimateRows);
+  const svc = new WorkloadCapacityService(db);
+  const result = await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+  return { result, wheresByCall, select };
+}
+
+describe("WorkloadCapacityService — estimate projection reads a column a writer actually populates", () => {
+  it("projects tickets.original_estimate, the column written by ticket create and ticket update, and never the writerless story_points", async () => {
+    const { select } = await capacityWithEstimates([]);
+    const estimateProjection = select.mock.calls[4]?.[0] as Record<string, unknown> | undefined;
+    expect(estimateProjection).toBeDefined();
+    const names = sqlColumnNames(estimateProjection);
+    expect(names).toContain("original_estimate");
+    expect(names).not.toContain("story_points");
+  });
+
+  it("excludes completed and cancelled statuses so the estimate figure is outstanding demand, not historical work", async () => {
+    const { wheresByCall } = await capacityWithEstimates([]);
+    const chunks = wheresByCall[4]?.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])) ?? [];
+    const text = chunks.filter((v): v is string => typeof v === "string").join(" ");
+    expect(text).toContain("IS DISTINCT FROM 'completed'");
+    expect(text).toContain("IS DISTINCT FROM 'cancelled'");
+  });
+
+  it("carries orgId and projectId in the estimate WHERE clause so one tenant's estimates cannot land on another tenant's workload row", async () => {
+    const { wheresByCall } = await capacityWithEstimates([]);
+    const vals = wheresByCall[4]?.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])) ?? [];
+    expect(vals).toContain(OWNER_ORG);
+    expect(vals).toContain(PROJECT_ID);
+  });
+});
+
+describe("WorkloadCapacityService — estimateHours distinguishes no-estimate from a zero estimate", () => {
+  it("returns null estimateHours when no open assigned ticket carries an original_estimate, so the row cannot render a fabricated 0h", async () => {
+    const { result } = await capacityWithEstimates([
+      { assigneeMembershipId: 1, estimateHours: "0", estimatedTicketCount: "0" },
+    ]);
+    expect(result.members[0].estimateHours).toBeNull();
+    expect(result.members[0].allocationPercent).toBeNull();
+    expect(result.members[0].varianceHours).toBeNull();
+  });
+
+  it("returns 0 estimateHours when a ticket does carry an explicit zero estimate, which is a different fact from null", async () => {
+    const { result } = await capacityWithEstimates([
+      { assigneeMembershipId: 1, estimateHours: "0", estimatedTicketCount: "1" },
+    ]);
+    expect(result.members[0].estimateHours).toBe(0);
+    expect(result.members[0].allocationPercent).toBe(0);
+  });
+
+  it("sums original_estimate across the member's open tickets and derives allocation against net capacity (positive control)", async () => {
+    const { result } = await capacityWithEstimates([
+      { assigneeMembershipId: 1, estimateHours: "20.00", estimatedTicketCount: "3" },
+    ]);
+    expect(result.members[0].capacityHours).toBe(40);
+    expect(result.members[0].estimateHours).toBe(20);
+    expect(result.members[0].allocationPercent).toBe(50);
+  });
+
+  it("returns null estimateHours for a member absent from the grouped estimate rows rather than crediting them another member's total", async () => {
+    const { result } = await capacityWithEstimates([
+      { assigneeMembershipId: 99, estimateHours: "40.00", estimatedTicketCount: "5" },
+    ]);
+    expect(result.members[0].membershipId).toBe(1);
+    expect(result.members[0].estimateHours).toBeNull();
+  });
+
+  it("ignores grouped rows whose assigneeMembershipId is null so unassigned estimates are never attributed to a member", async () => {
+    const { result } = await capacityWithEstimates([
+      { assigneeMembershipId: null, estimateHours: "40.00", estimatedTicketCount: "5" },
+      { assigneeMembershipId: 1, estimateHours: "8.00", estimatedTicketCount: "1" },
+    ]);
+    expect(result.members[0].estimateHours).toBe(8);
   });
 });

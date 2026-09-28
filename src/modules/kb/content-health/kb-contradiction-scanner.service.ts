@@ -7,8 +7,8 @@ import { forEachOrg } from "../../../common/tenant";
 import type { ForEachOrgResult } from "../../../common/tenant/for-each-org";
 import { type TenantTx } from "../../../db/drizzle.types";
 
-const RULE_VERSION = 1;
-const SCAN_BATCH = 50;
+export const RULE_VERSION = 1;
+export const SCAN_BATCH = 50;
 
 @Injectable()
 export class KbContradictionScannerService {

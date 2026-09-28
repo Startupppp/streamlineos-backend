@@ -310,24 +310,14 @@ export class KbPageReviewsService {
 
     const visibleMap = new Map(visibleReviews.map((r) => [r.id, r.status]));
     const membershipId = actingMembershipId(user.principal);
-    const results: BulkDecideResultItem[] = [];
 
-    for (const id of input.ids) {
-      const currentStatus = visibleMap.get(id);
-      if (currentStatus === undefined) {
-        results.push({ id, outcome: "notFound" });
-        continue;
-      }
-      if (currentStatus !== "pending") {
-        results.push({ id, outcome: "conflict" });
-        continue;
-      }
-      if (membershipId === null) {
-        results.push({ id, outcome: "denied" });
-        continue;
-      }
+    const pendingIds = input.ids.filter(
+      (id) => visibleMap.get(id) === "pending",
+    );
 
-      const [updated] = await this.db
+    let succeededSet = new Set<number>();
+    if (pendingIds.length > 0 && membershipId !== null) {
+      const updated = await this.db
         .update(kbPageReviews)
         .set({
           status: input.decision,
@@ -338,15 +328,22 @@ export class KbPageReviewsService {
         })
         .where(
           and(
-            eq(kbPageReviews.id, id),
             eq(kbPageReviews.orgId, user.orgId),
+            inArray(kbPageReviews.id, pendingIds),
             eq(kbPageReviews.status, "pending"),
           ),
         )
         .returning({ id: kbPageReviews.id });
-
-      results.push({ id, outcome: updated ? "succeeded" : "conflict" });
+      succeededSet = new Set(updated.map((r) => r.id));
     }
+
+    const results: BulkDecideResultItem[] = input.ids.map((id) => {
+      const status = visibleMap.get(id);
+      if (status === undefined) return { id, outcome: "notFound" };
+      if (status !== "pending") return { id, outcome: "conflict" };
+      if (membershipId === null) return { id, outcome: "denied" };
+      return { id, outcome: succeededSet.has(id) ? "succeeded" : "conflict" };
+    });
 
     return { results };
   }

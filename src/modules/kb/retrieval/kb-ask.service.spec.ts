@@ -862,4 +862,20 @@ describe("AV-04 scope enforcement — linked-documents channel is excluded when 
 
     expect(linkedRetrieve).not.toHaveBeenCalled();
   });
+
+  it("when ownerMembershipId is set, the linked-documents channel is not consulted even with companyDocuments on, so company-wide HR documents cannot cross into an owner-scoped answer", async () => {
+    const { service, linkedRetrieve } = buildForScopeTest();
+
+    await service.ask(scopeUser, { question: "leave policy", ownerMembershipId: 42 }, { companyDocuments: true });
+
+    expect(linkedRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("when status is set, the linked-documents channel is not consulted even with companyDocuments on, so status-filtered KB pages are not mixed with unfiltered company documents", async () => {
+    const { service, linkedRetrieve } = buildForScopeTest();
+
+    await service.ask(scopeUser, { question: "leave policy", status: "draft" }, { companyDocuments: true });
+
+    expect(linkedRetrieve).not.toHaveBeenCalled();
+  });
 });

@@ -14,6 +14,8 @@ export const KB_ANN_EF_SEARCH_MAX = 1_000;
 
 export const KB_CHUNK_COUNT_CACHE_TTL_SECONDS = 300;
 
+export const KB_DEGRADED_ARTICLE_LIMIT = 3;
+
 export function kbAnnEfSearch(cap: number): number {
   const scaled = Math.ceil(cap * KB_ANN_EF_SEARCH_MULTIPLIER);
   return Math.trunc(Math.min(Math.max(scaled, cap), KB_ANN_EF_SEARCH_MAX));

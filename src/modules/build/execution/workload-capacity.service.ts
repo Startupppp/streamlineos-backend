@@ -4,7 +4,9 @@ import {
   leaveRequests,
   organizationMembers,
   projectMembers,
+  projectStatuses,
   projectTeamMembers,
+  tickets,
   timesheetSettings,
   timesheets,
 } from "../../../db/schema";
@@ -129,6 +131,43 @@ export class WorkloadCapacityService {
         .map((r) => [r.userMembershipId!, Number(r.totalHours)]),
     );
 
+    const estimateRows = await this.db
+      .select({
+        assigneeMembershipId: tickets.assigneeMembershipId,
+        estimateHours: sql<string>`COALESCE(SUM(${tickets.originalEstimate}), 0)`,
+        estimatedTicketCount: sql<string>`COUNT(${tickets.originalEstimate})`,
+      })
+      .from(tickets)
+      .leftJoin(
+        projectStatuses,
+        and(
+          eq(projectStatuses.orgId, tickets.orgId),
+          eq(projectStatuses.projectId, tickets.projectId),
+          eq(projectStatuses.name, tickets.status),
+        ),
+      )
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          eq(tickets.projectId, projectId),
+          isNull(tickets.deletedAt),
+          inArray(tickets.assigneeMembershipId, membershipIds),
+          sql`${projectStatuses.type} IS DISTINCT FROM 'completed'`,
+          sql`${projectStatuses.type} IS DISTINCT FROM 'cancelled'`,
+        ),
+      )
+      .groupBy(tickets.assigneeMembershipId)
+      .limit(500);
+
+    const estimateHoursByMembershipId = new Map<number, number | null>(
+      estimateRows
+        .filter((r) => r.assigneeMembershipId !== null)
+        .map((r) => [
+          r.assigneeMembershipId!,
+          Number(r.estimatedTicketCount) > 0 ? Number(r.estimateHours) : null,
+        ]),
+    );
+
     const members = memberRows.map(({ userId, membershipId }) => {
       const leaves = leavesByUserId.get(userId) ?? [];
       const loggedHours = loggedHoursByMembershipId.get(membershipId) ?? 0;
@@ -137,6 +176,7 @@ export class WorkloadCapacityService {
         windowEnd: end,
         expectedDailyHours,
         loggedHours,
+        estimateHours: estimateHoursByMembershipId.get(membershipId) ?? null,
         leaves,
       });
       return { userId, membershipId, ...result };

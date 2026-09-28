@@ -30,6 +30,12 @@ export const listWebhooksQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-}).strict();
+}).strict().refine(
+  (data) =>
+    data.from === undefined ||
+    data.to === undefined ||
+    data.to.getTime() >= data.from.getTime(),
+  { path: ["to"], message: "to must be the same as or later than from" },
+);
 
 export type ListWebhooksQuery = z.infer<typeof listWebhooksQuerySchema>;

@@ -6,7 +6,11 @@ import {
   resolvePoolAdmissionConfig,
 } from "../pool-admission";
 import { poolTelemetry, withPoolBorrow } from "../pool-telemetry";
-import { resolvePoolConfig } from "../pool.config";
+import {
+  resolvePoolConfig,
+  BACKGROUND_LANE_FRACTION,
+  MIN_BACKGROUND_LANE_CONNECTIONS,
+} from "../pool.config";
 
 /**
  * Box 7, connection pool. postgres-js has no acquire or queue timeout and its
@@ -105,17 +109,25 @@ describe("pool admission", () => {
     held();
   });
 
-  it("counts capacity per lane, because each region opens its own pool", async () => {
-    configurePoolAdmission({ maxConcurrent: 1, maxQueueDepth: 0, acquireTimeoutMs: 20 });
+  it("background burst cannot exhaust the interactive budget because each workload has its own lane cap", async () => {
+    configurePoolAdmission({
+      maxConcurrent: 3,
+      maxQueueDepth: 0,
+      acquireTimeoutMs: 20,
+      laneCapOverrides: { background: 1 },
+    });
 
-    const primary = await poolAdmission.acquire("primary");
-    const secondary = await poolAdmission.acquire("eu-west");
+    const bg = await poolAdmission.acquire("background");
+    await expect(poolAdmission.acquire("background")).rejects.toBeInstanceOf(PoolSaturatedError);
 
-    expect(poolAdmission.snapshot().active).toBe(2);
+    const p1 = await poolAdmission.acquire("primary");
+    const p2 = await poolAdmission.acquire("primary");
+    const p3 = await poolAdmission.acquire("primary");
     await expect(poolAdmission.acquire("primary")).rejects.toBeInstanceOf(PoolSaturatedError);
 
-    primary();
-    secondary();
+    expect(poolAdmission.snapshot().active).toBe(4);
+
+    bg(); p1(); p2(); p3();
   });
 
   describe("through withPoolBorrow", () => {
@@ -191,6 +203,20 @@ describe("pool admission", () => {
         DB_POOL_ADMISSION_ENABLED: "false",
       });
       expect(config.admission.enabled).toBe(false);
+    });
+
+    it("primaryLaneMax equals DB_POOL_MAX minus backgroundLaneMax, derived from named constants so the split is always complementary", () => {
+      const config = resolvePoolConfig({
+        DATABASE_URL: "postgres://u:p@localhost:5432/scratch_pool_admission",
+        DB_POOL_MAX: "20",
+      });
+      const expectedBackground = Math.max(
+        MIN_BACKGROUND_LANE_CONNECTIONS,
+        Math.floor(20 * BACKGROUND_LANE_FRACTION),
+      );
+      expect(config.admission.backgroundLaneMax).toBe(expectedBackground);
+      expect(config.admission.primaryLaneMax).toBe(20 - expectedBackground);
+      expect(config.admission.primaryLaneMax + config.admission.backgroundLaneMax).toBe(20);
     });
   });
 });

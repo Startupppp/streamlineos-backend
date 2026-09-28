@@ -15,6 +15,7 @@ export interface CapacityInput {
   windowEnd: string;
   expectedDailyHours: number | null;
   loggedHours: number;
+  estimateHours: number | null;
   leaves: CapacityLeaveInterval[];
 }
 
@@ -25,6 +26,9 @@ export interface CapacityResult {
   netCapacityDays: number;
   capacityHours: number | null;
   loggedHours: number;
+  estimateHours: number | null;
+  allocationPercent: number | null;
+  varianceHours: number | null;
   isOverAllocated: boolean;
   isZeroCapacity: boolean;
   utilizationPercent: number | null;
@@ -66,7 +70,8 @@ function clipLeaveToWindow(
 }
 
 export function computeCapacity(input: CapacityInput): CapacityResult {
-  const { windowStart, windowEnd, expectedDailyHours, loggedHours, leaves } = input;
+  const { windowStart, windowEnd, expectedDailyHours, loggedHours, estimateHours, leaves } =
+    input;
 
   const workingDaysInWindow = countWorkingDays(windowStart, windowEnd);
 
@@ -103,6 +108,14 @@ export function computeCapacity(input: CapacityInput): CapacityResult {
       ? Math.round((loggedHours / capacityHours) * 1000) / 10
       : null;
 
+  const allocationPercent =
+    estimateHours !== null && capacityHours !== null && capacityHours > 0
+      ? Math.round((estimateHours / capacityHours) * 1000) / 10
+      : null;
+
+  const varianceHours =
+    estimateHours !== null ? Math.round((loggedHours - estimateHours) * 100) / 100 : null;
+
   return {
     workingDaysInWindow,
     leaveDays,
@@ -110,6 +123,9 @@ export function computeCapacity(input: CapacityInput): CapacityResult {
     netCapacityDays,
     capacityHours,
     loggedHours,
+    estimateHours,
+    allocationPercent,
+    varianceHours,
     isOverAllocated,
     isZeroCapacity,
     utilizationPercent,

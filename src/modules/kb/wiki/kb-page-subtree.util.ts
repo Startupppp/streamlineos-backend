@@ -6,13 +6,15 @@ type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export async function collectSubtreeIds(
   tx: KbTransaction,
   orgId: string,
-  rootId: number,
+  rootIds: number | number[],
 ): Promise<number[]> {
+  const ids = Array.isArray(rootIds) ? rootIds : [rootIds];
+  if (ids.length === 0) return [];
   const rows = await tx.execute(sql`
     WITH RECURSIVE subtree AS (
       SELECT id, parent_page_id, 1 AS depth
       FROM kb_pages
-      WHERE id = ${rootId} AND org_id = ${orgId}
+      WHERE id = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[]) AND org_id = ${orgId}
       UNION ALL
       SELECT p.id, p.parent_page_id, s.depth + 1
       FROM kb_pages p

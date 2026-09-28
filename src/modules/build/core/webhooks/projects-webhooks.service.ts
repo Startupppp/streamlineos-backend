@@ -195,7 +195,7 @@ export class ProjectsWebhooksService {
       eq(projectWebhooks.projectId, projectId),
     );
     const [before] = await this.db
-      .select({ version: projectWebhooks.version })
+      .select(webhookProjection)
       .from(projectWebhooks)
       .where(tenantMatch)
       .limit(1);
@@ -208,6 +208,14 @@ export class ProjectsWebhooksService {
       ...(data.events !== undefined ? { events: data.events } : {}),
       ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
     };
+
+    if (Object.keys(changes).length === 0)
+      return {
+        ...before,
+        lastDeliveryAt: null,
+        lastDeliveryStatus: null,
+        failureRate: null,
+      };
 
     const [updated] = await this.db
       .update(projectWebhooks)

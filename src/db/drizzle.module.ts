@@ -46,12 +46,11 @@ export type { Db } from "./drizzle.types";
         });
         if (config.admission.enabled)
           configurePoolAdmission({
-            maxConcurrent: config.max,
+            maxConcurrent: config.admission.primaryLaneMax,
             maxQueueDepth: config.admission.queueDepth,
             acquireTimeoutMs: config.admission.acquireTimeoutMs,
             laneCapOverrides: {
               background: config.admission.backgroundLaneMax,
-              primary: config.admission.primaryLaneMax,
             },
           });
         const client = instrumentPostgresClient(
@@ -154,8 +153,9 @@ export class DrizzleModule
     const admission = poolAdmission.snapshot();
     this.logger.log(
       admission.configured
-        ? `Pool backpressure — shed above ${String(admission.maxConcurrent)} concurrent borrows ` +
-            `with ${String(admission.maxQueueDepth)} queued, ${String(admission.acquireTimeoutMs)}ms acquire deadline`
+        ? `Pool backpressure — interactive shed above ${String(config.admission.primaryLaneMax)}, ` +
+            `background above ${String(config.admission.backgroundLaneMax)}, ` +
+            `${String(admission.maxQueueDepth)} queued, ${String(admission.acquireTimeoutMs)}ms acquire deadline`
         : "Pool backpressure DISABLED — waiters queue in the driver with no timeout (DB_POOL_ADMISSION_ENABLED=false)",
     );
     for (const warning of config.warnings) this.logger.warn(warning);

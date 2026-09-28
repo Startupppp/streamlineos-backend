@@ -320,6 +320,9 @@ export class KbSearchRetrievalService {
           pageVisibility,
         ];
         if (spaceId) pageConditions.push(eq(kbPages.spaceId, spaceId));
+        if (ownerMembershipId !== undefined)
+          pageConditions.push(eq(kbPages.ownerMembershipId, ownerMembershipId));
+        if (status !== undefined) pageConditions.push(eq(kbPages.status, status));
         const pageRows = await this.db
           .select({
             id: kbPages.id,

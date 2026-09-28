@@ -14,6 +14,7 @@ import type {
 } from "./kb-search-retrieval.service";
 import {
   resolveKbRetrievalStrategy,
+  KB_DEGRADED_ARTICLE_LIMIT,
   type KbRetrievalStrategy,
 } from "./kb-retrieval-strategy";
 import { KB_ASK_MAX_CONTEXT_DOCUMENTS } from "./kb-ask-context";
@@ -96,6 +97,8 @@ export class KbRetrievalService {
     }
 
     const embedding = await this.search.resolveQueryEmbedding(query, user.orgId);
+    const effectiveDocumentsLimit =
+      embedding.vectorLiteral === null ? KB_DEGRADED_ARTICLE_LIMIT : documentsLimit;
 
     const { documents, sources, passages, documentsKind, sourcesKind, passagesKind } =
       await runInTenantTransaction(
@@ -105,7 +108,7 @@ export class KbRetrievalService {
           this.search.retrieveTopArticlesWithOutcome(
             user,
             query,
-            documentsLimit,
+            effectiveDocumentsLimit,
             opts.spaceId,
             opts.verifiedOnly,
             embedding,

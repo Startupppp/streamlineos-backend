@@ -31,6 +31,34 @@ jest.mock("./kb-page-attachment-purge", () => ({
   purgeOrphanedKbMedia: jest.fn().mockResolvedValue(0),
 }));
 
+jest.mock("./kb-multi-store-purge", () => ({
+  KB_PURGE_STORES: [
+    "visits", "favorites", "source_links", "reviews", "versions", "comments",
+    "grants", "chunks", "analytics", "notifications", "caches", "public_cdn",
+    "connector_projections", "page_rows", "blobs",
+  ],
+  openMultiStoreLedger: jest.fn().mockResolvedValue(undefined),
+  incompleteStorePages: jest.fn().mockResolvedValue([]),
+  markStoresComplete: jest.fn().mockResolvedValue(undefined),
+  markStoresFailed: jest.fn().mockResolvedValue(undefined),
+  purgeVisitsForPages: jest.fn().mockResolvedValue(undefined),
+  purgeFavoritesForPages: jest.fn().mockResolvedValue(undefined),
+  purgeLinksForPages: jest.fn().mockResolvedValue(undefined),
+  purgeVersionsForPages: jest.fn().mockResolvedValue(undefined),
+  purgeCommentsForPages: jest.fn().mockResolvedValue(undefined),
+  purgeGrantsForPages: jest.fn().mockResolvedValue(undefined),
+  purgeChunksForPages: jest.fn().mockResolvedValue(undefined),
+  purgeAnalyticsForPages: jest.fn().mockResolvedValue(undefined),
+  purgeNotificationsForPages: jest.fn().mockResolvedValue(undefined),
+  purgeCachesForPages: jest.fn().mockResolvedValue(undefined),
+  purgePublicCdnForPages: jest.fn().mockResolvedValue(undefined),
+  purgeConnectorProjectionsForPages: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock("./kb-purge-reviews", () => ({
+  purgeReviewsForPages: jest.fn().mockResolvedValue(undefined),
+}));
+
 type SelectChain = {
   from: () => { where: () => { orderBy: () => { limit: (n: number) => Promise<unknown[]> } } };
 };
@@ -400,57 +428,76 @@ describe("legal hold — blocks all three purge paths", () => {
   });
 });
 
-describe("DELETE /kb/pages/trash/purge — bulk purge", () => {
-  it("a hidden page returns notFound; a visible page returns succeeded", async () => {
-    const db = {
-      select: jest.fn()
-        .mockImplementationOnce(() => ({
-          from: () => ({
-            where: () => Promise.resolve([{ id: 3 }]),
-          }),
-        }))
-        .mockImplementation(() => ({
-          from: () => ({
-            where: () => Promise.resolve([]),
-          }),
-        })),
-      query: {
-        kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 3, title: "P3" }) },
-        kbPagePurgeLedger: { findFirst: jest.fn().mockResolvedValue(undefined) },
-      },
-      transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
+function makeBulkPurgeDb(options: {
+  visibleIds: number[];
+  subtreeIds: number[];
+  legalHoldIds: number[];
+}): Db {
+  let selectCount = 0;
+  return {
+    select: jest.fn().mockImplementation(() => ({
+      from: () => ({
+        where: () => {
+          selectCount++;
+          if (selectCount === 1) {
+            return Promise.resolve(options.visibleIds.map((id) => ({ id })));
+          }
+          return Promise.resolve(
+            options.legalHoldIds.map((id) => ({
+              id,
+              title: `Page ${id}`,
+              legalHoldReason: null,
+            })),
+          );
+        },
+      }),
+    })),
+    transaction: jest.fn().mockImplementation(
+      async (cb: (tx: unknown) => Promise<unknown>) =>
         cb({
-          execute: jest.fn().mockResolvedValue([{ id: 3 }]),
-          delete: () => ({ where: jest.fn().mockResolvedValue([]) }),
-          insert: () => ({
-            values: () => ({
-              onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
-              onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+          execute: jest.fn().mockResolvedValue(
+            options.subtreeIds.map((id) => ({ id })),
+          ),
+          select: jest.fn().mockReturnValue({
+            from: () => ({
+              where: () => ({
+                for: () => Promise.resolve([]),
+              }),
             }),
           }),
-          update: () => ({ set: () => ({ where: jest.fn().mockResolvedValue([]) }) }),
-          select: () => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) }),
-        })
-      ),
-    } as unknown as Db;
+          delete: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([]),
+          }),
+          insert: jest.fn().mockReturnValue({
+            values: () => ({
+              onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+            }),
+          }),
+        }),
+    ),
+  } as unknown as Db;
+}
+
+describe("DELETE /kb/pages/trash/purge — bulk purge", () => {
+  it("a visible page with no legal hold returns succeeded and a hidden page returns notFound", async () => {
+    const db = makeBulkPurgeDb({ visibleIds: [3], subtreeIds: [3], legalHoldIds: [] });
+
     const result = await service(db).bulkPurge(userInOrg, { pageIds: [3, 99] });
+
     const r3 = result.results.find((r) => r.pageId === 3);
     const r99 = result.results.find((r) => r.pageId === 99);
     expect(r3?.result).toBe("succeeded");
     expect(r99?.result).toBe("notFound");
   });
 
-  it("a NotFoundException during purge becomes notFound — race condition tolerance", async () => {
-    const db = {
-      select: jest.fn().mockImplementation(() => ({
-        from: () => ({
-          where: () => Promise.resolve([{ id: 8 }]),
-        }),
-      })),
-      query: { kbPages: { findFirst: jest.fn().mockResolvedValue(null) } },
-      transaction: jest.fn().mockResolvedValue([{ id: 8 }]),
-    } as unknown as Db;
-    const result = await service(db).bulkPurge(userInOrg, { pageIds: [8] });
-    expect(result.results[0]?.result).toBe("notFound");
+  it("a legal-hold page in the batch marks all visible pages conflict — the batch is rejected atomically before any page is deleted", async () => {
+    const db = makeBulkPurgeDb({ visibleIds: [3], subtreeIds: [3], legalHoldIds: [3] });
+
+    const result = await service(db).bulkPurge(userInOrg, { pageIds: [3, 99] });
+
+    const r3 = result.results.find((r) => r.pageId === 3);
+    const r99 = result.results.find((r) => r.pageId === 99);
+    expect(r3?.result).toBe("conflict");
+    expect(r99?.result).toBe("notFound");
   });
 });

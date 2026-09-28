@@ -289,6 +289,8 @@ export class KbContentHealthService {
     const existingPageIds = new Set(existingItems.map((i) => i.pageId));
 
     const results: BulkRepairResponse["results"] = [];
+    const toUpdate: number[] = [];
+    const toInsert: number[] = [];
 
     for (const pageId of body.pageIds) {
       if (!visibleIds.has(pageId)) {
@@ -300,36 +302,54 @@ export class KbContentHealthService {
         continue;
       }
 
-      const now = new Date();
-
-      if (body.repairAction === "assign_owner" && body.assigneeMembershipId !== undefined) {
+      if (
+        body.repairAction === "assign_owner" &&
+        body.assigneeMembershipId !== undefined
+      ) {
         if (existingPageIds.has(pageId)) {
-          await this.db
-            .update(kbHealthItems)
-            .set({ assigneeMembershipId: body.assigneeMembershipId, updatedAt: now })
-            .where(
-              and(
-                eq(kbHealthItems.orgId, user.orgId),
-                eq(kbHealthItems.pageId, pageId),
-                eq(kbHealthItems.kind, body.kind),
-              ),
-            );
+          toUpdate.push(pageId);
         } else {
-          await this.db
-            .insert(kbHealthItems)
-            .values({
-              orgId: user.orgId,
-              pageId,
-              kind: body.kind,
-              ruleVersion: 1,
-              state: "open",
-              assigneeMembershipId: body.assigneeMembershipId,
-              detectedAt: now,
-            });
+          toInsert.push(pageId);
         }
       }
 
       results.push({ pageId, outcome: "applied" });
+    }
+
+    if (
+      body.repairAction === "assign_owner" &&
+      body.assigneeMembershipId !== undefined
+    ) {
+      const now = new Date();
+      const assigneeId = body.assigneeMembershipId;
+
+      if (toUpdate.length > 0) {
+        await this.db
+          .update(kbHealthItems)
+          .set({ assigneeMembershipId: assigneeId, repairAction: "assign_owner", updatedAt: now })
+          .where(
+            and(
+              eq(kbHealthItems.orgId, user.orgId),
+              inArray(kbHealthItems.pageId, toUpdate),
+              eq(kbHealthItems.kind, body.kind),
+            ),
+          );
+      }
+
+      if (toInsert.length > 0) {
+        type InsertRow = typeof kbHealthItems.$inferInsert;
+        const rows: InsertRow[] = toInsert.map((pageId) => ({
+          orgId: user.orgId,
+          pageId,
+          kind: body.kind,
+          ruleVersion: 1,
+          state: "open",
+          assigneeMembershipId: assigneeId,
+          repairAction: "assign_owner",
+          detectedAt: now,
+        }));
+        await this.db.insert(kbHealthItems).values(rows);
+      }
     }
 
     return { results };

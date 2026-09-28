@@ -5,7 +5,7 @@ import {
 } from "../../../../common/openapi/wire-types";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { idCursorPageSchema } from "../../../../common/openapi/response-envelopes";
-import { KB_HEALTH_ITEM_KINDS } from "../../../../db/schema/kb/health-items";
+import { KB_HEALTH_ITEM_KINDS, KB_REPAIR_ACTIONS } from "../../../../db/schema/kb/health-items";
 
 export const contentHealthSignalTypeEnum = z.enum(KB_HEALTH_ITEM_KINDS);
 
@@ -85,6 +85,8 @@ export type DismissHealthItemBody = z.infer<typeof dismissHealthItemBodySchema>;
 
 export const healthItemStateEnum = z.enum(["open", "resolved", "dismissed"]);
 
+export const repairActionEnum = z.enum(KB_REPAIR_ACTIONS);
+
 export const healthItemSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -100,6 +102,7 @@ export const healthItemSchema = z.object({
   dismissedAt: nullableWireDate(),
   dismissedReason: z.string().nullable(),
   dismissalExpiresAt: nullableWireDate(),
+  repairAction: repairActionEnum.nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });

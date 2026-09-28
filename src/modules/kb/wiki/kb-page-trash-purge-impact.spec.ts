@@ -22,24 +22,26 @@ function makeDb(
   visibleRows: Array<{ id: number }>,
   subtreesByRoot: Record<number, number[]>,
 ): Db {
+  const allSubtreeIds = new Set<number>();
+  for (const { id } of visibleRows) {
+    for (const sid of subtreesByRoot[id] ?? [id]) {
+      allSubtreeIds.add(sid);
+    }
+  }
   return {
     select: jest.fn().mockImplementation(() => ({
       from: () => ({
         where: () => Promise.resolve(visibleRows),
       }),
     })),
-    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
-      const result = await cb({
-        execute: jest.fn().mockImplementation((query: { queryChunks?: unknown[] }) => {
-          const rootId = (query.queryChunks ?? []).find(
-            (chunk): chunk is number => typeof chunk === "number",
-          ) ?? null;
-          const ids = rootId !== null ? subtreesByRoot[rootId] ?? [rootId] : [];
-          return Promise.resolve(ids.map((id) => ({ id })));
+    transaction: jest.fn().mockImplementation(
+      async (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          execute: jest.fn().mockResolvedValue(
+            [...allSubtreeIds].map((id) => ({ id })),
+          ),
         }),
-      });
-      return result;
-    }),
+    ),
   } as unknown as Db;
 }
 
@@ -76,5 +78,20 @@ describe("KbPageTrashQueryService.purgeImpact — dependency impact before a des
     const result = await svc.purgeImpact(userInOrg, { pageIds: [1, 999] });
 
     expect(result).toEqual({ pageCount: 1, descendantCount: 0 });
+  });
+
+  it("opens exactly one transaction for a ten-page batch — not one BEGIN per page id", async () => {
+    const ids = Array.from({ length: 10 }, (_, i) => i + 1);
+    const subtreesByRoot: Record<number, number[]> = {};
+    for (const id of ids) subtreesByRoot[id] = [id];
+    const db = makeDb(
+      ids.map((id) => ({ id })),
+      subtreesByRoot,
+    );
+    const svc = service(db, makeAuth());
+
+    await svc.purgeImpact(userInOrg, { pageIds: ids });
+
+    expect((db as unknown as { transaction: jest.Mock }).transaction).toHaveBeenCalledTimes(1);
   });
 });

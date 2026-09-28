@@ -105,13 +105,13 @@ export class KbPageTrashQueryService {
         ),
       );
     const visibleIds = found.map((p) => p.id);
-    const affected = new Set<number>();
-    for (const id of visibleIds) {
-      const subtreeIds = await this.db.transaction((tx) =>
-        collectSubtreeIds(tx, orgId, id),
-      );
-      for (const subId of subtreeIds) affected.add(subId);
+    if (visibleIds.length === 0) {
+      return { pageCount: 0, descendantCount: 0 };
     }
+    const subtreeIds = await this.db.transaction((tx) =>
+      collectSubtreeIds(tx, orgId, visibleIds),
+    );
+    const affected = new Set<number>(subtreeIds);
     return {
       pageCount: visibleIds.length,
       descendantCount: Math.max(0, affected.size - visibleIds.length),

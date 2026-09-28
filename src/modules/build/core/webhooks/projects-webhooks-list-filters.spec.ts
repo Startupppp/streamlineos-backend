@@ -16,6 +16,20 @@ function sqlValues(node: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
+function sqlColumnNames(node: unknown, seen = new Set<object>()): string[] {
+  if (node === null || node === undefined || typeof node !== "object") return [];
+  if (node instanceof Date) return [];
+  if (seen.has(node as object)) return [];
+  seen.add(node as object);
+  if (Array.isArray(node)) return node.flatMap((item) => sqlColumnNames(item, seen));
+  const obj = node as Record<string, unknown>;
+  const own = typeof obj.name === "string" && obj.table !== undefined ? [obj.name] : [];
+  return [
+    ...own,
+    ...(Array.isArray(obj.queryChunks) ? sqlColumnNames(obj.queryChunks, seen) : []),
+  ];
+}
+
 describe("listWebhooksQuerySchema — from/to date filter", () => {
   it("accepts a from date string so a deep-linked date range no longer 400s", () => {
     const result = listWebhooksQuerySchema.safeParse({ from: "2026-01-01" });
@@ -32,6 +46,22 @@ describe("listWebhooksQuerySchema — from/to date filter", () => {
   it("accepts from and to together — a date range is not rejected", () => {
     const result = listWebhooksQuerySchema.safeParse({ from: "2026-01-01", to: "2026-12-31" });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects a range whose to precedes from, so an impossible window is a 400 and not an always-empty list", () => {
+    const result = listWebhooksQuerySchema.safeParse({ from: "2026-12-31", to: "2026-01-01" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(["to"]);
+  });
+
+  it("accepts a range whose to equals from, so a single-day window is not rejected (BE-141 positive pair)", () => {
+    expect(
+      listWebhooksQuerySchema.safeParse({ from: "2026-05-05", to: "2026-05-05" }).success,
+    ).toBe(true);
+  });
+
+  it("does not reject a lone to that precedes the epoch-defaulted from, because from is genuinely absent", () => {
+    expect(listWebhooksQuerySchema.safeParse({ to: "1970-01-02" }).success).toBe(true);
   });
 
   it("still rejects an unknown key so .strict() is maintained after adding from/to", () => {
@@ -93,6 +123,22 @@ describe("ProjectsWebhooksService.listWebhooks — from/to narrows results", () 
     await module.get(ProjectsWebhooksService).listWebhooks("org-1", 1, { to });
     const values = sqlValues(capturedWhere);
     expect(values).toContainEqual(to);
+    await module.close();
+  });
+
+  it("windows on created_at and never on the delivery timestamp, so from/to means when the webhook was registered", async () => {
+    let capturedWhere: unknown;
+    const db = makeDb((c) => { capturedWhere = c; });
+    const module = await Test.createTestingModule({
+      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    await module.get(ProjectsWebhooksService).listWebhooks("org-1", 1, {
+      from: new Date("2026-06-01T00:00:00.000Z"),
+      to: new Date("2026-06-30T00:00:00.000Z"),
+    });
+    const names = sqlColumnNames(capturedWhere);
+    expect(names).toContain("created_at");
+    expect(names).not.toContain("delivered_at");
     await module.close();
   });
 

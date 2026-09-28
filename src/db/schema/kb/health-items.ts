@@ -23,6 +23,14 @@ export const KB_HEALTH_ITEM_KINDS = [
   "contradictory_claim",
 ] as const;
 
+export const KB_REPAIR_ACTIONS = [
+  "assign_owner",
+  "request_review",
+  "mark_needs_content",
+] as const;
+
+export type KbRepairAction = (typeof KB_REPAIR_ACTIONS)[number];
+
 export type KbHealthItemKind = (typeof KB_HEALTH_ITEM_KINDS)[number];
 
 export const KB_HEALTH_ITEM_STATES = ["open", "resolved", "dismissed"] as const;
@@ -55,6 +63,7 @@ export const kbHealthItems = pgTable(
     dismissalExpiresAt: timestamp("dismissal_expires_at", {
       withTimezone: true,
     }),
+    repairAction: text("repair_action").$type<KbRepairAction>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

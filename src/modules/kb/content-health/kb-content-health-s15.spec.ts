@@ -4,7 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { KbContentHealthService } from "./kb-content-health.service";
-import { KbContradictionScannerService } from "./kb-contradiction-scanner.service";
+import { KbContradictionScannerService, SCAN_BATCH } from "./kb-contradiction-scanner.service";
 import type {
   ContentHealthSignalsQuery,
   ContentHealthCountsQuery,
@@ -304,6 +304,54 @@ describe("KbContentHealthService — bulkRepair", () => {
     expect(result.results).toHaveLength(3);
     expect(result.results.every((r) => r.outcome === "applied")).toBe(true);
   });
+
+  it("issues a single batch update for all existing assign_owner pages rather than one update per page, so bulk repair cannot issue N round trips at the 100-page cap", async () => {
+    const db = makeBulkRepairDb({
+      visiblePageIds: [1, 2, 3],
+      existingItems: [
+        { pageId: 1, state: "open" },
+        { pageId: 2, state: "open" },
+        { pageId: 3, state: "open" },
+      ],
+    });
+    const svc = new KbContentHealthService(db, auth as never);
+    await svc.bulkRepair(makeUser(), {
+      pageIds: [1, 2, 3],
+      kind: "unowned",
+      repairAction: "assign_owner",
+      assigneeMembershipId: 5,
+    });
+    const updateMock = (db as unknown as { update: jest.Mock }).update;
+    expect(updateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("issues a single multi-row insert for all new assign_owner pages rather than one insert per page, so bulk repair cannot issue N round trips at the 100-page cap", async () => {
+    const db = makeBulkRepairDb({ visiblePageIds: [1, 2, 3], existingItems: [] });
+    const svc = new KbContentHealthService(db, auth as never);
+    await svc.bulkRepair(makeUser(), {
+      pageIds: [1, 2, 3],
+      kind: "unowned",
+      repairAction: "assign_owner",
+      assigneeMembershipId: 5,
+    });
+    const insertMock = (db as unknown as { insert: jest.Mock }).insert;
+    expect(insertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("stores repair_action on the health item when assign_owner is applied, so the workflow surface can show what repair was done and an audit trail exists", async () => {
+    const db = makeBulkRepairDb({ visiblePageIds: [1], existingItems: [] });
+    const svc = new KbContentHealthService(db, auth as never);
+    await svc.bulkRepair(makeUser(), {
+      pageIds: [1],
+      kind: "unowned",
+      repairAction: "assign_owner",
+      assigneeMembershipId: 5,
+    });
+    const insertMock = (db as unknown as { insert: jest.Mock }).insert;
+    const insertValues = insertMock.mock.results[0]?.value as { values: jest.Mock } | undefined;
+    const rows = insertValues?.values.mock.calls[0]?.[0] as Array<{ repairAction?: string }>;
+    expect(rows?.[0]?.repairAction).toBe("assign_owner");
+  });
 });
 
 describe("KbContentHealthService — bulkRepair cannot publish a page", () => {
@@ -493,6 +541,22 @@ describe("KbContradictionScannerService — runContradictionScanForOrg", () => {
     const rendered = render(execute.mock.calls[0]?.[0]);
     expect(rendered).toContain("md5");
     expect(rendered).toContain("IS DISTINCT FROM");
+  });
+
+  it("exports SCAN_BATCH as a named constant so callers and tests can size fixtures and verify the scan is bounded without a magic number (BE-131, BE-132)", () => {
+    expect(typeof SCAN_BATCH).toBe("number");
+    expect(SCAN_BATCH).toBeGreaterThan(0);
+    expect(SCAN_BATCH).toBeLessThanOrEqual(100);
+  });
+
+  it("passes SCAN_BATCH as the LIMIT parameter in the SQL, so the per-org sweep cannot grow without the constant being changed", async () => {
+    const { db: tx, ambient, execute } = makeContradictionScanDb({ candidates: [] });
+    const svc = makeScanner(ambient);
+
+    await svc.runContradictionScanForOrg(tx, "org-1");
+
+    const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0] as SQL);
+    expect(query.params).toContain(SCAN_BATCH);
   });
 });
 

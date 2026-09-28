@@ -243,3 +243,121 @@ describe("KB ask scope — an unreadable sourceId is not silently widened to all
     expect(rendered.params).toContain(ORG);
   });
 });
+
+const OWNER_MEMBERSHIP_ID = 77;
+
+describe("KB ask scope — ownerMembershipId is honoured in the keyword candidate query", () => {
+  it("when ownerMembershipId is provided the membership id appears as a bound parameter in the WHERE so pages owned by other members are excluded", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+
+    await svc.pageKeywordCandidates(ORG, QUERY, 10, sql`true`, false, undefined, undefined, OWNER_MEMBERSHIP_ID);
+
+    const rendered = dialect.sqlToQuery(getCond());
+    expect(rendered.params).toContain(OWNER_MEMBERSHIP_ID);
+  });
+
+  it("CONTROL: without ownerMembershipId the membership id is absent from the WHERE, proving the previous assertion is not a tautology", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+
+    await svc.pageKeywordCandidates(ORG, QUERY, 10, sql`true`, false, undefined, undefined, undefined);
+
+    const rendered = dialect.sqlToQuery(getCond());
+    expect(rendered.params).not.toContain(OWNER_MEMBERSHIP_ID);
+  });
+});
+
+describe("KB ask scope — ownerMembershipId is honoured in the vector candidate query", () => {
+  it("when ownerMembershipId is provided the membership id appears as a bound parameter in the WHERE so pages owned by other members are excluded", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+    jest.spyOn(svc, "vectorChunkIds").mockResolvedValue(CHUNK_IDS);
+
+    await svc.pageVectorCandidates(ORG, VECTOR, 10, sql`true`, false, undefined, undefined, OWNER_MEMBERSHIP_ID);
+
+    const rendered = dialect.sqlToQuery(getCond());
+    expect(rendered.params).toContain(OWNER_MEMBERSHIP_ID);
+  });
+
+  it("CONTROL: without ownerMembershipId the membership id is absent from the WHERE, proving the previous assertion is not a tautology", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+    jest.spyOn(svc, "vectorChunkIds").mockResolvedValue(CHUNK_IDS);
+
+    await svc.pageVectorCandidates(ORG, VECTOR, 10, sql`true`, false, undefined, undefined, undefined);
+
+    const rendered = dialect.sqlToQuery(getCond());
+    expect(rendered.params).not.toContain(OWNER_MEMBERSHIP_ID);
+  });
+});
+
+describe("KB ask scope — status is honoured in the keyword candidate query", () => {
+  it("when status is provided the value appears as a bound parameter in the WHERE so pages in other lifecycle states are excluded", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+
+    await svc.pageKeywordCandidates(ORG, QUERY, 10, sql`true`, false, undefined, undefined, undefined, "published");
+
+    const rendered = dialect.sqlToQuery(getCond());
+    expect(rendered.params).toContain("published");
+  });
+
+  it("CONTROL: without a caller-supplied status the value 'published' is absent from the WHERE as a bound param, proving the previous assertion is not a tautology", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+
+    await svc.pageKeywordCandidates(ORG, QUERY, 10, sql`true`, false, undefined, undefined, undefined, undefined);
+
+    const rendered = dialect.sqlToQuery(getCond());
+    expect(rendered.params.filter((p) => p === "published")).toHaveLength(0);
+  });
+});
+
+describe("KB ask scope — status is honoured in the vector candidate query", () => {
+  it("when status is provided the value appears as a bound parameter in the WHERE so pages in other lifecycle states are excluded", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+    jest.spyOn(svc, "vectorChunkIds").mockResolvedValue(CHUNK_IDS);
+
+    await svc.pageVectorCandidates(ORG, VECTOR, 10, sql`true`, false, undefined, undefined, undefined, "published");
+
+    const rendered = dialect.sqlToQuery(getCond());
+    expect(rendered.params).toContain("published");
+  });
+
+  it("CONTROL: without a caller-supplied status the value 'published' is absent from the WHERE as a bound param, proving the previous assertion is not a tautology", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+    jest.spyOn(svc, "vectorChunkIds").mockResolvedValue(CHUNK_IDS);
+
+    await svc.pageVectorCandidates(ORG, VECTOR, 10, sql`true`, false, undefined, undefined, undefined, undefined);
+
+    const rendered = dialect.sqlToQuery(getCond());
+    expect(rendered.params.filter((p) => p === "published")).toHaveLength(0);
+  });
+});
+
+describe("KB ask scope — caller-supplied status narrows, never widens the archived exclusion", () => {
+  it("when status 'archived' is requested the WHERE contains both ne(status, 'archived') unconditionally and eq(status, 'archived') from the caller — two contradictory conditions that guarantee no archived page surfaces", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+
+    await svc.pageKeywordCandidates(ORG, QUERY, 10, sql`true`, false, undefined, undefined, undefined, "archived");
+
+    const rendered = dialect.sqlToQuery(getCond());
+    const archivedParams = rendered.params.filter((p) => p === "archived");
+    expect(archivedParams.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("CONTROL: when status is omitted, 'archived' still appears exactly once in the WHERE from the unconditional ne filter, confirming the previous test measures a second occurrence not just the ne filter", async () => {
+    const { db, getCond } = makeCaptureDb();
+    const svc = new KbCandidateService(db, null);
+
+    await svc.pageKeywordCandidates(ORG, QUERY, 10, sql`true`, false, undefined, undefined, undefined, undefined);
+
+    const rendered = dialect.sqlToQuery(getCond());
+    const archivedParams = rendered.params.filter((p) => p === "archived");
+    expect(archivedParams).toHaveLength(1);
+  });
+});
