@@ -36,10 +36,16 @@ describe("Build ticket list projection contract", () => {
   });
 
   it("accepts the actual cross-project work projection and requires rendered fields", () => {
-    const work = { id: 1, title: "Ticket", type: "BUG", status: "OPEN", priority: "HIGH", projectId: 42, projectKey: "BUILD", projectName: "Project", ticketNumber: 1, dueDate: null, startDate: null, points: null, estimate: null, rank: "a0", cycleId: null, epicId: null, assigneeId: user.id, assignee: user, labels: [], createdAt: new Date(), updatedAt: new Date() };
+    const work = { id: 1, title: "Ticket", type: "BUG", status: "OPEN", priority: "HIGH", projectId: 42, projectKey: "BUILD", projectName: "Project", ticketNumber: 1, dueDate: null, startDate: null, points: null, estimate: null, rank: "a0", version: 2, cycleId: null, epicId: null, assigneeId: user.id, assignee: user, labels: [], createdAt: new Date(), updatedAt: new Date() };
     const page = { data: [work], limit: 25, nextCursor: null, hasMore: false };
     expect(allWorkPageSchema.parse(page).data[0]).toEqual(work);
     expect(allWorkPageSchema.safeParse({ ...page, data: [{ ...work, projectName: undefined }] }).success).toBe(false);
+  });
+
+  it("rejects an all-work row with no version, because the board inline edit cannot send a token the list never gave it", () => {
+    const work = { id: 1, title: "Ticket", type: "BUG", status: "OPEN", priority: "HIGH", projectId: 42, projectKey: "BUILD", projectName: "Project", ticketNumber: 1, dueDate: null, startDate: null, points: null, estimate: null, rank: "a0", version: 2, cycleId: null, epicId: null, assigneeId: user.id, assignee: user, labels: [], createdAt: new Date(), updatedAt: new Date() };
+    const page = { data: [work], limit: 25, nextCursor: null, hasMore: false };
+    expect(allWorkPageSchema.safeParse({ ...page, data: [{ ...work, version: undefined }] }).success).toBe(false);
   });
   it("accepts the bounded light projection without demanding detail-only columns", () => {
     const result = ticketListPageSchema.parse({ data: [row], pagination: { limit: 25, hasMore: false, nextCursor: null } });

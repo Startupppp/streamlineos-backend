@@ -22,6 +22,7 @@ function roadmapBase(overrides: Record<string, unknown> = {}): Record<string, un
     impact: null,
     confidence: null,
     effort: null,
+    version: 1,
     createdBy: null,
     createdAt: NOW,
     updatedAt: NOW,
@@ -73,6 +74,14 @@ describe("roadmapItemSchema — status field", () => {
   it("rejects a row with no status field at all", () => {
     const raw = roadmapBase();
     delete raw.status;
+    expect(() => roadmapItemSchema.parse(raw)).toThrow();
+  });
+});
+
+describe("roadmapItemSchema — version field", () => {
+  it("rejects a roadmap item with no version, because the board inline edit cannot send a token the list never gave it", () => {
+    const raw = roadmapBase();
+    delete raw.version;
     expect(() => roadmapItemSchema.parse(raw)).toThrow();
   });
 });

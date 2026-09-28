@@ -69,6 +69,7 @@ export class ProjectsTicketRelationsService {
         priority: true,
         type: true,
         points: true,
+        version: true,
         assigneeMembershipId: true,
         projectId: true,
       },

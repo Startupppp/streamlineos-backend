@@ -339,6 +339,7 @@ export class ProjectsWorkQueryService {
       points: r.points,
       estimate: r.estimate,
       rank: r.rank,
+      version: r.version,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       assigneeId: r.assigneeId,

@@ -13,6 +13,7 @@ export const WORK_ROW_SELECTION = {
   points: tickets.points,
   estimate: tickets.estimate,
   rank: tickets.rank,
+  version: tickets.version,
   createdAt: tickets.createdAt,
   updatedAt: tickets.updatedAt,
   assigneeId: sql<string | null>`${organizationMembers.userId}`,

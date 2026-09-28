@@ -70,6 +70,7 @@ function workResultWithRows(count: number, hasMore = false): AllWorkResult {
     points: null,
     estimate: null,
     rank: `0|${i}`,
+    version: 1,
     createdAt: new Date(),
     updatedAt: new Date(),
     assigneeId: null,

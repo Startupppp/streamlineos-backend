@@ -16,6 +16,7 @@ const relationListItem = {
     priority: "HIGH" as const,
     type: "BUG" as const,
     points: 3,
+    version: 1,
     assigneeMembershipId: 77,
     projectId: 12,
     project: { key: "PAY" },
@@ -61,6 +62,15 @@ describe("listRelations contract", () => {
       relatedTicket: { ...relationListItem.relatedTicket, assignee: null },
     };
     expect(ticketRelationListItemSchema.parse(unassigned).relatedTicket.assignee).toBeNull();
+  });
+
+  it("rejects a related ticket with no version, because the board inline edit cannot send a token the list never gave it", () => {
+    expect(() =>
+      ticketRelationListItemSchema.parse({
+        ...relationListItem,
+        relatedTicket: { ...relationListItem.relatedTicket, version: undefined },
+      }),
+    ).toThrow();
   });
 
   it("rejects a relationType outside the work_item_relation_type enum, so a widened column cannot pass silently", () => {
