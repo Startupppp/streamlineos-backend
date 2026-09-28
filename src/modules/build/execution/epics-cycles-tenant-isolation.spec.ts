@@ -49,9 +49,10 @@ describe("EpicsService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new EpicsService(db);
 
-    const result = await svc.listEpics(OWNER_ORG, 1);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toHaveProperty("dependencyCount", 0);
+    const page = await svc.listEpics(OWNER_ORG, 1);
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]).toHaveProperty("dependencyCount", 0);
+    expect(page.pagination).toEqual({ limit: 100, hasMore: false, nextCursor: null });
   });
 });
 

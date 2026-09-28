@@ -28,6 +28,7 @@ import {
   createModuleSchema,
   createSprintSchema,
   cycleListQuerySchema,
+  epicListQuerySchema,
   moduleListQuerySchema,
   updateCycleSchema,
   updateEpicSchema,
@@ -38,6 +39,7 @@ import {
   type CreateModuleInput,
   type CreateSprintInput,
   type CycleListQuery,
+  type EpicListQuery,
   type ModuleListQuery,
   type UpdateCycleInput,
   type UpdateEpicInput,
@@ -68,6 +70,7 @@ import {
   modulePageSchema,
   moduleRowSchema,
   epicRowSchema,
+  epicPageSchema,
 } from "./dto/execution-response.schemas";
 
 @RequireModule("build")
@@ -271,13 +274,14 @@ export class EpicsController {
 
   @Get()
   @RequirePermission("build:tickets:view")
-  @ResponseSchema(z.array(epicRowSchema))
-  @Validate({ params: projectIdParams })
+  @ResponseSchema(epicPageSchema)
+  @Validate({ params: projectIdParams, query: epicListQuerySchema })
   listEpics(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: EpicListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.epics.listEpics(u.orgId, projectId);
+    return this.epics.listEpics(u.orgId, projectId, query);
   }
 
   @Post()

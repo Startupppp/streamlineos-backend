@@ -223,6 +223,15 @@ export const epicRowSchema = z.object({
   assignee: z.object({ user: userColsSchema }).nullable().optional(),
 });
 
+export const epicPageSchema = z.object({
+  data: z.array(epicRowSchema),
+  pagination: z.object({
+    limit: z.number().int().positive(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+});
+
 export const memberCapacitySchema = z.object({
   userId: z.string(),
   membershipId: z.number().int(),

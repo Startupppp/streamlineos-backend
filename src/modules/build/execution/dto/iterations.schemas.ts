@@ -123,6 +123,17 @@ export const cycleListQuerySchema = z
   })
   .strict();
 
+export const epicListQuerySchema = z
+  .object({
+    cursor: z.string().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    q: z.string().optional(),
+    status: z.string().optional(),
+    ownerId: z.string().optional(),
+    health: z.enum(["on_track", "at_risk", "off_track"]).optional(),
+  })
+  .strict();
+
 export const moduleListQuerySchema = z
   .object({
     cursor: z.string().min(1).optional(),
@@ -240,6 +251,7 @@ export type CreateCycleInput = z.infer<typeof createCycleSchema>;
 export type UpdateCycleInput = z.infer<typeof updateCycleSchema>;
 export type CycleListQuery = z.infer<typeof cycleListQuerySchema>;
 export type ModuleListQuery = z.infer<typeof moduleListQuerySchema>;
+export type EpicListQuery = z.infer<typeof epicListQuerySchema>;
 export type CreateModuleInput = z.infer<typeof createModuleSchema>;
 export type UpdateModuleInput = z.infer<typeof updateModuleSchema>;
 export type CreateSprintInput = z.infer<typeof createSprintSchema>;
