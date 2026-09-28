@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchRetrievalService } from "./kb-search-retrieval.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -213,5 +214,49 @@ describe("KbCandidateService — verifiedOnly scope", () => {
     expect(ids).toEqual([5]);
     const combined = whereClauses.flatMap((c) => columnNames(c)).join(" ");
     expect(combined).not.toContain("verified_until");
+  });
+});
+
+describe("KbCandidateService — archived pages are excluded before the candidate limit", () => {
+  function capturePageCandidateQuery() {
+    const whereClauses: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn((clause: unknown) => {
+        whereClauses.push(clause);
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue(chain),
+      execute: jest.fn().mockResolvedValue([]),
+    };
+    return {
+      service: new KbCandidateService(db as never),
+      limit: chain.limit,
+      rendered: () =>
+        whereClauses.map((c) => new PgDialect().sqlToQuery(c as never)),
+    };
+  }
+
+  it("pageKeywordCandidates excludes archived inside the same query that applies the limit, so archived rows cannot consume candidate slots and starve the answer of context", async () => {
+    const harness = capturePageCandidateQuery();
+
+    await harness.service.pageKeywordCandidates("org-1", "test query", 10, sql`true`);
+    const queries = harness.rendered();
+
+    expect(queries.some((q) => /"status"\s*<>/.test(q.sql))).toBe(true);
+    expect(queries.flatMap((q) => q.params)).toContain("archived");
+  });
+
+  it("the exclusion sits in the query that is limited rather than a later one — the same call applies its limit, so filtering after the fact could not have had the same effect", async () => {
+    const harness = capturePageCandidateQuery();
+
+    await harness.service.pageKeywordCandidates("org-1", "test query", 10, sql`true`);
+
+    expect(harness.limit).toHaveBeenCalledWith(10);
+    expect(harness.rendered()).toHaveLength(1);
   });
 });

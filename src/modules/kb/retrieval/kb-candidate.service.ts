@@ -163,6 +163,7 @@ export class KbCandidateService {
     const conditions: (SQL | undefined)[] = [
       eq(kbPages.orgId, orgId),
       wikiPagePredicate(),
+      ne(kbPages.status, "archived"),
       pageVisibility,
       keywordCond,
     ];
@@ -187,7 +188,11 @@ export class KbCandidateService {
     pageIds?: number[],
     spaceId?: number,
   ): Promise<number[]> {
-    const extra: SQL[] = [wikiPagePredicate(), chunkVisibility];
+    const extra: SQL[] = [
+      wikiPagePredicate(),
+      ne(kbPages.status, "archived"),
+      chunkVisibility,
+    ];
     if (verifiedOnly) extra.push(isVerifiedNow());
     if (pageIds && pageIds.length > 0) extra.push(inArray(kbPages.id, pageIds));
     if (spaceId) extra.push(eq(kbPages.spaceId, spaceId));
