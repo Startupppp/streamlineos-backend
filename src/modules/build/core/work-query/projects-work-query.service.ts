@@ -34,6 +34,7 @@ import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { AllWorkQuery } from "../dto/projects.schemas";
 import {
+  WORK_SORT_COLUMNS,
   assignedOrParticipatingIds,
   mineCountByStatusSql,
   mineCountSql,
@@ -218,9 +219,14 @@ export class ProjectsWorkQueryService {
       if (isTicketRef) {
         const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
         const num = parseInt(numStr, 10);
-        const numCondition: SQL<unknown> = isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num);
+        const numCondition: SQL<unknown> = isNaN(num)
+          ? sql`false`
+          : eq(tickets.ticketNumber, num);
         const keyBranch: SQL<unknown> = prefixedRef
-          ? (and(sql`UPPER(${projects.key}) = UPPER(${prefixedRef[1]})`, numCondition) ?? sql`false`)
+          ? (and(
+              sql`UPPER(${projects.key}) = UPPER(${prefixedRef[1]})`,
+              numCondition,
+            ) ?? sql`false`)
           : numCondition;
         const searchCondition = or(
           sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
@@ -232,7 +238,8 @@ export class ProjectsWorkQueryService {
       }
     }
 
-    if (status && status.length > 0) conditions.push(inArray(tickets.status, status));
+    if (status && status.length > 0)
+      conditions.push(inArray(tickets.status, status));
     if (managedProductId !== undefined) {
       conditions.push(eq(projects.managedProductId, managedProductId));
     }
@@ -245,8 +252,10 @@ export class ProjectsWorkQueryService {
           AND pta.team_id = ${teamId}
       )`);
     }
-    if (excludeStatus && excludeStatus.length > 0) conditions.push(notInArray(tickets.status, excludeStatus));
-    if (priority && priority.length > 0) conditions.push(inArray(tickets.priority, priority));
+    if (excludeStatus && excludeStatus.length > 0)
+      conditions.push(notInArray(tickets.status, excludeStatus));
+    if (priority && priority.length > 0)
+      conditions.push(inArray(tickets.priority, priority));
 
     if (type && type.length > 0) {
       conditions.push(
@@ -257,20 +266,38 @@ export class ProjectsWorkQueryService {
       );
     }
 
+    let assigneeUnion:
+      | { nullBranch: SQL<unknown>; inBranch: SQL<unknown> }
+      | undefined;
     if (assigneeId && assigneeId.length > 0) {
       const resolved = assigneeId.map((id) => (id === "@me" ? u.userId : id));
       const unassigned = resolved.includes("__unassigned__");
       const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(
-          isNull(tickets.assigneeMembershipId),
-          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`,
-        );
-        if (assigneeCondition) conditions.push(assigneeCondition);
+        const inBranch = sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(
+          realIds.map((id) => sql`${id}`),
+          sql`, `,
+        )}))`;
+        if (scope === "mine") {
+          const assigneeCondition = or(
+            isNull(tickets.assigneeMembershipId),
+            inBranch,
+          );
+          if (assigneeCondition) conditions.push(assigneeCondition);
+        } else
+          assigneeUnion = {
+            nullBranch: isNull(tickets.assigneeMembershipId),
+            inBranch,
+          };
       } else if (unassigned) {
         conditions.push(isNull(tickets.assigneeMembershipId));
       } else {
-        conditions.push(sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`);
+        conditions.push(
+          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(
+            realIds.map((id) => sql`${id}`),
+            sql`, `,
+          )}))`,
+        );
       }
     }
 
@@ -287,7 +314,8 @@ export class ProjectsWorkQueryService {
       );
     }
 
-    if (cycleId && cycleId.length > 0) conditions.push(inArray(tickets.cycleId, cycleId));
+    if (cycleId && cycleId.length > 0)
+      conditions.push(inArray(tickets.cycleId, cycleId));
     if (epicId !== undefined) conditions.push(eq(tickets.epicId, epicId));
     if (dueDateFrom) conditions.push(gte(tickets.dueDate, dueDateFrom));
     if (dueDateTo) conditions.push(lte(tickets.dueDate, dueDateTo));
@@ -299,7 +327,15 @@ export class ProjectsWorkQueryService {
     const { rows, nextCursor, hasMore, total } =
       scope === "mine"
         ? await this.pageMineWork(u, where, sort, limit, cursor, isFirstPage)
-        : await this.pageFilteredWork(where, sort, limit, cursor, isFirstPage);
+        : await this.pageFilteredWork(
+            where,
+            sort,
+            limit,
+            cursor,
+            isFirstPage,
+            assigneeUnion,
+            u.orgId,
+          );
 
     const ticketIds = rows.map((r) => r.id);
 
@@ -320,10 +356,17 @@ export class ProjectsWorkQueryService {
             .where(inArray(ticketLabelMappings.ticketId, ticketIds))
         : [];
 
-    const labelsByTicket = new Map<number, { id: number; name: string; color: string }[]>();
+    const labelsByTicket = new Map<
+      number,
+      { id: number; name: string; color: string }[]
+    >();
     for (const row of labelRows) {
       const existing = labelsByTicket.get(row.ticketId) ?? [];
-      existing.push({ id: row.labelId, name: row.labelName, color: row.labelColor });
+      existing.push({
+        id: row.labelId,
+        name: row.labelName,
+        color: row.labelColor,
+      });
       labelsByTicket.set(row.ticketId, existing);
     }
 
@@ -361,7 +404,13 @@ export class ProjectsWorkQueryService {
       labels: labelsByTicket.get(r.id) ?? [],
     }));
 
-    return { data, limit, nextCursor, hasMore, ...(total !== undefined ? { total } : {}) };
+    return {
+      data,
+      limit,
+      nextCursor,
+      hasMore,
+      ...(total !== undefined ? { total } : {}),
+    };
   }
 
   async countTicketsByProjectAndStatus(
@@ -371,7 +420,13 @@ export class ProjectsWorkQueryService {
       projectIds?: number[];
     },
   ): Promise<{
-    byProject: { projectId: number; projectName: string; total: number; done: number; inProgress: number }[];
+    byProject: {
+      projectId: number;
+      projectName: string;
+      total: number;
+      done: number;
+      inProgress: number;
+    }[];
     totals: { total: number; done: number; inProgress: number };
   }> {
     const baseConditions: SQL<unknown>[] = [
@@ -381,7 +436,8 @@ export class ProjectsWorkQueryService {
     ];
 
     const membershipId = actingMembershipId(u.principal);
-    if (membershipId === null) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
+    if (membershipId === null)
+      return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
     baseConditions.push(reachableProjectsSql(u.orgId, membershipId));
     if (opts.projectIds && opts.projectIds.length > 0) {
       baseConditions.push(inArray(tickets.projectId, opts.projectIds));
@@ -391,11 +447,21 @@ export class ProjectsWorkQueryService {
     const statusRows =
       opts.assigneeId === undefined
         ? await this.groupedCountByProjectAndStatus(where)
-        : await this.personGroupedCountByProjectAndStatus(where, u.orgId, opts.assigneeId);
+        : await this.personGroupedCountByProjectAndStatus(
+            where,
+            u.orgId,
+            opts.assigneeId,
+          );
 
     const byProjectMap = new Map<
       number,
-      { projectId: number; projectName: string; total: number; done: number; inProgress: number }
+      {
+        projectId: number;
+        projectName: string;
+        total: number;
+        done: number;
+        inProgress: number;
+      }
     >();
     for (const row of statusRows) {
       if (row.projectId === null) continue;
@@ -408,13 +474,20 @@ export class ProjectsWorkQueryService {
       };
       entry.total += row.count;
       if (row.status === "DONE") entry.done += row.count;
-      if (row.status === "IN_PROGRESS" || row.status === "IN_REVIEW") entry.inProgress += row.count;
+      if (row.status === "IN_PROGRESS" || row.status === "IN_REVIEW")
+        entry.inProgress += row.count;
       byProjectMap.set(row.projectId, entry);
     }
 
-    const byProject = Array.from(byProjectMap.values()).sort((a, b) => b.total - a.total);
+    const byProject = Array.from(byProjectMap.values()).sort(
+      (a, b) => b.total - a.total,
+    );
     const totals = byProject.reduce(
-      (acc, r) => ({ total: acc.total + r.total, done: acc.done + r.done, inProgress: acc.inProgress + r.inProgress }),
+      (acc, r) => ({
+        total: acc.total + r.total,
+        done: acc.done + r.done,
+        inProgress: acc.inProgress + r.inProgress,
+      }),
       { total: 0, done: 0, inProgress: 0 },
     );
     return { byProject, totals };
@@ -508,7 +581,9 @@ export class ProjectsWorkQueryService {
     }
 
     const where = and(...baseConditions);
-    const rawRows = await this.db.execute(mineCountByStatusSql(where, u.orgId, u.userId));
+    const rawRows = await this.db.execute(
+      mineCountByStatusSql(where, u.orgId, u.userId),
+    );
     const byStatus: Record<string, number> = {};
     let total = 0;
     for (const row of rawRows) {
@@ -526,9 +601,100 @@ export class ProjectsWorkQueryService {
     limit: number,
     cursor: string | undefined,
     includeTotal: boolean,
+    assigneeUnion?: { nullBranch: SQL<unknown>; inBranch: SQL<unknown> },
+    orgId?: string,
   ) {
     const position = decodeCursor(cursor);
-    const cursorCond = position ? buildCursorPredicate(sort.sortKey, sort.dir, position) : undefined;
+    const cursorCond = position
+      ? buildCursorPredicate(sort.sortKey, sort.dir, position)
+      : undefined;
+
+    if (assigneeUnion !== undefined && orgId !== undefined) {
+      const { nullBranch, inBranch } = assigneeUnion;
+      const sortCol = WORK_SORT_COLUMNS[sort.sortKey];
+      const sortDir = sort.dir === "asc" ? sql`ASC` : sql`DESC`;
+      const b1 = cursorCond
+        ? and(where, nullBranch, cursorCond)
+        : and(where, nullBranch);
+      const b2 = cursorCond
+        ? and(where, inBranch, cursorCond)
+        : and(where, inBranch);
+
+      const unionIdSql = sql`
+        (SELECT ${tickets.id} AS id, ${sortCol} AS sort_col
+         FROM ${tickets}
+         INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+         WHERE ${b1})
+        UNION ALL
+        (SELECT ${tickets.id} AS id, ${sortCol} AS sort_col
+         FROM ${tickets}
+         INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+         WHERE ${b2})
+        ORDER BY 2 ${sortDir}, 1 ${sortDir}
+        LIMIT ${limit + 1}`;
+
+      const unionCountSql = sql`
+        SELECT count(*)::text AS total FROM (
+          (SELECT ${tickets.id} AS id
+           FROM ${tickets}
+           INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+           WHERE ${and(where, nullBranch)})
+          UNION ALL
+          (SELECT ${tickets.id} AS id
+           FROM ${tickets}
+           INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+           WHERE ${and(where, inBranch)})
+        ) t`;
+
+      const [rawIds, unionCountRows] = await Promise.all([
+        this.db.execute<{ id: number }>(unionIdSql),
+        includeTotal
+          ? this.db.execute<{ total: string }>(unionCountSql)
+          : Promise.resolve(null),
+      ]);
+
+      const ids = readIds(rawIds);
+      const hasMore = ids.length > limit;
+      const pageIds = hasMore ? ids.slice(0, limit) : ids;
+      const total = unionCountRows
+        ? Number(unionCountRows[0]?.["total"] ?? 0)
+        : undefined;
+
+      if (pageIds.length === 0) {
+        return { rows: [], nextCursor: null, hasMore: false, total };
+      }
+
+      const rows = await this.db
+        .select({
+          ...WORK_ROW_SELECTION,
+          cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
+          cursorUpdatedAt: sql<string>`${tickets.updatedAt}::text`,
+        })
+        .from(tickets)
+        .innerJoin(projects, eq(tickets.projectId, projects.id))
+        .leftJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, tickets.orgId),
+            eq(organizationMembers.id, tickets.assigneeMembershipId),
+          ),
+        )
+        .leftJoin(users, eq(organizationMembers.userId, users.id))
+        .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, pageIds)))
+        .orderBy(...sort.rows);
+
+      const lastRow = rows[rows.length - 1];
+      const nextCursor =
+        hasMore && lastRow
+          ? encodeCursor({
+              sortValue: serializeSortValue(lastRow, sort.sortKey),
+              id: String(lastRow.id),
+            })
+          : null;
+
+      return { rows, nextCursor, hasMore, total };
+    }
+
     const finalWhere = cursorCond ? and(where, cursorCond) : where;
 
     const [rawRows, countRows] = await Promise.all([
@@ -540,7 +706,13 @@ export class ProjectsWorkQueryService {
         })
         .from(tickets)
         .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+        .leftJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, tickets.orgId),
+            eq(organizationMembers.id, tickets.assigneeMembershipId),
+          ),
+        )
         .leftJoin(users, eq(organizationMembers.userId, users.id))
         .where(finalWhere)
         .orderBy(...sort.rows)
@@ -603,7 +775,9 @@ export class ProjectsWorkQueryService {
     const pageIds = hasMore ? ids.slice(0, limit) : ids;
 
     if (pageIds.length === 0) {
-      const total = countRows ? Number(countRows[0]?.["total"] ?? 0) : undefined;
+      const total = countRows
+        ? Number(countRows[0]?.["total"] ?? 0)
+        : undefined;
       return { rows: [], nextCursor: null, hasMore: false, total };
     }
 
@@ -615,7 +789,13 @@ export class ProjectsWorkQueryService {
       })
       .from(tickets)
       .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, tickets.orgId),
+          eq(organizationMembers.id, tickets.assigneeMembershipId),
+        ),
+      )
       .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(and(eq(tickets.orgId, u.orgId), inArray(tickets.id, pageIds)))
       .orderBy(...sort.rows);
@@ -623,7 +803,10 @@ export class ProjectsWorkQueryService {
     const lastRow = rows[rows.length - 1];
     const nextCursor =
       hasMore && lastRow
-        ? encodeCursor({ sortValue: serializeSortValue(lastRow, sort.sortKey), id: String(lastRow.id) })
+        ? encodeCursor({
+            sortValue: serializeSortValue(lastRow, sort.sortKey),
+            id: String(lastRow.id),
+          })
         : null;
 
     const total = countRows ? Number(countRows[0]?.["total"] ?? 0) : undefined;
