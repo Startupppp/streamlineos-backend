@@ -1,4 +1,4 @@
-import { connectProbe, ReportingProbe } from "./reporting-probe";
+import { connectProbe, ReportingProbe } from "../../../../test/helpers/reporting-probe";
 
 jest.setTimeout(120_000);
 

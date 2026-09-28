@@ -10,7 +10,7 @@ import { ReportingManagerPolicyService } from "../reporting-manager-policy.servi
 import { ReportingManagerFallbackResolver } from "../reporting-manager-fallback.resolver";
 import { ReportingRelationshipService } from "../reporting-relationship.service";
 import type { SetRelationshipsCommand } from "../reporting-line.types";
-import { connectProbe, ReportingProbe, type ProbePerson } from "./reporting-probe";
+import { connectProbe, ReportingProbe, type ProbePerson } from "../../../../test/helpers/reporting-probe";
 
 jest.setTimeout(120_000);
 

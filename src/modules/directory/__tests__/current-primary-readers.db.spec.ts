@@ -5,7 +5,7 @@ import { ScopedRead } from "../../access/scoped-read";
 import { orgBusinessDate } from "../../hr/time/attendance-business-date";
 import { snapshotOldValue } from "../../hr/core/hr-effective-changes.helpers";
 import { SelfHrTools } from "../../ai/core/tools/self-hr-tools";
-import { connectProbe, ReportingProbe } from "./reporting-probe";
+import { connectProbe, ReportingProbe } from "../../../../test/helpers/reporting-probe";
 
 jest.setTimeout(120_000);
 

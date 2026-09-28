@@ -5,7 +5,7 @@ import * as schema from "../../../db/schema";
 import { hrReportingLines } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.types";
 import { currentPrimaryReportingLine, orgBusinessDateSql } from "../employment-query";
-import { connectProbe, ReportingProbe } from "./reporting-probe";
+import { connectProbe, ReportingProbe } from "../../../../test/helpers/reporting-probe";
 
 jest.setTimeout(120_000);
 

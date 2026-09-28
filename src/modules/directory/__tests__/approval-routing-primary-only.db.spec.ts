@@ -7,7 +7,7 @@ import type { DataScope } from "../../access/access.types";
 import { ApprovalAuthorityService } from "../approval-authority.service";
 import { EmploymentFactsService } from "../employment-facts.service";
 import { ReportingLineService } from "../reporting-line.service";
-import { connectProbe, ReportingProbe } from "./reporting-probe";
+import { connectProbe, ReportingProbe } from "../../../../test/helpers/reporting-probe";
 
 jest.setTimeout(120_000);
 
