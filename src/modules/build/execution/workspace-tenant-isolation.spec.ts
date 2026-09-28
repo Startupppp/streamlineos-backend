@@ -82,6 +82,15 @@ describe("MilestonesService — cross-tenant isolation", () => {
       select: jest
         .fn()
         .mockReturnValueOnce(memberSelectChain([{ role: "MEMBER" }]))
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+              }),
+            }),
+          }),
+        })
         .mockReturnValue(chain),
     } as unknown as Db;
     const svc = new MilestonesService(db, mockAccess);
@@ -164,6 +173,15 @@ describe("MilestonesService — project membership gate (BOLA fix)", () => {
       select: jest
         .fn()
         .mockReturnValueOnce(memberSelectChain([{ role: "MEMBER" }]))
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+              }),
+            }),
+          }),
+        })
         .mockReturnValue(milestoneSelectChain([]).chain),
     } as unknown as Db;
   }

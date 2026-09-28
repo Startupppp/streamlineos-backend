@@ -28,12 +28,12 @@ function isApplicationSource(filePath: string): boolean {
   return true;
 }
 
-const DUE_SWEEP = src("modules/build/core/build-due-sweep.service.ts");
+const DUE_SWEEP = src("modules/build/core/due-sweep/build-due-sweep.service.ts");
 const WORK_ACTIONS = src("modules/ai/core/tools/work-actions-tools.ts");
 const SPRINTS_SVC = src("modules/build/execution/sprints.service.ts");
 const DASHBOARD_SVC = src("modules/dashboard/dashboard-project.service.ts");
-const VELOCITY_REPORT = src("modules/build/core/projects-velocity-report.ts");
-const WORK_QUERY_SVC = src("modules/build/core/projects-work-query.service.ts");
+const VELOCITY_REPORT = src("modules/build/core/analytics/projects-velocity-report.ts");
+const WORK_QUERY_SVC = src("modules/build/core/work-query/projects-work-query.service.ts");
 
 describe("phase-04 detach invariant: owned execution paths use cycleId not sprintId", () => {
   it("build-due-sweep no longer queries inArray(tickets.sprintId", () => {

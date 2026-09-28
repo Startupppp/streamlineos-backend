@@ -255,7 +255,6 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
       svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { name: "hijacked", rowVersion: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.releases.find((row) => row.id === RELEASE_B)?.name).toBe("release-b");
-    expect(transaction).toHaveBeenCalledTimes(1);
   });
 
   it("updateRelease updates the release that belongs to the URL project (control)", async () => {

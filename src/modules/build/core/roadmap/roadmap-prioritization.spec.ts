@@ -145,17 +145,23 @@ describe("createRoadmapSchema — the four RICE inputs are accepted, which they 
 describe("updateRoadmapSchema — RICE inputs are clearable, not just settable", () => {
   it("accepts null for each RICE field so an operator can retract a guess", () => {
     const parsed = updateRoadmapSchema.parse({
+      version: 1,
       reach: null,
       impact: null,
       confidence: null,
       effort: null,
     });
-    expect(parsed).toEqual({ reach: null, impact: null, confidence: null, effort: null });
+    expect(parsed).toEqual({ version: 1, reach: null, impact: null, confidence: null, effort: null });
   });
 
   it("accepts a value for each RICE field", () => {
-    const parsed = updateRoadmapSchema.parse({ reach: 1, impact: 2, confidence: 3, effort: 4 });
-    expect(parsed).toEqual({ reach: 1, impact: 2, confidence: 3, effort: 4 });
+    const parsed = updateRoadmapSchema.parse({ version: 1, reach: 1, impact: 2, confidence: 3, effort: 4 });
+    expect(parsed).toEqual({ version: 1, reach: 1, impact: 2, confidence: 3, effort: 4 });
+  });
+
+  it("rejects an update that omits the version concurrency token, so a stale client cannot overwrite without knowing the current version", () => {
+    expect(() => updateRoadmapSchema.parse({ reach: 1 })).toThrow();
+    expect(() => updateRoadmapSchema.parse({ version: 1, reach: 1 })).not.toThrow();
   });
 
   it("still rejects an unknown key on update, proving .strict() survived the widening", () => {

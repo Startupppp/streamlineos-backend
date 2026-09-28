@@ -11,6 +11,7 @@ const MIGRATION = join(
   "..",
   "..",
   "..",
+  "..",
   "migrations",
   "1185_roadmap_search_id_probe.sql",
 );

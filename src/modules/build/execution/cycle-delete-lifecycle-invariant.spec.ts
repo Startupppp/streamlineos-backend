@@ -119,7 +119,7 @@ describe("hard delete is still required, and what it costs", () => {
 
   it("is not blocked by the velocity report, which already excludes tombstoned cycles", () => {
     const velocity = readFileSync(
-      join(SRC, "modules", "build", "core", "projects-velocity-report.ts"),
+      join(SRC, "modules", "build", "core", "analytics", "projects-velocity-report.ts"),
       "utf8",
     );
     expect(velocity).toContain("isNull(cycles.deletedAt)");
