@@ -4,6 +4,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { ManagedProductsService } from "./managed-products.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { TicketVersionConflictException } from "../core";
+import { updateManagedProductSchema } from "./dto/managed-products.schemas";
 
 const pgDialect = new PgDialect();
 
@@ -27,6 +29,7 @@ function makeProduct(overrides: Record<string, unknown> = {}) {
     ownerId: null,
     ownerMembershipId: null,
     status: "active",
+    version: 1,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -144,7 +147,7 @@ describe("ManagedProductsService", () => {
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
       await expect(
-        svc.updateManagedProduct(OTHER_ORG, USER_ID, 1, { name: "x" }),
+        svc.updateManagedProduct(OTHER_ORG, USER_ID, 1, { version: 1, name: "x" }),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
     });
@@ -163,6 +166,7 @@ describe("ManagedProductsService", () => {
       });
 
       const result = await svc.updateManagedProduct(ORG_ID, USER_ID, 1, {
+        version: 1,
         name: "Atlas v2",
       });
 
@@ -186,11 +190,82 @@ describe("ManagedProductsService", () => {
         }),
       });
 
-      await svc.updateManagedProduct(ORG_ID, USER_ID, 1, { name: "safe" });
+      await svc.updateManagedProduct(ORG_ID, USER_ID, 1, { version: 1, name: "safe" });
 
       const sql = renderSql(capturedWhere);
       expect(sql).toMatch(/deleted_at/);
       expect(sql).toMatch(/is null/i);
+    });
+  });
+
+  describe("updateManagedProduct — version conflict guard", () => {
+    it("rejects an update that omits version so the conflict check cannot be bypassed by a missing token", () => {
+      expect(() => updateManagedProductSchema.parse({ name: "x" })).toThrow();
+    });
+
+    it("throws TicketVersionConflictException when the supplied version is stale so concurrent edits are detected", async () => {
+      const existing = makeProduct({ version: 2 });
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      await expect(
+        svc.updateManagedProduct(ORG_ID, USER_ID, 1, { version: 1, name: "New name" }),
+      ).rejects.toBeInstanceOf(TicketVersionConflictException);
+      expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
+    });
+
+    it("succeeds when the supplied version matches the stored version", async () => {
+      const existing = makeProduct({ version: 3 });
+      const updated = makeProduct({ version: 4, name: "Atlas v2" });
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([updated]),
+          }),
+        }),
+      });
+
+      const result = await svc.updateManagedProduct(ORG_ID, USER_ID, 1, {
+        version: 3,
+        name: "Atlas v2",
+      });
+
+      expect(result).toMatchObject({ name: "Atlas v2" });
+    });
+
+    it("does not include version in the DB patch so the trigger bumps it exactly once per edit", async () => {
+      const existing = makeProduct({ version: 1 });
+      const updated = makeProduct({ version: 2 });
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      let capturedSet: unknown;
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({
+        set: jest.fn().mockImplementation((patch: unknown) => {
+          capturedSet = patch;
+          return {
+            where: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([updated]),
+            }),
+          };
+        }),
+      });
+
+      await svc.updateManagedProduct(ORG_ID, USER_ID, 1, { version: 1, name: "Atlas v2" });
+
+      expect(capturedSet).not.toHaveProperty("version");
+    });
+
+    it("returns the stored row without issuing an UPDATE when the body carries only the version, because an empty set clause is a driver error and not a 500 the caller can act on", async () => {
+      const existing = makeProduct({ version: 5 });
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      const result = await svc.updateManagedProduct(ORG_ID, USER_ID, 1, { version: 5 });
+
+      expect(result).toMatchObject({ version: 5 });
+      expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
     });
   });
 

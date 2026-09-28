@@ -2,6 +2,13 @@ import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
+const milestoneOwnerSchema = z.object({
+  membershipId: z.number().int(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  image: z.string().nullable(),
+});
+
 export const milestoneRowSchema = z.object({
   id: z.number().int(),
   projectId: z.number().int().nullable(),
@@ -11,6 +18,9 @@ export const milestoneRowSchema = z.object({
   targetDate: z.string().nullable(),
   status: z.string().nullable(),
   createdBy: z.string().nullable(),
+  ownerMembershipId: z.number().int().nullable(),
+  owner: milestoneOwnerSchema.nullable(),
+  linkedTicketCount: z.number().int(),
   clientVisible: z.boolean(),
   version: z.number().int(),
   deletedAt: nullableWireDate(),

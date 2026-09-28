@@ -1,11 +1,13 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { TicketVersionConflictException, reserveTicketCapacity } from "../core/tickets";
-import { and, asc, desc, eq, gte, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   intakeItems,
+  organizationMembers,
   projectMilestones,
   projectViews,
   tickets,
+  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -36,9 +38,9 @@ export class MilestonesService {
   async listMilestones(u: CurrentUserContext, projectId: number, query: ListMilestonesQuery) {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
-    const { cursor, limit, status, q, from, to } = query;
+    const { cursor, limit, status, q, from, to, ownerId } = query;
     const pos = decodeIntegerCursor(cursor ?? null);
-    const rows = await this.db
+    const rawRows = await this.db
       .select({
         id: projectMilestones.id,
         projectId: projectMilestones.projectId,
@@ -48,13 +50,19 @@ export class MilestonesService {
         targetDate: projectMilestones.targetDate,
         status: projectMilestones.status,
         createdBy: projectMilestones.createdBy,
+        ownerMembershipId: projectMilestones.ownerMembershipId,
         clientVisible: projectMilestones.clientVisible,
         version: projectMilestones.version,
         deletedAt: projectMilestones.deletedAt,
         createdAt: projectMilestones.createdAt,
         updatedAt: projectMilestones.updatedAt,
+        ownerFirstName: users.firstName,
+        ownerLastName: users.lastName,
+        ownerImage: users.image,
       })
       .from(projectMilestones)
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMilestones.orgId), eq(organizationMembers.id, projectMilestones.ownerMembershipId)))
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(and(
         eq(projectMilestones.projectId, projectId),
         eq(projectMilestones.orgId, orgId),
@@ -63,19 +71,65 @@ export class MilestonesService {
         q ? sql`${projectMilestones.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
         from ? gte(projectMilestones.targetDate, from) : undefined,
         to ? lte(projectMilestones.targetDate, to) : undefined,
+        ownerId ? eq(projectMilestones.ownerMembershipId, ownerId) : undefined,
         pos ? keysetAfterId(projectMilestones.targetDate, projectMilestones.id, pos) : undefined,
       ))
       .orderBy(asc(projectMilestones.targetDate), asc(projectMilestones.id))
       .limit(limit + 1);
-    return buildCursorPage(rows, limit, (row) => ({
+    const rawPage = buildCursorPage(rawRows, limit, (row) => ({
       sortValue: row.targetDate ?? "",
       id: String(row.id),
     }));
+    const milestoneIds = rawPage.data.map((r) => r.id);
+    const ticketCountMap = new Map<number, number>();
+    if (milestoneIds.length > 0) {
+      const countRows = await this.db
+        .select({ milestoneId: tickets.milestoneId, cnt: sql<number>`count(*)::int` })
+        .from(tickets)
+        .where(and(eq(tickets.orgId, orgId), inArray(tickets.milestoneId, milestoneIds), isNull(tickets.deletedAt)))
+        .groupBy(tickets.milestoneId);
+      for (const r of countRows) {
+        if (r.milestoneId != null) ticketCountMap.set(r.milestoneId, r.cnt);
+      }
+    }
+    return {
+      ...rawPage,
+      data: rawPage.data.map((row) => ({
+        id: row.id,
+        projectId: row.projectId,
+        orgId: row.orgId,
+        name: row.name,
+        description: row.description,
+        targetDate: row.targetDate,
+        status: row.status,
+        createdBy: row.createdBy,
+        ownerMembershipId: row.ownerMembershipId ?? null,
+        owner: row.ownerMembershipId != null
+          ? { membershipId: row.ownerMembershipId, firstName: row.ownerFirstName ?? null, lastName: row.ownerLastName ?? null, image: row.ownerImage ?? null }
+          : null,
+        linkedTicketCount: ticketCountMap.get(row.id) ?? 0,
+        clientVisible: row.clientVisible,
+        version: row.version,
+        deletedAt: row.deletedAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      })),
+    };
+  }
+
+  private async assertOwnerInOrg(orgId: string, ownerMembershipId: number | null | undefined): Promise<void> {
+    if (ownerMembershipId == null) return;
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.id, ownerMembershipId), eq(organizationMembers.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!member) throw new BadRequestException("The provided owner does not belong to this organization");
   }
 
   async createMilestone(u: CurrentUserContext, projectId: number, input: CreateMilestoneInput) {
     const { orgId, userId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
+    await this.assertOwnerInOrg(orgId, input.ownerMembershipId);
     const [milestone] = await this.db
       .insert(projectMilestones)
       .values({
@@ -86,18 +140,25 @@ export class MilestonesService {
         targetDate: input.targetDate,
         status: input.status,
         createdBy: userId,
+        ownerMembershipId: input.ownerMembershipId ?? null,
       })
       .returning();
-    return milestone;
+    const ownerMembershipId = milestone.ownerMembershipId ?? null;
+    return {
+      ...milestone,
+      owner: ownerMembershipId != null ? { membershipId: ownerMembershipId, firstName: null as string | null, lastName: null as string | null, image: null as string | null } : null,
+      linkedTicketCount: 0,
+    };
   }
 
   async updateMilestone(orgId: string, projectId: number, milestoneId: number, input: UpdateMilestoneInput) {
     const before = await this.db.query.projectMilestones.findFirst({
       where: and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
-      columns: { version: true },
+      columns: { version: true, ownerMembershipId: true },
     });
     if (!before) throw new NotFoundException("Milestone not found");
     if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
+    await this.assertOwnerInOrg(orgId, input.ownerMembershipId);
 
     const { version: _v, ...rest } = input;
     const [updated] = await this.db
@@ -109,7 +170,12 @@ export class MilestonesService {
       const [current] = await this.db.select({ version: projectMilestones.version }).from(projectMilestones).where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId))).limit(1);
       throw new TicketVersionConflictException(current?.version ?? before.version);
     }
-    return updated;
+    const ownerMembershipId = updated.ownerMembershipId ?? null;
+    return {
+      ...updated,
+      owner: ownerMembershipId != null ? { membershipId: ownerMembershipId, firstName: null as string | null, lastName: null as string | null, image: null as string | null } : null,
+      linkedTicketCount: 0,
+    };
   }
 
   async deleteMilestone(orgId: string, projectId: number, milestoneId: number) {

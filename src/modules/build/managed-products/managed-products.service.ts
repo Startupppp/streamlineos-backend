@@ -233,6 +233,7 @@ export class ManagedProductsService {
       patch.description = input.description ?? null;
     if (input.ownerId !== undefined) patch.ownerId = input.ownerId ?? null;
     if (input.status !== undefined) patch.status = input.status;
+    if (Object.keys(patch).length === 0) return stored;
     const [updated] = await this.db
       .update(managedProducts)
       .set(patch)

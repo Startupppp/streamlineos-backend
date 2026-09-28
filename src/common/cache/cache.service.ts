@@ -97,6 +97,8 @@ export class CacheService {
     ttlSeconds = 300,
   ): Promise<T> {
     const version = await this.namespaceVersionWithRedis(this.redis, namespace);
+    if (version === null)
+      return this.fill.run(null, this.unknownGenerationKey(namespace, key), fetcher, ttlSeconds);
     return this.fill.run(this.redis, `${namespace}:v${version}:${key}`, fetcher, ttlSeconds);
   }
 
@@ -107,6 +109,13 @@ export class CacheService {
     ttlSeconds = 300,
   ): Promise<{ value: T; cacheOutcome: "hit" | "miss" | "bypass" }> {
     const version = await this.namespaceVersionWithRedis(this.redis, namespace);
+    if (version === null)
+      return this.fill.runWithOutcome(
+        null,
+        this.unknownGenerationKey(namespace, key),
+        fetcher,
+        ttlSeconds,
+      );
     return this.fill.runWithOutcome(this.redis, `${namespace}:v${version}:${key}`, fetcher, ttlSeconds);
   }
 
@@ -122,13 +131,28 @@ export class CacheService {
     return `cache:namespace:${namespace}:version`;
   }
 
-  private async namespaceVersionWithRedis(redis: Redis | null, namespace: string): Promise<number> {
+  /**
+   * `null` means the generation is unknown, which is not the same as generation
+   * zero. Returning zero on a failed counter read selects the *oldest* live
+   * generation, so a request that could not read the counter was served entries
+   * an `invalidateNamespace` had already retired — a revoked space list
+   * outliving its revocation for the rest of its TTL. An unknown generation must
+   * therefore bypass the cache entirely rather than guess a number.
+   */
+  private async namespaceVersionWithRedis(
+    redis: Redis | null,
+    namespace: string,
+  ): Promise<number | null> {
     if (!redis) return 0;
     try {
       return (await this.timedRedis(() => redis.get<number>(this.namespaceVersionKey(namespace)))) ?? 0;
     } catch {
-      return 0;
+      return null;
     }
+  }
+
+  private unknownGenerationKey(namespace: string, key: string): string {
+    return `${namespace}:vunknown:${key}`;
   }
 
   private timedRedis<T>(operation: () => Promise<T>): Promise<T> {
@@ -287,6 +311,8 @@ export class CacheService {
     const redis = await this.region.redisForOrg(orgId);
     const ns = await this.region.scopedKey(orgId, namespace);
     const version = await this.namespaceVersionWithRedis(redis, ns);
+    if (version === null)
+      return this.fill.run(null, this.unknownGenerationKey(ns, localKey), fetcher, baseTtl);
     return this.fill.run(redis, `${ns}:v${version}:${localKey}`, fetcher, baseTtl);
   }
 

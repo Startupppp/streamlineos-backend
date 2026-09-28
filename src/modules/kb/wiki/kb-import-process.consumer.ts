@@ -232,6 +232,7 @@ export class KbImportProcessConsumer implements OutboxEventConsumer, OnModuleIni
                   contentText: kbPages.contentText,
                 });
               succeeded += inserted.length;
+              duplicates += toInsert.length - inserted.length;
               await this.writer.commitManyPageChanges(tx, { orgId, pages: inserted });
             } catch {
               failed += toInsert.length;

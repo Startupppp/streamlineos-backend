@@ -9,6 +9,7 @@ import {
   projectReleases,
   releaseTickets,
   tickets,
+  users,
 } from "../../../../db/schema";
 import type { CreateReleaseInput, ListReleasesQuery, OrgListReleasesQuery, UpdateReleaseInput } from "../dto/releases.schemas";
 import { assertProjectAccess } from "../project-crud/project-access";
@@ -52,8 +53,15 @@ export class ProjectsReleasesService {
         ticketCount: sql<number>`CAST(
           (SELECT COUNT(*) FROM ${releaseTickets} WHERE ${releaseTickets.releaseId} = ${projectReleases.id})
           AS INT)`,
+        createdByUser: {
+          name: users.name,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        },
       })
       .from(projectReleases)
+      .leftJoin(users, eq(users.id, projectReleases.createdBy))
       .where(
         and(
           eq(projectReleases.orgId, orgId),
@@ -93,8 +101,15 @@ export class ProjectsReleasesService {
         ticketCount: sql<number>`CAST(
           (SELECT COUNT(*) FROM ${releaseTickets} WHERE ${releaseTickets.releaseId} = ${projectReleases.id})
           AS INT)`,
+        createdByUser: {
+          name: users.name,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        },
       })
       .from(projectReleases)
+      .leftJoin(users, eq(users.id, projectReleases.createdBy))
       .where(and(
         eq(projectReleases.projectId, projectId),
         eq(projectReleases.orgId, orgId),

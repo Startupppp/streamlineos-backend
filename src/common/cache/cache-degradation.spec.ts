@@ -46,6 +46,39 @@ function fakeRedis(store: Map<string, unknown>, stats: FakeRedisStats): Redis {
   } as unknown as Redis;
 }
 
+/**
+ * Serves every key except the namespace generation counter, which times out.
+ * A single command failing while the connection still answers is the ordinary
+ * shape of an overloaded Redis, and it is the only shape in which the
+ * generation fallback can be observed at all.
+ */
+function generationBlindRedis(store: Map<string, unknown>): Redis {
+  return {
+    get: jest.fn(async (key: string) => {
+      if (key.startsWith("cache:namespace:")) throw new Error("ETIMEDOUT");
+      return store.get(key) ?? null;
+    }),
+    set: jest.fn(async (key: string, value: unknown, options?: { nx?: boolean; ex?: number }) => {
+      if (options?.nx && store.has(key)) return null;
+      store.set(key, value);
+      return "OK";
+    }),
+    incr: jest.fn(async () => {
+      throw new Error("ETIMEDOUT");
+    }),
+    eval: jest.fn(async (script: string, keys: string[], args: string[]) => {
+      if (store.get(keys[0] ?? "") !== args[0]) return 0;
+      if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+        store.set(keys[1], JSON.parse(args[1] ?? "null"));
+        return 1;
+      }
+      store.delete(keys[0] ?? "");
+      return 1;
+    }),
+    del: jest.fn(async () => 1),
+  } as unknown as Redis;
+}
+
 function brokenRedis(): Redis {
   const explode = jest.fn(() => Promise.reject(new Error("ECONNREFUSED")));
   return {
@@ -317,6 +350,57 @@ describe("the outage memo cannot answer an authorization question", () => {
 
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(cache.outageMemoServedCount).toBe(1);
+  });
+
+  it("a namespace-generation read that fails must not fall back to the pre-revocation generation and serve its cached allow", async () => {
+    const NAMESPACE = "kb:acc-spaces:org-1";
+    const ENTRY = "op1:khuman-session:cunbounded:m42:u99";
+    const beforeRevocation = [10, 27];
+    const afterRevocation = [10];
+
+    const store = new Map<string, unknown>([
+      [`${NAMESPACE}:v0:${ENTRY}`, beforeRevocation],
+      [`cache:namespace:${NAMESPACE}:version`, 1],
+    ]);
+    const cache = new CacheService(generationBlindRedis(store));
+    const fetcher = jest.fn().mockResolvedValue(afterRevocation);
+
+    await expect(
+      cache.cachedVersioned(NAMESPACE, ENTRY, fetcher, 60),
+    ).resolves.toEqual(afterRevocation);
+    expect(fetcher).toHaveBeenCalled();
+  });
+
+  it("POSITIVE CONTROL — the same generation counter read healthily still serves the live generation from cache, so the guard above is not an unconditional bypass", async () => {
+    const NAMESPACE = "kb:acc-spaces:org-1";
+    const ENTRY = "op1:khuman-session:cunbounded:m42:u99";
+    const store = new Map<string, unknown>([
+      [`cache:namespace:${NAMESPACE}:version`, 1],
+    ]);
+    const stats: FakeRedisStats = { gets: 0, sets: 0 };
+    const cache = new CacheService(fakeRedis(store, stats));
+    const fetcher = jest.fn().mockResolvedValue([10]);
+
+    await expect(cache.cachedVersioned(NAMESPACE, ENTRY, fetcher, 60)).resolves.toEqual([10]);
+    await expect(cache.cachedVersioned(NAMESPACE, ENTRY, fetcher, 60)).resolves.toEqual([10]);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(store.has(`${NAMESPACE}:v1:${ENTRY}`)).toBe(true);
+  });
+
+  it("NEGATIVE CONTROL — the generation-blind Redis really does still serve the generation-0 entry, so the assertion above is testing the fallback and not a dead store", async () => {
+    const NAMESPACE = "kb:acc-spaces:org-1";
+    const ENTRY = "op1:khuman-session:cunbounded:m42:u99";
+    const store = new Map<string, unknown>([
+      [`${NAMESPACE}:v0:${ENTRY}`, [10, 27]],
+      [`cache:namespace:${NAMESPACE}:version`, 1],
+    ]);
+    const redis = generationBlindRedis(store);
+
+    await expect(redis.get(`${NAMESPACE}:v0:${ENTRY}`)).resolves.toEqual([10, 27]);
+    await expect(redis.get(`cache:namespace:${NAMESPACE}:version`)).rejects.toThrow(
+      "ETIMEDOUT",
+    );
   });
 
   it("kb:acc-spaces: key re-queries the source after a space-member removal even within the outage-memo window", async () => {

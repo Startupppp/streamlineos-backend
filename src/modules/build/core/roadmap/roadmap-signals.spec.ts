@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import {
@@ -132,6 +132,39 @@ describe("createRoadmap — the four RICE columns were published but unwritable;
     );
   });
 
+  it("writes outcome into the insert values so a stated goal round-trips to the DB", async () => {
+    const { insert, values } = insertCapture(roadmapRow());
+    const service = makeService({ insert });
+
+    await service.createRoadmap(ORG, "user-1", {
+      title: "Reduce churn",
+      status: "planned",
+      isPublic: true,
+      sortOrder: 0,
+      outcome: "Churn falls below 3% within one quarter",
+    });
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "Churn falls below 3% within one quarter" }),
+    );
+  });
+
+  it("writes null outcome when the field is omitted — never undefined — so the column always has a value", async () => {
+    const { insert, values } = insertCapture(roadmapRow());
+    const service = makeService({ insert });
+
+    await service.createRoadmap(ORG, "user-1", {
+      title: "No goal yet",
+      status: "planned",
+      isPublic: true,
+      sortOrder: 0,
+    });
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: null }),
+    );
+  });
+
   it("returns the created row already carrying its computed prioritization", async () => {
     const stored = roadmapRow({ reach: 1000, impact: 3, confidence: 80, effort: 4 });
     const { insert } = insertCapture(stored);
@@ -147,6 +180,39 @@ describe("createRoadmap — the four RICE columns were published but unwritable;
     });
 
     expect(created.prioritization).toMatchObject({ score: 600, isComplete: true });
+  });
+});
+
+describe("createRoadmap — owner membership is validated against the actor's org before the row is written", () => {
+  it("writes ownerMembershipId into the insert values when the membership exists in the same org", async () => {
+    const { insert, values } = insertCapture(roadmapRow());
+    const service = makeService({ insert, aggregateRows: [{ id: 42 }] });
+
+    await service.createRoadmap(ORG, "user-1", {
+      title: "Ship owner",
+      status: "planned",
+      isPublic: true,
+      sortOrder: 0,
+      ownerMembershipId: 42,
+    });
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerMembershipId: 42 }),
+    );
+  });
+
+  it("throws BadRequestException when the membership belongs to a different org — cross-tenant owner is rejected cleanly, not as a 500", async () => {
+    const service = makeService({ aggregateRows: [] });
+
+    await expect(
+      service.createRoadmap(ORG, "user-1", {
+        title: "Cross-tenant attempt",
+        status: "planned",
+        isPublic: true,
+        sortOrder: 0,
+        ownerMembershipId: 99,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -169,6 +235,23 @@ describe("updateRoadmap — RICE inputs round-trip through the update", () => {
     const { update, set, findFirst } = updateCapture(roadmapRow());
     await makeService({ update, findFirst }).updateRoadmap(ORG, 7, { version: 1, effort: null });
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ effort: null }));
+  });
+
+  it("passes outcome through to .set so a stated goal can be updated on an existing item", async () => {
+    const { update, set, findFirst } = updateCapture(roadmapRow());
+    await makeService({ update, findFirst }).updateRoadmap(ORG, 7, {
+      version: 1,
+      outcome: "Increase activation rate by 20%",
+    });
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "Increase activation rate by 20%" }),
+    );
+  });
+
+  it("passes null outcome through so a previously set goal can be cleared", async () => {
+    const { update, set, findFirst } = updateCapture(roadmapRow());
+    await makeService({ update, findFirst }).updateRoadmap(ORG, 7, { version: 1, outcome: null });
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ outcome: null }));
   });
 
   it("returns a null score once an input is cleared, never the stale complete score", async () => {

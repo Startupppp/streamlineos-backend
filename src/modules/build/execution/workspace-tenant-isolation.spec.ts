@@ -10,8 +10,10 @@ const EMPTY_MILESTONES_QUERY = listMilestonesQuerySchema.parse({});
 
 interface MilestoneSelectChain {
   from: jest.Mock;
+  leftJoin: jest.Mock;
   where: jest.Mock;
   orderBy: jest.Mock;
+  groupBy: jest.Mock;
   limit: jest.Mock;
 }
 
@@ -19,11 +21,13 @@ function milestoneSelectChain(rows: unknown[]) {
   const whereSpy = jest.fn();
   const chain: MilestoneSelectChain = {
     from: jest.fn(() => chain),
+    leftJoin: jest.fn(() => chain),
     where: jest.fn((condition: unknown) => {
       whereSpy(condition);
       return chain;
     }),
     orderBy: jest.fn(() => chain),
+    groupBy: jest.fn(() => Promise.resolve([])),
     limit: jest.fn(() => Promise.resolve(rows)),
   };
   return { chain, whereSpy };

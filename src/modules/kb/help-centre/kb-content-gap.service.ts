@@ -38,7 +38,7 @@ import {
 } from "../../../common/pagination/cursor";
 import { keysetInteger } from "../../../common/pagination/keyset";
 
-const MIN_COHORT_SIZE = 3;
+export const MIN_COHORT_SIZE = 3;
 
 type ContentGapRow = {
   query: string | null;

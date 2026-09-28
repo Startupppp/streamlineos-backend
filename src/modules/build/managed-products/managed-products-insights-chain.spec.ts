@@ -151,25 +151,25 @@ describe("managedProductRowSchema — enum and nullability contract", () => {
   const validDates = { createdAt: new Date(), updatedAt: new Date(), deletedAt: null, targetLaunchDate: null };
 
   it("rejects a status value that is not in managedProductStatusEnum", () => {
-    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "invalid_status", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, owner: null, ...validDates };
+    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "invalid_status", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, owner: null, version: 1, ...validDates };
     expect(() => managedProductRowSchema.parse(raw)).toThrow();
   });
 
   it("accepts every value in managedProductStatusEnum", () => {
     for (const value of managedProductStatusEnum.enumValues) {
-      const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: value, ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, owner: null, ...validDates };
+      const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: value, ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, owner: null, version: 1, ...validDates };
       expect(() => managedProductRowSchema.parse(raw)).not.toThrow();
     }
   });
 
   it("no longer accepts a pmWorkspaceId field in the row shape, because the schema is .strict()-free but the field was removed from the model", () => {
-    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "active", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, owner: null, ...validDates };
+    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "active", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, owner: null, version: 1, ...validDates };
     const parsed = managedProductRowSchema.parse(raw);
     expect(parsed).not.toHaveProperty("pmWorkspaceId");
   });
 
   it("accepts a row with no pmWorkspaceId at all (the field no longer exists on the model)", () => {
-    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "active", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, owner: null, ...validDates };
+    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "active", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, owner: null, version: 1, ...validDates };
     expect(() => managedProductRowSchema.parse(raw)).not.toThrow();
   });
 });

@@ -53,6 +53,34 @@ describe("S04 roadmap projectId filter", () => {
   });
 });
 
+describe("S04 roadmap ownerId filter", () => {
+  it("ownerId predicate touches the owner_membership_id column — query filters items by assigned owner", async () => {
+    const findMany = jest.fn().mockResolvedValue([{ id: 3, sortOrder: 0 }]);
+    const service = makeService(findMany);
+
+    await service.listRoadmap(ORG, { limit: 20, ownerId: 42 });
+
+    expect(querySql(findMany, 0)).toContain("owner_membership_id");
+    expect(queryParams(findMany, 0)).toContain(42);
+  });
+
+  it("ownerId is accepted by roadmapListQuerySchema — a deep-linked ownerId no longer 400s", () => {
+    const { roadmapListQuerySchema } = jest.requireActual<typeof import("../dto/roadmap.schemas")>("../dto/roadmap.schemas");
+    const result = roadmapListQuerySchema.safeParse({ ownerId: "7" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.ownerId).toBe(7);
+  });
+
+  it("omitting ownerId does not add an owner_membership_id predicate to the SQL", async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = makeService(findMany);
+
+    await service.listRoadmap(ORG, { limit: 20 });
+
+    expect(querySql(findMany, 0)).not.toMatch(/owner_membership_id\s*=\s*\$/);
+  });
+});
+
 describe("S04 roadmap horizon filter", () => {
   it("horizon predicate touches the target_quarter column — query B filters by horizon value", async () => {
     const findMany = jest.fn().mockResolvedValue([{ id: 2, sortOrder: 0 }]);

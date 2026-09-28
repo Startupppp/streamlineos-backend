@@ -19,6 +19,7 @@ import {
   kbPageVisits,
   kbPages,
   kbResearchBriefs,
+  kbSources,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -38,7 +39,10 @@ import {
 } from "../../../common/pagination/cursor";
 import { keysetInteger } from "../../../common/pagination/keyset";
 
-const CITATION_REUSE_MIN = 2;
+export const CITATION_REUSE_MIN = 2;
+
+export const CITATION_KINDS_ON_KB_PAGES = ["page", "article"] as const;
+export const CITATION_KIND_ON_KB_SOURCES = "source";
 const STALE_PAGE_THRESHOLD_DAYS = 90;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -271,9 +275,23 @@ export class KbAnalyticsService {
     range: RangeWithSpaceInput,
   ): Promise<CitationReuseRow[]> {
     const orgId = user.orgId;
-    const visiblePage = await this.auth.visiblePagePredicate(user, "view");
+    const [visiblePage, standing] = await Promise.all([
+      this.auth.visiblePagePredicate(user, "view"),
+      this.auth.resolveStanding(user),
+    ]);
     const messageFrom = toDate(range.from);
     const messageTo = toDate(range.to);
+    const pageKinds = sql.join(
+      CITATION_KINDS_ON_KB_PAGES.map((kind) => sql`${kind}`),
+      sql`, `,
+    );
+    const sourceSpaceFence =
+      standing.accessibleSpaceIds.length > 0
+        ? sql`(${kbSources.spaceId} IS NULL OR ${kbSources.spaceId} IN (${sql.join(
+            standing.accessibleSpaceIds.map((id) => sql`${id}`),
+            sql`, `,
+          )}))`
+        : sql`${kbSources.spaceId} IS NULL`;
     const rows = await this.db.execute(sql`
       WITH cited AS (
         SELECT
@@ -315,15 +333,30 @@ export class KbAnalyticsService {
       FROM cited
       WHERE ref_id IS NOT NULL
         AND (
-          kind <> 'page'
-          OR EXISTS (
-            SELECT 1
-            FROM ${kbPages}
-            WHERE ${kbPages.orgId} = ${orgId}
-              AND ${kbPages.id} = cited.ref_id
-              AND ${kbPages.deletedAt} IS NULL
-              AND ${visiblePage}
-              ${range.spaceId !== undefined ? sql`AND ${kbPages.spaceId} = ${range.spaceId}` : sql``}
+          (
+            kind IN (${pageKinds})
+            AND EXISTS (
+              SELECT 1
+              FROM ${kbPages}
+              WHERE ${kbPages.orgId} = ${orgId}
+                AND ${kbPages.id} = cited.ref_id
+                AND ${kbPages.deletedAt} IS NULL
+                AND ${visiblePage}
+                ${range.spaceId !== undefined ? sql`AND ${kbPages.spaceId} = ${range.spaceId}` : sql``}
+            )
+          )
+          OR (
+            kind = ${CITATION_KIND_ON_KB_SOURCES}
+            AND EXISTS (
+              SELECT 1
+              FROM ${kbSources}
+              WHERE ${kbSources.orgId} = ${orgId}
+                AND ${kbSources.id} = cited.ref_id
+                AND ${kbSources.deletedAt} IS NULL
+                AND ${kbSources.status} = 'ready'
+                AND ${sourceSpaceFence}
+                ${range.spaceId !== undefined ? sql`AND (${kbSources.spaceId} IS NULL OR ${kbSources.spaceId} = ${range.spaceId})` : sql``}
+            )
           )
         )
       GROUP BY kind, ref_id

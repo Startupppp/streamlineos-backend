@@ -130,6 +130,12 @@ export const projectReleaseListItemSchema = z.object({
   releaseDate: z.string().nullable(),
   publishedAt: nullableWireDate(),
   createdBy: z.string().nullable(),
+  createdByUser: z.object({
+    name: z.string().nullable(),
+    firstName: z.string().nullable(),
+    lastName: z.string().nullable(),
+    email: z.string().nullable(),
+  }).nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
   ticketCount: z.number().int(),
