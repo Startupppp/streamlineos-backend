@@ -79,7 +79,7 @@ export class BuildDueSweepService {
           assigneeId: organizationMembers.userId,
         })
         .from(tickets)
-        .innerJoin(projects, and(eq(projects.orgId, tickets.orgId), eq(projects.id, tickets.projectId)))
+        .innerJoin(projects, and(eq(projects.orgId, tickets.orgId), eq(projects.id, tickets.projectId), isNull(projects.deletedAt)))
         .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, entersWindow)))
         .limit(500);
@@ -95,7 +95,7 @@ export class BuildDueSweepService {
           assigneeId: organizationMembers.userId,
         })
         .from(tickets)
-        .innerJoin(projects, and(eq(projects.orgId, tickets.orgId), eq(projects.id, tickets.projectId)))
+        .innerJoin(projects, and(eq(projects.orgId, tickets.orgId), eq(projects.id, tickets.projectId), isNull(projects.deletedAt)))
         .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, slippedYesterday)))
         .limit(500);

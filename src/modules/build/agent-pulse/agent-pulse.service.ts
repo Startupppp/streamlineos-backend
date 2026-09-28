@@ -66,6 +66,7 @@ export class AgentPulseService {
     };
     const actorCond = and(
       pendingApprovalsForActorCondition(orgId, membershipId),
+      isNull(projectApprovals.deletedAt),
       lt(projectApprovals.dueAt, now),
     );
 
