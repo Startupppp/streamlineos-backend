@@ -128,7 +128,7 @@ function makeBulkDb() {
   } as unknown as Db;
 }
 
-describe("rank route fires same effects as detail route", () => {
+describe("rank route fires the same webhook and automation effects as the detail route, the only two families RankTicketEffectDeps can carry", () => {
   it("fires webhook ticket.updated (positive)", async () => {
     const webhooksEnqueue = jest.fn().mockResolvedValue(undefined);
     await rankTicket(makeRankDb(), makeCache(), makeAccess(), actor, 1, 1, {}, makeEffectDeps({ webhooksEnqueue }));
@@ -178,7 +178,7 @@ describe("rank route fires same effects as detail route", () => {
   });
 });
 
-describe("bulk route fires same effects as detail route", () => {
+describe("bulk route fires the same webhook and automation effects as the detail route, the only two families BulkTicketEffectDeps can carry", () => {
   it("fires webhook ticket.updated (positive)", async () => {
     const webhooksEnqueue = jest.fn().mockResolvedValue(undefined);
     await bulkMutateTickets(makeBulkDb(), makeAccess(), actor, 1, { ticketIds: [1], priority: "HIGH" }, makeEffectDeps({ webhooksEnqueue }));

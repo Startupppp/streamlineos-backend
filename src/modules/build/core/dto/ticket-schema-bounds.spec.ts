@@ -24,19 +24,24 @@ describe("ticket type derives from the database enum", () => {
   it.each(["EPIC", "STORY", "TASK", "BUG"])(
     "updateTicketSchema accepts DB enum value: %s",
     (type) => {
-      expect(updateTicketSchema.safeParse({ type }).success).toBe(true);
+      expect(updateTicketSchema.safeParse({ version: 1, type }).success).toBe(true);
     },
   );
 
   it.each(["SUBTASK", "subtask", "FEATURE", "", "null"])(
     "updateTicketSchema rejects value absent from the DB enum: %s",
     (type) => {
-      expect(updateTicketSchema.safeParse({ type }).success).toBe(false);
+      expect(updateTicketSchema.safeParse({ version: 1, type }).success).toBe(false);
     },
   );
 
   it("updateTicketSchema accepts omitted type (field is optional)", () => {
-    expect(updateTicketSchema.safeParse({}).success).toBe(true);
+    expect(updateTicketSchema.safeParse({ version: 1 }).success).toBe(true);
+  });
+
+  it("updateTicketSchema rejects a body with no version, so every rejection above is attributable to the field under test and not to the missing concurrency token", () => {
+    expect(updateTicketSchema.safeParse({ type: "TASK" }).success).toBe(false);
+    expect(updateTicketSchema.safeParse({ version: 1, type: "TASK" }).success).toBe(true);
   });
 });
 
@@ -51,7 +56,7 @@ describe("Build ticket numeric bounds", () => {
   it.each([-1, 1.5, Number.POSITIVE_INFINITY])(
     "rejects invalid story points on update: %s",
     (points) => {
-      expect(updateTicketSchema.safeParse({ points }).success).toBe(false);
+      expect(updateTicketSchema.safeParse({ version: 1, points }).success).toBe(false);
     },
   );
 
@@ -65,18 +70,18 @@ describe("Build ticket numeric bounds", () => {
   it.each([-0.01, Number.POSITIVE_INFINITY])(
     "rejects invalid original estimates on update: %s",
     (originalEstimate) => {
-      expect(updateTicketSchema.safeParse({ originalEstimate }).success).toBe(false);
+      expect(updateTicketSchema.safeParse({ version: 1, originalEstimate }).success).toBe(false);
     },
   );
 
   it.each([0, 8])("accepts valid story points: %s", (points) => {
     expect(createTicketSchema.safeParse({ title: "Valid ticket", points }).success).toBe(true);
-    expect(updateTicketSchema.safeParse({ points }).success).toBe(true);
+    expect(updateTicketSchema.safeParse({ version: 1, points }).success).toBe(true);
   });
 
   it.each([0, 0.25, 100])("accepts valid original estimates: %s", (originalEstimate) => {
     expect(createTicketSchema.safeParse({ title: "Valid ticket", originalEstimate }).success).toBe(true);
-    expect(updateTicketSchema.safeParse({ originalEstimate }).success).toBe(true);
+    expect(updateTicketSchema.safeParse({ version: 1, originalEstimate }).success).toBe(true);
   });
 
   it.each([ticketsListQuerySchema, allWorkQuerySchema])("accepts ISO due-date filters", (schema) => {
