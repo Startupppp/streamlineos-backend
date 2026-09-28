@@ -181,7 +181,8 @@ describe("CyclesService — cross-tenant isolation", () => {
     const svc = new CyclesService(db);
 
     const result = await svc.listCycles(OWNER_ORG, 1, {});
-    expect(result).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.orgId).toBe(OWNER_ORG);
   });
 });
 

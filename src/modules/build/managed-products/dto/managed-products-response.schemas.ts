@@ -1,7 +1,18 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+} from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 import { managedProductStatusEnum } from "../../../../db/schema";
+
+export const managedProductOwnerSchema = z.object({
+  id: z.string(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  email: z.string(),
+  image: z.string().nullable(),
+});
 
 export const managedProductRowSchema = z.object({
   id: z.number().int(),
@@ -19,12 +30,15 @@ export const managedProductRowSchema = z.object({
   targetLaunchDate: nullableWireDate(),
   successMetrics: z.unknown(),
   ownerMembershipId: z.number().int().nullable(),
+  owner: managedProductOwnerSchema.nullable(),
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
 
-export const managedProductPageSchema = cursorPageSchema(managedProductRowSchema);
+export const managedProductPageSchema = cursorPageSchema(
+  managedProductRowSchema,
+);
 
 export const bulkManagedProductsResultItemSchema = z.object({
   id: z.number().int(),

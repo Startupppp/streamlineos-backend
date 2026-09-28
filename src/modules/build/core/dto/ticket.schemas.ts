@@ -9,7 +9,7 @@ import {
   baseListQuerySchema,
   pageSizeField,
 } from "../../../../common/pagination/list-query.schema";
-import { ticketTypeEnum, ticketPriorityEnum } from "../../../../db/schema";
+import { ticketTypeEnum, ticketPriorityEnum, portfolioHealthEnum } from "../../../../db/schema";
 
 const SEARCH_TERM_MAX_LENGTH = 200;
 
@@ -54,6 +54,14 @@ const csvToTicketTypeArray = z.preprocess(
     .optional(),
 );
 
+const csvToHealthArray = z.preprocess(
+  normalizeCsv,
+  z
+    .array(z.enum(portfolioHealthEnum.enumValues))
+    .max(100)
+    .optional(),
+);
+
 export const ticketsListQuerySchema = baseListQuerySchema
   .omit({ page: true, sortDir: true })
   .extend({
@@ -66,6 +74,7 @@ export const ticketsListQuerySchema = baseListQuerySchema
     cycleId: csvToIntArray,
     moduleIds: csvToIntArray,
     epicId: z.coerce.number().int().positive().optional(),
+    health: csvToHealthArray,
     dueDateFrom: z.iso.date().optional(),
     dueDateTo: z.iso.date().optional(),
     orderBy: z

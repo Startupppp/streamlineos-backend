@@ -3,18 +3,24 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
 import { invoiceLineDetailEnum } from "../../../../db/schema";
 
-export const listProjectMembersQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: pageSizeField(25),
-}).strict();
-export type ListProjectMembersQuery = z.infer<typeof listProjectMembersQuerySchema>;
+export const listProjectMembersQuerySchema = z
+  .object({
+    cursor: z.string().optional(),
+    limit: pageSizeField(25),
+  })
+  .strict();
+export type ListProjectMembersQuery = z.infer<
+  typeof listProjectMembersQuerySchema
+>;
 
 export const invoiceLineDetailSchema = z.enum(invoiceLineDetailEnum.enumValues);
 
-export const projectInvoiceLineDetailSchema = z.object({
-  projectId: z.number().int(),
-  invoiceLineDetail: invoiceLineDetailSchema,
-}).strict();
+export const projectInvoiceLineDetailSchema = z
+  .object({
+    projectId: z.number().int(),
+    invoiceLineDetail: invoiceLineDetailSchema,
+  })
+  .strict();
 
 const projectModulesSchema = z.object({
   sprints: z.boolean(),
@@ -23,7 +29,12 @@ const projectModulesSchema = z.object({
   wiki: z.boolean(),
 });
 
-export const projectPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
+export const projectPrioritySchema = z.enum([
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "URGENT",
+]);
 
 export function refineEndAfterStart(
   data: { startDate?: string | null; endDate?: string | null },
@@ -62,7 +73,12 @@ export function refineDueDateRange(
   data: { dueDateFrom?: string; dueDateTo?: string },
   ctx: z.RefinementCtx,
 ): void {
-  if (!data.dueDateFrom || !data.dueDateTo || data.dueDateTo >= data.dueDateFrom) return;
+  if (
+    !data.dueDateFrom ||
+    !data.dueDateTo ||
+    data.dueDateTo >= data.dueDateFrom
+  )
+    return;
   ctx.addIssue({
     code: z.ZodIssueCode.custom,
     message: "Due date end must be on or after due date start",
@@ -70,14 +86,30 @@ export function refineDueDateRange(
   });
 }
 
-export const listProjectsSchema = z.object({
-  search: z.string().optional(),
-  status: z.enum(["ACTIVE", "COMPLETED", "ARCHIVED", "ALL"]).default("ALL"),
-  afterId: idCursorSchema,
-  limit: pageSizeField(9),
-  managedProductId: z.coerce.number().int().positive().optional(),
-  managerId: z.string().optional(),
-}).strict();
+export const projectHealthEnum = ["on_track", "at_risk", "off_track"] as const;
+export type ProjectHealth = (typeof projectHealthEnum)[number];
+
+export const projectSortEnum = [
+  "name_asc",
+  "priority_desc",
+  "due_asc",
+  "due_desc",
+] as const;
+export type ProjectSort = (typeof projectSortEnum)[number];
+
+export const listProjectsSchema = z
+  .object({
+    search: z.string().optional(),
+    status: z.enum(["ACTIVE", "COMPLETED", "ARCHIVED", "ALL"]).default("ALL"),
+    afterId: idCursorSchema,
+    afterSortValue: z.string().optional(),
+    limit: pageSizeField(9),
+    managedProductId: z.coerce.number().int().positive().optional(),
+    managerId: z.string().optional(),
+    health: z.enum(projectHealthEnum).optional(),
+    sort: z.enum(projectSortEnum).optional(),
+  })
+  .strict();
 
 export const createProjectSchema = z
   .object({
@@ -113,7 +145,8 @@ export const createProjectSchema = z
     features: z.record(z.string(), z.boolean()).optional(),
     priority: projectPrioritySchema.optional(),
     managedProductId: z.number().int().positive().optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     refineEndAfterStart(data, ctx);
   });
@@ -134,14 +167,17 @@ export const updateProjectSchema = z
     features: z.record(z.string(), z.boolean()).optional(),
     priority: projectPrioritySchema.optional(),
     invoiceLineDetail: invoiceLineDetailSchema.optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     refineEndAfterStart(data, ctx);
   });
 
-export const updateBudgetSchema = z.object({
-  budget: z.number().min(0),
-}).strict();
+export const updateBudgetSchema = z
+  .object({
+    budget: z.number().min(0),
+  })
+  .strict();
 
 export const fromDealSchema = z
   .object({
@@ -150,31 +186,40 @@ export const fromDealSchema = z
     description: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     refineEndAfterStart(data, ctx);
   });
 
-export const addMemberSchema = z.object({
-  userId: z.string().min(1),
-  role: z.string().default("CONTRIBUTOR"),
-}).strict();
+export const addMemberSchema = z
+  .object({
+    userId: z.string().min(1),
+    role: z.string().default("CONTRIBUTOR"),
+  })
+  .strict();
 
-export const removeMemberSchema = z.object({
-  userId: z.string().min(1),
-}).strict();
+export const removeMemberSchema = z
+  .object({
+    userId: z.string().min(1),
+  })
+  .strict();
 
-export const updateProjectMemberRoleSchema = z.object({
-  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
-}).strict();
+export const updateProjectMemberRoleSchema = z
+  .object({
+    role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
+  })
+  .strict();
 
 export type UpdateProjectMemberRoleInput = z.infer<
   typeof updateProjectMemberRoleSchema
 >;
 
-export const linkManagedProductSchema = z.object({
-  managedProductId: z.number().int().positive().nullable(),
-}).strict();
+export const linkManagedProductSchema = z
+  .object({
+    managedProductId: z.number().int().positive().nullable(),
+  })
+  .strict();
 
 export type ListProjectsInput = z.infer<typeof listProjectsSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

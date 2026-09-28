@@ -15,7 +15,7 @@ it("none project scope does not fall back to membership visibility", async () =>
   const actor: CurrentUserContext = { orgId: "org-a", userId: "member", role: "MEMBER", isOrgOwner: false,
     sessionId: "session", tokenScopes: null, principal: { kind: "human-session", membershipId: 12, isOrgOwner: false } };
   await expect(module.get(ProjectsQueryService).listProjects(actor, { status: "ALL", limit: 20 }))
-    .resolves.toEqual({ data: [], hasMore: false, nextCursor: null });
+    .resolves.toEqual({ data: [], hasMore: false, nextCursor: null, nextSortCursor: null });
   expect(select).not.toHaveBeenCalled();
   await module.close();
 });

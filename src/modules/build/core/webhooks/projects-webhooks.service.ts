@@ -1,9 +1,16 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
-import { and, eq, desc, ilike, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, desc, ilike, inArray, lt, gte, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
-import { projectWebhooks, webhookDeliveries } from "../../../../db/schema/build/tasks";
-import type { CreateWebhookInput, ListWebhooksQuery, UpdateWebhookInput } from "../dto/webhook.schemas";
+import {
+  projectWebhooks,
+  webhookDeliveries,
+} from "../../../../db/schema/build/tasks";
+import type {
+  CreateWebhookInput,
+  ListWebhooksQuery,
+  UpdateWebhookInput,
+} from "../dto/webhook.schemas";
 import { generateWebhookSecret } from "./projects-webhooks-dispatch.service";
 import { assertProjectInOrg } from "../project-crud/project-access";
 import { buildIdCursorPage } from "../../../../common/pagination/cursor";
@@ -29,7 +36,11 @@ const webhookProjection = {
 export class ProjectsWebhooksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listWebhooks(orgId: string, projectId: number, filters: ListWebhooksQuery = {}) {
+  async listWebhooks(
+    orgId: string,
+    projectId: number,
+    filters: ListWebhooksQuery = {},
+  ) {
     await assertProjectInOrg(this.db, orgId, projectId);
 
     const conditions = [
@@ -37,11 +48,20 @@ export class ProjectsWebhooksService {
       eq(projectWebhooks.projectId, projectId),
     ];
 
-    if (filters.state === "active") conditions.push(eq(projectWebhooks.isActive, true));
-    if (filters.state === "inactive") conditions.push(eq(projectWebhooks.isActive, false));
-    if (filters.event) conditions.push(sql`${projectWebhooks.events} @> ARRAY[${filters.event}]::text[]`);
+    if (filters.state === "active")
+      conditions.push(eq(projectWebhooks.isActive, true));
+    if (filters.state === "inactive")
+      conditions.push(eq(projectWebhooks.isActive, false));
+    if (filters.event)
+      conditions.push(
+        sql`${projectWebhooks.events} @> ARRAY[${filters.event}]::text[]`,
+      );
     if (filters.q) conditions.push(ilike(projectWebhooks.url, `${filters.q}%`));
-    if (filters.cursor !== undefined) conditions.push(lt(projectWebhooks.id, filters.cursor));
+    if (filters.cursor !== undefined)
+      conditions.push(lt(projectWebhooks.id, filters.cursor));
+    if (filters.from)
+      conditions.push(gte(projectWebhooks.createdAt, filters.from));
+    if (filters.to) conditions.push(lte(projectWebhooks.createdAt, filters.to));
 
     const rows = await this.db
       .select({
@@ -105,11 +125,14 @@ export class ProjectsWebhooksService {
       WHERE rn = 1
     `);
 
-    const statsMap = new Map<number, {
-      lastDeliveryAt: Date | null;
-      lastDeliveryStatus: string | null;
-      failureRate: number | null;
-    }>();
+    const statsMap = new Map<
+      number,
+      {
+        lastDeliveryAt: Date | null;
+        lastDeliveryStatus: string | null;
+        failureRate: number | null;
+      }
+    >();
     for (const row of statsRows) {
       statsMap.set(row.webhookId, {
         lastDeliveryAt: row.lastDeliveryAt,
@@ -132,12 +155,25 @@ export class ProjectsWebhooksService {
     };
   }
 
-  async createWebhook(orgId: string, projectId: number, createdBy: string, data: CreateWebhookInput) {
+  async createWebhook(
+    orgId: string,
+    projectId: number,
+    createdBy: string,
+    data: CreateWebhookInput,
+  ) {
     await assertProjectInOrg(this.db, orgId, projectId);
     const secret = data.secret ?? generateWebhookSecret();
     const [webhook] = await this.db
       .insert(projectWebhooks)
-      .values({ orgId, projectId, createdBy, url: data.url, events: data.events, secret, secretSetAt: new Date() })
+      .values({
+        orgId,
+        projectId,
+        createdBy,
+        url: data.url,
+        events: data.events,
+        secret,
+        secretSetAt: new Date(),
+      })
       .returning(webhookProjection);
     return {
       ...webhook,
@@ -147,7 +183,12 @@ export class ProjectsWebhooksService {
     };
   }
 
-  async updateWebhook(orgId: string, projectId: number, webhookId: number, data: UpdateWebhookInput) {
+  async updateWebhook(
+    orgId: string,
+    projectId: number,
+    webhookId: number,
+    data: UpdateWebhookInput,
+  ) {
     const tenantMatch = and(
       eq(projectWebhooks.id, webhookId),
       eq(projectWebhooks.orgId, orgId),
@@ -159,7 +200,8 @@ export class ProjectsWebhooksService {
       .where(tenantMatch)
       .limit(1);
     if (!before) throw new NotFoundException("Webhook not found");
-    if (data.version !== before.version) throw new TicketVersionConflictException(before.version);
+    if (data.version !== before.version)
+      throw new TicketVersionConflictException(before.version);
 
     const changes = {
       ...(data.url !== undefined ? { url: data.url } : {}),
@@ -178,7 +220,9 @@ export class ProjectsWebhooksService {
         .from(projectWebhooks)
         .where(tenantMatch)
         .limit(1);
-      throw new TicketVersionConflictException(current?.version ?? before.version);
+      throw new TicketVersionConflictException(
+        current?.version ?? before.version,
+      );
     }
     return {
       ...updated,
@@ -203,7 +247,11 @@ export class ProjectsWebhooksService {
     if (!deleted) throw new NotFoundException("Webhook not found");
   }
 
-  async assertWebhookOwnership(orgId: string, projectId: number, webhookId: number): Promise<void> {
+  async assertWebhookOwnership(
+    orgId: string,
+    projectId: number,
+    webhookId: number,
+  ): Promise<void> {
     const row = await this.db
       .select({ id: projectWebhooks.id })
       .from(projectWebhooks)
@@ -232,7 +280,12 @@ export class ProjectsWebhooksService {
         deliveredAt: webhookDeliveries.deliveredAt,
       })
       .from(webhookDeliveries)
-      .where(and(eq(webhookDeliveries.orgId, orgId), eq(webhookDeliveries.webhookId, webhookId)))
+      .where(
+        and(
+          eq(webhookDeliveries.orgId, orgId),
+          eq(webhookDeliveries.webhookId, webhookId),
+        ),
+      )
       .orderBy(desc(webhookDeliveries.deliveredAt))
       .limit(20);
   }

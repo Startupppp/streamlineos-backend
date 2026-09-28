@@ -1,12 +1,38 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gt,
+  gte,
+  ilike,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { cycles, projectStatuses, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { CreateCycleInput, CycleListQuery, UpdateCycleInput } from "./dto/iterations.schemas";
+import type {
+  CreateCycleInput,
+  CycleListQuery,
+  UpdateCycleInput,
+} from "./dto/iterations.schemas";
 import { assertProjectInOrg } from "../core";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 import { TicketVersionConflictException } from "../core/tickets";
+import {
+  buildCursorPage,
+  decodeIntegerCursor,
+} from "../../../common/pagination/cursor";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 @Injectable()
 export class CyclesService {
@@ -14,8 +40,28 @@ export class CyclesService {
 
   async listCycles(orgId: string, projectId: number, query: CycleListQuery) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    const conditions = [eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), isNull(cycles.deletedAt)];
+    const limit = Math.min(query.limit ?? 50, PAGE_SIZE_CAP);
+    const cursor = decodeIntegerCursor(query.cursor);
+
+    const conditions = [
+      eq(cycles.projectId, projectId),
+      eq(cycles.orgId, orgId),
+      isNull(cycles.deletedAt),
+    ];
     if (query.status) conditions.push(eq(cycles.status, query.status));
+    if (query.q) {
+      const escaped = query.q.replace(/[%_\\]/g, "\\$&");
+      conditions.push(ilike(cycles.name, `%${escaped}%`));
+    }
+    if (query.from) conditions.push(gte(cycles.endDate, query.from));
+    if (query.to) conditions.push(lte(cycles.startDate, query.to));
+    if (cursor) {
+      const keyset = or(
+        gt(cycles.startDate, cursor.sortValue),
+        and(eq(cycles.startDate, cursor.sortValue), gt(cycles.id, cursor.id)),
+      );
+      if (keyset) conditions.push(keyset);
+    }
 
     const cycleList = await this.db
       .select({
@@ -36,10 +82,11 @@ export class CyclesService {
       })
       .from(cycles)
       .where(and(...conditions))
-      .orderBy(cycles.startDate)
-      .limit(100);
+      .orderBy(asc(cycles.startDate), asc(cycles.id))
+      .limit(limit + 1);
 
-    if (cycleList.length === 0) return [];
+    if (cycleList.length === 0)
+      return buildCursorPage([], limit, () => ({ sortValue: "", id: "" }));
 
     const cycleIds = cycleList.map((c) => c.id);
     const statsRows = await this.db
@@ -60,14 +107,17 @@ export class CyclesService {
         and(
           eq(tickets.orgId, orgId),
           isNull(tickets.deletedAt),
-          sql`${tickets.cycleId} IN (${sql.join(cycleIds.map((cid) => sql`${cid}`), sql`, `)})`,
+          sql`${tickets.cycleId} IN (${sql.join(
+            cycleIds.map((cid) => sql`${cid}`),
+            sql`, `,
+          )})`,
         ),
       )
       .groupBy(tickets.cycleId);
 
     const statsMap = new Map(statsRows.map((s) => [s.cycleId, s]));
 
-    return cycleList.map((cycle) => {
+    const rows = cycleList.map((cycle) => {
       const stats = statsMap.get(cycle.id);
       const total = Number(stats?.total ?? 0);
       const completed = Number(stats?.completed ?? 0);
@@ -78,9 +128,19 @@ export class CyclesService {
         progress: total > 0 ? Math.round((completed / total) * 100) : 0,
       };
     });
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.startDate,
+      id: String(row.id),
+    }));
   }
 
-  async createCycle(orgId: string, userId: string, projectId: number, input: CreateCycleInput) {
+  async createCycle(
+    orgId: string,
+    userId: string,
+    projectId: number,
+    input: CreateCycleInput,
+  ) {
     await assertProjectInOrg(this.db, orgId, projectId);
     const overlapping = await this.db
       .select({ id: cycles.id })
@@ -91,18 +151,29 @@ export class CyclesService {
           eq(cycles.orgId, orgId),
           isNull(cycles.deletedAt),
           or(
-            and(lte(cycles.startDate, input.startDate), gte(cycles.endDate, input.startDate)),
-            and(lte(cycles.startDate, input.endDate), gte(cycles.endDate, input.endDate)),
-            and(gte(cycles.startDate, input.startDate), lte(cycles.endDate, input.endDate)),
+            and(
+              lte(cycles.startDate, input.startDate),
+              gte(cycles.endDate, input.startDate),
+            ),
+            and(
+              lte(cycles.startDate, input.endDate),
+              gte(cycles.endDate, input.endDate),
+            ),
+            and(
+              gte(cycles.startDate, input.startDate),
+              lte(cycles.endDate, input.endDate),
+            ),
           ),
         ),
       )
       .limit(1);
 
     if (overlapping.length > 0)
-      throw new ConflictException("Cycle dates overlap with an existing cycle.");
+      throw new ConflictException(
+        "Cycle dates overlap with an existing cycle.",
+      );
 
-    let cycle: (typeof cycles.$inferSelect) | undefined;
+    let cycle: typeof cycles.$inferSelect | undefined;
     try {
       [cycle] = await this.db
         .insert(cycles)
@@ -119,54 +190,90 @@ export class CyclesService {
         .returning();
     } catch (error: unknown) {
       if (sqlstateOf(error) === "23P01")
-        throw new ConflictException("Cycle dates overlap with an existing cycle.");
+        throw new ConflictException(
+          "Cycle dates overlap with an existing cycle.",
+        );
       throw error;
     }
 
     return cycle;
   }
 
-  async updateCycle(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput) {
+  async updateCycle(
+    orgId: string,
+    projectId: number,
+    cycleId: number,
+    input: UpdateCycleInput,
+  ) {
     await assertProjectInOrg(this.db, orgId, projectId);
     const before = await this.db.query.cycles.findFirst({
-      where: and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)),
+      where: and(
+        eq(cycles.id, cycleId),
+        eq(cycles.projectId, projectId),
+        eq(cycles.orgId, orgId),
+      ),
       columns: { version: true },
     });
     if (!before) throw new NotFoundException("Cycle not found");
-    if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
+    if (input.version !== before.version)
+      throw new TicketVersionConflictException(before.version);
 
     if (input.status === "active") {
       const [existing] = await this.db
         .select({ id: cycles.id })
         .from(cycles)
         .where(
-          and(eq(cycles.status, "active"), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), isNull(cycles.deletedAt)),
+          and(
+            eq(cycles.status, "active"),
+            eq(cycles.projectId, projectId),
+            eq(cycles.orgId, orgId),
+            isNull(cycles.deletedAt),
+          ),
         )
         .limit(1);
 
       if (existing && existing.id !== cycleId)
-        throw new ConflictException("Only one active cycle is allowed at a time per project.");
+        throw new ConflictException(
+          "Only one active cycle is allowed at a time per project.",
+        );
     }
 
     const { version: _v, ...rest } = input;
-    let updated: (typeof cycles.$inferSelect) | undefined;
+    let updated: typeof cycles.$inferSelect | undefined;
     try {
       [updated] = await this.db
         .update(cycles)
         .set({ ...rest, updatedAt: new Date() })
-        .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), eq(cycles.version, before.version)))
+        .where(
+          and(
+            eq(cycles.id, cycleId),
+            eq(cycles.projectId, projectId),
+            eq(cycles.orgId, orgId),
+            eq(cycles.version, before.version),
+          ),
+        )
         .returning();
     } catch (error: unknown) {
       if (sqlstateOf(error) === "23505")
-        throw new ConflictException("Only one active cycle is allowed at a time per project.");
+        throw new ConflictException(
+          "Only one active cycle is allowed at a time per project.",
+        );
       if (sqlstateOf(error) === "23P01")
-        throw new ConflictException("Cycle dates overlap with an existing cycle.");
+        throw new ConflictException(
+          "Cycle dates overlap with an existing cycle.",
+        );
       throw error;
     }
 
     if (!updated) {
-      const [current] = await this.db.select({ version: cycles.version }).from(cycles).where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId))).limit(1);
-      throw new TicketVersionConflictException(current?.version ?? before.version);
+      const [current] = await this.db
+        .select({ version: cycles.version })
+        .from(cycles)
+        .where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)))
+        .limit(1);
+      throw new TicketVersionConflictException(
+        current?.version ?? before.version,
+      );
     }
     return updated;
   }
@@ -174,10 +281,19 @@ export class CyclesService {
   async deleteCycle(orgId: string, projectId: number, cycleId: number) {
     await assertProjectInOrg(this.db, orgId, projectId);
     await this.db.transaction(async (tx) => {
-      await tx.update(tickets).set({ cycleId: null }).where(and(eq(tickets.cycleId, cycleId), eq(tickets.orgId, orgId)));
+      await tx
+        .update(tickets)
+        .set({ cycleId: null })
+        .where(and(eq(tickets.cycleId, cycleId), eq(tickets.orgId, orgId)));
       const removed = await tx
         .delete(cycles)
-        .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
+        .where(
+          and(
+            eq(cycles.id, cycleId),
+            eq(cycles.projectId, projectId),
+            eq(cycles.orgId, orgId),
+          ),
+        )
         .returning({ id: cycles.id });
       if (removed.length === 0) throw new NotFoundException("Cycle not found");
     });

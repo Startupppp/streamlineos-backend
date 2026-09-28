@@ -1,5 +1,23 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, avg, count, desc, eq, ilike, inArray, isNull, or, sql, sum } from "drizzle-orm";
+import {
+  and,
+  avg,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  ne,
+  notInArray,
+  or,
+  sql,
+  sum,
+} from "drizzle-orm";
 import {
   okrGoals,
   okrKeyResults,
@@ -21,7 +39,10 @@ import type {
   UpdateInput,
 } from "./dto/goal.schemas";
 import { GoalLinksService, type GoalLinkRow } from "./goal-links.service";
-import { buildListResponse, type ListResponse } from "../../common/pagination/pagination";
+import {
+  buildListResponse,
+  type ListResponse,
+} from "../../common/pagination/pagination";
 import { TicketVersionConflictException } from "../build/core";
 import {
   normalizeRolledUpValue,
@@ -77,15 +98,70 @@ export interface GoalUpdateRow {
   userImage: string | null;
 }
 
-type GoalListItem = typeof okrGoals.$inferSelect & KeyResultRollup & { owner: GoalOwner | null; keyResultCount: number };
+type GoalListItem = typeof okrGoals.$inferSelect &
+  KeyResultRollup & { owner: GoalOwner | null; keyResultCount: number };
 
-type GoalDetail = typeof okrGoals.$inferSelect & KeyResultRollup & {
-  owner: GoalOwner | null;
-  project: GoalProject | null;
-  keyResults: Array<typeof okrKeyResults.$inferSelect>;
-  updates: GoalUpdateRow[];
-  links: GoalLinkRow[];
-};
+type GoalDetail = typeof okrGoals.$inferSelect &
+  KeyResultRollup & {
+    owner: GoalOwner | null;
+    project: GoalProject | null;
+    keyResults: Array<typeof okrKeyResults.$inferSelect>;
+    updates: GoalUpdateRow[];
+    links: GoalLinkRow[];
+  };
+
+function goalHealthWhere(health: "on_track" | "at_risk" | "off_track") {
+  const notOverdue = or(
+    isNull(okrGoals.dueDate),
+    gte(okrGoals.dueDate, sql`CURRENT_DATE`),
+  );
+  const isOverdue = and(
+    isNotNull(okrGoals.dueDate),
+    lt(okrGoals.dueDate, sql`CURRENT_DATE`),
+  );
+  if (health === "on_track") {
+    return or(
+      eq(okrGoals.status, "completed"),
+      and(
+        notOverdue,
+        ne(okrGoals.status, "off_track"),
+        ne(okrGoals.status, "at_risk"),
+        or(eq(okrGoals.status, "on_track"), gte(okrGoals.progress, 70)),
+      ),
+    );
+  }
+  if (health === "at_risk") {
+    return and(
+      notOverdue,
+      ne(okrGoals.status, "completed"),
+      ne(okrGoals.status, "off_track"),
+      or(
+        eq(okrGoals.status, "at_risk"),
+        and(
+          ne(okrGoals.status, "on_track"),
+          gte(okrGoals.progress, 30),
+          lt(okrGoals.progress, 70),
+        ),
+      ),
+    );
+  }
+  return and(
+    ne(okrGoals.status, "completed"),
+    or(
+      isOverdue,
+      eq(okrGoals.status, "off_track"),
+      and(
+        notOverdue,
+        notInArray(okrGoals.status, [
+          "off_track",
+          "at_risk",
+          "on_track",
+        ] as const),
+        lt(okrGoals.progress, 30),
+      ),
+    ),
+  );
+}
 
 function clamp(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
@@ -160,7 +236,9 @@ export class GoalsService {
     orgId: string,
     membershipIds: number[],
   ): Promise<Map<number, GoalOwner>> {
-    const ids = [...new Set(membershipIds.filter((id) => Number.isInteger(id)))];
+    const ids = [
+      ...new Set(membershipIds.filter((id) => Number.isInteger(id))),
+    ];
     if (ids.length === 0) return new Map();
 
     const rows = await this.db
@@ -188,18 +266,22 @@ export class GoalsService {
     );
   }
 
-  async list(u: CurrentUserContext, filters: ListInput): Promise<ListResponse<GoalListItem>> {
+  async list(
+    u: CurrentUserContext,
+    filters: ListInput,
+  ): Promise<ListResponse<GoalListItem>> {
     const { orgId, userId } = u;
     const membershipId = actingMembershipId(u.principal);
     const read = await resolveGoalsScope(this.access, u);
 
     // Ownership on a goal is a membership id on either the owner or the creator, so it is a domain predicate rather than a user column.
-    const ownGoal = membershipId !== null
-      ? or(
-          eq(okrGoals.ownerMembershipId, membershipId),
-          eq(okrGoals.createdByMembershipId, membershipId),
-        )
-      : eq(okrGoals.ownerMembershipId, -1);
+    const ownGoal =
+      membershipId !== null
+        ? or(
+            eq(okrGoals.ownerMembershipId, membershipId),
+            eq(okrGoals.createdByMembershipId, membershipId),
+          )
+        : eq(okrGoals.ownerMembershipId, -1);
 
     const limit = Math.min(filters.limit, 100);
     const offset = (filters.page - 1) * limit;
@@ -215,11 +297,20 @@ export class GoalsService {
           filters.ownerId
             ? sql`EXISTS (SELECT 1 FROM organization_members om WHERE om.org_id = ${orgId} AND om.user_id = ${filters.ownerId} AND om.id = ${okrGoals.ownerMembershipId})`
             : undefined,
-          filters.projectId !== undefined ? eq(okrGoals.projectId, filters.projectId) : undefined,
+          filters.projectId !== undefined
+            ? eq(okrGoals.projectId, filters.projectId)
+            : undefined,
           filters.managedProductId !== undefined
             ? goalsInManagedProductCondition(orgId, filters.managedProductId)
             : undefined,
-          filters.search ? ilike(okrGoals.title, `%${filters.search}%`) : undefined,
+          filters.search
+            ? ilike(okrGoals.title, `%${filters.search}%`)
+            : undefined,
+          filters.due ? lte(okrGoals.dueDate, filters.due) : undefined,
+          filters.scope === "own" && membershipId !== null
+            ? eq(okrGoals.ownerMembershipId, membershipId)
+            : undefined,
+          filters.health ? goalHealthWhere(filters.health) : undefined,
         ],
       },
       (clause) => clause.sql,
@@ -250,9 +341,17 @@ export class GoalsService {
           current: sum(okrKeyResults.currentValue),
         })
         .from(okrKeyResults)
-        .where(and(eq(okrKeyResults.orgId, orgId), inArray(okrKeyResults.goalId, goalIds)))
+        .where(
+          and(
+            eq(okrKeyResults.orgId, orgId),
+            inArray(okrKeyResults.goalId, goalIds),
+          ),
+        )
         .groupBy(okrKeyResults.goalId),
-      this.loadOwners(orgId, goals.map((goal) => goal.ownerMembershipId ?? -1)),
+      this.loadOwners(
+        orgId,
+        goals.map((goal) => goal.ownerMembershipId ?? -1),
+      ),
     ]);
 
     const countMap = new Map(counts.map((c) => [c.goalId, c]));
@@ -262,7 +361,10 @@ export class GoalsService {
         const rollup = countMap.get(goal.id);
         return {
           ...goal,
-          owner: goal.ownerMembershipId === null ? null : owners.get(goal.ownerMembershipId) ?? null,
+          owner:
+            goal.ownerMembershipId === null
+              ? null
+              : (owners.get(goal.ownerMembershipId) ?? null),
           keyResultCount: rollup?.total ?? 0,
           target: normalizeRolledUpValue(rollup?.target ?? null),
           current: normalizeRolledUpValue(rollup?.current ?? null),
@@ -273,7 +375,12 @@ export class GoalsService {
     );
   }
 
-  create(orgId: string, userId: string, input: CreateInput, membershipId?: number | null): Promise<typeof okrGoals.$inferSelect> {
+  create(
+    orgId: string,
+    userId: string,
+    input: CreateInput,
+    membershipId?: number | null,
+  ): Promise<typeof okrGoals.$inferSelect> {
     return this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(okrGoals)
@@ -352,14 +459,21 @@ export class GoalsService {
 
   async getGoal(orgId: string, goalId: number): Promise<GoalDetail | null> {
     const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
+      where: and(
+        eq(okrGoals.id, goalId),
+        eq(okrGoals.orgId, orgId),
+        isNull(okrGoals.deletedAt),
+      ),
       with: {
         project: { columns: { id: true, name: true, key: true } },
       },
     });
     if (!goal) return null;
 
-    const owners = await this.loadOwners(orgId, goal.ownerMembershipId === null ? [] : [goal.ownerMembershipId]);
+    const owners = await this.loadOwners(
+      orgId,
+      goal.ownerMembershipId === null ? [] : [goal.ownerMembershipId],
+    );
 
     const keyResults = await this.db.query.okrKeyResults.findMany({
       where: and(
@@ -392,23 +506,35 @@ export class GoalsService {
     return {
       ...goal,
       ...rollUpKeyResultValues(keyResults),
-      owner: goal.ownerMembershipId === null ? null : owners.get(goal.ownerMembershipId) ?? null,
+      owner:
+        goal.ownerMembershipId === null
+          ? null
+          : (owners.get(goal.ownerMembershipId) ?? null),
       keyResults,
       updates,
       links,
     };
   }
 
-  async update(orgId: string, goalId: number, input: UpdateInput): Promise<GoalDetail | null> {
+  async update(
+    orgId: string,
+    goalId: number,
+    input: UpdateInput,
+  ): Promise<GoalDetail | null> {
     const { version, ...changes } = input;
-    const tenantMatch = and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt));
+    const tenantMatch = and(
+      eq(okrGoals.id, goalId),
+      eq(okrGoals.orgId, orgId),
+      isNull(okrGoals.deletedAt),
+    );
 
     const before = await this.db.query.okrGoals.findFirst({
       where: tenantMatch,
       columns: { version: true },
     });
     if (!before) return null;
-    if (version !== before.version) throw new TicketVersionConflictException(before.version);
+    if (version !== before.version)
+      throw new TicketVersionConflictException(before.version);
 
     const [updated] = await this.db
       .update(okrGoals)
@@ -421,16 +547,27 @@ export class GoalsService {
         where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
         columns: { version: true },
       });
-      throw new TicketVersionConflictException(current?.version ?? before.version);
+      throw new TicketVersionConflictException(
+        current?.version ?? before.version,
+      );
     }
     return this.getGoal(orgId, goalId);
   }
 
-  async remove(orgId: string, goalId: number): Promise<{ success: true } | null> {
+  async remove(
+    orgId: string,
+    goalId: number,
+  ): Promise<{ success: true } | null> {
     const [deleted] = await this.db
       .update(okrGoals)
       .set({ deletedAt: new Date() })
-      .where(and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)))
+      .where(
+        and(
+          eq(okrGoals.id, goalId),
+          eq(okrGoals.orgId, orgId),
+          isNull(okrGoals.deletedAt),
+        ),
+      )
       .returning({ id: okrGoals.id });
 
     if (!deleted) return null;
@@ -444,7 +581,11 @@ export class GoalsService {
     input: CheckInInput,
   ): Promise<GoalDetail | null> {
     const goalExists = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
+      where: and(
+        eq(okrGoals.id, goalId),
+        eq(okrGoals.orgId, orgId),
+        isNull(okrGoals.deletedAt),
+      ),
       columns: { id: true },
     });
     if (!goalExists) return null;

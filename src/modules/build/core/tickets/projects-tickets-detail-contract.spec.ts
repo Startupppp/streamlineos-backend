@@ -14,7 +14,7 @@ const row = {
   projectId: 42, ticketNumber: 101, sprintId: null, epicId: 2, assigneeMembershipId: 1, reporterId: null,
   reporterMembershipId: null, points: null, storyPoints: null, link: null, rank: "a0", parentTicketId: null,
   originalEstimate: null, timeSpent: "0", startDate: null, dueDate: null, moduleId: null, cycleId: null,
-  sequenceId: null, estimate: null, completionPercentage: 0, clientVisible: false, isRecurring: false,
+  health: null, sequenceId: null, estimate: null, completionPercentage: 0, clientVisible: false, isRecurring: false,
   recurrenceRule: null, recurrenceParentId: null, recurrenceNextRunAt: null, customerId: null,
   version: 1, deletedAt: null, createdAt: new Date(), updatedAt: new Date(),
   project: { id: 42, orgId: "org-1", name: "Project", key: "BUILD" }, sprint: null,

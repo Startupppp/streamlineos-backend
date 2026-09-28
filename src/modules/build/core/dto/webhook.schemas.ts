@@ -28,6 +28,8 @@ export const listWebhooksQuerySchema = z.object({
   event: z.string().optional(),
   q: z.string().optional(),
   cursor: z.coerce.number().int().positive().optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
 }).strict();
 
 export type ListWebhooksQuery = z.infer<typeof listWebhooksQuerySchema>;

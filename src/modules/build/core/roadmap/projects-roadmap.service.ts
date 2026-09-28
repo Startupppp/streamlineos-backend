@@ -231,6 +231,10 @@ export class ProjectsRoadmapService {
         );
       conditions.push(inArray(roadmapItems.projectId, sub));
     }
+    if (query.projectId !== undefined)
+      conditions.push(eq(roadmapItems.projectId, query.projectId));
+    if (query.horizon !== undefined)
+      conditions.push(eq(roadmapItems.targetQuarter, query.horizon));
     if (position) {
       const boundary = ordering.buildBoundary(position);
       if (boundary) conditions.push(boundary);

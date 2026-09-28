@@ -32,6 +32,45 @@ function querySql(findMany: jest.Mock, callIndex: number): string {
   return dialect.sqlToQuery(where).sql;
 }
 
+describe("S04 roadmap projectId filter", () => {
+  it("projectId predicate touches the project_id column — query A returns only that project's items", async () => {
+    const findMany = jest.fn().mockResolvedValue([{ id: 1, sortOrder: 0 }]);
+    const service = makeService(findMany);
+
+    await service.listRoadmap(ORG, { limit: 20, projectId: 7 });
+
+    expect(querySql(findMany, 0)).toContain("project_id");
+    expect(queryParams(findMany, 0)).toContain(7);
+  });
+
+  it("omitting projectId does not add a project_id predicate to the SQL", async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = makeService(findMany);
+
+    await service.listRoadmap(ORG, { limit: 20 });
+
+    expect(querySql(findMany, 0)).not.toMatch(/project_id\s*=\s*\$/);
+  });
+});
+
+describe("S04 roadmap horizon filter", () => {
+  it("horizon predicate touches the target_quarter column — query B filters by horizon value", async () => {
+    const findMany = jest.fn().mockResolvedValue([{ id: 2, sortOrder: 0 }]);
+    const service = makeService(findMany);
+
+    await service.listRoadmap(ORG, { limit: 20, horizon: "Q3 2026" });
+
+    expect(querySql(findMany, 0)).toContain("target_quarter");
+    expect(queryParams(findMany, 0)).toContain("Q3 2026");
+  });
+
+  it("horizon is accepted by roadmapListQuerySchema — a deep-linked horizon no longer 400s", () => {
+    const { roadmapListQuerySchema } = jest.requireActual<typeof import("../dto/roadmap.schemas")>("../dto/roadmap.schemas");
+    const result = roadmapListQuerySchema.safeParse({ horizon: "Q2 2025" });
+    expect(result.success).toBe(true);
+  });
+});
+
 describe("S04 roadmap cursor contract", () => {
   it("keeps duplicate sort values in order and anchors the cursor on the last returned row", async () => {
     const findMany = jest.fn<Promise<RoadmapRow[]>, [{ where: unknown; orderBy: unknown[]; limit: number }]>()

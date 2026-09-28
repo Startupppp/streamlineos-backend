@@ -25,6 +25,7 @@ function makeProduct(overrides: Record<string, unknown> = {}) {
     key: "ATLAS",
     description: null,
     ownerId: null,
+    ownerMembershipId: null,
     status: "active",
     createdAt: new Date(),
     updatedAt: new Date(),

@@ -11,7 +11,7 @@ const row = {
   projectId: 42, ticketNumber: 1, epicId: null, assigneeMembershipId: 7,
   reporterId: null, points: null, storyPoints: null, link: null, rank: "a0", parentTicketId: null,
   originalEstimate: null, timeSpent: "0", startDate: null, dueDate: null, moduleId: null,
-  cycleId: null, sequenceId: null, estimate: null, version: 1, createdAt: new Date(), updatedAt: new Date(),
+  cycleId: null, sequenceId: null, estimate: null, health: null, version: 1, createdAt: new Date(), updatedAt: new Date(),
   descriptionExcerpt: "A short plain-text excerpt of the ticket body",
   assigneeId: user.id, assignee: user, assignees: [{ id: 1, ticketId: 1, assignedAt: new Date(), assignedBy: null, userId: user.id, user }],
   labels: [{ id: 1, ticketId: 1, labelId: 3, createdAt: new Date(), label: { id: 3, orgId: "org-1", createdAt: new Date(), name: "Bug", color: null } }], cycle: null,
@@ -68,5 +68,19 @@ describe("Build ticket list projection contract", () => {
 
   it("rejects membership IDs impersonating user summaries", () => {
     expect(ticketListPageSchema.safeParse({ data: [{ ...row, assignee: { id: 7 } }], pagination: { limit: 25, hasMore: false, nextCursor: null } }).success).toBe(false);
+  });
+
+  it("projects health as null when the column has no value", () => {
+    const parsed = ticketListPageSchema.parse({ data: [row], pagination: { limit: 25, hasMore: false, nextCursor: null } });
+    expect(parsed.data[0]).toHaveProperty("health", null);
+  });
+
+  it("projects health as a recognised enum value", () => {
+    const parsed = ticketListPageSchema.parse({ data: [{ ...row, health: "on_track" }], pagination: { limit: 25, hasMore: false, nextCursor: null } });
+    expect(parsed.data[0]?.health).toBe("on_track");
+  });
+
+  it("rejects an unrecognised health value", () => {
+    expect(ticketListPageSchema.safeParse({ data: [{ ...row, health: "fine" }], pagination: { limit: 25, hasMore: false, nextCursor: null } }).success).toBe(false);
   });
 });

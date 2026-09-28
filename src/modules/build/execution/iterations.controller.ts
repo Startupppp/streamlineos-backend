@@ -62,7 +62,7 @@ import {
   sprintListItemSchema,
   sprintRowSchema,
   sprintDetailSchema,
-  cycleListItemSchema,
+  cyclePageSchema,
   cycleRowSchema,
   moduleListItemSchema,
   modulePageSchema,
@@ -154,7 +154,7 @@ export class CyclesController {
 
   @Get()
   @RequirePermission("build:cycles:view")
-  @ResponseSchema(z.array(cycleListItemSchema))
+  @ResponseSchema(cyclePageSchema)
   @Validate({ params: projectIdParams, query: cycleListQuerySchema })
   listCycles(
     @Param("projectId", ParseIntPipe) projectId: number,

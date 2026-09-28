@@ -88,6 +88,15 @@ export const cycleRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
+export const cyclePageSchema = z.object({
+  data: z.array(cycleListItemSchema),
+  pagination: z.object({
+    limit: z.number().int().positive(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  }),
+});
+
 export const moduleListItemSchema = z.object({
   id: z.number().int(),
   name: z.string(),

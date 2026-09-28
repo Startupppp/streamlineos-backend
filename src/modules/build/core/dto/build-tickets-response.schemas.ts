@@ -50,6 +50,7 @@ export const ticketRowSchema = z.object({
   recurrenceParentId: z.number().int().nullable(),
   recurrenceNextRunAt: nullableWireDate(),
   customerId: z.number().int().nullable(),
+  health: z.enum(["on_track", "at_risk", "off_track"]).nullable(),
   version: z.number().int(),
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
@@ -109,7 +110,9 @@ export const ticketDetailSchema = ticketRowSchema.extend({
         createdAt: wireDate(),
         updatedAt: wireDate(),
         user: userSummarySchema,
-        reactions: z.array(z.object({ emoji: z.string(), userId: z.string() })).default([]),
+        reactions: z
+          .array(z.object({ emoji: z.string(), userId: z.string() }))
+          .default([]),
       }),
     )
     .default([]),
@@ -141,6 +144,7 @@ export const ticketListRowSchema = ticketRowSchema
     cycleId: true,
     sequenceId: true,
     estimate: true,
+    health: true,
     version: true,
     createdAt: true,
     updatedAt: true,

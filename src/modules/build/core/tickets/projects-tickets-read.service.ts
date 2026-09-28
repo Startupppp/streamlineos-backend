@@ -14,12 +14,13 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { buildAssigneeFilter } from "./assignee-filter";
-import {
-  tickets,
-} from "../../../../db/schema";
+import { tickets } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../../common/pagination/keyset";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
@@ -63,8 +64,10 @@ function ticketCursorBoundary(
     return undefined;
   }
   if (
-    typeof decoded !== "object" || decoded === null ||
-    !("primary" in decoded) || !("createdAt" in decoded) ||
+    typeof decoded !== "object" ||
+    decoded === null ||
+    !("primary" in decoded) ||
+    !("createdAt" in decoded) ||
     !(decoded.primary === null || typeof decoded.primary === "string") ||
     typeof decoded.createdAt !== "string"
   ) {
@@ -75,7 +78,12 @@ function ticketCursorBoundary(
   const primaryColumn = TICKET_ORDERBY_COLUMNS[orderBy];
   const primaryValue = decoded.primary;
   const timestampPrimary = orderBy === "created" || orderBy === "updated";
-  if (timestampPrimary && primaryValue !== null && Number.isNaN(Date.parse(primaryValue))) return undefined;
+  if (
+    timestampPrimary &&
+    primaryValue !== null &&
+    Number.isNaN(Date.parse(primaryValue))
+  )
+    return undefined;
 
   const createdParam = sql`${decoded.createdAt}::timestamptz`;
   const idParam = sql.param(id, tickets.id);
@@ -90,7 +98,9 @@ function ticketCursorBoundary(
       : or(and(isNull(primaryColumn), tail), isNotNull(primaryColumn));
   }
 
-  const primaryParam = timestampPrimary ? sql`${primaryValue}::timestamptz` : sql.param(primaryValue, primaryColumn);
+  const primaryParam = timestampPrimary
+    ? sql`${primaryValue}::timestamptz`
+    : sql.param(primaryValue, primaryColumn);
   return direction === "asc"
     ? sql`(
         ${primaryColumn} > ${primaryParam}
@@ -146,6 +156,7 @@ export class ProjectsTicketsReadService {
       cycleId,
       moduleIds,
       epicId,
+      health,
       dueDateFrom,
       dueDateTo,
       orderBy,
@@ -194,13 +205,20 @@ export class ProjectsTicketsReadService {
       );
     }
 
-    let assigneeUnion: { nullBranch: SQL<unknown>; inBranch: SQL<unknown> } | undefined;
+    let assigneeUnion:
+      | { nullBranch: SQL<unknown>; inBranch: SQL<unknown> }
+      | undefined;
     if (assigneeId && assigneeId.length > 0) {
       const resolved = assigneeId.map((id) => (id === "@me" ? u.userId : id));
       const includeUnassigned = resolved.includes("__unassigned__");
       const userIds = resolved.filter((id) => id !== "__unassigned__");
-      const assigneeFilter = buildAssigneeFilter(u.orgId, userIds, includeUnassigned);
-      if (assigneeFilter?.kind === "single") filterConditions.push(assigneeFilter.clause);
+      const assigneeFilter = buildAssigneeFilter(
+        u.orgId,
+        userIds,
+        includeUnassigned,
+      );
+      if (assigneeFilter?.kind === "single")
+        filterConditions.push(assigneeFilter.clause);
       if (assigneeFilter?.kind === "union") assigneeUnion = assigneeFilter;
     }
 
@@ -222,6 +240,8 @@ export class ProjectsTicketsReadService {
     if (moduleIds && moduleIds.length > 0)
       filterConditions.push(inArray(tickets.moduleId, moduleIds));
     if (epicId !== undefined) filterConditions.push(eq(tickets.epicId, epicId));
+    if (health && health.length > 0)
+      filterConditions.push(inArray(tickets.health, health));
     if (dueDateFrom) filterConditions.push(gte(tickets.dueDate, dueDateFrom));
     if (dueDateTo) filterConditions.push(lte(tickets.dueDate, dueDateTo));
 
@@ -229,7 +249,11 @@ export class ProjectsTicketsReadService {
       {
         tenant: tickets.orgId,
         scope: ticketScope(read.orgId, read.actorId),
-        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...filterConditions],
+        and: [
+          eq(tickets.projectId, projectId),
+          isNull(tickets.deletedAt),
+          ...filterConditions,
+        ],
       },
       ({ sql: where }) => where,
       () => sql`false`,
@@ -306,7 +330,9 @@ export class ProjectsTicketsReadService {
         cursor_primary_text: string | null;
         rank: string | null;
         cursor_created_at: string;
-      }>(sql`(SELECT ${selCols} FROM ${tickets} WHERE ${branch1Bounded}) UNION ALL (SELECT ${selCols} FROM ${tickets} WHERE ${branch2Bounded}) ORDER BY ${unionOrderSql} LIMIT ${limit + 1}`);
+      }>(
+        sql`(SELECT ${selCols} FROM ${tickets} WHERE ${branch1Bounded}) UNION ALL (SELECT ${selCols} FROM ${tickets} WHERE ${branch2Bounded}) ORDER BY ${unionOrderSql} LIMIT ${limit + 1}`,
+      );
 
       rows = rawRows.map((r) => ({
         id: r.id,
@@ -332,7 +358,7 @@ export class ProjectsTicketsReadService {
     const page = buildCursorPage(rows, limit, (row) => ({
       sortValue:
         orderBy === "rank"
-          ? row.rank ?? ""
+          ? (row.rank ?? "")
           : JSON.stringify({
               primary: row.cursorPrimaryText,
               createdAt: row.cursorCreatedAt,
@@ -343,12 +369,7 @@ export class ProjectsTicketsReadService {
     const ids = page.data.map((row) => row.id);
     const data =
       ids.length > 0
-        ? await queryTickets(
-            this.db,
-            inArray(tickets.id, ids),
-            sortExpr,
-            limit,
-          )
+        ? await queryTickets(this.db, inArray(tickets.id, ids), sortExpr, limit)
         : [];
 
     return { data, pagination: page.pagination };
@@ -376,46 +397,75 @@ export class ProjectsTicketsReadService {
       if (isTicketRef) {
         const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
         const num = parseInt(numStr, 10);
-        const searchCondition = or(titleMatch, Number.isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num));
+        const searchCondition = or(
+          titleMatch,
+          Number.isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
+        );
         if (searchCondition) filterConditions.push(searchCondition);
       } else {
         filterConditions.push(titleMatch);
       }
     }
-    if (query.status?.length) filterConditions.push(inArray(tickets.status, query.status));
-    if (query.priority?.length) filterConditions.push(inArray(tickets.priority, query.priority));
+    if (query.status?.length)
+      filterConditions.push(inArray(tickets.status, query.status));
+    if (query.priority?.length)
+      filterConditions.push(inArray(tickets.priority, query.priority));
     if (query.type?.length) {
       filterConditions.push(
-        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(query.type.map((value) => sql`${value}`), sql`, `)}])`,
+        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(
+          query.type.map((value) => sql`${value}`),
+          sql`, `,
+        )}])`,
       );
     }
-    let assigneeUnion2: { nullBranch: SQL<unknown>; inBranch: SQL<unknown> } | undefined;
+    let assigneeUnion2:
+      | { nullBranch: SQL<unknown>; inBranch: SQL<unknown> }
+      | undefined;
     if (query.assigneeId?.length) {
-      const resolved = query.assigneeId.map((id) => (id === "@me" ? u.userId : id));
+      const resolved = query.assigneeId.map((id) =>
+        id === "@me" ? u.userId : id,
+      );
       const includeUnassigned = resolved.includes("__unassigned__");
       const userIds = resolved.filter((id) => id !== "__unassigned__");
-      const assigneeFilter = buildAssigneeFilter(u.orgId, userIds, includeUnassigned);
-      if (assigneeFilter?.kind === "single") filterConditions.push(assigneeFilter.clause);
+      const assigneeFilter = buildAssigneeFilter(
+        u.orgId,
+        userIds,
+        includeUnassigned,
+      );
+      if (assigneeFilter?.kind === "single")
+        filterConditions.push(assigneeFilter.clause);
       if (assigneeFilter?.kind === "union") assigneeUnion2 = assigneeFilter;
     }
     if (query.labelIds?.length) {
       filterConditions.push(sql`EXISTS (
         SELECT 1 FROM build.ticket_label_mappings tlm
         WHERE tlm.ticket_id = ${tickets.id}
-          AND tlm.label_id = ANY(ARRAY[${sql.join(query.labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+          AND tlm.label_id = ANY(ARRAY[${sql.join(
+            query.labelIds.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::int[])
       )`);
     }
-    if (query.cycleId?.length) filterConditions.push(inArray(tickets.cycleId, query.cycleId));
-    if (query.moduleIds?.length) filterConditions.push(inArray(tickets.moduleId, query.moduleIds));
-    if (query.epicId !== undefined) filterConditions.push(eq(tickets.epicId, query.epicId));
-    if (query.dueDateFrom) filterConditions.push(gte(tickets.dueDate, query.dueDateFrom));
-    if (query.dueDateTo) filterConditions.push(lte(tickets.dueDate, query.dueDateTo));
+    if (query.cycleId?.length)
+      filterConditions.push(inArray(tickets.cycleId, query.cycleId));
+    if (query.moduleIds?.length)
+      filterConditions.push(inArray(tickets.moduleId, query.moduleIds));
+    if (query.epicId !== undefined)
+      filterConditions.push(eq(tickets.epicId, query.epicId));
+    if (query.dueDateFrom)
+      filterConditions.push(gte(tickets.dueDate, query.dueDateFrom));
+    if (query.dueDateTo)
+      filterConditions.push(lte(tickets.dueDate, query.dueDateTo));
 
     const scopeSpec = {
       tenant: tickets.orgId,
       scope: ticketScope(read.orgId, read.actorId),
     };
-    const baseAnd = [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...filterConditions];
+    const baseAnd = [
+      eq(tickets.projectId, projectId),
+      isNull(tickets.deletedAt),
+      ...filterConditions,
+    ];
 
     if (assigneeUnion2) {
       const where1 = read.compose(
@@ -428,7 +478,10 @@ export class ProjectsTicketsReadService {
         ({ sql: w }) => w,
         () => sql`false`,
       );
-      const countRows = await this.db.execute<{ status: string | null; cnt: string }>(sql`
+      const countRows = await this.db.execute<{
+        status: string | null;
+        cnt: string;
+      }>(sql`
         SELECT status, sum(cnt::bigint)::text AS cnt FROM (
           SELECT ${tickets.status} AS status, count(*)::text AS cnt FROM ${tickets} WHERE ${where1} GROUP BY ${tickets.status}
           UNION ALL
@@ -444,11 +497,12 @@ export class ProjectsTicketsReadService {
 
     const rows = await read.read(
       { ...scopeSpec, and: baseAnd },
-      ({ sql: where }) => this.db
-        .select({ status: tickets.status, cnt: sql<string>`count(*)` })
-        .from(tickets)
-        .where(where)
-        .groupBy(tickets.status),
+      ({ sql: where }) =>
+        this.db
+          .select({ status: tickets.status, cnt: sql<string>`count(*)` })
+          .from(tickets)
+          .where(where)
+          .groupBy(tickets.status),
       () => [],
     );
     const result: Record<string, number> = {};
@@ -457,5 +511,4 @@ export class ProjectsTicketsReadService {
     }
     return result;
   }
-
 }

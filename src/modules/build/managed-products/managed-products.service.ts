@@ -5,14 +5,27 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import {
   feedbucketSubmissions,
   feedbucketWidgets,
   feedbackPosts,
   managedProducts,
+  organizationMembers,
   projects,
   roadmapItems,
+  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -130,7 +143,40 @@ export class ManagedProductsService {
   }
 
   async getManagedProduct(orgId: string, managedProductId: number) {
-    return this.loadProduct(orgId, managedProductId);
+    const product = await this.loadProduct(orgId, managedProductId);
+
+    let owner: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+      image: string | null;
+    } | null = null;
+
+    if (product.ownerMembershipId !== null) {
+      const [ownerRow] = await this.db
+        .select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          image: users.image,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            eq(organizationMembers.id, product.ownerMembershipId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        )
+        .limit(1);
+      if (ownerRow) {
+        owner = ownerRow;
+      }
+    }
+
+    return { ...product, owner };
   }
 
   async createManagedProduct(
@@ -209,13 +255,20 @@ export class ManagedProductsService {
   private computeRangeStart(range: string | undefined): Date | undefined {
     if (!range) return undefined;
     const now = new Date();
-    if (range === "7d") return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    if (range === "30d") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    if (range === "90d") return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    if (range === "7d")
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    if (range === "30d")
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    if (range === "90d")
+      return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     return undefined;
   }
 
-  async getProductInsights(orgId: string, managedProductId: number, query: ProductInsightsQuery = {}) {
+  async getProductInsights(
+    orgId: string,
+    managedProductId: number,
+    query: ProductInsightsQuery = {},
+  ) {
     await this.loadProduct(orgId, managedProductId);
 
     const rangeStart = this.computeRangeStart(query.range);
@@ -251,7 +304,9 @@ export class ManagedProductsService {
               eq(feedbucketWidgets.managedProductId, managedProductId),
               isNull(feedbucketSubmissions.deletedAt),
               isNull(feedbucketWidgets.deletedAt),
-              rangeStart ? gte(feedbucketSubmissions.createdAt, rangeStart) : undefined,
+              rangeStart
+                ? gte(feedbucketSubmissions.createdAt, rangeStart)
+                : undefined,
             ),
           )
           .groupBy(feedbucketSubmissions.status),
@@ -426,7 +481,11 @@ export class ManagedProductsService {
       const results = input.ids.map((id) =>
         updatedIds.has(id)
           ? { id, outcome: "updated" as const, reason: null }
-          : { id, outcome: "skipped" as const, reason: "not_found_or_filtered" },
+          : {
+              id,
+              outcome: "skipped" as const,
+              reason: "not_found_or_filtered",
+            },
       );
 
       this.audit.log({
@@ -435,7 +494,11 @@ export class ManagedProductsService {
         orgId,
         resourceType: "managed_product",
         resourceId: input.ids.join(","),
-        metadata: { ids: input.ids, action: input.action, status: input.status },
+        metadata: {
+          ids: input.ids,
+          action: input.action,
+          status: input.status,
+        },
       });
 
       return {

@@ -349,11 +349,16 @@ describe("the sprintId field is absent from every Build request and response con
     },
   );
 
-  it("the only surviving sprintId in a DTO is the frozen route's path parameter, which .strict() requires the route to declare", () => {
+  it("the only surviving sprintId in a DTO is the frozen route's path parameter, matched by whole declaration rather than by single line so reformatting that declaration across lines cannot smuggle a second sprintId past this guard", () => {
     const iterations = src("modules/build/execution/dto/iterations.schemas.ts");
     expect(iterations).toContain("projectAndSprintIdParams");
-    expect(iterations).toContain('sprintId: z.coerce.number().int().positive()');
-    const withoutParams = iterations.replace(/export const projectAndSprintIdParams[^\n]*\n/, "");
+    expect(iterations).toContain("sprintId: z.coerce.number().int().positive()");
+    const declarations = iterations.split(/^export const /m);
+    const frozen = declarations.filter((d) => d.startsWith("projectAndSprintIdParams"));
+    expect(frozen).toHaveLength(1);
+    const withoutParams = declarations
+      .filter((d) => !d.startsWith("projectAndSprintIdParams"))
+      .join("export const ");
     expect(withoutParams).not.toContain("sprintId");
   });
 });

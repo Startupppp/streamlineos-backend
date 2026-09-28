@@ -20,7 +20,8 @@ export const createSprintSchema = z
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
     goal: z.string().optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -38,7 +39,8 @@ export const updateSprintSchema = z
     endDate: z.string().optional(),
     goal: z.string().optional(),
     status: z.enum(["PLANNED", "ACTIVE", "COMPLETED"]).optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -70,7 +72,8 @@ export const createCycleSchema = z
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
     capacity: z.number().int().min(0).optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -89,12 +92,16 @@ export const updateCycleSchema = z
       .string()
       .max(500, "Description must be 500 characters or fewer")
       .optional(),
-    goal: z.string().max(500, "Goal must be 500 characters or fewer").optional(),
+    goal: z
+      .string()
+      .max(500, "Goal must be 500 characters or fewer")
+      .optional(),
     capacity: z.number().int().min(0).nullable().optional(),
     status: z.enum(["draft", "active", "completed"]).optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -105,14 +112,23 @@ export const updateCycleSchema = z
     }
   });
 
-export const cycleListQuerySchema = z.object({
-  status: z.enum(["draft", "active", "completed"]).optional(),
-}).strict();
+export const cycleListQuerySchema = z
+  .object({
+    status: z.enum(["draft", "active", "completed"]).optional(),
+    cursor: z.string().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    q: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+  })
+  .strict();
 
-export const moduleListQuerySchema = z.object({
-  cursor: z.string().min(1).optional(),
-  pageSize: z.coerce.number().int().min(1).max(100).optional(),
-}).strict();
+export const moduleListQuerySchema = z
+  .object({
+    cursor: z.string().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  })
+  .strict();
 
 const moduleNameSchema = z
   .string()
@@ -148,7 +164,8 @@ export const createModuleSchema = z
     leadId: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -180,7 +197,8 @@ export const updateModuleSchema = z
     leadId: z.string().nullable().optional(),
     startDate: z.string().nullable().optional(),
     endDate: z.string().nullable().optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -191,26 +209,30 @@ export const updateModuleSchema = z
     }
   });
 
-export const createEpicSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
-  startDate: z.string().optional(),
-  dueDate: z.string().optional(),
-  points: z.number().optional(),
-}).strict();
+export const createEpicSchema = z
+  .object({
+    title: z.string().min(1),
+    description: z.string().optional(),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+    startDate: z.string().optional(),
+    dueDate: z.string().optional(),
+    points: z.number().optional(),
+  })
+  .strict();
 
-export const updateEpicSchema = z.object({
-  version: z.number().int().positive(),
-  title: z.string().min(1).optional(),
-  description: z.string().optional(),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
-  assigneeId: z.string().nullable().optional(),
-  health: z.enum(["on_track", "at_risk", "off_track"]).nullable().optional(),
-  startDate: z.string().nullable().optional(),
-  dueDate: z.string().nullable().optional(),
-  points: z.number().nullable().optional(),
-}).strict();
+export const updateEpicSchema = z
+  .object({
+    version: z.number().int().positive(),
+    title: z.string().min(1).optional(),
+    description: z.string().optional(),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+    assigneeId: z.string().nullable().optional(),
+    health: z.enum(["on_track", "at_risk", "off_track"]).nullable().optional(),
+    startDate: z.string().nullable().optional(),
+    dueDate: z.string().nullable().optional(),
+    points: z.number().nullable().optional(),
+  })
+  .strict();
 
 export type CreateEpicInput = z.infer<typeof createEpicSchema>;
 export type UpdateEpicInput = z.infer<typeof updateEpicSchema>;
@@ -223,8 +245,30 @@ export type UpdateModuleInput = z.infer<typeof updateModuleSchema>;
 export type CreateSprintInput = z.infer<typeof createSprintSchema>;
 export type UpdateSprintInput = z.infer<typeof updateSprintSchema>;
 
-export const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
-export const projectAndSprintIdParams = z.object({ projectId: z.coerce.number().int().positive(), sprintId: z.coerce.number().int().positive() }).strict();
-export const projectAndCycleIdParams = z.object({ projectId: z.coerce.number().int().positive(), cycleId: z.coerce.number().int().positive() }).strict();
-export const projectAndModuleIdParams = z.object({ projectId: z.coerce.number().int().positive(), moduleId: z.coerce.number().int().positive() }).strict();
-export const projectAndEpicIdParams = z.object({ projectId: z.coerce.number().int().positive(), epicId: z.coerce.number().int().positive() }).strict();
+export const projectIdParams = z
+  .object({ projectId: z.coerce.number().int().positive() })
+  .strict();
+export const projectAndSprintIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    sprintId: z.coerce.number().int().positive(),
+  })
+  .strict();
+export const projectAndCycleIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    cycleId: z.coerce.number().int().positive(),
+  })
+  .strict();
+export const projectAndModuleIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    moduleId: z.coerce.number().int().positive(),
+  })
+  .strict();
+export const projectAndEpicIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    epicId: z.coerce.number().int().positive(),
+  })
+  .strict();

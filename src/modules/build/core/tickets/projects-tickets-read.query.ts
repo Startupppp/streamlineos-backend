@@ -38,6 +38,7 @@ const TICKET_LIST_COLUMNS = {
   cycleId: true,
   sequenceId: true,
   estimate: true,
+  health: true,
   version: true,
   createdAt: true,
   updatedAt: true,
@@ -54,9 +55,10 @@ export async function queryTickets(
     limit,
     columns: TICKET_LIST_COLUMNS,
     extras: {
-      descriptionExcerpt: sql<string>`btrim(regexp_replace(left(regexp_replace(coalesce(${tickets.description}, ''), '<[^>]*>', ' ', 'g'), ${TICKET_EXCERPT_CHARS}), '[[:space:]]+', ' ', 'g'))`.as(
-        "description_excerpt",
-      ),
+      descriptionExcerpt:
+        sql<string>`btrim(regexp_replace(left(regexp_replace(coalesce(${tickets.description}, ''), '<[^>]*>', ' ', 'g'), ${TICKET_EXCERPT_CHARS}), '[[:space:]]+', ' ', 'g'))`.as(
+          "description_excerpt",
+        ),
     },
     with: {
       assignee: { columns: {}, with: { user: { columns: USER_COLS } } },
@@ -66,7 +68,13 @@ export async function queryTickets(
       labels: {
         with: {
           label: {
-            columns: { id: true, orgId: true, name: true, color: true, createdAt: true },
+            columns: {
+              id: true,
+              orgId: true,
+              name: true,
+              color: true,
+              createdAt: true,
+            },
           },
         },
       },
