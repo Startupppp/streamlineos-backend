@@ -4,7 +4,7 @@ import type { Db } from "../../db/drizzle.types";
 import { GoalsService } from "./goals.service";
 import { GoalLinksService } from "./goal-links.service";
 import { AccessService } from "../access/access.service";
-import { TicketVersionConflictException } from "../build/core/tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../build/core";
 import { createSchema, updateSchema } from "./dto/goal.schemas";
 import { goalDetailSchema, goalRowSchema } from "./dto/goals-response.schemas";
 import { rollUpKeyResultValues } from "./goals-key-result-rollup";

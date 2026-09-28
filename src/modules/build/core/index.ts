@@ -20,6 +20,7 @@ export { escapeLike } from "./lib/escape-like";
 export { createTicketSchema } from "./dto/ticket.schemas";
 export { refineDueOnOrAfterStart } from "./dto/project-core.schemas";
 export { PROJECTS_MANAGE_PERMISSION } from "./project-crud/projects-scope";
+export { TicketVersionConflictException } from "./tickets/ticket-version-conflict.exception";
 export { ProjectsModule } from "./projects.module";
 export { ProjectsByIdModule } from "./project-crud/projects-by-id.module";
 export { ProjectsRetentionSettingsModule } from "./settings/projects-retention-settings.module";

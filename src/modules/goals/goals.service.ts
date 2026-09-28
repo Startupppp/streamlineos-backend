@@ -22,7 +22,7 @@ import type {
 } from "./dto/goal.schemas";
 import { GoalLinksService, type GoalLinkRow } from "./goal-links.service";
 import { buildListResponse, type ListResponse } from "../../common/pagination/pagination";
-import { TicketVersionConflictException } from "../build/core/tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../build/core";
 import {
   normalizeRolledUpValue,
   rollUpKeyResultValues,
