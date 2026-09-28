@@ -5,6 +5,7 @@ import {
   organizationMembers,
   projectMembers,
   projectStatuses,
+  projectTeams,
   projectTeamMembers,
   tickets,
   timesheetSettings,
@@ -168,6 +169,36 @@ export class WorkloadCapacityService {
         ]),
     );
 
+    const teamRows = await this.db
+      .select({
+        membershipId: projectTeamMembers.membershipId,
+        teamId: projectTeams.id,
+        teamName: projectTeams.name,
+      })
+      .from(projectTeamMembers)
+      .innerJoin(
+        projectTeams,
+        and(
+          eq(projectTeams.orgId, projectTeamMembers.orgId),
+          eq(projectTeams.id, projectTeamMembers.teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(projectTeamMembers.orgId, orgId),
+          inArray(projectTeamMembers.membershipId, membershipIds),
+          isNull(projectTeams.deletedAt),
+        ),
+      )
+      .limit(500);
+
+    const teamsByMembershipId = new Map<number, Array<{ id: number; name: string }>>();
+    for (const row of teamRows) {
+      const arr = teamsByMembershipId.get(row.membershipId) ?? [];
+      arr.push({ id: row.teamId, name: row.teamName });
+      teamsByMembershipId.set(row.membershipId, arr);
+    }
+
     const members = memberRows.map(({ userId, membershipId }) => {
       const leaves = leavesByUserId.get(userId) ?? [];
       const loggedHours = loggedHoursByMembershipId.get(membershipId) ?? 0;
@@ -179,7 +210,12 @@ export class WorkloadCapacityService {
         estimateHours: estimateHoursByMembershipId.get(membershipId) ?? null,
         leaves,
       });
-      return { userId, membershipId, ...result };
+      return {
+        userId,
+        membershipId,
+        teams: teamsByMembershipId.get(membershipId) ?? [],
+        ...result,
+      };
     });
 
     return { members };

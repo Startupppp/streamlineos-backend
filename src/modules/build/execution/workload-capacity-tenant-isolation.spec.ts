@@ -286,3 +286,62 @@ describe("WorkloadCapacityService — estimateHours distinguishes no-estimate fr
     expect(result.members[0].estimateHours).toBe(8);
   });
 });
+
+function makeTeamDb(teamRows: unknown[]) {
+  return makeSequentialDb([
+    [{ expectedDailyHours: "8.0" }],
+    [MEMBER_ROW],
+    [],
+    [],
+    [],
+    teamRows,
+  ]);
+}
+
+describe("WorkloadCapacityService — team membership on the capacity projection", () => {
+  it("carries each team the member belongs to, so the workload view can group by team without one read per team", async () => {
+    const { db } = makeTeamDb([
+      { membershipId: 1, teamId: 4, teamName: "Platform" },
+      { membershipId: 1, teamId: 9, teamName: "Payments" },
+    ]);
+    const svc = new WorkloadCapacityService(db);
+    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    expect(result.members[0].teams).toEqual([
+      { id: 4, name: "Platform" },
+      { id: 9, name: "Payments" },
+    ]);
+  });
+
+  it("returns an empty team list for a member on no team, rather than omitting the field the contract declares", async () => {
+    const { db } = makeTeamDb([]);
+    const svc = new WorkloadCapacityService(db);
+    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    expect(result.members[0].teams).toEqual([]);
+  });
+
+  it("never credits one member with another member's team", async () => {
+    const { db } = makeTeamDb([{ membershipId: 77, teamId: 4, teamName: "Platform" }]);
+    const svc = new WorkloadCapacityService(db);
+    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    expect(result.members[0].membershipId).toBe(1);
+    expect(result.members[0].teams).toEqual([]);
+  });
+
+  it("scopes the team read to the caller's org, so a shared team id cannot name another tenant's team", async () => {
+    const { db, wheresByCall } = makeTeamDb([{ membershipId: 1, teamId: 4, teamName: "Platform" }]);
+    const svc = new WorkloadCapacityService(db);
+    await svc.capacity(ATTACKER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    const teamWhereVals =
+      wheresByCall[5]?.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])) ?? [];
+    expect(teamWhereVals).toContain(ATTACKER_ORG);
+    expect(teamWhereVals).not.toContain(OWNER_ORG);
+  });
+
+  it("bounds the team read, so a member on hundreds of teams cannot make the response unbounded", async () => {
+    const { db, select } = makeTeamDb([{ membershipId: 1, teamId: 4, teamName: "Platform" }]);
+    const svc = new WorkloadCapacityService(db);
+    await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    const teamBuilder = select.mock.results[5]?.value as { limit: jest.Mock };
+    expect(teamBuilder.limit).toHaveBeenCalledWith(500);
+  });
+});

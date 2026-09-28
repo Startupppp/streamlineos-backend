@@ -226,6 +226,7 @@ export const epicRowSchema = z.object({
 export const memberCapacitySchema = z.object({
   userId: z.string(),
   membershipId: z.number().int(),
+  teams: z.array(z.object({ id: z.number().int(), name: z.string() })),
   workingDaysInWindow: z.number(),
   leaveDays: z.number(),
   halfLeaveDays: z.number(),
