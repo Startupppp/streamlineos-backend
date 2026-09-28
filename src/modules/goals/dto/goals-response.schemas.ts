@@ -44,6 +44,9 @@ const goalListItemSchema = goalRowSchema.extend({
   ...keyResultRollupFields,
   owner: goalOwnerSchema.nullable(),
   keyResultCount: z.number().int(),
+  linkCount: z.number().int(),
+  linkedTicketCount: z.number().int(),
+  linkedProjectCount: z.number().int(),
 });
 
 export const goalsListResponseSchema = z.object({

@@ -21,6 +21,7 @@ import {
 import {
   okrGoals,
   okrKeyResults,
+  okrLinks,
   okrUpdates,
   organizationMembers,
   users,
@@ -332,7 +333,7 @@ export class GoalsService {
     if (goals.length === 0) return buildListResponse([], total, page);
 
     const goalIds = goals.map((g) => g.id);
-    const [counts, owners] = await Promise.all([
+    const [counts, linkCounts, owners] = await Promise.all([
       this.db
         .select({
           goalId: okrKeyResults.goalId,
@@ -348,6 +349,18 @@ export class GoalsService {
           ),
         )
         .groupBy(okrKeyResults.goalId),
+      this.db
+        .select({
+          goalId: okrLinks.goalId,
+          total: count(),
+          ticketLinks: count(okrLinks.ticketId),
+          projectLinks: count(okrLinks.projectId),
+        })
+        .from(okrLinks)
+        .where(
+          and(eq(okrLinks.orgId, orgId), inArray(okrLinks.goalId, goalIds)),
+        )
+        .groupBy(okrLinks.goalId),
       this.loadOwners(
         orgId,
         goals.map((goal) => goal.ownerMembershipId ?? -1),
@@ -355,16 +368,21 @@ export class GoalsService {
     ]);
 
     const countMap = new Map(counts.map((c) => [c.goalId, c]));
+    const linkMap = new Map(linkCounts.map((c) => [c.goalId, c]));
 
     return buildListResponse(
       goals.map((goal) => {
         const rollup = countMap.get(goal.id);
+        const links = linkMap.get(goal.id);
         return {
           ...goal,
           owner:
             goal.ownerMembershipId === null
               ? null
               : (owners.get(goal.ownerMembershipId) ?? null),
+          linkCount: links?.total ?? 0,
+          linkedTicketCount: links?.ticketLinks ?? 0,
+          linkedProjectCount: links?.projectLinks ?? 0,
           keyResultCount: rollup?.total ?? 0,
           target: normalizeRolledUpValue(rollup?.target ?? null),
           current: normalizeRolledUpValue(rollup?.current ?? null),

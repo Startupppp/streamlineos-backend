@@ -6,7 +6,11 @@ import { GoalLinksService } from "./goal-links.service";
 import { AccessService } from "../access/access.service";
 import { TicketVersionConflictException } from "../build/core";
 import { createSchema, updateSchema } from "./dto/goal.schemas";
-import { goalDetailSchema, goalRowSchema } from "./dto/goals-response.schemas";
+import {
+  goalDetailSchema,
+  goalRowSchema,
+  goalsListResponseSchema,
+} from "./dto/goals-response.schemas";
 import { rollUpKeyResultValues } from "./goals-key-result-rollup";
 import { okrGoals } from "../../db/schema";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -53,19 +57,23 @@ function goalRow(overrides: Record<string, unknown> = {}) {
 function makeDb(options: {
   goalRows?: unknown[];
   rollupRows?: unknown[];
+  linkRows?: unknown[];
   keyResults?: unknown[];
   storedVersion?: number | null;
   updateReturnRows?: unknown[];
 }) {
   const countChain = makeThenable([{ total: options.goalRows?.length ?? 0 }]);
   const rollupChain = makeThenable(options.rollupRows ?? []);
+  const linkChain = makeThenable(options.linkRows ?? []);
   const ownerChain = makeThenable([]);
   const select = jest.fn().mockImplementation((projection?: Record<string, unknown>) =>
     projection !== undefined && Object.keys(projection).length === 1 && "total" in projection
       ? countChain()
       : projection !== undefined && "membershipId" in projection
         ? ownerChain()
-        : rollupChain(),
+        : projection !== undefined && "ticketLinks" in projection
+          ? linkChain()
+          : rollupChain(),
   );
   const set = jest.fn().mockReturnValue({
     where: jest.fn().mockReturnValue({
@@ -315,5 +323,81 @@ describe("goal target and current are rolled up from key results", () => {
     expect(columns).not.toContain("current");
     expect(columns).not.toContain("targetValue");
     expect(columns).not.toContain("currentValue");
+  });
+});
+
+describe("goal links are counted onto the list row", () => {
+  it("projects linkCount and the per-arm counts from the okr_links aggregate", async () => {
+    const { db } = makeDb({
+      goalRows: [goalRow()],
+      linkRows: [{ goalId: 1, total: 3, ticketLinks: 2, projectLinks: 1 }],
+    });
+    const result = await service(db).list(userCtx(), { page: 1, limit: 20 });
+    expect(result.items[0]).toMatchObject({
+      linkCount: 3,
+      linkedTicketCount: 2,
+      linkedProjectCount: 1,
+    });
+  });
+
+  it("projects zero rather than undefined for a goal with no links, so the row never renders an empty count", async () => {
+    const { db } = makeDb({ goalRows: [goalRow()], linkRows: [] });
+    const result = await service(db).list(userCtx(), { page: 1, limit: 20 });
+    expect(result.items[0]).toMatchObject({
+      linkCount: 0,
+      linkedTicketCount: 0,
+      linkedProjectCount: 0,
+    });
+  });
+
+  it("counts links with one grouped query rather than one per goal, so a page of goals is not an N+1", async () => {
+    const { db, select } = makeDb({
+      goalRows: [goalRow(), goalRow({ id: 2 })],
+      linkRows: [
+        { goalId: 1, total: 1, ticketLinks: 1, projectLinks: 0 },
+        { goalId: 2, total: 2, ticketLinks: 0, projectLinks: 2 },
+      ],
+    });
+    await service(db).list(userCtx(), { page: 1, limit: 20 });
+    const linkSelects = select.mock.calls.filter(
+      ([projection]) => projection !== undefined && "ticketLinks" in projection,
+    );
+    expect(linkSelects).toHaveLength(1);
+  });
+
+  it("carries the link counts through the list response contract", () => {
+    const parsed = goalsListResponseSchema.parse({
+      items: [
+        {
+          ...goalRow(),
+          owner: null,
+          keyResultCount: 0,
+          target: null,
+          current: null,
+          linkCount: 3,
+          linkedTicketCount: 2,
+          linkedProjectCount: 1,
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    expect(parsed.items[0]).toMatchObject({ linkCount: 3, linkedTicketCount: 2 });
+  });
+
+  it("rejects a list row that omits linkCount, so a dropped projection cannot render as no links", () => {
+    const row: Record<string, unknown> = {
+      ...goalRow(),
+      owner: null,
+      keyResultCount: 0,
+      target: null,
+      current: null,
+      linkedTicketCount: 0,
+      linkedProjectCount: 0,
+    };
+    expect(
+      goalsListResponseSchema.safeParse({ items: [row], page: 1, pageSize: 20, total: 1 }).success,
+    ).toBe(false);
   });
 });
