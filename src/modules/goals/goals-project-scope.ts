@@ -1,19 +1,15 @@
-import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
-import { okrGoals, projects } from "../../db/schema";
-
-function goalsInProjectsMatching(condition: SQL | undefined): SQL {
-  return sql`${okrGoals.projectId} IN (SELECT ${projects.id} FROM ${projects} WHERE ${condition})`;
-}
+import { sql, type SQL } from "drizzle-orm";
+import { okrGoals } from "../../db/schema";
 
 export function goalsInManagedProductCondition(
   orgId: string,
   managedProductId: number,
 ): SQL {
-  return goalsInProjectsMatching(
-    and(
-      eq(projects.orgId, orgId),
-      eq(projects.managedProductId, managedProductId),
-      isNull(projects.deletedAt),
-    ),
-  );
+  return sql`${okrGoals.projectId} IN (
+    SELECT "goal_projects"."id"
+    FROM "build"."projects" AS "goal_projects"
+    WHERE "goal_projects"."org_id" = ${orgId}
+      AND "goal_projects"."managed_product_id" = ${managedProductId}
+      AND "goal_projects"."deleted_at" IS NULL
+  )`;
 }
