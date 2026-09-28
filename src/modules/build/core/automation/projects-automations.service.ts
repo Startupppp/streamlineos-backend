@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { projectAutomations, projectStatuses, users } from "../../../../db/schema";
 import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
-import { ProjectsMembersService } from "../projects-members.service";
+import { ProjectsMembersService } from "../members/projects-members.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { CreateAutomationInput, UpdateAutomationInput, ListAutomationsQuery } from "../dto/automation.schemas";
 

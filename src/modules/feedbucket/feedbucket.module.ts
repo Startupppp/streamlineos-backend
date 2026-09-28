@@ -7,7 +7,7 @@ import { FeedbucketMediaRetentionService } from "./feedbucket-media-retention.se
 import { FeedbucketPublicService } from "./feedbucket-public.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { FeedbucketCorsMiddleware } from "./feedbucket-cors.middleware";
-import { ProjectsModule } from "../build/core/projects.module";
+import { ProjectsModule } from "../build/core";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AiModule } from "../ai/core/ai.module";
 import { BillingModule } from "../billing/core/billing.module";

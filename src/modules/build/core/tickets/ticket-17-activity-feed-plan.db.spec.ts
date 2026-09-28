@@ -5,7 +5,7 @@ import { Test } from "@nestjs/testing";
 import * as schema from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.module";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { ProjectsActivityFeedService } from "../projects-activity-feed.service";
+import { ProjectsActivityFeedService } from "../activity/projects-activity-feed.service";
 import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 

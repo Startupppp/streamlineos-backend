@@ -23,7 +23,7 @@ import type { CreateProjectInput, FromDealInput } from "../dto/projects.schemas"
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import { isUniqueViolation } from "../../../../common/db/postgres-error";
 import { lockQuota } from "../../../billing/core/seat-definition";
-import { buildProjectHref } from "../build-app-paths";
+import { buildProjectHref } from "../lib/build-app-paths";
 
 function generateProjectKey(name: string): string {
   const namePart = name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();

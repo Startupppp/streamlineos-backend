@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, desc, eq, gt, ilike, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, desc, eq, gt, gte, ilike, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { projectClientGrants } from "../../../../db/schema/portal-access/project-client-grants";
 import { portalMemberships } from "../../../../db/schema/portal-access/portal-memberships";
 import { partyContacts, projects } from "../../../../db/schema";
@@ -136,13 +136,16 @@ export async function listGrants(
   organizationId: string,
   query: ListGrantsQuery,
 ) {
-  const { limit, cursor, projectId, q, permission, state } = query;
+  const { limit, cursor, projectId, grantId, from, to, q, permission, state } = query;
   const position = cursor === undefined ? undefined : decodeCursor(cursor);
   if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
 
   const conditions = and(
     eq(projectClientGrants.organizationId, organizationId),
     projectId ? eq(projectClientGrants.projectId, projectId) : undefined,
+    grantId ? eq(projectClientGrants.projectClientGrantId, grantId) : undefined,
+    from ? gte(projectClientGrants.createdAt, from) : undefined,
+    to ? lte(projectClientGrants.createdAt, to) : undefined,
     position
       ? keysetBeforeUuid(projectClientGrants.createdAt, projectClientGrants.projectClientGrantId, position)
       : undefined,

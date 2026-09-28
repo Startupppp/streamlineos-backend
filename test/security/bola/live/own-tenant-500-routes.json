@@ -177,7 +177,7 @@
    "path": "/build/:projectId/releases/:releaseId",
    "requestPath": "/build/1/releases/1",
    "handler": "ProjectsReleasesController.updateRelease",
-   "file": "src/modules/build/core/projects-releases.controller.ts"
+   "file": "src/modules/build/core/releases/projects-releases.controller.ts"
   },
   {
    "key": "PATCH /build/:projectId/sprints/:sprintId [SprintsController.updateSprint]",
@@ -193,7 +193,7 @@
    "path": "/build/:projectId/tickets/:ticketId/related-links/:linkId",
    "requestPath": "/build/1/tickets/1/related-links/1",
    "handler": "ProjectsTicketAssociationsController.updateRelatedLink",
-   "file": "src/modules/build/core/projects-ticket-associations.controller.ts"
+   "file": "src/modules/build/core/tickets/projects-ticket-associations.controller.ts"
   },
   {
    "key": "PATCH /build/labels/:labelId [ProjectsController.updateLabel]",

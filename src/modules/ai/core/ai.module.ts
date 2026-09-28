@@ -45,7 +45,7 @@ import { CalendarModule } from "../../calendar/calendar.module";
 import { ChatModule } from "../../chat/chat.module";
 import { BillingModule } from "../../billing/core/billing.module";
 import { AiConfirmationModule } from "../confirmation/ai-confirmation.module";
-import { ProjectsModule } from "../../build/core/projects.module";
+import { ProjectsModule } from "../../build/core";
 import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { MeetingsAiController } from "./controllers/meetings-ai.controller";
 import { MeetingsPrepService } from "./services/meetings-prep.service";

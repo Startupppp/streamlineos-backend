@@ -3,7 +3,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ProjectsTicketsDeleteService } from "./tickets/projects-tickets-delete.service";
-import { ProjectsActivityService } from "./projects-activity.service";
+import { ProjectsActivityService } from "./activity/projects-activity.service";
 import { assertTicketReadAccess } from "./tickets/build-ticket-read-access";
 
 jest.mock("./tickets/build-ticket-read-access", () => ({

@@ -2,7 +2,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
 import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
-import { ProjectsMembersService } from "../projects-members.service";
+import { ProjectsMembersService } from "../members/projects-members.service";
 import { RateLimitService } from "../../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";

@@ -6,7 +6,7 @@ import { type Db } from "../../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiSummariesService } from "../../summaries/ai-summaries.service";
-import { ProjectsAnalyticsService } from "../../../build/core/projects-analytics.service";
+import { ProjectsAnalyticsService } from "../../../build/core";
 import { CrmSalesDashboardService } from "../../../crm/core/crm-sales-dashboard.service";
 import { SupportReportsService } from "../../../support/core/support-reports.service";
 import type { SnapshotCitation } from "../../summaries/ai-summaries.types";

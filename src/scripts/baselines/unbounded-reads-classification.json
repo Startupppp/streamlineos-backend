@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "classifiedAt": "2026-09-08",
+  "classifiedAt": "2026-09-28",
   "note": "Verdicts: KEYSET-MIGRATED|BOUNDED|AGGREGATE|STREAM|FALSE-POSITIVE|EXCLUDED-MODULE|ACTIONABLE",
   "offset": {
     "/accounting/ap/lib/ap-document-reads.ts": {
@@ -1052,12 +1052,12 @@
       "note": "Fetches tickets with due dates inside a date-range window (calendar start/end); bounded by the query predicate, typically â‰¤90 days of data per user",
       "justification": "bounded by date-range predicate (calendar window typically <=90 days of events); ticket sub-select bounded by entity IDs from first query 2026-09-01"
     },
-    "/build/core/build-automation-runner.service.ts": {
+    "/build/core/automation/build-automation-runner.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Reads automation rules for a specific project + trigger event; automation rules per project are a small config set (typically <20)",
       "justification": "per-project automation rule config; bounded by number of automation rules per project (<20 in practice); small config set 2026-09-01"
     },
-    "/build/core/build-automation-run-history.service.ts": {
+    "/build/core/automation/build-automation-run-history.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "listRuns first keyset-paginates run ids, then loads actions for only that bounded page in one grouped query",
       "justification": "The primary read uses .limit(limit + 1), and listAutomationRunsQuerySchema clamps limit to PAGE_SIZE_CAP=100. The flagged action read filters with inArray(runId, runIds), where runIds comes from page.data and is therefore at most 100 ids. Each automation stores at most 50 actions because createAutomationSchema caps actions at 50 and updateAutomationSchema is its partial form; recordRunActions receives exactly the runner results for that validated action array. The query is one batched page sub-read, not an org-wide scan or N+1. 2026-09-24"
@@ -1072,42 +1072,42 @@
       "note": "Contains only count/sum/groupBy aggregates for status-change analytics; no row-returning unbounded scan",
       "justification": "all flagged selects are aggregate-only projections (count, groupBy); gate window missed the aggregate pattern in sql template literals 2026-09-01"
     },
-    "/build/core/projects-activity.service.ts": {
+    "/build/core/activity/projects-activity.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Activity reads all carry .limit() â€” gate detected the select chain before the limit clause within the 120-line window; per-ticket activity is small",
       "justification": "violations are per-entity sub-reads bounded by project/cycle scope; L215 reads cycles by projectId (config-sized), L245 per-cycle, L289 membership lookup for inArray; all bounded by entity scope 2026-09-01"
     },
-    "/build/core/projects-analytics.service.ts": {
+    "/build/core/analytics/projects-analytics.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Analytics aggregates are bounded by SQL aggregation or the page ID list",
       "justification": "getOrgProjectHealthSummary is one tenant-scoped SQL aggregate. Remaining detector matches are aggregate/raw SQL shapes that do not materialize an unbounded application row set 2026-09-25"
     },
-    "/build/core/projects-budget.service.ts": {
+    "/build/core/budget/projects-budget.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Contains sum aggregates for budget tracking; member list reads are scoped to project membership (small)",
       "justification": "L56 reads projectMembers.projectId for user to build inArray filter; bounded by user project membership count 2026-09-01"
     },
-    "/build/core/projects-custom-fields.service.ts": {
+    "/build/core/custom-fields/projects-custom-fields.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Reads custom field definitions per project (small config set) and field values per ticket (bounded by field count); both are small per-entity datasets",
       "justification": "L45 listFields reads customFieldDefinitions per project+entityType (small config set <100); L146 reads field values per ticket bounded by field count 2026-09-01"
     },
-    "/build/core/projects-custom-states.service.ts": {
+    "/build/core/custom-states/projects-custom-states.service.ts": {
       "verdict": "BOUNDED",
       "note": "Reads project statuses (small config set per project, typically <10); has explicit .limit() calls",
       "justification": "project status config set is bounded by system design (<20 statuses per project); explicit .limit() on main paginated paths; per-project status reads are config-sized 2026-09-01"
     },
-    "/build/core/projects-members.service.ts": {
+    "/build/core/members/projects-members.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has explicit .limit(100) and .limit(500) caps on membership reads; gate window missed the limit placement",
       "justification": "L171 reads membership details for a specific user+project scope; has explicit .limit(100)/.limit(500) on other paths; gate window missed limits on per-user sub-reads 2026-09-01"
     },
-    "/build/core/projects-query.service.ts": {
+    "/build/core/project-crud/projects-query.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Uses cursor limit+1 sentinel pattern and aggregate counts; all row-returning paths are capped",
       "justification": "L70/L74 read user project memberships/team assignments as inArray input bounded by user membership count; L165/L176 read members bounded by inArray(projectIds) already capped by cursor pagination; L311 membership lookup for access check 2026-09-01"
     },
-    "/build/core/projects-reports.service.ts": {
+    "/build/core/analytics/projects-reports.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "All reads are groupBy/count/avg aggregates for time-series reports; no unbounded row-returning scan",
       "justification": "L82 sprint scope events bounded by sprintId (one sprint); L217 daily snapshots bounded by date-range window (query.days rows); L262 sprint velocity bounded by sprint count; L450/L462 grouped per-sprint ticket aggregates 2026-09-01"
@@ -1161,27 +1161,27 @@
       "note": "findMany for blocking relations on pre-delete check; blocking relation count is small per ticket in practice",
       "justification": "findMany workItemRelations without take; pre-delete check for blocking tickets bounded by ticket graph density per project; used only to report count in error message 2026-09-01"
     },
-    "/build/core/projects-webhooks-dispatch.service.ts": {
+    "/build/core/webhooks/projects-webhooks-dispatch.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has explicit .limit(); webhook dispatch reads active webhooks per project (small config set)",
       "justification": "has explicit .limit(); webhook config set bounded per project (<20 webhooks); gate window missed limit placement 2026-09-01"
     },
-    "/build/core/projects-webhooks.service.ts": {
+    "/build/core/webhooks/projects-webhooks.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 2 explicit .limit() calls; webhook list is a small config set per project",
       "justification": "has 2 explicit .limit(); webhook list bounded per project; gate window missed limit placement 2026-09-01"
     },
-    "/build/core/projects-work-query.service.ts": {
+    "/build/core/work-query/projects-work-query.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 2 explicit .limit() calls and 6 aggregate references; all row-returning paths are capped",
       "justification": "has 2 explicit .limit() + 6 aggregates; violations are bounded by sprint/project scope; gate missed limits past 120-line window 2026-09-01"
     },
-    "/build/core/build-members.service.ts": {
+    "/build/core/members/build-members.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 3 explicit .limit() calls; workspace membership is bounded by org size",
       "justification": "has 3 explicit .limit(); violations are per-workspace membership queries bounded by workspace member count; gate missed limit placement 2026-09-01"
     },
-    "/build/core/projects-write.service.ts": {
+    "/build/core/project-crud/projects-write.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 2 explicit .limit() calls; write-path lookups are existence checks with limits",
       "justification": "has 2 explicit .limit(); violations are write-path existence checks with inArray bounded by ticket IDs from request; gate missed limit past 120 lines 2026-09-01"
@@ -1230,12 +1230,12 @@
       "note": "Has 12 count/sum/groupBy aggregate references; test-run analytics queries produce scalar summaries",
       "justification": "L86 is aggregate-only; L135/L150/L163 read testCase IDs bounded by specific test run ID; test cases per run bounded by run scope 2026-09-01"
     },
-    "/build/core/project-access.ts": {
+    "/build/core/project-crud/project-access.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "resolveProjectAssignableMemberships (L54-79) selects projectMembers JOIN organizationMembers filtered by inArray(organizationMembers.userId, uniqueUserIds) where uniqueUserIds is the caller-supplied assignee list",
       "justification": "All three call sites pass small, request-scoped id lists, never an unbounded set: projects-tickets-create.service.ts:116-119 passes a single ticket's [...allAssigneeIds] (one create request); projects-tickets-update.service.ts:223-226 passes [...pendingActorIds] for one ticket being updated; build-ticket-bulk-mutation.ts:47-52 passes at most one id ([assigneeId] or []). Row count is bounded by uniqueUserIds.length by construction (inArray), same shape as build-ticket-mutation-policy.ts's FALSE-POSITIVE. 2026-09-23"
     },
-    "/build/core/projects-roadmap.service.ts": {
+    "/build/core/roadmap/projects-roadmap.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "L74 .select({ id: projects.id }) is a Drizzle sub-select builder passed unawaited into inArray(roadmapItems.projectId, sub) at L75 — it is never executed as an independent query",
       "justification": "The select is not awaited on its own; it becomes a correlated IN-subquery compiled into the single roadmapItems.findMany() statement at L91-95 (`WHERE project_id IN (SELECT id FROM projects WHERE org_id = ? AND managed_product_id = ?)`). No row set is ever materialized into the app from this line — the gate's regex matches `.select(` without seeing it is a subquery argument, not a top-level read. The outer findMany already carries `limit: limit + 1` (cursor pagination). 2026-09-23"
@@ -3853,7 +3853,7 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "NEWLY VISIBLE 2026-09-03: src/db entered this gate's corpus for the first time. Bounded by eq(coupons.code, coupon.code) — an existence check on one code, inside a seed script that is never on a request path."
     },
-    "/build/core/projects-automations.service.ts": {
+    "/build/core/automation/projects-automations.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Select with no LIMIT, but the row set is bounded by the request",
       "justification": "IN-list is the distinct set_status values of the request's own actions, tenant- and project-scoped. The actions array was uncapped when this was flagged; createAutomationSchema now caps conditions and actions at 50 each and their strings at 200/2000, so the IN-list has a hard ceiling of 50 2026-09-07"
@@ -4041,6 +4041,16 @@
       "verdict": "FALSE-POSITIVE",
       "note": "bounded by its parent entity, not by a LIMIT",
       "justification": "Classified 2026-09-13. Guard read: selects structural-admin membership ids for ONE org to refuse demoting the last one. Bounded by that org's admin count, which the six-standing model keeps small; a LIMIT would break the guard, since it must count what is there."
+    },
+    "/build/core/tickets/build-ticket-bulk-mutation.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Two reads, one genuinely unbounded. :201 selects inArray(ticketLabels.id, body.labelIds) and bulkUpdateSchema caps labelIds at .max(10), so that one returns at most 10 rows. :164 is the archive blocker probe: inArray(tickets.parentTicketId, ids) over the <=100 selected ids, and nothing caps children per parent, so the row count is the total child population of up to 100 epics.",
+      "justification": "ACTIONABLE, not FALSE-POSITIVE: the file verdict is per file and :164 has no bound, so blessing the file would also bless the unbounded read. A .limit() here would be a correctness regression, not a fix - the rows feed blockersMap, which counts children outside the selection to refuse the archive, so a truncated read would under-count blockers and let a parent with active sub-tickets be archived. The bounded rewrite is an aggregate: group by parentTicketId and count children where id NOT IN (ids), which returns at most one row per selected parent. Deferred to the tickets concept owner because ticket 27 is structure-only. Classified 2026-09-28."
+    },
+    "/build/updates/updates.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "selectFullRow:56 filters eq(projectUpdates.orgId, orgId) AND eq(projectUpdates.id, id). project_updates.id is integer().primaryKey().generatedAlwaysAsIdentity(), so the predicate is a primary-key equality and the result set is at most one row by construction; the caller destructures [row] and 404s when it is absent. The two left joins are to organizationMembers and users on equality of their own keys and cannot fan the row out.",
+      "justification": "Bounded by the primary key, not by a limit clause - the gate flags the missing .limit(1) rather than an unbounded row count. The other reads in this file already carry .limit(): loadUpdate uses .limit(1) and listUpdates keyset-pages with decodeTimestampCursor and a clamped limit. Classified 2026-09-28."
     }
   }
 }

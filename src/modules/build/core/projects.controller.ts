@@ -21,7 +21,7 @@ import { ParseResourceIdPipe } from "../../../common/pipes/parse-resource-id.pip
 import { ProjectsQueryService } from "./project-crud/projects-query.service";
 import { ProjectsProvisionService } from "./project-crud/projects-provision.service";
 import { ProjectsWriteService } from "./project-crud/projects-write.service";
-import { ProjectsMembersService } from "./projects-members.service";
+import { ProjectsMembersService } from "./members/projects-members.service";
 import {
   createLabelSchema,
   createProjectSchema,

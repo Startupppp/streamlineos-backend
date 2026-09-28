@@ -6,11 +6,11 @@ import { CacheService } from "../../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { AccessService } from "../../../access/access.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
-import { ProjectsActivityService } from "../projects-activity.service";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
-import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
+import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 
 describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {

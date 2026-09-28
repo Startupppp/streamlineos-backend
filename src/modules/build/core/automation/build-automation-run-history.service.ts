@@ -6,7 +6,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import { withSavepoint } from "../../../data-quality/savepoint";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ProjectsMembersService } from "../projects-members.service";
+import { ProjectsMembersService } from "../members/projects-members.service";
 import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
 

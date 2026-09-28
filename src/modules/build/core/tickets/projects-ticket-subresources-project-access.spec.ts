@@ -5,13 +5,13 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { AccessService } from "../../../access/access.service";
 import { assertTicketReadAccess } from "./build-ticket-read-access";
-import { ProjectsActivityService } from "../projects-activity.service";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
-import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
+import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 
 jest.mock("./build-ticket-read-access", () => ({
   assertTicketReadAccess: jest.fn(),

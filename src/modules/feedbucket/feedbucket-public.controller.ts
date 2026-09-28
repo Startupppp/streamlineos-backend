@@ -29,7 +29,7 @@ import { StorageService } from "../storage/storage.service";
 import { MediaTransformRunner } from "../storage/media-transform.runner";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import { ProjectsTicketsCreateService } from "../build/core/tickets/projects-tickets-create.service";
+import { ProjectsTicketsCreateService } from "../build/core/tickets";
 import { publicSubmitSchema, publicAiAssistSchema, publicSubmitDeclSchema, publicAiAssistDeclSchema } from "./feedbucket.schemas";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";

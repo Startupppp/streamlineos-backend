@@ -17,8 +17,8 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
-import { ProjectsFeedbackService } from "../projects-feedback.service";
-import { ProjectsChangelogService } from "../projects-changelog.service";
+import { ProjectsFeedbackService } from "../feedback/projects-feedback.service";
+import { ProjectsChangelogService } from "../activity/projects-changelog.service";
 import {
   changelogListQuerySchema,
   createChangelogSchema,

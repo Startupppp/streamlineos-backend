@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { ProjectsFeedbackService } from "../projects-feedback.service";
+import { ProjectsFeedbackService } from "../feedback/projects-feedback.service";
 import type { Db } from "../../../../db/drizzle.module";
 
 const ORG_ID = "org-1";

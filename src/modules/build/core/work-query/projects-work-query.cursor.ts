@@ -1,7 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { tickets } from "../../../../db/schema";
 import type { CursorPosition } from "../../../../common/pagination/cursor";
-import type { SortDirection, WorkSortKey } from "../work-scope-union";
+import type { SortDirection, WorkSortKey } from "./work-scope-union";
 
 const SORT_COLUMNS = {
   created: tickets.createdAt,

@@ -25,7 +25,7 @@ import { resolveAssigneeId } from "./tickets-helpers";
 import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { CacheService } from "../../../../common/cache/cache.service";
-import { buildTicketHref, buildTicketKey } from "../build-app-paths";
+import { buildTicketHref, buildTicketKey } from "../lib/build-app-paths";
 
 const EXPORT_ROW_CAP = 5_000;
 

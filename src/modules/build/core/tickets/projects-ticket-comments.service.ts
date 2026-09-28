@@ -13,13 +13,13 @@ import { logger } from "../../../../common/logger/logger.service";
 import { withSavepoint } from "../../../data-quality/savepoint";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
-import { ProjectsActivityService } from "../projects-activity.service";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { resolveTicketsScope } from "./tickets-scope";
 import {
   ProjectsCommentNotFoundException,
   ProjectsForbiddenTicketException,
 } from "../../../../common/http/api-exceptions";
-import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
+import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import type { CommentInput } from "../dto/projects.schemas";
 import { resolvePersonDisplayName } from "../../../../common/organization/person-display-name";
 import { assertTicketReadAccess } from "./build-ticket-read-access";

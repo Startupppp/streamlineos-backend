@@ -1,7 +1,7 @@
 import type { Db } from "../../../db/drizzle.module";
 import { WorkloadCapacityService } from "./workload-capacity.service";
 
-jest.mock("../core/project-access", () => ({
+jest.mock("../core/project-crud/project-access", () => ({
   assertProjectInOrg: jest.fn().mockResolvedValue(undefined),
 }));
 

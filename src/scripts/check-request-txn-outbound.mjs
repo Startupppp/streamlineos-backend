@@ -86,7 +86,7 @@ const FROZEN = new Map([
     "HOLDS, the same six-hop chain through AutomationService.testRule. Both rule-test routes were invisible to this gate until it learned to unwrap Pick<EmailOutboxService, ...>.",
   ],
   [
-    "modules/build/core/projects-webhooks.controller.ts#sendTest",
+    "modules/build/core/webhooks/projects-webhooks.controller.ts#sendTest",
     "HOLDS, bounded. Awaited so the user is shown the delivery result, and capped at INTERACTIVE_TEST_BUDGET: one attempt, 5s, against the background path's five attempts at 10s. Opting out needs the dispatch service to own its transactions first.",
   ],
   [

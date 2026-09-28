@@ -4,7 +4,7 @@ import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
 import { OrgFeaturesService } from "./services/org-features.service";
-import { ProjectsTicketsService } from "../../build/core/tickets/projects-tickets.service";
+import { ProjectsTicketsService } from "../../build/core/tickets";
 import { ChatMessagesService } from "../../chat/chat-messages.service";
 import { CalendarService } from "../../calendar/calendar.service";
 import { MailComposeService } from "../../mail/mail-compose.service";

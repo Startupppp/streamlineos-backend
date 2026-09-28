@@ -17,8 +17,8 @@ jest.mock("./build-ticket-read-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 
-jest.mock("../project-access", () => ({
-  ...jest.requireActual("../project-access"),
+jest.mock("../project-crud/project-access", () => ({
+  ...jest.requireActual("../project-crud/project-access"),
   resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }),
 }));
 

@@ -33,6 +33,9 @@ export const listGrantsQuerySchema = z.object({
   limit: pageSizeField(20, 100),
   cursor: z.string().optional(),
   projectId: z.coerce.number().int().positive().optional(),
+  grantId: z.string().min(1).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
   q: z.string().max(200).optional(),
   permission: z
     .string()

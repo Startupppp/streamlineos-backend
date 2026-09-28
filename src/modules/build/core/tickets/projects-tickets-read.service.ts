@@ -13,7 +13,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { buildAssigneeFilter } from "../assignee-filter";
+import { buildAssigneeFilter } from "./assignee-filter";
 import {
   tickets,
 } from "../../../../db/schema";

@@ -4,10 +4,10 @@ import { projectStatuses, tickets, ticketActivityLog, ticketWatchers } from "../
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
-import { computeNextRunAt } from "../build/core/projects-recurrence.util";
+import { computeNextRunAt } from "../build/core";
 import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
 import { forEachOrg, type TenantTx } from "../../common/tenant";
-import { reserveTicketCapacity } from "../build/core/tickets/build-ticket-capacity";
+import { reserveTicketCapacity } from "../build/core/tickets";
 
 const BATCH_SIZE = 50;
 

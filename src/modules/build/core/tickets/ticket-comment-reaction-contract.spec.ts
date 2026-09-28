@@ -6,8 +6,8 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { agentTokenPrincipal, humanSessionPrincipal } from "../../../../common/auth/principal";
 import { AccessService } from "../../../access/access.service";
-import { ProjectsActivityService } from "../projects-activity.service";
-import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
+import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 
 const PROJECT_ID = 3;

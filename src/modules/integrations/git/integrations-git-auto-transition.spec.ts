@@ -11,7 +11,7 @@
 import * as tenantTx from "../../../common/tenant/run-in-tenant-transaction";
 import { IntegrationsGitService } from "./integrations-git.service";
 import type { Db } from "../../../db/drizzle.module";
-import type { ProjectsTicketsUpdateService } from "../../build/core/tickets/projects-tickets-update.service";
+import type { ProjectsTicketsUpdateService } from "../../build/core/tickets";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => {
   const actual = jest.requireActual<typeof import("../../../common/tenant/run-in-tenant-transaction")>(

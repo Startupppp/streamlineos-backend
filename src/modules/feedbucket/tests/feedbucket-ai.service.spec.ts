@@ -8,7 +8,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
-import type { ProjectsTicketsCreateService } from "../../build/core/tickets/projects-tickets-create.service";
+import type { ProjectsTicketsCreateService } from "../../build/core/tickets";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { AccessService } from "../../access/access.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";

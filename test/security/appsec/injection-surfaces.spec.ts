@@ -261,8 +261,8 @@ describe("SQL injection — every value reaches Postgres as a bind parameter", (
         // (inventory gl-recon-sql journalLateral) passes the literal "j".
         "src/modules/accounting/adapters/reconciliation/stock-journal-sql.ts",
         "src/modules/billing/core/payment-status-order.ts",
-        "src/modules/build/core/build-due-sweep.service.ts",
-        "src/modules/build/core/projects-reports.service.ts",
+        "src/modules/build/core/due-sweep/build-due-sweep.service.ts",
+        "src/modules/build/core/analytics/projects-reports.service.ts",
         // Projection text built from the encoder's compile-time LEDGER_COLUMNS /
         // AUDIT_EVENT_COLUMNS / AUDIT_EVENT_EXPRESSIONS constants; no request value on the path.
         "src/modules/inventory/audit-export/audit-export-rows.ts",

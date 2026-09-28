@@ -329,15 +329,15 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/build/core/projects-changelog.service.ts": {
+    "src/modules/build/core/activity/projects-changelog.service.ts": {
       "as": 0,
       "nonNull": 1
     },
-    "src/modules/build/core/projects-feedback.service.ts": {
+    "src/modules/build/core/feedback/projects-feedback.service.ts": {
       "as": 0,
       "nonNull": 1
     },
-    "src/modules/build/core/projects-provision.service.ts": {
+    "src/modules/build/core/project-crud/projects-provision.service.ts": {
       "as": 0,
       "nonNull": 1
     },
@@ -345,7 +345,7 @@
       "as": 0,
       "nonNull": 3
     },
-    "src/modules/build/core/projects-webhooks-dispatch.service.ts": {
+    "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts": {
       "as": 1,
       "nonNull": 0
     },

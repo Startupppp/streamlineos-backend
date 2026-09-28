@@ -40,7 +40,7 @@ import {
   readIds,
   resolveWorkSort,
   type WorkSort,
-} from "../work-scope-union";
+} from "./work-scope-union";
 import {
   buildCursorPage,
   decodeCursor,

@@ -107,7 +107,7 @@
       "verdict": "FALSE-POSITIVE",
       "note": "First seen 2026-09-09. The detector matches `for (const row of changed) await assertTransitionAllowed(db, ...)` at :20-23 because the callee takes a `db` handle, but that call issues ZERO statements on this path. `validateBatchTransition` reads the workflow ONCE at :13 via `fetchTransitionsAndStatuses`, then builds `prefetched` at :19 carrying `{ ...workflow, ticketFields: new Map(rows.map(row => [row.id, row])), wipAlreadyChecked: true }` and passes it as the last argument. `assertTransitionAllowed` (projects-tickets-workflow-utils.ts:93) destructures `prefetched ?? await fetchTransitionsAndStatuses(...)`, so the workflow read is skipped, and its only other query — `readTicketRequiredFields` at :120 — is reached at :163 only when `prefetched?.ticketFields?.get(context.ticketId)` misses. The Map is keyed by every row `readMutationTickets` returned, and `changed` is a subset of those rows, so it never misses. The one remaining round trip is the capacity reservation at :18, which is hoisted ABOVE the loop and runs once for the whole batch. Statement count is therefore independent of batch size; pinned by build-ticket-mutation-bounds.spec.ts, which asserts one read for a 100-ticket batch."
     },
-    "/build/core/projects-custom-states.service.ts": {
+    "/build/core/custom-states/projects-custom-states.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "N+1 removed: the reorder is one UPDATE ... FROM (VALUES (id, order), ...) via common/db/bulk-update.ts. Executed against a real database (build.project_statuses, schema-qualified, reserved-word column) and asserted at one statement in projects-custom-states-bulk-reorder.spec.ts"
     },
@@ -127,11 +127,11 @@
       "verdict": "N+1-FIXED",
       "note": "Ticket 21 third pass, verified by reading: the ticket read is memoized in `ticketRows` above the loop and runs at most once for any number of matching transitions. The inner `for (const field of transition.requiredFields)` touches nothing but the row already in hand."
     },
-    "/build/core/projects-webhooks-dispatch.service.ts": {
+    "/build/core/webhooks/projects-webhooks-dispatch.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "Ticket 21 third pass, verified by reading: the deliveries insert is one multi-row INSERT ... RETURNING and the outbox emit is a single `OutboxWriter.emitMany` over `deliveries.map(...)`. The per-delivery `OutboxWriter.emit` the earlier note named is gone."
     },
-    "/build/core/projects-write.service.ts": {
+    "/build/core/project-crud/projects-write.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "Ticket 21 third pass: the member-removal reassignment grouped open tickets by target assignee and issued one `tx.update(tickets)` per group. It is now one `bulkUpdateFromValues`, so no statement is issued from inside a loop. Pinned by projects-write-reassign.spec.ts, which fails against the grouped shape."
     },

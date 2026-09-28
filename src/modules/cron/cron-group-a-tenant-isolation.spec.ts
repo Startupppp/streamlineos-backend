@@ -25,7 +25,7 @@ import { BillingWebhookHandler } from "../billing/core/billing-webhook.handler";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { ProjectsReportsService } from "../build/core/projects-reports.service";
+import { ProjectsReportsService } from "../build/core";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { HrWorkflowEngineService } from "../hr/workflows/hr-workflow-engine.service";
 import { HrEffectiveChangesService } from "../hr/core/hr-effective-changes.service";

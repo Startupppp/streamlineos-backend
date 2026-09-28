@@ -51,7 +51,7 @@ import { SignReportsService } from "./sign-reports.service";
 import { SignReportsController } from "./sign-reports.controller";
 import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
 import { QuotesModule } from "../quotes/quotes.module";
-import { ProjectsModule } from "../build/core/projects.module";
+import { ProjectsModule } from "../build/core";
 
 @Module({
   imports: [

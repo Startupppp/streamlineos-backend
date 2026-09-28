@@ -4,11 +4,11 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { systemActor } from "../../../../common/auth/system-actor";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
-import { ProjectsActivityService } from "../projects-activity.service";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
-import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
+import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { AccessService } from "../../../access/access.service";
 

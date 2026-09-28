@@ -20,7 +20,7 @@ import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { withSavepoint } from "../../../data-quality/savepoint";
-import { ProjectsActivityService } from "../projects-activity.service";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";

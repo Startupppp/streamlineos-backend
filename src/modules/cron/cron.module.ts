@@ -95,7 +95,7 @@ import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronAiUsageRetentionService } from "./cron-ai-usage-retention.service";
-import { ProjectsModule } from "../build/core/projects.module";
+import { ProjectsModule } from "../build/core";
 import { CrmModule } from "../crm/core/crm.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import { SessionsModule } from "../sessions/sessions.module";

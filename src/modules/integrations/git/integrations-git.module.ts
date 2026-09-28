@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { ProjectsModule } from "../../build/core/projects.module";
+import { ProjectsModule } from "../../build/core";
 import { IntegrationsGitController } from "./integrations-git.controller";
 import { IntegrationsGitService } from "./integrations-git.service";
 import { GitConnectionsController } from "./git-connections.controller";

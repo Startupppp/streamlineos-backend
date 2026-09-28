@@ -7,8 +7,10 @@ import { ModuleRef } from "@nestjs/core";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ProjectsTicketsService } from "../../../build/core/tickets/projects-tickets.service";
-import { ProjectsTicketCommentsService } from "../../../build/core/tickets/projects-ticket-comments.service";
+import {
+  ProjectsTicketCommentsService,
+  ProjectsTicketsService,
+} from "../../../build/core/tickets";
 import { findConfirmableAction } from ".";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 

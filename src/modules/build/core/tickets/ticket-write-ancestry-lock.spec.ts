@@ -5,8 +5,8 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 
-jest.mock("../project-access", () => ({
-  ...jest.requireActual("../project-access"),
+jest.mock("../project-crud/project-access", () => ({
+  ...jest.requireActual("../project-crud/project-access"),
   resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "MEMBER" }),
 }));
 

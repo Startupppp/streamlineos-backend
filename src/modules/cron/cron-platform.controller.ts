@@ -15,7 +15,7 @@ import { OwnershipTransfersService } from "../ownership/ownership-transfers.serv
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { AccountOrganizationIndexService } from "../organization/core/account-organization-index.service";
 import { CronWorkflowService } from "./cron-workflow.service";
-import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
+import { BuildDueSweepService } from "../build/core";
 import { CronLeaseService } from "./cron-lease.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {

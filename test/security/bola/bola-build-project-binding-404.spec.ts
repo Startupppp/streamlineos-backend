@@ -1,9 +1,11 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { IntakeService, ViewsService } from "src/modules/build/execution/workspace.service";
 import { ModulesService } from "src/modules/build/execution/modules.service";
-import { ProjectsCustomFieldsService } from "src/modules/build/core/projects-custom-fields.service";
-import { ProjectsWebhooksService } from "src/modules/build/core/projects-webhooks.service";
-import { ProjectsMembersService } from "src/modules/build/core/projects-members.service";
+import {
+  ProjectsCustomFieldsService,
+  ProjectsMembersService,
+  ProjectsWebhooksService,
+} from "src/modules/build/core";
 import type { Db } from "src/db/drizzle.module";
 import type { AccessService } from "src/modules/access/access.service";
 import type { CurrentUserContext } from "src/common/auth/backend-claims";

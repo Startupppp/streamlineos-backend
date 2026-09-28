@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
-import { ProjectsMembersService } from "./projects-members.service";
+import { ProjectsMembersService } from "./members/projects-members.service";
 import { ProjectsTicketsCreateService } from "./tickets/projects-tickets-create.service";
 import * as actorSeam from "../../../common/organization/organization-actor";
 import type { AccessService } from "../../access/access.service";
@@ -31,7 +31,7 @@ jest.mock("../../../common/organization/organization-actor", () => ({
   organizationActorHttpError: jest.fn(),
 }));
 
-jest.mock("./project-access", () => ({
+jest.mock("./project-crud/project-access", () => ({
   resolveProjectAssignableMemberships: jest.fn(),
   resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: null }),
 }));

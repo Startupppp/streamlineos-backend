@@ -6,7 +6,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import * as projectAccessSeam from "../core";
 
-jest.mock("../core/project-access", () => ({
+jest.mock("../core/project-crud/project-access", () => ({
   assertProjectAccess: jest.fn().mockResolvedValue(undefined),
   assertProjectInOrg: jest.fn().mockResolvedValue(undefined),
 }));

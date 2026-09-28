@@ -19,7 +19,7 @@ import { ExecutiveBriefService } from "./executive-brief.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiSummariesService } from "../../summaries/ai-summaries.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { ProjectsAnalyticsService } from "../../../build/core/projects-analytics.service";
+import { ProjectsAnalyticsService } from "../../../build/core";
 import { CrmSalesDashboardService } from "../../../crm/core/crm-sales-dashboard.service";
 import { SupportReportsService } from "../../../support/core/support-reports.service";
 

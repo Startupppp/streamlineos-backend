@@ -24,12 +24,12 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { NotificationsService } from "../../../notifications/notifications.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
-import { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
+import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { CreateTicketInput } from "../dto/projects.schemas";
-import { computeNextRunAt } from "../projects-recurrence.util";
-import { buildTicketHref, buildTicketKey } from "../build-app-paths";
+import { computeNextRunAt } from "../lib/projects-recurrence.util";
+import { buildTicketHref, buildTicketKey } from "../lib/build-app-paths";
 import { normalizeTicketType } from "./tickets-helpers";
 import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";

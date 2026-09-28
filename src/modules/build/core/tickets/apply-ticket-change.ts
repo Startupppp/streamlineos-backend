@@ -11,22 +11,22 @@ import type { CacheService } from "../../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { systemJobCovers } from "../../../../common/auth/principal";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
-import type { ProjectsActivityService } from "../projects-activity.service";
+import type { ProjectsActivityService } from "../activity/projects-activity.service";
 import type { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
-import type { ProjectsWebhooksDispatchService } from "../projects-webhooks-dispatch.service";
+import type { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import type { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
 import type { UpdateTicketInput } from "../dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
-import { computeNextRunAt } from "../projects-recurrence.util";
+import { computeNextRunAt } from "../lib/projects-recurrence.util";
 import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
 import { assertTransitionAllowed } from "./projects-tickets-workflow-utils";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 import type { AccessService } from "../../../access/access.service";
-import { buildTicketBoardHref } from "../build-app-paths";
+import { buildTicketBoardHref } from "../lib/build-app-paths";
 
 export interface ApplyTicketChangeDeps {
   readonly db: Db;

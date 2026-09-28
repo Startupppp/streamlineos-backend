@@ -10,6 +10,17 @@ import {
   ProjectsProvisionService,
   ProjectsQueryService,
   ProjectsWorkQueryService,
+  listProjectsSchema,
+  createProjectSchema,
+  createTicketSchema,
+  allWorkQuerySchema,
+  ticketsListQuerySchema,
+  projectListPageSchema,
+  type ListProjectsInput,
+  type CreateProjectInput,
+  type CreateTicketInput,
+  type AllWorkQuery,
+  type TicketsListQuery,
 } from "../build/core";
 import {
   ProjectsTicketsCreateService,
@@ -17,18 +28,6 @@ import {
   ProjectsTicketsService,
   ProjectsTicketSubresourcesService,
 } from "../build/core/tickets";
-import {
-  listProjectsSchema,
-  createProjectSchema,
-  createTicketSchema,
-  allWorkQuerySchema,
-  ticketsListQuerySchema,
-  type ListProjectsInput,
-  type CreateProjectInput,
-  type CreateTicketInput,
-  type AllWorkQuery,
-  type TicketsListQuery,
-} from "../build/core/dto/projects.schemas";
 import { agentCommentSchema, agentUpdateTicketSchema, type AgentCommentInput, type AgentUpdateTicketInput } from "./dto/agent-tokens.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
@@ -42,7 +41,6 @@ import {
   ticketRowSchema,
   updateTicketSchema,
 } from "./dto/agent-response.schemas";
-import { projectListPageSchema } from "../build/core/dto/build-core-response.schemas";
 import { z } from "zod";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();

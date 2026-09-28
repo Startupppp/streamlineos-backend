@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
-import { ProjectsReportsService } from "../build/core/projects-reports.service";
+import { ProjectsReportsService } from "../build/core";
 import { systemActor } from "../../common/auth/system-actor";
 
 // How many ACTIVE projects to snapshot per org per run.

@@ -6,11 +6,11 @@
  */
 
 import { NotFoundException } from "@nestjs/common";
-import { ProjectsReleasesService } from "./projects-releases.service";
-import { ProjectsLabelsService } from "./projects-labels.service";
-import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
+import { ProjectsReleasesService } from "./releases/projects-releases.service";
+import { ProjectsLabelsService } from "./tickets/projects-labels.service";
+import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";
 import { ProjectsTicketChecklistsService } from "./tickets/projects-ticket-checklists.service";
-import { ProjectsCustomStatesService } from "./projects-custom-states.service";
+import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";

@@ -6,8 +6,8 @@ jest.mock("./tickets/ticket-status.util", () => ({
   resolveValidTicketStatuses: jest.fn(),
 }));
 
-jest.mock("./project-access", () => ({
-  ...jest.requireActual("./project-access"),
+jest.mock("./project-crud/project-access", () => ({
+  ...jest.requireActual("./project-crud/project-access"),
   resolveProjectAccess: jest.fn(),
 }));
 
@@ -17,7 +17,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketsTransferService } from "./tickets/projects-tickets-transfer.service";
 import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
-import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { ProjectsWebhooksDispatchService } from "./webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "./automation/build-automation-runner.service";
 import type { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { NotificationsService } from "../../notifications/notifications.service";

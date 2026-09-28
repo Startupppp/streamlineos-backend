@@ -66,6 +66,35 @@ describe("listGrantsQuerySchema — new filter fields", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts grantId as a direct lookup filter, which strict mode rejected before it was declared", () => {
+    const result = listGrantsQuerySchema.safeParse({ limit: 20, grantId: "pcg-1" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.grantId).toBe("pcg-1");
+  });
+
+  it("rejects an empty grantId so a blank URL param is not a filter that matches nothing", () => {
+    expect(listGrantsQuerySchema.safeParse({ limit: 20, grantId: "" }).success).toBe(false);
+  });
+
+  it("coerces from and to into Date, following inboxQuerySchema rather than the bare-string updates schema", () => {
+    const result = listGrantsQuerySchema.safeParse({
+      limit: 20,
+      from: "2026-01-01",
+      to: "2026-12-31T23:59:59.999Z",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.from).toBeInstanceOf(Date);
+      expect(result.data.to).toBeInstanceOf(Date);
+      expect(result.data.from?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+    }
+  });
+
+  it("rejects an unparseable from so the service never builds a predicate around an Invalid Date", () => {
+    expect(listGrantsQuerySchema.safeParse({ limit: 20, from: "not-a-date" }).success).toBe(false);
+    expect(listGrantsQuerySchema.safeParse({ limit: 20, to: "not-a-date" }).success).toBe(false);
+  });
 });
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -88,6 +117,22 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
       ? sqlValues(record.value, seen)
       : []),
   ];
+}
+
+function sqlColumnNames(value: unknown, seen = new Set<object>(), found: string[] = []): string[] {
+  if (value === null || typeof value !== "object" || seen.has(value)) return found;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) sqlColumnNames(item, seen, found);
+    return found;
+  }
+  const record = value as { name?: unknown; table?: unknown; queryChunks?: unknown[] };
+  if (typeof record.name === "string" && record.table !== undefined) {
+    found.push(record.name);
+    return found;
+  }
+  if (record.queryChunks) sqlColumnNames(record.queryChunks, seen, found);
+  return found;
 }
 
 function makeListGrantsDb(): { db: Db; capturedWhere: jest.Mock } {
@@ -272,5 +317,147 @@ describe("listGrants — state filter", () => {
       { limit: 20, state: "active" },
     );
     expect(sqlValues(capturedWhere.mock.calls[0]?.[0])).toContain(OWNER_ORG);
+  });
+});
+
+describe("listGrants — grantId filter reaches the query, not just the schema", () => {
+  it("adds the grant id as a predicate value so an accepted grantId is not a silently dropped filter", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants(
+      { db, audit, loadMembership: jest.fn() },
+      OWNER_ORG,
+      { limit: 20, grantId: "pcg-target" },
+    );
+    expect(sqlValues(capturedWhere.mock.calls[0]?.[0])).toContain("pcg-target");
+  });
+
+  it("binds grantId to project_client_grant_id and not to any other column", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants(
+      { db, audit, loadMembership: jest.fn() },
+      OWNER_ORG,
+      { limit: 20, grantId: "pcg-target" },
+    );
+    expect(sqlColumnNames(capturedWhere.mock.calls[0]?.[0])).toContain("project_client_grant_id");
+  });
+
+  it("omits the grant id when grantId is absent, so the unfiltered list is unchanged", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants({ db, audit, loadMembership: jest.fn() }, OWNER_ORG, { limit: 20 });
+    expect(sqlValues(capturedWhere.mock.calls[0]?.[0])).not.toContain("pcg-target");
+  });
+
+  it("keeps the org predicate so grantId cannot fetch another tenant's grant by id", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants(
+      { db, audit, loadMembership: jest.fn() },
+      ATTACKER_ORG,
+      { limit: 20, grantId: "pcg-target" },
+    );
+    expect(sqlValues(capturedWhere.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+  });
+});
+
+describe("listGrants — from/to range reaches the query, not just the schema", () => {
+  const FROM = new Date("2026-01-01T00:00:00.000Z");
+  const TO = new Date("2026-06-30T23:59:59.000Z");
+
+  it("adds both range boundaries as predicate values so an accepted range is not a silently dropped filter", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants(
+      { db, audit, loadMembership: jest.fn() },
+      OWNER_ORG,
+      { limit: 20, from: FROM, to: TO },
+    );
+    const dates = sqlValues(capturedWhere.mock.calls[0]?.[0]).filter(
+      (v): v is Date => v instanceof Date,
+    );
+    expect(dates.map((d) => d.toISOString())).toContain(FROM.toISOString());
+    expect(dates.map((d) => d.toISOString())).toContain(TO.toISOString());
+  });
+
+  it("binds the range to created_at, the same column the keyset cursor orders by", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants(
+      { db, audit, loadMembership: jest.fn() },
+      OWNER_ORG,
+      { limit: 20, from: FROM },
+    );
+    expect(sqlColumnNames(capturedWhere.mock.calls[0]?.[0])).toContain("created_at");
+  });
+
+  it("applies from on its own without requiring to", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants(
+      { db, audit, loadMembership: jest.fn() },
+      OWNER_ORG,
+      { limit: 20, from: FROM },
+    );
+    const dates = sqlValues(capturedWhere.mock.calls[0]?.[0]).filter(
+      (v): v is Date => v instanceof Date,
+    );
+    expect(dates.map((d) => d.toISOString())).toContain(FROM.toISOString());
+    expect(dates.map((d) => d.toISOString())).not.toContain(TO.toISOString());
+  });
+
+  it("applies to on its own without requiring from", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants({ db, audit, loadMembership: jest.fn() }, OWNER_ORG, { limit: 20, to: TO });
+    const dates = sqlValues(capturedWhere.mock.calls[0]?.[0]).filter(
+      (v): v is Date => v instanceof Date,
+    );
+    expect(dates.map((d) => d.toISOString())).toContain(TO.toISOString());
+    expect(dates.map((d) => d.toISOString())).not.toContain(FROM.toISOString());
+  });
+
+  it("adds no Date boundary when neither from nor to is supplied, so the base query is unchanged", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants({ db, audit, loadMembership: jest.fn() }, OWNER_ORG, { limit: 20 });
+    expect(sqlValues(capturedWhere.mock.calls[0]?.[0]).some((v) => v instanceof Date)).toBe(false);
+  });
+
+  it("keeps the org predicate so a date range cannot widen the visible tenant", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants(
+      { db, audit, loadMembership: jest.fn() },
+      ATTACKER_ORG,
+      { limit: 20, from: FROM, to: TO },
+    );
+    expect(sqlValues(capturedWhere.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+  });
+
+  it("composes the range with state, permission and q rather than replacing them", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants(
+      { db, audit, loadMembership: jest.fn() },
+      OWNER_ORG,
+      {
+        limit: 20,
+        from: FROM,
+        to: TO,
+        grantId: "pcg-target",
+        state: "active",
+        permission: "canViewMilestones",
+        q: "alice",
+      },
+    );
+    const values = sqlValues(capturedWhere.mock.calls[0]?.[0]);
+    expect(values).toContain(OWNER_ORG);
+    expect(values).toContain("pcg-target");
+    expect(values).toContain("ACTIVE");
+    expect(values).toContain(true);
+    expect(values.some((v) => typeof v === "string" && v.includes("alice"))).toBe(true);
+    expect(values.filter((v): v is Date => v instanceof Date).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("listGrants — the column assertions above are not vacuous", () => {
+  it("names neither created_at nor project_client_grant_id in the where predicate when no range and no grantId are supplied", async () => {
+    const { db, capturedWhere } = makeListGrantsDb();
+    await listGrants({ db, audit, loadMembership: jest.fn() }, OWNER_ORG, { limit: 20 });
+    const columns = sqlColumnNames(capturedWhere.mock.calls[0]?.[0]);
+    expect(columns).toContain("organization_id");
+    expect(columns).not.toContain("created_at");
+    expect(columns).not.toContain("project_client_grant_id");
   });
 });

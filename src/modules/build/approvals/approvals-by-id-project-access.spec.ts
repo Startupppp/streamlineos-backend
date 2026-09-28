@@ -12,7 +12,7 @@ import { ChatMessagesService } from "../../chat/chat-messages.service";
 import { assertProjectAccess } from "../core";
 import { ApprovalsService } from "./approvals.service";
 
-jest.mock("../core/project-access", () => ({ assertProjectAccess: jest.fn() }));
+jest.mock("../core/project-crud/project-access", () => ({ assertProjectAccess: jest.fn() }));
 
 const ORG_ID = "org-1";
 const PROJECT_ID = 7;

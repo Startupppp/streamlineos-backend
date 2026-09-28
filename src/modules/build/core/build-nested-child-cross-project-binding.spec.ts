@@ -6,9 +6,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { projectStatuses, projectWebhooks, tickets } from "../../../db/schema";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
-import { ProjectsCustomStatesService } from "./projects-custom-states.service";
-import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
-import { ProjectsWebhooksService } from "./projects-webhooks.service";
+import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
+import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";
+import { ProjectsWebhooksService } from "./webhooks/projects-webhooks.service";
 import type { UpdateCustomFieldInput } from "./dto/custom-fields.schemas";
 import type { UpdateCustomStateInput } from "./dto/projects.schemas";
 

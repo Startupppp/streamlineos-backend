@@ -26,7 +26,7 @@ import {
   type PlannedMedia,
 } from "../feedbucket-media-transforms";
 import type { NotificationsService } from "../../notifications/notifications.service";
-import type { ProjectsTicketsCreateService } from "../../build/core/tickets/projects-tickets-create.service";
+import type { ProjectsTicketsCreateService } from "../../build/core/tickets";
 import {
   runInTenantTransaction,
   runInNewTenantTransaction,
