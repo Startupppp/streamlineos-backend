@@ -68,8 +68,8 @@ describe("KbPagesService.validatePublicAttachment", () => {
     );
 
     const svc = makeService();
-    const key = await svc.validatePublicAttachment("good-token", "org1/image.png");
-    expect(key).toBe("org1/image.png");
+    const grant = await svc.validatePublicAttachment("good-token", "org1/image.png");
+    expect(grant.fileKey).toBe("org1/image.png");
   });
 
   it("passes the orgId from the page row to runInNewTenantTransaction", async () => {

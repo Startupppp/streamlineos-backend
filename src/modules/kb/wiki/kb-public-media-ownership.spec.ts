@@ -1,7 +1,10 @@
 import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { KbPagePublicService } from "./kb-page-public.service";
+import { hashPublicToken } from "./kb-public-token";
 
 jest.mock("../../../common/tenant/with-public-token", () => ({
   withPublicToken: jest.fn(),
@@ -38,6 +41,12 @@ const runInNewTenantTransactionMock = runInNewTenantTransaction as jest.MockedFu
   typeof runInNewTenantTransaction
 >;
 
+const dialect = new PgDialect();
+
+function renderedQuery(condition: unknown): { sql: string; params: unknown[] } {
+  return dialect.sqlToQuery(condition as SQL);
+}
+
 function makeService(): KbPagePublicService {
   return new KbPagePublicService({} as never, {} as never, {} as never, {} as never);
 }
@@ -68,7 +77,7 @@ describe("KbPagePublicService.validatePublicAttachment — page-id key-ownership
     );
 
     const result = await makeService().validatePublicAttachment("token-a", "org-tenant-a/img.png");
-    expect(result).toBe("org-tenant-a/img.png");
+    expect(result.fileKey).toBe("org-tenant-a/img.png");
 
     const bound = sqlValues((capturedOpts as { where?: unknown })?.where);
     expect(bound).toContain(PAGE_A.id);
@@ -141,5 +150,77 @@ describe("KbPagePublicService.validatePublicAttachment — page-id key-ownership
     await expect(
       makeService().validatePublicAttachment("token-a", "org-tenant-a/nonexistent.png"),
     ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("KbPagePublicService.validatePublicAttachment — page-level grant predicates mirror getPublicPage", () => {
+  const RAW_TOKEN = "grant-binding-probe-token-001";
+  const EXPECTED_HASH = hashPublicToken(RAW_TOKEN);
+
+  let capturedPageWhere: unknown;
+
+  beforeEach(() => {
+    capturedPageWhere = undefined;
+    withPublicTokenMock.mockImplementation(async (_db, _token, fn) =>
+      fn({
+        query: {
+          kbPages: {
+            findFirst: async (opts: { where?: unknown }) => {
+              capturedPageWhere = opts.where;
+              return PAGE_A;
+            },
+          },
+        },
+      } as never),
+    );
+    runInNewTenantTransactionMock.mockImplementation(async (_db, _orgId, fn) =>
+      fn({
+        query: {
+          kbPageAttachments: {
+            findFirst: async () => ({ fileKey: "org-tenant-a/img.png" }),
+          },
+        },
+      } as never),
+    );
+  });
+
+  it("positive control: returns the file key when token hash, visibility, status and soft-delete all pass so the guard assertions below are not vacuous", async () => {
+    const result = await makeService().validatePublicAttachment(RAW_TOKEN, "org-tenant-a/img.png");
+    expect(result.fileKey).toBe("org-tenant-a/img.png");
+    expect(capturedPageWhere).toBeDefined();
+  });
+
+  it("passes the hash of the raw token to withPublicToken so the RLS GUC matches the page-lookup predicate and the raw bearer credential never reaches the database", async () => {
+    await makeService().validatePublicAttachment(RAW_TOKEN, "org-tenant-a/img.png");
+    expect(withPublicTokenMock).toHaveBeenCalledWith(expect.anything(), EXPECTED_HASH, expect.any(Function));
+    expect(withPublicTokenMock).not.toHaveBeenCalledWith(expect.anything(), RAW_TOKEN, expect.any(Function));
+  });
+
+  it("binds the token hash into the page WHERE clause so revoking the share (which nulls public_token_hash) also blocks attachment access for the same token", async () => {
+    await makeService().validatePublicAttachment(RAW_TOKEN, "org-tenant-a/img.png");
+    const q = renderedQuery(capturedPageWhere);
+    expect(q.params).toContain(EXPECTED_HASH);
+    expect(q.params).not.toContain(RAW_TOKEN);
+  });
+
+  it("the page WHERE clause requires visibility=public so clearing the share to private or org also blocks attachment access through the same token", async () => {
+    await makeService().validatePublicAttachment(RAW_TOKEN, "org-tenant-a/img.png");
+    const q = renderedQuery(capturedPageWhere);
+    expect(q.sql).toMatch(/visibility/);
+    expect(q.params).toContain("public");
+  });
+
+  it("the page WHERE clause requires status=published so draft and archived pages cannot serve their attachments through a public link", async () => {
+    await makeService().validatePublicAttachment(RAW_TOKEN, "org-tenant-a/img.png");
+    const q = renderedQuery(capturedPageWhere);
+    expect(q.sql).toMatch(/status/);
+    expect(q.params).toContain("published");
+  });
+
+  it("the page WHERE clause requires deleted_at IS NULL so soft-deleted pages cannot serve their attachments after deletion", async () => {
+    await makeService().validatePublicAttachment(RAW_TOKEN, "org-tenant-a/img.png");
+    const q = renderedQuery(capturedPageWhere);
+    expect(q.sql).toMatch(/deleted_at/);
+    expect(q.sql).toMatch(/is null/);
   });
 });

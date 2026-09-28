@@ -188,7 +188,7 @@ export class KbPagePublicService {
   async validatePublicAttachment(
     token: string,
     fileKey: string,
-  ): Promise<string> {
+  ): Promise<{ fileKey: string; orgId: string }> {
     const tokenHash = hashPublicToken(token);
     const page = await withPublicToken(this.db, tokenHash, (tx) =>
       tx.query.kbPages.findFirst({
@@ -217,6 +217,6 @@ export class KbPagePublicService {
         }),
     );
     if (!attachment) throw new NotFoundException("Attachment not found");
-    return attachment.fileKey;
+    return { fileKey: attachment.fileKey, orgId: page.orgId };
   }
 }

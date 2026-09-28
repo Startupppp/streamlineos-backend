@@ -2,10 +2,10 @@ import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { HttpException, NotFoundException } from "@nestjs/common";
-import { KbPublicPagesController } from "./kb-public-pages.controller";
+import { KbPublicPagesController, KB_PUBLIC_MEDIA_URL_TTL_SECONDS } from "./kb-public-pages.controller";
 import { KbPagePublicService } from "./kb-page-public.service";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
-import { APP_CONFIG } from "../../../config/config.module";
+import { StorageService } from "../../storage/storage.service";
 
 describe("KbPublicPagesController (e2e)", () => {
   let app: INestApplication;
@@ -37,7 +37,7 @@ describe("KbPublicPagesController (e2e)", () => {
       providers: [
         { provide: KbPagePublicService, useValue: mockPagesService },
         { provide: RateLimitService, useValue: mockRateLimit },
-        { provide: APP_CONFIG, useValue: { NEXT_PUBLIC_R2_PUBLIC_URL: "" } },
+        { provide: StorageService, useValue: { getFileUrl: jest.fn() } },
       ],
     }).compile();
 
@@ -98,39 +98,71 @@ describe("KbPublicPagesController (e2e)", () => {
 });
 
 describe("KbPublicPagesController.getPublicMedia", () => {
-  const R2_BASE = "https://cdn.example.com";
+  const SIGNED_URL = "https://bucket.example.com/org1/fileA.png?X-Amz-Expires=300&X-Amz-Signature=abc";
   const VALID_TOKEN = "pagetokenA";
   const FILE_A_KEY = "org1/fileA.png";
+  const ORG_ID = "org-1";
 
   let mockValidateAttachment: jest.Mock;
   let mockRateLimitCheck: jest.Mock;
+  let mockGetFileUrl: jest.Mock;
   let controller: KbPublicPagesController;
 
   beforeEach(() => {
-    mockValidateAttachment = jest.fn(async () => FILE_A_KEY);
+    mockValidateAttachment = jest.fn(async () => ({ fileKey: FILE_A_KEY, orgId: ORG_ID }));
     mockRateLimitCheck = jest.fn(async () => ({ allowed: true }));
+    mockGetFileUrl = jest.fn(async () => SIGNED_URL);
     controller = new KbPublicPagesController(
       { validatePublicAttachment: mockValidateAttachment } as never,
       { check: mockRateLimitCheck } as never,
-      { NEXT_PUBLIC_R2_PUBLIC_URL: R2_BASE } as never,
+      { getFileUrl: mockGetFileUrl } as never,
     );
   });
 
   const fakeReq = () => ({ ip: "1.2.3.4", headers: {} as Record<string, string> });
 
-  it("issues a 302 redirect to the R2 base URL with the file key validated by the service", async () => {
+  it("redirects to a signed, expiring storage URL rather than a permanent public object URL, so revoking the share actually revokes its attachments instead of leaving every URL a client already holds valid forever", async () => {
     const redirect = jest.fn();
+
     await controller.getPublicMedia(VALID_TOKEN, FILE_A_KEY, fakeReq(), { redirect } as never);
-    expect(redirect).toHaveBeenCalledWith(302, `${R2_BASE}/${FILE_A_KEY}`);
+
+    expect(redirect).toHaveBeenCalledWith(302, SIGNED_URL);
+    expect(mockGetFileUrl).toHaveBeenCalledTimes(1);
   });
 
-  it("throws NotFoundException without redirecting when the service rejects the key — positive control is the preceding test", async () => {
+  it("signs the URL with a bounded lifetime, because an unbounded one reintroduces the permanent-URL defect under a different name", async () => {
+    await controller.getPublicMedia(VALID_TOKEN, FILE_A_KEY, fakeReq(), { redirect: jest.fn() } as never);
+
+    const [, , expiresIn] = mockGetFileUrl.mock.calls[0] as unknown[];
+    expect(typeof expiresIn).toBe("number");
+    expect(expiresIn as number).toBeGreaterThan(0);
+    expect(expiresIn as number).toBeLessThanOrEqual(KB_PUBLIC_MEDIA_URL_TTL_SECONDS);
+  });
+
+  it("signs against the tenant that owns the page rather than any org derived from the client-supplied key, so a key naming another tenant cannot be signed under that tenant's placement", async () => {
+    await controller.getPublicMedia(VALID_TOKEN, "org-other/file.png", fakeReq(), { redirect: jest.fn() } as never);
+
+    const [orgId, fileKey] = mockGetFileUrl.mock.calls[0] as unknown[];
+    expect(orgId).toBe(ORG_ID);
+    expect(fileKey).toBe(FILE_A_KEY);
+  });
+
+  it("marks the signing call preauthorized, which is what lets the share token stand in for a session while still leaving the storage quarantine check in force for an infected object", async () => {
+    await controller.getPublicMedia(VALID_TOKEN, FILE_A_KEY, fakeReq(), { redirect: jest.fn() } as never);
+
+    const options = (mockGetFileUrl.mock.calls[0] as unknown[])[4] as { preauthorized?: boolean };
+    expect(options.preauthorized).toBe(true);
+  });
+
+  it("throws NotFoundException without signing anything when the service rejects the key — positive control is the redirect test above", async () => {
     mockValidateAttachment.mockRejectedValue(new NotFoundException("Attachment not found"));
     const redirect = jest.fn();
+
     await expect(
       controller.getPublicMedia(VALID_TOKEN, "other/file.png", fakeReq(), { redirect } as never),
     ).rejects.toThrow(NotFoundException);
     expect(redirect).not.toHaveBeenCalled();
+    expect(mockGetFileUrl).not.toHaveBeenCalled();
   });
 
   it("throws NotFoundException without calling the service when the token fails the alphanumeric-hyphen format check", async () => {
@@ -165,24 +197,13 @@ describe("KbPublicPagesController.getPublicMedia", () => {
     expect(redirect).not.toHaveBeenCalled();
   });
 
-  it("throws NotFoundException without redirecting when the R2 base URL is absent from configuration", async () => {
-    const noR2 = new KbPublicPagesController(
-      { validatePublicAttachment: mockValidateAttachment } as never,
-      { check: mockRateLimitCheck } as never,
-      { NEXT_PUBLIC_R2_PUBLIC_URL: "" } as never,
-    );
-    const redirect = jest.fn();
-    await expect(
-      noR2.getPublicMedia(VALID_TOKEN, FILE_A_KEY, fakeReq(), { redirect } as never),
-    ).rejects.toThrow(NotFoundException);
-    expect(redirect).not.toHaveBeenCalled();
-  });
-
-  it("uses the file key returned by the service in the redirect URL, not the raw client-supplied key", async () => {
+  it("signs the file key returned by the service, not the raw client-supplied key", async () => {
     const dbKey = "org1/canonical-db-key.png";
-    mockValidateAttachment.mockResolvedValue(dbKey);
-    const redirect = jest.fn();
-    await controller.getPublicMedia(VALID_TOKEN, "any-client-value", fakeReq(), { redirect } as never);
-    expect(redirect).toHaveBeenCalledWith(302, `${R2_BASE}/${dbKey}`);
+    mockValidateAttachment.mockResolvedValue({ fileKey: dbKey, orgId: ORG_ID });
+
+    await controller.getPublicMedia(VALID_TOKEN, "any-client-value", fakeReq(), { redirect: jest.fn() } as never);
+
+    const [, fileKey] = mockGetFileUrl.mock.calls[0] as unknown[];
+    expect(fileKey).toBe(dbKey);
   });
 });

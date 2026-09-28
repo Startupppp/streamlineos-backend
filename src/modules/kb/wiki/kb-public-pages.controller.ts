@@ -1,4 +1,4 @@
-﻿import { Controller, Get, HttpException, HttpStatus, Inject, NotFoundException, Param, Query, Res, Request } from "@nestjs/common";
+import { Controller, Get, HttpException, HttpStatus, NotFoundException, Param, Query, Res, Request } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
 import { Public } from "../../../common/auth/public.decorator";
@@ -8,8 +8,7 @@ import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { resolveClientIpOr } from "../../../common/http/client-ip";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { kbPublicPageSchema } from "./dto/kb-wiki-response.schemas";
-import { APP_CONFIG } from "../../../config/config.module";
-import type { AppConfig } from "../../../config/env.validation";
+import { StorageService } from "../../storage/storage.service";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
@@ -21,13 +20,15 @@ const mediaQuerySchema = z.object({ key: z.string().min(1).max(1024) }).strict()
 
 const kbPublicMediaBrokerSchema = z.object({ redirected: z.literal(true) });
 
+export const KB_PUBLIC_MEDIA_URL_TTL_SECONDS = 300;
+
 @Public()
 @Controller("public/wiki")
 export class KbPublicPagesController {
   constructor(
     private readonly pages: KbPagePublicService,
     private readonly rateLimit: RateLimitService,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly storage: StorageService,
   ) {}
 
   @Get(":token")
@@ -67,9 +68,14 @@ export class KbPublicPagesController {
     if (!parsedToken.success) throw new NotFoundException("Page not found");
     const parsedKey = mediaKeySchema.safeParse(key);
     if (!parsedKey.success) throw new NotFoundException("Attachment not found");
-    const fileKey = await this.pages.validatePublicAttachment(parsedToken.data, parsedKey.data);
-    const r2Base = (this.config.NEXT_PUBLIC_R2_PUBLIC_URL ?? "").replace(/\/$/, "");
-    if (!r2Base) throw new NotFoundException("Attachment not found");
-    res.redirect(302, `${r2Base}/${fileKey}`);
+    const grant = await this.pages.validatePublicAttachment(parsedToken.data, parsedKey.data);
+    const signedUrl = await this.storage.getFileUrl(
+      grant.orgId,
+      grant.fileKey,
+      KB_PUBLIC_MEDIA_URL_TTL_SECONDS,
+      undefined,
+      { preauthorized: true },
+    );
+    res.redirect(302, signedUrl);
   }
 }
