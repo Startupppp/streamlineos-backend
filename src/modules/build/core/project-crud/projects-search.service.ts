@@ -67,7 +67,11 @@ export function orgTicketSearchQuery(
     .from(tickets)
     .innerJoin(
       projects,
-      and(eq(tickets.projectId, projects.id), eq(projects.orgId, tickets.orgId)),
+      and(
+        eq(tickets.projectId, projects.id),
+        eq(projects.orgId, tickets.orgId),
+        isNull(projects.deletedAt),
+      ),
     )
     .where(
       and(

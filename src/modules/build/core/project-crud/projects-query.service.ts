@@ -250,7 +250,7 @@ export class ProjectsQueryService {
           projectTeamMembers,
           and(eq(projectTeamMembers.orgId, projectMembers.orgId), eq(projectTeamMembers.membershipId, projectMembers.membershipId)),
         )
-        .innerJoin(projectTeams, and(eq(projectTeams.orgId, projectTeamMembers.orgId), eq(projectTeams.id, projectTeamMembers.teamId)))
+        .innerJoin(projectTeams, and(eq(projectTeams.orgId, projectTeamMembers.orgId), eq(projectTeams.id, projectTeamMembers.teamId), isNull(projectTeams.deletedAt)))
         .where(and(eq(projectMembers.orgId, orgId), inArray(projectMembers.projectId, projectIds)))
         .groupBy(projectMembers.projectId, projectTeams.name),
     ]);

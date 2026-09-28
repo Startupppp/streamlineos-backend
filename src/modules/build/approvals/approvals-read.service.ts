@@ -69,7 +69,7 @@ export class ApprovalsReadService {
         decidedAt: projectApprovals.decidedAt,
       })
       .from(projectApprovals)
-      .innerJoin(projects, eq(projects.id, projectApprovals.projectId))
+      .innerJoin(projects, and(eq(projects.id, projectApprovals.projectId), isNull(projects.deletedAt)))
       .where(
         and(
           pendingApprovalsForActorCondition(orgId, membershipId),

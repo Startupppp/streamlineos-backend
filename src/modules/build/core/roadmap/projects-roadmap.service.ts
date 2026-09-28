@@ -289,6 +289,7 @@ export class ProjectsRoadmapService {
           and(
             eq(projects.orgId, orgId),
             eq(projects.managedProductId, query.managedProductId),
+            isNull(projects.deletedAt),
           ),
         );
       conditions.push(inArray(roadmapItems.projectId, sub));

@@ -208,7 +208,7 @@ export class WhiteboardsService {
         projectName: projects.name,
       })
       .from(projectWhiteboards)
-      .innerJoin(projects, eq(projects.id, projectWhiteboards.projectId))
+      .innerJoin(projects, and(eq(projects.id, projectWhiteboards.projectId), isNull(projects.deletedAt)))
       .leftJoin(
         projectWhiteboardShares,
         and(
