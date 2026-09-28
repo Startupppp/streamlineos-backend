@@ -21,9 +21,8 @@ import { articleSpacePredicate, KbCandidateService, kbPageCoreProjection } from 
 import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { AccessService } from "../../access/access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
-import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { articleOwnerScope, articleOwnerScopeFilter } from "./kb-article-owner-scope";
+import { articleOwnerScope, resolveArticleOwnerFilter } from "./kb-article-owner-scope";
 import { encodeSearchCursor, decodeSearchCursor, searchScopeTag } from "./kb-page-search-cursor";
 
 export const KB_SNIPPET_CONTENT_CAP = 500;
@@ -57,8 +56,7 @@ export class KbSearchService {
   ) {}
 
   async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL> {
-    const read = await resolveKbArticlesViewScope(this.scopes, user);
-    return articleOwnerScopeFilter(read, user);
+    return resolveArticleOwnerFilter(this.scopes, user);
   }
 
   async aclCacheOutcome(user: CurrentUserContext): Promise<"hit" | "miss" | "bypass"> {

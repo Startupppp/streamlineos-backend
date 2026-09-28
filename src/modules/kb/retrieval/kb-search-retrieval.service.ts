@@ -26,10 +26,9 @@ import {
 import { AccessService } from "../../access/access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
-import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import {
   articleOwnerScope,
-  articleOwnerScopeFilter,
+  resolveArticleOwnerFilter,
 } from "./kb-article-owner-scope";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import {
@@ -132,8 +131,7 @@ export class KbSearchRetrievalService {
   }
 
   async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL> {
-    const read = await resolveKbArticlesViewScope(this.scopes, user);
-    return articleOwnerScopeFilter(read, user);
+    return resolveArticleOwnerFilter(this.scopes, user);
   }
 
   private chunkKeywordRank(text: string): SQL<number> {
