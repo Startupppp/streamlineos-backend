@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -227,10 +227,11 @@ export class ProjectsTemplatesService {
     );
 
     if (template.tickets.length > 0) {
-      const [{ value: maxTN }] = await this.db
-        .select({ value: count(tickets.id) })
+      const [maxRow] = await this.db
+        .select({ value: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
         .from(tickets)
-        .where(eq(tickets.projectId, project.id));
+        .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, project.id)));
+      const maxTN = maxRow?.value ?? 0;
 
       await this.db.insert(tickets).values(
         template.tickets.map((t, i) => ({
