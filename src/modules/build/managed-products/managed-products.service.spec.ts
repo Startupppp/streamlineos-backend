@@ -655,3 +655,96 @@ describe("ManagedProductsService", () => {
     });
   });
 });
+
+describe("ManagedProductsService.getManagedProduct — resolved owner projection", () => {
+  let svc: ManagedProductsService;
+  let select: jest.Mock;
+
+  function productChain(rows: unknown[]) {
+    return {
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue(rows),
+        }),
+      }),
+    };
+  }
+
+  function ownerJoinChain(rows: unknown[]) {
+    return {
+      from: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue(rows),
+          }),
+        }),
+      }),
+    };
+  }
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    select = jest.fn();
+    const module = await Test.createTestingModule({
+      providers: [
+        ManagedProductsService,
+        {
+          provide: DRIZZLE,
+          useValue: { select, insert: jest.fn(), update: jest.fn(), query: {} },
+        },
+        { provide: AuditService, useValue: mockAudit },
+      ],
+    }).compile();
+    svc = module.get(ManagedProductsService);
+  });
+
+  it("returns a named owner so the page can render a person instead of the raw ownerId FE-85 forbids on screen", async () => {
+    select
+      .mockReturnValueOnce(productChain([makeProduct({ ownerId: "user-7", ownerMembershipId: 9 })]))
+      .mockReturnValueOnce(
+        ownerJoinChain([
+          {
+            id: "user-7",
+            firstName: "Ada",
+            lastName: "Lovelace",
+            email: "ada@example.com",
+            image: null,
+          },
+        ]),
+      );
+
+    await expect(svc.getManagedProduct(ORG_ID, 1)).resolves.toMatchObject({
+      owner: {
+        id: "user-7",
+        firstName: "Ada",
+        lastName: "Lovelace",
+        email: "ada@example.com",
+      },
+    });
+  });
+
+  it("returns owner null without a second query when no owner membership is set", async () => {
+    select.mockReturnValueOnce(productChain([makeProduct()]));
+
+    await expect(svc.getManagedProduct(ORG_ID, 1)).resolves.toMatchObject({
+      owner: null,
+    });
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes the owner lookup to the caller org so a cross-tenant membership id cannot name a foreign user", async () => {
+    select
+      .mockReturnValueOnce(productChain([makeProduct({ ownerMembershipId: 9 })]))
+      .mockReturnValueOnce(ownerJoinChain([]));
+
+    await expect(svc.getManagedProduct(ORG_ID, 1)).resolves.toMatchObject({
+      owner: null,
+    });
+    const joinChain = select.mock.results[1]?.value as {
+      from: jest.Mock;
+    };
+    const where = joinChain.from.mock.results[0]?.value.innerJoin.mock.results[0]?.value
+      .where as jest.Mock;
+    expect(renderSql(where.mock.calls[0]?.[0])).toMatch(/org_id/);
+  });
+});
