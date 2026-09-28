@@ -10,7 +10,6 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 const ORG = "org-vector";
 const OTHER_ORG = "org-intruder";
 const VECTOR = "[0.1,0.2]";
-const PRINCIPAL = { userId: "user-1", membershipId: 1, roleSlugs: ["MEMBER"] };
 
 const dialect = new PgDialect();
 
@@ -82,7 +81,7 @@ describe("KB vector candidate retrieval binds the tenant in the predicate", () =
   it("articleVectorCandidates binds the caller's org on the chunk AND the article side", async () => {
     const { service, wheres } = makeHarness();
 
-    await service.articleVectorCandidates(ORG, [1], VECTOR, 4, PRINCIPAL, null);
+    await service.articleVectorCandidates(ORG, [1], VECTOR, 4, null, null);
 
     expect(wheres).toHaveLength(1);
     const where = wheres[0];
@@ -108,7 +107,7 @@ describe("KB vector candidate retrieval binds the tenant in the predicate", () =
   it("the bound value follows the argument, so the predicate is not a constant that happens to match", async () => {
     const { service, wheres } = makeHarness();
 
-    await service.articleVectorCandidates(OTHER_ORG, [1], VECTOR, 4, PRINCIPAL, null);
+    await service.articleVectorCandidates(OTHER_ORG, [1], VECTOR, 4, null, null);
 
     const where = wheres[0];
     expect(boundOrgIds(where, "kb_article_chunks")).toEqual([OTHER_ORG]);

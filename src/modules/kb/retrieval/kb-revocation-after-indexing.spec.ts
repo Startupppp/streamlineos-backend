@@ -104,6 +104,7 @@ const boundValues = (wheres: SQL[]): unknown[] => wheres.flatMap((w) => render(w
 
 const makeKbAuth = (standing: KbActorStanding) => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
   resolveStanding: jest.fn().mockResolvedValue(standing),
   assertPageAccess: jest
     .fn()

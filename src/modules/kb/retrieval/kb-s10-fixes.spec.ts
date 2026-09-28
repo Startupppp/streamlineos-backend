@@ -68,6 +68,7 @@ describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () =
     };
     const auth = {
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
       resolveStanding: jest.fn().mockResolvedValue({
         orgId: "org-fix1",
         userId: "u1",

@@ -45,6 +45,7 @@ function expectStrictFence(rendered: string): void {
 
 const makeKbAuth = (spaceIds = [1]) => ({
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
   resolveStanding: jest.fn().mockResolvedValue({
     orgId: "org-1",
     userId: "user-1",

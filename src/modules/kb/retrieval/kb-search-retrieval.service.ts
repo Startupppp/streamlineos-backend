@@ -45,7 +45,12 @@ import type { KbPageStatus } from "../core/collection/knowledge-collection.types
 
 export { normalizeEmbeddableQuery };
 
-export type RetrievalChannelKind = "ok" | "empty" | "disabled" | "degraded" | "failed";
+export type RetrievalChannelKind =
+  | "ok"
+  | "empty"
+  | "disabled"
+  | "degraded"
+  | "failed";
 
 export interface RetrievalChannelOutcome<T> {
   kind: RetrievalChannelKind;
@@ -186,12 +191,10 @@ export class KbSearchRetrievalService {
       const standing = await this.auth.resolveStanding(user);
       const ids = standing.accessibleSpaceIds;
 
-      const principal = {
-        userId: standing.userId,
-        membershipId: standing.membershipId,
-        roleSlugs: standing.roleSlugs,
-      };
-      const ownerFilter = await this.articleOwnerFilterFor(user);
+      const [ownerFilter, restriction] = await Promise.all([
+        this.articleOwnerFilterFor(user),
+        this.auth.articleRestrictionPredicate(user),
+      ]);
 
       const pool = Math.max(limit * 3, limit);
 
@@ -212,7 +215,7 @@ export class KbSearchRetrievalService {
             ids,
             q,
             pool,
-            principal,
+            restriction,
             ownerFilter,
             spaceId,
           ),
@@ -222,7 +225,7 @@ export class KbSearchRetrievalService {
                 ids,
                 vectorLiteral,
                 pool,
-                principal,
+                restriction,
                 ownerFilter,
                 spaceId,
               )
@@ -258,7 +261,8 @@ export class KbSearchRetrievalService {
         lists.push(articleKeyword.map((id) => `a:${id}`));
       if (articleVector.length > 0)
         lists.push(articleVector.map((id) => `a:${id}`));
-      if (pageKeyword.length > 0) lists.push(pageKeyword.map((id) => `p:${id}`));
+      if (pageKeyword.length > 0)
+        lists.push(pageKeyword.map((id) => `p:${id}`));
       if (pageVector.length > 0) lists.push(pageVector.map((id) => `p:${id}`));
 
       const fused = this.candidates.fuseKeys(lists).slice(0, limit);

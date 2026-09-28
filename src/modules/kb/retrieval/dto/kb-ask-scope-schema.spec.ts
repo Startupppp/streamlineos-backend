@@ -1,4 +1,7 @@
-import { askSchema } from "./kb-ai.schemas";
+import { askSchema, KB_ASK_STATUS_SCOPES } from "./kb-ai.schemas";
+import { KB_PAGE_STATUSES } from "../../core/collection/knowledge-collection.types";
+import { kbScopeExcludesLinkedDocuments } from "../kb-ask-context";
+import type { AskInput } from "./kb-ai.schemas";
 
 describe("askSchema source scope", () => {
   it("rejects an empty sourceIds array, because an empty IN list is dropped downstream and silently widens the search to every accessible source", () => {
@@ -83,15 +86,29 @@ describe("askSchema status scope", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("accepts every status the schema declares so no valid status is accidentally excluded", () => {
-    const statuses = ["draft", "in_review", "published", "archived"] as const;
-    for (const status of statuses) {
+  it("accepts every status Ask can actually retrieve, so no scope the candidate queries could honour is accidentally excluded", () => {
+    for (const status of KB_ASK_STATUS_SCOPES) {
       const parsed = askSchema.safeParse({
         question: "what is the leave policy",
         status,
       });
       expect(parsed.success).toBe(true);
     }
+  });
+
+  it("rejects an archived scope outright rather than accepting it and returning nothing, because the candidate queries exclude archived unconditionally and a contract that accepts a value it can never honour reports an empty knowledge base instead of a bad request", () => {
+    const parsed = askSchema.safeParse({
+      question: "what is the leave policy",
+      status: "archived",
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("offers exactly the page statuses minus archived, so adding a lifecycle state to the page catalogue fails here until someone decides whether Ask should retrieve it", () => {
+    expect([...KB_ASK_STATUS_SCOPES]).toEqual(
+      KB_PAGE_STATUSES.filter((s) => s !== "archived"),
+    );
   });
 
   it("accepts an omitted status, because omitting the scope is how a caller asks across all lifecycle states they can read", () => {
@@ -116,5 +133,29 @@ describe("askSchema status scope", () => {
       unknownField: true,
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("kbScopeExcludesLinkedDocuments — ownerMembershipId and status cause exclusion", () => {
+  const baseInput: AskInput = { question: "what is the leave policy" };
+
+  it("returns true when ownerMembershipId is set so the linked-documents channel is skipped rather than returning unscoped company documents alongside owner-scoped KB pages", () => {
+    expect(kbScopeExcludesLinkedDocuments({ ...baseInput, ownerMembershipId: 7 })).toBe(true);
+  });
+
+  it("returns false when ownerMembershipId is absent and no other scope is set, confirming linked documents are still eligible when no ownership restriction applies", () => {
+    expect(kbScopeExcludesLinkedDocuments(baseInput)).toBe(false);
+  });
+
+  it("returns true when status is set so the linked-documents channel is skipped rather than returning unscoped company documents alongside status-filtered KB pages", () => {
+    expect(kbScopeExcludesLinkedDocuments({ ...baseInput, status: "published" })).toBe(true);
+  });
+
+  it("returns false when status is absent and no other scope is set, confirming linked documents are still eligible when no status restriction applies", () => {
+    expect(kbScopeExcludesLinkedDocuments(baseInput)).toBe(false);
+  });
+
+  it("returns true when both ownerMembershipId and status are set together", () => {
+    expect(kbScopeExcludesLinkedDocuments({ ...baseInput, ownerMembershipId: 3, status: "draft" })).toBe(true);
   });
 });

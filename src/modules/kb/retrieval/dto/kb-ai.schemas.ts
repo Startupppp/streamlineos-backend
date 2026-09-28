@@ -4,6 +4,12 @@ import {
 } from "../../../../common/pagination/list-query.schema";
 import { KB_PAGE_STATUSES } from "../../core/collection/knowledge-collection.types";
 
+export const KB_ASK_STATUS_SCOPES = [
+  "draft",
+  "in_review",
+  "published",
+] as const satisfies readonly (typeof KB_PAGE_STATUSES)[number][];
+
 export const searchSchema = z
   .object({
     q: z.string().trim().min(1).max(200),
@@ -31,7 +37,7 @@ export const askSchema = z
       .optional(),
     verifiedOnly: z.boolean().optional(),
     ownerMembershipId: z.coerce.number().int().positive().optional(),
-    status: z.enum(KB_PAGE_STATUSES).optional(),
+    status: z.enum(KB_ASK_STATUS_SCOPES).optional(),
   })
   .strict();
 export type AskInput = z.infer<typeof askSchema>;

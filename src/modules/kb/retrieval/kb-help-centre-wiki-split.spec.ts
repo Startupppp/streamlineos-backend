@@ -6,10 +6,11 @@ import { chunkVisibleTo } from "./kb-chunk-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { KbActorStanding } from "../core/authorization/knowledge-authorization.types";
+import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 
 const ORG = "org-split";
 const VECTOR = "[0.1,0.2]";
-const PRINCIPAL = { userId: "user-1", membershipId: 1, roleSlugs: ["MEMBER"] };
+const RESTRICTION = buildArticleRestrictionBranch(ORG, { membershipId: 1, roleSlugs: ["MEMBER"] });
 const SHARED_ID = 77;
 
 function makeStanding(overrides: Partial<KbActorStanding> = {}): KbActorStanding {
@@ -80,7 +81,7 @@ describe("kb_pages holds help-centre articles and wiki pages, and a read must sa
   it("the article keyword surface narrows to support_article by equality, never by a deny-list that would admit a future content type", async () => {
     const { wheres, candidates } = makeHarness();
 
-    await candidates.articleKeywordCandidates(ORG, [1], "policy", 4, PRINCIPAL, null);
+    await candidates.articleKeywordCandidates(ORG, [1], "policy", 4, null, null);
 
     const { text, params } = render(wheres[0] as SQL);
     expect(text).toContain(ARTICLE_ALLOW_LIST);
@@ -92,7 +93,7 @@ describe("kb_pages holds help-centre articles and wiki pages, and a read must sa
   it("the article keyword surface filters deleted_at, which kb_articles never had", async () => {
     const { wheres, candidates } = makeHarness();
 
-    await candidates.articleKeywordCandidates(ORG, [1], "policy", 4, PRINCIPAL, null);
+    await candidates.articleKeywordCandidates(ORG, [1], "policy", 4, null, null);
 
     expect(render(wheres[0] as SQL).text).toContain(SOFT_DELETE);
   });
@@ -100,7 +101,7 @@ describe("kb_pages holds help-centre articles and wiki pages, and a read must sa
   it("the article vector surface carries the same two narrowings, so semantic retrieval cannot reach a wiki page as an article", async () => {
     const { wheres, candidates } = makeHarness();
 
-    await candidates.articleVectorCandidates(ORG, [1], VECTOR, 4, PRINCIPAL, null);
+    await candidates.articleVectorCandidates(ORG, [1], VECTOR, 4, null, null);
 
     const { text, params } = render(wheres[0] as SQL);
     expect(text).toContain(ARTICLE_ALLOW_LIST);
@@ -133,11 +134,29 @@ describe("kb_pages holds help-centre articles and wiki pages, and a read must sa
     const articles = makeHarness();
     const wiki = makeHarness();
 
-    await articles.candidates.articleKeywordCandidates(ORG, [1], "policy", 4, PRINCIPAL, null);
+    await articles.candidates.articleKeywordCandidates(ORG, [1], "policy", 4, RESTRICTION, null);
     await wiki.candidates.pageKeywordCandidates(ORG, "policy", 4, sql`true`);
 
     expect(render(articles.wheres[0] as SQL).text).toContain("kb_page_restrictions");
     expect(render(wiki.wheres[0] as SQL).text).not.toContain("kb_page_restrictions");
+  });
+});
+
+describe("canonical restriction predicate — admin receives null so the over-restriction defect cannot recur", () => {
+  it("passing null restriction produces a candidate query with no kb_page_restrictions subquery, so an org owner or KB admin is not over-restricted compared with the page list", async () => {
+    const { wheres, candidates } = makeHarness();
+
+    await candidates.articleKeywordCandidates(ORG, [1], "query", 4, null, null);
+
+    expect(render(wheres[0] as SQL).text).not.toContain("kb_page_restrictions");
+  });
+
+  it("passing a non-null restriction produces a candidate query that contains kb_page_restrictions, so the null assertion above cannot be satisfied by an always-empty WHERE clause", async () => {
+    const { wheres, candidates } = makeHarness();
+
+    await candidates.articleKeywordCandidates(ORG, [1], "query", 4, RESTRICTION, null);
+
+    expect(render(wheres[0] as SQL).text).toContain("kb_page_restrictions");
   });
 });
 

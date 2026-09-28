@@ -19,7 +19,6 @@ const PROBE_USER = `kbacl-user-${suffix}`;
 const ARTICLE_ACL_REVISION = 5;
 const DIM = 1536;
 const CONTENT_HASH = "b".repeat(64);
-const PRINCIPAL = { userId: PROBE_USER, membershipId: null, roleSlugs: [] };
 
 function embedding(seed: number): number[] {
   return Array.from({ length: DIM }, (_, i) => Math.sin((i + 1) * seed));
@@ -126,7 +125,7 @@ describe("KB attachment chunks carry the parent page's ACL revision", () => {
         [spaceId],
         queryVector,
         10,
-        PRINCIPAL,
+        null,
         null,
       ),
     );
@@ -160,7 +159,7 @@ describe("KB attachment chunks carry the parent page's ACL revision", () => {
         [spaceId],
         queryVector,
         10,
-        PRINCIPAL,
+        null,
         null,
       ),
     );
@@ -231,7 +230,7 @@ describe("KB attachment chunks carry the parent page's ACL revision", () => {
         [spaceId],
         queryVector,
         10,
-        PRINCIPAL,
+        null,
         null,
       ),
     );

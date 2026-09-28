@@ -31,13 +31,12 @@ function readSrc(file: string): string {
 }
 
 describe("KB authorization invariant — canonical KnowledgeAuthorization is the only access decision; no caller rebuilds the predicate", () => {
-  it("direct callers of buildArticleRestrictionBranch across all KB production files are bounded to the known set — a text scan that catches direct-import call sites but misses barrel re-exports and dynamic imports; the known retrieval caller bypasses the admin null-return in articleRestrictionPredicate", () => {
+  it("direct callers of buildArticleRestrictionBranch across all KB production files are bounded to the known set — a text scan that catches direct-import call sites but misses barrel re-exports and dynamic imports", () => {
     const KNOWN_CALLERS = [
       "core/authorization/knowledge-authorization.service.ts",
       "core/authorization/knowledge-page-scope.ts",
       "core/kb-support-documents.ts",
       "core/kb-document-delivery-access.ts",
-      "retrieval/kb-candidate.service.ts",
     ];
 
     const callers = allKbSources()
@@ -48,16 +47,13 @@ describe("KB authorization invariant — canonical KnowledgeAuthorization is the
     expect(callers).toEqual(expect.arrayContaining(KNOWN_CALLERS));
   });
 
-  it("every caller of buildArticleRestrictionBranch inside the retrieval module is bounded — callers in this set build the restriction predicate without the admin bypass that articleRestrictionPredicate provides, so adding one for an admin-facing retrieval path is a defect", () => {
-    const KNOWN_RETRIEVAL_CALLERS = ["kb-candidate.service.ts"];
-
+  it("no production file inside the retrieval module calls buildArticleRestrictionBranch directly — every article restriction decision must go through articleRestrictionPredicate so the admin null-return is always honoured", () => {
     const retrievalDir = path.join(KB_SRC, "retrieval");
     const callers = productionSources(retrievalDir)
       .filter((file) => /\bbuildArticleRestrictionBranch\b/.test(readSrc(file)))
       .map((file) => path.basename(file));
 
-    expect(callers.filter((f) => !KNOWN_RETRIEVAL_CALLERS.includes(f))).toHaveLength(0);
-    expect(callers).toEqual(expect.arrayContaining(KNOWN_RETRIEVAL_CALLERS));
+    expect(callers).toHaveLength(0);
   });
 
   it("kbPageRestrictions is imported only inside the canonical authorization module — any other production file that imports it has bypassed the restriction predicate builder and is writing an independent access decision", () => {

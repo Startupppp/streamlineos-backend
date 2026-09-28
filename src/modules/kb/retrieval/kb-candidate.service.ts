@@ -20,7 +20,6 @@ import {
   wikiPagePredicate,
 } from "../help-centre/kb-article-page-scope";
 import { queryVectorChunkIds } from "./kb-vector-candidate-query";
-import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 import { isVerifiedNow } from "../core/kb-page-trust-predicates";
 import type { KbPageStatus } from "../core/collection/knowledge-collection.types";
 
@@ -88,11 +87,7 @@ export class KbCandidateService {
     spaceIds: number[],
     query: string,
     pool: number,
-    principal: {
-      userId: string;
-      membershipId: number | null;
-      roleSlugs: string[];
-    },
+    restriction: SQL | null,
     ownerScopeFilter: SQL | null,
     spaceId?: number,
   ): Promise<number[]> {
@@ -108,8 +103,8 @@ export class KbCandidateService {
       articleSpacePredicate(spaceIds),
       eq(kbPages.status, "published"),
       keywordCond,
-      buildArticleRestrictionBranch(orgId, principal),
     ];
+    if (restriction) conditions.push(restriction);
     if (ownerScopeFilter) conditions.push(ownerScopeFilter);
     if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
 
@@ -127,11 +122,7 @@ export class KbCandidateService {
     spaceIds: number[],
     vector: string,
     pool: number,
-    principal: {
-      userId: string;
-      membershipId: number | null;
-      roleSlugs: string[];
-    },
+    restriction: SQL | null,
     ownerScopeFilter: SQL | null,
     spaceId?: number,
   ): Promise<number[]> {
@@ -139,8 +130,8 @@ export class KbCandidateService {
       articleSpacePredicate(spaceIds),
       eq(kbPages.status, "published"),
       supportArticlePredicate(),
-      buildArticleRestrictionBranch(orgId, principal),
     ];
+    if (restriction) conditions.push(restriction);
     if (ownerScopeFilter) conditions.push(ownerScopeFilter);
     if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
     return this.pageIdsNearest(orgId, vector, pool, conditions, "KB article");
@@ -171,9 +162,11 @@ export class KbCandidateService {
       keywordCond,
     ];
     if (verifiedOnly) conditions.push(isVerifiedNow());
-    if (pageIds && pageIds.length > 0) conditions.push(inArray(kbPages.id, pageIds));
+    if (pageIds && pageIds.length > 0)
+      conditions.push(inArray(kbPages.id, pageIds));
     if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
-    if (ownerMembershipId !== undefined) conditions.push(eq(kbPages.ownerMembershipId, ownerMembershipId));
+    if (ownerMembershipId !== undefined)
+      conditions.push(eq(kbPages.ownerMembershipId, ownerMembershipId));
     if (status !== undefined) conditions.push(eq(kbPages.status, status));
     const rows = await this.db
       .select({ id: kbPages.id })
@@ -203,15 +196,10 @@ export class KbCandidateService {
     if (verifiedOnly) extra.push(isVerifiedNow());
     if (pageIds && pageIds.length > 0) extra.push(inArray(kbPages.id, pageIds));
     if (spaceId) extra.push(eq(kbPages.spaceId, spaceId));
-    if (ownerMembershipId !== undefined) extra.push(eq(kbPages.ownerMembershipId, ownerMembershipId));
+    if (ownerMembershipId !== undefined)
+      extra.push(eq(kbPages.ownerMembershipId, ownerMembershipId));
     if (status !== undefined) extra.push(eq(kbPages.status, status));
-    return this.pageIdsNearest(
-      orgId,
-      vector,
-      pool,
-      extra,
-      "KB page",
-    );
+    return this.pageIdsNearest(orgId, vector, pool, extra, "KB page");
   }
 
   async resolveArticleKeywordCondition(
