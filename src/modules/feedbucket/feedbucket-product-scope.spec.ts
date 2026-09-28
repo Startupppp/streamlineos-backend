@@ -47,6 +47,8 @@ describe("FeedbucketSubmissionsService.list — managedProductId filter", () => 
 
     const rendered = dialect.sqlToQuery(sink.where as SQL);
     expect(rendered.params).toContain(PRODUCT_ID);
+    expect(rendered.sql).toContain('"feedbucket_widgets_scope"."managed_product_id"');
+    expect(rendered.sql).not.toContain('"feedbucketSubmissions"."managed_product_id"');
   });
 
   it("does not include a managed_product_id predicate when managedProductId is absent", async () => {

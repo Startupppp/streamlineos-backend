@@ -1,4 +1,14 @@
-import { and, eq, gte, ilike, isNotNull, isNull, lt, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  ilike,
+  isNotNull,
+  isNull,
+  lt,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   feedbucketSubmissions,
   feedbucketWidgets,
@@ -7,21 +17,20 @@ import {
 import type { Db } from "../../db/drizzle.module";
 import type { SubmissionFilters } from "./feedbucket.schemas";
 
-function submissionsInWidgetsMatching(condition: SQL | undefined): SQL {
-  return sql`${feedbucketSubmissions.widgetId} IN (SELECT ${feedbucketWidgets.id} FROM ${feedbucketWidgets} WHERE ${condition})`;
-}
-
 function submissionsInManagedProductCondition(
   orgId: string,
   managedProductId: number,
 ): SQL {
-  return submissionsInWidgetsMatching(
-    and(
-      eq(feedbucketWidgets.orgId, orgId),
-      eq(feedbucketWidgets.managedProductId, managedProductId),
-      isNull(feedbucketWidgets.deletedAt),
-    ),
-  );
+  const widgetAlias = sql.identifier("feedbucket_widgets_scope");
+  const widgetColumn = (name: string) =>
+    sql`${widgetAlias}.${sql.identifier(name)}`;
+  return sql`${feedbucketSubmissions.widgetId} IN (
+    SELECT ${widgetColumn("id")}
+    FROM ${sql.identifier("build")}.${sql.identifier("feedbucket_widgets")} AS ${widgetAlias}
+    WHERE ${widgetColumn("org_id")} = ${orgId}
+      AND ${widgetColumn("managed_product_id")} = ${managedProductId}
+      AND ${widgetColumn("deleted_at")} IS NULL
+  )`;
 }
 
 export async function resolveAssigneeMembershipId(
@@ -44,11 +53,23 @@ export async function buildSubmissionFilterConditions(
   orgId: string,
   filters: SubmissionFilters,
 ): Promise<(SQL | undefined)[]> {
-  const { widgetId, managedProductId, type, status, assigneeId, search, linked, duplicate, from, to } =
-    filters;
+  const {
+    widgetId,
+    managedProductId,
+    type,
+    status,
+    assigneeId,
+    search,
+    linked,
+    duplicate,
+    from,
+    to,
+  } = filters;
 
   const domain: (SQL | undefined)[] = [
-    widgetId !== undefined ? eq(feedbucketSubmissions.widgetId, widgetId) : undefined,
+    widgetId !== undefined
+      ? eq(feedbucketSubmissions.widgetId, widgetId)
+      : undefined,
     managedProductId !== undefined
       ? submissionsInManagedProductCondition(orgId, managedProductId)
       : undefined,
@@ -58,8 +79,14 @@ export async function buildSubmissionFilterConditions(
   ];
 
   if (assigneeId !== undefined) {
-    const membershipId = await resolveAssigneeMembershipId(db, orgId, assigneeId);
-    domain.push(eq(feedbucketSubmissions.assigneeMembershipId, membershipId ?? -1));
+    const membershipId = await resolveAssigneeMembershipId(
+      db,
+      orgId,
+      assigneeId,
+    );
+    domain.push(
+      eq(feedbucketSubmissions.assigneeMembershipId, membershipId ?? -1),
+    );
   }
   if (search?.trim()) {
     domain.push(ilike(feedbucketSubmissions.message, `%${search}%`));
