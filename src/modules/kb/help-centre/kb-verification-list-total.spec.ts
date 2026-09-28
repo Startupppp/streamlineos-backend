@@ -117,23 +117,33 @@ describe("KbVerificationService — pages whose verification lapsed before an ed
     };
   }
 
-  it("the due predicate compares verified_until to now() outside the effective-state CASE, so a page that was verified, lapsed, then got edited back to unverified still appears in the queue", async () => {
+  it("due-ness is the negation of verified-now rather than an equality on trust_state, so a page edited back to unverified while its old verification window is still in the future is due immediately instead of waiting for that window to lapse", async () => {
     const harness = captureDueWhere();
 
     await harness.service.listDue(USER, 1, 20);
-    const withoutCaseExpressions = harness
-      .rendered()
-      .replace(/case when[\s\S]*?end/gi, "");
+    const rendered = harness.rendered();
 
-    expect(withoutCaseExpressions).toMatch(/"verified_until"\s*<\s*now\(\)/);
+    expect(rendered).toMatch(
+      /NOT\s*\(\s*"kb_pages"\."trust_state"\s*=\s*'verified'/i,
+    );
+    expect(rendered).not.toMatch(/"trust_state"\s*=\s*'unverified'/i);
   });
 
-  it("the effective-state CASE is still present, so the assertion above is reading a second, standalone comparison rather than the one inside it", async () => {
+  it("the scheduled-review comparison sits outside the verified-now negation, so an article still inside its verification window whose scheduled review date has passed is still due — collapsing it into the negation would silently drop those articles", async () => {
+    const harness = captureDueWhere();
+
+    await harness.service.listDue(USER, 1, 20);
+    const rendered = harness.rendered();
+    const beforeNegation = rendered.slice(0, rendered.search(/NOT\s*\(/i));
+
+    expect(beforeNegation).toMatch(/"next_review_at"\s*<=\s*now\(\)/);
+  });
+
+  it("a previous verification counts as a review commitment on its own, so an article verified with no review cadence still becomes due once its window lapses rather than dropping out of the queue for want of an interval", async () => {
     const harness = captureDueWhere();
 
     await harness.service.listDue(USER, 1, 20);
 
-    expect(harness.rendered()).toMatch(/case when/i);
-    expect(harness.rendered()).toContain("verification_expired");
+    expect(harness.rendered()).toMatch(/"verified_until"\s*IS\s*NOT\s*NULL/i);
   });
 });

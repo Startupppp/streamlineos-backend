@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, isNotNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -7,7 +7,7 @@ import { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveWindowedTotal, totalOverWindow } from "../../../common/pagination/window-count";
 import { supportArticlePredicate } from "./kb-article-page-scope";
-import { effectiveTrustState } from "../core/kb-page-trust-predicates";
+import { isReviewDue } from "../core/kb-page-trust-predicates";
 
 type VerificationQueueItem = {
   id: number;
@@ -43,27 +43,11 @@ export class KbVerificationService {
       return { items: [], total: 0, page, pageSize: capped, totalPages: 0 };
     }
 
-    const scheduledReviewReached = lte(kbPages.nextReviewAt, sql`now()`);
-    const trustLapsed = sql`${effectiveTrustState()} = 'verification_expired'`;
-    const neverVerifiedOnACadence = and(
-      eq(kbPages.trustState, "unverified"),
-      isNotNull(kbPages.reviewIntervalDays),
-    );
-    const editedAfterVerificationLapsed = and(
-      eq(kbPages.trustState, "unverified"),
-      lt(kbPages.verifiedUntil, sql`now()`),
-    );
-
     const where = and(
       eq(kbPages.orgId, user.orgId),
       supportArticlePredicate(),
       eq(kbPages.status, "published"),
-      or(
-        scheduledReviewReached,
-        trustLapsed,
-        neverVerifiedOnACadence,
-        editedAfterVerificationLapsed,
-      ),
+      isReviewDue(),
     );
 
     const offset = (page - 1) * capped;

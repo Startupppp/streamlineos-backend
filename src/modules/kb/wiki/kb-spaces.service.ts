@@ -11,7 +11,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  lt,
   ne,
   sql,
 } from "drizzle-orm";
@@ -26,6 +25,10 @@ import {
   supportArticlePredicate,
   wikiPagePredicate,
 } from "../help-centre/kb-article-page-scope";
+import {
+  hasReviewCommitment,
+  isReviewDue,
+} from "../core/kb-page-trust-predicates";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -225,8 +228,8 @@ export class KbSpacesService {
             eq(kbPages.orgId, user.orgId),
             inArray(kbPages.spaceId, spaceIds),
             isNull(kbPages.deletedAt),
-            isNotNull(kbPages.nextReviewAt),
-            lt(kbPages.nextReviewAt, new Date()),
+            ne(kbPages.status, "archived"),
+            isReviewDue(),
           ),
         )
         .groupBy(kbPages.spaceId),
@@ -388,8 +391,8 @@ export class KbSpacesService {
             eq(kbPages.orgId, user.orgId),
             eq(kbPages.spaceId, spaceId),
             isNull(kbPages.deletedAt),
-            isNotNull(kbPages.nextReviewAt),
-            lt(kbPages.nextReviewAt, new Date()),
+            ne(kbPages.status, "archived"),
+            isReviewDue(),
           ),
         ),
       this.db
@@ -400,7 +403,8 @@ export class KbSpacesService {
             eq(kbPages.orgId, user.orgId),
             eq(kbPages.spaceId, spaceId),
             isNull(kbPages.deletedAt),
-            isNotNull(kbPages.nextReviewAt),
+            ne(kbPages.status, "archived"),
+            hasReviewCommitment(),
           ),
         ),
       membershipId !== null
