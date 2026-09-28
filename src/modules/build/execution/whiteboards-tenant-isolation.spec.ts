@@ -9,7 +9,9 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
   const access = { holds: jest.fn().mockResolvedValue(true) } as never;
 
   function makeDb(projectRow: unknown | null, boardRows: unknown[]) {
-    const loadSharesWhere = jest.fn().mockResolvedValue([]);
+    const loadSharesWhere = jest
+      .fn()
+      .mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
     const innerJoin2 = jest.fn().mockReturnValue({ where: loadSharesWhere });
     const innerJoin = jest.fn().mockReturnValue({ innerJoin: innerJoin2 });
     const boardWhere = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(boardRows) });
