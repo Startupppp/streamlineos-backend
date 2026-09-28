@@ -44,17 +44,37 @@ function makeUser(orgId: string) {
 
 describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
   it("returns empty when attacker org has no project membership (DENY — cross-tenant isolation)", async () => {
-    const memberWhere = jest.fn().mockResolvedValue([]);
-    const memberInnerJoin = jest.fn().mockReturnValue({ where: memberWhere });
-    const memberFrom = jest.fn().mockReturnValue({ innerJoin: memberInnerJoin });
-    const db = { select: jest.fn().mockReturnValue({ from: memberFrom }) } as unknown as Db;
+    const capturedWhere = jest.fn().mockReturnValue({
+      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+    });
+    const rowChain = {
+      from: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnValue({
+          leftJoin: jest.fn().mockReturnValue({
+            leftJoin: jest.fn().mockReturnValue({ where: capturedWhere }),
+          }),
+        }),
+      }),
+    };
+    const countChain = {
+      from: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue([{ total: "0" }]),
+        }),
+      }),
+    };
+    const db = {
+      select: jest.fn()
+        .mockReturnValueOnce(rowChain)
+        .mockReturnValueOnce(countChain),
+    } as unknown as Db;
 
     const svc = new ProjectsWorkQueryService(db);
     const result = await svc.getAllWork(makeUser(ATTACKER_ORG), BASE_QUERY);
 
     expect(result.data).toHaveLength(0);
     expect(result.total).toBe(0);
-    const whereVals = sqlValues(memberWhere.mock.calls[0]?.[0]);
+    const whereVals = sqlValues(capturedWhere.mock.calls[0]?.[0]);
     expect(whereVals).toContain(ATTACKER_ORG);
     expect(whereVals).not.toContain(OWNER_ORG);
   });
@@ -88,10 +108,6 @@ describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
       projectName: "Main Project",
     };
 
-    const memberWhere = jest.fn().mockResolvedValue([{ projectId: 10 }]);
-    const memberInnerJoin = jest.fn().mockReturnValue({ where: memberWhere });
-    const memberFrom = jest.fn().mockReturnValue({ innerJoin: memberInnerJoin });
-
     const ticketLimit = jest.fn().mockResolvedValue([ticketRow]);
     const ticketOrderBy = jest.fn().mockReturnValue({ limit: ticketLimit });
     const ticketWhere = jest.fn().mockReturnValue({ orderBy: ticketOrderBy });
@@ -109,7 +125,6 @@ describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
     const labelFrom = jest.fn().mockReturnValue({ innerJoin: labelInnerJoin });
 
     const select = jest.fn()
-      .mockReturnValueOnce({ from: memberFrom })
       .mockReturnValueOnce({ from: ticketFrom })
       .mockReturnValueOnce({ from: countFrom })
       .mockReturnValueOnce({ from: labelFrom });

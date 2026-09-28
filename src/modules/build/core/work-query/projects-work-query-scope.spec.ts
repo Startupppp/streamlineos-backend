@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { AllWorkQuery } from "../dto/projects.schemas";
@@ -71,10 +72,37 @@ describe("GET /build/all-work — created and subscribed scopes bypass the proje
     expect(selectMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("scope=all with zero project_members rows still short-circuits so the bypass is strictly limited to identity-scoped queries", async () => {
-    const { service, selectMock } = buildMockService();
+  it("scope=all applies the project-reachability predicate so the bypass is strictly limited to identity-scoped queries — result is empty and reachability SQL is present", async () => {
+    const capturedWhere = jest.fn().mockReturnValue({
+      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+    });
+    const rowChain = {
+      from: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnValue({
+          leftJoin: jest.fn().mockReturnValue({
+            leftJoin: jest.fn().mockReturnValue({ where: capturedWhere }),
+          }),
+        }),
+      }),
+    };
+    const countChain = {
+      from: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue([{ total: "0" }]),
+        }),
+      }),
+    };
+    const selectMock = jest.fn()
+      .mockReturnValueOnce(rowChain)
+      .mockReturnValueOnce(countChain);
+    const mockDb = { select: selectMock, execute: jest.fn().mockResolvedValue([]) };
+    const service = new ProjectsWorkQueryService(mockDb as never);
     const result = await service.getAllWork(ACTOR, minimalQuery("all"));
-    expect(selectMock).toHaveBeenCalledTimes(1);
+
     expect(result.data).toHaveLength(0);
+    const dialect = new PgDialect();
+    const rendered = dialect.sqlToQuery(capturedWhere.mock.calls[0]?.[0]);
+    expect(rendered.sql.toLowerCase()).toContain("project_members");
+    expect(rendered.params).toContain(42);
   });
 });

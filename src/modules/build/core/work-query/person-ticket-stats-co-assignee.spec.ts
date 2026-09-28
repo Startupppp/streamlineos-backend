@@ -4,6 +4,7 @@ import type { Db } from "../../../../db/drizzle.module";
 
 const ORG_ID = "org-r7";
 const CALLER_USER_ID = "user-caller";
+const CALLER_MEMBERSHIP_ID = 1;
 const SUBJECT_USER_ID = "user-priya";
 
 const dialect = new PgDialect();
@@ -33,18 +34,11 @@ type GroupedRow = {
 };
 
 function makeDbMock(options: {
-  memberProjectIds: number[];
   executeRows?: Record<string, unknown>[];
   groupedRows?: GroupedRow[];
 }) {
   const executedStatements: unknown[] = [];
   const groupedWheres: unknown[] = [];
-
-  const memberWhere = jest
-    .fn()
-    .mockResolvedValue(options.memberProjectIds.map((projectId) => ({ projectId })));
-  const memberInnerJoin = jest.fn().mockReturnValue({ where: memberWhere });
-  const memberFrom = jest.fn().mockReturnValue({ innerJoin: memberInnerJoin });
 
   const groupBy = jest.fn().mockResolvedValue(options.groupedRows ?? []);
   const groupedWhere = jest.fn().mockImplementation((where: unknown) => {
@@ -54,10 +48,7 @@ function makeDbMock(options: {
   const groupedInnerJoin = jest.fn().mockReturnValue({ where: groupedWhere });
   const groupedFrom = jest.fn().mockReturnValue({ innerJoin: groupedInnerJoin });
 
-  const select = jest
-    .fn()
-    .mockReturnValueOnce({ from: memberFrom })
-    .mockReturnValue({ from: groupedFrom });
+  const select = jest.fn().mockReturnValue({ from: groupedFrom });
 
   const execute = jest.fn().mockImplementation((statement: unknown) => {
     executedStatements.push(statement);
@@ -78,7 +69,7 @@ async function runPersonStats(
 
 describe("getPersonTicketStats — countTicketsByProjectAndStatus covers co-assignees", () => {
   it("consults the ticket_assignees link table, so a ticket the subject is a co-assignee of is not omitted from their count", async () => {
-    const mock = makeDbMock({ memberProjectIds: [10, 20] });
+    const mock = makeDbMock({});
 
     await runPersonStats(mock, { assigneeId: SUBJECT_USER_ID });
 
@@ -87,7 +78,7 @@ describe("getPersonTicketStats — countTicketsByProjectAndStatus covers co-assi
   });
 
   it("counts a ticket the subject is both primary assignee and a ticket_assignees row of exactly once, by UNION set semantics rather than UNION ALL", async () => {
-    const mock = makeDbMock({ memberProjectIds: [10, 20] });
+    const mock = makeDbMock({});
 
     await runPersonStats(mock, { assigneeId: SUBJECT_USER_ID });
 
@@ -100,7 +91,7 @@ describe("getPersonTicketStats — countTicketsByProjectAndStatus covers co-assi
   });
 
   it("deduplicates on the ticket id, so the two branches cannot both contribute a row for one ticket", async () => {
-    const mock = makeDbMock({ memberProjectIds: [10, 20] });
+    const mock = makeDbMock({});
 
     await runPersonStats(mock, { assigneeId: SUBJECT_USER_ID });
 
@@ -114,19 +105,21 @@ describe("getPersonTicketStats — countTicketsByProjectAndStatus covers co-assi
   });
 
   it("applies the caller's project-membership bound to the co-assigned branch too, so a co-assignment cannot expose a ticket in a project the caller cannot see", async () => {
-    const mock = makeDbMock({ memberProjectIds: [7] });
+    const mock = makeDbMock({});
 
     await runPersonStats(mock, { assigneeId: SUBJECT_USER_ID, projectIds: [7, 99] });
 
     const rendered = mock.executedStatements.map(renderSql);
     const personStatement = rendered.find((statement) => statement.sql.includes("ticket_assignees"));
     expect(personStatement).toBeDefined();
-    expect(personStatement?.params.filter((param) => param === 7)).toHaveLength(2);
-    expect(personStatement?.params).not.toContain(99);
+    const reachabilityOccurrences =
+      (personStatement?.sql ?? "").toLowerCase().split("manager_membership_id").length - 1;
+    expect(reachabilityOccurrences).toBe(2);
+    expect(personStatement?.params).toContain(CALLER_MEMBERSHIP_ID);
   });
 
   it("carries the soft-delete and archived-project exclusions onto both branches, so a co-assigned deleted ticket is not counted", async () => {
-    const mock = makeDbMock({ memberProjectIds: [7] });
+    const mock = makeDbMock({});
 
     await runPersonStats(mock, { assigneeId: SUBJECT_USER_ID });
 
@@ -139,7 +132,7 @@ describe("getPersonTicketStats — countTicketsByProjectAndStatus covers co-assi
   });
 
   it("binds the subject user id as a parameter on both branches rather than inlining it, so neither branch can widen to the whole organisation", async () => {
-    const mock = makeDbMock({ memberProjectIds: [7] });
+    const mock = makeDbMock({});
 
     await runPersonStats(mock, { assigneeId: SUBJECT_USER_ID });
 
@@ -153,7 +146,6 @@ describe("getPersonTicketStats — countTicketsByProjectAndStatus covers co-assi
 
   it("aggregates the deduplicated union rows into per-project totals, converting the raw count text at the use site", async () => {
     const mock = makeDbMock({
-      memberProjectIds: [10, 20],
       executeRows: [
         { project_id: 10, project_name: "Alpha", status: "DONE", cnt: "3" },
         { project_id: 10, project_name: "Alpha", status: "IN_PROGRESS", cnt: "2" },
@@ -170,27 +162,36 @@ describe("getPersonTicketStats — countTicketsByProjectAndStatus covers co-assi
     expect(result.totals).toEqual({ total: 6, done: 3, inProgress: 3 });
   });
 
-  it("returns zero totals without touching tickets when the caller belongs to no projects, so a co-assignment grants no visibility of its own", async () => {
-    const mock = makeDbMock({ memberProjectIds: [] });
+  it("returns zero totals when the caller belongs to no projects, with the reachability predicate enforcing the scope in SQL so a co-assignment grants no visibility of its own", async () => {
+    const mock = makeDbMock({});
 
     const result = await runPersonStats(mock, { assigneeId: SUBJECT_USER_ID });
 
     expect(result).toEqual({ byProject: [], totals: { total: 0, done: 0, inProgress: 0 } });
-    expect(mock.execute).not.toHaveBeenCalled();
+    const personStatement = mock.executedStatements
+      .map(renderSql)
+      .find((s) => s.sql.includes("ticket_assignees"));
+    expect(personStatement).toBeDefined();
+    expect(personStatement?.sql.toLowerCase()).toContain("project_members");
+    expect(personStatement?.params).toContain(CALLER_MEMBERSHIP_ID);
   });
 
-  it("returns zero totals without touching tickets when the requested project is outside the caller's membership", async () => {
-    const mock = makeDbMock({ memberProjectIds: [7] });
+  it("returns zero totals when the requested project is outside the caller's membership, with the reachability predicate enforcing the bound in SQL", async () => {
+    const mock = makeDbMock({});
 
     const result = await runPersonStats(mock, { assigneeId: SUBJECT_USER_ID, projectIds: [99] });
 
     expect(result).toEqual({ byProject: [], totals: { total: 0, done: 0, inProgress: 0 } });
-    expect(mock.execute).not.toHaveBeenCalled();
+    const personStatement = mock.executedStatements
+      .map(renderSql)
+      .find((s) => s.sql.includes("ticket_assignees"));
+    expect(personStatement).toBeDefined();
+    expect(personStatement?.sql.toLowerCase()).toContain("project_members");
+    expect(personStatement?.params).toContain(CALLER_MEMBERSHIP_ID);
   });
 
   it("keeps the single-pass grouped scan when no subject is named, because an unfiltered union would deduplicate every ticket for nothing", async () => {
     const mock = makeDbMock({
-      memberProjectIds: [10],
       groupedRows: [{ projectId: 10, projectName: "Alpha", status: "DONE", cnt: "4" }],
     });
 

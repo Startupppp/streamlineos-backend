@@ -38,18 +38,10 @@ function makeMockedDb(): { db: Db; capturedTicketWhere: jest.Mock } {
     orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
   });
 
-  const memberWhere = jest.fn().mockResolvedValue([{ projectId: 10 }]);
   const countWhere = jest.fn().mockResolvedValue([{ total: "0" }]);
 
   const db = {
     select: jest.fn()
-      .mockReturnValueOnce({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: memberWhere,
-          }),
-        }),
-      })
       .mockReturnValueOnce({
         from: jest.fn().mockReturnValue({
           innerJoin: jest.fn().mockReturnValue({
