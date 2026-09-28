@@ -263,10 +263,6 @@
       "verdict": "FALSE-POSITIVE",
       "note": "for(;;) chunked drain â€” the flagged sql is a NOT EXISTS subquery inside the batch SELECT's WHERE, not a standalone query"
     },
-    "/cron/cron-kb-chunk-retention.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "for(;;) chunked drain in both prune methods â€” SELECT up to 500 ids then one inArray DELETE per iteration"
-    },
     "/cron/cron-leave.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Was N+1-FIXED, which was the wrong verdict for the wrong reason. The two sites the detector reports (134/136 and 322/324) are `while (true)` KEYSET PAGINATION loops â€” each iteration reads the next page, which is the correct bounded-read pattern, not an N+1. expireUnusedMonthlyLeaves itself is batched as the old note said."
@@ -639,9 +635,13 @@
       "verdict": "FALSE-POSITIVE",
       "note": "the per-invoice UPDATE is a compare-and-set claim on nextRecurringDate; making it a batch would remove the guarantee that exactly one worker advances each schedule"
     },
-    "/kb/article-conversion/kb-article-migration.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "each iteration is one transaction with a single bulk insert of up to 50 rows"
+    "/kb/content-health/kb-content-health.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "TWO detected sites, and they are not the same thing. :118 is a FALSE POSITIVE — `signalTypes.map` inside Promise.all over a FIXED literal array of five signal kinds, and the flagged text is `buildSignalPredicate(this.db, signalType)`, which passes the handle to a predicate builder and issues nothing; the five count queries behind it are a fixed fan-out, not growth. :293 is a REAL N+1 and is why this file is ACTIONABLE: `bulkRepair` loops `for (const pageId of body.pageIds)` and issues one UPDATE or one INSERT on kb_health_items PER PAGE ID, bounded only by the DTO cap `pageIds: z.array(...).max(100)` in dto:122. Bounded is not the same as fixed — this is up to 100 sequential round trips on one synchronous POST /kb/wiki/content-health/signals/bulk-repair. It collapses: every UPDATE carries the IDENTICAL SET (assigneeMembershipId, updatedAt) so the whole update branch is ONE inArray(pageId, ...) UPDATE, and the insert branch is ONE multi-row INSERT — the partition into the two branches is already computed before the loop as `existingPageIds`. Same collapse /cron/cron-hr.service.ts and /clients/client-accounts.service.ts took."
+    },
+    "/kb/core/kb-chunk-retention.ts": {
+      "verdict": "BATCHED",
+      "note": "MOVED 2026-09-28 from /cron/cron-kb-chunk-retention.service.ts with its verdict corrected and its argument intact — CronKbChunkRetentionService now only wraps forEachOrg around `pruneStaleDocumentChunks`, and the drain itself came here verbatim (:13). Re-deriving the verdict at the new path is how a split launders a finding. Original note: for(;;) chunked drain — SELECT up to 500 ids then one inArray DELETE per iteration. The original said FALSE-POSITIVE; BATCHED is the verdict this baseline defines for that shape, because a chunk drain is a TRUE positive of the detector with an acceptable cost, not a miss. Statements are 2 per batch, i.e. O(orphaned chunks / CHUNK_RETENTION_BATCH_SIZE), never O(rows), and the loop is SUPPOSED to keep matching. Only one prune method survives the move; the original note said `both prune methods`."
     },
     "/kb/help-centre/kb-articles.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -663,6 +663,10 @@
       "verdict": "N+1-FIXED",
       "note": "The per-parent max(sortOrder) probe is one grouped max() over or(inArray(parentPageId, ids), isNull(parentPageId)) with GROUP BY parent_page_id, read into a map; the surviving loop only fills sortOffsets in memory. Org and deleted_at filters unchanged, and a missing group still defaults to 0 and offset 100. P distinct parents: P selects -> 1."
     },
+    "/kb/wiki/kb-multi-store-purge.ts": {
+      "verdict": "BATCHED",
+      "note": "One site, :45. `openMultiStoreLedger` builds one ledger row per (pageId x store) over the KB_PURGE_STORES set, then writes them with `for (let i = 0; i < rows.length; i += 100)` and one multi-row `insert ... onConflictDoNothing` per chunk of 100, inside a single runInTenantTransaction. Statements are ceil(pageIds x stores / 100), never one per row. NOT a move: /kb/wiki/kb-purge-ledger.ts is a different file that still exists and is still detected separately, and it chunks on PURGE_BOOKKEEPING_CHUNK with onConflictDoUpdate — two similar-looking ledgers, two entries, deliberately. Worth knowing the multiplier: the pre-delete store list in kb-page-trash.service.ts:197 is 13 entries, so a 500-page purge batch opens 6,500 ledger rows and costs 65 INSERTs here. That is the write-ahead record that makes a partial purge recoverable, so it stays visible rather than exempt."
+    },
     "/kb/wiki/kb-page-attachment-purge.ts": {
       "verdict": "BATCHED",
       "note": "Classified 2026-09-03 (file arrived from another lane mid-release; classified by reading, not baselined). Two sites. Site A line 43 is a chunked write-ahead insert under PURGE_BOOKKEEPING_CHUNK with an onConflictDoUpdate â€” bounded by ceil(n/CHUNK). Site B line 79 issues one `markPurge` per key and that is CORRECT rather than batched: each key needs its own object-store delete, and the bookkeeping row is marked per key so a partial failure is recoverable â€” collapsing the marks to one statement after the loop would report objects as purged that were never deleted, which is the same crash-window argument ticket 21 records for the recurring-journal sweeps."
@@ -670,6 +674,18 @@
     "/kb/wiki/kb-page-duplicate.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "The subtree copy is a breadth-first level walk: every node at one depth is inserted in a single INSERT ... VALUES RETURNING, and returned rows are correlated back by (parentPageId, sortOrder), a key unique by construction within a level, rather than by relying on RETURNING order. Page links are one select of all referenced ids across the subtree plus one bulk insert. The final select of the new root is gone, because the root comes back from its own level's RETURNING, and that read also had no org_id predicate. N nodes at depth D: at most 3N+1 -> D+2. BFS additionally makes unrepresentable an ordering defect the old map-order walk had, where a child visited before its parent got a null newParentId and was grafted to the space root."
+    },
+    "/kb/wiki/kb-page-reviews.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "One site, :315, and it is a REAL N+1. `bulkDecide` loops `for (const id of input.ids)` and issues one `update(kbPageReviews) ... returning({ id })` PER REVIEW ID, bounded only by `ids: z.array(...).max(100)` in dto/kb-page-reviews.schemas.ts:22. The visibility read above it is already batched into one inArray select, which makes the per-row write the only thing that grows. It collapses to ONE statement: the SET is identical for every id (status, reviewerId, reviewerMembershipId, decidedAt, decisionNote), the WHERE is `id = ? AND org_id = ? AND status = 'pending'`, and the per-row branch only reads `updated ? succeeded : conflict` — so one `inArray(id, ids)` UPDATE with the same `status = 'pending'` guard and RETURNING id gives the succeeded set directly, and the complement of that set against the visible ids is the conflict set. That is the compare-and-set-preserving collapse /e-sign/sign-public.service.ts already took."
+    },
+    "/kb/wiki/kb-page-trash-query.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "One site, :109, and it is the worst read-path shape in this module. `purgeImpact` resolves the visible page ids in one inArray select, then loops them and opens `this.db.transaction((tx) => collectSubtreeIds(tx, orgId, id))` ONCE PER PAGE — a transaction per row, not merely a statement per row, on a read-only impact PREVIEW endpoint, bounded only by `pageIds: z.array(...).max(PAGE_SIZE_CAP)` in dto/kb-pages.schemas.ts:135, i.e. 100. Each iteration costs a BEGIN, the tenant GUC set_config, the recursive CTE, and a COMMIT. It collapses to one statement: collectSubtreeIds (kb-page-subtree.util.ts:11) is a single WITH RECURSIVE whose anchor is `WHERE id = ${rootId} AND org_id = ${orgId}`; widening that anchor to `id = ANY(...)` over all roots walks every subtree in one pass, and the caller already discards per-root identity by unioning into one `affected` Set. Fixing it also removes the nested-transaction-per-row interaction with the request-wide tenant transaction."
+    },
+    "/kb/wiki/kb-page-trash.service.ts": {
+      "verdict": "ACTIONABLE-UNDETECTED",
+      "note": "The THREE detected sites are all acceptable and must keep matching: :262 fans out over `preDeleteStores`, a FIXED list of 13 stores, each issuing a different statement against a different table, so no single statement could replace them (the /cron/cron-hr-retention.service.ts shape); :290 (emptyTrash) and :357 (purgeExpired) are for(;;) keyset drains reading EXPIRED_PURGE_BATCH_SIZE = 500 ids then doing one batch of work, i.e. O(pages/500). The DEFECT is in two loops the detector CANNOT see, because the per-row work is a service call: :450 `bulkRestore` awaits `this.tree.restore(user, pageId)` per page, and :491 `bulkPurge` awaits `this.hardDelete(user, pageId)` per page, both bounded only by PAGE_SIZE_CAP = 100. `hardDelete` (:108) is not a statement — per single page it runs visiblePagePredicate, a findFirst, a transaction for collectSubtreeIds, assertNoLegalHoldInSubtree, openMultiStoreLedger (its own transaction plus chunked inserts), recordPageAttachmentPurge, executePreDeleteStores across all 13 stores, a delete transaction, markStoresComplete twice, and attemptPageAttachmentPurge against R2. That is roughly 50 statements and 3 transactions PER PAGE, so a 100-page bulkPurge is on the order of 5,000 statements and 300 transactions inside one synchronous HTTP request, plus one object-store delete per attachment. It is provably batchable because the batched form is IN THIS FILE: purgeExpired does the identical work for 500 pages in about 46 statements by passing an id ARRAY through the same helpers, which all already take `pageIds: number[]`. bulkRestore is the same shape against tree.restore. Classified ACTIONABLE-UNDETECTED rather than ACTIONABLE on purpose: ACTIONABLE would count the three sites above as the work to fix, which would point the next reader at the three loops that are correct and leave the two that are not uncounted. This entry raises the invisible set from 0 and the gate fails on it; that failure is the admission, and ACTIONABLE_UNDETECTED_BASELINE has NOT been raised to absorb it."
     },
     "/kb/wiki/kb-page-tree.service.ts": {
       "verdict": "FALSE-POSITIVE",
