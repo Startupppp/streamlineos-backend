@@ -23,7 +23,7 @@ import type { ScopedRead } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../../common/auth/principal";
 import { resolveProjectsScope } from "./projects-scope";
-import { resolveTicketsScope, ticketScope } from "../tickets/tickets-scope";
+import { resolveTicketsScope, ticketScope } from "../tickets";
 import type { ListProjectsInput } from "../dto/projects.schemas";
 import { PAGE_SIZE_CAP } from "../../../../common/pagination/list-query.schema";
 import { encodeCursor, decodeIntegerCursor } from "../../../../common/pagination/cursor";

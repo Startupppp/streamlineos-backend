@@ -15,7 +15,7 @@ import { CACHE_TTL } from "../../../../common/cache/cache-keys";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { assertProjectAggregateAccess } from "../project-crud/build-project-aggregate-access";
-import { ticketsScopeIsUnrestricted } from "../tickets/tickets-scope";
+import { ticketsScopeIsUnrestricted } from "../tickets";
 import {
   computeBurnupFromEvents,
   type BurnupPoint,

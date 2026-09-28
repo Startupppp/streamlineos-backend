@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { TicketVersionConflictException } from "../tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../tickets";
 import {
   and,
   asc,

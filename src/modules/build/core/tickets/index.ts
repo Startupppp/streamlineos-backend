@@ -21,3 +21,6 @@ export { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
 export { resolveValidTicketStatuses } from "./ticket-status.util";
 export { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 export { resolveTicketsScope, ticketScope, TICKETS_PERMISSION } from "./tickets-scope";
+export { ticketsScopeIsUnrestricted } from "./tickets-scope";
+export { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
+export { ProjectsLabelsService } from "./projects-labels.service";

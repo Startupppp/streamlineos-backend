@@ -23,6 +23,7 @@ import {
   ProjectsTicketLinksService,
   ProjectsTicketRelationsService,
   BuildTicketStatusChangedConsumerService,
+  ProjectsLabelsService,
 } from "./tickets";
 import { ProjectsReportsController } from "./analytics/projects-reports.controller";
 import { ProjectsBudgetController } from "./budget/projects-budget.controller";
@@ -59,7 +60,6 @@ import { ProjectsWebhooksService } from "./webhooks/projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./webhooks/projects-webhooks-dispatch.service";
 import { ProjectsAutomationsService } from "./automation/projects-automations.service";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
-import { ProjectsLabelsService } from "./tickets/projects-labels.service";
 import { BuildAutomationRunnerService } from "./automation/build-automation-runner.service";
 import { BuildAutomationActionExecutor } from "./automation/build-automation-actions.service";
 import { BuildAutomationRunHistoryService } from "./automation/build-automation-run-history.service";

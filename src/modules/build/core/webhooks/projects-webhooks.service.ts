@@ -14,7 +14,7 @@ import type {
 import { generateWebhookSecret } from "./projects-webhooks-dispatch.service";
 import { assertProjectInOrg } from "../project-crud/project-access";
 import { buildIdCursorPage } from "../../../../common/pagination/cursor";
-import { TicketVersionConflictException } from "../tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../tickets";
 
 const PAGE_SIZE = 50;
 
