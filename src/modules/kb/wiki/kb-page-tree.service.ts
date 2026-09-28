@@ -45,23 +45,28 @@ type KbPageTreeItem = {
   hasChildren: boolean;
 };
 
-export function isDescendant(
-  allPages: Pick<PageRow, "id" | "parentPageId">[],
-  ancestorId: number,
-  candidateId: number,
-): boolean {
-  const parentMap = new Map<number, number | null>(
-    allPages.map((p) => [p.id, p.parentPageId]),
-  );
-  let current: number | null = parentMap.get(candidateId) ?? null;
-  const visited = new Set<number>();
-  while (current !== null && current !== undefined) {
-    if (visited.has(current)) break;
-    visited.add(current);
-    if (current === ancestorId) return true;
-    current = parentMap.get(current) ?? null;
-  }
-  return false;
+export const KB_PAGE_TREE_MAX_ANCESTOR_WALK = 100;
+
+export function ancestorWalkQuery(
+  orgId: string,
+  pageId: number,
+  targetParentId: number,
+): SQL {
+  return sql`
+    WITH RECURSIVE ancestors(id, parent_page_id, depth) AS (
+      SELECT id, parent_page_id, 1
+      FROM kb_pages
+      WHERE id = ${targetParentId} AND org_id = ${orgId} AND deleted_at IS NULL
+      UNION ALL
+      SELECT p.id, p.parent_page_id, a.depth + 1
+      FROM kb_pages p
+      JOIN ancestors a ON p.id = a.parent_page_id
+      WHERE p.org_id = ${orgId}
+        AND p.deleted_at IS NULL
+        AND a.depth < ${KB_PAGE_TREE_MAX_ANCESTOR_WALK}
+    )
+    SELECT 1 AS hit FROM ancestors WHERE id = ${pageId} LIMIT 1
+  `;
 }
 
 @Injectable()
@@ -276,7 +281,10 @@ export class KbPageTreeService {
         })
         .from(kbPages)
         .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, subtreeIds)));
-      await this.writer.commitManyPageChanges(tx, { orgId, pages: pagesToIndex });
+      await this.writer.commitManyPageChanges(tx, {
+        orgId,
+        pages: pagesToIndex,
+      });
 
       const [restoredPage] = await tx
         .select(KB_PAGE_COLUMNS)
@@ -338,16 +346,10 @@ export class KbPageTreeService {
         throw new NotFoundException("Target parent page not found");
       targetSpaceId = targetParent.spaceId;
 
-      const allPages = await this.db
-        .select({ id: kbPages.id, parentPageId: kbPages.parentPageId })
-        .from(kbPages)
-        .where(and(eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)));
-
-      if (isDescendant(allPages, pageId, targetParentId)) {
+      if (await this.targetSitsInsideSubtree(orgId, pageId, targetParentId))
         throw new BadRequestException(
           "Cannot move a page into one of its own descendants",
         );
-      }
     }
 
     if (targetSpaceId !== page.spaceId && targetSpaceId !== null) {
@@ -392,7 +394,12 @@ export class KbPageTreeService {
           parentPageId: targetParentId,
           sortOrder: newSortOrder,
           spaceId: targetSpaceId,
-          ...(spaceChanged ? { aclRevision: sql`acl_revision + 1`, aclRevisionChangedAt: new Date() } : {}),
+          ...(spaceChanged
+            ? {
+                aclRevision: sql`acl_revision + 1`,
+                aclRevisionChangedAt: new Date(),
+              }
+            : {}),
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning(KB_PAGE_COLUMNS);
@@ -402,7 +409,10 @@ export class KbPageTreeService {
         orgId,
         actor: {
           userId: user.userId,
-          membershipId: user.principal !== undefined ? actingMembershipId(user.principal) : null,
+          membershipId:
+            user.principal !== undefined
+              ? actingMembershipId(user.principal)
+              : null,
         },
         action: "kb.page.moved",
         page: updated,
@@ -411,5 +421,16 @@ export class KbPageTreeService {
 
       return updated;
     });
+  }
+
+  private async targetSitsInsideSubtree(
+    orgId: string,
+    pageId: number,
+    targetParentId: number,
+  ): Promise<boolean> {
+    const rows = await this.db.execute(
+      ancestorWalkQuery(orgId, pageId, targetParentId),
+    );
+    return rows.length > 0;
   }
 }

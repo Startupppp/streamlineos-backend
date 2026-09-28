@@ -6,7 +6,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
-import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../../common/pagination/cursor";
 import { keysetAfterId } from "../../../../common/pagination/keyset";
 import type { ListProjectMembersQuery } from "../dto/projects.schemas";
 import {
@@ -50,7 +53,11 @@ async function assertProjectOwnership(
   projectId: number,
 ): Promise<void> {
   const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
+    where: and(
+      eq(projects.id, projectId),
+      eq(projects.orgId, orgId),
+      isNull(projects.deletedAt),
+    ),
     columns: { id: true },
   });
   if (!project) throw new NotFoundException("Project not found");
@@ -71,7 +78,11 @@ export class ProjectsMembersService {
     projectId: number,
   ): Promise<void> {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
+      where: and(
+        eq(projects.id, projectId),
+        eq(projects.orgId, u.orgId),
+        isNull(projects.deletedAt),
+      ),
       columns: { managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -97,24 +108,16 @@ export class ProjectsMembersService {
     );
   }
 
-  /**
-   * The project is resolved under the caller's organisation BEFORE any short-circuit.
-   *
-   * The two rungs above used to return first: an org owner, and anyone holding `build:manage`,
-   * passed this check for a project id that belongs to another organisation and for one that
-   * belongs to nobody. Nothing crossed — every read below still filters on `u.orgId` — but the
-   * handler then answered 200 with the caller's own (empty) rows where the contract requires 404,
-   * so five routes could not tell a project that does not exist from one they may not see:
-   * `GET /build/:projectId/automations`, `/custom-states`, `/labels`, `/members` and `/roster`.
-   * `assertCanManageProject`, twenty lines above, already does the lookup first; this is the same
-   * order, and the standing checks below it are unchanged.
-   */
   async assertProjectAccess(
     u: CurrentUserContext,
     projectId: number,
   ): Promise<void> {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
+      where: and(
+        eq(projects.id, projectId),
+        eq(projects.orgId, u.orgId),
+        isNull(projects.deletedAt),
+      ),
       columns: { managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -156,14 +159,24 @@ export class ProjectsMembersService {
     throw new ForbiddenException("You do not have access to this project");
   }
 
-  async listMembers(u: CurrentUserContext, projectId: number, query: ListProjectMembersQuery = { limit: 25 }) {
+  async listMembers(
+    u: CurrentUserContext,
+    projectId: number,
+    query: ListProjectMembersQuery = { limit: 25 },
+  ) {
     await this.assertProjectAccess(u, projectId);
     const { limit, cursor } = query;
     const pos = decodeCursor(cursor);
     const conds: SQL[] = [eq(projectMembers.projectId, projectId)];
-    if (pos) {
-      conds.push(keysetAfterId(projectMembers.joinedAt, projectMembers.membershipId, pos));
-    }
+    if (pos)
+      conds.push(
+        keysetAfterId(
+          projectMembers.joinedAt,
+          projectMembers.membershipId,
+          pos,
+        ),
+      );
+
     const rows = await this.db
       .select({
         id: users.id,
@@ -177,7 +190,13 @@ export class ProjectsMembersService {
         membershipId: projectMembers.membershipId,
       })
       .from(projectMembers)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, u.orgId),
+          eq(organizationMembers.id, projectMembers.membershipId),
+        ),
+      )
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .innerJoin(
         projects,
@@ -239,7 +258,13 @@ export class ProjectsMembersService {
         image: users.image,
       })
       .from(projectTeamMembers)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.id, projectTeamMembers.membershipId)))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, u.orgId),
+          eq(organizationMembers.id, projectTeamMembers.membershipId),
+        ),
+      )
       .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
@@ -277,9 +302,13 @@ export class ProjectsMembersService {
 
     let actor: OrganizationActor;
     try {
-      actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: body.userId });
+      actor = await assertOrganizationActor(this.db, orgId, {
+        kind: "user",
+        userId: body.userId,
+      });
     } catch (e) {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      if (e instanceof OrganizationActorError)
+        throw organizationActorHttpError(e);
       throw e;
     }
 
@@ -297,16 +326,27 @@ export class ProjectsMembersService {
     const member = await this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(projectMembers)
-        .values({ orgId, projectId, membershipId: actor.membershipId, role: body.role })
+        .values({
+          orgId,
+          projectId,
+          membershipId: actor.membershipId,
+          role: body.role,
+        })
         .returning();
-      await this.webhooksDispatch.enqueue(tx, orgId, projectId, "member.added", {
-        id: created.id,
+      await this.webhooksDispatch.enqueue(
+        tx,
+        orgId,
         projectId,
-        userId: body.userId,
-        role: body.role,
-        actor: actorId,
-        timestamp: new Date().toISOString(),
-      });
+        "member.added",
+        {
+          id: created.id,
+          projectId,
+          userId: body.userId,
+          role: body.role,
+          actor: actorId,
+          timestamp: new Date().toISOString(),
+        },
+      );
       return created;
     });
 
@@ -318,7 +358,10 @@ export class ProjectsMembersService {
     const actorId = u.userId;
     await assertProjectOwnership(this.db, orgId, projectId);
     await this.assertCanManageProject(u, projectId);
-    const targetActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
+    const targetActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId,
+    });
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -354,13 +397,19 @@ export class ProjectsMembersService {
             )`,
         ),
       );
-      await this.webhooksDispatch.enqueue(tx, orgId, projectId, "member.removed", {
-        id: projectId,
+      await this.webhooksDispatch.enqueue(
+        tx,
+        orgId,
         projectId,
-        userId,
-        actor: actorId,
-        timestamp: new Date().toISOString(),
-      });
+        "member.removed",
+        {
+          id: projectId,
+          projectId,
+          userId,
+          actor: actorId,
+          timestamp: new Date().toISOString(),
+        },
+      );
     });
 
     return { success: true };
@@ -376,30 +425,41 @@ export class ProjectsMembersService {
     const actorId = u.userId;
     await assertProjectOwnership(this.db, orgId, projectId);
     await this.assertCanManageProject(u, projectId);
-    const targetActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: memberUserId });
+    const targetActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId: memberUserId,
+    });
 
     const updated = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .update(projectMembers)
         .set({ role: input.role })
-        .where(and(
-          eq(projectMembers.projectId, projectId),
-          eq(projectMembers.membershipId, targetActor.membershipId),
-        ))
+        .where(
+          and(
+            eq(projectMembers.projectId, projectId),
+            eq(projectMembers.membershipId, targetActor.membershipId),
+          ),
+        )
         .returning({
           id: projectMembers.id,
           membershipId: projectMembers.membershipId,
           role: projectMembers.role,
         });
       if (!row) throw new NotFoundException("Member not found");
-      await this.webhooksDispatch.enqueue(tx, orgId, projectId, "member.role_updated", {
-        id: row.id,
+      await this.webhooksDispatch.enqueue(
+        tx,
+        orgId,
         projectId,
-        userId: memberUserId,
-        role: input.role,
-        actor: actorId,
-        timestamp: new Date().toISOString(),
-      });
+        "member.role_updated",
+        {
+          id: row.id,
+          projectId,
+          userId: memberUserId,
+          role: input.role,
+          actor: actorId,
+          timestamp: new Date().toISOString(),
+        },
+      );
       return { ...row, userId: memberUserId };
     });
 
