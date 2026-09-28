@@ -17,6 +17,7 @@ import {
   type KbRetrievalStrategy,
 } from "./kb-retrieval-strategy";
 import { KB_ASK_MAX_CONTEXT_DOCUMENTS } from "./kb-ask-context";
+import type { KbPageStatus } from "../core/collection/knowledge-collection.types";
 
 export interface KbRetrieveOptions {
   documentsLimit?: number;
@@ -25,6 +26,8 @@ export interface KbRetrieveOptions {
   verifiedOnly?: boolean;
   sourceIds?: number[];
   pageIds?: number[];
+  ownerMembershipId?: number;
+  status?: KbPageStatus;
 }
 
 export interface KbRetrievalDegradation {
@@ -107,6 +110,8 @@ export class KbRetrievalService {
             opts.verifiedOnly,
             embedding,
             opts.pageIds,
+            opts.ownerMembershipId,
+            opts.status,
           ),
           this.search.retrieveTopSourcesWithOutcome(
             user,

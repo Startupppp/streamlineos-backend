@@ -260,3 +260,129 @@ describe("KbCandidateService — archived pages are excluded before the candidat
     expect(harness.rendered()).toHaveLength(1);
   });
 });
+
+describe("KbCandidateService — ownerMembershipId scope", () => {
+  function capturePageCandidateQuery() {
+    const whereClauses: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn((clause: unknown) => {
+        whereClauses.push(clause);
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue(chain),
+      execute: jest.fn().mockResolvedValue([]),
+    };
+    return {
+      service: new KbCandidateService(db as never),
+      rendered: () =>
+        whereClauses.map((c) => new PgDialect().sqlToQuery(c as never)),
+    };
+  }
+
+  it("pageKeywordCandidates includes owner_membership_id = $1 in the query when ownerMembershipId is provided, so only pages owned by that member are candidates", async () => {
+    const harness = capturePageCandidateQuery();
+
+    await harness.service.pageKeywordCandidates("org-1", "query", 10, sql`true`, undefined, undefined, undefined, 7);
+    const queries = harness.rendered();
+
+    expect(queries.some((q) => q.sql.includes('"owner_membership_id"'))).toBe(true);
+    expect(queries.flatMap((q) => q.params)).toContain(7);
+  });
+
+  it("pageKeywordCandidates does not include owner_membership_id in the query when ownerMembershipId is omitted, so the owner scope is absent rather than silently matching null owners", async () => {
+    const whereClauses: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn((clause: unknown) => {
+        whereClauses.push(clause);
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: 5 }]),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue(chain),
+      execute: jest.fn().mockResolvedValue([]),
+    };
+    const service = new KbCandidateService(db as never);
+    const ids = await service.pageKeywordCandidates("org-1", "query", 10, sql`true`);
+
+    expect(ids).toEqual([5]);
+    const combined = whereClauses.flatMap((c) => new PgDialect().sqlToQuery(c as never)).map((q) => q.sql).join(" ");
+    expect(combined).not.toContain('"owner_membership_id"');
+  });
+});
+
+describe("KbCandidateService — status scope narrows without removing the archived exclusion", () => {
+  function capturePageCandidateQuery() {
+    const whereClauses: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn((clause: unknown) => {
+        whereClauses.push(clause);
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue(chain),
+      execute: jest.fn().mockResolvedValue([]),
+    };
+    return {
+      service: new KbCandidateService(db as never),
+      rendered: () =>
+        whereClauses.map((c) => new PgDialect().sqlToQuery(c as never)),
+    };
+  }
+
+  it("pageKeywordCandidates includes status = $1 in the query when status scope is provided so only pages with that status are candidates", async () => {
+    const harness = capturePageCandidateQuery();
+
+    await harness.service.pageKeywordCandidates("org-1", "query", 10, sql`true`, undefined, undefined, undefined, undefined, "published");
+    const queries = harness.rendered();
+
+    expect(queries.flatMap((q) => q.params)).toContain("published");
+  });
+
+  it("pageKeywordCandidates always includes the archived exclusion even when a status scope is also set, so the status scope cannot re-admit archived pages by replacing the exclusion", async () => {
+    const harness = capturePageCandidateQuery();
+
+    await harness.service.pageKeywordCandidates("org-1", "query", 10, sql`true`, undefined, undefined, undefined, undefined, "published");
+    const queries = harness.rendered();
+
+    expect(queries.some((q) => /"status"\s*<>/.test(q.sql))).toBe(true);
+    expect(queries.flatMap((q) => q.params)).toContain("archived");
+    expect(queries.flatMap((q) => q.params)).toContain("published");
+  });
+
+  it("pageKeywordCandidates does not include an extra status predicate when no status scope is provided, so omitting the scope does not narrow results", async () => {
+    const whereClauses: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn((clause: unknown) => {
+        whereClauses.push(clause);
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: 9 }]),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue(chain),
+      execute: jest.fn().mockResolvedValue([]),
+    };
+    const service = new KbCandidateService(db as never);
+    const ids = await service.pageKeywordCandidates("org-1", "query", 10, sql`true`);
+
+    expect(ids).toEqual([9]);
+    const allParams = whereClauses.flatMap((c) => new PgDialect().sqlToQuery(c as never)).flatMap((q) => q.params);
+    expect(allParams.filter((p) => p !== "archived")).not.toContain("draft");
+    expect(allParams.filter((p) => p !== "archived")).not.toContain("published");
+    expect(allParams.filter((p) => p !== "archived")).not.toContain("in_review");
+  });
+});

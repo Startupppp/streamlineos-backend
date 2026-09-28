@@ -41,6 +41,7 @@ import {
   KbEmbeddingCache,
   normalizeEmbeddableQuery,
 } from "./kb-embedding-cache";
+import type { KbPageStatus } from "../core/collection/knowledge-collection.types";
 
 export { normalizeEmbeddableQuery };
 
@@ -150,6 +151,8 @@ export class KbSearchRetrievalService {
     verifiedOnly?: boolean,
     embedding?: QueryEmbedding,
     pageIds?: number[],
+    ownerMembershipId?: number,
+    status?: KbPageStatus,
   ): Promise<RetrievedSource[]> {
     const { results } = await this.retrieveTopArticlesWithOutcome(
       user,
@@ -159,6 +162,8 @@ export class KbSearchRetrievalService {
       verifiedOnly,
       embedding,
       pageIds,
+      ownerMembershipId,
+      status,
     );
     return results;
   }
@@ -171,6 +176,8 @@ export class KbSearchRetrievalService {
     verifiedOnly?: boolean,
     embedding?: QueryEmbedding,
     pageIds?: number[],
+    ownerMembershipId?: number,
+    status?: KbPageStatus,
   ): Promise<RetrievalChannelOutcome<RetrievedSource>> {
     const q = query.trim();
     if (!q) return { kind: "disabled", results: [] };
@@ -228,6 +235,8 @@ export class KbSearchRetrievalService {
             verifiedOnly,
             pageIds,
             spaceId,
+            ownerMembershipId,
+            status,
           ),
           vectorLiteral
             ? this.candidates.pageVectorCandidates(
@@ -238,6 +247,8 @@ export class KbSearchRetrievalService {
                 verifiedOnly,
                 pageIds,
                 spaceId,
+                ownerMembershipId,
+                status,
               )
             : Promise.resolve<number[]>([]),
         ]);

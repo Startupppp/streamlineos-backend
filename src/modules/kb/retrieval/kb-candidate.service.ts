@@ -22,6 +22,7 @@ import {
 import { queryVectorChunkIds } from "./kb-vector-candidate-query";
 import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 import { isVerifiedNow } from "../core/kb-page-trust-predicates";
+import type { KbPageStatus } from "../core/collection/knowledge-collection.types";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
@@ -153,6 +154,8 @@ export class KbCandidateService {
     verifiedOnly?: boolean,
     pageIds?: number[],
     spaceId?: number,
+    ownerMembershipId?: number,
+    status?: KbPageStatus,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
     const keywordCond = await this.resolveArticleKeywordCondition(
@@ -170,6 +173,8 @@ export class KbCandidateService {
     if (verifiedOnly) conditions.push(isVerifiedNow());
     if (pageIds && pageIds.length > 0) conditions.push(inArray(kbPages.id, pageIds));
     if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
+    if (ownerMembershipId !== undefined) conditions.push(eq(kbPages.ownerMembershipId, ownerMembershipId));
+    if (status !== undefined) conditions.push(eq(kbPages.status, status));
     const rows = await this.db
       .select({ id: kbPages.id })
       .from(kbPages)
@@ -187,6 +192,8 @@ export class KbCandidateService {
     verifiedOnly?: boolean,
     pageIds?: number[],
     spaceId?: number,
+    ownerMembershipId?: number,
+    status?: KbPageStatus,
   ): Promise<number[]> {
     const extra: SQL[] = [
       wikiPagePredicate(),
@@ -196,6 +203,8 @@ export class KbCandidateService {
     if (verifiedOnly) extra.push(isVerifiedNow());
     if (pageIds && pageIds.length > 0) extra.push(inArray(kbPages.id, pageIds));
     if (spaceId) extra.push(eq(kbPages.spaceId, spaceId));
+    if (ownerMembershipId !== undefined) extra.push(eq(kbPages.ownerMembershipId, ownerMembershipId));
+    if (status !== undefined) extra.push(eq(kbPages.status, status));
     return this.pageIdsNearest(
       orgId,
       vector,

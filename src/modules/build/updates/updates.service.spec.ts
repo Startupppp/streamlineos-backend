@@ -90,7 +90,7 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
     const db = makeMockDb();
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
@@ -215,7 +215,8 @@ describe("UpdatesService.editUpdate — body update with authz", () => {
     db.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
       .mockReturnValueOnce(makeSelectChain([]))
-      .mockReturnValueOnce(makeSelectChain([{ id: 5, authorMembershipId: 42 }]));
+      .mockReturnValueOnce(makeSelectChain([{ id: 5, authorMembershipId: 42 }]))
+      .mockReturnValueOnce(makeSelectChain([updatedRow]));
     db.update.mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
@@ -243,7 +244,9 @@ describe("UpdatesService.editUpdate — body update with authz", () => {
     };
     db.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([{ id: 5, authorMembershipId: 99 }]));
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([{ id: 5, authorMembershipId: 99 }]))
+      .mockReturnValueOnce(makeSelectChain([updatedRow]));
     db.update.mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
