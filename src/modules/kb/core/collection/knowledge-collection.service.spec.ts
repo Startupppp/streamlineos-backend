@@ -12,7 +12,10 @@ import type { KnowledgeAuthorizationService } from "../authorization/knowledge-a
 import type { KbActorStanding } from "../authorization/knowledge-authorization.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { KbPageCollectionQuery } from "./knowledge-collection.types";
-import { KB_PAGE_COLLECTION_COUNT_CAP } from "./knowledge-collection.types";
+import {
+  KB_PAGE_COLLECTION_COUNT_CAP,
+  KB_PAGE_COLLECTION_FACET_CAP,
+} from "./knowledge-collection.types";
 import { kbPageCollectionPageSchema } from "../dto/kb-core-response.schemas";
 
 const ORG = "org-collection";
@@ -54,6 +57,7 @@ interface Capture {
   selectCalls: number;
   unions: number;
   selections: CollectionSelection[];
+  executed: SQL[];
 }
 
 function makeChain(
@@ -86,6 +90,7 @@ function makeHarness(options: {
   rows?: Record<string, unknown>[];
   grantRows?: Record<string, unknown>[];
   countRows?: Record<string, unknown>[];
+  facetRows?: Record<string, unknown>[];
   actor?: KbActorStanding;
 }) {
   const capture: Capture = {
@@ -96,12 +101,23 @@ function makeHarness(options: {
     selectCalls: 0,
     unions: 0,
     selections: [],
+    executed: [],
   };
   const rows = options.rows ?? [];
   const grantRows = options.grantRows ?? [];
   const countRows = options.countRows ?? rows;
+  const facetRows = options.facetRows ?? [
+    { dimension: "status", text_value: "published", int_value: null, tally: 1 },
+    { dimension: "space", text_value: null, int_value: 7, tally: 1 },
+    { dimension: "owner", text_value: null, int_value: MEMBERSHIP, tally: 1 },
+    { dimension: "probe", text_value: null, int_value: null, tally: 1 },
+  ];
 
   const db = {
+    execute: jest.fn((clause: SQL) => {
+      capture.executed.push(clause);
+      return Promise.resolve(facetRows);
+    }),
     select: jest.fn((selection: CollectionSelection) => {
       capture.selectCalls += 1;
       capture.selections.push(selection);
@@ -373,11 +389,11 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
     expect(grantWhere.sql).toContain('"revoked_at" is null');
   });
 
-  it("computes facets only when asked, because a facet count scans the whole filtered set", async () => {
+  it("computes facets only when asked", async () => {
     const without = makeHarness({ rows: [pageRow()] });
     const plain = await without.svc.listPages(user(), query());
     expect(plain.facets).toBeNull();
-    expect(without.capture.groupBys).toBe(0);
+    expect(without.capture.executed).toHaveLength(0);
 
     const withFacets = makeHarness({ rows: [pageRow()] });
     const faceted = await withFacets.svc.listPages(
@@ -386,7 +402,58 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
     );
     expect(faceted.facets).not.toBeNull();
     expect(faceted.facets?.owner).toBeDefined();
-    expect(withFacets.capture.groupBys).toBe(3);
+  });
+
+  it("reads all three facets from one capped probe, because an uncapped group-by aggregates the whole tenant corpus and its cost grows with it", async () => {
+    const h = makeHarness({ rows: [pageRow()] });
+    await h.svc.listPages(user(), query({ facets: true }));
+
+    expect(h.capture.executed).toHaveLength(1);
+    const facetQuery = render(h.capture.executed[0]);
+    expect(facetQuery.params).toContain(KB_PAGE_COLLECTION_FACET_CAP + 1);
+    expect(facetQuery.sql).toContain("LIMIT");
+    expect(facetQuery.sql).toContain("GROUP BY status");
+    expect(facetQuery.sql).toContain("GROUP BY space_id");
+    expect(facetQuery.sql).toContain("GROUP BY owner_membership_id");
+  });
+
+  it("reports facets as inexact once the probe fills its cap, so a sampled distribution is never presented as a census", async () => {
+    const exact = makeHarness({ rows: [pageRow()] });
+    const exactPage = await exact.svc.listPages(user(), query({ facets: true }));
+    expect(exactPage.facets?.isExact).toBe(true);
+
+    const capped = makeHarness({
+      rows: [pageRow()],
+      facetRows: [
+        { dimension: "status", text_value: "draft", int_value: null, tally: KB_PAGE_COLLECTION_FACET_CAP + 1 },
+        {
+          dimension: "probe",
+          text_value: null,
+          int_value: null,
+          tally: KB_PAGE_COLLECTION_FACET_CAP + 1,
+        },
+      ],
+    });
+    const cappedPage = await capped.svc.listPages(
+      user(),
+      query({ facets: true }),
+    );
+    expect(cappedPage.facets?.isExact).toBe(false);
+  });
+
+  it("drops a status value the enum does not declare rather than widening the contract to whatever the column held", async () => {
+    const h = makeHarness({
+      rows: [pageRow()],
+      facetRows: [
+        { dimension: "status", text_value: "published", int_value: null, tally: 4 },
+        { dimension: "status", text_value: "retired", int_value: null, tally: 9 },
+        { dimension: "probe", text_value: null, int_value: null, tally: 13 },
+      ],
+    });
+    const page = await h.svc.listPages(user(), query({ facets: true }));
+
+    expect(page.facets?.status).toEqual([{ value: "published", count: 4 }]);
+    expect(kbPageCollectionPageSchema.parse(page).facets?.status).toHaveLength(1);
   });
 
   it("declares the owner facet in the route's @ResponseSchema, because an undeclared key is stripped by the contract and openapi never learns the field exists", async () => {
@@ -420,11 +487,9 @@ describe("KnowledgeCollectionService — the canonical page collection", () => {
 
     const keysetMarker = '"updated_at", "kb_pages"."id") <';
     const listWhere = render(next.capture.wheres[0]).sql;
-    const facetWhere = render(
-      next.capture.wheres[next.capture.wheres.length - 1],
-    ).sql;
+    const facetQuery = render(next.capture.executed[0]).sql;
     expect(listWhere).toContain(keysetMarker);
-    expect(facetWhere).not.toContain(keysetMarker);
+    expect(facetQuery).not.toContain(keysetMarker);
   });
 
   it("returns nothing when the search text reduces to no usable term, rather than matching every page", async () => {

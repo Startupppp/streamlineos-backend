@@ -22,6 +22,8 @@ export const KB_PAGE_COLLECTION_DEFAULT_LIMIT = 50;
 
 export const KB_PAGE_COLLECTION_COUNT_CAP = PAGE_SIZE_CAP * 5;
 
+export const KB_PAGE_COLLECTION_FACET_CAP = PAGE_SIZE_CAP * 50;
+
 export const KB_PAGE_COLLECTION_QUERY_FIELDS = [
   "q",
   "spaceId",
@@ -92,6 +94,7 @@ export interface KbPageCollectionFacets {
   readonly status: readonly { value: KbPageStatus; count: number }[];
   readonly space: readonly { spaceId: number | null; count: number }[];
   readonly owner: readonly { ownerMembershipId: number | null; count: number }[];
+  readonly isExact: boolean;
 }
 
 export interface KbPageCollectionPage {

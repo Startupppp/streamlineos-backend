@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { KB_PAGE_COLLECTION_FACET_CAP } from "./knowledge-collection.types";
 
 const suffix = randomUUID().slice(0, 8);
 const ORG = `kbcib-${suffix}`;
@@ -387,6 +388,30 @@ describe("KB page collection — index selection and buffer bounds at 5000-row c
     );
     const planBuffers = parseTotalSharedBuffers(lines);
     expect(planBuffers).toBeLessThan(500);
+  });
+
+  it("the capped facet probe reads a bounded slice of a corpus larger than its cap while the uncapped group-by it replaced reads every row, so the facet cost stops being a function of the tenant's page count — measured against the 20000-row tenant, because a cap above the fixture's cardinality would make this comparison vacuous", async () => {
+    expect(BULK_PAGE_COUNT).toBeGreaterThan(KB_PAGE_COLLECTION_FACET_CAP);
+
+    const cappedLines = await explainAsApp(
+      ORG_BULK,
+      `SELECT status::text AS text_value, count(*)::int AS tally
+         FROM (SELECT status FROM kb_pages WHERE org_id = '${ORG_BULK}' AND deleted_at IS NULL LIMIT ${KB_PAGE_COLLECTION_FACET_CAP + 1}) c
+         GROUP BY status`,
+    );
+    const uncappedLines = await explainAsApp(
+      ORG_BULK,
+      `SELECT status, count(*)::int FROM kb_pages
+         WHERE org_id = '${ORG_BULK}' AND deleted_at IS NULL
+         GROUP BY status`,
+    );
+
+    const capped = parseTotalSharedBuffers(cappedLines);
+    const uncapped = parseTotalSharedBuffers(uncappedLines);
+
+    expect(uncapped).toBeGreaterThan(capped * 2);
+    expect(cappedLines.join("\n")).toContain(`rows=${KB_PAGE_COLLECTION_FACET_CAP + 1}`);
+    expect(uncappedLines.join("\n")).toContain(`rows=${BULK_PAGE_COUNT}`);
   });
 
   it("the updated_desc collection for ORG_B (50 rows, a second tenant in the same database) uses at most 50 shared buffers so the RLS predicate excludes the 5000-row tenant corpus from the scan", async () => {

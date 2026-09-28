@@ -48,7 +48,11 @@ import type {
   KbPageSharedBy,
   KbPageStatus,
 } from "./knowledge-collection.types";
-import { KB_PAGE_COLLECTION_COUNT_CAP } from "./knowledge-collection.types";
+import {
+  KB_PAGE_COLLECTION_COUNT_CAP,
+  KB_PAGE_COLLECTION_FACET_CAP,
+  KB_PAGE_STATUSES,
+} from "./knowledge-collection.types";
 
 const COLLECTION_PROJECTION = {
   id: kbPages.id,
@@ -84,6 +88,23 @@ function sortColumn(sort: KbPageCollectionSort) {
   if (sort === "created_desc") return kbPages.createdAt;
   if (sort === "title_asc") return kbPages.title;
   return kbPages.updatedAt;
+}
+
+function facetTally(raw: unknown): number {
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function facetInt(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+function facetStatus(raw: unknown): KbPageStatus | null {
+  return KB_PAGE_STATUSES.find(function matches(known) {
+    return known === raw;
+  }) ?? null;
 }
 
 function emptyPage(limit: number): KbPageCollectionPage {
@@ -322,33 +343,51 @@ export class KnowledgeCollectionService {
   private async loadFacets(
     filter: SQL<unknown> | undefined,
   ): Promise<KbPageCollectionFacets> {
-    const [byStatus, bySpace, byOwner] = await Promise.all([
-      this.db
-        .select({ value: kbPages.status, count: sql<number>`count(*)::int` })
-        .from(kbPages)
-        .where(filter)
-        .groupBy(kbPages.status),
-      this.db
-        .select({ spaceId: kbPages.spaceId, count: sql<number>`count(*)::int` })
-        .from(kbPages)
-        .where(filter)
-        .groupBy(kbPages.spaceId),
-      this.db
-        .select({
-          ownerMembershipId: kbPages.ownerMembershipId,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(kbPages)
-        .where(filter)
-        .groupBy(kbPages.ownerMembershipId),
-    ]);
+    const rows = await this.db.execute(sql`
+      WITH capped AS (
+        SELECT
+          ${kbPages.status} AS status,
+          ${kbPages.spaceId} AS space_id,
+          ${kbPages.ownerMembershipId} AS owner_membership_id
+        FROM ${kbPages}
+        WHERE ${filter ?? sql`true`}
+        LIMIT ${KB_PAGE_COLLECTION_FACET_CAP + 1}
+      )
+      SELECT 'status'::text AS dimension, status::text AS text_value, NULL::integer AS int_value, count(*)::int AS tally
+        FROM capped GROUP BY status
+      UNION ALL
+      SELECT 'space'::text, NULL::text, space_id, count(*)::int FROM capped GROUP BY space_id
+      UNION ALL
+      SELECT 'owner'::text, NULL::text, owner_membership_id, count(*)::int FROM capped GROUP BY owner_membership_id
+      UNION ALL
+      SELECT 'probe'::text, NULL::text, NULL::integer, count(*)::int FROM capped
+    `);
+
+    const status: { value: KbPageStatus; count: number }[] = [];
+    const space: { spaceId: number | null; count: number }[] = [];
+    const owner: { ownerMembershipId: number | null; count: number }[] = [];
+    let probed = 0;
+
+    for (const row of rows) {
+      const tally = facetTally(row.tally);
+      const dimension = row.dimension;
+      if (dimension === "probe") {
+        probed = tally;
+      } else if (dimension === "status") {
+        const value = facetStatus(row.text_value);
+        if (value !== null) status.push({ value, count: tally });
+      } else if (dimension === "space") {
+        space.push({ spaceId: facetInt(row.int_value), count: tally });
+      } else if (dimension === "owner") {
+        owner.push({ ownerMembershipId: facetInt(row.int_value), count: tally });
+      }
+    }
 
     return {
-      status: byStatus.map(function toStatusFacet(row) {
-        return { value: row.value as KbPageStatus, count: row.count };
-      }),
-      space: bySpace,
-      owner: byOwner,
+      status,
+      space,
+      owner,
+      isExact: probed <= KB_PAGE_COLLECTION_FACET_CAP,
     };
   }
 }
