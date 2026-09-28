@@ -38,6 +38,7 @@ const TICKET_LIST_COLUMNS = {
   cycleId: true,
   sequenceId: true,
   estimate: true,
+  version: true,
   createdAt: true,
   updatedAt: true,
 } as const;

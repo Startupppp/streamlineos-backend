@@ -11,7 +11,7 @@ const row = {
   projectId: 42, ticketNumber: 1, epicId: null, assigneeMembershipId: 7,
   reporterId: null, points: null, storyPoints: null, link: null, rank: "a0", parentTicketId: null,
   originalEstimate: null, timeSpent: "0", startDate: null, dueDate: null, moduleId: null,
-  cycleId: null, sequenceId: null, estimate: null, createdAt: new Date(), updatedAt: new Date(),
+  cycleId: null, sequenceId: null, estimate: null, version: 1, createdAt: new Date(), updatedAt: new Date(),
   descriptionExcerpt: "A short plain-text excerpt of the ticket body",
   assigneeId: user.id, assignee: user, assignees: [{ id: 1, ticketId: 1, assignedAt: new Date(), assignedBy: null, userId: user.id, user }],
   labels: [{ id: 1, ticketId: 1, labelId: 3, createdAt: new Date(), label: { id: 3, orgId: "org-1", createdAt: new Date(), name: "Bug", color: null } }], cycle: null,
@@ -49,9 +49,15 @@ describe("Build ticket list projection contract", () => {
     expect(ticketRowSchema.safeParse(row).success).toBe(false);
   });
 
-  it.each(["title", "rank", "assigneeMembershipId", "createdAt", "assignees", "labels"])("rejects missing required projected %s", (field) => {
+  it.each(["title", "rank", "assigneeMembershipId", "createdAt", "assignees", "labels", "version"])("rejects missing required projected %s", (field) => {
     const incomplete = Object.fromEntries(Object.entries(row).filter(([key]) => key !== field));
     expect(ticketListPageSchema.safeParse({ data: [incomplete], pagination: { limit: 25, hasMore: false, nextCursor: null } }).success).toBe(false);
+  });
+
+  it("projects the concurrency token, because a board inline edit cannot send a token the list never gave it and the ticket PATCH body requires one", () => {
+    const parsed = ticketListPageSchema.parse({ data: [row], pagination: { limit: 25, hasMore: false, nextCursor: null } });
+
+    expect(parsed.data[0]?.version).toBe(1);
   });
 
   it("rejects membership IDs impersonating user summaries", () => {
