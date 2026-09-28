@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers, users } from "../common/auth";
 import { crmAccountTierEnum } from "../common/enums";
 import { projects } from "./core";
 import { tickets } from "./tasks";
@@ -45,6 +45,7 @@ export const roadmapItems = build.table(
       .notNull(),
     title: text("title").notNull(),
     description: text("description"),
+    outcome: text("outcome"),
     status: roadmapStatusEnum("status").default("planned").notNull(),
     category: text("category"),
     isPublic: boolean("is_public").default(false).notNull(),
@@ -60,6 +61,7 @@ export const roadmapItems = build.table(
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    ownerMembershipId: integer("owner_membership_id"),
     version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -79,8 +81,16 @@ export const roadmapItems = build.table(
       foreignColumns: [tickets.orgId, tickets.id],
       name: "fk_roadmap_items_org_ticket",
     }).onDelete("set null"),
+    foreignKey({
+      columns: [table.orgId, table.ownerMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_roadmap_items_org_owner_membership",
+    }).onDelete("set null"),
     index("idx_roadmap_items_org_status")
       .on(table.orgId, table.status)
+      .where(sql`deleted_at IS NULL`),
+    index("idx_roadmap_items_org_owner_membership")
+      .on(table.orgId, table.ownerMembershipId)
       .where(sql`deleted_at IS NULL`),
     index("idx_roadmap_items_title_trgm")
       .using("gin", table.title.op("gin_trgm_ops"))

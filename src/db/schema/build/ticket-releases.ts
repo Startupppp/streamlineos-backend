@@ -19,6 +19,7 @@ export const projectReleases = build.table(
     description: text("description"),
     status: text("status").default("draft").notNull(),
     releaseDate: date("release_date"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -34,6 +35,7 @@ export const projectReleases = build.table(
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_releases_org_project" }).onDelete("cascade"),
     index("idx_project_releases_project").on(table.projectId).where(sql`deleted_at IS NULL`),
     index("idx_project_releases_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
+    index("idx_project_releases_org_published").on(table.orgId, table.publishedAt).where(sql`deleted_at IS NULL AND published_at IS NOT NULL`),
     unique("uniq_project_releases_org_id").on(table.orgId, table.id),
     check(
       "chk_project_releases_status",

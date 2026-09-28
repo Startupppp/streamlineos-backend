@@ -39,6 +39,7 @@ export const managedProducts = build.table(
       Array<{ label: string; target?: string }>
     >(),
     ownerMembershipId: integer("owner_membership_id"),
+    version: integer("version").notNull().default(1),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

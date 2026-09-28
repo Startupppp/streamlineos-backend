@@ -57,6 +57,7 @@ export const tickets = build.table(
     dueDate: date("due_date"),
     moduleId: integer("module_id"),
     cycleId: integer("cycle_id"),
+    milestoneId: integer("milestone_id"),
     sequenceId: text("sequence_id"),
     estimate: integer("estimate"),
     completionPercentage: integer("completion_percentage").default(0).notNull(),
@@ -130,6 +131,8 @@ export const tickets = build.table(
       .on(t.orgId, t.projectId, t.dueDate.asc(), t.createdAt.desc(), t.id.asc())
       .where(sql`deleted_at IS NULL`),
     index("idx_tickets_cycle").on(t.cycleId),
+    index("idx_tickets_org_milestone_live").on(t.orgId, t.milestoneId)
+      .where(sql`${t.deletedAt} IS NULL AND ${t.milestoneId} IS NOT NULL`),
     index("idx_tickets_org_cycle_live").on(t.orgId, t.cycleId)
       .where(sql`${t.deletedAt} IS NULL AND ${t.cycleId} IS NOT NULL`),
     index("idx_tickets_parent").on(t.parentTicketId),

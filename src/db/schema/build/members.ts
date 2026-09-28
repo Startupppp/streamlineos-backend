@@ -124,6 +124,7 @@ export const projectMilestones = build.table("project_milestones", {
   targetDate: date("target_date").notNull(),
   status: text("status").notNull().default("PENDING"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  ownerMembershipId: integer("owner_membership_id"),
   clientVisible: boolean("client_visible").notNull().default(false),
   version: integer("version").notNull().default(1),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -133,6 +134,8 @@ export const projectMilestones = build.table("project_milestones", {
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_milestones_org_project" }).onDelete("cascade"),
   index("idx_project_milestones_project").on(table.projectId).where(sql`deleted_at IS NULL`),
   index("idx_project_milestones_org").on(table.orgId).where(sql`deleted_at IS NULL`),
+  foreignKey({ columns: [table.orgId, table.ownerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_project_milestones_org_owner_membership" }).onDelete("set null"),
+  index("idx_project_milestones_org_owner_membership").on(table.orgId, table.ownerMembershipId).where(sql`deleted_at IS NULL`),
   unique("uniq_project_milestones_org_id").on(table.orgId, table.id),
   check("chk_project_milestones_status", sql`${table.status} IN ('PENDING','ACHIEVED','MISSED')`),
 ]);
