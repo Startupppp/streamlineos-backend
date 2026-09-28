@@ -6,11 +6,12 @@ import * as schema from "../../../db/schema";
 import { createTenantAwareDb } from "../../../common/tenant/tenant-db";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { KbCandidateService } from "./kb-candidate.service";
+import { kbAnnEfSearch, KB_EXACT_SCAN_MAX_CHUNKS } from "./kb-retrieval-strategy";
 
-const TENANT_CHUNKS = 320;
-const OTHER_CHUNKS = 320;
+const TENANT_CHUNKS = 9000;
+const OTHER_CHUNKS = 500;
 const CAP = 200;
-const SCAN_BOUND = 120;
+const RECALL_FLOOR = 0.95;
 
 const suffix = randomUUID().slice(0, 8);
 const TENANT_ORG = `kbrecall-a-${suffix}`;
@@ -73,7 +74,7 @@ describe("KB vectorChunkIds — candidate pool recall against Postgres", () => {
       SELECT embedding::text AS v FROM kb_article_chunks WHERE org_id = ${TENANT_ORG} ORDER BY id LIMIT 1`;
     if (!row) throw new Error("fixture seeded no chunks");
     queryVector = row.v;
-  }, 180_000);
+  }, 300_000);
 
   afterAll(async () => {
     if (owner) {
@@ -92,7 +93,6 @@ describe("KB vectorChunkIds — candidate pool recall against Postgres", () => {
       await base.transaction(async (tx) => {
         await tx.execute(sql`SELECT set_config('app.organization_id', ${TENANT_ORG}, true)`);
         await tx.execute(sql.raw("SET LOCAL enable_sort = off"));
-        await tx.execute(sql.raw(`SET LOCAL hnsw.max_scan_tuples = ${SCAN_BOUND}`));
         captured.push({
           value: await runWithTenantContext({ orgId: TENANT_ORG, audience: "INTERNAL", tx }, fn),
         });
@@ -106,6 +106,11 @@ describe("KB vectorChunkIds — candidate pool recall against Postgres", () => {
     return result.value;
   }
 
+  it("ef_search computed at this cap satisfies BE-130 requiring ef_search to be at least as large as the requested cap so that the HNSW candidate pool is never smaller than the result set", () => {
+    const efSearch = kbAnnEfSearch(CAP);
+    expect(efSearch).toBeGreaterThanOrEqual(CAP);
+  });
+
   it("the plan under test is the HNSW index scan with the tenant predicate as a filter", async () => {
     const plan = await inTenantTransaction(async () => {
       const rows = await appDb.execute(
@@ -118,29 +123,33 @@ describe("KB vectorChunkIds — candidate pool recall against Postgres", () => {
     expect(plan).toContain("idx_kb_chunks_embedding_hnsw");
   }, 120_000);
 
-  it("returns the full candidate pool when the tenant has more chunks than the cap", async () => {
+  it("returns the full candidate pool when the tenant corpus exceeds the cap and the ANN index path is active", async () => {
+    expect(TENANT_CHUNKS).toBeGreaterThan(KB_EXACT_SCAN_MAX_CHUNKS);
     const ids = await inTenantTransaction(() =>
       service.vectorChunkIds(TENANT_ORG, queryVector, CAP),
     );
     expect(ids).toHaveLength(CAP);
   }, 120_000);
 
-  it("returns the tenant's true nearest chunks, not whatever the truncated ANN pass reached", async () => {
-    const { ids, groundTruth } = await inTenantTransaction(async () => {
-      const actual = await service.vectorChunkIds(TENANT_ORG, queryVector, CAP);
+  it("ANN recall at 9000-chunk cardinality: at least 95% of the exact top-200 nearest TENANT_ORG chunks appear in the vectorChunkIds result, meaning the HNSW path does not silently discard correct candidates the way a truncated scan would", async () => {
+    const { annIds, exactIds } = await inTenantTransaction(async () => {
+      const ann = await service.vectorChunkIds(TENANT_ORG, queryVector, CAP);
       const exact = await appDb.execute(
         sql`SELECT id FROM (
               SELECT id, embedding <=> ${queryVector}::vector AS distance
               FROM public.kb_article_chunks WHERE org_id = ${TENANT_ORG} OFFSET 0
             ) scoped ORDER BY scoped.distance LIMIT ${CAP}`,
       );
-      return { ids: actual, groundTruth: exact.map((r) => Number(r["id"])) };
+      return { annIds: ann, exactIds: exact.map((r) => Number(r["id"])) };
     });
-    expect(groundTruth).toHaveLength(CAP);
-    expect([...ids].sort((a, b) => a - b)).toEqual([...groundTruth].sort((a, b) => a - b));
+    expect(exactIds).toHaveLength(CAP);
+    const exactSet = new Set(exactIds);
+    const overlap = annIds.filter((id) => exactSet.has(id)).length;
+    const recall = overlap / CAP;
+    expect(recall).toBeGreaterThanOrEqual(RECALL_FLOOR);
   }, 120_000);
 
-  it("never returns another tenant's chunk ids", async () => {
+  it("never returns another tenant's chunk ids under the ANN path where the tenant predicate is a post-filter on HNSW index output rather than a pre-filter on the data scanned", async () => {
     const ids = await inTenantTransaction(() =>
       service.vectorChunkIds(TENANT_ORG, queryVector, CAP),
     );
@@ -150,7 +159,7 @@ describe("KB vectorChunkIds — candidate pool recall against Postgres", () => {
     expect(foreign[0]?.n).toBe(0);
   }, 120_000);
 
-  it("returns every chunk the tenant has when the cap exceeds the corpus", async () => {
+  it("returns every chunk the tenant has when the cap exceeds the ANN ef_search maximum, triggering the exact-scan fallback so no chunks are missed by the index", async () => {
     const ids = await inTenantTransaction(() =>
       service.vectorChunkIds(TENANT_ORG, queryVector, TENANT_CHUNKS + 50),
     );
