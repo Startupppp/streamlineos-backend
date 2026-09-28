@@ -471,6 +471,40 @@ describe("KbAskService", () => {
     expect(span.attributes["kb.ask.degraded"]).toBe(false);
   });
 
+  it("kb.ask.retrieval_latency_ms carries the measured cost of gathering context — the attribute was declared but hard-zero, so an always-0 emission would pass a presence check", async () => {
+    mockRetrieval.retrieve.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return {
+        documents: [articleResult],
+        sources: [],
+        passages: [],
+        degraded: { documents: false, sources: false, passages: false },
+        strategy: { kind: "exact" as const },
+      };
+    });
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Reset via the login page."));
+
+    const span = await captureAskSpan(() => service.ask(user, input));
+
+    expect(Number(span.attributes["kb.ask.retrieval_latency_ms"])).toBeGreaterThanOrEqual(20);
+  });
+
+  it("a no-context ask still reports its retrieval cost, so the no-answer rate and the work it cost are measurable on the same span", async () => {
+    mockRetrieval.retrieve.mockResolvedValueOnce({
+      documents: [],
+      sources: [],
+      passages: [],
+      degraded: { documents: false, sources: false, passages: false },
+      strategy: { kind: "exact" as const },
+    });
+
+    const span = await captureAskSpan(() => service.ask(user, input));
+
+    expect(span.attributes["kb.ask.outcome"]).toBe("no_context");
+    expect(span.attributes["kb.ask.is_no_answer"]).toBe(true);
+    expect(typeof span.attributes["kb.ask.retrieval_latency_ms"]).toBe("number");
+  });
+
   it("reportKnowledgeGap records a search_no_results event carrying the reported question, so the existing detection sweep can surface it", async () => {
     await service.reportKnowledgeGap(user, "Where is the expense policy?");
 

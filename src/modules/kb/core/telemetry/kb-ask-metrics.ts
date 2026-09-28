@@ -35,7 +35,7 @@ export interface KbAskFacts {
   citations?: number;
   candidates?: number;
   degraded?: boolean;
-  rerankLatencyMs?: number;
+  retrievalLatencyMs?: number;
   isNoAnswer?: boolean;
   queueLane?: string;
   sourceKind?: string;
@@ -69,7 +69,7 @@ export class KbAskMetrics {
     this.attributes["kb.ask.citations"] = facts.citations ?? 0;
     this.attributes["kb.ask.candidates"] = facts.candidates ?? 0;
     this.attributes["kb.ask.degraded"] = facts.degraded ?? false;
-    this.attributes["kb.ask.rerank_latency_ms"] = facts.rerankLatencyMs ?? 0;
+    this.attributes["kb.ask.retrieval_latency_ms"] = facts.retrievalLatencyMs ?? 0;
     this.attributes["kb.ask.is_no_answer"] = facts.isNoAnswer ?? (outcome === "no_context");
     this.attributes["kb.ask.queue_lane"] = facts.queueLane ?? "fast";
     this.attributes["kb.ask.source_kind"] = facts.sourceKind ?? "none";

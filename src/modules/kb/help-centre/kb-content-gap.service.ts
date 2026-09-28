@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   and,
   desc,
@@ -245,7 +245,8 @@ export class KbContentGapService {
         dismissalReason: supportKnowledgeGaps.dismissalReason,
         updatedAt: supportKnowledgeGaps.updatedAt,
       });
-    return row!;
+    if (!row) throw new NotFoundException("Knowledge gap not found");
+    return row;
   }
 
   async dismissGap(user: CurrentUserContext, body: GapDismissBody) {
@@ -279,7 +280,8 @@ export class KbContentGapService {
         dismissalReason: supportKnowledgeGaps.dismissalReason,
         updatedAt: supportKnowledgeGaps.updatedAt,
       });
-    return row!;
+    if (!row) throw new NotFoundException("Knowledge gap not found");
+    return row;
   }
 
   async createFix(user: CurrentUserContext, body: GapCreateFixBody) {
@@ -316,7 +318,8 @@ export class KbContentGapService {
           })
           .returning({ id: kbPages.id });
 
-        const pageId = page!.id;
+        if (!page) throw new NotFoundException("Page not found");
+        const pageId = page.id;
 
         const [row] = await tx
           .insert(supportKnowledgeGaps)
@@ -349,7 +352,8 @@ export class KbContentGapService {
             dismissalReason: supportKnowledgeGaps.dismissalReason,
             updatedAt: supportKnowledgeGaps.updatedAt,
           });
-        return row!;
+        if (!row) throw new NotFoundException("Knowledge gap not found");
+        return row;
       },
       { orgId: user.orgId },
     );

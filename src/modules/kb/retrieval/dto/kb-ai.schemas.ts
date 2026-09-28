@@ -8,6 +8,7 @@ export const searchSchema = z
     q: z.string().trim().min(1).max(200),
     spaceId: z.coerce.number().int().positive().optional(),
     pageSize: pageSizeField(20, 50),
+    cursor: z.string().min(1).max(512).optional(),
   })
   .strict();
 export type SearchInput = z.infer<typeof searchSchema>;

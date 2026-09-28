@@ -234,7 +234,7 @@ describe("the KB Ask span carries no tenant content and survives redaction", () 
       "kb.ask.citations",
       "kb.ask.candidates",
       "kb.ask.degraded",
-      "kb.ask.rerank_latency_ms",
+      "kb.ask.retrieval_latency_ms",
       "kb.ask.is_no_answer",
       "kb.ask.queue_lane",
       "kb.ask.source_kind",

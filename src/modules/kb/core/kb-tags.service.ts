@@ -29,7 +29,13 @@ export class KbTagsService {
 
   list(orgId: string): Promise<TagRow[]> {
     return this.db
-      .select()
+      .select({
+        id: kbTags.id,
+        orgId: kbTags.orgId,
+        name: kbTags.name,
+        slug: kbTags.slug,
+        createdAt: kbTags.createdAt,
+      })
       .from(kbTags)
       .where(eq(kbTags.orgId, orgId))
       .orderBy(asc(kbTags.name))

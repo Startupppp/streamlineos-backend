@@ -33,11 +33,12 @@ export class KbFromTicketService {
     const ticketContent = await runInTenantTransaction(this.db, async (tx) => {
       const ticket = await tx.query.supportTickets.findFirst({
         where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { title: true, description: true },
       });
       if (!ticket) throw new NotFoundException("Ticket not found");
 
       const messages = await tx
-        .select()
+        .select({ body: supportTicketMessages.body })
         .from(supportTicketMessages)
         .where(eq(supportTicketMessages.ticketId, ticketId))
         .orderBy(asc(supportTicketMessages.createdAt));

@@ -191,15 +191,14 @@ export class KbChatHistoryService {
     }
 
     if (cursorRow) {
-      baseConditions.push(
-        or(
-          lt(kbChatConversations.updatedAt, cursorRow.updatedAt),
-          and(
-            eq(kbChatConversations.updatedAt, cursorRow.updatedAt),
-            lt(kbChatConversations.id, cursorRow.id),
-          ),
-        ) as SQL,
+      const cursorCondition = or(
+        lt(kbChatConversations.updatedAt, cursorRow.updatedAt),
+        and(
+          eq(kbChatConversations.updatedAt, cursorRow.updatedAt),
+          lt(kbChatConversations.id, cursorRow.id),
+        ),
       );
+      if (cursorCondition) baseConditions.push(cursorCondition);
     }
 
     const rows = await this.db

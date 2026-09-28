@@ -217,9 +217,11 @@ export class KbAskService {
     });
     try {
       const cacheOutcome = await this.search.aclCacheOutcome(user);
+      const retrievalStart = Date.now();
       const gathered = await this.gatherContext(user, input, options);
+      const retrievalLatencyMs = Date.now() - retrievalStart;
       if (gathered.kind === "no-context") {
-        metrics.finish("no_context");
+        metrics.finish("no_context", { retrievalLatencyMs });
         void this.writeNoContextInteraction(user, correlationId);
         return this.noContextAnswer(user, input.question, correlationId);
       }
@@ -261,6 +263,7 @@ export class KbAskService {
           metrics.finish("credits_exhausted", {
             citations: citations.length,
             candidates,
+            retrievalLatencyMs,
             queueLane,
             sourceKind,
             cacheOutcome,
@@ -289,6 +292,7 @@ export class KbAskService {
           metrics.finish("provider_unavailable", {
             citations: citations.length,
             candidates,
+            retrievalLatencyMs,
             queueLane,
             sourceKind,
             cacheOutcome,
@@ -301,6 +305,7 @@ export class KbAskService {
         metrics.finish("provider_unavailable", {
           citations: citations.length,
           candidates,
+          retrievalLatencyMs,
           queueLane,
           sourceKind,
           cacheOutcome,
@@ -369,6 +374,7 @@ export class KbAskService {
         citations: citations.length,
         candidates,
         degraded,
+        retrievalLatencyMs,
         queueLane,
         sourceKind,
         cacheOutcome,
@@ -404,11 +410,13 @@ export class KbAskService {
     });
     try {
       const cacheOutcome = await this.search.aclCacheOutcome(user);
+      const retrievalStart = Date.now();
       const gathered = await this.gatherContext(user, input, options);
+      const retrievalLatencyMs = Date.now() - retrievalStart;
       if (gathered.kind === "no-context") {
         this.noContextAnswer(user, input.question, correlationId);
         void this.writeNoContextInteraction(user, correlationId);
-        metrics.finish("no_context");
+        metrics.finish("no_context", { retrievalLatencyMs });
         return { hasContext: false };
       }
       const { fullContext, top, sources, linked, citations, degraded } =
@@ -516,6 +524,7 @@ export class KbAskService {
         citations: citations.length,
         candidates,
         degraded,
+        retrievalLatencyMs,
         queueLane,
         sourceKind,
         cacheOutcome,
