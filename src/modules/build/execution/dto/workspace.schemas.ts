@@ -15,6 +15,7 @@ export const listMilestonesQuerySchema = z.object({
   q: z.string().max(200).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  ownerId: z.coerce.number().int().positive().optional(),
 }).strict();
 export type ListMilestonesQuery = z.infer<typeof listMilestonesQuerySchema>;
 
@@ -23,6 +24,7 @@ export const createMilestoneSchema = z.object({
   description: z.string().max(1000).optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
   status: z.enum(["PENDING", "ACHIEVED", "MISSED"]).default("PENDING"),
+  ownerMembershipId: z.number().int().min(1).nullable().optional(),
 }).strict();
 
 export const updateMilestoneSchema = z.object({
@@ -31,6 +33,7 @@ export const updateMilestoneSchema = z.object({
   description: z.string().max(1000).optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format").optional(),
   status: z.enum(["PENDING", "ACHIEVED", "MISSED"]).optional(),
+  ownerMembershipId: z.number().int().min(1).nullable().optional(),
 }).strict();
 
 export const createIntakeSchema = z.object({

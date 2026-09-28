@@ -25,6 +25,7 @@ export const createManagedProductSchema = z.object({
 }).strict();
 
 export const updateManagedProductSchema = z.object({
+  version: z.number().int().min(1),
   name: z.string().min(1).max(255).optional(),
   description: z.string().nullish(),
   ownerId: z.string().min(1).nullish(),

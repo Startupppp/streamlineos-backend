@@ -46,6 +46,7 @@ import type {
   UpdateManagedProductInput,
 } from "./dto/managed-products.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { TicketVersionConflictException } from "../core";
 
 type ManagedProductRow = typeof managedProducts.$inferSelect;
 type ManagedProductPatch = Partial<typeof managedProducts.$inferInsert>;
@@ -222,7 +223,10 @@ export class ManagedProductsService {
     managedProductId: number,
     input: UpdateManagedProductInput,
   ) {
-    await this.loadProduct(orgId, managedProductId);
+    const stored = await this.loadProduct(orgId, managedProductId);
+    if (input.version !== stored.version) {
+      throw new TicketVersionConflictException(stored.version);
+    }
     const patch: ManagedProductPatch = {};
     if (input.name !== undefined) patch.name = input.name;
     if (input.description !== undefined)
@@ -237,10 +241,25 @@ export class ManagedProductsService {
           eq(managedProducts.id, managedProductId),
           eq(managedProducts.orgId, orgId),
           isNull(managedProducts.deletedAt),
+          eq(managedProducts.version, input.version),
         ),
       )
       .returning();
-    if (!updated) throw new NotFoundException("Managed product not found");
+    if (!updated) {
+      const [current] = await this.db
+        .select({ version: managedProducts.version })
+        .from(managedProducts)
+        .where(
+          and(
+            eq(managedProducts.id, managedProductId),
+            eq(managedProducts.orgId, orgId),
+          ),
+        )
+        .limit(1);
+      throw new TicketVersionConflictException(
+        current?.version ?? stored.version,
+      );
+    }
     this.audit.log({
       action: "managed_product.updated",
       userId,

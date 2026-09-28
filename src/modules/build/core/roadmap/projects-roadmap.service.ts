@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { TicketVersionConflictException } from "../tickets/ticket-version-conflict.exception";
 import {
   and,
@@ -14,7 +19,12 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { projects, roadmapItems } from "../../../../db/schema";
+import {
+  projects,
+  roadmapItems,
+  organizationMembers,
+  users,
+} from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import type {
@@ -53,6 +63,58 @@ import {
 const ROADMAP_SEARCH_MIN_TERM_LENGTH = 3;
 export const ROADMAP_SEARCH_ID_CAP = 500;
 
+interface OwnerFields {
+  readonly name: string | null;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly email: string;
+  readonly image: string | null;
+}
+
+async function loadOwners(
+  db: Db,
+  orgId: string,
+  membershipIds: number[],
+): Promise<Map<number, OwnerFields>> {
+  if (membershipIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      membershipId: organizationMembers.id,
+      name: users.name,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      image: users.image,
+    })
+    .from(organizationMembers)
+    .innerJoin(users, eq(organizationMembers.userId, users.id))
+    .where(
+      and(
+        eq(organizationMembers.orgId, orgId),
+        inArray(organizationMembers.id, membershipIds),
+      ),
+    );
+  const map = new Map<number, OwnerFields>();
+  for (const r of rows) {
+    map.set(r.membershipId, {
+      name: r.name ?? null,
+      firstName: r.firstName ?? null,
+      lastName: r.lastName ?? null,
+      email: r.email,
+      image: r.image ?? null,
+    });
+  }
+  return map;
+}
+
+function withOwner<T extends { ownerMembershipId?: number | null }>(
+  row: T,
+  ownerMap: Map<number, OwnerFields>,
+): T & { owner: OwnerFields | null } {
+  const id = row.ownerMembershipId ?? null;
+  return { ...row, owner: id !== null ? (ownerMap.get(id) ?? null) : null };
+}
+
 type RoadmapSortMode = "sort_order" | "updated_at" | "created_at" | "title";
 
 interface RoadmapPageKey {
@@ -85,14 +147,16 @@ function decodeRoadmapCursor(
   cursor: string | undefined | null,
   mode: RoadmapSortMode,
 ): RoadmapCursorDecoded {
-  if (typeof cursor !== "string" || cursor.length === 0) return { match: "absent" };
+  if (typeof cursor !== "string" || cursor.length === 0)
+    return { match: "absent" };
   const parts = decodeTupleCursor(cursor, 3);
   if (!parts) return { match: "absent" };
   const [cursorMode, sortValue, rawId] = parts;
   if (cursorMode !== mode) return { match: "cross_sort" };
   if (!/^[1-9][0-9]{0,9}$/.test(rawId)) return { match: "absent" };
   const id = Number(rawId);
-  if (!Number.isSafeInteger(id) || id > 2_147_483_647) return { match: "absent" };
+  if (!Number.isSafeInteger(id) || id > 2_147_483_647)
+    return { match: "absent" };
   return { match: "valid", key: { sortValue, id } };
 }
 
@@ -175,9 +239,7 @@ function withPrioritization<T extends RiceInputs>(
 
 @Injectable()
 export class ProjectsRoadmapService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   searchFallbackCondition(term: string): SQL {
     const like = `%${term}%`;
@@ -235,6 +297,8 @@ export class ProjectsRoadmapService {
       conditions.push(eq(roadmapItems.projectId, query.projectId));
     if (query.horizon !== undefined)
       conditions.push(eq(roadmapItems.targetQuarter, query.horizon));
+    if (query.ownerId !== undefined)
+      conditions.push(eq(roadmapItems.ownerMembershipId, query.ownerId));
     if (position) {
       const boundary = ordering.buildBoundary(position);
       if (boundary) conditions.push(boundary);
@@ -257,10 +321,18 @@ export class ProjectsRoadmapService {
       orgId,
       page.data.map((row) => row.id),
     );
+    const ownerIds = [
+      ...new Set(
+        page.data
+          .map((r) => r.ownerMembershipId ?? null)
+          .filter((id): id is number => id !== null),
+      ),
+    ];
+    const ownerMap = await loadOwners(this.db, orgId, ownerIds);
     return {
       ...page,
       data: page.data.map((row) =>
-        withPrioritization(row, accounts.get(row.id)),
+        withOwner(withPrioritization(row, accounts.get(row.id)), ownerMap),
       ),
     };
   }
@@ -270,18 +342,44 @@ export class ProjectsRoadmapService {
     return accounts.get(itemId);
   }
 
+  private async assertOwnerMembershipInOrg(
+    membershipId: number,
+    orgId: string,
+  ): Promise<void> {
+    const [row] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.id, membershipId),
+        ),
+      )
+      .limit(1);
+    if (!row)
+      throw new BadRequestException(
+        "Owner membership not found in this organisation",
+      );
+  }
+
   async createRoadmap(
     orgId: string,
     userId: string,
     input: CreateRoadmapInput,
   ) {
     await assertRoadmapTargetsInOrg(this.db, orgId, input);
+    if (
+      input.ownerMembershipId !== undefined &&
+      input.ownerMembershipId !== null
+    )
+      await this.assertOwnerMembershipInOrg(input.ownerMembershipId, orgId);
     const [item] = await this.db
       .insert(roadmapItems)
       .values({
         orgId,
         title: input.title,
         description: input.description ?? null,
+        outcome: input.outcome ?? null,
         status: input.status,
         category: input.category ?? null,
         isPublic: input.isPublic,
@@ -293,10 +391,21 @@ export class ProjectsRoadmapService {
         impact: input.impact ?? null,
         confidence: input.confidence ?? null,
         effort: input.effort ?? null,
+        ownerMembershipId: input.ownerMembershipId ?? null,
         createdBy: userId,
       })
       .returning();
-    return withPrioritization(item, await this.accountTiersOf(orgId, item.id));
+    const ownerMap = await loadOwners(
+      this.db,
+      orgId,
+      item.ownerMembershipId !== null && item.ownerMembershipId !== undefined
+        ? [item.ownerMembershipId]
+        : [],
+    );
+    return withOwner(
+      withPrioritization(item, await this.accountTiersOf(orgId, item.id)),
+      ownerMap,
+    );
   }
 
   async getRoadmap(orgId: string, itemId: number) {
@@ -308,7 +417,17 @@ export class ProjectsRoadmapService {
       ),
     });
     if (!item) throw new NotFoundException("Roadmap item not found");
-    return withPrioritization(item, await this.accountTiersOf(orgId, item.id));
+    const ownerMap = await loadOwners(
+      this.db,
+      orgId,
+      item.ownerMembershipId !== null && item.ownerMembershipId !== undefined
+        ? [item.ownerMembershipId]
+        : [],
+    );
+    return withOwner(
+      withPrioritization(item, await this.accountTiersOf(orgId, item.id)),
+      ownerMap,
+    );
   }
 
   async updateRoadmap(
@@ -317,12 +436,22 @@ export class ProjectsRoadmapService {
     input: UpdateRoadmapInput,
   ) {
     await assertRoadmapTargetsInOrg(this.db, orgId, input);
+    if (
+      input.ownerMembershipId !== undefined &&
+      input.ownerMembershipId !== null
+    )
+      await this.assertOwnerMembershipInOrg(input.ownerMembershipId, orgId);
     const before = await this.db.query.roadmapItems.findFirst({
-      where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
+      where: and(
+        eq(roadmapItems.id, itemId),
+        eq(roadmapItems.orgId, orgId),
+        isNull(roadmapItems.deletedAt),
+      ),
       columns: { version: true },
     });
     if (!before) throw new NotFoundException("Roadmap item not found");
-    if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
+    if (input.version !== before.version)
+      throw new TicketVersionConflictException(before.version);
 
     const { version: _v, ...rest } = input;
     const [updated] = await this.db
@@ -338,12 +467,26 @@ export class ProjectsRoadmapService {
       )
       .returning();
     if (!updated) {
-      const [current] = await this.db.select({ version: roadmapItems.version }).from(roadmapItems).where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId))).limit(1);
-      throw new TicketVersionConflictException(current?.version ?? before.version);
+      const [current] = await this.db
+        .select({ version: roadmapItems.version })
+        .from(roadmapItems)
+        .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId)))
+        .limit(1);
+      throw new TicketVersionConflictException(
+        current?.version ?? before.version,
+      );
     }
-    return withPrioritization(
-      updated,
-      await this.accountTiersOf(orgId, updated.id),
+    const ownerMap = await loadOwners(
+      this.db,
+      orgId,
+      updated.ownerMembershipId !== null &&
+        updated.ownerMembershipId !== undefined
+        ? [updated.ownerMembershipId]
+        : [],
+    );
+    return withOwner(
+      withPrioritization(updated, await this.accountTiersOf(orgId, updated.id)),
+      ownerMap,
     );
   }
 

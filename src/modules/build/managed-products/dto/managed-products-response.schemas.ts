@@ -31,6 +31,7 @@ export const managedProductRowSchema = z.object({
   successMetrics: z.unknown(),
   ownerMembershipId: z.number().int().nullable(),
   owner: managedProductOwnerSchema.nullable(),
+  version: z.number().int(),
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),

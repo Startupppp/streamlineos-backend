@@ -28,11 +28,13 @@ export const roadmapListQuerySchema = z.object({
   sort: z.enum(["updated_at", "created_at", "title"]).optional(),
   projectId: z.coerce.number().int().positive().optional(),
   horizon: z.string().trim().max(20).optional(),
+  ownerId: z.coerce.number().int().positive().optional(),
 }).strict();
 
 export const createRoadmapSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(5000).optional(),
+  outcome: z.string().trim().max(5000).nullable().optional(),
   status: z
     .enum(["planned", "in_progress", "completed", "cancelled"])
     .default("planned"),
@@ -46,12 +48,14 @@ export const createRoadmapSchema = z.object({
   impact: riceImpactField.optional(),
   confidence: riceConfidenceField.optional(),
   effort: riceEffortField.optional(),
+  ownerMembershipId: z.number().int().positive().nullable().optional(),
 }).strict();
 
 export const updateRoadmapSchema = z.object({
   version: z.number().int().positive(),
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(5000).nullable().optional(),
+  outcome: z.string().trim().max(5000).nullable().optional(),
   status: z
     .enum(["planned", "in_progress", "completed", "cancelled"])
     .optional(),
@@ -65,6 +69,7 @@ export const updateRoadmapSchema = z.object({
   impact: riceImpactField.nullable().optional(),
   confidence: riceConfidenceField.nullable().optional(),
   effort: riceEffortField.nullable().optional(),
+  ownerMembershipId: z.number().int().positive().nullable().optional(),
 }).strict();
 
 export const feedbackListQuerySchema = z.object({

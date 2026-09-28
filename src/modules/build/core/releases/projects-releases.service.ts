@@ -45,6 +45,7 @@ export class ProjectsReleasesService {
         description: projectReleases.description,
         status: projectReleases.status,
         releaseDate: projectReleases.releaseDate,
+        publishedAt: projectReleases.publishedAt,
         createdBy: projectReleases.createdBy,
         createdAt: projectReleases.createdAt,
         updatedAt: projectReleases.updatedAt,
@@ -85,6 +86,7 @@ export class ProjectsReleasesService {
         description: projectReleases.description,
         status: projectReleases.status,
         releaseDate: projectReleases.releaseDate,
+        publishedAt: projectReleases.publishedAt,
         createdBy: projectReleases.createdBy,
         createdAt: projectReleases.createdAt,
         updatedAt: projectReleases.updatedAt,
@@ -128,16 +130,20 @@ export class ProjectsReleasesService {
     const orgId = u.orgId;
     const before = await this.db.query.projectReleases.findFirst({
       where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
-      columns: { rowVersion: true },
+      columns: { rowVersion: true, status: true, publishedAt: true },
     });
     if (!before) throw new NotFoundException("Release not found");
     if (data.rowVersion !== before.rowVersion) throw new TicketVersionConflictException(before.rowVersion);
 
     const { rowVersion: _rv, ...rest } = data;
+    const publishedAtPatch: { publishedAt?: Date } =
+      data.status === "released" && before.status !== "released"
+        ? { publishedAt: new Date() }
+        : {};
     const rows = await this.db.transaction(async (tx) => {
       const result = await tx
         .update(projectReleases)
-        .set(rest)
+        .set({ ...rest, ...publishedAtPatch })
         .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt), eq(projectReleases.rowVersion, before.rowVersion)))
         .returning();
       const row = result[0];

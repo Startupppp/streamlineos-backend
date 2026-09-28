@@ -11,11 +11,20 @@ import { ROADMAP_DELIVERY_SOURCES } from "../roadmap/roadmap-delivery";
 import { ROADMAP_TIER_UNWEIGHTED_REASONS } from "../roadmap/roadmap-accounts";
 import { crmAccountTierEnum } from "../../../../db/schema";
 
+export const roadmapOwnerSchema = z.object({
+  name: z.string().nullable(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  email: z.string(),
+  image: z.string().nullable(),
+});
+
 export const roadmapItemSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   title: z.string(),
   description: z.string().nullable(),
+  outcome: z.string().nullable(),
   status: z.enum(roadmapStatusEnum.enumValues),
   category: z.string().nullable(),
   isPublic: z.boolean(),
@@ -28,6 +37,8 @@ export const roadmapItemSchema = z.object({
   impact: z.number().int().nullable(),
   confidence: z.number().int().nullable(),
   effort: z.number().int().nullable(),
+  ownerMembershipId: z.number().int().nullable(),
+  owner: roadmapOwnerSchema.nullable(),
   version: z.number().int(),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
