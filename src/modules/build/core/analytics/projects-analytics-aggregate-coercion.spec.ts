@@ -51,7 +51,7 @@ function fieldsNamed(selections: Selection[], name: string): unknown[] {
 }
 
 describe("ProjectsAnalyticsService aggregate coercion", () => {
-  it("decodes cycleVelocity completedPoints to a number, because SUM over the integer storyPoints column arrives from postgres-js as a bigint string and the frontend contract types it z.number()", async () => {
+  it("decodes cycleVelocity completedPoints to a number, because SUM over the integer points column arrives from postgres-js as a bigint string and the frontend contract types it z.number()", async () => {
     const { db, selections } = captureSelections();
 
     await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);

@@ -150,7 +150,7 @@ export class ProjectsAnalyticsService {
         .select({
           cycleId: cycles.id,
           cycleName: cycles.name,
-          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
+          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN COALESCE(${tickets.points}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
         })
         .from(cycles)
         .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
@@ -276,7 +276,7 @@ export class ProjectsAnalyticsService {
           c.start_date,
           COALESCE(SUM(
             CASE WHEN ps.type = 'completed'
-              THEN COALESCE(t.story_points, t.estimate, 0)
+              THEN COALESCE(t.points, t.estimate, 0)
               ELSE 0
             END
           ), 0) AS completed_points

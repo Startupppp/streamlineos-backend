@@ -8,7 +8,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 describe("Build report cache revision", () => {
   it("reuses an unchanged report but refetches after a committed project revision", async () => {
     let reportRevision = 0;
-    let rows: Array<{ id: number; title: string; storyPoints: number }> = [];
+    let rows: Array<{ id: number; title: string; points: number }> = [];
     const entries = new Map<string, unknown>();
     const cached = jest.fn(async (key: string, fetcher: () => Promise<unknown>) => {
       if (entries.has(key)) return entries.get(key);
@@ -40,7 +40,7 @@ describe("Build report cache revision", () => {
     expect((await reports.criticalPath(actor, 1)).nodeCount).toBe(0);
     await reports.criticalPath(actor, 1);
     expect(where).toHaveBeenCalledTimes(1);
-    rows = [{ id: 7, title: "Committed ticket", storyPoints: 3 }];
+    rows = [{ id: 7, title: "Committed ticket", points: 3 }];
     reportRevision++;
     expect((await reports.criticalPath(actor, 1)).nodeCount).toBe(1);
     expect(cached.mock.calls[2]?.[0]).not.toBe(cached.mock.calls[0]?.[0]);

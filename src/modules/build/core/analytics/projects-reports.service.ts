@@ -131,7 +131,7 @@ export class ProjectsReportsService {
   ): Promise<BurnupPoint[]> {
     const [scopeRow] = await this.db
       .select({
-        totalScope: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+        totalScope: sql<number>`COALESCE(SUM(${tickets.points}), 0)::int`,
       })
       .from(tickets)
       .where(and(eq(tickets.orgId, orgId), eq(tickets.cycleId, cycleId), isNull(tickets.deletedAt)));
@@ -141,7 +141,7 @@ export class ProjectsReportsService {
     const completedDayRows = await this.db
       .select({
         day: sql<string>`to_char(date_trunc('day', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
-        pts: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+        pts: sql<number>`COALESCE(SUM(${tickets.points}), 0)::int`,
       })
       .from(tickets)
       .leftJoin(
@@ -239,7 +239,7 @@ export class ProjectsReportsService {
       .select({
         group: sql<StateGroup>`${projectStatuses.type}`,
         count: sql<number>`COUNT(*)::int`,
-        points: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+        points: sql<number>`COALESCE(SUM(${tickets.points}), 0)::int`,
       })
       .from(tickets)
       .innerJoin(
@@ -369,7 +369,7 @@ export class ProjectsReportsService {
       cacheKey,
       async () => {
         const ticketRows = await this.db
-          .select({ id: tickets.id, title: tickets.title, storyPoints: tickets.storyPoints })
+          .select({ id: tickets.id, title: tickets.title, points: tickets.points })
           .from(tickets)
           .limit(MAX_CRITICAL_PATH_TICKETS + 1)
           .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)));

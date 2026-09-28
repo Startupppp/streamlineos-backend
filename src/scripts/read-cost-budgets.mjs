@@ -1403,7 +1403,7 @@ export const BUDGETS = [
       ), cycle_points AS (
         SELECT c.project_id, c.id AS cycle_id, c.start_date,
                COALESCE(SUM(CASE WHEN ps.type = 'completed'
-                 THEN COALESCE(t.story_points, t.estimate, 0) ELSE 0 END), 0) AS completed_points
+                 THEN COALESCE(t.points, t.estimate, 0) ELSE 0 END), 0) AS completed_points
         FROM build.cycles c
         LEFT JOIN build.tickets t
           ON t.cycle_id = c.id AND t.org_id = $1 AND t.deleted_at IS NULL

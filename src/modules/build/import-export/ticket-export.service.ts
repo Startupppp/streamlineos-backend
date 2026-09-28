@@ -76,7 +76,7 @@ export class TicketExportService {
             startDate: tickets.startDate,
             dueDate: tickets.dueDate,
             points: tickets.points,
-            storyPoints: tickets.storyPoints,
+            storyPoints: tickets.points,
             estimate: tickets.estimate,
             completionPercentage: tickets.completionPercentage,
             clientVisible: tickets.clientVisible,

@@ -31,9 +31,9 @@ export async function queryVelocityReport(db: Db, orgId: string, projectId: numb
   const statsRows = cycleIds.length ? await db.select({
     cycleId: tickets.cycleId,
     committedCount: sql<number>`COUNT(*)::int`,
-    committedPoints: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+    committedPoints: sql<number>`COALESCE(SUM(${tickets.points}), 0)::int`,
     completedCount: sql<number>`COUNT(*) FILTER (WHERE ${projectStatuses.type} = 'completed')::int`,
-    completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN ${tickets.storyPoints} ELSE 0 END), 0)::int`,
+    completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN ${tickets.points} ELSE 0 END), 0)::int`,
   }).from(tickets).leftJoin(projectStatuses, and(
     eq(tickets.orgId, projectStatuses.orgId), eq(tickets.projectId, projectStatuses.projectId), eq(tickets.status, projectStatuses.name),
   )).where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), inArray(tickets.cycleId, cycleIds), isNull(tickets.deletedAt)))

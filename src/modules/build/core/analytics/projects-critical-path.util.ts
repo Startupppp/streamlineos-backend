@@ -9,7 +9,7 @@ export interface CriticalPathNode {
 interface TicketRow {
   id: number;
   title: string;
-  storyPoints: number | null;
+  points: number | null;
 }
 
 interface DagEdge {
@@ -48,7 +48,7 @@ export function computeCriticalPath(ticketRows: TicketRow[], edges: DagEdge[]) {
   const estimateById = new Map<number, number>();
   const titleById = new Map<number, string>();
   for (const t of ticketRows) {
-    const estimate = t.storyPoints ?? 1;
+    const estimate = t.points ?? 1;
     estimateById.set(t.id, estimate > 0 ? estimate : 1);
     titleById.set(t.id, t.title);
   }
