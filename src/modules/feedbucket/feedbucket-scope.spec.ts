@@ -27,10 +27,15 @@ describe("feedbucketScope", () => {
     expect(query.params).not.toContain(userId);
   });
 
-  it("team arm compares the membership column to the actor's user id — a pre-existing mismatch, preserved as-is", () => {
-    const query = dialect.sqlToQuery(feedbucketScope(userId, null).team as SQL);
+  it("team arm uses the caller's membership id when present", () => {
+    const query = dialect.sqlToQuery(feedbucketScope(userId, 42).team as SQL);
     expect(query.sql).toContain('"assignee_membership_id"');
-    expect(query.params).toContain(userId);
+    expect(query.params).toContain(42);
+    expect(query.params).not.toContain(userId);
+  });
+
+  it("team arm denies when the caller has no membership to bind", () => {
+    expect(renderArm(userId, null, "team")).toBe("false");
   });
 
   it("composes through ScopedRead: all is unrestricted, none is denied", () => {
