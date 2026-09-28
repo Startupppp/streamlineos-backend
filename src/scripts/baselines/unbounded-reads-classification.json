@@ -65,8 +65,8 @@
       "note": "Offset pagination; needs keyset migration or proven depth bound"
     },
     "/build/core/tickets/projects-tickets-read.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Cursor mode exists for board view (paging=cursor); default offset path retained until frontend useTickets hook is coordinated to consume CursorPaginatedResponse â€” deadline 2026-12-31"
+      "verdict": "KEYSET-MIGRATED",
+      "note": "cut over on both sides 2026-09-28: listTickets returns listTicketsByCursor unconditionally, there is no offset path and no paging discriminator left in the file, and the frontend useTickets hook types its response CursorPageResponse<Ticket> and parses ticketListPageContract. Was ACTIONABLE with a 2026-12-31 deadline; the deadline was met early and the entry had gone stale, which an ACTIONABLE verdict is never checked for. KEYSET-MIGRATED so a returning offset fails as a regression."
     },
     "/commission/commission.service.ts": {
       "verdict": "ACTIONABLE",
