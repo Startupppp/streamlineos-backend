@@ -23,7 +23,7 @@ export const projectInvoiceLineDetailSchema = z
   .strict();
 
 const projectModulesSchema = z.object({
-  sprints: z.boolean(),
+  sprints: z.boolean().optional(),
   epics: z.boolean(),
   timeTracking: z.boolean(),
   wiki: z.boolean(),

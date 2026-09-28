@@ -50,7 +50,7 @@ export const projects = build.table(
     invoiceLineDetail: invoiceLineDetailEnum("invoice_line_detail").notNull().default("summary"),
     settings: jsonb("settings").$type<{
       modules: {
-        sprints: boolean;
+        sprints?: boolean;
         epics: boolean;
         timeTracking: boolean;
         wiki: boolean;
