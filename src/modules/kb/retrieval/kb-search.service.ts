@@ -17,7 +17,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
 import type { ScopedRead } from "../../access/scoped-read";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { articleSpacePredicate, KbCandidateService } from "./kb-candidate.service";
+import { articleSpacePredicate, KbCandidateService, kbPageCoreProjection } from "./kb-candidate.service";
 import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { AccessService } from "../../access/access.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -144,14 +144,10 @@ export class KbSearchService {
 
     const rows = await this.db
       .select({
-        id: kbPages.id,
-        spaceId: kbPages.spaceId,
+        ...kbPageCoreProjection,
         categoryId: kbPages.categoryId,
-        title: kbPages.title,
-        slug: kbPages.slug,
         excerpt: kbPages.excerpt,
         status: kbPages.status,
-        updatedAt: kbPages.updatedAt,
         contentText: sql<string | null>`left(${kbPages.contentText}, ${KB_SNIPPET_CONTENT_CAP})`,
         rankValue: sql<string>`${rankExpr}::text`,
         updatedAtValue: sql<string>`to_char(${kbPages.updatedAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`,

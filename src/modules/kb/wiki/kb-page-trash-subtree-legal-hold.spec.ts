@@ -25,6 +25,30 @@ jest.mock("./kb-page-attachment-purge", () => ({
   purgeOrphanedKbMedia: jest.fn().mockResolvedValue(0),
 }));
 
+jest.mock("./kb-multi-store-purge", () => ({
+  ...jest.requireActual("./kb-multi-store-purge"),
+  openMultiStoreLedger: jest.fn(async () => undefined),
+  incompleteStorePages: jest.fn(async (_db: unknown, _orgId: unknown, pageIds: number[]) => pageIds),
+  markStoresComplete: jest.fn(async () => undefined),
+  markStoresFailed: jest.fn(async () => undefined),
+  purgeVisitsForPages: jest.fn(async () => undefined),
+  purgeFavoritesForPages: jest.fn(async () => undefined),
+  purgeLinksForPages: jest.fn(async () => undefined),
+  purgeVersionsForPages: jest.fn(async () => undefined),
+  purgeCommentsForPages: jest.fn(async () => undefined),
+  purgeGrantsForPages: jest.fn(async () => undefined),
+  purgeChunksForPages: jest.fn(async () => undefined),
+  purgeAnalyticsForPages: jest.fn(async () => undefined),
+  purgeNotificationsForPages: jest.fn(async () => undefined),
+  purgeCachesForPages: jest.fn(async () => undefined),
+  purgePublicCdnForPages: jest.fn(async () => undefined),
+  purgeConnectorProjectionsForPages: jest.fn(async () => undefined),
+}));
+
+jest.mock("./kb-purge-reviews", () => ({
+  purgeReviewsForPages: jest.fn(async () => undefined),
+}));
+
 interface Harness {
   db: Db;
   deletedRowSets: number;
@@ -90,6 +114,12 @@ function service(db: Db): KbPageTrashService {
   );
 }
 
+import { openMultiStoreLedger } from "./kb-multi-store-purge";
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
 describe("legal hold covers the whole subtree, not just the page named in the request", () => {
   it("refuses to hard-delete an unheld parent whose descendant is under a legal hold, because collectSubtreeIds deletes descendants and a hold on one of them is unrecoverable once the rows are gone", async () => {
     const harness = makeDb([
@@ -109,5 +139,29 @@ describe("legal hold covers the whole subtree, not just the page named in the re
     await expect(
       service(harness.db).hardDelete(userInOrg, ROOT_ID),
     ).resolves.not.toThrow();
+
+    expect(harness.deletedRowSets).toBeGreaterThan(0);
+  });
+});
+
+describe("hold check runs before any multi-store ledger entry is opened or store purge runs", () => {
+  it("does not open the purge ledger when a held descendant stops the delete — no store is touched before the hold check rejects", async () => {
+    const harness = makeDb([
+      { id: HELD_CHILD_ID, title: "Held child", legalHoldReason: "Litigation" },
+    ]);
+
+    await expect(
+      service(harness.db).hardDelete(userInOrg, ROOT_ID),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(jest.mocked(openMultiStoreLedger)).not.toHaveBeenCalled();
+  });
+
+  it("CONTROL: opens the purge ledger when no hold stops the delete, proving the assertion above is not vacuous", async () => {
+    const harness = makeDb([]);
+
+    await service(harness.db).hardDelete(userInOrg, ROOT_ID);
+
+    expect(jest.mocked(openMultiStoreLedger)).toHaveBeenCalledTimes(1);
   });
 });

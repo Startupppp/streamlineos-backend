@@ -55,6 +55,7 @@ import {
   markStoresComplete,
   markStoresFailed,
   openMultiStoreLedger,
+  purgeCachesForPages,
   purgeCommentsForPages,
   purgeVisitsForPages,
 } from "./kb-multi-store-purge";
@@ -256,5 +257,40 @@ describe("an interrupted purge keeps its completed stores and resumes on the sto
 
     expect(jest.mocked(purgeVisitsForPages)).toHaveBeenCalled();
     expect(storesMarkedFor(PAGE_IDS[0] as number)).toContain("visits");
+  });
+});
+
+describe("a purgeCachesForPages failure is captured in the multi-store ledger and not silently dropped", () => {
+  beforeEach(() => {
+    jest
+      .mocked(incompleteStorePages)
+      .mockImplementation(async (_db, _orgId, pageIds) => pageIds as number[]);
+  });
+
+  it("marks the caches store failed when invalidateNamespace throws, so the next resume run retries the invalidation rather than leaving a silent gap", async () => {
+    jest
+      .mocked(purgeCachesForPages)
+      .mockRejectedValueOnce(new Error("Redis ECONNREFUSED"));
+    const service = makeService();
+
+    await expect(service.emptyTrash(makeUser())).rejects.toThrow("Redis ECONNREFUSED");
+
+    const cacheFailures = jest.mocked(markStoresFailed).mock.calls.filter(
+      (call) => String(call[3]) === "caches",
+    );
+    expect(cacheFailures).toHaveLength(1);
+  });
+
+  it("CONTROL: when invalidateNamespace succeeds, the caches store is marked complete and not left pending", async () => {
+    const service = makeService();
+
+    await service.emptyTrash(makeUser());
+
+    for (const id of PAGE_IDS) {
+      expect(storesMarkedFor(id)).toContain("caches");
+    }
+    expect(
+      jest.mocked(markStoresFailed).mock.calls.filter((call) => String(call[3]) === "caches"),
+    ).toHaveLength(0);
   });
 });

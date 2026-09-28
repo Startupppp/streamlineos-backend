@@ -8,14 +8,10 @@ import { KbLinkedDocumentAskSource } from "../linked-documents/kb-linked-documen
 import type { LinkedDocumentItem } from "../linked-documents/dto/kb-linked-documents-response.schemas";
 import type { AskCitation } from "./kb-ask-context";
 import type { KbChatCitation } from "../../../db/schema";
+import type { KbPageCoreFields } from "./kb-candidate.service";
 
-export interface CitableTop {
+export interface CitableTop extends KbPageCoreFields {
   kind: "article" | "page";
-  id: number;
-  title: string;
-  slug?: string | null;
-  spaceId: number | null;
-  updatedAt: Date;
 }
 
 export interface CitableSource {

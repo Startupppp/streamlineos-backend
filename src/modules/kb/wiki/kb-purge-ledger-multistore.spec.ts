@@ -611,3 +611,30 @@ describe("purgeConnectorProjectionsForPages — no connector-projection table ex
     expect(mockTx.insert).not.toHaveBeenCalled();
   });
 });
+
+describe("transaction boundary — purgeCachesForPages is outside any DB transaction because cache invalidation is a network call and BE-84 forbids network calls inside a tenant transaction", () => {
+  it("does not call runInTenantTransaction when invalidating the cache", async () => {
+    const { runInTenantTransaction: txMock } = jest.requireMock(
+      "../../../common/tenant/run-in-tenant-transaction",
+    ) as { runInTenantTransaction: jest.Mock };
+    const callsBefore = txMock.mock.calls.length;
+
+    const invalidateNamespace = jest.fn().mockResolvedValue(undefined);
+    await purgeCachesForPages({ invalidateNamespace } as never, ORG_A, [PAGE_1]);
+
+    expect(txMock.mock.calls.length).toBe(callsBefore);
+    expect(invalidateNamespace).toHaveBeenCalledWith(`kb:acc-spaces:${ORG_A}`);
+  });
+
+  it("BITE: purgeVisitsForPages does call runInTenantTransaction, proving the test above is sensitive to the boundary", async () => {
+    const { runInTenantTransaction: txMock } = jest.requireMock(
+      "../../../common/tenant/run-in-tenant-transaction",
+    ) as { runInTenantTransaction: jest.Mock };
+    const callsBefore = txMock.mock.calls.length;
+
+    const db = makeQueryDb(null);
+    await purgeVisitsForPages(db, ORG_A, [PAGE_1]);
+
+    expect(txMock.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+});

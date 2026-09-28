@@ -5,11 +5,12 @@ import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbAskCitationService } from "./kb-ask-citations.service";
 import { KbSearchService } from "./kb-search.service";
-import { KbCandidateService } from "./kb-candidate.service";
+import { KbCandidateService, kbPageCoreProjection, type KbPageCoreFields } from "./kb-candidate.service";
 import { humanSessionPrincipal, actingMembershipId } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
 import type { AskCitation } from "./kb-ask.service";
+import type { CitableTop } from "./kb-ask-citations.service";
 import { NO_LINKED_DOCUMENTS } from "../../../test/kb-linked-document-ask-source.spec-fixtures";
 
 
@@ -347,5 +348,42 @@ describe("KbAskService — page citation: visiblePagePredicate applied on re-ver
     expect(kbPagesWheres).toHaveLength(1);
     expect(predicateLiteralIn(kbPagesWheres[0])).toBe(true);
     expect(pageIdsBoundIn(kbPagesWheres[0])).toEqual([CITED_PAGE_ID]);
+  });
+});
+
+describe("search/citation core-projection parity — kbPageCoreProjection and CitableTop derive from the same declared field set", () => {
+  const CORE_FIELD_KEYS: readonly (keyof Required<KbPageCoreFields>)[] = [
+    "id",
+    "title",
+    "spaceId",
+    "updatedAt",
+    "slug",
+  ];
+
+  it("kbPageCoreProjection contains a column entry for every field in KbPageCoreFields so a field added to the type without a column mapping is a compile-time error", () => {
+    for (const key of CORE_FIELD_KEYS) {
+      expect(kbPageCoreProjection).toHaveProperty(key);
+    }
+    expect(Object.keys(kbPageCoreProjection)).toHaveLength(CORE_FIELD_KEYS.length);
+  });
+
+  it("CitableTop satisfies KbPageCoreFields so the citation interface cannot silently drop a core field", () => {
+    const top: CitableTop = {
+      kind: "article",
+      id: 42,
+      title: "Onboarding guide",
+      spaceId: null,
+      updatedAt: new Date("2024-01-01"),
+    };
+    const core: KbPageCoreFields = top;
+    expect(core.id).toBe(top.id);
+    expect(core.title).toBe(top.title);
+    expect(core.updatedAt).toBe(top.updatedAt);
+  });
+
+  it("BITE: a projection missing one core field does not satisfy the length invariant, so the assertion above is not vacuous", () => {
+    const withoutSlug = { id: 1, title: "T", spaceId: null, updatedAt: new Date() };
+    expect(Object.keys(withoutSlug)).not.toHaveLength(CORE_FIELD_KEYS.length);
+    expect(Object.keys(kbPageCoreProjection)).toHaveLength(CORE_FIELD_KEYS.length);
   });
 });

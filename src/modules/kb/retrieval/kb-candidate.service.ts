@@ -25,6 +25,22 @@ import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-p
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
 
+export interface KbPageCoreFields {
+  id: number;
+  title: string;
+  spaceId: number | null;
+  updatedAt: Date;
+  slug?: string | null;
+}
+
+export const kbPageCoreProjection = {
+  id: kbPages.id,
+  title: kbPages.title,
+  spaceId: kbPages.spaceId,
+  updatedAt: kbPages.updatedAt,
+  slug: kbPages.slug,
+} satisfies { [K in keyof Required<KbPageCoreFields>]: unknown };
+
 /** Help-centre articles often have no wiki space. A space allow-list alone hides them from Ask. */
 export function articleSpacePredicate(spaceIds: readonly number[]): SQL {
   const unspaced = isNull(kbPages.spaceId);
