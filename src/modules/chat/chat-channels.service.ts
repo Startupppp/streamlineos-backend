@@ -249,7 +249,11 @@ export class ChatChannelsService {
 
   async getEntityChannel(entityType: string, entityId: string, actor: EntityActor) {
     await this.assertEntityReadable(entityType, entityId, actor);
-    return this.loadEntityChannel(entityType, entityId, actor);
+    const channel = await this.loadEntityChannel(entityType, entityId, actor);
+    if (!channel || channel.members.some((member) => member.userId === actor.userId)) {
+      return channel;
+    }
+    return null;
   }
 
   async createEntityChannel(
@@ -258,12 +262,29 @@ export class ChatChannelsService {
     actor: EntityActor,
   ) {
     const resolution = await this.assertEntityReadable(entityType, entityId, actor);
-
-    const existing = await this.loadEntityChannel(entityType, entityId, actor);
-    if (existing) return { channel: existing, created: false };
-
     const actorMembershipId = actor.membershipId;
     if (!actorMembershipId) throw new ForbiddenException("Membership required to create a channel");
+
+    const existing = await this.loadEntityChannel(entityType, entityId, actor);
+    if (existing) {
+      const isMember = existing.members.some((member) => member.userId === actor.userId);
+      if (!isMember) {
+        await this.db
+          .insert(chatChannelMembers)
+          .values({
+            orgId: actor.orgId,
+            channelId: existing.id,
+            membershipId: actorMembershipId,
+            role: "MEMBER",
+            notificationPreference: "DEFAULT",
+          })
+          .onConflictDoNothing();
+        const joined = await this.loadEntityChannel(entityType, entityId, actor);
+        if (!joined) throw new NotFoundException("Record not found");
+        return { channel: joined, created: false };
+      }
+      return { channel: existing, created: false };
+    }
 
     // Check-then-insert with nothing behind it produced TWO channels for one record: the
     // only caller is a TanStack `useQuery` (a GET that writes), so a StrictMode

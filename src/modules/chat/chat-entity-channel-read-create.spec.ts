@@ -40,8 +40,20 @@ const CHANNEL_ROW = {
   lastMessageAt: new Date("2026-09-12T00:00:00.000Z"),
   createdAt: new Date("2026-09-12T00:00:00.000Z"),
   updatedAt: new Date("2026-09-12T00:00:00.000Z"),
-  members: [],
+  members: [
+    {
+      channelId: 7,
+      id: 1,
+      role: "ADMIN",
+      membership: {
+        userId: "user1",
+        user: { id: "user1", name: "User One", image: null, email: "user1@example.com" },
+      },
+    },
+  ],
 };
+
+const ORPHANED_CHANNEL_ROW = { ...CHANNEL_ROW, members: [] };
 
 class QuotaExceeded extends Error {}
 
@@ -172,6 +184,14 @@ describe("entity channel — the GET is a read and only the POST writes", () => 
 
     await expect(h.service.getEntityChannel("project", "42", actor)).resolves.toBeNull();
   });
+
+  it("hides an existing private channel from a non-member read", async () => {
+    const h = await buildHarness();
+    h.findFirst.mockResolvedValue(ORPHANED_CHANNEL_ROW);
+
+    await expect(h.service.getEntityChannel("project", "42", actor)).resolves.toBeNull();
+    expect(h.transaction).not.toHaveBeenCalled();
+  });
 });
 
 describe("entity channel — the entity ACL resolves before any channel table is touched", () => {
@@ -245,6 +265,18 @@ describe("entity channel — create is race-safe and quota-admitted", () => {
     const result = await h.service.createEntityChannel("project", "42", actor);
 
     expect(result.created).toBe(false);
+    expect(h.transaction).not.toHaveBeenCalled();
+  });
+
+  it("joins an existing entity channel when the caller can read the entity but is not a member", async () => {
+    const h = await buildHarness();
+    h.findFirst.mockResolvedValueOnce(ORPHANED_CHANNEL_ROW).mockResolvedValue(CHANNEL_ROW);
+
+    const result = await h.service.createEntityChannel("project", "42", actor);
+
+    expect(result.created).toBe(false);
+    expect(result.channel).toMatchObject({ id: 7, entityId: "42" });
+    expect(h.insert).toHaveBeenCalledTimes(1);
     expect(h.transaction).not.toHaveBeenCalled();
   });
 
