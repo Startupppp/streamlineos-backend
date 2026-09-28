@@ -278,17 +278,10 @@ export class ProjectsWorkQueryService {
           realIds.map((id) => sql`${id}`),
           sql`, `,
         )}))`;
-        if (scope === "mine") {
-          const assigneeCondition = or(
-            isNull(tickets.assigneeMembershipId),
-            inBranch,
-          );
-          if (assigneeCondition) conditions.push(assigneeCondition);
-        } else
-          assigneeUnion = {
-            nullBranch: isNull(tickets.assigneeMembershipId),
-            inBranch,
-          };
+        assigneeUnion = {
+          nullBranch: isNull(tickets.assigneeMembershipId),
+          inBranch,
+        };
       } else if (unassigned) {
         conditions.push(isNull(tickets.assigneeMembershipId));
       } else {
@@ -326,7 +319,15 @@ export class ProjectsWorkQueryService {
 
     const { rows, nextCursor, hasMore, total } =
       scope === "mine"
-        ? await this.pageMineWork(u, where, sort, limit, cursor, isFirstPage)
+        ? await this.pageMineWork(
+            u,
+            where,
+            sort,
+            limit,
+            cursor,
+            isFirstPage,
+            assigneeUnion,
+          )
         : await this.pageFilteredWork(
             where,
             sort,
@@ -747,10 +748,15 @@ export class ProjectsWorkQueryService {
     limit: number,
     cursor: string | undefined,
     includeTotal: boolean,
+    assigneeUnion?: { nullBranch: SQL<unknown>; inBranch: SQL<unknown> },
   ) {
     const position = decodeCursor(cursor);
     const cursorPredicate = position
       ? buildMineCursorPredicate(sort.sortKey, sort.dir, position)
+      : undefined;
+
+    const splitBranches = assigneeUnion
+      ? [assigneeUnion.nullBranch, assigneeUnion.inBranch]
       : undefined;
 
     const idSql = assignedOrParticipatingIds({
@@ -761,12 +767,15 @@ export class ProjectsWorkQueryService {
       orderBy: sort.unionOrderBy,
       limit: limit + 1,
       cursorPredicate,
+      splitBranches,
     });
 
     const [rawIds, countRows] = await Promise.all([
       this.db.execute(idSql),
       includeTotal
-        ? this.db.execute(mineCountSql(where, u.orgId, u.userId))
+        ? this.db.execute(
+            mineCountSql(where, u.orgId, u.userId, splitBranches),
+          )
         : Promise.resolve(null),
     ]);
 

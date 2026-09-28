@@ -173,3 +173,66 @@ describe("getAllWork assignee UNION — shared-createdAt tiebreak pagination", (
     expect(page2UnionSql.params).toContain(20);
   });
 });
+
+describe("getAllWork scope=mine assignee UNION — no OR between the null check and the semi-join (BE-81)", () => {
+  const dialect = new PgDialect();
+  let idSql: { sql: string; params: unknown[] };
+  let countSql: { sql: string; params: unknown[] };
+
+  beforeEach(async () => {
+    const execute = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ total: "0" }]);
+    const db = {
+      select: jest.fn().mockReturnValue(makeChain([])),
+      execute,
+    } as unknown as Db;
+
+    const svc = new ProjectsWorkQueryService(db);
+    await svc.getAllWork(ACTOR, makeQuery({ scope: "mine" }));
+
+    idSql = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    countSql = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+  });
+
+  it("emits no OR joining the unassigned test to the membership IN list, because an OR defeats both indexes", () => {
+    expect(idSql.sql).not.toMatch(/assignee_membership_id"? is null\s+or\b/i);
+    expect(countSql.sql).not.toMatch(
+      /assignee_membership_id"? is null\s+or\b/i,
+    );
+  });
+
+  it("crosses the two mine branches with the two assignee branches into four independently indexable UNION branches", () => {
+    expect(idSql.sql.split(" UNION ").length).toBe(4);
+    expect(countSql.sql.split(" UNION ").length).toBe(4);
+  });
+
+  it("keeps the unassigned test and the membership IN list on separate branches so each can use idx_tickets_org_assignee_status", () => {
+    const branches = idSql.sql.split(" UNION ");
+    const nullBranches = branches.filter((b) =>
+      /assignee_membership_id"? is null/i.test(b),
+    );
+    const inBranches = branches.filter((b) =>
+      /assignee_membership_id"? in \(select id from organization_members where org_id = \$\d+ and user_id in/i.test(
+        b,
+      ),
+    );
+    expect(nullBranches.length).toBe(2);
+    expect(inBranches.length).toBe(2);
+    expect(
+      branches.filter(
+        (b) =>
+          /assignee_membership_id"? is null/i.test(b) &&
+          /user_id in/i.test(b),
+      ).length,
+    ).toBe(0);
+  });
+
+  it("binds the acting user on every branch, so no branch widens past the caller's own work", () => {
+    const branches = idSql.sql.split(" UNION ");
+    for (const branch of branches) {
+      expect(branch).toContain("user_id = $");
+    }
+  });
+});

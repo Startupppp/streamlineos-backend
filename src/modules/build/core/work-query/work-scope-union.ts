@@ -47,7 +47,43 @@ type AssignedOrParticipatingParams = {
   orderBy: SQL<unknown>;
   limit: number;
   cursorPredicate?: SQL<unknown>;
+  splitBranches?: SQL<unknown>[];
 };
+
+function branchSplits(splitBranches?: SQL<unknown>[]): SQL<unknown>[] {
+  return splitBranches && splitBranches.length > 0
+    ? splitBranches
+    : [sql`true`];
+}
+
+function mineBranches(
+  orgId: string,
+  userId: string,
+  where: SQL<unknown>,
+  carry: SQL<unknown> | undefined,
+  splitBranches: SQL<unknown>[] | undefined,
+): SQL<unknown> {
+  const carried = carry ? sql`, ${carry}` : sql``;
+  const branches = branchSplits(splitBranches).flatMap((extra) => [
+    sql`(SELECT ${tickets.id} AS id${carried}
+       FROM ${tickets}
+       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+       WHERE ${where} AND ${extra} AND ${tickets.assigneeMembershipId} IN (
+         SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId}
+       ))`,
+    sql`(SELECT ${tickets.id} AS id${carried}
+       FROM ${tickets}
+       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+       INNER JOIN ${ticketAssignees} ta
+         ON ta.ticket_id = ${tickets.id}
+        AND ta.org_id = ${orgId}
+        AND ta.membership_id IN (
+          SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId}
+        )
+       WHERE ${where} AND ${extra})`,
+  ]);
+  return sql.join(branches, sql` UNION `);
+}
 
 export function assignedOrParticipatingIds(
   params: AssignedOrParticipatingParams,
@@ -56,23 +92,7 @@ export function assignedOrParticipatingIds(
   const cursorFilter = params.cursorPredicate ?? sql`true`;
   return sql`
     SELECT u.id FROM (
-      (SELECT ${tickets.id} AS id, ${params.carry}
-       FROM ${tickets}
-       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
-       WHERE ${where} AND ${tickets.assigneeMembershipId} IN (
-         SELECT id FROM organization_members WHERE org_id = ${params.orgId} AND user_id = ${params.userId}
-       ))
-      UNION
-      (SELECT ${tickets.id} AS id, ${params.carry}
-       FROM ${tickets}
-       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
-       INNER JOIN ${ticketAssignees} ta
-         ON ta.ticket_id = ${tickets.id}
-        AND ta.org_id = ${params.orgId}
-        AND ta.membership_id IN (
-          SELECT id FROM organization_members WHERE org_id = ${params.orgId} AND user_id = ${params.userId}
-        )
-       WHERE ${where})
+      ${mineBranches(params.orgId, params.userId, where, params.carry, params.splitBranches)}
     ) u
     WHERE ${cursorFilter}
     ORDER BY ${params.orderBy}
@@ -83,27 +103,12 @@ export function mineCountSql(
   where: SQL<unknown> | undefined,
   orgId: string,
   userId: string,
+  splitBranches?: SQL<unknown>[],
 ): SQL<unknown> {
   const w = where ?? sql`true`;
   return sql`
     SELECT count(*) AS total FROM (
-      (SELECT ${tickets.id} AS id
-       FROM ${tickets}
-       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
-       WHERE ${w} AND ${tickets.assigneeMembershipId} IN (
-         SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId}
-       ))
-      UNION
-      (SELECT ${tickets.id} AS id
-       FROM ${tickets}
-       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
-       INNER JOIN ${ticketAssignees} ta
-         ON ta.ticket_id = ${tickets.id}
-        AND ta.org_id = ${orgId}
-        AND ta.membership_id IN (
-          SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId}
-        )
-       WHERE ${w})
+      ${mineBranches(orgId, userId, w, undefined, splitBranches)}
     ) u`;
 }
 
