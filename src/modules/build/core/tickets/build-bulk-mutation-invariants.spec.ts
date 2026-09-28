@@ -54,7 +54,7 @@ async function harness() {
   return { module, db, set, scopeFor, service: module.get(ProjectsTicketsQueryService) };
 }
 
-async function archiveHarness(childRows: Array<{ parentTicketId: number | null; childId: number }>) {
+async function archiveAggregateHarness(blockerRows: Array<{ parentTicketId: number | null; childCount: number }>) {
   const scopeFor = jest.fn().mockResolvedValue("all");
   const rows = [{ id: 10, status: "TODO", version: 1, assigneeMembershipId: null, allowed: true }];
   const ticketChain = {
@@ -63,16 +63,16 @@ async function archiveHarness(childRows: Array<{ parentTicketId: number | null; 
     limit: jest.fn().mockResolvedValue(rows),
     then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
   };
-  const childChain = {
-    from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockResolvedValue(childRows),
-    then: (resolve: (value: typeof childRows) => unknown) => Promise.resolve(childRows).then(resolve),
+  const aggregateChain = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    groupBy: jest.fn().mockReturnThis(),
+    then: (resolve: (value: typeof blockerRows) => unknown) => Promise.resolve(blockerRows).then(resolve),
   };
   let selectCount = 0;
   const set = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) });
   const db = {
-    select: jest.fn(() => { selectCount++; return selectCount === 1 ? ticketChain : childChain; }),
+    select: jest.fn(() => { selectCount++; return selectCount === 1 ? ticketChain : aggregateChain; }),
     update: jest.fn(() => ({ set })),
     execute: jest.fn().mockResolvedValue([]),
     query: {
@@ -152,12 +152,25 @@ describe("Build bulk assignment invariants", () => {
   });
 
   it("returns blocked list with zero updates when a selected ticket has active children outside the selection, and no write occurs", async () => {
-    const h = await archiveHarness([{ parentTicketId: 10, childId: 99 }]);
+    const h = await archiveAggregateHarness([{ parentTicketId: 10, childCount: 1 }]);
     try {
       const result = await h.service.bulkUpdate(actor, 1, { ticketIds: [10], archive: true });
       expect(result.updated).toBe(0);
       expect(result.blocked).toEqual([
         expect.objectContaining({ ticketId: 10, dependencyCount: 1 }),
+      ]);
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
+  });
+
+  it("archive blocker count is exact when a parent has 150 active children outside the selection — aggregate over excluded children preserves full count without truncation", async () => {
+    const childCount = 150;
+    const h = await archiveAggregateHarness([{ parentTicketId: 10, childCount }]);
+    try {
+      const result = await h.service.bulkUpdate(actor, 1, { ticketIds: [10], archive: true });
+      expect(result.updated).toBe(0);
+      expect(result.blocked).toEqual([
+        expect.objectContaining({ ticketId: 10, dependencyCount: childCount }),
       ]);
       expect(h.set).not.toHaveBeenCalled();
     } finally { await h.module.close(); }

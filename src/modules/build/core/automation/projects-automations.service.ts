@@ -7,6 +7,8 @@ import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import { ProjectsMembersService } from "../members/projects-members.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { CreateAutomationInput, UpdateAutomationInput, ListAutomationsQuery } from "../dto/automation.schemas";
+import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 
 @Injectable()
 export class ProjectsAutomationsService {
@@ -45,13 +47,20 @@ export class ProjectsAutomationsService {
       );
   }
 
-  async listAutomations(u: CurrentUserContext, projectId: number, query: ListAutomationsQuery = {}) {
+  async listAutomations(u: CurrentUserContext, projectId: number, query: ListAutomationsQuery = { limit: 50 }) {
     await this.members.assertProjectAccess(u, projectId);
+
+    const { limit, cursor } = query;
+    const pos = decodeCursor(cursor);
 
     const conditions = [
       eq(projectAutomations.orgId, u.orgId),
       eq(projectAutomations.projectId, projectId),
     ];
+
+    if (pos) {
+      conditions.push(keysetBeforeId(projectAutomations.createdAt, projectAutomations.id, pos));
+    }
 
     if (query.ownerId !== undefined) {
       conditions.push(eq(projectAutomations.createdBy, query.ownerId));
@@ -63,7 +72,7 @@ export class ProjectsAutomationsService {
       );
     }
 
-    return this.db
+    const rows = await this.db
       .select({
         id: projectAutomations.id,
         projectId: projectAutomations.projectId,
@@ -87,8 +96,13 @@ export class ProjectsAutomationsService {
       .from(projectAutomations)
       .leftJoin(users, eq(users.id, projectAutomations.createdBy))
       .where(and(...conditions))
-      .orderBy(desc(projectAutomations.createdAt))
-      .limit(100);
+      .orderBy(desc(projectAutomations.createdAt), desc(projectAutomations.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: r.createdAt.toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async createAutomation(u: CurrentUserContext, projectId: number, data: CreateAutomationInput) {

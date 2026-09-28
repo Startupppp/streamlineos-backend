@@ -11,6 +11,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import { resolveWhiteboardAccess } from "./whiteboard-access";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 export async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
   const project = await db.query.projects.findFirst({
@@ -40,7 +41,8 @@ export async function loadShares(db: Db, whiteboardId: number): Promise<ShareEnt
     .from(projectWhiteboardShares)
     .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectWhiteboardShares.orgId), eq(organizationMembers.id, projectWhiteboardShares.membershipId)))
     .innerJoin(users, eq(users.id, organizationMembers.userId))
-    .where(eq(projectWhiteboardShares.whiteboardId, whiteboardId));
+    .where(eq(projectWhiteboardShares.whiteboardId, whiteboardId))
+    .limit(PAGE_SIZE_CAP);
 }
 
 export async function requireWhiteboardManageAccess(

@@ -221,6 +221,8 @@ export const projectAutomationListItemSchema = z.object({
   updatedAt: wireDate(),
 });
 
+export const projectAutomationListPageSchema = cursorPageSchema(projectAutomationListItemSchema);
+
 export const projectAutomationRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

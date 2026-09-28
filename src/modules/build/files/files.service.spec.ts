@@ -85,6 +85,7 @@ describe("FilesService.listFiles — cross-tenant isolation (BOLA)", () => {
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
 
@@ -185,6 +186,7 @@ describe("FilesService.softDeleteFile — soft-delete and author ownership", () 
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(
         makeSelectChain([{ id: 5, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]),
       );
@@ -232,6 +234,7 @@ describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) 
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([{ id: 5, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]));
     const updateChain = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(undefined) };
     db.update.mockReturnValue(updateChain);
@@ -242,6 +245,7 @@ describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) 
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([]));
 
     await expect(svc.softDeleteFile(makeUser("org-1", 7), 1, 5)).rejects.toThrow(NotFoundException);
@@ -253,6 +257,7 @@ describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) 
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([{ id: 5, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]));
     const updateChain = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(undefined) };
     db.update.mockReturnValue(updateChain);
@@ -271,6 +276,7 @@ describe("FilesService.getSignedUrl — access gate", () => {
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
       .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(
         makeSelectChain([{ id: 3, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]),
       );

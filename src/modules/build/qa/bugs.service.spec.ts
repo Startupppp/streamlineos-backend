@@ -370,7 +370,9 @@ describe("BugsService — project membership gate (assertProjectAccess)", () => 
       },
       select: jest.fn().mockImplementation(() => {
         callCount++;
-        return callCount === 1 ? makeLimitChain([{ role: "MEMBER" }]) : ticketsChain;
+        if (callCount === 1) return makeLimitChain([{ role: "MEMBER" }]);
+        if (callCount === 2) return makeLimitChain([]);
+        return ticketsChain;
       }),
       transaction: jest.fn(),
       update: jest.fn(),

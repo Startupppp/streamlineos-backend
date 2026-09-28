@@ -3993,9 +3993,9 @@
       "justification": "Classified 2026-09-12. Both reads resolve `inv_product_variants` by `inArray(sku, skus)` for one publication outcome (:174) or one channel order (:262), each behind a `skus.length === 0` early return, so the caller's SKU list is the bound. Recorded ACTIONABLE rather than FALSE-POSITIVE because that bound is only exact now that the missing `deleted_at IS NULL` predicate has been added to both (same pass): `uniq_inv_product_variants_org_sku_live` is PARTIAL on `deleted_at IS NULL`, so before that a SKU reused after a deletion returned two rows and the second silently overwrote the `bySku` entry. What remains is the limit — one row per SKU asked for — which nothing yet states."
     },
     "/build/execution/whiteboard-board-helpers.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "parent-scoped read with no LIMIT and no proven cap",
-      "justification": "Classified 2026-09-13. loadShares reads every share row of one whiteboard with no LIMIT. Scoped to the board, but a board's share list has no enforced cap, so this is real debt rather than a detector artefact. Sibling whiteboard files carry FALSE-POSITIVE; that verdict is generous and is not inherited here."
+      "verdict": "BOUNDED",
+      "note": "loadShares now applies .limit(PAGE_SIZE_CAP) imported from common/pagination/list-query.schema.ts",
+      "justification": "Fixed 2026-09-28. loadShares renders a display list for the manage-access DTO response only; it is never used for an access-control decision, so truncation at PAGE_SIZE_CAP (100) is safe. Added .limit(PAGE_SIZE_CAP) to the query chain. Callers (getWhiteboard, updateWhiteboard) only call loadShares when access === 'manage' and place the result in the shares field of the DTO."
     },
     "/calls/call-analysis-subjects.ts": {
       "verdict": "ACTIONABLE",
@@ -4043,9 +4043,9 @@
       "justification": "Classified 2026-09-13. Guard read: selects structural-admin membership ids for ONE org to refuse demoting the last one. Bounded by that org's admin count, which the six-standing model keeps small; a LIMIT would break the guard, since it must count what is there."
     },
     "/build/core/tickets/build-ticket-bulk-mutation.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Two reads, one genuinely unbounded. :201 selects inArray(ticketLabels.id, body.labelIds) and bulkUpdateSchema caps labelIds at .max(10), so that one returns at most 10 rows. :164 is the archive blocker probe: inArray(tickets.parentTicketId, ids) over the <=100 selected ids, and nothing caps children per parent, so the row count is the total child population of up to 100 epics.",
-      "justification": "ACTIONABLE, not FALSE-POSITIVE: the file verdict is per file and :164 has no bound, so blessing the file would also bless the unbounded read. A .limit() here would be a correctness regression, not a fix - the rows feed blockersMap, which counts children outside the selection to refuse the archive, so a truncated read would under-count blockers and let a parent with active sub-tickets be archived. The bounded rewrite is an aggregate: group by parentTicketId and count children where id NOT IN (ids), which returns at most one row per selected parent. Deferred to the tickets concept owner because ticket 27 is structure-only. Classified 2026-09-28."
+      "verdict": "BOUNDED",
+      "note": "both previously unbounded reads are now bounded: aggregate at :164, .limit(body.labelIds.length) at the label check",
+      "justification": "Fixed 2026-09-28. :164 archive blocker probe replaced with select({ parentTicketId, childCount: count() }).from(tickets).where(inArray(parentTicketId, ids) AND notInArray(id, ids)).groupBy(parentTicketId) — returns at most one row per selected parent (at most 100 by construction), and count() in the projection satisfies projectsOnlyAggregates. Label validation read (inArray(ticketLabels.id, body.labelIds)) receives .limit(body.labelIds.length); bulkUpdateSchema caps labelIds at .max(10) so this limit is 1–10 by construction and the NotFoundException path still covers all missing ids."
     },
     "/build/updates/updates.service.ts": {
       "verdict": "FALSE-POSITIVE",

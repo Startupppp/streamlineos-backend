@@ -97,7 +97,9 @@ describe("TestRunsService — project membership gate (assertProjectAccess)", ()
       },
       select: jest.fn().mockImplementation(() => {
         callCount++;
-        return callCount === 1 ? makeLimitChain([{ role: "MEMBER" }]) : runsChain;
+        if (callCount === 1) return makeLimitChain([{ role: "MEMBER" }]);
+        if (callCount === 2) return makeLimitChain([]);
+        return runsChain;
       }),
     } as unknown as Db;
   }

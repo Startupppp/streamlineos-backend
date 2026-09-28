@@ -114,6 +114,15 @@ describe("ClientVisibilityService — project membership gate (BOLA fix)", () =>
             }),
           }),
         })
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+              }),
+            }),
+          }),
+        })
         .mockReturnValue(listChain),
     } as unknown as Db;
   }

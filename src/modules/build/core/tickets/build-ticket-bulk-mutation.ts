@@ -3,7 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { Db } from "../../../../db/drizzle.types";
 import {
@@ -159,25 +159,26 @@ export async function bulkMutateTickets(
     if (body.parentTicketId !== undefined)
       update.parentTicketId = body.parentTicketId;
     if (body.archive) {
-      const selectedSet = new Set(ids);
-      const childRows = await tx
-        .select({ parentTicketId: tickets.parentTicketId, childId: tickets.id })
+      const blockerRows = await tx
+        .select({
+          parentTicketId: tickets.parentTicketId,
+          childCount: count(),
+        })
         .from(tickets)
         .where(
           and(
             eq(tickets.orgId, actor.orgId),
             eq(tickets.projectId, projectId),
             inArray(tickets.parentTicketId, ids),
+            notInArray(tickets.id, ids),
             isNull(tickets.deletedAt),
           ),
-        );
+        )
+        .groupBy(tickets.parentTicketId);
       const blockersMap = new Map<number, number>();
-      for (const row of childRows) {
-        if (row.parentTicketId !== null && !selectedSet.has(row.childId)) {
-          blockersMap.set(
-            row.parentTicketId,
-            (blockersMap.get(row.parentTicketId) ?? 0) + 1,
-          );
+      for (const row of blockerRows) {
+        if (row.parentTicketId !== null) {
+          blockersMap.set(row.parentTicketId, row.childCount);
         }
       }
       if (blockersMap.size > 0) {
@@ -205,7 +206,8 @@ export async function bulkMutateTickets(
             eq(ticketLabels.orgId, actor.orgId),
             inArray(ticketLabels.id, body.labelIds),
           ),
-        );
+        )
+        .limit(body.labelIds.length);
       const existingLabelIds = new Set(existingLabels.map((l) => l.id));
       const missingLabelIds = body.labelIds.filter(
         (id) => !existingLabelIds.has(id),

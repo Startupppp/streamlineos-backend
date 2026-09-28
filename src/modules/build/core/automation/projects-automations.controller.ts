@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -19,15 +31,25 @@ import {
 } from "../dto/automation.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
 import {
-  projectAutomationListItemSchema,
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../../common/openapi/zod-operation-contracts";
+import {
+  projectAutomationListPageSchema,
   projectAutomationRowSchema,
   automationRunListSchema,
 } from "../dto/build-core-response.schemas";
 
-const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
-const projectIdautomationIdParams = z.object({ projectId: z.coerce.number().int().positive(), automationId: z.coerce.number().int().positive() }).strict();
+const projectIdParams = z
+  .object({ projectId: z.coerce.number().int().positive() })
+  .strict();
+const projectIdautomationIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    automationId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -40,7 +62,7 @@ export class ProjectsAutomationsController {
 
   @Get(":projectId/automations")
   @RequirePermission("build:view")
-  @ResponseSchema(z.array(projectAutomationListItemSchema))
+  @ResponseSchema(projectAutomationListPageSchema)
   @Validate({ params: projectIdParams, query: listAutomationsQuerySchema })
   list(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -50,12 +72,6 @@ export class ProjectsAutomationsController {
     return this.automations.listAutomations(u, projectId, query);
   }
 
-  /**
-   * Phase 5 read surface: automation run history, cursor-paginated (BE-24/25),
-   * permission-gated on the same `build:view` key `list()` above already uses
-   * for the automation rules themselves — run history is visibility into what
-   * those rules did, not a distinct resource with its own permission key.
-   */
   @Get(":projectId/automations/runs")
   @RequirePermission("build:view")
   @ResponseSchema(automationRunListSchema)
@@ -84,7 +100,10 @@ export class ProjectsAutomationsController {
   @Patch(":projectId/automations/:automationId")
   @RequirePermission("build:manage")
   @ResponseSchema(projectAutomationRowSchema)
-  @Validate({ params: projectIdautomationIdParams, body: updateAutomationSchema })
+  @Validate({
+    params: projectIdautomationIdParams,
+    body: updateAutomationSchema,
+  })
   update(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("automationId", ParseIntPipe) automationId: number,

@@ -128,7 +128,8 @@ describe("FormsService — project-membership gate (BOLA)", () => {
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-        .mockReturnValueOnce(makeSelectChain([])),
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValue(makeSelectChain([])),
     } as unknown as Db;
     const svc = new FormsService(mockDb, makeAccess(), audit);
 

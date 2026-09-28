@@ -91,7 +91,8 @@ function memberSelect(bodyChains: Array<() => unknown>) {
   return jest.fn().mockImplementation(() => {
     call += 1;
     if (call === 1) return membershipProbe([{ role: "MEMBER" }]);
-    const chain = bodyChains[call - 2];
+    if (call === 2) return membershipProbe([]);
+    const chain = bodyChains[call - 3];
     return chain ? chain() : membershipProbe([]);
   });
 }

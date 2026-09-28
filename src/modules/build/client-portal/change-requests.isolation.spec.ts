@@ -183,6 +183,15 @@ describe("ChangeRequestsService — project membership gate (BOLA fix)", () => {
             }),
           }),
         })
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+              }),
+            }),
+          }),
+        })
         .mockReturnValue(postGateChain),
     } as unknown as Db;
   }
@@ -637,6 +646,15 @@ describe("ChangeRequestsService — listChangeRequests returns cursor page envel
             }),
           }),
         })
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+              }),
+            }),
+          }),
+        })
         .mockReturnValue(postGateChain),
     } as unknown as Db;
   }
@@ -689,6 +707,15 @@ describe("ChangeRequestsService — releaseId and clientVisible filters", () => 
             innerJoin: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
                 limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]),
+              }),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
               }),
             }),
           }),

@@ -126,7 +126,8 @@ describe("TestManagementService — project membership gate (assertProjectAccess
       select: jest.fn().mockImplementation(() => {
         callCount++;
         if (callCount === 1) return makeLimitChain([{ role: "MEMBER" }]);
-        if (callCount === 2) return suitesChain;
+        if (callCount === 2) return makeLimitChain([]);
+        if (callCount === 3) return suitesChain;
         return countChain;
       }),
     } as unknown as Db;

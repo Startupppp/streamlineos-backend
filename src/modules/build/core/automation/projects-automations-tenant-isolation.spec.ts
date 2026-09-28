@@ -33,19 +33,19 @@ describe("ProjectsAutomationsService — cross-tenant isolation", () => {
     const members = { assertProjectAccess: jest.fn().mockResolvedValue(undefined) } as never;
     const svc = new ProjectsAutomationsService(db, planLimits, members);
     const u = { orgId: ATTACKER_ORG, userId: "u1" } as never;
-    const result = await svc.listAutomations(u, 1);
-    expect(result).toHaveLength(0);
+    const result = await svc.listAutomations(u, 1, { limit: 50 });
+    expect(result.data).toHaveLength(0);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
   });
 
   it("returns automations for the owning org (same-tenant control)", async () => {
-    const auto = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "Auto1" };
+    const auto = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "Auto1", createdAt: new Date(), updatedAt: new Date(), createdByUser: null };
     const { db } = makeDb([auto]);
     const members = { assertProjectAccess: jest.fn().mockResolvedValue(undefined) } as never;
     const svc = new ProjectsAutomationsService(db, planLimits, members);
     const u = { orgId: OWNER_ORG, userId: "u1" } as never;
-    const result = await svc.listAutomations(u, 1);
-    expect(result).toHaveLength(1);
+    const result = await svc.listAutomations(u, 1, { limit: 50 });
+    expect(result.data).toHaveLength(1);
   });
 });
 
