@@ -90,7 +90,7 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
     const db = makeMockDb();
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
       .mockReturnValueOnce(makeSelectChain([]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
