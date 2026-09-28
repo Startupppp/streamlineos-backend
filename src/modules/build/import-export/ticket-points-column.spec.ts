@@ -4,7 +4,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { Db } from "../../../db/drizzle.types";
 import type { AccessService } from "../../access/access.service";
-import { queryTickets } from "../core/tickets/projects-tickets-read.query";
+import { queryTickets } from "../core";
 import { parseCsvRows } from "./csv-source";
 import { parseImportSource } from "./import-source";
 import { insertTicketBatch, type ImportActor } from "./ticket-import-batches";
