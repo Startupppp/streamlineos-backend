@@ -5,6 +5,7 @@ import {
   intakeItems,
   organizationMembers,
   projectMilestones,
+  projectStatuses,
   projectViews,
   tickets,
   users,
@@ -80,18 +81,7 @@ export class MilestonesService {
       sortValue: row.targetDate ?? "",
       id: String(row.id),
     }));
-    const milestoneIds = rawPage.data.map((r) => r.id);
-    const ticketCountMap = new Map<number, number>();
-    if (milestoneIds.length > 0) {
-      const countRows = await this.db
-        .select({ milestoneId: tickets.milestoneId, cnt: sql<number>`count(*)::int` })
-        .from(tickets)
-        .where(and(eq(tickets.orgId, orgId), inArray(tickets.milestoneId, milestoneIds), isNull(tickets.deletedAt)))
-        .groupBy(tickets.milestoneId);
-      for (const r of countRows) {
-        if (r.milestoneId != null) ticketCountMap.set(r.milestoneId, r.cnt);
-      }
-    }
+    const counts = await this.linkedWorkCounts(orgId, rawPage.data.map((r) => r.id));
     return {
       ...rawPage,
       data: rawPage.data.map((row) => ({
@@ -107,7 +97,8 @@ export class MilestonesService {
         owner: row.ownerMembershipId != null
           ? { membershipId: row.ownerMembershipId, firstName: row.ownerFirstName ?? null, lastName: row.ownerLastName ?? null, image: row.ownerImage ?? null }
           : null,
-        linkedTicketCount: ticketCountMap.get(row.id) ?? 0,
+        linkedTicketCount: counts.get(row.id)?.linked ?? 0,
+        completedTicketCount: counts.get(row.id)?.completed ?? 0,
         clientVisible: row.clientVisible,
         version: row.version,
         deletedAt: row.deletedAt,
@@ -115,6 +106,32 @@ export class MilestonesService {
         updatedAt: row.updatedAt,
       })),
     };
+  }
+
+  private async linkedWorkCounts(orgId: string, milestoneIds: number[]): Promise<Map<number, { linked: number; completed: number }>> {
+    const byMilestone = new Map<number, { linked: number; completed: number }>();
+    if (milestoneIds.length === 0) return byMilestone;
+    const countRows = await this.db
+      .select({
+        milestoneId: tickets.milestoneId,
+        linked: sql<number>`CAST(count(*) AS int)`,
+        completed: sql<number>`CAST(count(*) FILTER (WHERE ${projectStatuses.type} = 'completed') AS int)`,
+      })
+      .from(tickets)
+      .leftJoin(
+        projectStatuses,
+        and(
+          eq(tickets.orgId, projectStatuses.orgId),
+          eq(tickets.projectId, projectStatuses.projectId),
+          eq(tickets.status, projectStatuses.name),
+        ),
+      )
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.milestoneId, milestoneIds), isNull(tickets.deletedAt)))
+      .groupBy(tickets.milestoneId);
+    for (const r of countRows) {
+      if (r.milestoneId != null) byMilestone.set(r.milestoneId, { linked: r.linked, completed: r.completed });
+    }
+    return byMilestone;
   }
 
   private async assertOwnerInOrg(orgId: string, ownerMembershipId: number | null | undefined): Promise<void> {
@@ -148,6 +165,7 @@ export class MilestonesService {
       ...milestone,
       owner: ownerMembershipId != null ? { membershipId: ownerMembershipId, firstName: null as string | null, lastName: null as string | null, image: null as string | null } : null,
       linkedTicketCount: 0,
+      completedTicketCount: 0,
     };
   }
 
@@ -171,10 +189,12 @@ export class MilestonesService {
       throw new TicketVersionConflictException(current?.version ?? before.version);
     }
     const ownerMembershipId = updated.ownerMembershipId ?? null;
+    const counts = await this.linkedWorkCounts(orgId, [milestoneId]);
     return {
       ...updated,
       owner: ownerMembershipId != null ? { membershipId: ownerMembershipId, firstName: null as string | null, lastName: null as string | null, image: null as string | null } : null,
-      linkedTicketCount: 0,
+      linkedTicketCount: counts.get(milestoneId)?.linked ?? 0,
+      completedTicketCount: counts.get(milestoneId)?.completed ?? 0,
     };
   }
 

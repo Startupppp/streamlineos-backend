@@ -21,6 +21,7 @@ export const milestoneRowSchema = z.object({
   ownerMembershipId: z.number().int().nullable(),
   owner: milestoneOwnerSchema.nullable(),
   linkedTicketCount: z.number().int(),
+  completedTicketCount: z.number().int(),
   clientVisible: z.boolean(),
   version: z.number().int(),
   deletedAt: nullableWireDate(),

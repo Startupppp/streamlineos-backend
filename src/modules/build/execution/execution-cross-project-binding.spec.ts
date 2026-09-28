@@ -166,6 +166,7 @@ function makeDb(store: Store): Fixture {
 
   const selectBuilder = () => ({
     from: (table: unknown) => ({
+      leftJoin: () => ({ where: () => ({ groupBy: async () => [] }) }),
       where: (where: unknown) => {
         const rows = tableRows(store, table);
         if (!rows) throw new Error("unexpected select target");

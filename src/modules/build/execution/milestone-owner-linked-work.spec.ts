@@ -54,6 +54,7 @@ function countChain(counts: unknown[]) {
   const c: Record<string, jest.Mock> = {};
   const self = () => c;
   c.from = jest.fn(self);
+  c.leftJoin = jest.fn(self);
   c.where = jest.fn(self);
   c.groupBy = jest.fn(() => Promise.resolve(counts));
   return c;
@@ -73,6 +74,7 @@ const VALID_MILESTONE_ROW = {
   ownerMembershipId: null,
   owner: null,
   linkedTicketCount: 0,
+  completedTicketCount: 0,
   clientVisible: true,
   version: 1,
   deletedAt: null,
@@ -92,6 +94,11 @@ describe("milestoneRowSchema — new required fields are enforced so the contrac
 
   it("rejects a row missing linkedTicketCount because the count is required for every milestone", () => {
     const { linkedTicketCount: _removed, ...row } = VALID_MILESTONE_ROW;
+    expect(milestoneRowSchema.safeParse(row).success).toBe(false);
+  });
+
+  it("rejects a row missing completedTicketCount because progress cannot be rendered without it", () => {
+    const { completedTicketCount: _removed, ...row } = VALID_MILESTONE_ROW;
     expect(milestoneRowSchema.safeParse(row).success).toBe(false);
   });
 
@@ -220,12 +227,28 @@ describe("MilestonesService — linked ticket count uses one aggregate query reg
   });
 
   it("milestone with four linked tickets gets linkedTicketCount four and milestone with no tickets gets zero", async () => {
-    const db = makeListDb([M1, M2], [{ milestoneId: 1, cnt: 4 }]);
+    const db = makeListDb([M1, M2], [{ milestoneId: 1, linked: 4, completed: 1 }]);
     const result = await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     const row1 = result.data.find((r) => r.id === 1);
     const row2 = result.data.find((r) => r.id === 2);
     expect(row1?.linkedTicketCount).toBe(4);
     expect(row2?.linkedTicketCount).toBe(0);
+  });
+
+  it("completedTicketCount comes from the same aggregate row so progress needs no extra query", async () => {
+    const db = makeListDb([M1, M2], [{ milestoneId: 1, linked: 4, completed: 3 }]);
+    const selectSpy = db.select as jest.Mock;
+    const result = await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    expect(result.data.find((r) => r.id === 1)?.completedTicketCount).toBe(3);
+    expect(result.data.find((r) => r.id === 2)?.completedTicketCount).toBe(0);
+    expect(selectSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("the completed aggregate is filtered by the project status type, not by a hardcoded status name", async () => {
+    const db = makeListDb([M1], []);
+    await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    const countSelect = (db.select as jest.Mock).mock.calls[1]?.[0] as Record<string, unknown>;
+    expect(sqlValues(countSelect.completed).join("")).toMatch(/FILTER \(WHERE .* = 'completed'\)/);
   });
 
   it("owner is populated from joined user columns when ownerMembershipId is set", async () => {
@@ -241,5 +264,41 @@ describe("MilestonesService — linked ticket count uses one aggregate query reg
     const db = makeListDb([milestoneNoOwner], []);
     const result = await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     expect(result.data[0]?.owner).toBeNull();
+  });
+});
+
+describe("MilestonesService — updateMilestone projects the real counts, so a cache patch cannot zero a milestone's linked work", () => {
+  function makeUpdateDb(counts: unknown[]) {
+    const countChainWithJoin: Record<string, jest.Mock> = {};
+    const self = () => countChainWithJoin;
+    countChainWithJoin.from = jest.fn(self);
+    countChainWithJoin.leftJoin = jest.fn(self);
+    countChainWithJoin.where = jest.fn(self);
+    countChainWithJoin.groupBy = jest.fn(() => Promise.resolve(counts));
+    return {
+      query: { projectMilestones: { findFirst: jest.fn().mockResolvedValue({ version: 1, ownerMembershipId: null }) } },
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ id: 1, orgId: ORG, projectId: PROJECT_ID, name: "M1", version: 2, ownerMembershipId: null }]),
+          }),
+        }),
+      }),
+      select: jest.fn().mockReturnValue(countChainWithJoin),
+    } as unknown as Db;
+  }
+
+  it("returns the milestone's four linked and three completed tickets instead of the zero the previous projection hardcoded", async () => {
+    const db = makeUpdateDb([{ milestoneId: 1, linked: 4, completed: 3 }]);
+    const result = await new MilestonesService(db, mockAccess).updateMilestone(ORG, PROJECT_ID, 1, { version: 1, name: "M1" });
+    expect(result.linkedTicketCount).toBe(4);
+    expect(result.completedTicketCount).toBe(3);
+  });
+
+  it("returns zero counts for a milestone the aggregate returned no row for", async () => {
+    const db = makeUpdateDb([]);
+    const result = await new MilestonesService(db, mockAccess).updateMilestone(ORG, PROJECT_ID, 1, { version: 1, name: "M1" });
+    expect(result.linkedTicketCount).toBe(0);
+    expect(result.completedTicketCount).toBe(0);
   });
 });
