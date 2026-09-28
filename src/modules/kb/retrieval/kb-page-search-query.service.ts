@@ -15,6 +15,7 @@ import {
 } from "./kb-page-search-cursor";
 import type { PageFullSearchQuery, KbPageFullSearchResponse } from "./dto/kb-page-search-query.schemas";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { effectiveTrustState, isVerifiedNow } from "../core/kb-page-trust-predicates";
 
 export const FTS_ID_CAP = 500;
 
@@ -68,7 +69,7 @@ export class KbPageSearchQueryService {
             spaceId: kbPages.spaceId,
             projectId: kbPages.projectId,
             status: kbPages.status,
-            trustState: kbPages.trustState,
+            trustState: effectiveTrustState(),
             visibility: kbPages.visibility,
             contentType: kbPages.contentType,
             updatedAt: kbPages.updatedAt,
@@ -139,8 +140,8 @@ export class KbPageSearchQueryService {
     if (input.verified !== undefined) {
       conditions.push(
         input.verified
-          ? eq(kbPages.trustState, "verified")
-          : ne(kbPages.trustState, "verified"),
+          ? isVerifiedNow()
+          : sql`NOT (${isVerifiedNow()})`,
       );
     }
 
@@ -152,6 +153,7 @@ export class KbPageSearchQueryService {
     filter: SQL<unknown> | undefined,
   ): Promise<KbPageFullSearchResponse["facets"]> {
     try {
+      const trustStateExpr = effectiveTrustState();
       const [byStatus, bySpace, byType, byVerified] = await Promise.all([
         this.db
           .select({ value: kbPages.status, count: sql<number>`count(*)::int` })
@@ -169,10 +171,10 @@ export class KbPageSearchQueryService {
           .where(filter)
           .groupBy(kbPages.contentType),
         this.db
-          .select({ value: kbPages.trustState, count: sql<number>`count(*)::int` })
+          .select({ value: trustStateExpr, count: sql<number>`count(*)::int` })
           .from(kbPages)
           .where(filter)
-          .groupBy(kbPages.trustState),
+          .groupBy(trustStateExpr),
       ]);
       return {
         status: byStatus.map((row) => ({ value: row.value, count: row.count })),

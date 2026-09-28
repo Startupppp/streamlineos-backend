@@ -7,6 +7,7 @@ import { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveWindowedTotal, totalOverWindow } from "../../../common/pagination/window-count";
 import { supportArticlePredicate } from "./kb-article-page-scope";
+import { effectiveTrustState } from "../core/kb-page-trust-predicates";
 
 type VerificationQueueItem = {
   id: number;
@@ -43,20 +44,26 @@ export class KbVerificationService {
     }
 
     const scheduledReviewReached = lte(kbPages.nextReviewAt, sql`now()`);
-    const trustLapsed = or(
-      eq(kbPages.trustState, "verification_expired"),
-      lt(kbPages.verifiedUntil, sql`now()`),
-    );
+    const trustLapsed = sql`${effectiveTrustState()} = 'verification_expired'`;
     const neverVerifiedOnACadence = and(
       eq(kbPages.trustState, "unverified"),
       isNotNull(kbPages.reviewIntervalDays),
+    );
+    const editedAfterVerificationLapsed = and(
+      eq(kbPages.trustState, "unverified"),
+      lt(kbPages.verifiedUntil, sql`now()`),
     );
 
     const where = and(
       eq(kbPages.orgId, user.orgId),
       supportArticlePredicate(),
       eq(kbPages.status, "published"),
-      or(scheduledReviewReached, trustLapsed, neverVerifiedOnACadence),
+      or(
+        scheduledReviewReached,
+        trustLapsed,
+        neverVerifiedOnACadence,
+        editedAfterVerificationLapsed,
+      ),
     );
 
     const offset = (page - 1) * capped;

@@ -38,6 +38,7 @@ import {
 import { reviewerCanSeeAllReviews } from "./kb-page-reviews.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
+import { effectiveTrustState } from "../core/kb-page-trust-predicates";
 import type { ListPageReviewsQuery } from "./dto/kb-page-reviews.schemas";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
@@ -210,7 +211,7 @@ export class KbPageReviewsQueryService {
       .select({
         ...REVIEW_LIST_COLUMNS,
         pageTitle: kbPages.title,
-        pageTrustState: kbPages.trustState,
+        pageTrustState: effectiveTrustState(),
         requestedByName: requester.name,
         reviewerName: reviewer.name,
       })

@@ -1,4 +1,5 @@
 import { and, eq, exists, isNull, lt, sql, type SQL } from "drizzle-orm";
+import { isVerifiedNow } from "../core/kb-page-trust-predicates";
 import { kbPageLinks, kbPageReviews, kbPages } from "../../../db/schema";
 import { kbHealthItems } from "../../../db/schema/kb/health-items";
 import type { Db } from "../../../db/drizzle.module";
@@ -46,7 +47,7 @@ export function buildSignalPredicate(db: Db, signalType: ContentHealthSignalType
     }
 
     case "unverified":
-      return sql`(${kbPages.trustState} = 'unverified' OR ${kbPages.trustState} = 'verification_expired')`;
+      return sql`NOT (${isVerifiedNow()})`;
 
     case "empty":
       return sql`(${kbPages.contentText} IS NULL OR trim(${kbPages.contentText}) = '')`;

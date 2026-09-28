@@ -498,3 +498,46 @@ describe("KbPageSearchQueryService — exact identifier queries", () => {
     expect(combined).not.toContain("to_tsquery");
   });
 });
+
+describe("KbPageSearchQueryService — verified filter", () => {
+  it("includes verified_until in the predicate when verified=true, so a page with a stale verified_until is not considered verified", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const svc = makeService(db, makeAuth());
+
+    await svc.search(makeUser(), { ...baseQuery, verified: true });
+
+    const combined = whereClauses.map(serialize).join("\n");
+    expect(combined).toContain("verified_until");
+    expect(combined).toContain("trust_state");
+  });
+
+  it("returns items when the query includes verified=true — positive pair for the predicate column assertion", async () => {
+    const { db } = makeCapturingDb([searchRow({ id: 99, trustState: "verified" })]);
+    const svc = makeService(db, makeAuth());
+
+    const result = await svc.search(makeUser(), { ...baseQuery, verified: true });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].id).toBe(99);
+  });
+
+  it("includes verified_until in the not-verified predicate too, so an expired-but-still-columnar-verified page is excluded from verified results and included in unverified", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const svc = makeService(db, makeAuth());
+
+    await svc.search(makeUser(), { ...baseQuery, verified: false });
+
+    const combined = whereClauses.map(serialize).join("\n");
+    expect(combined).toContain("verified_until");
+  });
+
+  it("returns items when the query includes verified=false — positive pair for the not-verified predicate", async () => {
+    const { db } = makeCapturingDb([searchRow({ id: 55, trustState: "unverified" })]);
+    const svc = makeService(db, makeAuth());
+
+    const result = await svc.search(makeUser(), { ...baseQuery, verified: false });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].id).toBe(55);
+  });
+});

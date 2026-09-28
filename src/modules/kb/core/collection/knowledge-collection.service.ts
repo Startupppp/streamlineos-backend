@@ -38,6 +38,7 @@ import {
   sortUsesTimestamp,
 } from "./kb-page-collection-cursor";
 import { kbPagePrefixTsQuery } from "./kb-page-text-query";
+import { effectiveTrustState, isVerifiedNow } from "../kb-page-trust-predicates";
 import type {
   KbPageCollectionFacets,
   KbPageCollectionItem,
@@ -60,7 +61,7 @@ const COLLECTION_PROJECTION = {
   status: kbPages.status,
   visibility: kbPages.visibility,
   contentType: kbPages.contentType,
-  trustState: kbPages.trustState,
+  trustState: effectiveTrustState(),
   ownerMembershipId: kbPages.ownerMembershipId,
   ownerUserId: kbPages.ownerUserId,
   createdById: kbPages.createdById,
@@ -143,8 +144,8 @@ export class KnowledgeCollectionService {
     if (query.verified !== undefined) {
       conditions.push(
         query.verified
-          ? eq(kbPages.trustState, "verified")
-          : ne(kbPages.trustState, "verified"),
+          ? isVerifiedNow()
+          : sql`NOT (${isVerifiedNow()})`,
       );
     }
     if (query.q !== undefined && query.q.trim().length > 0) {

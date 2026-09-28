@@ -8,6 +8,24 @@ import type { Db } from "../../../db/drizzle.module";
 
 const dialect = new PgDialect();
 
+function chunksOf(node: unknown): unknown[] | null {
+  if (node === null || typeof node !== "object") return null;
+  const c = (node as { queryChunks?: unknown }).queryChunks;
+  return Array.isArray(c) ? c : null;
+}
+
+function columnNames(node: unknown, out: string[] = []): string[] {
+  const chunks = chunksOf(node);
+  if (chunks !== null) {
+    for (const c of chunks) columnNames(c, out);
+    return out;
+  }
+  if (node === null || typeof node !== "object") return out;
+  const record = node as { name?: unknown; table?: unknown };
+  if (typeof record.name === "string" && record.table !== undefined) out.push(record.name);
+  return out;
+}
+
 const ORG = "org-ask-scope";
 const QUERY = "how does onboarding work";
 const VECTOR = "[0.1,0.2]";
@@ -101,7 +119,7 @@ function makeSearchRetrieval(
 }
 
 describe("KB ask scope — verifiedOnly is honoured in the keyword candidate query", () => {
-  it("with verifiedOnly true the WHERE carries the string 'verified' as a bound parameter", async () => {
+  it("with verifiedOnly true the WHERE references verified_until so a page with a stale verified_until is not returned as verified content", async () => {
     const { db, getCond } = makeCaptureDb();
     const svc = new KbCandidateService(db, null);
 
@@ -109,11 +127,12 @@ describe("KB ask scope — verifiedOnly is honoured in the keyword candidate que
 
     const cond = getCond();
     expect(cond).toBeDefined();
-    const rendered = dialect.sqlToQuery(cond);
-    expect(rendered.params).toContain("verified");
+    const cols = columnNames(cond);
+    expect(cols).toContain("verified_until");
+    expect(cols).toContain("trust_state");
   });
 
-  it("CONTROL: without verifiedOnly the string 'verified' is absent from the WHERE, proving the positive test is not a tautology", async () => {
+  it("CONTROL: without verifiedOnly the WHERE does not reference verified_until, proving the positive test is not a tautology", async () => {
     const { db, getCond } = makeCaptureDb();
     const svc = new KbCandidateService(db, null);
 
@@ -121,13 +140,13 @@ describe("KB ask scope — verifiedOnly is honoured in the keyword candidate que
 
     const cond = getCond();
     expect(cond).toBeDefined();
-    const rendered = dialect.sqlToQuery(cond);
-    expect(rendered.params).not.toContain("verified");
+    const cols = columnNames(cond);
+    expect(cols).not.toContain("verified_until");
   });
 });
 
 describe("KB ask scope — verifiedOnly is honoured in the vector candidate query", () => {
-  it("with verifiedOnly true the WHERE carries the string 'verified' as a bound parameter", async () => {
+  it("with verifiedOnly true the WHERE references verified_until so a page with a stale verified_until is not returned as verified content", async () => {
     const { db, getCond } = makeCaptureDb();
     const svc = new KbCandidateService(db, null);
     jest.spyOn(svc, "vectorChunkIds").mockResolvedValue(CHUNK_IDS);
@@ -136,11 +155,12 @@ describe("KB ask scope — verifiedOnly is honoured in the vector candidate quer
 
     const cond = getCond();
     expect(cond).toBeDefined();
-    const rendered = dialect.sqlToQuery(cond);
-    expect(rendered.params).toContain("verified");
+    const cols = columnNames(cond);
+    expect(cols).toContain("verified_until");
+    expect(cols).toContain("trust_state");
   });
 
-  it("CONTROL: without verifiedOnly the string 'verified' is absent, proving the positive test is not a tautology", async () => {
+  it("CONTROL: without verifiedOnly the WHERE does not reference verified_until, proving the positive test is not a tautology", async () => {
     const { db, getCond } = makeCaptureDb();
     const svc = new KbCandidateService(db, null);
     jest.spyOn(svc, "vectorChunkIds").mockResolvedValue(CHUNK_IDS);
@@ -149,8 +169,8 @@ describe("KB ask scope — verifiedOnly is honoured in the vector candidate quer
 
     const cond = getCond();
     expect(cond).toBeDefined();
-    const rendered = dialect.sqlToQuery(cond);
-    expect(rendered.params).not.toContain("verified");
+    const cols = columnNames(cond);
+    expect(cols).not.toContain("verified_until");
   });
 });
 

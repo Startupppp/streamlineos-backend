@@ -30,6 +30,7 @@ import type {
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { supportArticlePredicate } from "./kb-article-page-scope";
+import { effectiveTrustState, isVerifiedNow } from "../core/kb-page-trust-predicates";
 import {
   buildTupleCursorPage,
   decodeTupleCursor,
@@ -134,7 +135,7 @@ export class KbAnalyticsService {
           totalViews: sql<number>`coalesce(sum(${kbPages.views}), 0)::int`,
           helpfulUp: sql<number>`coalesce(sum(${kbPages.helpfulCount}), 0)::int`,
           helpfulDown: sql<number>`coalesce(sum(${kbPages.notHelpfulCount}), 0)::int`,
-          verifiedPublished: sql<number>`(count(*) filter (where ${kbPages.status} = 'published' and ${kbPages.trustState} = 'verified' and (${kbPages.verifiedUntil} is null or ${kbPages.verifiedUntil} >= now())))::int`,
+          verifiedPublished: sql<number>`(count(*) filter (where ${kbPages.status} = 'published' and ${isVerifiedNow()}))::int`,
         })
         .from(kbPages)
         .where(and(...pageConditions)),
@@ -223,7 +224,7 @@ export class KbAnalyticsService {
         id: kbPages.id,
         title: kbPages.title,
         status: kbPages.status,
-        trustState: kbPages.trustState,
+        trustState: effectiveTrustState(),
         updatedAt: kbPages.updatedAt,
         uniqueViewers: sql<number>`count(distinct ${kbPageVisits.id})::int`,
         commentCount: sql<number>`count(distinct ${kbPageComments.id})::int`,

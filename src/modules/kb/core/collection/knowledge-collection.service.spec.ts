@@ -702,3 +702,40 @@ describe("KnowledgeCollectionService — four-case predicate equivalence (shape 
     expect(anonIndexedRendered.params).not.toContain(stand.membershipId);
   });
 });
+
+describe("KnowledgeCollectionService — verified filter", () => {
+  it("references verified_until in the predicate when verified=true, so a page with trust_state=verified but a stale verified_until is not treated as currently verified", async () => {
+    const h = makeHarness({ rows: [] });
+
+    await h.svc.listPages(user(), query({ verified: true }));
+
+    const combined = h.capture.wheres.map((w) => render(w).sql).join("\n");
+    expect(combined).toContain("verified_until");
+    expect(combined).toContain("trust_state");
+  });
+
+  it("returns items when the query includes verified=true — positive pair proving the filter admits a valid verified page", async () => {
+    const h = makeHarness({ rows: [pageRow({ trustState: "verified" })] });
+
+    const result = await h.svc.listPages(user(), query({ verified: true }));
+
+    expect(result.data).toHaveLength(1);
+  });
+
+  it("references verified_until in the predicate when verified=false, so an expired-but-column-verified page is included in the unverified set", async () => {
+    const h = makeHarness({ rows: [] });
+
+    await h.svc.listPages(user(), query({ verified: false }));
+
+    const combined = h.capture.wheres.map((w) => render(w).sql).join("\n");
+    expect(combined).toContain("verified_until");
+  });
+
+  it("returns items when the query includes verified=false — positive pair proving the filter admits an unverified page", async () => {
+    const h = makeHarness({ rows: [pageRow({ trustState: "unverified" })] });
+
+    const result = await h.svc.listPages(user(), query({ verified: false }));
+
+    expect(result.data).toHaveLength(1);
+  });
+});

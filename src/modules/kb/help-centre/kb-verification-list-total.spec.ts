@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { KbVerificationService } from "./kb-verification.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { KbAccessService } from "../core/kb-access.service";
@@ -87,5 +88,52 @@ describe("kb verification queue — the total costs no extra round trip", () => 
     const result = await harness.service.listDue(USER, 1, 500);
 
     expect(result.pageSize).toBe(100);
+  });
+});
+
+describe("KbVerificationService — pages whose verification lapsed before an edit reset them", () => {
+  function captureDueWhere() {
+    const captured: unknown[] = [];
+    const chain: Record<string, unknown> = {};
+    for (const m of ["from", "orderBy"]) chain[m] = jest.fn(() => chain);
+    chain["where"] = jest.fn((clause: unknown) => {
+      captured.push(clause);
+      return chain;
+    });
+    chain["limit"] = jest.fn(() => chain);
+    chain["offset"] = jest.fn(() => Promise.resolve([]));
+
+    const db = { select: jest.fn(() => chain) } as unknown as Db;
+    const access = {
+      getAccessibleSpaceIds: jest.fn(() => Promise.resolve([1])),
+    } as unknown as KbAccessService;
+
+    return {
+      service: new KbVerificationService(db, access),
+      rendered: () =>
+        captured
+          .map((c) => new PgDialect().sqlToQuery(c as never).sql)
+          .join(" "),
+    };
+  }
+
+  it("the due predicate compares verified_until to now() outside the effective-state CASE, so a page that was verified, lapsed, then got edited back to unverified still appears in the queue", async () => {
+    const harness = captureDueWhere();
+
+    await harness.service.listDue(USER, 1, 20);
+    const withoutCaseExpressions = harness
+      .rendered()
+      .replace(/case when[\s\S]*?end/gi, "");
+
+    expect(withoutCaseExpressions).toMatch(/"verified_until"\s*<\s*now\(\)/);
+  });
+
+  it("the effective-state CASE is still present, so the assertion above is reading a second, standalone comparison rather than the one inside it", async () => {
+    const harness = captureDueWhere();
+
+    await harness.service.listDue(USER, 1, 20);
+
+    expect(harness.rendered()).toMatch(/case when/i);
+    expect(harness.rendered()).toContain("verification_expired");
   });
 });

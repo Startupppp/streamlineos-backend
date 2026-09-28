@@ -21,6 +21,7 @@ import {
 } from "../help-centre/kb-article-page-scope";
 import { queryVectorChunkIds } from "./kb-vector-candidate-query";
 import { buildArticleRestrictionBranch } from "../core/authorization/knowledge-page-scope";
+import { isVerifiedNow } from "../core/kb-page-trust-predicates";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
@@ -165,7 +166,7 @@ export class KbCandidateService {
       pageVisibility,
       keywordCond,
     ];
-    if (verifiedOnly) conditions.push(eq(kbPages.trustState, "verified"));
+    if (verifiedOnly) conditions.push(isVerifiedNow());
     if (pageIds && pageIds.length > 0) conditions.push(inArray(kbPages.id, pageIds));
     if (spaceId) conditions.push(eq(kbPages.spaceId, spaceId));
     const rows = await this.db
@@ -187,7 +188,7 @@ export class KbCandidateService {
     spaceId?: number,
   ): Promise<number[]> {
     const extra: SQL[] = [wikiPagePredicate(), chunkVisibility];
-    if (verifiedOnly) extra.push(eq(kbPages.trustState, "verified"));
+    if (verifiedOnly) extra.push(isVerifiedNow());
     if (pageIds && pageIds.length > 0) extra.push(inArray(kbPages.id, pageIds));
     if (spaceId) extra.push(eq(kbPages.spaceId, spaceId));
     return this.pageIdsNearest(

@@ -25,6 +25,7 @@ import type {
   WikiStalePageItem,
   WikiContributorItem,
 } from "./dto/kb-wiki-analytics.schemas";
+import { effectiveTrustState } from "../core/kb-page-trust-predicates";
 
 const STALE_THRESHOLD_DAYS = 90;
 const CONTRIBUTOR_LIMIT = 50;
@@ -69,7 +70,7 @@ export class KbWikiAnalyticsService {
         title: kbPages.title,
         spaceId: kbPages.spaceId,
         status: kbPages.status,
-        trustState: kbPages.trustState,
+        trustState: effectiveTrustState(),
         updatedAt: kbPages.updatedAt,
         updatedAtMicros: microsecondCursorValue(kbPages.updatedAt),
         uniqueViewers: sql<number>`count(distinct ${kbPageVisits.id})::int`,

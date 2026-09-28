@@ -147,3 +147,71 @@ describe("KbSearchService — restriction enforcement", () => {
     expect(result).toEqual([]);
   });
 });
+
+function chunksOf(node: unknown): unknown[] | null {
+  if (node === null || typeof node !== "object") return null;
+  const c = (node as { queryChunks?: unknown }).queryChunks;
+  return Array.isArray(c) ? c : null;
+}
+
+function columnNames(node: unknown, out: string[] = []): string[] {
+  const chunks = chunksOf(node);
+  if (chunks !== null) {
+    for (const c of chunks) columnNames(c, out);
+    return out;
+  }
+  if (node === null || typeof node !== "object") return out;
+  const record = node as { name?: unknown; table?: unknown };
+  if (typeof record.name === "string" && record.table !== undefined) out.push(record.name);
+  return out;
+}
+
+describe("KbCandidateService — verifiedOnly scope", () => {
+  it("references verified_until in the where predicate when verifiedOnly=true, so a page with trust_state=verified but a past verified_until is excluded rather than returned as verified content", async () => {
+    const whereClauses: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn((clause: unknown) => {
+        whereClauses.push(clause);
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue(chain),
+      execute: jest.fn().mockResolvedValue([]),
+    };
+
+    const svc = new KbCandidateService(db as never);
+    await svc.pageKeywordCandidates("org-1", "test query", 10, sql`true`, true);
+
+    const combined = whereClauses.flatMap((c) => columnNames(c)).join(" ");
+    expect(combined).toContain("verified_until");
+    expect(combined).toContain("trust_state");
+  });
+
+  it("does not include verified_until in the predicate when verifiedOnly is not set — positive pair showing the column appears only when the scope requires it", async () => {
+    const whereClauses: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn((clause: unknown) => {
+        whereClauses.push(clause);
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: 5 }]),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue(chain),
+      execute: jest.fn().mockResolvedValue([]),
+    };
+
+    const svc = new KbCandidateService(db as never);
+    const ids = await svc.pageKeywordCandidates("org-1", "test query", 10, sql`true`);
+
+    expect(ids).toEqual([5]);
+    const combined = whereClauses.flatMap((c) => columnNames(c)).join(" ");
+    expect(combined).not.toContain("verified_until");
+  });
+});
