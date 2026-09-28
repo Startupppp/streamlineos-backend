@@ -22,14 +22,16 @@ const minCacheHitPct = Math.min(
   Math.max(0, parseFloat(args.find((a) => a.startsWith("--min-cache-hit-pct="))?.slice(20) ?? "90")),
 );
 
-function evaluate(connStats, lockWaits, slowQueries, cacheStats, thresholds) {
+function evaluate(connStats, lockWaits, slowQueryProbe, cacheStats, thresholds) {
   const totalSaturated =
     (connStats.active ?? 0) + (connStats.idleInTransaction ?? 0);
   const connectionsFired = totalSaturated > thresholds.maxConnections;
 
   const lockWaitsFired = (lockWaits ?? 0) > thresholds.maxLockWaits;
 
-  const slowQueriesFired = slowQueries.length > 0;
+  const slowQueriesObservable = slowQueryProbe.installed === true;
+  const slowQueryRows = slowQueriesObservable ? slowQueryProbe.rows : [];
+  const slowQueriesFired = slowQueryRows.length > 0;
 
   const lowHitTables = cacheStats.filter(
     (t) =>
@@ -46,6 +48,7 @@ function evaluate(connStats, lockWaits, slowQueries, cacheStats, thresholds) {
     connectionsFired,
     lockWaitsFired,
     slowQueriesFired,
+    slowQueriesObservable,
     cacheHitFired,
     connections: {
       active: connStats.active ?? 0,
@@ -59,7 +62,18 @@ function evaluate(connStats, lockWaits, slowQueries, cacheStats, thresholds) {
       count: lockWaits ?? 0,
       threshold: thresholds.maxLockWaits,
     },
-    slowQueries,
+    slowQueries: slowQueriesObservable
+      ? {
+          status: "measured",
+          thresholdMs: thresholds.slowQueryMs,
+          rows: slowQueryRows,
+        }
+      : {
+          status: "blocked",
+          reason: "pg-stat-statements-not-installed",
+          message:
+            "pg_stat_statements is not installed on this database, so no statement can be seen at all. This dimension is unmeasured, not clear. Install the extension to enable it.",
+        },
     cacheHit: {
       lowHitTables,
       threshold: thresholds.minCacheHitPct,
@@ -86,8 +100,12 @@ if (args.includes("--self-test")) {
   const highConn = { active: 60, idle: 5, idleInTransaction: 30, other: 0 };
   const healthyLocks = 0;
   const highLocks = 10;
-  const noSlowQueries = [];
-  const slowQueriesPresent = [{ query: "SELECT ...", meanExecMs: 250, maxExecMs: 800, calls: 5 }];
+  const noSlowQueries = { installed: true, rows: [] };
+  const slowQueriesPresent = {
+    installed: true,
+    rows: [{ query: "SELECT ...", meanExecMs: 250, maxExecMs: 800, calls: 5 }],
+  };
+  const slowQueriesUnobservable = { installed: false, rows: [] };
   const goodCache = [{ table: "kb_pages", hitRatePct: 98.5, totalBlocks: 1000 }];
   const badCache = [{ table: "kb_article_chunks", hitRatePct: 75.0, totalBlocks: 2000 }];
   const emptyCache = [{ table: "kb_pages", hitRatePct: null, totalBlocks: 0 }];
@@ -98,6 +116,13 @@ if (args.includes("--self-test")) {
   const case4 = evaluate(healthyConn, healthyLocks, slowQueriesPresent, goodCache, thresholds);
   const case5 = evaluate(healthyConn, healthyLocks, noSlowQueries, badCache, thresholds);
   const case6 = evaluate(healthyConn, healthyLocks, noSlowQueries, emptyCache, thresholds);
+  const case7 = evaluate(
+    healthyConn,
+    healthyLocks,
+    slowQueriesUnobservable,
+    goodCache,
+    thresholds,
+  );
 
   const checks = {
     healthyClear: !case1.fired,
@@ -106,6 +131,12 @@ if (args.includes("--self-test")) {
     slowQueriesFire: case4.fired && case4.slowQueriesFired,
     lowCacheHitFires: case5.fired && case5.cacheHitFired,
     zeroBlocksDoesNotFireOnCache: !case6.cacheHitFired,
+    measuredSlowQueriesReportMeasured: case1.slowQueries.status === "measured",
+    absentExtensionIsNotReportedAsClear:
+      case7.slowQueries.status === "blocked" &&
+      case7.slowQueriesObservable === false &&
+      !Object.prototype.hasOwnProperty.call(case7.slowQueries, "rows"),
+    absentExtensionDoesNotPageOncall: !case7.fired,
     replicaLagAlwaysBlocked: case1.replicaLag.status === "blocked",
     droppedInvalidationsDelegated: case1.droppedInvalidations.status === "delegated",
   };
@@ -158,7 +189,7 @@ try {
   `;
   const pgStatStatementsInstalled = Number(extensionRows[0]?.cnt ?? 0) > 0;
 
-  let slowQueries = [];
+  let slowQueryRows = [];
   if (pgStatStatementsInstalled) {
     const slowRows = await sql`
       SELECT
@@ -177,7 +208,7 @@ try {
       ORDER BY mean_exec_time DESC
       LIMIT 10
     `;
-    slowQueries = slowRows.map((r) => ({
+    slowQueryRows = slowRows.map((r) => ({
       query: r.query,
       meanExecMs: Number(r.mean_exec_ms),
       maxExecMs: Number(r.max_exec_ms),
@@ -207,7 +238,13 @@ try {
   }));
 
   const thresholds = { maxConnections, maxLockWaits, slowQueryMs, minCacheHitPct };
-  const result = evaluate(connStats, lockWaits, slowQueries, cacheStats, thresholds);
+  const result = evaluate(
+    connStats,
+    lockWaits,
+    { installed: pgStatStatementsInstalled, rows: slowQueryRows },
+    cacheStats,
+    thresholds,
+  );
 
   process.stdout.write(
     JSON.stringify({
