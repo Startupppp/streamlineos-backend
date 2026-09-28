@@ -26,12 +26,8 @@ export const BUILD_NOTIFICATION_EVENTS = [
     defaultPriority: "LOW", defaultChannels: IN_APP, rateLimitWindowSeconds: 3600, rateLimitMax: 100,
     visibilityResourceKind: BUILD_TICKET_RESOURCE,
   }),
-  notificationEvent("build.sprint.started", "build", "PROJECTS", "Sprint started", { defaultChannels: IN_APP }),
-  notificationEvent("build.sprint.ending", "build", "PROJECTS", "Sprint ending soon", {
+  notificationEvent("build.sprint.ending", "build", "PROJECTS", "Cycle ending soon", {
     defaultChannels: IN_APP_EMAIL, ttlSeconds: 86400,
-  }),
-  notificationEvent("build.sprint.completed", "build", "PROJECTS", "Sprint completed", {
-    defaultType: "SUCCESS", defaultChannels: IN_APP,
   }),
   notificationEvent("build.release.published", "build", "PROJECTS", "Release published", {
     defaultPriority: "LOW", defaultType: "SUCCESS", defaultChannels: IN_APP,
