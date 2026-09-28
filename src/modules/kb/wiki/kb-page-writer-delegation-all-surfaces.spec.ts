@@ -417,7 +417,7 @@ describe("KbPageTreeService — writer delegation for restore", () => {
     const NOT_DELEGATING = new Set([
       "getTreeLevel",
       "softDelete",
-      "isDescendant",
+      "targetSitsInsideSubtree",
     ]);
     const all = protoMethods(KbPageTreeService);
     const unclassified = [...all].filter(

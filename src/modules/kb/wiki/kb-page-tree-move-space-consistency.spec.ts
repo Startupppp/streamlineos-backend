@@ -44,6 +44,7 @@ function makeMoveDb(pageRow: { id: number; parentPageId: number | null; spaceId:
   const db = {
     query: { kbPages: { findFirst } },
     select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+    execute: jest.fn().mockResolvedValue([]),
     transaction,
   } as unknown as Db;
   return { db, transaction, txUpdate, updateWhere, txInsert, txValues };

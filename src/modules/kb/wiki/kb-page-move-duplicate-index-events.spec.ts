@@ -127,6 +127,7 @@ function makeMoveHarness(updatedRows: Row[]): { db: Db; outboxRows: Row[] } {
           .mockResolvedValue({ id: PAGE_ID, parentPageId: null, spaceId: null }),
       },
     },
+    execute: jest.fn().mockResolvedValue([]),
     transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx)),
   } as unknown as Db;
 

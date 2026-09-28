@@ -119,9 +119,11 @@ describe("KB page collection — index selection and buffer bounds at 5000-row c
   async function explainAsApp(orgId: string, query: string): Promise<string[]> {
     const rows = await app.begin(async (tx) => {
       await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
-      return tx.unsafe(`EXPLAIN (ANALYZE, BUFFERS) ${query}`);
+      return tx.unsafe<{ "QUERY PLAN": string }[]>(
+        `EXPLAIN (ANALYZE, BUFFERS) ${query}`,
+      );
     });
-    return (rows as { "QUERY PLAN": string }[]).map((r) => r["QUERY PLAN"]);
+    return rows.map((r) => r["QUERY PLAN"]);
   }
 
   it("the updated_desc collection at 5000 rows uses BitmapOr with idx_kb_pages_org_created_by_membership_id rather than the keyset index because the RLS OR condition (org_id = current_org_id_or_null()) OR (public_token_hash = current_public_token_or_null()) structurally defeats the ordered keyset scan, and the buffer count stays under 300 so the scan is bounded", async () => {
