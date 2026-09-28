@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { projects, projectRetentionSettings } from "../../../../db/schema";
@@ -114,7 +114,7 @@ export class ProjectsRetentionSettingsService {
     const [project] = await this.db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.orgId, u.orgId), eq(projects.id, projectId)))
+      .where(and(eq(projects.orgId, u.orgId), eq(projects.id, projectId), isNull(projects.deletedAt)))
       .limit(1);
 
     if (!project) throw new NotFoundException();

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { type Db } from "../../../db/drizzle.module";
 import { projects } from "../../../db/schema";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
@@ -20,6 +20,7 @@ export async function isProjectMember(
     where: and(
       eq(projects.id, projectId),
       eq(projects.orgId, actor.orgId),
+      isNull(projects.deletedAt),
       reachableProjectsSql(actor.orgId, membershipId),
     ),
     columns: { id: true },

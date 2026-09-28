@@ -113,7 +113,7 @@ const JOIN_CANDIDATE_BASELINE = 83;
  * A ratchet on a previously ungated class, not a clean bill: ticket 06 hand-
  * audited 27 of these and found 11 genuine. It may only go down.
  */
-const PRIMARY_CANDIDATE_BASELINE = 69;
+const PRIMARY_CANDIDATE_BASELINE = 68;
 
 /**
  * Read sites ticket 06 opened individually and ruled correct as written, plus the
@@ -126,6 +126,16 @@ const ACCEPTED = [
   { site: "modules/ai/core/services/survey-ai.service.ts::surveyForms", reason: "reported by ticket 06, outside its territory" },
   { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbSources", reason: "erasure deliberately sweeps deleted rows (report 06)" },
   { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbPages", reason: "erasure deliberately sweeps deleted rows (report 06)" },
+  { site: "modules/build/client-portal/change-request-number-counter.ts::changeRequests", reason: "number allocator: MAX(cr_number) must see soft-deleted rows or a restored CR collides with a reissued number (Build lifecycle sweep, 02-schemas box 2)" },
+  { site: "modules/build/qa/test-runs.service.ts::tickets", reason: "number allocator: MAX(ticket_number) must see soft-deleted rows or a retired ticket number is reused (Build lifecycle sweep)" },
+  { site: "modules/build/core/project-crud/projects-templates.service.ts::tickets", reason: "number allocator on a project created in the same transaction, so the count is always zero; filtering would still be wrong in principle (Build lifecycle sweep)" },
+  { site: "modules/build/core/activity/projects-activity.service.ts::tickets", reason: "resolves a ticket's project to WRITE its activity row; filtering would drop the audit trail of the deletion itself (Build lifecycle sweep)" },
+  { site: "modules/build/core/activity/projects-activity.service.ts::organizationPeople", reason: "display-name resolution: filtering blanks the name on every record a departed colleague touched, which is this gate's own stated reason for excluding identity tables (Build lifecycle sweep)" },
+  { site: "modules/build/core/tickets/projects-ticket-comments.service.ts::organizationPeople", reason: "comment-author display join, same class as the activity one above (Build lifecycle sweep)" },
+  { site: "modules/build/core/budget/projects-budget.service.ts::tickets", reason: "cost aggregate: money already spent does not un-spend when a ticket is retired, and filtering would understate actuals against Accounting (Build lifecycle sweep)" },
+  { site: "modules/build/execution/timesheets.service.ts::projects", reason: "effort aggregate, same reasoning as the budget rollup: excluding retired projects makes the per-project hours stop summing to the org total (Build lifecycle sweep)" },
+  { site: "modules/build/comment-drafts/comment-drafts.service.ts::projects", reason: "display leftJoin supplying projectKey/projectName; filtering blanks the label instead of removing the row. If a draft on a retired project should vanish, the predicate belongs in the where clause (Build lifecycle sweep)" },
+  { site: "modules/build/core/tickets/projects-tickets-read.query.ts::tickets", reason: "shared helper whose `where` is supplied by the caller; it cannot carry a predicate without breaking its contract, and every caller passes isNull(deletedAt). Structurally invisible to this gate (Build lifecycle sweep)" },
 ];
 
 function snakeToCamel(name) {
@@ -614,7 +624,7 @@ if (
 
 const acceptedSites = new Set(ACCEPTED.map((a) => a.site));
 const seen = new Set();
-for (const c of candidates) {
+for (const c of [...candidates, ...joinCandidates]) {
   const key = `${c.file}::${c.symbol}`;
   if (acceptedSites.has(key)) seen.add(key);
 }
