@@ -3,19 +3,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import { KbHrLinkFlagsService } from "../core/kb-hr-link-flags.service";
-import type { KbContextPassage } from "../retrieval/kb-ask-context";
+import type { KbContextPassage, LinkedDocumentCitation } from "../retrieval/kb-ask-context";
 import { KbLinkedDocumentQueryService, type LinkedDocumentCaller } from "./kb-linked-document-query.service";
 import type { LinkedDocumentItem } from "./dto/kb-linked-documents-response.schemas";
 
 export const KB_ASK_MAX_LINKED_DOCUMENTS = 3;
-
-export interface LinkedDocumentCitation {
-  kind: "document";
-  linkedDocumentId: number;
-  title: string;
-  spaceId: null;
-  updatedAt: Date;
-}
 
 const UNTITLED = "Company document";
 

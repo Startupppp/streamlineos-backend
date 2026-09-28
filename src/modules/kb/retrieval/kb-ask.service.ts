@@ -36,6 +36,7 @@ import {
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
   KbAskOptions,
   restrictToCited,
+  kbScopeExcludesLinkedDocuments,
 } from "./kb-ask-context";
 import { kbAiInteractions } from "../../../db/schema";
 import { PROCESS_CELL_ID } from "../../../common/cell-resources/cell-id";
@@ -96,7 +97,7 @@ export class KbAskService {
       runInTenantTransaction(
         this.db,
         async () =>
-          options.companyDocuments === true
+          options.companyDocuments === true && !kbScopeExcludesLinkedDocuments(input)
             ? this.linkedDocuments.retrieve(user, input.question)
             : Promise.resolve<LinkedDocumentItem[]>([]),
         { orgId: user.orgId },

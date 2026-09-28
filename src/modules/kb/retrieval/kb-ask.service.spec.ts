@@ -728,3 +728,138 @@ describe("KbAskService", () => {
     expect(row?.provider).toBe("openai");
   });
 });
+
+describe("AV-04 scope enforcement — linked-documents channel is excluded when any KB scope field is set", () => {
+  const scopeUser: typeof user = {
+    userId: "user-scope",
+    orgId: "org-scope",
+    role: "member",
+    isOrgOwner: false,
+    sessionId: "sess-scope",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(2, false),
+  };
+
+  const scopeArticle = {
+    kind: "article" as const,
+    id: 9,
+    title: "Scope doc",
+    slug: "scope-doc",
+    spaceId: null,
+    contentText: "Relevant content for the scope test.",
+    updatedAt: new Date("2026-01-01"),
+  };
+
+  const scopeArticleCitation = {
+    kind: "article" as const,
+    articleId: 9,
+    title: "Scope doc",
+    slug: "scope-doc",
+    spaceId: null,
+    updatedAt: new Date("2026-01-01"),
+  };
+
+  function buildForScopeTest() {
+    const linkedRetrieve = jest.fn().mockResolvedValue([]);
+    const linkedDocuments = {
+      retrieve: linkedRetrieve,
+      stillCitable: jest.fn().mockResolvedValue(new Set()),
+      citationOf: jest.fn(),
+      passageOf: jest.fn(),
+    } as unknown as import("../linked-documents/kb-linked-document-ask-source").KbLinkedDocumentAskSource;
+
+    const insertedRows: unknown[] = [];
+    const scopeDb = {
+      execute: jest.fn().mockResolvedValue([{ one: 1 }]),
+      transaction: jest.fn(),
+      insert: jest.fn().mockImplementation(() => ({
+        values: jest.fn().mockImplementation((row: unknown) => {
+          insertedRows.push(row);
+          return Promise.resolve([]);
+        }),
+      })),
+    };
+    scopeDb.transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(scopeDb));
+
+    const scopeGateway = {
+      invokeTextWithUsage: jest.fn().mockResolvedValue({
+        ok: true as const,
+        data: "Scoped answer.",
+        correlationId: "gw-scope",
+        aiUsage: { model: "m", promptTokens: 1, completionTokens: 1, totalTokens: 2, credits: 0, costUsd: 0 },
+      }),
+      streamTextWithUsage: jest.fn(),
+    };
+
+    const scopeEvents = { record: jest.fn().mockResolvedValue(undefined) };
+    const scopeSearch = { aclCacheOutcome: jest.fn().mockResolvedValue("bypass") };
+
+    const scopeRetrieval = {
+      retrieve: jest.fn().mockResolvedValue({
+        documents: [scopeArticle],
+        sources: [],
+        passages: [],
+        degraded: { documents: false, sources: false, passages: false },
+        strategy: { kind: "exact" as const },
+      }),
+    };
+
+    const scopeCitations = {
+      resolveCitations: jest.fn().mockResolvedValue([scopeArticleCitation]),
+      stillCitableDocuments: jest.fn().mockResolvedValue([]),
+    };
+
+    const service = new KbAskService(
+      scopeDb as never,
+      scopeGateway as never,
+      scopeEvents as never,
+      scopeSearch as never,
+      scopeCitations as never,
+      linkedDocuments,
+      null,
+      scopeRetrieval as never,
+    );
+
+    return { service, linkedRetrieve };
+  }
+
+  it("when spaceId is set, the linked-documents channel is not consulted even with companyDocuments on", async () => {
+    const { service, linkedRetrieve } = buildForScopeTest();
+
+    await service.ask(scopeUser, { question: "leave policy", spaceId: 5 }, { companyDocuments: true });
+
+    expect(linkedRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("CONTROL: without any scope the linked-documents channel IS consulted when companyDocuments is on, so none of the four not-called assertions can pass merely because the channel is unreachable", async () => {
+    const { service, linkedRetrieve } = buildForScopeTest();
+
+    await service.ask(scopeUser, { question: "leave policy" }, { companyDocuments: true });
+
+    expect(linkedRetrieve).toHaveBeenCalled();
+  });
+
+  it("when sourceIds is set, the linked-documents channel is not consulted even with companyDocuments on", async () => {
+    const { service, linkedRetrieve } = buildForScopeTest();
+
+    await service.ask(scopeUser, { question: "leave policy", sourceIds: [10] }, { companyDocuments: true });
+
+    expect(linkedRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("when pageIds is set, the linked-documents channel is not consulted even with companyDocuments on", async () => {
+    const { service, linkedRetrieve } = buildForScopeTest();
+
+    await service.ask(scopeUser, { question: "leave policy", pageIds: [20] }, { companyDocuments: true });
+
+    expect(linkedRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("when verifiedOnly is true, the linked-documents channel is not consulted even with companyDocuments on", async () => {
+    const { service, linkedRetrieve } = buildForScopeTest();
+
+    await service.ask(scopeUser, { question: "leave policy", verifiedOnly: true }, { companyDocuments: true });
+
+    expect(linkedRetrieve).not.toHaveBeenCalled();
+  });
+});

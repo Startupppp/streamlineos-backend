@@ -1,7 +1,15 @@
-import type { LinkedDocumentCitation } from "../linked-documents/kb-linked-document-ask-source";
 import type { KbAiSourceRecord } from "../../../db/schema/kb/ai-interactions";
+import type { AskInput } from "./dto/kb-ai.schemas";
 
 export type KbDocumentKind = "article" | "page" | "source" | "document";
+
+export interface LinkedDocumentCitation {
+  kind: "document";
+  linkedDocumentId: number;
+  title: string;
+  spaceId: null;
+  updatedAt: Date;
+}
 
 export type AskCitation =
   | {
@@ -30,6 +38,15 @@ export type AskCitation =
 
 export interface KbAskOptions {
   companyDocuments?: boolean;
+}
+
+export function kbScopeExcludesLinkedDocuments(input: AskInput): boolean {
+  return (
+    input.spaceId !== undefined ||
+    input.verifiedOnly === true ||
+    input.sourceIds !== undefined ||
+    input.pageIds !== undefined
+  );
 }
 
 export function restrictToCited<
