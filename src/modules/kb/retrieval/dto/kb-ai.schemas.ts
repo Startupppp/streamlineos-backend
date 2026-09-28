@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   pageSizeField,
 } from "../../../../common/pagination/list-query.schema";
+import { KB_PAGE_STATUSES } from "../../core/collection/knowledge-collection.types";
 
 export const searchSchema = z
   .object({
@@ -29,6 +30,8 @@ export const askSchema = z
       .max(50)
       .optional(),
     verifiedOnly: z.boolean().optional(),
+    ownerMembershipId: z.coerce.number().int().positive().optional(),
+    status: z.enum(KB_PAGE_STATUSES).optional(),
   })
   .strict();
 export type AskInput = z.infer<typeof askSchema>;

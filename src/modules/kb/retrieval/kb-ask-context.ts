@@ -45,7 +45,9 @@ export function kbScopeExcludesLinkedDocuments(input: AskInput): boolean {
     input.spaceId !== undefined ||
     input.verifiedOnly === true ||
     input.sourceIds !== undefined ||
-    input.pageIds !== undefined
+    input.pageIds !== undefined ||
+    input.ownerMembershipId !== undefined ||
+    input.status !== undefined
   );
 }
 

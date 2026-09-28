@@ -93,6 +93,8 @@ export class KbAskService {
         verifiedOnly: input.verifiedOnly,
         sourceIds: input.sourceIds,
         pageIds: input.pageIds,
+        ownerMembershipId: input.ownerMembershipId,
+        status: input.status,
       }),
       runInTenantTransaction(
         this.db,
