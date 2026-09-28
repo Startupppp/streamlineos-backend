@@ -271,7 +271,7 @@ describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) 
 });
 
 describe("FilesService.getSignedUrl — access gate", () => {
-  it("returns a signed URL for a file the caller can access", async () => {
+  it("returns a signed URL that expires in 120s, because a pre-signed URL is a bearer capability that outlives a revoked project grant", async () => {
     const db = makeMockDb();
     db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
@@ -285,7 +285,7 @@ describe("FilesService.getSignedUrl — access gate", () => {
 
     const result = await svc.getSignedUrl(makeUser("org-1", 7), 1, 3);
     expect(result.url).toBe("https://cdn.example.com/signed");
-    expect(result.expiresIn).toBe(3600);
+    expect(result.expiresIn).toBe(120);
   });
 
   it("throws ForbiddenException for a non-member trying to get a signed URL", async () => {

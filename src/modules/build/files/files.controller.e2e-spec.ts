@@ -136,7 +136,7 @@ describe("Files auth/RBAC (e2e)", () => {
   it("200 on GET /build/1/files/2/url with build:files:view — fileIdParams includes projectId so params validation passes", async () => {
     filesMock.getSignedUrl.mockResolvedValue({
       url: "https://cdn.example.com/signed",
-      expiresIn: 3600,
+      expiresIn: 120,
     });
     const token = await signToken({
       permissions: ["build:files:view"],

@@ -28,7 +28,7 @@ import { validateMagicBytes } from "../../storage/file-signatures";
 import type { UploadFileInput, ListFilesQuery } from "./dto/files.schemas";
 
 const DEFAULT_LIMIT = 25;
-const SIGNED_URL_TTL = 3600;
+const SIGNED_URL_TTL = 120;
 
 function decodeBase64(value: string): Buffer {
   const payload =
