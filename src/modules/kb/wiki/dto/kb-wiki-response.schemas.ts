@@ -44,7 +44,9 @@ export const kbPageCommentWithAuthorSchema = kbPageCommentSchema.extend({
   authorName: z.string().nullable(),
 });
 
-export const kbPageCommentListSchema = z.array(kbPageCommentWithAuthorSchema);
+export const kbPageCommentListSchema = cursorPageSchema(
+  kbPageCommentWithAuthorSchema,
+);
 
 export const kbRecordLinkSchema = z.object({
   id: z.number().int(),
