@@ -30,6 +30,8 @@ export const okrGoals = build.table("okr_goals", {
   level: goalLevelEnum("level").default("company").notNull(),
   status: goalStatusEnum("status").default("not_started").notNull(),
   progress: integer("progress").default(0).notNull(),
+  confidence: integer("confidence"),
+  version: integer("version").default(1).notNull(),
   startDate: date("start_date"),
   dueDate: date("due_date"),
   parentGoalId: integer("parent_goal_id"),
@@ -46,6 +48,7 @@ export const okrGoals = build.table("okr_goals", {
   index("idx_okr_goals_parent").on(table.parentGoalId),
   index("idx_okr_goals_org_owner_membership").on(table.orgId, table.ownerMembershipId),
   unique("uniq_okr_goals_org_id").on(table.orgId, table.id),
+  check("chk_okr_goals_confidence_range", sql`${table.confidence} IS NULL OR (${table.confidence} >= 0 AND ${table.confidence} <= 100)`),
   foreignKey({
     name: "fk_okr_goals_owner_actor",
     columns: [table.orgId, table.ownerMembershipId],

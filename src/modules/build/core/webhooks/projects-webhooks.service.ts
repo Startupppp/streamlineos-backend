@@ -7,8 +7,23 @@ import type { CreateWebhookInput, ListWebhooksQuery, UpdateWebhookInput } from "
 import { generateWebhookSecret } from "./projects-webhooks-dispatch.service";
 import { assertProjectInOrg } from "../project-crud/project-access";
 import { buildIdCursorPage } from "../../../../common/pagination/cursor";
+import { TicketVersionConflictException } from "../tickets/ticket-version-conflict.exception";
 
 const PAGE_SIZE = 50;
+
+const webhookProjection = {
+  id: projectWebhooks.id,
+  orgId: projectWebhooks.orgId,
+  projectId: projectWebhooks.projectId,
+  url: projectWebhooks.url,
+  events: projectWebhooks.events,
+  isActive: projectWebhooks.isActive,
+  hasSecret: sql<boolean>`${projectWebhooks.secret} IS NOT NULL`,
+  secretSetAt: projectWebhooks.secretSetAt,
+  version: projectWebhooks.version,
+  createdAt: projectWebhooks.createdAt,
+  updatedAt: projectWebhooks.updatedAt,
+};
 
 @Injectable()
 export class ProjectsWebhooksService {
@@ -36,7 +51,11 @@ export class ProjectsWebhooksService {
         url: projectWebhooks.url,
         events: projectWebhooks.events,
         isActive: projectWebhooks.isActive,
+        hasSecret: sql<boolean>`${projectWebhooks.secret} IS NOT NULL`,
+        secretSetAt: projectWebhooks.secretSetAt,
+        version: projectWebhooks.version,
         createdAt: projectWebhooks.createdAt,
+        updatedAt: projectWebhooks.updatedAt,
       })
       .from(projectWebhooks)
       .where(and(...conditions))
@@ -118,16 +137,8 @@ export class ProjectsWebhooksService {
     const secret = data.secret ?? generateWebhookSecret();
     const [webhook] = await this.db
       .insert(projectWebhooks)
-      .values({ orgId, projectId, createdBy, url: data.url, events: data.events, secret })
-      .returning({
-        id: projectWebhooks.id,
-        orgId: projectWebhooks.orgId,
-        projectId: projectWebhooks.projectId,
-        url: projectWebhooks.url,
-        events: projectWebhooks.events,
-        isActive: projectWebhooks.isActive,
-        createdAt: projectWebhooks.createdAt,
-      });
+      .values({ orgId, projectId, createdBy, url: data.url, events: data.events, secret, secretSetAt: new Date() })
+      .returning(webhookProjection);
     return {
       ...webhook,
       lastDeliveryAt: null,
@@ -137,27 +148,38 @@ export class ProjectsWebhooksService {
   }
 
   async updateWebhook(orgId: string, projectId: number, webhookId: number, data: UpdateWebhookInput) {
-    await this.assertWebhookOwnership(orgId, projectId, webhookId);
+    const tenantMatch = and(
+      eq(projectWebhooks.id, webhookId),
+      eq(projectWebhooks.orgId, orgId),
+      eq(projectWebhooks.projectId, projectId),
+    );
+    const [before] = await this.db
+      .select({ version: projectWebhooks.version })
+      .from(projectWebhooks)
+      .where(tenantMatch)
+      .limit(1);
+    if (!before) throw new NotFoundException("Webhook not found");
+    if (data.version !== before.version) throw new TicketVersionConflictException(before.version);
+
+    const changes = {
+      ...(data.url !== undefined ? { url: data.url } : {}),
+      ...(data.events !== undefined ? { events: data.events } : {}),
+      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+    };
+
     const [updated] = await this.db
       .update(projectWebhooks)
-      .set({ isActive: data.isActive })
-      .where(
-        and(
-          eq(projectWebhooks.id, webhookId),
-          eq(projectWebhooks.orgId, orgId),
-          eq(projectWebhooks.projectId, projectId),
-        ),
-      )
-      .returning({
-        id: projectWebhooks.id,
-        orgId: projectWebhooks.orgId,
-        projectId: projectWebhooks.projectId,
-        url: projectWebhooks.url,
-        events: projectWebhooks.events,
-        isActive: projectWebhooks.isActive,
-        createdAt: projectWebhooks.createdAt,
-      });
-    if (!updated) throw new NotFoundException("Webhook not found");
+      .set({ ...changes, updatedAt: new Date() })
+      .where(and(tenantMatch, eq(projectWebhooks.version, before.version)))
+      .returning(webhookProjection);
+    if (!updated) {
+      const [current] = await this.db
+        .select({ version: projectWebhooks.version })
+        .from(projectWebhooks)
+        .where(tenantMatch)
+        .limit(1);
+      throw new TicketVersionConflictException(current?.version ?? before.version);
+    }
     return {
       ...updated,
       lastDeliveryAt: null,

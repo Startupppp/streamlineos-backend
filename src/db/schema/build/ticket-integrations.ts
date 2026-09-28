@@ -17,11 +17,16 @@ export const projectWebhooks = build.table(
     url: text("url").notNull(),
     events: text("events").array().notNull().default([]),
     secret: text("secret"),
+    secretSetAt: timestamp("secret_set_at", { withTimezone: true }),
     isActive: boolean("is_active").notNull().default(true),
+    version: integer("version").notNull().default(1),
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },

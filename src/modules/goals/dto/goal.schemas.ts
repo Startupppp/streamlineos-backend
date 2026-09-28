@@ -15,6 +15,11 @@ const metricTypeEnum = z.enum(["number", "percentage", "currency", "boolean"]);
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+export const GOAL_CONFIDENCE_MIN = 0;
+export const GOAL_CONFIDENCE_MAX = 100;
+
+const goalConfidenceField = z.number().int().min(GOAL_CONFIDENCE_MIN).max(GOAL_CONFIDENCE_MAX);
+
 export const listSchema = z.object({
   status: goalStatusEnum.optional(),
   level: goalLevelEnum.optional(),
@@ -41,6 +46,7 @@ export const createSchema = z.object({
   ownerId: z.string().optional(),
   level: goalLevelEnum.default("company"),
   status: goalStatusEnum.default("not_started"),
+  confidence: goalConfidenceField.optional(),
   startDate: isoDate.optional(),
   dueDate: isoDate.optional(),
   parentGoalId: z.number().int().optional(),
@@ -49,11 +55,13 @@ export const createSchema = z.object({
 }).strict();
 
 export const updateSchema = z.object({
+  version: z.number().int().positive(),
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).nullable().optional(),
   ownerId: z.string().nullable().optional(),
   level: goalLevelEnum.optional(),
   status: goalStatusEnum.optional(),
+  confidence: goalConfidenceField.nullable().optional(),
   startDate: isoDate.nullable().optional(),
   dueDate: isoDate.nullable().optional(),
   parentGoalId: z.number().int().nullable().optional(),

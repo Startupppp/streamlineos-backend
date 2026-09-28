@@ -23,6 +23,8 @@ export const goalRowSchema = z.object({
   level: z.string(),
   status: z.string(),
   progress: z.number().int(),
+  confidence: z.number().int().nullable(),
+  version: z.number().int(),
   startDate: z.string().nullable(),
   dueDate: z.string().nullable(),
   parentGoalId: z.number().int().nullable(),
@@ -33,7 +35,13 @@ export const goalRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
+const keyResultRollupFields = {
+  target: z.string().nullable(),
+  current: z.string().nullable(),
+};
+
 const goalListItemSchema = goalRowSchema.extend({
+  ...keyResultRollupFields,
   owner: goalOwnerSchema.nullable(),
   keyResultCount: z.number().int(),
 });
@@ -92,6 +100,7 @@ const goalLinkRowSchema = z.object({
 });
 
 export const goalDetailSchema = goalRowSchema.extend({
+  ...keyResultRollupFields,
   owner: goalOwnerSchema.nullable(),
   project: goalProjectSchema.nullable(),
   keyResults: z.array(keyResultRowSchema),

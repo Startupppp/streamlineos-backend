@@ -1,16 +1,25 @@
 import { z } from "zod";
 
+const webhookUrlField = z.string().url();
+const webhookEventsField = z.array(z.string().min(1)).min(1);
+
 export const createWebhookSchema = z.object({
-  url: z.string().url(),
-  events: z.array(z.string().min(1)).min(1),
+  url: webhookUrlField,
+  events: webhookEventsField,
   secret: z.string().optional(),
 }).strict();
 
 export type CreateWebhookInput = z.infer<typeof createWebhookSchema>;
 
 export const updateWebhookSchema = z.object({
-  isActive: z.boolean(),
-}).strict();
+  version: z.number().int().positive(),
+  url: webhookUrlField.optional(),
+  events: webhookEventsField.optional(),
+  isActive: z.boolean().optional(),
+}).strict().refine(
+  (data) => data.url !== undefined || data.events !== undefined || data.isActive !== undefined,
+  { message: "Provide at least one of url, events or isActive" },
+);
 
 export type UpdateWebhookInput = z.infer<typeof updateWebhookSchema>;
 

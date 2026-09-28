@@ -55,19 +55,35 @@ describe("ProjectsWebhooksService — cross-tenant isolation", () => {
   });
 
   it("listWebhooks returns webhooks for the owning org (control — same-tenant access works)", async () => {
-    const fakeWebhook = { id: 1, orgId: OWNER_ORG, projectId: 1, url: "https://x.com", events: [], isActive: true, createdAt: new Date() };
+    const fakeWebhook = {
+      id: 1,
+      orgId: OWNER_ORG,
+      projectId: 1,
+      url: "https://x.com",
+      events: [],
+      isActive: true,
+      hasSecret: true,
+      secretSetAt: null,
+      version: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     const db = {
       query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+      execute: jest.fn().mockResolvedValue([]),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([fakeWebhook]) }),
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeWebhook]) }),
+          }),
         }),
       }),
     } as unknown as Db;
     const svc = new ProjectsWebhooksService(db);
 
     const result = await svc.listWebhooks(OWNER_ORG, 1);
-    expect(result).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.orgId).toBe(OWNER_ORG);
   });
 
   it("assertWebhookOwnership throws NotFoundException for a different org (cross-tenant isolation — returns 404 not 403)", async () => {
