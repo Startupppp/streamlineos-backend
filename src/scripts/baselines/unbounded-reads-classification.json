@@ -68,6 +68,11 @@
       "verdict": "KEYSET-MIGRATED",
       "note": "cut over on both sides 2026-09-28: listTickets returns listTicketsByCursor unconditionally, there is no offset path and no paging discriminator left in the file, and the frontend useTickets hook types its response CursorPageResponse<Ticket> and parses ticketListPageContract. Was ACTIONABLE with a 2026-12-31 deadline; the deadline was met early and the entry had gone stale, which an ACTIONABLE verdict is never checked for. KEYSET-MIGRATED so a returning offset fails as a regression."
     },
+    "/build/execution/epics.service.ts": {
+      "verdict": "KEYSET-MIGRATED",
+      "note": "listEpics cut over to a (createdAt DESC, id DESC) keyset cursor 2026-09-28; there is no offset path and no paging discriminator left in the file. KEYSET-MIGRATED so a returning offset fails as a regression, the same repair the ticket list took.",
+      "justification": "Classified 2026-09-28. epics.service.ts:30 decodes the position with decodeTimestampCursor(query.cursor), :29 caps the page at PAGE_SIZE_CAP, :59 orders by [desc(tickets.createdAt), desc(tickets.id)] so the sort carries an id tiebreaker, :60 reads limit + 1 to detect a further page, and :98 returns buildCursorPage(rows, limit, ...). grep for offset in the file finds none. Recorded under offset rather than unbounded because the file's unbounded detections are its per-page relation sub-reads, not this list."
+    },
     "/commission/commission.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound",
@@ -1062,7 +1067,7 @@
       "note": "listRuns first keyset-paginates run ids, then loads actions for only that bounded page in one grouped query",
       "justification": "The primary read uses .limit(limit + 1), and listAutomationRunsQuerySchema clamps limit to PAGE_SIZE_CAP=100. The flagged action read filters with inArray(runId, runIds), where runIds comes from page.data and is therefore at most 100 ids. Each automation stores at most 50 actions because createAutomationSchema caps actions at 50 and updateAutomationSchema is its partial form; recordRunActions receives exactly the runner results for that validated action array. The query is one batched page sub-read, not an org-wide scan or N+1. 2026-09-24"
     },
-    "/build/core/tickets/build-ticket-mutation-policy.ts": {
+    "/build/core/lib/build-ticket-mutation-policy.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "readMutationTickets:25 selects inArray(tickets.id, ids) FOR UPDATE over a caller-supplied id list, then throws NotFoundException unless rows.length === ids.length. It is an exact-id read, not a scan; the row count is ids.length by construction.",
       "justification": "Three call paths, each bounded before the read. build-ticket-bulk-mutation.ts:13-14 deduplicates through a Set and rejects outside 1..100 with BadRequestException, so <=100. projects-tickets-rank-utils.ts:33 builds [ticketId, beforeTicketId?, afterTicketId?], so <=3. projects-tickets-query.service.ts:50 authorizeMutation has exactly one caller, projects-tickets-update.service.ts:234, which passes the single-element [ticketId]. The 100 cap is load-bearing rather than cosmetic: the select takes FOR UPDATE row locks inside the mutation transaction, so an uncapped list would escalate lock footprint as well as row count. Pinned by build-ticket-mutation-bounds.spec.ts 2026-09-09"
@@ -1198,7 +1203,8 @@
     },
     "/build/execution/epics.service.ts": {
       "verdict": "FALSE-POSITIVE",
-      "note": "findMany has limit:100 in its options object; gate's 10-line window missed it because the options span >10 lines"
+      "note": "Corrected 2026-09-28. The prior note claimed \"findMany has limit:100 in its options object; gate's 10-line window missed it\" and that is now false — listEpics is keyset-paginated and has no fixed 100. The two reads this gate actually detects are not the epic list at all: epics.service.ts:71 and :80 are the per-page dependency-count sub-reads, bounded by IN (idList) over the ids of the current page. The epic list's own KEYSET-MIGRATED verdict is recorded under offset.",
+      "justification": "Reclassified 2026-09-28. The detected violations are :71 select({ id: workItemRelations.workItemId }) and :80 select({ id: workItemRelations.relatedWorkItemId }), both filtered by sql`… IN (${idList})` where idList is built at :64 from the epics array returned by the keyset page, so each is bounded by PAGE_SIZE_CAP rows and carries no .limit() for the gate to see — the same shape already classified FALSE-POSITIVE for /build/entity/build-entity-reads.service.ts. KEYSET-MIGRATED was tried here first and is wrong for this file: the verdict is per file, these two sub-reads are not the paginated read, and the gate correctly reported the file as a regression."
     },
     "/build/execution/whiteboard-sharing.service.ts": {
       "verdict": "FALSE-POSITIVE",

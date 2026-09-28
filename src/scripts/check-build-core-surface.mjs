@@ -261,7 +261,7 @@ function selfTest() {
   const ticketsBad = [
     `import { foo } from "../build/core/tickets/projects-tickets.service";`,
     `import type { Foo } from "../build/core/tickets/ticket-status.util";`,
-    `import { foo } from "src/modules/build/core/tickets/tickets-scope";`,
+    `import { foo } from "src/modules/build/core/tickets/projects-tickets-read.query";`,
   ];
   const ticketsGood = [
     `import { foo } from "../build/core/tickets";`,
