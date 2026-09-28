@@ -45,7 +45,7 @@ import type {
 } from "../dto/projects.schemas";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsCustomStatesService } from "../custom-states/projects-custom-states.service";
-import { ProjectsLabelsService } from "../tickets/projects-labels.service";
+import { ProjectsLabelsService } from "../lib/projects-labels.service";
 
 async function assertProjectOwnership(
   db: Db,

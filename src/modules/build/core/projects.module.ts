@@ -23,8 +23,8 @@ import {
   ProjectsTicketLinksService,
   ProjectsTicketRelationsService,
   BuildTicketStatusChangedConsumerService,
-  ProjectsLabelsService,
 } from "./tickets";
+import { ProjectsLabelsService } from "./lib/projects-labels.service";
 import { ProjectsReportsController } from "./analytics/projects-reports.controller";
 import { ProjectsBudgetController } from "./budget/projects-budget.controller";
 import { ProjectsTemplatesController } from "./project-crud/projects-templates.controller";

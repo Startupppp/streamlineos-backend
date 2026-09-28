@@ -17,13 +17,13 @@ import { NotificationDispatchService } from "../../../notifications/notification
 import { AccessService } from "../../../access/access.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { resolveProjectAccess } from "../project-crud/project-access";
-import { resolveTicketsScope, ticketScope } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
 import type { ScopedWhere } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "../dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
 import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
-import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { buildTicketHref, buildTicketKey } from "../lib/build-app-paths";
 

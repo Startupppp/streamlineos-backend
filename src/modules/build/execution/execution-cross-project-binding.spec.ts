@@ -17,7 +17,7 @@ import { IntakeService, MilestonesService, ViewsService } from "./workspace.serv
 jest.mock("../core/lib/allocate-ticket-number", () => ({
   allocateTicketNumbers: jest.fn(async () => 1),
 }));
-jest.mock("../core/tickets/build-ticket-capacity", () => ({
+jest.mock("../core/lib/build-ticket-capacity", () => ({
   reserveTicketCapacity: jest.fn(async () => undefined),
 }));
 

@@ -32,7 +32,7 @@ import { computeNextRunAt } from "../lib/projects-recurrence.util";
 import { buildTicketHref, buildTicketKey } from "../lib/build-app-paths";
 import { normalizeTicketType } from "./tickets-helpers";
 import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
-import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { AccessService } from "../../../access/access.service";
 import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
 

@@ -7,7 +7,7 @@
 
 import { NotFoundException } from "@nestjs/common";
 import { ProjectsReleasesService } from "./releases/projects-releases.service";
-import { ProjectsLabelsService } from "./tickets/projects-labels.service";
+import { ProjectsLabelsService } from "./lib/projects-labels.service";
 import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";
 import { ProjectsTicketChecklistsService } from "./tickets/projects-ticket-checklists.service";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";

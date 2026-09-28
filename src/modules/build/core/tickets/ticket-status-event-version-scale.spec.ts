@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.types";
-import type { readMutationTickets } from "./build-ticket-mutation-policy";
+import type { readMutationTickets } from "../lib/build-ticket-mutation-policy";
 import { emitBatchStatusChanges } from "./build-ticket-batch-workflow";
 
 const ORG = "11111111-1111-4111-8111-111111111111";

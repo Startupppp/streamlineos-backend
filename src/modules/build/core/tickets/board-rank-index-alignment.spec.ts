@@ -31,7 +31,7 @@ import type { AccessService } from "../../../access/access.service";
 import type { DataScope } from "../../../access/access.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
-import { TICKETS_PERMISSION } from "./tickets-scope";
+import { TICKETS_PERMISSION } from "../lib/tickets-scope";
 
 const dialect = new PgDialect();
 const ORG = "org-rank-index";

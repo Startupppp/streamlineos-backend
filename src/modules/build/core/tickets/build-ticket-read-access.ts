@@ -5,7 +5,7 @@ import type { Db } from "../../../../db/drizzle.types";
 import { tickets } from "../../../../db/schema";
 import type { AccessService } from "../../../access/access.service";
 import { resolveProjectAccess } from "../project-crud/project-access";
-import { resolveTicketsScope, ticketScope } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
 
 export type TicketReadAccess = Pick<
   AccessService,

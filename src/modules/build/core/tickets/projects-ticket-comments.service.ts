@@ -14,7 +14,7 @@ import { withSavepoint } from "../../../data-quality/savepoint";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
-import { resolveTicketsScope } from "./tickets-scope";
+import { resolveTicketsScope } from "../lib/tickets-scope";
 import {
   ProjectsCommentNotFoundException,
   ProjectsForbiddenTicketException,

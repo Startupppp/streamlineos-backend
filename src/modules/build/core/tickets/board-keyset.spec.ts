@@ -5,7 +5,7 @@ import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { DataScope } from "../../../access/access.types";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
-import { TICKETS_PERMISSION } from "./tickets-scope";
+import { TICKETS_PERMISSION } from "../lib/tickets-scope";
 import { encodeCursor } from "../../../../common/pagination/cursor";
 
 const dialect = new PgDialect();

@@ -20,9 +20,9 @@ import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../pr
 import type { UpdateTicketInput } from "../dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
 import { computeNextRunAt } from "../lib/projects-recurrence.util";
-import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
+import { lockProjectTicketMutation } from "../lib/build-ticket-mutation-policy";
 import { assertTransitionAllowed } from "./projects-tickets-workflow-utils";
-import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 import type { AccessService } from "../../../access/access.service";

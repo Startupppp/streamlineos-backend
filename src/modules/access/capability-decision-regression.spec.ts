@@ -7,8 +7,8 @@ import { resolve } from "node:path";
  * Keep this list intentionally bounded to the modules migrated by c3/c4.
  */
 const migratedProductionFiles = [
-  "build/core/projects-scope.ts",
-  "build/core/tickets/tickets-scope.ts",
+  "build/core/project-crud/projects-scope.ts",
+  "build/core/lib/tickets-scope.ts",
   "build/execution/timesheets-scope.ts",
   "build/execution/timesheets.service.ts",
   "build/execution/whiteboards.service.ts",

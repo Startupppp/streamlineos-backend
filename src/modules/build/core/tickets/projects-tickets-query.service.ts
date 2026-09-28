@@ -10,7 +10,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { BulkUpdateInput, RankTicketInput } from "../dto/projects.schemas";
 import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils";
 import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
-import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "./build-ticket-mutation-policy";
+import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "../lib/build-ticket-mutation-policy";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 

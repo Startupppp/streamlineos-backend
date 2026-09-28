@@ -2,7 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { tickets } from "../../../../db/schema";
 import { ScopedRead } from "../../../access/scoped-read";
-import { ticketScope } from "./tickets-scope";
+import { ticketScope } from "../lib/tickets-scope";
 
 describe("canonical ticket read scope predicate", () => {
   const dialect = new PgDialect();

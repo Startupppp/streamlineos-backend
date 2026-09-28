@@ -24,7 +24,7 @@ import {
 import { keysetAfterValue } from "../../../../common/pagination/keyset";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { resolveTicketsScope, ticketScope } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
 import type { TicketsListQuery } from "../dto/projects.schemas";
 import { queryTickets } from "./projects-tickets-read.query";
 import { resolveProjectAccess } from "../project-crud/project-access";

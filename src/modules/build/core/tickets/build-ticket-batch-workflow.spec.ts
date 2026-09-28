@@ -1,14 +1,14 @@
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.types";
-import type { readMutationTickets } from "./build-ticket-mutation-policy";
+import type { readMutationTickets } from "../lib/build-ticket-mutation-policy";
 import { validateBatchTransition, emitBatchStatusChanges } from "./build-ticket-batch-workflow";
 
-jest.mock("./build-ticket-capacity", () => ({
+jest.mock("../lib/build-ticket-capacity", () => ({
   reserveTicketCapacity: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const PROJECT_ID = 1;

@@ -19,7 +19,7 @@ import {
   authorizeTicketMutation,
   lockProjectTicketMutation,
   readMutationTickets,
-} from "./build-ticket-mutation-policy";
+} from "../lib/build-ticket-mutation-policy";
 import {
   emitBatchStatusChanges,
   validateBatchTransition,

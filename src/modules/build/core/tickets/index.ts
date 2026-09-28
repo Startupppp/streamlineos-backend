@@ -16,11 +16,9 @@ export { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.se
 export { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 export { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 export { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
-export { reserveTicketCapacity } from "./build-ticket-capacity";
-export { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
+export { reserveTicketCapacity } from "../lib/build-ticket-capacity";
+export { lockProjectTicketMutation } from "../lib/build-ticket-mutation-policy";
 export { resolveValidTicketStatuses } from "./ticket-status.util";
 export { TicketVersionConflictException } from "./ticket-version-conflict.exception";
-export { resolveTicketsScope, ticketScope, TICKETS_PERMISSION } from "./tickets-scope";
-export { ticketsScopeIsUnrestricted } from "./tickets-scope";
+export { resolveTicketsScope, ticketScope, TICKETS_PERMISSION } from "../lib/tickets-scope";
 export { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
-export { ProjectsLabelsService } from "./projects-labels.service";
