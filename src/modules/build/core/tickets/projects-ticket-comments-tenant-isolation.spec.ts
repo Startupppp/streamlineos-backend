@@ -79,7 +79,7 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when ticket belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
+    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks, { log: jest.fn(), logCritical: jest.fn() } as never);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
     await expect(svc.addComment(u, 10, 99, { content: "hack", parentCommentId: undefined } as never)).rejects.toThrow(NotFoundException);
   });
@@ -87,7 +87,7 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
   it("resolves without throwing for the owning org (same-tenant control)", async () => {
     const ticket = { id: 1, orgId: OWNER_ORG, title: "T", projectId: 10, ticketNumber: 1 };
     const db = makeDb(ticket);
-    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
+    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks, { log: jest.fn(), logCritical: jest.fn() } as never);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     await expect(svc.addComment(u, 10, 1, { content: "hello", parentCommentId: undefined } as never)).resolves.not.toThrow();
   });

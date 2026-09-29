@@ -9,6 +9,7 @@ import { AccessService } from "../../../access/access.service";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
+import { AuditService } from "../../../../common/audit/audit.service";
 
 const PROJECT_ID = 3;
 const TICKET_ID = 9;
@@ -78,6 +79,7 @@ async function buildService(options: {
         },
       },
       { provide: ProjectsWebhooksDispatchService, useValue: {} },
+      { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
     ],
   }).compile();
   return {

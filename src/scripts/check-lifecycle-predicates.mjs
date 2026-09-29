@@ -146,6 +146,8 @@ const ACCEPTED = [
   { site: "modules/build/execution/timesheets.service.ts::projects", reason: "effort aggregate, same reasoning as the budget rollup: excluding retired projects makes the per-project hours stop summing to the org total (Build lifecycle sweep)" },
   { site: "modules/build/comment-drafts/comment-drafts.service.ts::projects", reason: "display leftJoin supplying projectKey/projectName; filtering blanks the label instead of removing the row. If a draft on a retired project should vanish, the predicate belongs in the where clause (Build lifecycle sweep)" },
   { site: "modules/build/core/tickets/projects-tickets-read.query.ts::tickets", reason: "shared helper whose `where` is supplied by the caller; it cannot carry a predicate without breaking its contract, and every caller passes isNull(deletedAt). Structurally invisible to this gate (Build lifecycle sweep)" },
+  { site: "modules/build/core/project-crud/projects-restore.service.ts::projectTemplates", reason: "restore path: the row it reads is by definition the soft-deleted one, and filtering deleted_at would make every restore 404 (Build lifecycle completeness, lane H1)" },
+  { site: "modules/build/core/tickets/projects-tickets-restore.service.ts::projects", reason: "restore path: reads the parent project WITH its deleted_at so a child restore can refuse and name a still-deleted parent per BE-54 (Build lifecycle completeness, lane H1)" },
 ];
 
 function snakeToCamel(name) {

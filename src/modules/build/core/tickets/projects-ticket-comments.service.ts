@@ -20,6 +20,7 @@ import {
   ProjectsForbiddenTicketException,
 } from "../../../../common/http/api-exceptions";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
+import { AuditService } from "../../../../common/audit/audit.service";
 import type { CommentInput } from "../dto/projects.schemas";
 import { resolvePersonDisplayName } from "../../../../common/organization/person-display-name";
 import { assertTicketReadAccess } from "./build-ticket-read-access";
@@ -32,6 +33,7 @@ export class ProjectsTicketCommentsService {
     private readonly activity: ProjectsActivityService,
     private readonly access: AccessService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
+    private readonly audit: AuditService,
   ) {}
 
   private async resolveTicketForComment(
@@ -280,6 +282,15 @@ export class ProjectsTicketCommentsService {
       await tx.update(ticketComments).set({ deletedAt: now }).where(
         and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, u.orgId)),
       );
+    });
+
+    await this.audit.logCritical({
+      action: "ticket.comment.deleted",
+      userId: u.userId,
+      orgId: u.orgId,
+      targetId: String(commentId),
+      targetType: "ticket_comment",
+      metadata: { projectId, ticketId },
     });
 
     try {

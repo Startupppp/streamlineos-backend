@@ -30,8 +30,10 @@ import { RequireModule } from "../../../../common/rbac/require-module.decorator"
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
 import { templateListSchema, templateRowSchema, applyTemplateResultSchema } from "../dto/build-roadmap-response.schemas";
+import { buildRestoreResultSchema } from "../dto/build-core-response.schemas";
+import { ProjectsRestoreService } from "./projects-restore.service";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -39,7 +41,10 @@ const templateIdParams = z.object({ templateId: z.coerce.number().int().positive
 @Controller("build")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsTemplatesController {
-  constructor(private readonly templates: ProjectsTemplatesService) {}
+  constructor(
+    private readonly templates: ProjectsTemplatesService,
+    private readonly projectsRestore: ProjectsRestoreService,
+  ) {}
 
   @Get("templates")
   @RequirePermission("build:view")
@@ -73,7 +78,20 @@ export class ProjectsTemplatesController {
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.deleteTemplate(u.orgId, templateId);
+    return this.templates.deleteTemplate(u, templateId);
+  }
+
+  @Post("templates/:templateId/restore")
+  @BodylessAction()
+  @RequirePermission("build:restore")
+  @HttpCode(200)
+  @ResponseSchema(buildRestoreResultSchema)
+  @Validate({ params: templateIdParams })
+  restoreTemplate(
+    @Param("templateId", ParseIntPipe) templateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.projectsRestore.restoreTemplate(u, templateId);
   }
 
   @Post("templates/:templateId/apply")

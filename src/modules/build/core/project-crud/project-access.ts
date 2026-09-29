@@ -85,12 +85,13 @@ export async function resolveProjectAccess(
   access: Pick<AccessService, "resolveUserPermissions">,
   u: CurrentUserContext,
   projectId: number,
+  options: { includeDeleted?: boolean } = {},
 ): Promise<{ hasAccess: boolean; role: string | null }> {
   const projectRow = db.query.projects.findFirst({
     where: and(
       eq(projects.id, projectId),
       eq(projects.orgId, u.orgId),
-      isNull(projects.deletedAt),
+      ...(options.includeDeleted === true ? [] : [isNull(projects.deletedAt)]),
     ),
     columns: { managerMembershipId: true },
   });
@@ -167,7 +168,8 @@ export async function assertProjectAccess(
   access: Pick<AccessService, "resolveUserPermissions">,
   u: CurrentUserContext,
   projectId: number,
+  options: { includeDeleted?: boolean } = {},
 ): Promise<void> {
-  const { hasAccess } = await resolveProjectAccess(db, access, u, projectId);
+  const { hasAccess } = await resolveProjectAccess(db, access, u, projectId, options);
   if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
 }

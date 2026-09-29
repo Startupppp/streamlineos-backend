@@ -375,3 +375,10 @@ export const recentProjectsSchema = z.array(
     manager: recentProjectManagerSchema.nullable().optional(),
   }),
 );
+
+export const buildRestoreResultSchema = z.object({
+  restored: z.literal(true),
+  restoredChildren: z.number().int().nonnegative(),
+});
+
+export type BuildRestoreResult = z.infer<typeof buildRestoreResultSchema>;

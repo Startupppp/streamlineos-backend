@@ -12,6 +12,7 @@ export { ProjectsTicketsDetailService } from "./projects-tickets-detail.service"
 export { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 export { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 export { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
+export { ProjectsTicketsRestoreService } from "./projects-tickets-restore.service";
 export { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 export { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 export { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";

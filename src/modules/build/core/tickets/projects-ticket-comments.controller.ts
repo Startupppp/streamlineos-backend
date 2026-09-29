@@ -16,6 +16,7 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import { ProjectsTicketsRestoreService } from "./projects-tickets-restore.service";
 import {
   addReactionSchema,
   commentSchema,
@@ -27,7 +28,8 @@ import {
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { buildRestoreResultSchema } from "../dto/build-core-response.schemas";
 import { commentRowSchema, commentEditResultSchema, reactionSchema } from "../dto/build-tickets-response.schemas";
 
 const ticketInProjectParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
@@ -38,7 +40,10 @@ const projectIdticketIdcommentIdemojiParams = z.object({ projectId: z.coerce.num
 @Controller("build")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsTicketCommentsController {
-  constructor(private readonly subresources: ProjectsTicketSubresourcesService) {}
+  constructor(
+    private readonly subresources: ProjectsTicketSubresourcesService,
+    private readonly restore: ProjectsTicketsRestoreService,
+  ) {}
 
   @Post(":projectId/tickets/:ticketId/comments")
   @RequirePermission("build:tickets:update")
@@ -93,6 +98,21 @@ export class ProjectsTicketCommentsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.deleteComment(u, projectId, ticketId, commentId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/comments/:commentId/restore")
+  @BodylessAction()
+  @RequirePermission("build:tickets:restore")
+  @HttpCode(200)
+  @ResponseSchema(buildRestoreResultSchema)
+  @Validate({ params: projectIdticketIdcommentIdParams })
+  restoreComment(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("commentId", ParseIntPipe) commentId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.restore.restoreComment(u, projectId, ticketId, commentId);
   }
 
   @Post(":projectId/tickets/:ticketId/comments/:commentId/reactions")

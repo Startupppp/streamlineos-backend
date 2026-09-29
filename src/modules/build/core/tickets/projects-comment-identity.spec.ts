@@ -85,7 +85,7 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
     };
 
     const db = makeDb(ticket, [commentRow]);
-    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
+    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks, { log: jest.fn(), logCritical: jest.fn() } as never);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
 
     const result = await svc.getComment(u, PROJECT_ID, TICKET_ID, COMMENT_ID);
@@ -122,7 +122,7 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
     };
 
     const db = makeDb(ticket, [commentRow]);
-    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
+    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks, { log: jest.fn(), logCritical: jest.fn() } as never);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
 
     const result = await svc.getComment(u, PROJECT_ID, TICKET_ID, COMMENT_ID);
@@ -144,7 +144,7 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
       reporterId: "u1",
     };
     const db = makeDb(ticket, []);
-    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
+    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks, { log: jest.fn(), logCritical: jest.fn() } as never);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
 
     await expect(svc.getComment(u, PROJECT_ID, TICKET_ID, COMMENT_ID)).rejects.toThrow(
@@ -154,7 +154,7 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
 
   it("DENY — ticket not found (cross-org ticket) throws NotFoundException", async () => {
     const db = makeDb(null, []);
-    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
+    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks, { log: jest.fn(), logCritical: jest.fn() } as never);
     const u = { orgId: "org-attacker", userId: "u2", isOrgOwner: false } as never;
 
     await expect(svc.getComment(u, PROJECT_ID, TICKET_ID, COMMENT_ID)).rejects.toThrow(
@@ -189,7 +189,7 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
     };
 
     const db = makeDb(ticket, [commentRow]);
-    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks);
+    const svc = new ProjectsTicketCommentsService(db, activity, access, webhooks, { log: jest.fn(), logCritical: jest.fn() } as never);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
 
     const result = await svc.getComment(u, PROJECT_ID, TICKET_ID, COMMENT_ID);

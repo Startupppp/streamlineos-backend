@@ -18,6 +18,7 @@ export async function assertTicketReadAccess(
   actor: CurrentUserContext,
   projectId: number,
   ticketId: number,
+  options: { includeDeleted?: boolean } = {},
 ) {
   const read = await resolveTicketsScope(access, actor);
   const allowed = read.compose(
@@ -36,7 +37,7 @@ export async function assertTicketReadAccess(
         eq(tickets.orgId, actor.orgId),
         eq(tickets.projectId, projectId),
         eq(tickets.id, ticketId),
-        isNull(tickets.deletedAt),
+        ...(options.includeDeleted === true ? [] : [isNull(tickets.deletedAt)]),
       ),
     )
     .limit(1);
@@ -46,6 +47,7 @@ export async function assertTicketReadAccess(
     access,
     actor,
     projectId,
+    options,
   );
   if (!projectAccess.hasAccess || !ticket.allowed)
     throw new ForbiddenException("Ticket is outside your access scope");

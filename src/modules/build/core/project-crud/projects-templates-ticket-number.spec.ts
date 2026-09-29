@@ -88,7 +88,7 @@ function harness(highestTicketNumber: number) {
   );
 
   return {
-    service: new ProjectsTemplatesService(db, planLimits),
+    service: new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never),
     selectProjections,
     selectWheres,
     insertedTickets,

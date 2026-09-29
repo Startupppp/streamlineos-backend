@@ -23,6 +23,7 @@ import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service"
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
+import { ProjectsTicketsRestoreService } from "./projects-tickets-restore.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import { ProjectsSearchService } from "../project-crud/projects-search.service";
 import { ProjectsWorkQueryService } from "../work-query/projects-work-query.service";
@@ -52,7 +53,8 @@ import { RequireModule } from "../../../../common/rbac/require-module.decorator"
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { buildRestoreResultSchema } from "../dto/build-core-response.schemas";
 import {
   ticketRowSchema,
   ticketDetailSchema,
@@ -85,6 +87,7 @@ export class ProjectsTicketsController {
     private readonly query: ProjectsTicketsQueryService,
     private readonly transfer: ProjectsTicketsTransferService,
     private readonly del: ProjectsTicketsDeleteService,
+    private readonly restore: ProjectsTicketsRestoreService,
     private readonly subresources: ProjectsTicketSubresourcesService,
     private readonly search: ProjectsSearchService,
     private readonly workQuery: ProjectsWorkQueryService,
@@ -268,5 +271,19 @@ export class ProjectsTicketsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.del.deleteTicket(u, projectId, ticketId, force === "true");
+  }
+
+  @Post(":projectId/tickets/:ticketId/restore")
+  @BodylessAction()
+  @RequirePermission("build:tickets:restore")
+  @HttpCode(200)
+  @ResponseSchema(buildRestoreResultSchema)
+  @Validate({ params: ticketInProjectParams })
+  restoreTicket(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.restore.restoreTicket(u, projectId, ticketId);
   }
 }

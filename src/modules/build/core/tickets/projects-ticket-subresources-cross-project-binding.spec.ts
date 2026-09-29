@@ -303,6 +303,7 @@ function makeSubresources(store: Store) {
     { logTicketActivity: jest.fn(), processCommentMentions: jest.fn() } as never,
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:tickets:view"])) } as never,
     { enqueue: jest.fn() } as never,
+    { log: jest.fn(), logCritical: jest.fn() } as never,
   );
   const svc = new ProjectsTicketSubresourcesService(
     fixture.db,

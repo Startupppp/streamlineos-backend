@@ -8,6 +8,7 @@ import { assertTicketReadAccess } from "./build-ticket-read-access";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
+import { AuditService } from "../../../../common/audit/audit.service";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
@@ -67,6 +68,7 @@ async function makeComments() {
       { provide: ProjectsActivityService, useValue: {} },
       { provide: AccessService, useValue: {} },
       { provide: ProjectsWebhooksDispatchService, useValue: {} },
+      { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
     ],
   }).compile();
   return moduleRef.get(ProjectsTicketCommentsService);

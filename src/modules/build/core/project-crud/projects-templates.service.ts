@@ -19,6 +19,8 @@ import {
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
+import { AuditService } from "../../../../common/audit/audit.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type {
   ApplyTemplateInput,
   CreateTemplateInput,
@@ -53,6 +55,7 @@ export class ProjectsTemplatesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
+    private readonly audit: AuditService,
   ) {}
 
   async listTemplates(orgId: string, query: ListTemplatesQuery) {
@@ -148,7 +151,8 @@ export class ProjectsTemplatesService {
     });
   }
 
-  async deleteTemplate(orgId: string, templateId: number) {
+  async deleteTemplate(u: CurrentUserContext, templateId: number) {
+    const orgId = u.orgId;
     const [stamped] = await this.db
       .update(projectTemplates)
       .set({ deletedAt: new Date() })
@@ -159,8 +163,16 @@ export class ProjectsTemplatesService {
           isNull(projectTemplates.deletedAt),
         ),
       )
-      .returning({ id: projectTemplates.id });
+      .returning({ id: projectTemplates.id, name: projectTemplates.name });
     if (!stamped) throw new NotFoundException("Template not found");
+    await this.audit.logCritical({
+      action: "build.template.deleted",
+      userId: u.userId,
+      orgId,
+      targetId: String(templateId),
+      targetType: "project_template",
+      metadata: { name: stamped.name },
+    });
     return { success: true };
   }
 

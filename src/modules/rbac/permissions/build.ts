@@ -356,3 +356,18 @@ export const PROJECT_FILES_PERMISSIONS: Permission[] = [
     description: "Upload and delete project files",
   },
 ];
+
+export const PROJECT_LIFECYCLE_PERMISSIONS: Permission[] = [
+  {
+    name: "build:restore",
+    resource: "projects",
+    action: "restore",
+    description: "Restore a soft-deleted project or project template",
+  },
+  {
+    name: "build:tickets:restore",
+    resource: "build:tickets",
+    action: "restore",
+    description: "Restore a soft-deleted ticket or ticket comment",
+  },
+];

@@ -49,7 +49,7 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
   it("listTemplates scopes the select WHERE to the requesting org (cross-tenant isolation)", async () => {
     const { db, where } = makeSelectDb([]);
     const { planLimits } = makeDeps();
-    const svc = new ProjectsTemplatesService(db, planLimits);
+    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never);
 
     const result = await svc.listTemplates(ATTACKER_ORG, {});
 
@@ -64,7 +64,7 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
     const fakeTemplate = { id: 1, orgId: OWNER_ORG, name: "Sprint" };
     const { db } = makeSelectDb([fakeTemplate]);
     const { planLimits } = makeDeps();
-    const svc = new ProjectsTemplatesService(db, planLimits);
+    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never);
 
     const result = await svc.listTemplates(OWNER_ORG, {});
 
@@ -75,7 +75,7 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
   it("listTemplates carries the cursor id into the WHERE so page two cannot silently restart at page one", async () => {
     const { db, where } = makeSelectDb([]);
     const { planLimits } = makeDeps();
-    const svc = new ProjectsTemplatesService(db, planLimits);
+    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never);
 
     const cursor = encodeCursor({ sortValue: new Date(0).toISOString(), id: "42" });
     await svc.listTemplates(OWNER_ORG, { cursor });

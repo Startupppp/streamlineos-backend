@@ -7,6 +7,7 @@ jest.mock("./build-ticket-read-access", () => ({
 }));
 
 function buildService(comment: { id: number; userId: string } | undefined) {
+  const audit = { log: jest.fn(), logCritical: jest.fn() };
   const transaction = jest.fn();
   const db = {
     query: {
@@ -32,8 +33,9 @@ function buildService(comment: { id: number; userId: string } | undefined) {
     { logTicketActivity: jest.fn() } as never,
     access as never,
     {} as never,
+    audit as never,
   );
-  return { service, transaction, access };
+  return { service, transaction, access, audit };
 }
 
 const actor = {
@@ -51,6 +53,24 @@ beforeEach(() => {
 });
 
 describe("ProjectsTicketCommentsService.deleteComment", () => {
+  it("writes an audit row for the author's own delete", async () => {
+    const { service, transaction, audit } = buildService({ id: 42, userId: "viewer-2" });
+    transaction.mockImplementation((cb: (t: unknown) => unknown) =>
+      cb({ update: () => ({ set: () => ({ where: () => Promise.resolve([]) }) }) }),
+    );
+
+    await expect(service.deleteComment(actor as never, 3, 7, 42)).resolves.toEqual({
+      deleted: true,
+    });
+    expect(audit.logCritical).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ticket.comment.deleted",
+        targetId: "42",
+        targetType: "ticket_comment",
+      }),
+    );
+  });
+
   it("refuses a manager who did not write the comment", async () => {
     const { service, transaction } = buildService({ id: 42, userId: "author-1" });
 
