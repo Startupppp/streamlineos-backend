@@ -1022,6 +1022,10 @@
     "@db/seeds/marketplace-apps.seed.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "NEWLY VISIBLE 2026-09-03 with src/db. Iterates the imported const array APPS â€” literal-bounded, one-shot seed script."
+    },
+    "/build/core/tickets/ticket-change-effects.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-29, when the effect step of the panel, rank and bulk routes became one implementation here. The detector matches the two row loops because their first argument is a `tx` handle, but neither loop reads: `enqueueTicketChangeWebhooks` enqueues one webhook row per changed ticket and `dispatchTicketChangeEffects` writes one activity row per changed ticket, which is the contract ticket 44 box 4 states — one event per changed ticket, not one per batch. Every read the loops need is hoisted above them by the caller: `readBulkTicketMeta` and `readMembershipUserIds` (build-ticket-bulk-effects.ts) each issue ONE `inArray` select bounded by `.limit(unique.length)` for the whole batch, and the rank path reads its single row once. The row count is capped at 100 by `bulkMutateTickets` (`ids.length > 100` throws) and at 1 by the rank and detail routes, so the statement count is bounded by the batch cap. The three routes each issued these same per-row writes before the consolidation; the detector had not matched them only because the loops sat in three files whose enqueue call did not name its first parameter `tx`."
     }
   }
 }
