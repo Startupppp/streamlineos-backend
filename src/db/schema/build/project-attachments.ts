@@ -34,6 +34,9 @@ export const projectAttachments = build.table(
     index("idx_project_attachments_org_project_cursor")
       .on(t.orgId, t.projectId, t.createdAt.desc(), t.id.desc())
       .where(sql`deleted_at IS NULL`),
+    index("idx_project_attachments_org_project_deleted_at")
+      .on(t.orgId, t.projectId, t.deletedAt)
+      .where(sql`deleted_at IS NOT NULL`),
     unique("uniq_project_attachments_org_id").on(t.orgId, t.id),
   ],
 );

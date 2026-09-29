@@ -130,6 +130,9 @@ export const tickets = build.table(
     index("idx_tickets_org_project_due_date")
       .on(t.orgId, t.projectId, t.dueDate.asc(), t.createdAt.desc(), t.id.asc())
       .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_deleted_at")
+      .on(t.orgId, t.projectId, t.deletedAt)
+      .where(sql`${t.deletedAt} IS NOT NULL`),
     index("idx_tickets_cycle").on(t.cycleId),
     index("idx_tickets_org_milestone_live").on(t.orgId, t.milestoneId)
       .where(sql`${t.deletedAt} IS NULL AND ${t.milestoneId} IS NOT NULL`),
