@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   projectMembers,
@@ -28,6 +28,7 @@ import { CacheService } from "../../../../common/cache/cache.service";
 import { buildTicketHref, buildTicketKey } from "../lib/build-app-paths";
 
 const EXPORT_ROW_CAP = 5_000;
+const ASSIGNMENT_NOTIFY_CAP = 100;
 
 @Injectable()
 export class ProjectsTicketsTransferService {
@@ -230,60 +231,82 @@ export class ProjectsTicketsTransferService {
       const primary = resolveAssigneeId(input.assigneeId);
       if (primary) notifyIds.add(primary);
     }
-    if (notifyIds.size === 0) return;
+    await this.notifyAssignedTickets(orgId, [ticketId], actingUserId, Array.from(notifyIds));
+  }
 
-    const notifyTargets = Array.from(notifyIds).filter((userId) => userId !== actingUserId);
-    if (notifyTargets.length === 0) return;
+  async notifyAssignedTickets(
+    orgId: string,
+    ticketIds: readonly number[],
+    actingUserId: string,
+    assigneeUserIds: readonly string[],
+  ): Promise<void> {
+    const notifyTargets = [...new Set(assigneeUserIds)].filter((userId) => userId !== actingUserId);
+    const uniqueTicketIds = [...new Set(ticketIds)];
+    if (notifyTargets.length === 0 || uniqueTicketIds.length === 0) return;
+    if (uniqueTicketIds.length > ASSIGNMENT_NOTIFY_CAP)
+      throw new BadRequestException("Too many tickets for one assignment notification batch");
 
-    const ticketData = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
-      columns: {
-        title: true,
-        projectId: true,
-        ticketNumber: true,
-        priority: true,
-        status: true,
-        type: true,
-      },
-    });
-
-    let ticketKey: string | undefined;
-    let ticketLink: string | undefined;
-    if (ticketData?.projectId) {
-      const [projectRow] = await this.db
-        .select({ key: projects.key })
-        .from(projects)
-        .where(and(eq(projects.id, ticketData.projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
-        .limit(1);
-
-      ticketKey = buildTicketKey(projectRow?.key, ticketData.ticketNumber);
-      ticketLink = buildTicketHref(ticketData.projectId, ticketKey);
-    }
-
-    // REG-004: see projects-tickets-create.service.ts — one engine emit for the
-    // whole target set, replacing a raw create() per user.
-    await this.dispatch
-      .emit({
-        eventKey: "build.ticket.assigned",
-        orgId,
-        actorUserId: actingUserId,
-        targetUserIds: notifyTargets,
-        entityType: "ticket",
-        entityId: String(ticketId),
-        title: "Ticket Assigned to You",
-        message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
-        link: ticketLink,
-        metadata: {
-          ticketId,
-          ticketKey: ticketKey ?? null,
-          priority: ticketData?.priority ?? null,
-          status: ticketData?.status ?? null,
-          type: ticketData?.type ?? null,
-        },
+    const ticketRows = await this.db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        projectId: tickets.projectId,
+        ticketNumber: tickets.ticketNumber,
+        priority: tickets.priority,
+        status: tickets.status,
+        type: tickets.type,
       })
-      .catch((error: unknown) =>
-        logger.error("Failed to dispatch ticket assignment notification", { error }),
-      );
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          inArray(tickets.id, uniqueTicketIds),
+          isNull(tickets.deletedAt),
+        ),
+      )
+      .limit(uniqueTicketIds.length);
+    if (ticketRows.length === 0) return;
+
+    const projectIds = [...new Set(ticketRows.map((row) => row.projectId))];
+    const projectKeyById = new Map<number, string | null>();
+    const projectRows = await this.db
+      .select({ id: projects.id, key: projects.key })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.orgId, orgId),
+          inArray(projects.id, projectIds),
+          isNull(projects.deletedAt),
+        ),
+      )
+      .limit(projectIds.length);
+    for (const row of projectRows) projectKeyById.set(row.id, row.key);
+
+    for (const row of ticketRows) {
+      const ticketKey = buildTicketKey(projectKeyById.get(row.projectId), row.ticketNumber);
+      await this.dispatch
+        .emit({
+          eventKey: "build.ticket.assigned",
+          orgId,
+          actorUserId: actingUserId,
+          targetUserIds: notifyTargets,
+          entityType: "ticket",
+          entityId: String(row.id),
+          title: "Ticket Assigned to You",
+          message: `You have been assigned to ticket "${row.title}".`,
+          link: buildTicketHref(row.projectId, ticketKey),
+          metadata: {
+            ticketId: row.id,
+            ticketKey,
+            priority: row.priority,
+            status: row.status,
+            type: row.type,
+          },
+        })
+        .catch((error: unknown) =>
+          logger.error("Failed to dispatch ticket assignment notification", { error }),
+        );
+    }
 
   }
 }
