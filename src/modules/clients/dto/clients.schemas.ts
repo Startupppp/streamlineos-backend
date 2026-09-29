@@ -97,3 +97,11 @@ export type CreateOnboardingItemInput = z.infer<typeof createOnboardingItemSchem
 export type PatchOnboardingItemInput = z.infer<typeof patchOnboardingItemSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export type UpdateClientStatusInput = z.infer<typeof updateClientStatusSchema>;
+
+export const createDirectClientSchema = z
+  .object({
+    name: z.string().min(1, "Client name is required").max(200),
+  })
+  .strict();
+
+export type CreateDirectClientInput = z.infer<typeof createDirectClientSchema>;

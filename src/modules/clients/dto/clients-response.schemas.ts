@@ -81,6 +81,11 @@ export const clientListSchema = z.array(
   z.object({ id: z.number().int(), name: z.string().nullable() }),
 );
 
+export const clientCreatedSchema = z.object({
+  id: z.number().int(),
+  name: z.string().nullable(),
+});
+
 const healthItemSchema = z.object({
   id: z.number().int(),
   name: z.string().nullable(),

@@ -11,14 +11,9 @@ import {
   managedProducts,
   organizationMembers,
   projectMembers,
-  projectStatuses,
   projects,
-  ticketAssignees,
-  ticketAttachments,
   ticketComments,
-  ticketLabelMappings,
   tickets,
-  timesheets,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
@@ -93,14 +88,6 @@ export class ProjectsWriteService {
             where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, body.managerId), eq(organizationMembers.status, "ACTIVE")),
             columns: { id: true },
           }))?.id ?? null;
-    const clientMembershipId = body.clientId === undefined
-      ? undefined
-      : body.clientId === null
-        ? null
-        : (await this.db.query.organizationMembers.findFirst({
-            where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, body.clientId), eq(organizationMembers.status, "ACTIVE")),
-            columns: { id: true },
-          }))?.id ?? null;
 
     const projectFields = {
       ...(body.name !== undefined && { name: body.name }),
@@ -109,7 +96,6 @@ export class ProjectsWriteService {
       }),
       ...(body.status !== undefined && { status: body.status }),
       ...(body.managerId !== undefined && { managerMembershipId }),
-      ...(body.clientId !== undefined && { clientMembershipId }),
       ...(body.startDate !== undefined && {
         startDate: body.startDate ? new Date(body.startDate) : null,
       }),
@@ -123,14 +109,26 @@ export class ProjectsWriteService {
     };
 
     const hasFieldChanges = Object.keys(projectFields).length > 0;
+    const hasCrmClientChange = body.clientId !== undefined;
 
-    if (hasFieldChanges || body.memberIds !== undefined) {
+    if (hasFieldChanges || body.memberIds !== undefined || hasCrmClientChange) {
       await this.db.transaction(async (tx) => {
         if (hasFieldChanges) {
           await tx
             .update(projects)
             .set(projectFields)
             .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId)));
+        }
+
+        if (hasCrmClientChange) {
+          const crmClientId = body.clientId === null
+            ? null
+            : parseInt(body.clientId!, 10);
+          if (crmClientId === null || (!isNaN(crmClientId) && crmClientId > 0)) {
+            await tx.execute(
+              sql`UPDATE build.projects SET crm_client_id = ${crmClientId} WHERE org_id = ${orgId} AND id = ${projectId}`,
+            );
+          }
         }
 
         if (body.memberIds !== undefined) {
@@ -296,37 +294,9 @@ export class ProjectsWriteService {
         .set({ deletedAt: now })
         .where(sql`${ticketComments.ticketId} IN (${subTickets})`);
       await tx
-        .delete(ticketAssignees)
-        .where(sql`${ticketAssignees.ticketId} IN (${subTickets})`);
-      await tx
-        .delete(ticketAttachments)
-        .where(sql`${ticketAttachments.ticketId} IN (${subTickets})`);
-      await tx
-        .delete(ticketLabelMappings)
-        .where(sql`${ticketLabelMappings.ticketId} IN (${subTickets})`);
-      await tx
-        .delete(timesheets)
-        .where(sql`${timesheets.ticketId} IN (${subTickets})`);
-      await tx
         .update(tickets)
         .set({ deletedAt: now })
         .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-      await tx
-        .delete(projectMembers)
-        .where(
-          and(
-            eq(projectMembers.orgId, orgId),
-            eq(projectMembers.projectId, projectId),
-          ),
-        );
-      await tx
-        .delete(projectStatuses)
-        .where(
-          and(
-            eq(projectStatuses.projectId, projectId),
-            eq(projectStatuses.orgId, orgId),
-          ),
-        );
       await tx
         .update(projects)
         .set({ deletedAt: now })

@@ -13,6 +13,7 @@ import {
   CLIENT_PARTY_JOIN,
   CLIENT_PARTY_SCOPE,
 } from "./client-party-reader";
+import { createMirroredClient } from "../party/party-legacy-clients";
 
 export type ClientHealthFilter = "healthy" | "at_risk" | "critical";
 
@@ -22,6 +23,16 @@ export class ClientsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
   ) {}
+
+  async createClient(orgId: string, name: string): Promise<{ id: number; name: string | null }> {
+    const row = await createMirroredClient(
+      this.db,
+      orgId,
+      { orgId, name, status: "active" },
+      { linkedBy: "user:direct-create" },
+    );
+    return { id: row.id, name: row.name };
+  }
 
   listClients(read: ScopedRead): Promise<{ id: number; name: string | null }[]> {
     return read.read(
