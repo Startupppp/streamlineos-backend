@@ -26,13 +26,17 @@ import {
   validateBatchTransition,
 } from "./build-ticket-batch-workflow";
 import { resolveAssigneeId } from "./tickets-helpers";
-import type { BulkEffectRow, BulkTicketEffectDeps } from "./build-ticket-bulk-effects";
 import {
-  bulkEffectsNeedTicketMeta,
-  dispatchBulkTicketEffects,
   readBulkTicketMeta,
   readMembershipUserIds,
 } from "./build-ticket-bulk-effects";
+import {
+  dispatchTicketChangeEffects,
+  enqueueTicketChangeWebhooks,
+  type TicketChangeEffectDeps,
+  type TicketChangeEffectRow,
+  type TicketChangeFields,
+} from "./ticket-change-effects";
 import { resolveProjectAssignableMemberships } from "../project-crud/project-access";
 
 export async function bulkMutateTickets(
@@ -41,7 +45,7 @@ export async function bulkMutateTickets(
   actor: CurrentUserContext,
   projectId: number,
   body: BulkUpdateInput,
-  effectDeps?: BulkTicketEffectDeps,
+  effectDeps?: TicketChangeEffectDeps,
 ) {
   const ids = [...new Set(body.ticketIds)];
   if (!ids.length || ids.length > 100)
@@ -51,8 +55,14 @@ export async function bulkMutateTickets(
     (await access.scopeFor(actor, "build:tickets:assign")) === "none"
   )
     throw new ForbiddenException("Not authorized to assign tickets");
-  const effectRows: BulkEffectRow[] = [];
+  const effectRows: TicketChangeEffectRow[] = [];
   const assigneeId = resolveAssigneeId(body.assigneeId);
+  const changeFields: TicketChangeFields = {
+    status: body.status,
+    priority: body.priority,
+    assigneeId,
+    cycleId: body.cycleId,
+  };
   const result = await db.transaction(async (tx) => {
     const policy = await authorizeTicketMutation(tx, access, actor, projectId);
     await lockProjectTicketMutation(tx, actor.orgId, projectId);
@@ -267,90 +277,59 @@ export async function bulkMutateTickets(
         new Map(updated.map((r) => [r.id, r.version])),
       );
     if (effectDeps) {
-      const nowIso = now.toISOString();
-      const ticketMeta = bulkEffectsNeedTicketMeta(effectDeps)
-        ? await readBulkTicketMeta(
-            tx,
-            actor.orgId,
-            updated.map((row) => row.id),
-          )
-        : new Map<number, { title: string; type: string; reporterId: string | null }>();
-      const assigneeUserIdByMembership =
-        effectDeps.activity !== undefined && assigneeId !== undefined
-          ? await readMembershipUserIds(
-              tx,
-              actor.orgId,
-              rows
-                .map((row) => row.assigneeMembershipId)
-                .filter((id): id is number => id != null),
-            )
-          : new Map<number, string>();
+      const ticketMeta = await readBulkTicketMeta(
+        tx,
+        actor.orgId,
+        updated.map((row) => row.id),
+      );
+      const assigneeUserIdByMembership = await readMembershipUserIds(
+        tx,
+        actor.orgId,
+        rows
+          .map((row) => row.assigneeMembershipId)
+          .filter((id): id is number => id != null),
+      );
       for (const row of updated) {
         const beforeRow = rows.find((r) => r.id === row.id);
-        const effectiveStatus: string =
-          update.status ?? beforeRow?.status ?? "TODO";
-        await effectDeps.webhooksDispatch.enqueue(
-          tx,
-          actor.orgId,
-          projectId,
-          "ticket.updated",
-          {
-            id: row.id,
-            projectId,
-            status: effectiveStatus,
-            priority: update.priority ?? beforeRow?.priority ?? "MEDIUM",
-            actor: actor.userId,
-            timestamp: nowIso,
-          },
-        );
-        if (
-          body.status !== undefined &&
-          beforeRow &&
-          beforeRow.status !== body.status
-        ) {
-          await effectDeps.webhooksDispatch.enqueue(
-            tx,
-            actor.orgId,
-            projectId,
-            "ticket.status_changed",
-            {
-              id: row.id,
-              projectId,
-              previousStatus: beforeRow.status,
-              newStatus: body.status,
-              actor: actor.userId,
-              timestamp: nowIso,
-            },
-          );
-        }
         const meta = ticketMeta.get(row.id);
         effectRows.push({
           id: row.id,
-          previousStatus: beforeRow?.status,
-          effectiveStatus,
-          previousPriority: beforeRow?.priority ?? "MEDIUM",
-          previousDueDate: beforeRow?.dueDate ?? null,
-          previousPoints: beforeRow?.points ?? null,
-          previousCycleId: beforeRow?.cycleId ?? null,
-          previousAssigneeUserId:
-            beforeRow?.assigneeMembershipId != null
-              ? (assigneeUserIdByMembership.get(beforeRow.assigneeMembershipId) ?? null)
-              : null,
-          title: meta?.title ?? "",
-          type: meta?.type ?? "TASK",
           reporterId: meta?.reporterId ?? null,
+          before: {
+            title: meta?.title ?? "",
+            status: beforeRow?.status ?? body.status ?? "TODO",
+            priority: beforeRow?.priority ?? "MEDIUM",
+            assigneeId:
+              beforeRow?.assigneeMembershipId != null
+                ? (assigneeUserIdByMembership.get(beforeRow.assigneeMembershipId) ?? null)
+                : null,
+            dueDate: beforeRow?.dueDate ?? null,
+            points: beforeRow?.points ?? null,
+            type: meta?.type ?? "TASK",
+            cycleId: beforeRow?.cycleId ?? null,
+          },
         });
       }
+      await enqueueTicketChangeWebhooks(
+        effectDeps,
+        actor,
+        projectId,
+        tx,
+        effectRows,
+        changeFields,
+        now,
+      );
     }
     return { updated: updated.length, ticketIds: updated.map((row) => row.id) };
   });
-  if (effectDeps) {
-    await dispatchBulkTicketEffects(effectDeps, actor, projectId, effectRows, {
-      status: body.status,
-      priority: body.priority,
-      assigneeUserId: assigneeId,
-      cycleId: body.cycleId,
-    });
-  }
+  if (effectDeps)
+    await dispatchTicketChangeEffects(
+      effectDeps,
+      actor,
+      projectId,
+      effectRows,
+      changeFields,
+      assigneeId ? [assigneeId] : [],
+    );
   return result;
 }

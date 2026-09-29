@@ -3,7 +3,8 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { ApplyTicketChangeDeps } from "./apply-ticket-change";
 import { applyTicketChange } from "./apply-ticket-change";
 import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
-import type { BulkTicketEffectDeps } from "./build-ticket-bulk-effects";
+import { rankTicket } from "./projects-tickets-rank-utils";
+import type { TicketChangeEffectDeps } from "./ticket-change-effects";
 import type { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import type { ProjectsActivityService } from "../activity/projects-activity.service";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
@@ -250,7 +251,7 @@ function makeBulkDb(): Db {
   } as unknown as Db;
 }
 
-function makeBulkEffectDeps(sink: Sink): BulkTicketEffectDeps {
+function makeBulkEffectDeps(sink: Sink): TicketChangeEffectDeps {
   return {
     webhooksDispatch: makeWebhooks(sink),
     automationRunner: makeAutomation(sink),
@@ -259,6 +260,40 @@ function makeBulkEffectDeps(sink: Sink): BulkTicketEffectDeps {
     transfer: makeTransfer(sink),
   };
 }
+
+function makeRankDb(): Db {
+  const tx = {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest
+            .fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValue([
+              { id: TICKET_ID, title: TITLE, type: "TASK", reporterId: "reporter-1" },
+            ]),
+        }),
+      }),
+    }),
+    execute: jest.fn().mockResolvedValue([{ rank: "1500", valid: true }]),
+    update: jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([
+            { id: TICKET_ID, rank: "1500", status: "IN_REVIEW", version: 2 },
+          ]),
+        }),
+      }),
+    }),
+  };
+  return {
+    transaction: jest
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+  } as unknown as Db;
+}
+
+const noCache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never;
 
 const access = {
   holds: jest.fn().mockResolvedValue(true),
@@ -310,5 +345,55 @@ describe("the same logical change produces the same activity, notification and a
 
     expect(bulk.assignmentRequests).toEqual([`${TICKET_ID}:assignee-2`]);
     expect(detail.assignmentRequests).toEqual(bulk.assignmentRequests);
+  });
+});
+
+describe("the same logical change produces the same effects whether the detail route, the bulk route or the rank route performed it", () => {
+  it("a TODO->IN_REVIEW status change yields an identical effect set from applyTicketChange and rankTicket", async () => {
+    const detail = makeSink();
+    await applyTicketChange(makeDetailDeps(detail), actor, PROJECT_ID, TICKET_ID, {
+      version: 1,
+      status: "IN_REVIEW",
+    });
+
+    const rank = makeSink();
+    await rankTicket(
+      makeRankDb(),
+      noCache,
+      access,
+      actor,
+      PROJECT_ID,
+      TICKET_ID,
+      { status: "IN_REVIEW" },
+      makeBulkEffectDeps(rank),
+    );
+
+    expect([...rank.effects].sort()).toEqual([...detail.effects].sort());
+    expect(rank.effects).toContain(`webhook:ticket.status_changed:${TICKET_ID}`);
+    expect(rank.effects).toContain(
+      `notification:build.ticket.review_requested:${TICKET_ID}`,
+    );
+  });
+
+  it("an assignee change yields the same ticket.assigned webhook and automation from the detail route and the bulk route", async () => {
+    const detail = makeSink();
+    await applyTicketChange(makeDetailDeps(detail), actor, PROJECT_ID, TICKET_ID, {
+      version: 1,
+      assigneeId: "assignee-2",
+    });
+
+    const bulk = makeSink();
+    await bulkMutateTickets(
+      makeBulkDb(),
+      access,
+      actor,
+      PROJECT_ID,
+      { ticketIds: [TICKET_ID], assigneeId: "assignee-2" },
+      makeBulkEffectDeps(bulk),
+    );
+
+    expect([...bulk.effects].sort()).toEqual([...detail.effects].sort());
+    expect(bulk.effects).toContain(`webhook:ticket.assigned:${TICKET_ID}`);
+    expect(bulk.effects).toContain(`automation:ticket.assigned:${TICKET_ID}`);
   });
 });

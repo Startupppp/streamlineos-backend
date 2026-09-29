@@ -65,7 +65,7 @@ function makeDeps(
     dispatch: { emit: jest.fn().mockResolvedValue(undefined) } as never,
     activity: { logTicketFieldChanges: activityLog } as never,
     query: { authorizeMutation: jest.fn().mockResolvedValue([]) } as never,
-    transfer: { notifyNewAssignees: notifyNew } as never,
+    transfer: { notifyAssignedTickets: notifyNew } as never,
     webhooksDispatch: { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
     automationRunner: { runForTicketEvent: jest.fn() } as never,
     cache: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
@@ -107,7 +107,7 @@ describe("apply-ticket-change — withSavepoint wraps activity log and transfer 
     expect(activityLog).toHaveBeenCalled();
   });
 
-  it("notifyNewAssignees is wrapped in withSavepoint — outerTx.transaction called for both side effects when assignee changes", async () => {
+  it("notifyAssignedTickets is wrapped in withSavepoint — outerTx.transaction called for both side effects when assignee changes", async () => {
     const savepointTx = {} as unknown as TenantTx;
     let txCallCount = 0;
     const outerTransaction = jest.fn().mockImplementation(

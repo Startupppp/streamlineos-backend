@@ -60,6 +60,7 @@ export class ProjectsTicketsQueryService {
       automationRunner: this.automationRunner,
       activity: this.activity,
       dispatch: this.dispatch,
+      transfer: this.transfer,
     });
   }
 }

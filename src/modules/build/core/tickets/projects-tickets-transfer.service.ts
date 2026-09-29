@@ -20,8 +20,7 @@ import { resolveProjectAccess } from "../project-crud/project-access";
 import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
 import type { ScopedWhere } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import type { ImportTicketsInput, UpdateTicketInput } from "../dto/projects.schemas";
-import { resolveAssigneeId } from "./tickets-helpers";
+import type { ImportTicketsInput } from "../dto/projects.schemas";
 import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { CacheService } from "../../../../common/cache/cache.service";
@@ -216,22 +215,6 @@ export class ProjectsTicketsTransferService {
       .catch(logSideEffectFailure("analytics cache eviction", { orgId: u.orgId, projectId }));
 
     return { created: createdCount, skipped };
-  }
-
-  async notifyNewAssignees(
-    orgId: string,
-    ticketId: number,
-    actingUserId: string,
-    input: UpdateTicketInput,
-  ): Promise<void> {
-    const notifyIds = new Set<string>();
-    if (input.assigneeIds !== undefined) {
-      input.assigneeIds.forEach((uid) => notifyIds.add(uid));
-    } else {
-      const primary = resolveAssigneeId(input.assigneeId);
-      if (primary) notifyIds.add(primary);
-    }
-    await this.notifyAssignedTickets(orgId, [ticketId], actingUserId, Array.from(notifyIds));
   }
 
   async notifyAssignedTickets(

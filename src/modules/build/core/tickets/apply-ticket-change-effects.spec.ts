@@ -78,7 +78,7 @@ function makeDeps(
     dispatch: { emit: dispatchEmit } as never,
     activity: { logTicketFieldChanges: activityLog } as never,
     query: { authorizeMutation: jest.fn().mockResolvedValue([]) } as never,
-    transfer: { notifyNewAssignees: notifyNew } as never,
+    transfer: { notifyAssignedTickets: notifyNew } as never,
     webhooksDispatch: { enqueue: webhooksEnqueue } as never,
     automationRunner: { runForTicketEvent: automationRun } as never,
     cache: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,

@@ -201,7 +201,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
       {} as never,
       { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never,
       { authorizeMutation: jest.fn().mockResolvedValue(undefined) } as never,
-      { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never,
+      { notifyAssignedTickets: jest.fn().mockResolvedValue(undefined) } as never,
       { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
       { runForTicketEvent: jest.fn() } as never,
       { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,

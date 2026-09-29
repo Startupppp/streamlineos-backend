@@ -5,7 +5,6 @@ import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { cycles, ticketAssignees, tickets } from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.types";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
-import { logger } from "../../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import type { CacheService } from "../../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
@@ -26,8 +25,12 @@ import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 import type { AccessService } from "../../../access/access.service";
-import { buildTicketBoardHref } from "../lib/build-app-paths";
-import { withSavepoint } from "../../../data-quality/savepoint";
+import {
+  dispatchTicketChangeEffects,
+  enqueueTicketChangeWebhooks,
+  type TicketChangeEffectRow,
+  type TicketChangeFields,
+} from "./ticket-change-effects";
 
 export interface ApplyTicketChangeDeps {
   readonly db: Db;
@@ -235,7 +238,6 @@ export async function applyTicketChange(
       resolvedAssignee !== null ? (assigneeMemberships.get(resolvedAssignee) ?? null) : null;
   }
   const beforeAssigneeId = before.assignee?.userId ?? null;
-  const beforeAssigneeMembershipId = before.assigneeMembershipId;
   if (input.version !== undefined && input.version !== before.version)
     throw new TicketVersionConflictException(before.version);
   if (input.expectedUpdatedAt !== undefined) {
@@ -252,6 +254,30 @@ export async function applyTicketChange(
       : await resolveProjectAccess(deps.db, deps.access, u, ticketProjectId);
   if (!accessResult.hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
   const newAssignee = resolveAssigneeId(input.assigneeId);
+  const effectRow: TicketChangeEffectRow = {
+    id: ticketId,
+    reporterId: before.reporterId,
+    before: {
+      title: before.title,
+      status: before.status,
+      priority: before.priority,
+      assigneeId: beforeAssigneeId,
+      dueDate: before.dueDate,
+      points: before.points,
+      type: before.type,
+      cycleId: before.cycleId,
+    },
+  };
+  const changeFields: TicketChangeFields = {
+    title: input.title,
+    status: input.status,
+    priority: input.priority,
+    assigneeId: resolveAssigneeId(input.assigneeId),
+    dueDate: input.dueDate,
+    points: input.points,
+    type: input.type ? normalizeTicketType(input.type) : undefined,
+    cycleId: updateData.cycleId,
+  };
   let updatedVersion: number = before.version;
   await deps.db.transaction(async (tx) => {
     if (systemJobCovers(u.principal, "build:tickets:update"))
@@ -312,84 +338,16 @@ export async function applyTicketChange(
       });
     }
     await syncAssignees(tx, orgId, ticketId, actingUserId, input, assigneeMemberships);
-    await deps.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.updated", {
-      id: ticketId, projectId: ticketProjectId,
-      title: input.title ?? before.title,
-      status: input.status ?? before.status,
-      priority: input.priority ?? before.priority,
-      actor: actingUserId,
-      timestamp: now.toISOString(),
-    });
-    if (input.status && input.status !== before.status) {
-      await deps.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.status_changed", {
-        id: ticketId,
-        projectId: ticketProjectId,
-        previousStatus: before.status,
-        newStatus: input.status,
-        actor: actingUserId,
-        timestamp: now.toISOString(),
-      });
-    }
-    if (newAssignee !== undefined && (newAssignee ? assigneeMemberships.get(newAssignee) ?? null : null) !== beforeAssigneeMembershipId) {
-      await deps.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.assigned", {
-        id: ticketId, projectId: ticketProjectId,
-        title: input.title ?? before.title,
-        status: input.status ?? before.status,
-        assigneeId: newAssignee,
-        actor: actingUserId,
-        timestamp: now.toISOString(),
-      });
-    }
+    await enqueueTicketChangeWebhooks(deps, u, ticketProjectId, tx, [effectRow], changeFields, now);
   });
-  await withSavepoint(() =>
-    deps.activity.logTicketFieldChanges(orgId, ticketId, actingUserId, { ...before, assigneeId: beforeAssigneeId }, {
-      title: input.title,
-      status: input.status,
-      priority: input.priority,
-      assigneeId: resolveAssigneeId(input.assigneeId),
-      dueDate: input.dueDate,
-      points: input.points,
-      type: input.type,
-      cycleId: updateData.cycleId,
-    })
-  ).catch((error) => logger.error("Failed to log ticket activity", { error }));
-  await withSavepoint(() =>
-    deps.transfer.notifyNewAssignees(orgId, ticketId, actingUserId, input)
-  ).catch((error) => logger.error("Failed to notify ticket assignees", { error }));
-  if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
-    const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : newAssignee;
-    if (reviewTarget) {
-      await deps.dispatch.emit({
-        eventKey: input.status === "IN_REVIEW" ? "build.ticket.review_requested" : "build.ticket.changes_requested",
-        orgId,
-        actorUserId: actingUserId,
-        targetUserIds: [reviewTarget],
-        entityType: "ticket",
-        entityId: String(ticketId),
-        title: input.status === "IN_REVIEW" ? "Ticket ready for review" : "Changes requested on your ticket",
-        message: `Ticket "${before.title}" changed to ${input.status}.`,
-        link: buildTicketBoardHref(before.projectId, ticketId),
-        variables: { ticketId, status: input.status, title: before.title },
-      });
-    }
-  }
-  const afterPayload = {
-    ticketId,
-    projectId: ticketProjectId,
-    orgId,
-    title: input.title ?? before.title,
-    status: input.status ?? before.status,
-    priority: input.priority ?? before.priority,
-    assigneeId: newAssignee !== undefined ? newAssignee : beforeAssigneeId,
-    type: input.type ? normalizeTicketType(input.type) : before.type,
-  };
-  deps.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.updated", afterPayload);
-  if (input.status && input.status !== before.status) {
-    deps.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.status_changed", afterPayload);
-  }
-  if (newAssignee !== undefined && (newAssignee ? assigneeMemberships.get(newAssignee) ?? null : null) !== beforeAssigneeMembershipId) {
-    deps.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.assigned", afterPayload);
-  }
+  await dispatchTicketChangeEffects(
+    deps,
+    u,
+    ticketProjectId,
+    [effectRow],
+    changeFields,
+    input.assigneeIds ?? (newAssignee ? [newAssignee] : []),
+  );
   void deps.cache
     .invalidateNamespace(`build:analytics:${orgId}`)
     .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: ticketProjectId }));

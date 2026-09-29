@@ -92,7 +92,7 @@ function makeActor(): CurrentUserContext {
 const dispatch = { emit: jest.fn().mockResolvedValue(undefined) } as never;
 const activity = { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never;
 const query = { authorizeMutation: jest.fn().mockResolvedValue(undefined) } as never;
-const transfer = { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never;
+const transfer = { notifyAssignedTickets: jest.fn().mockResolvedValue(undefined) } as never;
 const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
 const automationRunner = { runForTicketEvent: jest.fn() } as never;
 const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;

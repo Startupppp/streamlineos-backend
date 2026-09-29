@@ -2,7 +2,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 
 /**
- * `notifyNewAssignees` ends in `NotificationDispatchService.emit`, which writes the
+ * `notifyAssignedTickets` ends in `NotificationDispatchService.emit`, which writes the
  * `notification_outbox` row on the AMBIENT tenant transaction. While it was fired with
  * `void`, the write raced this request's COMMIT: anything that had not finished by then
  * ran against a committed handle whose GUC was gone, so the row was never written and the
@@ -63,7 +63,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
   it("has finished notifying the new assignee by the time updateTicket resolves", async () => {
     let settled = false;
     const transfer = {
-      notifyNewAssignees: jest.fn().mockImplementation(async () => {
+      notifyAssignedTickets: jest.fn().mockImplementation(async () => {
         await new Promise<void>((resolve) => setTimeout(resolve, 10));
         settled = true;
       }),

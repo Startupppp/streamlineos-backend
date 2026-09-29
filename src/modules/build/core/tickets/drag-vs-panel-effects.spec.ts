@@ -93,18 +93,13 @@ function makeEffectDeps(overrides: {
   activityLog?: jest.Mock;
   dispatchEmit?: jest.Mock;
 } = {}) {
-  const deps: {
-    webhooksDispatch: { enqueue: jest.Mock };
-    automationRunner: { runForTicketEvent: jest.Mock };
-    activity?: { logTicketFieldChanges: jest.Mock };
-    dispatch?: { emit: jest.Mock };
-  } = {
+  return {
     webhooksDispatch: { enqueue: overrides.webhooksEnqueue ?? jest.fn().mockResolvedValue(undefined) },
     automationRunner: { runForTicketEvent: overrides.automationRun ?? jest.fn() },
+    activity: { logTicketFieldChanges: overrides.activityLog ?? jest.fn().mockResolvedValue(undefined) },
+    dispatch: { emit: overrides.dispatchEmit ?? jest.fn().mockResolvedValue(undefined) },
+    transfer: { notifyAssignedTickets: jest.fn().mockResolvedValue(undefined) },
   };
-  if (overrides.activityLog !== undefined) deps.activity = { logTicketFieldChanges: overrides.activityLog };
-  if (overrides.dispatchEmit !== undefined) deps.dispatch = { emit: overrides.dispatchEmit };
-  return deps;
 }
 
 function makeRankTxForReview(statusReturn = "IN_REVIEW") {
@@ -278,10 +273,11 @@ describe("rank route fires activity log for a status change (review card B7, tic
     expect(activityLog).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT fire activity.logTicketFieldChanges when rank carries no status change (negative pair)", async () => {
+  it("asks the activity log for nothing when rank carries no status change, exactly as the detail route does (negative pair)", async () => {
     const activityLog = jest.fn().mockResolvedValue(undefined);
     await rankTicket(makeRankDb(), makeCache(), makeAccess(), actor, 1, 1, {}, makeEffectDeps({ activityLog }));
-    expect(activityLog).not.toHaveBeenCalled();
+    expect(activityLog).toHaveBeenCalledTimes(1);
+    expect(activityLog.mock.calls[0]?.[4]).toEqual({ status: undefined });
   });
 });
 

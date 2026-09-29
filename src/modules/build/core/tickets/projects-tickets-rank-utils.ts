@@ -21,52 +21,14 @@ import {
   emitBatchStatusChanges,
   validateBatchTransition,
 } from "./build-ticket-batch-workflow";
-import type { TicketEventPayload } from "../automation/build-automation-runner.service";
-import type { DispatchEventInput } from "../../../notifications/notification.types";
-import { withSavepoint } from "../../../data-quality/savepoint";
-import { logger } from "../../../../common/logger/logger.service";
-import { buildTicketBoardHref } from "../lib/build-app-paths";
-
-export interface RankTicketEffectDeps {
-  readonly webhooksDispatch: {
-    enqueue(
-      tx: unknown,
-      orgId: string,
-      projectId: number,
-      event: string,
-      payload: Record<string, unknown>,
-    ): Promise<void>;
-  };
-  readonly automationRunner: {
-    runForTicketEvent(
-      orgId: string,
-      projectId: number,
-      event: string,
-      payload: TicketEventPayload,
-    ): void;
-  };
-  readonly activity?: {
-    logTicketFieldChanges(
-      orgId: string,
-      ticketId: number,
-      userId: string,
-      before: {
-        title: string;
-        status: string;
-        priority: string;
-        assigneeId: string | null;
-        dueDate: string | null;
-        points: number | null;
-        type: string;
-        cycleId: number | null;
-      },
-      changes: { status?: string },
-    ): Promise<void>;
-  };
-  readonly dispatch?: {
-    emit(input: DispatchEventInput): Promise<unknown>;
-  };
-}
+import {
+  dispatchTicketChangeEffects,
+  enqueueTicketChangeWebhooks,
+  type TicketChangeEffectDeps,
+  type TicketChangeEffectRow,
+  type TicketChangeFields,
+} from "./ticket-change-effects";
+import { readMembershipUserIds } from "./build-ticket-bulk-effects";
 
 export async function rebalanceProjectRanks(
   db: Db,
@@ -93,7 +55,7 @@ export async function rankTicket(
   projectId: number,
   ticketId: number,
   body: RankTicketInput,
-  effectDeps?: RankTicketEffectDeps,
+  effectDeps?: TicketChangeEffectDeps,
 ) {
   if (
     body.beforeTicketId === ticketId ||
@@ -103,11 +65,8 @@ export async function rankTicket(
     throw new BadRequestException(
       "Rank neighbours must be distinct from the target and each other",
     );
-  let previousStatus: string | undefined;
-  let capturedTarget:
-    | { priority: string | null; dueDate: string | null; points: number | null; cycleId: number | null }
-    | undefined;
-  let capturedReviewData: { reporterId: string | null; title: string } | undefined;
+  let effectRow: TicketChangeEffectRow | undefined;
+  let changeFields: TicketChangeFields = {};
   const result = await db.transaction(async (tx) => {
     const policy = await authorizeTicketMutation(tx, access, actor, projectId);
     await lockProjectTicketMutation(tx, actor.orgId, projectId);
@@ -227,129 +186,59 @@ export async function rankTicket(
         new Map([[updated.id, updated.version]]),
       );
     if (effectDeps) {
-      await effectDeps.webhooksDispatch.enqueue(
-        tx,
-        actor.orgId,
-        projectId,
-        "ticket.updated",
-        {
-          id: ticketId,
-          projectId,
-          status,
-          priority: target.priority ?? "MEDIUM",
-          actor: actor.userId,
-          timestamp: now.toISOString(),
-        },
-      );
-      if (body.status !== undefined && body.status !== target.status) {
-        await effectDeps.webhooksDispatch.enqueue(
-          tx,
-          actor.orgId,
-          projectId,
-          "ticket.status_changed",
-          {
-            id: ticketId,
-            projectId,
-            previousStatus: target.status,
-            newStatus: status,
-            actor: actor.userId,
-            timestamp: now.toISOString(),
-          },
-        );
-      }
-    }
-    capturedTarget = {
-      priority: target.priority,
-      dueDate: target.dueDate,
-      points: target.points,
-      cycleId: target.cycleId,
-    };
-    if (
-      effectDeps?.dispatch !== undefined &&
-      body.status === "IN_REVIEW" &&
-      target.status !== "IN_REVIEW"
-    ) {
-      const [reviewRow] = await tx
-        .select({ reporterId: tickets.reporterId, title: tickets.title })
+      const [meta] = await tx
+        .select({
+          title: tickets.title,
+          type: tickets.type,
+          reporterId: tickets.reporterId,
+        })
         .from(tickets)
         .where(and(eq(tickets.orgId, actor.orgId), eq(tickets.id, ticketId), isNull(tickets.deletedAt)))
         .limit(1);
-      capturedReviewData = {
-        reporterId: reviewRow?.reporterId ?? null,
-        title: reviewRow?.title ?? "",
-      };
-    }
-    previousStatus = target.status;
-    return updated;
-  });
-  if (effectDeps) {
-    const afterPayload = {
-      ticketId,
-      projectId,
-      orgId: actor.orgId,
-      status: result.status,
-      actor: actor.userId,
-    };
-    effectDeps.automationRunner.runForTicketEvent(
-      actor.orgId,
-      projectId,
-      "ticket.updated",
-      afterPayload,
-    );
-    if (body.status !== undefined && result.status !== previousStatus) {
-      effectDeps.automationRunner.runForTicketEvent(
+      const assigneeByMembership = await readMembershipUserIds(
+        tx,
         actor.orgId,
+        target.assigneeMembershipId != null ? [target.assigneeMembershipId] : [],
+      );
+      effectRow = {
+        id: ticketId,
+        reporterId: meta?.reporterId ?? null,
+        before: {
+          title: meta?.title ?? "",
+          status: target.status,
+          priority: target.priority ?? "MEDIUM",
+          assigneeId:
+            target.assigneeMembershipId != null
+              ? (assigneeByMembership.get(target.assigneeMembershipId) ?? null)
+              : null,
+          dueDate: target.dueDate,
+          points: target.points,
+          type: meta?.type ?? "TASK",
+          cycleId: target.cycleId,
+        },
+      };
+      changeFields = { status: body.status };
+      await enqueueTicketChangeWebhooks(
+        effectDeps,
+        actor,
         projectId,
-        "ticket.status_changed",
-        afterPayload,
+        tx,
+        [effectRow],
+        changeFields,
+        now,
       );
     }
-  }
-  const beforeStatus = previousStatus;
-  const ct = capturedTarget;
-  const rankActivity = effectDeps?.activity;
-  if (
-    rankActivity !== undefined &&
-    body.status !== undefined &&
-    beforeStatus !== undefined &&
-    result.status !== beforeStatus &&
-    ct !== undefined
-  ) {
-    await withSavepoint(() =>
-      rankActivity.logTicketFieldChanges(
-        actor.orgId,
-        ticketId,
-        actor.userId,
-        {
-          title: "",
-          status: beforeStatus,
-          priority: ct.priority ?? "MEDIUM",
-          assigneeId: null,
-          dueDate: ct.dueDate ?? null,
-          points: ct.points ?? null,
-          type: "TASK",
-          cycleId: ct.cycleId ?? null,
-        },
-        { status: result.status },
-      )
-    ).catch((error) => logger.error("Failed to log rank ticket activity", { error }));
-  }
-  const rd = capturedReviewData;
-  const rankDispatch = effectDeps?.dispatch;
-  if (rankDispatch !== undefined && rd !== undefined && rd.reporterId !== null) {
-    await rankDispatch.emit({
-      eventKey: "build.ticket.review_requested",
-      orgId: actor.orgId,
-      actorUserId: actor.userId,
-      targetUserIds: [rd.reporterId],
-      entityType: "ticket",
-      entityId: String(ticketId),
-      title: "Ticket ready for review",
-      message: `Ticket "${rd.title}" changed to IN_REVIEW.`,
-      link: buildTicketBoardHref(projectId, ticketId),
-      variables: { ticketId, status: "IN_REVIEW", title: rd.title },
-    });
-  }
+    return updated;
+  });
+  if (effectDeps && effectRow)
+    await dispatchTicketChangeEffects(
+      effectDeps,
+      actor,
+      projectId,
+      [effectRow],
+      changeFields,
+      [],
+    );
   await cache.invalidateNamespace(`build:analytics:${actor.orgId}`).catch(
     logSideEffectFailure("analytics cache eviction", {
       orgId: actor.orgId,
