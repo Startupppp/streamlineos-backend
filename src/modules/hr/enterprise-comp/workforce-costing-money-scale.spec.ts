@@ -5,9 +5,8 @@ function sqlText(value: unknown, seen = new Set<object>()): string {
   if (typeof value === "string") return value;
   if (value === null || typeof value !== "object" || seen.has(value)) return "";
   seen.add(value);
-  const record: Record<string, unknown> = value;
-  const chunks = record["queryChunks"];
-  const parts = Array.isArray(chunks) ? chunks : Object.values(record);
+  const chunks = Reflect.get(value, "queryChunks");
+  const parts: unknown[] = Array.isArray(chunks) ? chunks : Object.values(value);
   return parts.map((part) => sqlText(part, seen)).join("");
 }
 
