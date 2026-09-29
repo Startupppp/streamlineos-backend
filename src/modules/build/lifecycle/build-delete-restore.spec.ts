@@ -11,6 +11,7 @@ import { TestManagementService } from "../qa/test-management.service";
 import { TestRunsService } from "../qa/test-runs.service";
 import { MilestonesService } from "../execution/workspace.service";
 import { WhiteboardsService } from "../execution/whiteboards.service";
+import { BugsService } from "../qa/bugs.service";
 
 const ORG = "org-1";
 const USER = "user-7";
@@ -134,6 +135,16 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
     await expect(svc.deleteRun(makeU(), PROJECT, 5)).resolves.toEqual({ success: true });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: "build.test_run.deleted", resourceId: "5" }),
+    );
+  });
+
+  it("deleteBug audits bug.deleted, the parallel soft-delete path onto tickets", async () => {
+    const written = updateDouble([]);
+    const { audit, log } = auditDouble();
+    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit);
+    await expect(svc.deleteBug(makeU(), PROJECT, 77)).resolves.toEqual({ success: true });
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "bug.deleted", resourceId: "77" }),
     );
   });
 

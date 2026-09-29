@@ -348,6 +348,14 @@ export class BugsService {
       .update(tickets)
       .set({ deletedAt: new Date() })
       .where(and(eq(tickets.id, bugId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)));
+    this.audit.log({
+      action: "bug.deleted",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "ticket",
+      resourceId: String(bugId),
+      metadata: { ticketId: bugId, projectId },
+    });
     return { success: true };
   }
 }
