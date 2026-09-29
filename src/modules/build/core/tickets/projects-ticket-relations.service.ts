@@ -61,6 +61,7 @@ export class ProjectsTicketRelationsService {
     await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
 
     const relatedTicketSelect = {
+      where: isNull(tickets.deletedAt),
       columns: {
         id: true,
         title: true,
@@ -109,16 +110,19 @@ export class ProjectsTicketRelationsService {
       limit: 100,
     });
 
-    return relations.map((r) => {
+    return relations.flatMap((r) => {
       const isSource = r.workItemId === ticketId;
       const related = isSource ? r.relatedWorkItem : r.workItem;
+      if (related === null) return [];
       const { assignee, ...rest } = related;
-      return {
-        id: r.id,
-        relationType: r.relationType,
-        relatedTicket: { ...rest, assignee: assignee?.user ?? null },
-        direction: isSource ? "outgoing" : "incoming",
-      };
+      return [
+        {
+          id: r.id,
+          relationType: r.relationType,
+          relatedTicket: { ...rest, assignee: assignee?.user ?? null },
+          direction: isSource ? "outgoing" : "incoming",
+        },
+      ];
     });
   }
 
@@ -163,6 +167,7 @@ export class ProjectsTicketRelationsService {
             eq(tickets.id, workItemRelations.workItemId),
             eq(tickets.projectId, projectId),
             eq(tickets.orgId, u.orgId),
+            isNull(tickets.deletedAt),
           ),
         )
         .where(
