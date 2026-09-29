@@ -23,6 +23,7 @@ import {
   ProjectsTicketLinksService,
   ProjectsTicketRelationsService,
   BuildTicketStatusChangedConsumerService,
+  ProjectsTicketsRestoreService,
 } from "./tickets";
 import { ProjectsLabelsService } from "./lib/projects-labels.service";
 import { ProjectsReportsController } from "./analytics/projects-reports.controller";
@@ -39,6 +40,7 @@ import { ProjectsCustomersController } from "./customers/projects-customers.cont
 import { ProjectsCustomersService } from "./customers/projects-customers.service";
 import { ProjectsQueryService } from "./project-crud/projects-query.service";
 import { ProjectsWriteService } from "./project-crud/projects-write.service";
+import { ProjectsRestoreService } from "./project-crud/projects-restore.service";
 import { ProjectsProvisionService } from "./project-crud/projects-provision.service";
 import { ProjectsMembersService } from "./members/projects-members.service";
 import { BuildDueSweepService } from "./due-sweep/build-due-sweep.service";
@@ -65,6 +67,7 @@ import { BuildAutomationActionExecutor } from "./automation/build-automation-act
 import { BuildAutomationRunHistoryService } from "./automation/build-automation-run-history.service";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { BuildReleasePublishedConsumerService } from "./releases/build-release-published-consumer.service";
+import { BuildBlockerCreatedConsumerService } from "./tickets/build-blocker-created-consumer.service";
 import { ProjectsSettingsIterationsController } from "./settings/projects-settings-iterations.controller";
 import { ProjectsSettingsIterationsService } from "./settings/projects-settings-iterations.service";
 import { ProjectsActivityFeedController } from "./activity/projects-activity-feed.controller";
@@ -95,11 +98,14 @@ import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.s
   providers: [
     BuildReleasePublishedConsumerService,
     BuildTicketStatusChangedConsumerService,
+    BuildBlockerCreatedConsumerService,
     BuildDueSweepService,
     BuildNotificationVisibility,
     BuildNotificationContextService,
     ProjectsQueryService,
     ProjectsWriteService,
+    ProjectsRestoreService,
+    ProjectsTicketsRestoreService,
     ProjectsProvisionService,
     ProjectsMembersService,
     ProjectsTicketsService,
@@ -150,6 +156,8 @@ import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.s
     ProjectsQueryService,
     ProjectsProvisionService,
     ProjectsWriteService,
+    ProjectsRestoreService,
+    ProjectsTicketsRestoreService,
     ProjectsWorkQueryService,
     ProjectsTicketSubresourcesService,
     ProjectsReportsService,

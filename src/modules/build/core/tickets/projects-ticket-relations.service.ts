@@ -5,12 +5,15 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { tickets, workItemRelations } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
+import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
+import { BUILD_BLOCKER_CREATED_EVENT } from "./build-blocker-created-consumer.service";
 import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
 import type { AddRelationInput } from "../dto/projects.schemas";
 
@@ -197,16 +200,46 @@ export class ProjectsTicketRelationsService {
         );
     }
 
-    const [created] = await this.db
-      .insert(workItemRelations)
-      .values({
-        orgId: u.orgId,
-        workItemId: ticketId,
-        relatedWorkItemId: body.relatedTicketId,
-        relationType: body.relationType,
-      })
-      .onConflictDoNothing()
-      .returning();
+    const isBlocker =
+      body.relationType === "blocks" || body.relationType === "blocked_by";
+
+    const created = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(workItemRelations)
+        .values({
+          orgId: u.orgId,
+          workItemId: ticketId,
+          relatedWorkItemId: body.relatedTicketId,
+          relationType: body.relationType,
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      if (!row) return null;
+
+      if (isBlocker)
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: u.orgId,
+          aggregateType: "work_item_relation",
+          aggregateId: String(row.id),
+          aggregateVersion: 1,
+          eventType: BUILD_BLOCKER_CREATED_EVENT,
+          occurredAt: new Date(),
+          payload: {
+            relationId: row.id,
+            blockedTicketId:
+              body.relationType === "blocks" ? body.relatedTicketId : ticketId,
+            blockingTicketId:
+              body.relationType === "blocks" ? ticketId : body.relatedTicketId,
+            projectId,
+            orgId: u.orgId,
+            actorUserId: u.userId,
+          },
+        });
+
+      return row;
+    });
 
     if (!created) throw new ConflictException("This relation already exists.");
 
