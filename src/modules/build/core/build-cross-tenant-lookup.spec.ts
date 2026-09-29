@@ -82,6 +82,7 @@ describe("the delete guard's blocker lookup", () => {
       {} as never,
       {} as never,
       { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { log: jest.fn() } as never,
     );
 
     return { service, findMany };
@@ -141,6 +142,7 @@ describe("the delete guard's blocker lookup", () => {
       { enqueue: jest.fn() } as never,
       { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn(), delByPrefix: jest.fn() } as never,
       { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { log: jest.fn() } as never,
     );
 
     await service.deleteTicket(makeActor(), 3, 7, false).catch(() => undefined);

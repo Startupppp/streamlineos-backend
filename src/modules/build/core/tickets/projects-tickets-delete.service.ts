@@ -22,6 +22,7 @@ import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { AccessService } from "../../../access/access.service";
+import { AuditService } from "../../../../common/audit/audit.service";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
@@ -36,6 +37,7 @@ export class ProjectsTicketsDeleteService {
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly cache: CacheService,
     @Inject(AccessService) private readonly access: TicketReadAccess,
+    private readonly audit: AuditService,
   ) {}
 
   async deleteTicket(
@@ -129,6 +131,15 @@ export class ProjectsTicketsDeleteService {
         actor: userId,
         timestamp: new Date().toISOString(),
       });
+    });
+
+    this.audit.log({
+      action: "ticket.deleted",
+      userId,
+      orgId,
+      targetId: String(ticketId),
+      targetType: "ticket",
+      metadata: { projectId: ticketProjectId, title: existing.title, force },
     });
 
     void this.cache

@@ -69,6 +69,7 @@ function harness(enqueueFails: boolean) {
       webhooks,
       cache as never,
       { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { log: jest.fn() } as never,
     ),
     enqueue,
     timeline,
@@ -118,6 +119,7 @@ describe("Build mutation and webhook intent atomicity", () => {
       { enqueue } as never,
       {} as never,
       { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { log: jest.fn() } as never,
     );
 
     await expect(service.deleteTicket(makeActor(), 1, 7, true))

@@ -167,6 +167,7 @@ describe("ProjectsTicketsQueryService — cross-tenant isolation", () => {
       { provide: BuildAutomationRunnerService, useValue: {} },
       { provide: ProjectsActivityService, useValue: {} },
       { provide: NotificationDispatchService, useValue: {} },
+      { provide: ProjectsTicketsTransferService, useValue: {} },
     ] }).compile();
     return module.get(ProjectsTicketsQueryService);
   }

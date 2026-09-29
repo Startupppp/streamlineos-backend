@@ -295,6 +295,7 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
       { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
       { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
       access,
+      { log: jest.fn() } as never,
     );
     return { svc, transaction, db, access };
   }
