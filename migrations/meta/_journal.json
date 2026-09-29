@@ -7176,6 +7176,13 @@
       "when": 1803093640725,
       "tag": "1425_build_release_publication",
       "breakpoints": true
+    },
+    {
+      "idx": 1153,
+      "version": "7",
+      "when": 1803093641725,
+      "tag": "1500_build_project_approvals_inbox_cursor_index",
+      "breakpoints": true
     }
   ]
 }

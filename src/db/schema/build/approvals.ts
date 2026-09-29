@@ -48,6 +48,7 @@ export const projectApprovals = build.table("project_approvals", {
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_approvals_org_project" }).onDelete("cascade"),
   index("idx_project_approvals_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   index("idx_project_approvals_approver_status").on(t.orgId, t.approverMembershipId, t.status),
+  index("idx_project_approvals_approver_created_id").on(t.orgId, t.approverMembershipId, t.createdAt.desc(), t.id.desc(), t.status).where(sql`deleted_at IS NULL`),
   index("idx_project_approvals_entity").on(t.entityType, t.entityId),
   unique("uniq_project_approvals_org_id").on(t.orgId, t.id),
   foreignKey({
