@@ -99,7 +99,10 @@ export class RunsController {
       if (!result.ok) {
         const entitySuffix =
           body.entityId != null ? ` for entity ${body.entityId}` : " (org-level, no entity)";
-        const msg = `A ${body.runType ?? "REGULAR"} payroll run for this month already exists${entitySuffix}`;
+        const msg =
+          result.reason === "no_active_policy"
+            ? "Payroll is not set up yet: activate a payroll policy before starting a run"
+            : `A ${body.runType ?? "REGULAR"} payroll run for this month already exists${entitySuffix}`;
         await this.receipts.fail(begin.receiptId, msg);
         throw new ConflictException(msg);
       }

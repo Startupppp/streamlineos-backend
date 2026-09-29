@@ -91,7 +91,10 @@ export class RunsService {
       sourceRunId?: number | null;
       entityId?: number | null;
     },
-  ): Promise<{ ok: false; reason: "exists" } | { ok: true; runId: number }> {
+  ): Promise<
+    | { ok: false; reason: "exists" | "no_active_policy" }
+    | { ok: true; runId: number }
+  > {
     const runType = opts?.runType ?? "REGULAR";
     const entityId = opts?.entityId ?? null;
 
@@ -185,7 +188,8 @@ export class RunsService {
       .where(eq(payrollPolicies.orgId, orgId))
       .limit(1);
 
-    const policyVersionId = policyVersion[0]?.id ?? null;
+    const policyVersionId = policyVersion[0]?.id;
+    if (policyVersionId === undefined) return { ok: false, reason: "no_active_policy" };
 
     const creatorMember = await this.db.query.organizationMembers.findFirst({
       where: and(
