@@ -22,6 +22,7 @@ import type {
   UpdateTeamMemberRoleInput,
 } from "./dto/teams.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { escapeLike } from "../core";
 
 @Injectable()
 export class TeamMembersService {
@@ -44,7 +45,7 @@ export class TeamMembersService {
       eq(projectTeamMembers.orgId, orgId),
     ];
     if (query.q) {
-      const like = `%${query.q}%`;
+      const like = `%${escapeLike(query.q)}%`;
       conds.push(
         or(
           ilike(users.email, like),

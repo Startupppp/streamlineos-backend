@@ -9,6 +9,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { CreateAutomationInput, UpdateAutomationInput, ListAutomationsQuery } from "../dto/automation.schemas";
 import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
+import { escapeLike } from "../";
 
 @Injectable()
 export class ProjectsAutomationsService {
@@ -52,11 +53,16 @@ export class ProjectsAutomationsService {
 
     const { limit, cursor } = query;
     const pos = decodeCursor(cursor);
+    const search = query.search?.trim() || undefined;
 
     const conditions = [
       eq(projectAutomations.orgId, u.orgId),
       eq(projectAutomations.projectId, projectId),
     ];
+
+    if (search) {
+      conditions.push(sql`${projectAutomations.name} ILIKE ${`${escapeLike(search)}%`}`);
+    }
 
     if (pos) {
       conditions.push(keysetBeforeId(projectAutomations.createdAt, projectAutomations.id, pos));

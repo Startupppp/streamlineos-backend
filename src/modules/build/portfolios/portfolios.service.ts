@@ -21,6 +21,7 @@ import {
 } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { resolveProjectCounts } from "./portfolio-project-counts";
+import { escapeLike } from "../core";
 import type {
   CreatePortfolioInput,
   LinkedProjectsQuery,
@@ -84,7 +85,7 @@ export class PortfoliosService {
     const conds = [
       eq(portfolio.orgId, orgId),
       isNull(portfolio.deletedAt),
-      q ? ilike(portfolio.name, `%${q}%`) : undefined,
+      q ? ilike(portfolio.name, `${escapeLike(q)}%`) : undefined,
       status ? eq(portfolio.status, status) : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(portfolio.createdAt, portfolio.id, pos));

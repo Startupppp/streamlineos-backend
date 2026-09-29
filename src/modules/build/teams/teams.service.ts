@@ -21,6 +21,7 @@ import type {
   UpdateTeamInput,
 } from "./dto/teams.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { escapeLike } from "../core";
 
 export type TeamRow = typeof projectTeams.$inferSelect;
 type TeamPatch = Partial<typeof projectTeams.$inferInsert>;
@@ -58,7 +59,7 @@ export class TeamsService {
     const conds = [
       eq(projectTeams.orgId, orgId),
       isNull(projectTeams.deletedAt),
-      query.search ? ilike(projectTeams.name, `%${query.search}%`) : undefined,
+      query.search ? ilike(projectTeams.name, `${escapeLike(query.search)}%`) : undefined,
       query.leadId !== undefined ? sql`EXISTS (
         SELECT 1 FROM ${projectTeamMembers}
         JOIN ${organizationMembers} ON ${projectTeamMembers.membershipId} = ${organizationMembers.id}

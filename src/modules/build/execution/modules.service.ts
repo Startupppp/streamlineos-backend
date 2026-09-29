@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, count, eq, gt, ilike, isNull, or, sql } from "drizzle-orm";
+import { escapeLike } from "../core";
 import { modules, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -36,6 +37,7 @@ export class ModulesService {
     if (query.cursor && (!cursor || !/^\d+$/.test(cursor[1]))) {
       throw new BadRequestException("Invalid pagination cursor");
     }
+    const search = query.search?.trim() || undefined;
     const moduleList = await this.db
       .select({
         id: modules.id,
@@ -57,6 +59,7 @@ export class ModulesService {
         and(
           eq(modules.projectId, projectId),
           eq(modules.orgId, orgId),
+          search ? sql`${modules.name} ILIKE ${`${escapeLike(search)}%`}` : undefined,
           cursor
             ? or(
                 gt(modules.name, cursor[0]),

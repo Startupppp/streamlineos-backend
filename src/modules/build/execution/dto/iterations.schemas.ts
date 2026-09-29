@@ -138,6 +138,7 @@ export const moduleListQuerySchema = z
   .object({
     cursor: z.string().min(1).optional(),
     pageSize: z.coerce.number().int().min(1).max(100).optional(),
+    search: z.string().trim().max(200).optional(),
   })
   .strict();
 

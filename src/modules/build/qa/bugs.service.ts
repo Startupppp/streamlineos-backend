@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, escapeLike } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
 import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
@@ -33,7 +33,7 @@ export class BugsService {
       conditions.push(
         sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${query.assigneeId} AND status = 'ACTIVE')`,
       );
-    if (query.q) conditions.push(ilike(tickets.title, `%${query.q}%`));
+    if (query.q) conditions.push(ilike(tickets.title, `${escapeLike(query.q)}%`));
     return this.db
       .select({
         id: tickets.id,

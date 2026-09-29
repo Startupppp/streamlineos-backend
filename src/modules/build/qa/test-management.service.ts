@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, escapeLike } from "../core";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type {
   CreateTestCaseInput,
@@ -160,7 +160,7 @@ export class TestManagementService {
     if (query.suiteId !== undefined) conditions.push(eq(testCases.suiteId, query.suiteId));
     if (query.priority) conditions.push(eq(testCases.priority, query.priority));
     if (query.automationStatus) conditions.push(eq(testCases.automationStatus, query.automationStatus));
-    if (query.q) conditions.push(ilike(testCases.title, `%${query.q}%`));
+    if (query.q) conditions.push(ilike(testCases.title, `${escapeLike(query.q)}%`));
     if (query.cursor !== undefined) conditions.push(gt(testCases.id, query.cursor));
     const rows = await this.db
       .select()

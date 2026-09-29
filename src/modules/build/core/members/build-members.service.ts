@@ -17,6 +17,7 @@ import type {
   ListBuildMembersInput,
 } from "../dto/build-members.schemas";
 import { isUniqueViolation } from "../../../../common/db/postgres-error";
+import { escapeLike } from "../lib/escape-like";
 
 @Injectable()
 export class BuildMembersService {
@@ -31,10 +32,10 @@ export class BuildMembersService {
     const search = query.search?.trim();
     const searchCond = search
       ? or(
-          ilike(users.name, `%${search}%`),
-          ilike(users.email, `%${search}%`),
-          ilike(users.firstName, `%${search}%`),
-          ilike(users.lastName, `%${search}%`),
+          ilike(users.name, `%${escapeLike(search)}%`),
+          ilike(users.email, `%${escapeLike(search)}%`),
+          ilike(users.firstName, `%${escapeLike(search)}%`),
+          ilike(users.lastName, `%${escapeLike(search)}%`),
         )
       : undefined;
     const conds = [eq(buildMembers.orgId, orgId), searchCond];

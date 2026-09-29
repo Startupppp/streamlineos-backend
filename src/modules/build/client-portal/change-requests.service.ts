@@ -19,7 +19,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, escapeLike } from "../core";
 import type {
   CreateChangeRequestInput,
   ListCrQuery,
@@ -130,7 +130,7 @@ export class ChangeRequestsService {
             ? eq(changeRequests.clientVisible, query.clientVisible)
             : undefined,
           query.q !== undefined
-            ? ilike(changeRequests.title, `%${query.q}%`)
+            ? ilike(changeRequests.title, `${escapeLike(query.q)}%`)
             : undefined,
           query.affectedTicketId !== undefined
             ? sql`EXISTS (

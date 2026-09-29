@@ -46,7 +46,7 @@ import type {
   UpdateManagedProductInput,
 } from "./dto/managed-products.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
-import { TicketVersionConflictException } from "../core";
+import { TicketVersionConflictException, escapeLike } from "../core";
 
 type ManagedProductRow = typeof managedProducts.$inferSelect;
 type ManagedProductPatch = Partial<typeof managedProducts.$inferInsert>;
@@ -92,7 +92,7 @@ export class ManagedProductsService {
       isNull(managedProducts.deletedAt),
       status ? eq(managedProducts.status, status) : undefined,
       query.search
-        ? ilike(managedProducts.name, `%${query.search}%`)
+        ? ilike(managedProducts.name, `${escapeLike(query.search)}%`)
         : undefined,
       ownerId ? eq(managedProducts.ownerId, ownerId) : undefined,
     ];

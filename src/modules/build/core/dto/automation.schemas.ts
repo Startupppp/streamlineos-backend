@@ -49,6 +49,7 @@ export type ListAutomationRunsQuery = z.infer<typeof listAutomationRunsQuerySche
 export const listAutomationsQuerySchema = z.object({
   action: z.enum(AUTOMATION_ACTION_TYPES).optional(),
   ownerId: z.string().optional(),
+  search: z.string().trim().max(200).optional(),
   limit: pageSizeField(50),
   cursor: z.string().optional(),
 }).strict();

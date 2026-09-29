@@ -7,6 +7,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import type { ListProjectCustomersInput } from "../dto/projects-customers.schemas";
+import { escapeLike } from "../lib/escape-like";
 
 /**
  * The companies a project can be run for.
@@ -33,7 +34,7 @@ export class ProjectsCustomersService {
       eq(businessParties.organizationId, orgId),
       eq(businessParties.partyKind, "ORGANISATION"),
       isNull(businessParties.deletedAt),
-      search ? ilike(businessParties.name, `%${search}%`) : undefined,
+      search ? ilike(businessParties.name, `${escapeLike(search)}%`) : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(businessParties.createdAt, crmOrgPartyMap.crmOrganizationId, pos));
 
