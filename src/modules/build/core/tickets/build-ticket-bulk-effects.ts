@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { Db } from "../../../../db/drizzle.types";
 import { organizationMembers, tickets } from "../../../../db/schema";
@@ -105,7 +105,13 @@ export async function readBulkTicketMeta(
       reporterId: tickets.reporterId,
     })
     .from(tickets)
-    .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, unique)))
+    .where(
+      and(
+        eq(tickets.orgId, orgId),
+        inArray(tickets.id, unique),
+        isNull(tickets.deletedAt),
+      ),
+    )
     .limit(unique.length);
   for (const row of rows)
     meta.set(row.id, { title: row.title, type: row.type, reporterId: row.reporterId });
