@@ -20,7 +20,7 @@ export class WorkforceCostingService {
         d.id AS department_id,
         d.name AS department_name,
         COUNT(DISTINCT esp.user_id) AS headcount,
-        SUM(CAST(esp.annual_ctc AS BIGINT) / 12) AS monthly_cost_cents
+        SUM(ROUND(esp.annual_ctc * 100 / 12))::BIGINT AS monthly_cost_cents
       FROM (
         SELECT DISTINCT ON (user_id) user_id, annual_ctc
         FROM employee_salary_profiles
@@ -48,7 +48,7 @@ export class WorkforceCostingService {
       SELECT
         COALESCE(he.location_id::TEXT, 'unassigned') AS location_id,
         COUNT(DISTINCT esp.user_id) AS headcount,
-        SUM(CAST(esp.annual_ctc AS BIGINT) / 12) AS monthly_cost_cents
+        SUM(ROUND(esp.annual_ctc * 100 / 12))::BIGINT AS monthly_cost_cents
       FROM employee_salary_profiles esp
       JOIN hr_employments he ON he.user_id = esp.user_id AND he.org_id = ${orgId} AND he.deleted_at IS NULL
       WHERE esp.org_id = ${orgId}
@@ -98,8 +98,8 @@ export class WorkforceCostingService {
     const rows = await this.db.execute(sql`
       SELECT
         COUNT(DISTINCT user_id) AS total_headcount,
-        SUM(CAST(annual_ctc AS BIGINT)) AS total_annual_ctc_cents,
-        SUM(CAST(annual_ctc AS BIGINT) / 12) AS total_monthly_cost_cents
+        SUM(ROUND(annual_ctc * 100))::BIGINT AS total_annual_ctc_cents,
+        SUM(ROUND(annual_ctc * 100 / 12))::BIGINT AS total_monthly_cost_cents
       FROM employee_salary_profiles
       WHERE org_id = ${orgId}
         AND status = 'ACTIVE'
