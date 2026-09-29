@@ -6,6 +6,7 @@ import type { SQL } from "drizzle-orm";
 import { ApprovalsService } from "./approvals.service";
 import { ApprovalsReadService } from "./approvals-read.service";
 import { approvalRowSchema, approvalInboxItemSchema } from "./dto/approvals-response.schemas";
+import { IDEMPOTENCY_COMMAND } from "../../../common/idempotency/idempotency.constants";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { ChatChannelsService } from "../../chat/chat-channels.service";
@@ -74,6 +75,18 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   tokenScopes: null,
   principal: humanSessionPrincipal(1, false),
   ...overrides,
+});
+
+describe("BUG-040 — BuildApprovalsController.createApproval is decorated with @Idempotent so a double-POST replays the first response rather than creating a duplicate row", () => {
+  it("carries the idempotency_command metadata key with value 'build.approval.create'", () => {
+    const { BuildApprovalsController } = jest.requireActual("./approvals.controller") as { BuildApprovalsController: new () => object };
+    const key: string | undefined = Reflect.getMetadata(
+      IDEMPOTENCY_COMMAND,
+      BuildApprovalsController.prototype,
+      "createApproval",
+    );
+    expect(key).toBe("build.approval.create");
+  });
 });
 
 describe("ApprovalsService.createApproval", () => {

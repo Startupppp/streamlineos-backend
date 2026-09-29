@@ -67,6 +67,7 @@ const ticketVisibilityItemSchema = z.object({
   title: z.string(),
   type: z.string(),
   clientVisible: z.boolean(),
+  version: z.number().int(),
 });
 
 const milestoneVisibilityItemSchema = z.object({

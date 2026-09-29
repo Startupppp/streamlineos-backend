@@ -3,7 +3,7 @@ import { ProgramsService } from "./programs.service";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { portfolioPageSchema, programPageSchema } from "./dto/portfolios-response.schemas";
-import { listProgramsQuerySchema } from "./dto/portfolios.schemas";
+import { listPortfoliosQuerySchema, listProgramsQuerySchema } from "./dto/portfolios.schemas";
 import { checkResponseAgainstContract } from "../../../common/openapi/response-contract.interceptor";
 
 const STORED_PORTFOLIO = {
@@ -57,6 +57,28 @@ function dbProjecting(row: Record<string, unknown>): Db {
   });
   return builder as unknown as Db;
 }
+
+describe("listPortfoliosQuerySchema — BUG-056: sort param is accepted so the frontend toolbar does not generate a 400", () => {
+  it("accepts sort=createdAt so the default toolbar value is not rejected as an unknown key", () => {
+    expect(() => listPortfoliosQuerySchema.parse({ sort: "createdAt" })).not.toThrow();
+  });
+
+  it("accepts sort=updatedAt so the updatedAt toolbar option is not rejected as an unknown key", () => {
+    expect(() => listPortfoliosQuerySchema.parse({ sort: "updatedAt" })).not.toThrow();
+  });
+
+  it("accepts sort=name so the name toolbar option is not rejected as an unknown key", () => {
+    expect(() => listPortfoliosQuerySchema.parse({ sort: "name" })).not.toThrow();
+  });
+
+  it("rejects an unrecognised sort value so random inputs are still validated", () => {
+    expect(() => listPortfoliosQuerySchema.parse({ sort: "random" })).toThrow();
+  });
+
+  it("still rejects a completely unknown key so the .strict() contract is preserved", () => {
+    expect(() => listPortfoliosQuerySchema.parse({ unknown: "value" })).toThrow();
+  });
+});
 
 describe("the portfolio and program lists return the page their contracts promise", () => {
   it("satisfies portfolioPageSchema once a single portfolio exists, so creating the first one does not break the page", async () => {
