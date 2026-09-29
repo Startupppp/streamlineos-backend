@@ -112,7 +112,7 @@ const MUTATING_VERBS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const REVIEWED_INLINE = [
   {
-    key: "modules/build/core/projects-custom-fields.controller.ts#updateField",
+    key: "modules/build/core/custom-fields/projects-custom-fields.controller.ts#updateField",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
@@ -121,19 +121,19 @@ const REVIEWED_INLINE = [
       "Intra-tenant, not cross-tenant: orgId is still bound, so the write cannot leave the organisation. The caller already holds org-wide build:manage. The defect is the unverified path segment — it breaks the 404 contract for a foreign :projectId and defeats any project-scoped gate layered on later.",
     evidence: [
       {
-        file: "src/modules/build/core/projects-custom-fields.controller.ts",
+        file: "src/modules/build/core/custom-fields/projects-custom-fields.controller.ts",
         line: 65,
         anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/,
         note: "bound to the URL project",
       },
       {
-        file: "src/modules/build/core/projects-custom-fields.service.ts",
+        file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts",
         line: 143,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\),/,
         note: "bound to the URL project",
       },
       {
-        file: "src/modules/build/core/projects-custom-fields.service.ts",
+        file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts",
         line: 87,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\)/,
         note: "listFields DOES bind projectId — the control proving the column is usable here",
@@ -141,7 +141,7 @@ const REVIEWED_INLINE = [
     ],
   },
   {
-    key: "modules/build/core/projects-custom-fields.controller.ts#deleteField",
+    key: "modules/build/core/custom-fields/projects-custom-fields.controller.ts#deleteField",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
@@ -150,13 +150,13 @@ const REVIEWED_INLINE = [
       "Intra-tenant. orgId is bound, so no cross-tenant delete. Cross-PROJECT delete inside the org is reachable by anyone holding build:manage.",
     evidence: [
       {
-        file: "src/modules/build/core/projects-custom-fields.controller.ts",
+        file: "src/modules/build/core/custom-fields/projects-custom-fields.controller.ts",
         line: 79,
         anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/,
         note: "bound to the URL project",
       },
       {
-        file: "src/modules/build/core/projects-custom-fields.service.ts",
+        file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts",
         line: 166,
         anchor: /eq\(customFieldDefinitions\.projectId, projectId\),/,
         note: "bound to the URL project",
@@ -164,7 +164,7 @@ const REVIEWED_INLINE = [
     ],
   },
   {
-    key: "modules/build/core/projects-webhooks.controller.ts#deleteWebhook",
+    key: "modules/build/core/webhooks/projects-webhooks.controller.ts#deleteWebhook",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
@@ -173,20 +173,20 @@ const REVIEWED_INLINE = [
       "Intra-tenant. orgId is bound. A webhook registered against project A is deletable through project B's URL by any holder of build:manage.",
     evidence: [
       {
-        file: "src/modules/build/core/projects-webhooks.controller.ts",
-        line: 65,
+        file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts",
+        line: 60,
         anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/,
         note: "bound to the URL project",
       },
       {
-        file: "src/modules/build/core/projects-webhooks.service.ts",
-        line: 60,
+        file: "src/modules/build/core/webhooks/projects-webhooks.service.ts",
+        line: 48,
         anchor: /eq\(projectWebhooks\.projectId, projectId\),/,
         note: "bound to the URL project",
       },
       {
-        file: "src/modules/build/core/projects-webhooks.service.ts",
-        line: 76,
+        file: "src/modules/build/core/webhooks/projects-webhooks.service.ts",
+        line: 48,
         anchor: /eq\(projectWebhooks\.projectId, projectId\),/,
         note: "bound to the URL project",
       },
@@ -201,7 +201,7 @@ const REVIEWED_INLINE = [
   // another PROJECT inside the caller's own organisation, plus a broken 404.
 
   {
-    key: "modules/build/core/project-resources.controller.ts#updateCustomState",
+    key: "modules/build/core/project-crud/project-resources.controller.ts#updateCustomState",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
@@ -209,148 +209,148 @@ const REVIEWED_INLINE = [
     blastRadius:
       "Intra-tenant. A state belonging to project A is editable through project B's URL by a caller holding build:manage on A.",
     evidence: [
-      { file: "src/modules/build/core/project-resources.controller.ts", line: 173, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-custom-states.service.ts", line: 171, anchor: /eq\(projectStatuses\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/project-crud/project-resources.controller.ts", line: 178, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/custom-states/projects-custom-states.service.ts", line: 171, anchor: /eq\(projectStatuses\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
-    key: "modules/build/core/project-resources.controller.ts#deleteCustomState",
+    key: "modules/build/core/project-crud/project-resources.controller.ts#deleteCustomState",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "DELETE /build/:projectId/custom-states/:stateId. Identical to updateCustomState: @Param(\"projectId\") is bound to `_` and discarded, and the delete resolves the state by (id, orgId).",
     blastRadius: "Intra-tenant cross-project delete.",
     evidence: [
-      { file: "src/modules/build/core/project-resources.controller.ts", line: 187, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-custom-states.service.ts", line: 307, anchor: /eq\(projectStatuses\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/project-crud/project-resources.controller.ts", line: 192, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/custom-states/projects-custom-states.service.ts", line: 307, anchor: /eq\(projectStatuses\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
 
   {
-    key: "modules/build/core/projects-ticket-associations.controller.ts#getSubtasks",
+    key: "modules/build/core/tickets/projects-ticket-associations.controller.ts#getSubtasks",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "GET /build/:projectId/tickets/:ticketId/subtasks. Closed: the handler forwards the authenticated actor with projectId and ticketId, and getSubtasks calls assertTicketReadAccess before reading children. That helper binds tenant+project+ticket, verifies project membership, and applies the ticket DataScope predicate.",
     blastRadius: "None: a mismatched ticket 404s, while an inaccessible project or ticket scope is rejected before any subtask row is read.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 68, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 236, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the subtask query" },
-      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 37, anchor: /eq\(tickets\.projectId, projectId\),/, note: "the lookup binds tenant, project, and ticket" },
-      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 68, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 237, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the subtask query" },
+      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 37, anchor: /eq\(tickets\.projectId, projectId\),/, note: "the lookup binds tenant, project, and ticket" },
+      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-associations.controller.ts#getWatchers",
+    key: "modules/build/core/tickets/projects-ticket-associations.controller.ts#getWatchers",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "GET /build/:projectId/tickets/:ticketId/watchers. Closed: the handler forwards the actor and both route ids, and getWatchers calls assertTicketReadAccess before reading watcher rows. The helper enforces tenant, project membership, route binding, and ticket DataScope.",
     blastRadius: "None: authorization completes before watcher storage is queried.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 120, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 255, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before the watcher query" },
-      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 120, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 256, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before the watcher query" },
+      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-associations.controller.ts#addWatcher",
+    key: "modules/build/core/tickets/projects-ticket-associations.controller.ts#addWatcher",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/tickets/:ticketId/watchers. Closed: addWatcher receives the actor and both route ids and calls assertTicketReadAccess before resolving the requested organization member or inserting a watcher.",
     blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 133, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 294, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes member resolution and insertion" },
-      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 133, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 295, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes member resolution and insertion" },
+      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-associations.controller.ts#removeWatcher",
+    key: "modules/build/core/tickets/projects-ticket-associations.controller.ts#removeWatcher",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/tickets/:ticketId/watchers. Closed: removeWatcher carries the authenticated actor and calls assertTicketReadAccess before resolving membership and deleting the actor's watcher row.",
     blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the delete.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 147, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 342, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the watcher delete" },
-      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 147, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 343, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the watcher delete" },
+      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-associations.controller.ts#addLabel",
+    key: "modules/build/core/tickets/projects-ticket-associations.controller.ts#addLabel",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/tickets/:ticketId/labels. Closed: addLabel receives the actor and both route ids and calls assertTicketReadAccess before inserting a tenant-scoped label mapping.",
     blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 160, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 372, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the label mapping insert" },
-      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 160, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 373, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the label mapping insert" },
+      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-associations.controller.ts#addAttachment",
+    key: "modules/build/core/tickets/projects-ticket-associations.controller.ts#addAttachment",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/tickets/:ticketId/attachments. Closed: addAttachment receives the actor and both route ids and calls assertTicketReadAccess before inserting the tenant-scoped attachment row.",
     blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 188, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 428, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the attachment insert" },
-      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 188, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 429, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the attachment insert" },
+      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-comments.controller.ts#addComment",
+    key: "modules/build/core/tickets/projects-ticket-comments.controller.ts#addComment",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "POST /build/:projectId/tickets/:ticketId/comments. Closed: the handler forwards the actor and route ids, and resolveTicketForComment calls assertTicketReadAccess before resolving the ticket and creating the comment.",
     blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the comment write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 54, anchor: /return this\.subresources\.addComment\(u, projectId, ticketId, body\);/, note: "the actor and both route ids reach the service" },
-      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 42, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before ticket and comment storage" },
-      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 46, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "the ticket lookup also binds the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 54, anchor: /return this\.subresources\.addComment\(u, projectId, ticketId, body\);/, note: "the actor and both route ids reach the service" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 43, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before ticket and comment storage" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 47, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "the ticket lookup also binds the URL project" },
     ],
   },
 
   {
-    key: "modules/build/core/projects-ticket-checklists.controller.ts#updateChecklist",
+    key: "modules/build/core/tickets/projects-ticket-checklists.controller.ts#updateChecklist",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId. Closed: the handler forwards the actor and every route id; the facade applies assertTicketReadAccess, then requireChecklistInTicket binds checklistId to the authorized ticket before the update.",
     blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before mutation.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 502, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 168, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 503, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/tickets/projects-ticket-checklists.service.ts", line: 168, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-checklists.controller.ts#deleteChecklist",
+    key: "modules/build/core/tickets/projects-ticket-checklists.controller.ts#deleteChecklist",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId. Closed: the actor-aware facade applies assertTicketReadAccess, then requireChecklistInTicket binds checklistId to the authorized ticket before deletion.",
     blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before deletion.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 518, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 192, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 519, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/tickets/projects-ticket-checklists.service.ts", line: 192, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-checklists.controller.ts#createChecklistItem",
+    key: "modules/build/core/tickets/projects-ticket-checklists.controller.ts#createChecklistItem",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items. Closed: the actor-aware facade applies assertTicketReadAccess, then requireChecklistInTicket binds checklistId to the authorized ticket before creating the item.",
     blastRadius: "None: tenant, project membership, ticket DataScope, ticket binding, and checklist binding are all checked before insertion.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 539, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 219, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 540, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/tickets/projects-ticket-checklists.service.ts", line: 219, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-checklists.controller.ts#updateChecklistItem",
+    key: "modules/build/core/tickets/projects-ticket-checklists.controller.ts#updateChecklistItem",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
@@ -358,62 +358,63 @@ const REVIEWED_INLINE = [
     blastRadius:
       "None: every route parent and the item itself are bound before the mutation.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 563, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 250, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 255, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 564, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/tickets/projects-ticket-checklists.service.ts", line: 250, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/tickets/projects-ticket-checklists.service.ts", line: 255, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
     ],
   },
   {
-    key: "modules/build/core/projects-ticket-checklists.controller.ts#deleteChecklistItem",
+    key: "modules/build/core/tickets/projects-ticket-checklists.controller.ts#deleteChecklistItem",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. Closed: the actor-aware facade enforces project membership and ticket DataScope, requireChecklistInTicket binds the checklist to that ticket, and the item lookup and delete bind itemId to checklistId+orgId.",
     blastRadius: "None: every route parent and the item itself are bound before deletion.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 581, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 284, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 289, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
+      { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 582, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced in the actor-aware facade" },
+      { file: "src/modules/build/core/tickets/projects-ticket-checklists.service.ts", line: 284, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "the checklist is bound to the authorized ticket" },
+      { file: "src/modules/build/core/tickets/projects-ticket-checklists.service.ts", line: 289, anchor: /eq\(ticketChecklistItems\.checklistId, checklistId\),/, note: "the item is bound to the URL checklist" },
     ],
   },
 
   {
-    key: "modules/build/core/projects-tickets.controller.ts#getTicket",
+    key: "modules/build/core/tickets/projects-tickets.controller.ts#getTicket",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "GET /build/:projectId/tickets/:ticketId. Closed: the selector binds ticketId+projectId, readTicket binds orgId and deletedAt, resolves the ticket DataScope, and separately verifies project membership before returning the record.",
     blastRadius: "None: tenant, route binding, project membership, and ticket DataScope are enforced.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 54, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 63, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "the ticket DataScope is resolved" },
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 108, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is checked before the record is returned" },
+      { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 54, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 63, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "the ticket DataScope is resolved" },
+      { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 108, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is checked before the record is returned" },
     ],
   },
   {
-    key: "modules/build/core/projects-tickets.controller.ts#updateTicket",
+    key: "modules/build/core/tickets/projects-tickets.controller.ts#updateTicket",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/tickets/:ticketId. Closed: the pre-read binds ticketId+projectId+orgId, project access is checked, and authorizeMutation applies the canonical record-level mutation policy before the transaction updates the ticket.",
+      "PATCH /build/:projectId/tickets/:ticketId. Closed: the pre-read binds ticketId+projectId+orgId, project access is checked, and authorizeMutation applies the canonical record-level mutation policy before the transaction updates the ticket. The body moved to apply-ticket-change.ts, which added a system-job arm: when systemJobCovers(u.principal, \"build:tickets:update\") the transaction takes lockProjectTicketMutation alone and authorizeMutation does not run. That arm is reachable only by a system-job principal, and resolveProjectAccess still gates it above the transaction; it is recorded here because the claim \"authorizeMutation runs before the update\" is now true of human actors only.",
     blastRadius:
       "None: tenant, route binding, project membership, and ticket record scope are enforced before mutation.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 197, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 272, anchor: /await this\.query\.authorizeMutation\(tx, u, ticketProjectId, \[ticketId\]\);/, note: "canonical record-level mutation authorization runs inside the transaction" },
+      { file: "src/modules/build/core/tickets/apply-ticket-change.ts", line: 206, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/tickets/apply-ticket-change.ts", line: 257, anchor: /if \(systemJobCovers\(u\.principal, "build:tickets:update"\)\)/, note: "a system-job principal takes the lock-only arm and does NOT run authorizeMutation" },
+      { file: "src/modules/build/core/tickets/apply-ticket-change.ts", line: 260, anchor: /await deps\.query\.authorizeMutation\(tx, u, ticketProjectId, \[ticketId\]\);/, note: "for every human actor, canonical record-level mutation authorization runs inside the transaction" },
     ],
   },
   {
-    key: "modules/build/core/projects-tickets.controller.ts#deleteTicket",
+    key: "modules/build/core/tickets/projects-tickets.controller.ts#deleteTicket",
     verdict: "CLOSED",
     finding: "ticket-data-scope-missing",
     summary:
       "DELETE /build/:projectId/tickets/:ticketId. Closed: the controller forwards CurrentUserContext, and deleteTicket calls assertTicketReadAccess before its tenant/project-bound pre-read or any delete work. The helper verifies project membership and ticket DataScope.",
     blastRadius: "None: an inaccessible or mismatched ticket is rejected before blocker inspection or deletion.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets.controller.ts", line: 251, anchor: /return this\.tickets\.deleteTicket\(u, projectId, ticketId, force === "true"\);/, note: "the complete authenticated actor reaches the service" },
-      { file: "src/modules/build/core/projects-tickets.service.ts", line: 115, anchor: /async deleteTicket\(/, note: "the terminal service accepts CurrentUserContext" },
-      { file: "src/modules/build/core/projects-tickets.service.ts", line: 122, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before the pre-read and delete path" },
-      { file: "src/modules/build/core/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 270, anchor: /return this\.del\.deleteTicket\(u, projectId, ticketId, force === "true"\);/, note: "the complete authenticated actor reaches the service" },
+      { file: "src/modules/build/core/tickets/projects-tickets-delete.service.ts", line: 43, anchor: /async deleteTicket\(/, note: "the terminal service accepts CurrentUserContext" },
+      { file: "src/modules/build/core/tickets/projects-tickets-delete.service.ts", line: 50, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before the pre-read and delete path" },
+      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
 
@@ -447,7 +448,7 @@ const REVIEWED_INLINE = [
     summary: "PATCH /build/:projectId/modules/:moduleId. No @Param(\"projectId\"); the UPDATE binds (id, orgId).",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/modules.service.ts", line: 167, anchor: /eq\(modules\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/modules.service.ts", line: 170, anchor: /eq\(modules\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -458,7 +459,7 @@ const REVIEWED_INLINE = [
       "DELETE /build/:projectId/modules/:moduleId. No @Param(\"projectId\"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).",
     blastRadius: "Intra-tenant cross-project delete, with a side effect on every ticket referencing the module.",
     evidence: [
-      { file: "src/modules/build/execution/modules.service.ts", line: 202, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/modules.service.ts", line: 205, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -481,7 +482,7 @@ const REVIEWED_INLINE = [
       "PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is \"build/:projectId/milestones\", yet no @Param(\"projectId\") is declared and the UPDATE binds (id, orgId).",
     blastRadius: "Intra-tenant cross-project write; org-wide permission is sufficient, there is no row-derived re-check.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 109, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\), eq\(projectMilestones\.version, before\.version\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 185, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\), eq\(projectMilestones\.version, before\.version\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
@@ -491,7 +492,7 @@ const REVIEWED_INLINE = [
     summary: "DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.",
     blastRadius: "Intra-tenant cross-project delete.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 122, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 205, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
@@ -502,7 +503,7 @@ const REVIEWED_INLINE = [
       "PATCH /build/:projectId/intake/:requestId. No @Param(\"projectId\"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 198, anchor: /\.where\(and\(eq\(intakeItems\.id, requestId\), eq\(intakeItems\.projectId, projectId\), eq\(intakeItems\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 281, anchor: /\.where\(and\(eq\(intakeItems\.id, requestId\), eq\(intakeItems\.projectId, projectId\), eq\(intakeItems\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
@@ -514,8 +515,8 @@ const REVIEWED_INLINE = [
     blastRadius:
       "Intra-tenant. Private views are additionally user-scoped; SHARED views have no project or user constraint, so any org member can edit a shared view belonging to any project.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 333, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 343, anchor: /\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\)/, note: "UPDATE binds id + orgId" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 417, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 427, anchor: /\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\)/, note: "UPDATE binds id + orgId" },
     ],
   },
   {
@@ -525,56 +526,56 @@ const REVIEWED_INLINE = [
     summary: "DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.",
     blastRadius: "Intra-tenant; shared views are deletable across projects by any org member.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 350, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 357, anchor: /await this\.db\.delete\(projectViews\)\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\);/, note: "DELETE binds id + orgId" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 417, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 441, anchor: /await this\.db\.delete\(projectViews\)\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\);/, note: "DELETE binds id + orgId" },
     ],
   },
 
   // ── Fixed and merged: verified against the current tree ─────────────────
 
   {
-    key: "modules/build/core/projects-releases.controller.ts#updateRelease",
+    key: "modules/build/core/releases/projects-releases.controller.ts#updateRelease",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/releases/:releaseId. The release was resolved by (id, orgId) while assertProjectAccess gated only the URL project, so the UPDATE could land on a release owned by another project. Closed in d714ae8ff: the UPDATE now binds projectReleases.projectId, and the ticketCount subquery binds releaseTickets.orgId (it previously counted rows from every tenant).",
     blastRadius: "Was intra-tenant cross-project write. Closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 77, anchor: /\.where\(and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\)\)/, note: "UPDATE binds id + projectId + orgId" },
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 105, anchor: /\.where\(and\(eq\(releaseTickets\.releaseId, releaseId\), eq\(releaseTickets\.orgId, orgId\)\)\);/, note: "ticketCount now bound to the caller's organisation" },
+      { file: "src/modules/build/core/releases/projects-releases.service.ts", line: 203, anchor: /\.where\(and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\)\)/, note: "UPDATE binds id + projectId + orgId" },
+      { file: "src/modules/build/core/releases/projects-releases.service.ts", line: 193, anchor: /\.where\(and\(eq\(releaseTickets\.releaseId, releaseId\), eq\(releaseTickets\.orgId, orgId\)\)\);/, note: "ticketCount now bound to the caller's organisation" },
     ],
   },
   {
-    key: "modules/build/core/projects-releases.controller.ts#deleteRelease",
+    key: "modules/build/core/releases/projects-releases.controller.ts#deleteRelease",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/releases/:releaseId. Soft delete was resolved by (id, orgId). Closed in d714ae8ff.",
     blastRadius: "Was intra-tenant cross-project delete. Closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 115, anchor: /\.where\(and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\)\)/, note: "soft delete binds id + projectId + orgId" },
+      { file: "src/modules/build/core/releases/projects-releases.service.ts", line: 203, anchor: /\.where\(and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\)\)/, note: "soft delete binds id + projectId + orgId" },
     ],
   },
   {
-    key: "modules/build/core/projects-releases.controller.ts#addTicket",
+    key: "modules/build/core/releases/projects-releases.controller.ts#addTicket",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/releases/:releaseId/tickets. Release and ticket were each resolved by (id, orgId), so a ticket from project A could be attached to a release in project B. Closed in d714ae8ff: both now bind projectId.",
     blastRadius: "Was intra-tenant cross-project link. Closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 125, anchor: /where: and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\),/, note: "release bound to the URL project" },
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 131, anchor: /where: and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\), eq\(tickets\.orgId, orgId\), isNull\(tickets\.deletedAt\)\),/, note: "ticket bound to the URL project" },
+      { file: "src/modules/build/core/releases/projects-releases.service.ts", line: 147, anchor: /where: and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\),/, note: "release bound to the URL project" },
+      { file: "src/modules/build/core/releases/projects-releases.service.ts", line: 219, anchor: /where: and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\), eq\(tickets\.orgId, orgId\), isNull\(tickets\.deletedAt\)\),/, note: "ticket bound to the URL project" },
     ],
   },
   {
-    key: "modules/build/core/projects-releases.controller.ts#removeTicket",
+    key: "modules/build/core/releases/projects-releases.controller.ts#removeTicket",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId. The release was resolved by (id, orgId) and the join-row DELETE bound only (releaseId, ticketId) — no orgId at all, so it spanned organisations. Closed in d714ae8ff.",
     blastRadius: "Was intra-tenant cross-project, and the unqualified join delete was cross-TENANT. Closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 144, anchor: /where: and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\),/, note: "release bound to the URL project" },
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 150, anchor: /\.where\(and\(eq\(releaseTickets\.releaseId, releaseId\), eq\(releaseTickets\.ticketId, ticketId\), eq\(releaseTickets\.orgId, orgId\)\)\);/, note: "join delete now bound to the caller's organisation" },
+      { file: "src/modules/build/core/releases/projects-releases.service.ts", line: 147, anchor: /where: and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\),/, note: "release bound to the URL project" },
+      { file: "src/modules/build/core/releases/projects-releases.service.ts", line: 238, anchor: /\.where\(and\(eq\(releaseTickets\.releaseId, releaseId\), eq\(releaseTickets\.ticketId, ticketId\), eq\(releaseTickets\.orgId, orgId\)\)\);/, note: "join delete now bound to the caller's organisation" },
     ],
   },
 
@@ -612,10 +613,10 @@ const REVIEWED_INLINE = [
       "POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and IP rate-limited. One withPublicToken transaction resolves the active public form and performs capacity reservation, ticket allocation/inserts, and the submission insert under the same token-scoped RLS context. orgId and projectId come only from the resolved form row. The plaintext token comparison remains a storage hardening opportunity, not an access-control defect.",
     blastRadius: "A submission against the one form the token names.",
     evidence: [
-      { file: "src/modules/build/forms/submissions.service.ts", line: 65, anchor: /eq\(projectForms\.publicToken, publicToken\),/, note: "resolved by token inside withPublicToken; orgId derived from the row" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 66, anchor: /eq\(projectForms\.isPublic, true\),/, note: "non-public forms are not reachable through this route" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 231, anchor: /const \{ form, result \} = await withPublicToken\(this\.db, publicToken, async \(tx\) => \{/, note: "lookup and every write share one token-scoped transaction" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 233, anchor: /const result = await this\.runSubmission\(form, input, null, tx\);/, note: "the existing token transaction is passed into the write path" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 64, anchor: /eq\(projectForms\.publicToken, publicToken\),/, note: "resolved by token inside withPublicToken; orgId derived from the row" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 65, anchor: /eq\(projectForms\.isPublic, true\),/, note: "non-public forms are not reachable through this route" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 230, anchor: /const \{ form, result \} = await withPublicToken\(this\.db, publicToken, async \(tx\) => \{/, note: "lookup and every write share one token-scoped transaction" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 232, anchor: /const result = await this\.runSubmission\(form, input, null, tx\);/, note: "the existing token transaction is passed into the write path" },
     ],
   },
 ];
@@ -684,6 +685,103 @@ function* walkTs(dir) {
       yield full;
     }
   }
+}
+
+// ── Evidence identity ────────────────────────────────────────────────────────
+
+const AMBIGUOUS = Symbol("ambiguous");
+
+let TS_BY_BASENAME = null;
+
+function tsIndexByBasename() {
+  if (TS_BY_BASENAME) return TS_BY_BASENAME;
+  TS_BY_BASENAME = new Map();
+  for (const abs of walkTs(SRC)) {
+    const rel = `src/${relative(SRC, abs).replace(/\\/g, "/")}`;
+    const base = rel.slice(rel.lastIndexOf("/") + 1);
+    const bucket = TS_BY_BASENAME.get(base);
+    if (bucket) bucket.push(rel);
+    else TS_BY_BASENAME.set(base, [rel]);
+  }
+  return TS_BY_BASENAME;
+}
+
+function resolveEvidenceFile(relPath) {
+  if (existsSync(join(REPO_ROOT, relPath))) return { file: relPath };
+  const base = relPath.slice(relPath.lastIndexOf("/") + 1);
+  const hits = tsIndexByBasename().get(base) ?? [];
+  if (hits.length === 1) return { file: hits[0] };
+  return { file: null, candidates: hits };
+}
+
+const REGEX_META = "^$.*+?|()[]{}";
+const ESCAPE_CLASSES = /[dDwWsSbBnrtfv0-9uxkcpP]/;
+
+function anchorLiteral(anchor) {
+  const src = anchor.source;
+  let out = "";
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] === "\\") {
+      const next = src[i + 1];
+      if (next === undefined || ESCAPE_CLASSES.test(next)) return null;
+      out += next;
+      i++;
+      continue;
+    }
+    if (REGEX_META.includes(src[i])) return null;
+    out += src[i];
+  }
+  return out;
+}
+
+function squashText(text) {
+  const chars = [];
+  const lineAt = [];
+  let line = 1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\n") {
+      line++;
+      continue;
+    }
+    if (/\s/.test(ch)) continue;
+    chars.push(ch);
+    lineAt.push(line);
+  }
+  const out = [];
+  const outLine = [];
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] === "," && ")]}".includes(chars[i + 1])) continue;
+    out.push(chars[i]);
+    outLine.push(lineAt[i]);
+  }
+  return { text: out.join(""), lineAt: outLine };
+}
+
+function squashLiteral(literal) {
+  return squashText(literal).text;
+}
+
+const squashCache = new Map();
+
+function squashedOf(absPath, text) {
+  if (!squashCache.has(absPath)) squashCache.set(absPath, squashText(text));
+  return squashCache.get(absPath);
+}
+
+function looseKey(key) {
+  const hash = key.lastIndexOf("#");
+  const path = key.slice(0, hash);
+  return `${path.slice(path.lastIndexOf("/") + 1)}${key.slice(hash)}`;
+}
+
+function looseVerdictIndex(rows) {
+  const index = new Map();
+  for (const r of rows) {
+    const l = looseKey(r.key);
+    index.set(l, index.has(l) ? AMBIGUOUS : r);
+  }
+  return index;
 }
 
 // ── AST helpers ──────────────────────────────────────────────────────────────
@@ -1354,38 +1452,107 @@ function findServiceCall(methodNode, sf) {
 
 // ── Reviewed-anchor validation ───────────────────────────────────────────────
 
-function validateReviewed() {
+function validateReviewed(reviewed = REVIEWED) {
   const problems = [];
-  for (const r of REVIEWED) {
+  const drift = [];
+  for (const r of reviewed) {
     for (const e of r.evidence) {
-      const abs = join(REPO_ROOT, e.file);
-      let lines;
-      try {
-        lines = readFileSync(abs, "utf8").split(/\r?\n/);
-      } catch {
-        problems.push(`${r.key}: evidence file missing: ${e.file}`);
-        continue;
-      }
-      const text = lines[e.line - 1];
-      if (text === undefined) {
-        problems.push(`${r.key}: ${e.file}:${e.line} is past end of file`);
-        continue;
-      }
-      if (!e.anchor.test(text))
+      const resolved = resolveEvidenceFile(e.file);
+      if (!resolved.file) {
         problems.push(
-          `${r.key}: anchor no longer matches ${e.file}:${e.line}\n    expected ${e.anchor}\n    found    ${text.trim()}`,
+          resolved.candidates.length > 1
+            ? `${r.key}: evidence file ${e.file} is gone and its basename is ambiguous under src/: ${resolved.candidates.join(", ")}`
+            : `${r.key}: evidence file is gone and no file of that name exists under src/: ${e.file}`,
         );
+        continue;
+      }
+      const abs = join(REPO_ROOT, resolved.file);
+      const source = readFileSync(abs, "utf8");
+      const lines = source.split(/\r?\n/);
+      const hits = [];
+      for (let i = 0; i < lines.length; i++) if (e.anchor.test(lines[i])) hits.push(i + 1);
+      let reflowed = false;
+      if (hits.length === 0) {
+        const literal = anchorLiteral(e.anchor);
+        if (literal !== null) {
+          const squashed = squashedOf(abs, source);
+          const needle = squashLiteral(literal);
+          const at = needle.length > 0 ? squashed.text.indexOf(needle) : -1;
+          if (at !== -1) {
+            hits.push(squashed.lineAt[at]);
+            reflowed = true;
+          }
+        }
+      }
+      if (hits.length === 0) {
+        problems.push(
+          `${r.key}: anchor matches nothing in ${resolved.file}, on one line or across wrapped lines\n    expected ${e.anchor}\n    the source this verdict rests on is absent — re-read the handler and re-cut the verdict`,
+        );
+        continue;
+      }
+      const line = hits.reduce((best, h) => (Math.abs(h - e.line) < Math.abs(best - e.line) ? h : best), hits[0]);
+      e.resolvedFile = resolved.file;
+      e.resolvedLine = line;
+      e.anchorMatches = hits.length;
+      e.anchorReflowed = reflowed;
+      if (resolved.file !== e.file || line !== e.line)
+        drift.push({
+          key: r.key,
+          laneFile: r.laneFile ?? "build-authorization-census.mjs",
+          from: `${e.file}:${e.line}`,
+          to: `${resolved.file}:${line}`,
+        });
     }
   }
-  return problems;
+  return { problems, drift };
+}
+
+function evidenceFile(e) {
+  return e.resolvedFile ?? e.file;
+}
+
+function evidenceLine(e) {
+  return e.resolvedLine ?? e.line;
 }
 
 // ── Classification ───────────────────────────────────────────────────────────
 
-function classify(rows) {
-  const byKey = new Map(REVIEWED.map((r) => [r.key, r]));
+function reviewedLooseIndex(reviewed) {
+  const index = new Map();
+  for (const r of reviewed) {
+    const l = looseKey(r.key);
+    index.set(l, index.has(l) ? AMBIGUOUS : r);
+  }
+  return index;
+}
+
+function matchReviewed(key, byKey, byLoose) {
+  const exact = byKey.get(key);
+  if (exact) return exact;
+  const loose = byLoose.get(looseKey(key));
+  return loose && loose !== AMBIGUOUS ? loose : undefined;
+}
+
+function reviewedKeyDrift(rows, reviewed = REVIEWED) {
+  const rowKeys = new Set(rows.map((r) => r.key));
+  const rowsLoose = looseVerdictIndex(rows);
+  const moved = [];
+  const orphans = [];
+  for (const r of reviewed) {
+    if (rowKeys.has(r.key)) continue;
+    const loose = rowsLoose.get(looseKey(r.key));
+    if (loose && loose !== AMBIGUOUS)
+      moved.push({ key: r.key, laneFile: r.laneFile ?? "build-authorization-census.mjs", to: loose.key });
+    else orphans.push(r.key);
+  }
+  return { moved, orphans };
+}
+
+function classify(rows, entries = REVIEWED) {
+  const byKey = new Map(entries.map((r) => [r.key, r]));
+  const byLoose = reviewedLooseIndex(entries);
   for (const row of rows) {
-    const reviewed = byKey.get(row.key);
+    const reviewed = matchReviewed(row.key, byKey, byLoose);
     row.reviewed = reviewed ?? null;
     if (reviewed) {
       row.verdict = reviewed.verdict;
@@ -1430,6 +1597,42 @@ function analyze(controllerRoot, srcRoot, serviceRoots) {
 
 const ORDER = { VULNERABLE: 0, "CLOSED-IN-FLIGHT": 1, "NEEDS-REVIEW": 2, CLOSED: 3, VERIFIED: 4 };
 const VERDICTS = ["VULNERABLE", "CLOSED-IN-FLIGHT", "NEEDS-REVIEW", "CLOSED", "VERIFIED"];
+
+const SAFETY_RANK = { VERIFIED: 0, CLOSED: 0, "NEEDS-REVIEW": 1, "CLOSED-IN-FLIGHT": 2, VULNERABLE: 3 };
+
+function ratchetBreaches(rows, ratchet) {
+  const c = counts(rows);
+  const out = [];
+  const rc = ratchet.counts ?? {};
+  for (const k of ["VULNERABLE", "NEEDS-REVIEW"])
+    if (rc[k] !== undefined && c[k] > rc[k]) out.push(`${k} rose from ${rc[k]} to ${c[k]}. It may only decrease.`);
+  for (const k of ["CLOSED", "VERIFIED"])
+    if (rc[k] !== undefined && c[k] < rc[k]) out.push(`${k} fell from ${rc[k]} to ${c[k]}. It may only increase.`);
+
+  const frozen = ratchet.keys;
+  if (!frozen) {
+    out.push(
+      "this ratchet has no `keys` block, so it is scoped by count alone. A handler that disappears then reads as an improvement. Re-scope it by identity.",
+    );
+    return out;
+  }
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const byLoose = looseVerdictIndex(rows);
+  for (const [verdict, list] of Object.entries(frozen)) {
+    for (const key of list) {
+      const row = byKey.get(key) ?? (byLoose.get(looseKey(key)) !== AMBIGUOUS ? byLoose.get(looseKey(key)) : undefined);
+      if (!row) {
+        out.push(
+          `${verdict} handler ${key} is no longer in the census. Name its replacement in the ratchet, or record its retirement — do not let it vanish.`,
+        );
+        continue;
+      }
+      if (SAFETY_RANK[row.verdict] > SAFETY_RANK[verdict])
+        out.push(`${key} regressed from ${verdict} to ${row.verdict}.`);
+    }
+  }
+  return out;
+}
 
 function counts(rows) {
   const c = Object.fromEntries(VERDICTS.map((v) => [v, 0]));
@@ -1499,7 +1702,7 @@ function renderMd(files, rows) {
       }
       out.push("Evidence:");
       out.push("");
-      for (const e of r.reviewed.evidence) out.push(`- \`${e.file}:${e.line}\` — ${e.note}`);
+      for (const e of r.reviewed.evidence) out.push(`- \`${evidenceFile(e)}:${evidenceLine(e)}\` — ${e.note}`);
       out.push("");
     }
   }
@@ -1519,7 +1722,7 @@ function renderMd(files, rows) {
       out.push("");
       out.push(r.reviewed.summary);
       out.push("");
-      for (const e of r.reviewed.evidence) out.push(`- \`${e.file}:${e.line}\` — ${e.note}`);
+      for (const e of r.reviewed.evidence) out.push(`- \`${evidenceFile(e)}:${evidenceLine(e)}\` — ${e.note}`);
       out.push("");
     }
   }
@@ -1663,7 +1866,7 @@ function renderJson(files, rows) {
         verdictReason: r.verdictReason,
         evidence: r.evidence,
         reviewedEvidence: r.reviewed
-          ? r.reviewed.evidence.map((e) => ({ file: e.file, line: e.line, note: e.note }))
+          ? r.reviewed.evidence.map((e) => ({ file: evidenceFile(e), line: evidenceLine(e), note: e.note }))
           : null,
       })),
     },
@@ -1699,12 +1902,29 @@ function run(checkOnly) {
     return 1;
   }
 
-  const anchorProblems = validateReviewed();
+  const { problems: anchorProblems, drift } = validateReviewed();
   if (anchorProblems.length) {
-    console.error(`\n${anchorProblems.length} REVIEWED anchor(s) no longer match source:\n`);
+    console.error(`\n${anchorProblems.length} REVIEWED anchor(s) no longer exist in source:\n`);
     for (const p of anchorProblems) console.error(`  ${p}`);
-    console.error("\nA hand-read verdict whose line moved is a stale verdict. Re-read and update REVIEWED.");
+    console.error("\nA verdict whose anchor text is gone rests on code that is gone. Re-read and re-cut it.");
+    console.error("This is not position drift: the anchor was searched across the whole file and every file of that name under src/.");
     return 1;
+  }
+
+  const keyDrift = reviewedKeyDrift(rows);
+  if (keyDrift.orphans.length) {
+    console.error(`\n${keyDrift.orphans.length} REVIEWED key(s) name no handler in this tree:\n`);
+    for (const k of keyDrift.orphans) console.error(`  ${k}`);
+    console.error("\nA verdict on a handler that no longer exists is not a verdict. Retire it or re-key it.");
+    return 1;
+  }
+
+  if (drift.length || keyDrift.moved.length) {
+    console.log("");
+    console.log(
+      `Position drift: ${drift.length} evidence anchor(s) and ${keyDrift.moved.length} handler key(s) moved. The anchors all still match, so this is not a finding.`,
+    );
+    console.log("Run with --refresh-anchors to restamp the recorded positions; it never touches an anchor, verdict or summary.");
   }
 
   const c = counts(rows);
@@ -1717,25 +1937,13 @@ function run(checkOnly) {
   console.log("Not verified: actual runtime behavior (RLS, network calls, post-commit hooks) — use e2e/integration tests for those.");
   console.log("Not verified: non-Build modules (HR, KB, billing, etc.) — this census is scoped to src/modules/build/**.");
 
-  // Ratchet: VULNERABLE and NEEDS-REVIEW may only decrease; CLOSED and VERIFIED may only increase.
   if (existsSync(OUT_RATCHET)) {
     const ratchet = JSON.parse(readFileSync(OUT_RATCHET, "utf8"));
-    const rc = ratchet.counts;
-    let ratchetFailed = false;
-    for (const k of ["VULNERABLE", "NEEDS-REVIEW"]) {
-      if (c[k] > rc[k]) {
-        console.error(`\nRATCHET BREACH: ${k} rose from ${rc[k]} to ${c[k]}. It may only decrease.`);
-        ratchetFailed = true;
-      }
-    }
-    for (const k of ["CLOSED", "VERIFIED"]) {
-      if (c[k] < rc[k]) {
-        console.error(`\nRATCHET BREACH: ${k} fell from ${rc[k]} to ${c[k]}. It may only increase.`);
-        ratchetFailed = true;
-      }
-    }
-    if (ratchetFailed) {
-      console.error("Update docs/build-module/authorization-census-ratchet.json when a handler's verdict genuinely improves.");
+    const breaches = ratchetBreaches(rows, ratchet);
+    if (breaches.length) {
+      for (const b of breaches) console.error(`\nRATCHET BREACH: ${b}`);
+      console.error("\nUpdate docs/build-module/authorization-census-ratchet.json only when a handler's verdict genuinely improves.");
+      console.error("A handler that left the census is not a handler that improved.");
       return 1;
     }
   }
@@ -2011,7 +2219,7 @@ export class FakeController {
     `${real.rows.filter((r) => r.service?.resolved).length}/${real.rows.length} resolved`,
   );
 
-  const anchorProblems = validateReviewed();
+  const { problems: anchorProblems, drift: anchorDrift } = validateReviewed();
   check(
     "REVIEWED anchors all still match source",
     anchorProblems.length === 0,
@@ -2025,40 +2233,164 @@ export class FakeController {
     "a byte comparison would report drift on an untouched Windows checkout",
   );
 
+  const realKeyDrift = reviewedKeyDrift(real.rows);
   check(
     "every REVIEWED key matches a real handler",
-    REVIEWED.every((r) => real.rows.some((row) => row.key === r.key)),
-    REVIEWED.filter((r) => !real.rows.some((row) => row.key === r.key)).map((r) => r.key).join(", "),
+    realKeyDrift.orphans.length === 0,
+    realKeyDrift.orphans.join(", "),
   );
 
-  // ── Ratchet logic self-test ─────────────────────────────────────────────────
   {
-    const goodCounts = { VULNERABLE: 0, "CLOSED-IN-FLIGHT": 0, "NEEDS-REVIEW": 0, CLOSED: 42, VERIFIED: 283 };
-    const ratchetBase = { VULNERABLE: 0, "NEEDS-REVIEW": 0, CLOSED: 42, VERIFIED: 283 };
+    const sample = REVIEWED.find((r) => r.evidence.length > 0);
+    const clone = (over) => [{ ...sample, evidence: [{ ...sample.evidence[0], ...over }] }];
 
-    let ratchetBreached = false;
-    for (const k of ["VULNERABLE", "NEEDS-REVIEW"]) {
-      if (goodCounts[k] > ratchetBase[k]) ratchetBreached = true;
-    }
-    for (const k of ["CLOSED", "VERIFIED"]) {
-      if (goodCounts[k] < ratchetBase[k]) ratchetBreached = true;
-    }
-    check("ratchet: counts at floor do not breach", !ratchetBreached, "ratchet incorrectly reports a breach on compliant counts");
+    const movedFile = `src/modules/build/core/${sample.evidence[0].file.slice(sample.evidence[0].file.lastIndexOf("/") + 1)}`;
+    check(
+      "identity: an anchor whose file moved and whose line moved is not a failure",
+      validateReviewed(clone({ file: movedFile, line: 1 })).problems.length === 0,
+      JSON.stringify(validateReviewed(clone({ file: movedFile, line: 1 })).problems),
+    );
+    check(
+      "identity: a moved anchor is reported as drift so it can be restamped",
+      validateReviewed(clone({ line: 1 })).drift.length === 1,
+      JSON.stringify(validateReviewed(clone({ line: 1 })).drift),
+    );
 
-    const badCounts = { VULNERABLE: 1, "CLOSED-IN-FLIGHT": 0, "NEEDS-REVIEW": 0, CLOSED: 42, VERIFIED: 283 };
-    let ratchetCaught = false;
-    for (const k of ["VULNERABLE", "NEEDS-REVIEW"]) {
-      if (badCounts[k] > ratchetBase[k]) ratchetCaught = true;
-    }
-    check("ratchet: VULNERABLE rising above floor is detected", ratchetCaught, "ratchet missed a VULNERABLE increase");
-
-    const shrinkCounts = { VULNERABLE: 0, "CLOSED-IN-FLIGHT": 0, "NEEDS-REVIEW": 0, CLOSED: 42, VERIFIED: 100 };
-    let shrinkCaught = false;
-    for (const k of ["CLOSED", "VERIFIED"]) {
-      if (shrinkCounts[k] < ratchetBase[k]) shrinkCaught = true;
-    }
-    check("ratchet: VERIFIED falling below floor is detected", shrinkCaught, "ratchet missed a VERIFIED decrease");
+    const seeded = validateReviewed(clone({ anchor: /zzz-no-such-source-line-exists-anywhere/ }));
+    const reflowTolerant = validateReviewed([
+      {
+        ...sample,
+        evidence: [
+          {
+            file: "src/modules/build/execution/cycles.service.ts",
+            line: 1,
+            anchor: /\.where\(and\(eq\(cycles\.id, cycleId\), eq\(cycles\.projectId, projectId\), eq\(cycles\.orgId, orgId\), eq\(cycles\.version, before\.version\)\)\)/,
+            note: "written on one line, present in source across five wrapped lines",
+          },
+        ],
+      },
+    ]);
+    check(
+      "identity: an anchor the formatter wrapped across lines still matches",
+      reflowTolerant.problems.length === 0,
+      JSON.stringify(reflowTolerant.problems),
+    );
+    check(
+      "identity: SEEDED VIOLATION — an anchor matching nothing in the file is reported",
+      seeded.problems.length === 1 && seeded.problems[0].includes("matches nothing"),
+      JSON.stringify(seeded.problems),
+    );
+    const seededMissing = validateReviewed(clone({ file: "src/modules/build/core/zzz-no-such-file.ts" }));
+    check(
+      "identity: SEEDED VIOLATION — an evidence file with no counterpart under src/ is reported",
+      seededMissing.problems.length === 1 && seededMissing.problems[0].includes("no file of that name"),
+      JSON.stringify(seededMissing.problems),
+    );
+    check(
+      "identity: VIOLATION REMOVED — the unmodified entry is quiet again",
+      validateReviewed([sample]).problems.length === 0,
+      JSON.stringify(validateReviewed([sample]).problems),
+    );
   }
+
+  {
+    const row = (key, verdict) => ({ key, verdict });
+    const rows = [
+      row("modules/build/core/tickets/projects-tickets.controller.ts#deleteTicket", "VERIFIED"),
+      row("modules/build/core/webhooks/projects-webhooks.controller.ts#deleteWebhook", "CLOSED"),
+      row("modules/build/qa/bugs.controller.ts#deleteBug", "NEEDS-REVIEW"),
+    ];
+    const counted = { VULNERABLE: 0, "NEEDS-REVIEW": 1, CLOSED: 1, VERIFIED: 1 };
+    const base = {
+      counts: counted,
+      keys: {
+        VERIFIED: ["modules/build/core/tickets/projects-tickets.controller.ts#deleteTicket"],
+        CLOSED: ["modules/build/core/webhooks/projects-webhooks.controller.ts#deleteWebhook"],
+        "NEEDS-REVIEW": ["modules/build/qa/bugs.controller.ts#deleteBug"],
+      },
+    };
+
+    check(
+      "ratchet: an unchanged census does not breach",
+      ratchetBreaches(rows, base).length === 0,
+      JSON.stringify(ratchetBreaches(rows, base)),
+    );
+
+    const vanishedVerified = rows.filter((r) => !r.key.includes("projects-tickets.controller"));
+    const vanishedBreach = ratchetBreaches(vanishedVerified, base);
+    check(
+      "ratchet: SEEDED VIOLATION — a frozen VERIFIED handler that vanished is a breach, not an improvement",
+      vanishedBreach.some((b) => b.includes("no longer in the census")),
+      JSON.stringify(vanishedBreach),
+    );
+
+    const vanishedNeedsReview = rows.filter((r) => !r.key.includes("bugs.controller"));
+    const vanishedNrBreach = ratchetBreaches(vanishedNeedsReview, base);
+    check(
+      "ratchet: SEEDED VIOLATION — a frozen NEEDS-REVIEW handler that vanished is a breach, where the count alone reads as progress",
+      counts(vanishedNeedsReview)["NEEDS-REVIEW"] < counted["NEEDS-REVIEW"] &&
+        vanishedNrBreach.some((b) => b.includes("no longer in the census")),
+      JSON.stringify(vanishedNrBreach),
+    );
+
+    const regressed = rows.map((r) =>
+      r.key.includes("projects-tickets.controller") ? row(r.key, "VULNERABLE") : r,
+    );
+    check(
+      "ratchet: SEEDED VIOLATION — a frozen VERIFIED handler now VULNERABLE is a breach",
+      ratchetBreaches(regressed, base).some((b) => b.includes("regressed from VERIFIED to VULNERABLE")),
+      JSON.stringify(ratchetBreaches(regressed, base)),
+    );
+
+    const relocated = rows.map((r) =>
+      r.key.includes("projects-tickets.controller")
+        ? row("modules/build/core/somewhere-else/projects-tickets.controller.ts#deleteTicket", r.verdict)
+        : r,
+    );
+    check(
+      "ratchet: a frozen handler whose file moved still matches by identity",
+      ratchetBreaches(relocated, base).length === 0,
+      JSON.stringify(ratchetBreaches(relocated, base)),
+    );
+
+    check(
+      "ratchet: SEEDED VIOLATION — a ratchet with no keys block is refused as count-scoped",
+      ratchetBreaches(rows, { counts: counted }).some((b) => b.includes("scoped by count alone")),
+      JSON.stringify(ratchetBreaches(rows, { counts: counted })),
+    );
+    check(
+      "ratchet: VIOLATION REMOVED — the identity-scoped ratchet is quiet again",
+      ratchetBreaches(rows, base).length === 0,
+      JSON.stringify(ratchetBreaches(rows, base)),
+    );
+
+    check(
+      "ratchet: VULNERABLE rising above floor is detected",
+      ratchetBreaches([...rows, row("modules/build/x/x.controller.ts#leak", "VULNERABLE")], base).some((b) =>
+        b.includes("VULNERABLE rose"),
+      ),
+      "the count arm missed a VULNERABLE increase",
+    );
+    check(
+      "ratchet: VERIFIED falling below floor is detected",
+      ratchetBreaches(
+        rows.map((r) => (r.key.includes("projects-tickets.controller") ? row(r.key, "NEEDS-REVIEW") : r)),
+        base,
+      ).some((b) => b.includes("VERIFIED fell")),
+      "the count arm missed a VERIFIED decrease",
+    );
+  }
+
+  check(
+    "the committed ratchet is scoped by identity, not by count alone",
+    !existsSync(OUT_RATCHET) || Boolean(JSON.parse(readFileSync(OUT_RATCHET, "utf8")).keys),
+    "docs/build-module/authorization-census-ratchet.json has no `keys` block",
+  );
+
+  if (anchorDrift.length || realKeyDrift.moved.length)
+    console.log(
+      `\n  note  ${anchorDrift.length} evidence position(s) and ${realKeyDrift.moved.length} key(s) have drifted; --refresh-anchors restamps them.`,
+    );
 
   console.log(`\nbuild-authorization-census self-test: ${passed} passed, ${failed} failed`);
   return failed === 0 ? 0 : 1;
@@ -2066,5 +2398,66 @@ export class FakeController {
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
+function refreshAnchors() {
+  const { problems, drift } = validateReviewed();
+  if (problems.length) {
+    console.error(`${problems.length} anchor(s) match nothing — refresh cannot guess a position for code that is gone:\n`);
+    for (const p of problems) console.error(`  ${p}`);
+    return 1;
+  }
+
+  const { files, rows } = analyze(BUILD_MODULE, SRC, [join(SRC, "modules"), join(SRC, "common")]);
+  if (files.length < CONTROLLER_FLOOR || rows.length < METHOD_FLOOR) {
+    console.error(`INCONCLUSIVE — ${files.length} controllers / ${rows.length} handlers. Refusing to restamp against a vacuous walk.`);
+    return 2;
+  }
+  const keyDrift = reviewedKeyDrift(rows);
+  if (keyDrift.orphans.length) {
+    console.error(`${keyDrift.orphans.length} REVIEWED key(s) name no handler; retire or re-key them by hand:\n`);
+    for (const k of keyDrift.orphans) console.error(`  ${k}`);
+    return 1;
+  }
+
+  const edits = new Map();
+  const queue = (file, from, to) => {
+    if (from === to) return;
+    if (!edits.has(file)) edits.set(file, []);
+    edits.get(file).push([from, to]);
+  };
+  for (const d of drift) {
+    const [fromFile, fromLine] = [d.from.slice(0, d.from.lastIndexOf(":")), d.from.slice(d.from.lastIndexOf(":") + 1)];
+    const [toFile, toLine] = [d.to.slice(0, d.to.lastIndexOf(":")), d.to.slice(d.to.lastIndexOf(":") + 1)];
+    queue(d.laneFile, `file: "${fromFile}", line: ${fromLine},`, `file: "${toFile}", line: ${toLine},`);
+    queue(d.laneFile, `file: "${fromFile}",\n        line: ${fromLine},`, `file: "${toFile}",\n        line: ${toLine},`);
+  }
+  for (const m of keyDrift.moved) queue(m.laneFile, `key: "${m.key}"`, `key: "${m.to}"`);
+
+  let applied = 0;
+  let unmatched = 0;
+  for (const [file, pairs] of edits) {
+    const abs = join(SCRIPT_DIR, file);
+    let text = readFileSync(abs, "utf8");
+    for (const [from, to] of pairs) {
+      const parts = text.split(from);
+      if (parts.length === 1) {
+        unmatched++;
+        continue;
+      }
+      text = parts.join(to);
+      applied += parts.length - 1;
+    }
+    writeFileSync(abs, text);
+  }
+  console.log(`Restamped ${applied} position(s) across ${edits.size} verdict file(s). Anchors, verdicts and summaries untouched.`);
+  if (unmatched) console.log(`${unmatched} position(s) are written in a form this pass cannot rewrite; update them by hand.`);
+  return 0;
+}
+
 const args = process.argv.slice(2);
-process.exit(args.includes("--self-test") ? selfTest() : run(args.includes("--check")));
+process.exit(
+  args.includes("--self-test")
+    ? selfTest()
+    : args.includes("--refresh-anchors")
+      ? refreshAnchors()
+      : run(args.includes("--check")),
+);

@@ -1,6 +1,6 @@
 export default [
   {
-    key: "modules/build/core/project-resources.controller.ts#createProjectLabel",
+    key: "modules/build/core/project-crud/project-resources.controller.ts#createProjectLabel",
     verdict: "VERIFIED",
     finding: "insert-binds-org-in-values",
     summary:
@@ -9,19 +9,19 @@ export default [
       "None. Neither cross-tenant nor intra-tenant: the row is created in the caller's own org, and a :projectId belonging to another organisation is rejected 404 by assertCanManageProject before the insert runs.",
     evidence: [
       {
-        file: "src/modules/build/core/project-resources.controller.ts",
-        line: 223,
+        file: "src/modules/build/core/project-crud/project-resources.controller.ts",
+        line: 228,
         anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/,
         note: "the url project is resolved under the caller's org before the write",
       },
       {
-        file: "src/modules/build/core/projects-members.service.ts",
-        line: 71,
+        file: "src/modules/build/core/members/projects-members.service.ts",
+        line: 81,
         anchor: /where: and\(eq\(projects\.id, projectId\), eq\(projects\.orgId, u\.orgId\), isNull\(projects\.deletedAt\)\),/,
         note: "the project lookup that makes a foreign :projectId a 404",
       },
       {
-        file: "src/modules/build/core/projects-labels.service.ts",
+        file: "src/modules/build/core/lib/projects-labels.service.ts",
         line: 23,
         anchor: /\.values\(\{ orgId, name: body\.name, color: body\.color \?\? "#3B82F6" \}\)/,
         note: "org is bound as an INSERT column, not a predicate — the form the static pass cannot see",
@@ -30,7 +30,7 @@ export default [
   },
 
   {
-    key: "modules/build/core/projects-templates.controller.ts#createTemplate",
+    key: "modules/build/core/project-crud/projects-templates.controller.ts#createTemplate",
     verdict: "VERIFIED",
     finding: "insert-binds-org-in-values",
     summary:
@@ -39,14 +39,14 @@ export default [
       "None. The created template is owned by the caller's org; there is no reachable row outside it.",
     evidence: [
       {
-        file: "src/modules/build/core/projects-templates.service.ts",
-        line: 67,
+        file: "src/modules/build/core/project-crud/projects-templates.service.ts",
+        line: 114,
         anchor: /\.insert\(projectTemplates\)/,
         note: "the write is an INSERT — no WHERE clause exists for the static pass to inspect",
       },
       {
-        file: "src/modules/build/core/projects-templates.service.ts",
-        line: 69,
+        file: "src/modules/build/core/project-crud/projects-templates.service.ts",
+        line: 116,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -54,7 +54,7 @@ export default [
   },
 
   {
-    key: "modules/build/core/projects-ticket-associations.controller.ts#listRelatedLinks",
+    key: "modules/build/core/tickets/projects-ticket-associations.controller.ts#listRelatedLinks",
     verdict: "CLOSED",
     finding: "project-membership-gate-missing",
     summary:
@@ -63,25 +63,25 @@ export default [
       "Intra-tenant, not cross-tenant: ticketRelatedLinks.orgId was already bound in every query, so nothing left the organisation. The hole was project-level. Any member of the org holding the org-wide build:tickets:view key — with no project membership, no team assignment, not the project manager and without build:manage — could read the related links of any ticket in any project of the org by naming that project and ticket in the url. The paired POST let the same actor, holding build:tickets:update, write a link onto that ticket.",
     evidence: [
       {
-        file: "src/modules/build/core/projects-ticket-links.service.ts",
+        file: "src/modules/build/core/tickets/projects-ticket-links.service.ts",
         line: 38,
         anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/,
         note: "the fix — the private helper now delegates to the shared gate the sibling already used",
       },
       {
-        file: "src/modules/build/core/build-ticket-read-access.ts",
+        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
         line: 37,
         anchor: /eq\(tickets\.projectId, projectId\),/,
         note: "the parent is now bound in SQL, not only compared in JavaScript",
       },
       {
-        file: "src/modules/build/core/build-ticket-read-access.ts",
+        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
         line: 44,
         anchor: /const projectAccess = await resolveProjectAccess\(/,
         note: "the project-membership assertion that was entirely absent before",
       },
       {
-        file: "src/modules/build/core/projects-ticket-relations.service.ts",
+        file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts",
         line: 61,
         anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/,
         note: "the sibling in the same controller whose shape the fix copies",
@@ -90,7 +90,7 @@ export default [
   },
 
   {
-    key: "modules/build/core/projects-ticket-associations.controller.ts#addRelatedLink",
+    key: "modules/build/core/tickets/projects-ticket-associations.controller.ts#addRelatedLink",
     verdict: "CLOSED",
     finding: "project-membership-gate-missing",
     summary:
@@ -99,19 +99,19 @@ export default [
       "Intra-tenant write, not cross-tenant: orgId was and is bound on the insert, so no row can be planted in another organisation. Within the org, any holder of build:tickets:update could write a related link onto any ticket in any project without belonging to it — a stored, user-visible URL on someone else's work item.",
     evidence: [
       {
-        file: "src/modules/build/core/projects-ticket-links.service.ts",
+        file: "src/modules/build/core/tickets/projects-ticket-links.service.ts",
         line: 38,
         anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/,
         note: "the shared helper both related-link handlers call — now gated",
       },
       {
-        file: "src/modules/build/core/projects-ticket-links.service.ts",
+        file: "src/modules/build/core/tickets/projects-ticket-links.service.ts",
         line: 151,
         anchor: /orgId: u\.orgId,/,
         note: "org was already bound on the INSERT — the org dimension was never the hole",
       },
       {
-        file: "src/modules/build/core/build-ticket-read-access.ts",
+        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
         line: 50,
         anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/,
         note: "the refusal the outsider now hits",
@@ -135,7 +135,7 @@ export default [
         note: "the org passed is the caller's own, taken from the verified context",
       },
       {
-        file: "src/modules/build/core/projects-labels.service.ts",
+        file: "src/modules/build/core/lib/projects-labels.service.ts",
         line: 23,
         anchor: /\.values\(\{ orgId, name: body\.name, color: body\.color \?\? "#3B82F6" \}\)/,
         note: "org bound as an INSERT column",
@@ -256,13 +256,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/execution/workspace.service.ts",
-        line: 380,
+        line: 464,
         anchor: /projectId: null,/,
         note: "the row is intentionally project-less, so there is no parent dimension",
       },
       {
         file: "src/modules/build/execution/workspace.service.ts",
-        line: 381,
+        line: 399,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -280,13 +280,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/managed-products/managed-products.service.ts",
-        line: 143,
+        line: 190,
         anchor: /\.insert\(managedProducts\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/managed-products/managed-products.service.ts",
-        line: 145,
+        line: 192,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -304,13 +304,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/portfolios/portfolios.service.ts",
-        line: 247,
+        line: 248,
         anchor: /\.insert\(projectPortfolios\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/portfolios/portfolios.service.ts",
-        line: 249,
+        line: 250,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -328,13 +328,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/teams/teams.service.ts",
-        line: 151,
+        line: 152,
         anchor: /\.insert\(projectTeams\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/teams/teams.service.ts",
-        line: 153,
+        line: 154,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },

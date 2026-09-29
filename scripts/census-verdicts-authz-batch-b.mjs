@@ -7,9 +7,9 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign formId under this projectId 404s at loadForm before the list query executes.",
     evidence: [
       { file: "src/modules/build/forms/submissions.controller.ts", line: 68, anchor: /return this\.svc\.listSubmissions\(u, projectId, formId, query\);/, note: "route handler forwards the actor and path params" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 169, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 170, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "listSubmissions binds via loadForm before querying" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 54, anchor: /eq\(projectForms\.projectId, projectId\),/, note: "loadForm's WHERE binds formId to projectId and orgId together" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 168, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 169, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "listSubmissions binds via loadForm before querying" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 53, anchor: /eq\(projectForms\.projectId, projectId\),/, note: "loadForm's WHERE binds formId to projectId and orgId together" },
     ],
   },
   {
@@ -20,9 +20,9 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign formId under this projectId 404s at loadForm before any ticket or submission row is created.",
     evidence: [
       { file: "src/modules/build/forms/submissions.controller.ts", line: 82, anchor: /return this\.svc\.createSubmission\(u, projectId, formId, body\);/, note: "route handler forwards the actor and path params" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 212, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 213, anchor: /const form = await this\.loadForm\(orgId, projectId, formId\);/, note: "createSubmission binds via loadForm before running the submission" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 93, anchor: /const \{ orgId, id: formId, projectId \} = form;/, note: "runSubmission derives tenant and parent ids from the validated row" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 211, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 212, anchor: /const form = await this\.loadForm\(orgId, projectId, formId\);/, note: "createSubmission binds via loadForm before running the submission" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 92, anchor: /const \{ orgId, id: formId, projectId \} = form;/, note: "runSubmission derives tenant and parent ids from the validated row" },
     ],
   },
   {
@@ -33,10 +33,10 @@ export default [
     blastRadius: "None beyond the caller's own org/project/form: a foreign submissionId or formId 404s at loadForm/loadSubmission before the UPDATE executes.",
     evidence: [
       { file: "src/modules/build/forms/submissions.controller.ts", line: 96, anchor: /return this\.svc\.updateSubmission\(u, projectId, formId, submissionId, body\);/, note: "route handler forwards the actor and all path params" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 266, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "binds formId to projectId" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 267, anchor: /await this\.loadSubmission\(orgId, formId, submissionId\);/, note: "binds submissionId to formId" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 274, anchor: /eq\(formSubmissions\.formId, formId\),/, note: "UPDATE WHERE clause re-binds formId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 264, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "binds formId to projectId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 266, anchor: /await this\.loadSubmission\(orgId, formId, submissionId\);/, note: "binds submissionId to formId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 273, anchor: /eq\(formSubmissions\.formId, formId\),/, note: "UPDATE WHERE clause re-binds formId" },
     ],
   },
   {
@@ -291,8 +291,8 @@ export default [
     blastRadius: "None: the DELETE only ever removes the one (portfolioId, projectId, orgId) association row; a mismatched projectId is a no-op, and the underlying project row is never touched.",
     evidence: [
       { file: "src/modules/build/portfolios/portfolios.controller.ts", line: 134, anchor: /return this\.svc\.unlinkProject\(u\.orgId, u\.userId, portfolioId, projectId\);/, note: "route handler passes both raw path params straight to the service" },
-      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 359, anchor: /await this\.loadPortfolio\(orgId, portfolioId\);/, note: "binds portfolioId to orgId via loadPortfolio before the delete" },
-      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 366, anchor: /eq\(portfolioProjects\.orgId, orgId\),/, note: "DELETE WHERE clause scopes to portfolioId + projectId + orgId together" },
+      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 360, anchor: /await this\.loadPortfolio\(orgId, portfolioId\);/, note: "binds portfolioId to orgId via loadPortfolio before the delete" },
+      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 367, anchor: /eq\(portfolioProjects\.orgId, orgId\),/, note: "DELETE WHERE clause scopes to portfolioId + projectId + orgId together" },
     ],
   },
   {
@@ -315,7 +315,7 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign bugId 404s.",
     evidence: [
       { file: "src/modules/build/qa/bugs.controller.ts", line: 68, anchor: /return this\.svc\.getBug\(u, projectId, bugId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 118, anchor: /eq\(tickets\.orgId, u\.orgId\),/, note: "SELECT WHERE clause binds bugId to projectId and orgId together" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 119, anchor: /eq\(tickets\.orgId, u\.orgId\),/, note: "SELECT WHERE clause binds bugId to projectId and orgId together" },
     ],
   },
   {
@@ -326,8 +326,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign bugId 404s before either UPDATE runs.",
     evidence: [
       { file: "src/modules/build/qa/bugs.controller.ts", line: 94, anchor: /return this\.svc\.updateBug\(u, projectId, bugId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 225, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before patching" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 268, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\)/, note: "tickets UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 226, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before patching" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 350, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\)/, note: "tickets UPDATE targets the already-verified row by primary key id + orgId" },
     ],
   },
   {
@@ -338,8 +338,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign bugId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/qa/bugs.controller.ts", line: 107, anchor: /return this\.svc\.deleteBug\(u, projectId, bugId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 324, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before deleting" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 334, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 340, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before deleting" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 350, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
     ],
   },
   {
@@ -479,8 +479,8 @@ export default [
     blastRadius: "None beyond the caller's own org: a foreign teamId 404s, and a memberUserId outside the org fails membership resolution before any row is touched.",
     evidence: [
       { file: "src/modules/build/teams/teams.controller.ts", line: 161, anchor: /return this\.members\.updateMemberRole\(/, note: "route handler passes teamId and memberUserId straight to the service" },
-      { file: "src/modules/build/teams/team-members.service.ts", line: 183, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before updating" },
-      { file: "src/modules/build/teams/team-members.service.ts", line: 192, anchor: /\(await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberUserId \}\)\)\.membershipId,/, note: "memberUserId is resolved to a membership scoped to this exact orgId via assertOrganizationActor" },
+      { file: "src/modules/build/teams/team-members.service.ts", line: 184, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before updating" },
+      { file: "src/modules/build/teams/team-members.service.ts", line: 193, anchor: /\(await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberUserId \}\)\)\.membershipId,/, note: "memberUserId is resolved to a membership scoped to this exact orgId via assertOrganizationActor" },
     ],
   },
   {
@@ -491,8 +491,8 @@ export default [
     blastRadius: "None beyond the caller's own org: a foreign teamId 404s, and a memberId outside the org fails membership resolution before any row is touched.",
     evidence: [
       { file: "src/modules/build/teams/teams.controller.ts", line: 180, anchor: /return this\.members\.removeMember\(u\.orgId, u\.userId, teamId, memberId\);/, note: "route handler passes teamId and memberId straight to the service" },
-      { file: "src/modules/build/teams/team-members.service.ts", line: 153, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before deleting" },
-      { file: "src/modules/build/teams/team-members.service.ts", line: 161, anchor: /\(await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberId \}\)\)\.membershipId,/, note: "memberId is resolved to a membership scoped to this exact orgId via assertOrganizationActor" },
+      { file: "src/modules/build/teams/team-members.service.ts", line: 154, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before deleting" },
+      { file: "src/modules/build/teams/team-members.service.ts", line: 162, anchor: /\(await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberId \}\)\)\.membershipId,/, note: "memberId is resolved to a membership scoped to this exact orgId via assertOrganizationActor" },
     ],
   },
   {
