@@ -11,6 +11,7 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
+import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111", userId: "owner", role: "OWNER",
@@ -59,6 +60,7 @@ async function harness(size = 1, allowed = true, missingProject = false) {
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn().mockResolvedValue(undefined) } },
     { provide: ProjectsActivityService, useValue: { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } },
     { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+    { provide: ProjectsTicketsTransferService, useValue: { notifyAssignedTickets: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   return { module, db, rows, statuses, occupancy, transitions, set, values, service: module.get(ProjectsTicketsQueryService) };
 }
@@ -89,12 +91,12 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     } finally { await h.module.close(); }
   });
 
-  it.each([1, 100])("updates %i assignments with one lookup, one update, and two link writes", async (size) => {
+  it.each([1, 100])("updates %i assignments with one lookup, one effect-metadata read, one update, and two link writes — the read count does not grow with the batch", async (size) => {
     const h = await harness(size);
     try {
       const result = await h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), assigneeId: "member" });
       expect(result.updated).toBe(size);
-      expect(h.db.select).toHaveBeenCalledTimes(2);
+      expect(h.db.select).toHaveBeenCalledTimes(3);
       expect(h.db.query.organizationMembers.findFirst).not.toHaveBeenCalled();
       expect(h.set).toHaveBeenCalledTimes(1);
       expect(h.set).toHaveBeenCalledWith(expect.objectContaining({ assigneeMembershipId: 9 }));
@@ -115,11 +117,11 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     } finally { await h.module.close(); }
   });
 
-  it.each([1, 100])("writes %i status events in one outbox insert", async (size) => {
+  it.each([1, 100])("writes %i status events in one outbox insert and reads effect metadata once", async (size) => {
     const h = await harness(size);
     try {
       await h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" });
-      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.db.select).toHaveBeenCalledTimes(4);
       expect(h.values).toHaveBeenCalledTimes(1);
       expect(h.values.mock.calls[0]?.[0]).toHaveLength(size);
     } finally { await h.module.close(); }
@@ -148,7 +150,7 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     h.occupancy.count = 1;
     try {
       await expect(h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" })).resolves.toMatchObject({ updated: 100 });
-      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.db.select).toHaveBeenCalledTimes(4);
       expect(h.db.execute).toHaveBeenCalledTimes(3);
     } finally { await h.module.close(); }
   });

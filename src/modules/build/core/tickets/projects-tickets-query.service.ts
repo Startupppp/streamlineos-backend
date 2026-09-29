@@ -15,6 +15,7 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
+import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 
 @Injectable()
 export class ProjectsTicketsQueryService {
@@ -26,6 +27,7 @@ export class ProjectsTicketsQueryService {
     private readonly automationRunner: BuildAutomationRunnerService,
     private readonly activity: ProjectsActivityService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly transfer: ProjectsTicketsTransferService,
   ) {}
 
   async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
@@ -37,6 +39,9 @@ export class ProjectsTicketsQueryService {
     const result = await bulkMutateTickets(this.db, this.access, actor, projectId, body, {
       webhooksDispatch: this.webhooksDispatch,
       automationRunner: this.automationRunner,
+      activity: this.activity,
+      dispatch: this.dispatch,
+      transfer: this.transfer,
     });
     await this.cache.invalidateNamespace(`build:analytics:${actor.orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId }));

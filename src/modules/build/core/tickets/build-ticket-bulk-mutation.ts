@@ -25,29 +25,15 @@ import {
   emitBatchStatusChanges,
   validateBatchTransition,
 } from "./build-ticket-batch-workflow";
-import type { TicketEventPayload } from "../automation/build-automation-runner.service";
 import { resolveAssigneeId } from "./tickets-helpers";
+import type { BulkEffectRow, BulkTicketEffectDeps } from "./build-ticket-bulk-effects";
+import {
+  bulkEffectsNeedTicketMeta,
+  dispatchBulkTicketEffects,
+  readBulkTicketMeta,
+  readMembershipUserIds,
+} from "./build-ticket-bulk-effects";
 import { resolveProjectAssignableMemberships } from "../project-crud/project-access";
-
-export interface BulkTicketEffectDeps {
-  readonly webhooksDispatch: {
-    enqueue(
-      tx: unknown,
-      orgId: string,
-      projectId: number,
-      event: string,
-      payload: Record<string, unknown>,
-    ): Promise<void>;
-  };
-  readonly automationRunner: {
-    runForTicketEvent(
-      orgId: string,
-      projectId: number,
-      event: string,
-      payload: TicketEventPayload,
-    ): void;
-  };
-}
 
 export async function bulkMutateTickets(
   db: Db,
@@ -65,11 +51,8 @@ export async function bulkMutateTickets(
     (await access.scopeFor(actor, "build:tickets:assign")) === "none"
   )
     throw new ForbiddenException("Not authorized to assign tickets");
-  const effectRows: Array<{
-    id: number;
-    previousStatus: string | undefined;
-    effectiveStatus: string;
-  }> = [];
+  const effectRows: BulkEffectRow[] = [];
+  const assigneeId = resolveAssigneeId(body.assigneeId);
   const result = await db.transaction(async (tx) => {
     const policy = await authorizeTicketMutation(tx, access, actor, projectId);
     await lockProjectTicketMutation(tx, actor.orgId, projectId);
@@ -83,7 +66,6 @@ export async function bulkMutateTickets(
     }
     const now = new Date();
     const update: Partial<typeof tickets.$inferInsert> = { updatedAt: now };
-    const assigneeId = resolveAssigneeId(body.assigneeId);
     if (assigneeId !== undefined) {
       const assigneeMemberships = await resolveProjectAssignableMemberships(
         tx,
@@ -286,6 +268,23 @@ export async function bulkMutateTickets(
       );
     if (effectDeps) {
       const nowIso = now.toISOString();
+      const ticketMeta = bulkEffectsNeedTicketMeta(effectDeps)
+        ? await readBulkTicketMeta(
+            tx,
+            actor.orgId,
+            updated.map((row) => row.id),
+          )
+        : new Map<number, { title: string; type: string; reporterId: string | null }>();
+      const assigneeUserIdByMembership =
+        effectDeps.activity !== undefined && assigneeId !== undefined
+          ? await readMembershipUserIds(
+              tx,
+              actor.orgId,
+              rows
+                .map((row) => row.assigneeMembershipId)
+                .filter((id): id is number => id != null),
+            )
+          : new Map<number, string>();
       for (const row of updated) {
         const beforeRow = rows.find((r) => r.id === row.id);
         const effectiveStatus: string =
@@ -324,42 +323,34 @@ export async function bulkMutateTickets(
             },
           );
         }
+        const meta = ticketMeta.get(row.id);
         effectRows.push({
           id: row.id,
           previousStatus: beforeRow?.status,
           effectiveStatus,
+          previousPriority: beforeRow?.priority ?? "MEDIUM",
+          previousDueDate: beforeRow?.dueDate ?? null,
+          previousPoints: beforeRow?.points ?? null,
+          previousCycleId: beforeRow?.cycleId ?? null,
+          previousAssigneeUserId:
+            beforeRow?.assigneeMembershipId != null
+              ? (assigneeUserIdByMembership.get(beforeRow.assigneeMembershipId) ?? null)
+              : null,
+          title: meta?.title ?? "",
+          type: meta?.type ?? "TASK",
+          reporterId: meta?.reporterId ?? null,
         });
       }
     }
     return { updated: updated.length, ticketIds: updated.map((row) => row.id) };
   });
   if (effectDeps) {
-    for (const ep of effectRows) {
-      const afterPayload = {
-        ticketId: ep.id,
-        projectId,
-        orgId: actor.orgId,
-        status: ep.effectiveStatus,
-      };
-      effectDeps.automationRunner.runForTicketEvent(
-        actor.orgId,
-        projectId,
-        "ticket.updated",
-        afterPayload,
-      );
-      if (
-        body.status !== undefined &&
-        ep.previousStatus !== undefined &&
-        ep.previousStatus !== body.status
-      ) {
-        effectDeps.automationRunner.runForTicketEvent(
-          actor.orgId,
-          projectId,
-          "ticket.status_changed",
-          afterPayload,
-        );
-      }
-    }
+    await dispatchBulkTicketEffects(effectDeps, actor, projectId, effectRows, {
+      status: body.status,
+      priority: body.priority,
+      assigneeUserId: assigneeId,
+      cycleId: body.cycleId,
+    });
   }
   return result;
 }

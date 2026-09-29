@@ -11,6 +11,7 @@ import { TicketVersionConflictException } from "./ticket-version-conflict.except
 import { bulkUpdateSchema } from "../dto/projects.schemas";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
+import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111",
@@ -91,6 +92,7 @@ async function harness(ticketVersion: number) {
       },
       { provide: ProjectsActivityService, useValue: { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } },
       { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+    { provide: ProjectsTicketsTransferService, useValue: { notifyAssignedTickets: jest.fn().mockResolvedValue(undefined) } },
     ],
   }).compile();
   return {
