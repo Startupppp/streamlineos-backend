@@ -226,6 +226,7 @@ export class ClientPortalService {
                 eq(tickets.projectId, projectId),
                 eq(tickets.orgId, u.orgId),
                 isNull(tickets.deletedAt),
+                eq(tickets.clientVisible, true),
               ),
             )
             .where(
@@ -253,6 +254,7 @@ export class ClientPortalService {
                 eq(tickets.projectId, projectId),
                 eq(tickets.orgId, u.orgId),
                 isNull(tickets.deletedAt),
+                eq(tickets.clientVisible, true),
               ),
             )
             .leftJoin(users, eq(users.id, ticketComments.userId))
@@ -339,6 +341,7 @@ export class ClientPortalService {
             eq(tickets.projectId, projectId),
             eq(tickets.orgId, u.orgId),
             isNull(tickets.deletedAt),
+            eq(tickets.clientVisible, true),
           ),
         )
         .where(
@@ -364,6 +367,7 @@ export class ClientPortalService {
             eq(tickets.projectId, projectId),
             eq(tickets.orgId, u.orgId),
             isNull(tickets.deletedAt),
+            eq(tickets.clientVisible, true),
           ),
         )
         .leftJoin(users, eq(users.id, ticketComments.userId))

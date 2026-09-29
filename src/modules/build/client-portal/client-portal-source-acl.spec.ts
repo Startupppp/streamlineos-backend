@@ -116,7 +116,10 @@ describe("ClientPortalService.listPortalProjects — lifecycle gate: isNull(dele
 });
 
 describe("ClientPortalService.getProjectOverview — source ACL gate: clientVisible=true on sub-resource rows (Requirement E)", () => {
-  function makeOverviewDb(capturedPredicates: Array<{ idx: number; pred: unknown }>) {
+  function makeOverviewDb(
+    capturedPredicates: Array<{ idx: number; pred: unknown }>,
+    capturedJoins: Array<{ idx: number; pred: unknown }> = [],
+  ) {
     let selectCount = 0;
 
     const stubFromChain = (idx: number) => ({
@@ -135,17 +138,20 @@ describe("ClientPortalService.getProjectOverview — source ACL gate: clientVisi
           }),
         };
       }),
-      innerJoin: jest.fn().mockReturnValue({
-        where: jest.fn().mockImplementation((pred: unknown) => {
-          capturedPredicates.push({ idx, pred });
-          return { limit: jest.fn().mockResolvedValue([]) };
-        }),
-        leftJoin: jest.fn().mockReturnValue({
+      innerJoin: jest.fn().mockImplementation((_table: unknown, on: unknown) => {
+        capturedJoins.push({ idx, pred: on });
+        return {
           where: jest.fn().mockImplementation((pred: unknown) => {
             capturedPredicates.push({ idx, pred });
             return { limit: jest.fn().mockResolvedValue([]) };
           }),
-        }),
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockImplementation((pred: unknown) => {
+              capturedPredicates.push({ idx, pred });
+              return { limit: jest.fn().mockResolvedValue([]) };
+            }),
+          }),
+        };
       }),
     });
 
@@ -187,6 +193,46 @@ describe("ClientPortalService.getProjectOverview — source ACL gate: clientVisi
     const taskEntry = capturedPredicates.find((e) => e.idx === 4);
     expect(taskEntry).toBeDefined();
     expect(renderSql(taskEntry!.pred)).toContain("client_visible");
+  });
+
+  it("attachments JOIN requires the parent ticket's client_visible so an attachment on an internal-only ticket never reaches a portal client", async () => {
+    const capturedPredicates: Array<{ idx: number; pred: unknown }> = [];
+    const capturedJoins: Array<{ idx: number; pred: unknown }> = [];
+    const db = makeOverviewDb(capturedPredicates, capturedJoins);
+
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
+    await svc.getProjectOverview(makeU("org-1"), 10);
+
+    const attachmentJoin = capturedJoins.find((e) => e.idx === 5);
+    expect(attachmentJoin).toBeDefined();
+    expect(renderSql(attachmentJoin!.pred)).toContain("client_visible");
+  });
+
+  it("comments JOIN requires the parent ticket's client_visible so a comment on an internal-only ticket never reaches a portal client", async () => {
+    const capturedPredicates: Array<{ idx: number; pred: unknown }> = [];
+    const capturedJoins: Array<{ idx: number; pred: unknown }> = [];
+    const db = makeOverviewDb(capturedPredicates, capturedJoins);
+
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
+    await svc.getProjectOverview(makeU("org-1"), 10);
+
+    const commentJoin = capturedJoins.find((e) => e.idx === 6);
+    expect(commentJoin).toBeDefined();
+    expect(renderSql(commentJoin!.pred)).toContain("client_visible");
+  });
+
+  it("attachments and comments still filter their own client_visible flag so an internal note on a visible ticket stays private", async () => {
+    const capturedPredicates: Array<{ idx: number; pred: unknown }> = [];
+    const db = makeOverviewDb(capturedPredicates);
+
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
+    await svc.getProjectOverview(makeU("org-1"), 10);
+
+    for (const idx of [5, 6]) {
+      const entry = capturedPredicates.find((e) => e.idx === idx);
+      expect(entry).toBeDefined();
+      expect(renderSql(entry!.pred)).toContain("client_visible");
+    }
   });
 
   it("project query WHERE predicate contains 'deleted_at' so a soft-deleted project is excluded at the DB", async () => {
