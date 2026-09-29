@@ -8,6 +8,8 @@ import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { EmailService } from "../../email/email.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
 import { hashToken } from "../../../common/security/token.util";
 import { invitationEmailOtps, invitations } from "../../../db/schema";
 
@@ -164,6 +166,8 @@ describe("InvitationAcceptanceService.accept — assert-before-insert ordering",
           provide: EmailService,
           useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 

@@ -5,6 +5,9 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import { EmailService } from "../../email/email.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 
 const PENDING_INVITATION = {
@@ -80,6 +83,9 @@ describe("InvitationAcceptanceService.decline", () => {
           },
         },
         { provide: NotificationDispatchService, useValue: { emit } },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 

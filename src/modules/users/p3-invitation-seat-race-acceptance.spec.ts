@@ -82,12 +82,16 @@ const ACTIVE_ORG = {
   allowedEmailDomains: [],
 };
 
+const NEW_USER_OTP = "test-otp-123";
+const NEW_USER_OTP_HASH = hashToken(NEW_USER_OTP);
+
 function buildAcceptQuery() {
   return {
     users: { findFirst: jest.fn().mockResolvedValue(null) },
     organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
     organizations: { findFirst: jest.fn().mockResolvedValue(ACTIVE_ORG) },
     invitations: { findFirst: jest.fn().mockResolvedValue(PENDING_INVITATION) },
+    invitationEmailOtps: { findFirst: jest.fn().mockResolvedValue(null) },
   };
 }
 
@@ -148,6 +152,13 @@ function buildAcceptDb(lockedRows = [PENDING_INVITATION]) {
         }),
       }),
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ attempts: 1 }]),
+          }),
+        }),
+      }),
       transaction: jest.fn().mockImplementation(
         (fn: (handle: typeof tx) => Promise<unknown>) => fn(tx),
       ),
@@ -185,6 +196,9 @@ describe("P3 — rollback prevents seat ledger entry (accept path)", () => {
           provide: NotificationDispatchService,
           useValue: { emit: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 
@@ -199,23 +213,37 @@ describe("P3 — rollback prevents seat ledger entry (accept path)", () => {
   it("emits no seat event when assertWithinLimit rejects on the existing-user path", async () => {
     harness.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     harness.query.organizationMembers.findFirst.mockResolvedValue(null);
+    harness.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 99,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: FUTURE,
+      usedAt: null,
+    });
     planLimits.assertWithinLimit.mockRejectedValue(
       new ForbiddenException("member limit reached"),
     );
 
-    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP })).rejects.toBeInstanceOf(ForbiddenException);
 
     expect(recordSeatEvent).not.toHaveBeenCalled();
   });
 
   it("emits no seat event when assertWithinLimit rejects on the new-user path", async () => {
     harness.query.users.findFirst.mockResolvedValue(null);
+    harness.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 99,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: FUTURE,
+      usedAt: null,
+    });
     planLimits.assertWithinLimit.mockRejectedValue(
       new ForbiddenException("member limit reached"),
     );
 
     await expect(
-      svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe" }),
+      svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe", emailOtp: NEW_USER_OTP }),
     ).rejects.toBeInstanceOf(ForbiddenException);
 
     expect(recordSeatEvent).not.toHaveBeenCalled();
@@ -225,8 +253,15 @@ describe("P3 — rollback prevents seat ledger entry (accept path)", () => {
     await buildModule([]);
     harness.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     harness.query.organizationMembers.findFirst.mockResolvedValue(null);
+    harness.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 99,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: FUTURE,
+      usedAt: null,
+    });
 
-    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeDefined();
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP })).rejects.toBeDefined();
 
     expect(recordSeatEvent).not.toHaveBeenCalled();
   });
@@ -234,8 +269,15 @@ describe("P3 — rollback prevents seat ledger entry (accept path)", () => {
   it("emits the INVITE_ACCEPTED seat event only when the full transaction succeeds", async () => {
     harness.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     harness.query.organizationMembers.findFirst.mockResolvedValue(null);
+    harness.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 99,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: FUTURE,
+      usedAt: null,
+    });
 
-    const result = await svc.accept({ token: RAW_TOKEN });
+    const result = await svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP });
 
     expect(result.ok).toBe(true);
     expect(recordSeatEvent).toHaveBeenCalledTimes(1);
@@ -253,8 +295,15 @@ describe("P3 — rollback prevents seat ledger entry (accept path)", () => {
   it("passes the live transaction handle to recordSeatEvent, not the pool", async () => {
     harness.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     harness.query.organizationMembers.findFirst.mockResolvedValue(null);
+    harness.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 99,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: FUTURE,
+      usedAt: null,
+    });
 
-    await svc.accept({ token: RAW_TOKEN });
+    await svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP });
 
     const [, txArg] = recordSeatEvent.mock.calls[0] as [unknown, unknown];
     expect(txArg).toBe(harness.tx);
@@ -326,6 +375,9 @@ describe("P3 — decline idempotency: concurrent winner, no second seat release"
           provide: NotificationDispatchService,
           useValue: { emit: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 
@@ -360,6 +412,9 @@ describe("P3 — decline idempotency: concurrent winner, no second seat release"
           provide: NotificationDispatchService,
           useValue: { emit: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 
@@ -425,11 +480,19 @@ function buildResendDb(updateReturnsRows: boolean, expiresAt = FUTURE) {
   tx.for.mockReturnValue(tx);
   tx.update.mockReturnValue(tx);
 
+  const dbSelectChain = {
+    from: jest.fn(),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  dbSelectChain.from.mockReturnValue(dbSelectChain);
+  dbSelectChain.where.mockReturnValue(dbSelectChain);
   return {
     query,
     tx,
     db: {
       query,
+      select: jest.fn().mockReturnValue(dbSelectChain),
       transaction: jest.fn().mockImplementation(
         (fn: (handle: typeof tx) => Promise<unknown>) => fn(tx),
       ),
@@ -478,7 +541,7 @@ describe("P3 — post-commit delivery: resend email fires after commit, not befo
     const sendEmail = jest.fn().mockResolvedValue(undefined);
     const svc = await buildResendModule(db, sendEmail);
 
-    await expect(svc.resend(ORG_ID, INVITATION_ID, ACTOR)).resolves.toEqual({ success: true });
+    await expect(svc.resend(ORG_ID, INVITATION_ID, ACTOR)).resolves.toMatchObject({ success: true });
 
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
@@ -513,7 +576,7 @@ describe("P3 — post-commit delivery: resend email fires after commit, not befo
     const sendEmail = jest.fn().mockRejectedValue(new Error("smtp down"));
     const svc = await buildResendModule(db, sendEmail);
 
-    await expect(svc.resend(ORG_ID, INVITATION_ID, ACTOR)).resolves.toEqual({ success: true });
+    await expect(svc.resend(ORG_ID, INVITATION_ID, ACTOR)).resolves.toMatchObject({ success: true });
   });
 });
 
@@ -522,6 +585,13 @@ describe("P3 — one-seat invariant: advisory lock fires before the limit check"
     const harness = buildAcceptDb();
     harness.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     harness.query.organizationMembers.findFirst.mockResolvedValue(null);
+    harness.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 99,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: FUTURE,
+      usedAt: null,
+    });
 
     const recordSeatEvent = jest.fn().mockResolvedValue(undefined);
     const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
@@ -545,12 +615,15 @@ describe("P3 — one-seat invariant: advisory lock fires before the limit check"
           provide: NotificationDispatchService,
           useValue: { emit: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 
     const svc = moduleRef.get(InvitationAcceptanceService);
 
-    await svc.accept({ token: RAW_TOKEN });
+    await svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP });
 
     const lockOrder = harness.tx.execute.mock.invocationCallOrder[0] ?? 0;
     const checkOrder = planLimits.assertWithinLimit.mock.invocationCallOrder[0] ?? 0;

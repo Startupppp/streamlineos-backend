@@ -12,6 +12,9 @@ import {
   type SeatEventType,
 } from "../../billing/core/seat-definition";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import { EmailService } from "../../email/email.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import {
@@ -133,6 +136,9 @@ describe("seat release on decline — live authority versus the event ledger", (
             },
           },
           { provide: NotificationDispatchService, useValue: { emit } },
+          { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+          { provide: AuditService, useValue: { log: jest.fn() } },
+          { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
         ],
       }).compile();
 

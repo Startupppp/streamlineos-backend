@@ -30,17 +30,25 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { lockMembersQuota } from "../../billing/core/seat-definition";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
 import {
   accountOrganizationIndex,
   invitationEmailOtps,
   invitationEvents,
+  invitationModuleAccess,
   invitations,
   magicLinkTokens,
   organizationMembers,
   organizations,
+  roleAssignments,
   users,
 } from "../../../db/schema";
-import type { DbOrTx } from "../../../common/rbac/access-invalidate";
+import { bumpPermissionsVersion, type DbOrTx } from "../../../common/rbac/access-invalidate";
+import { assertMayAssignRole } from "../../rbac/assert-role-assignment";
+import { resolveModuleStandingRole } from "../../rbac/resolve-module-standing-role";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   AcceptInvitationInput,
   DeclineInvitationInput,
@@ -88,6 +96,8 @@ export class InvitationAcceptanceService {
     private readonly seatLedger: SeatLedgerService,
     private readonly dispatch: NotificationDispatchService,
     private readonly email: EmailService,
+    private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   private async assertAdmissionPolicy(
@@ -409,6 +419,7 @@ export class InvitationAcceptanceService {
             .set({ lastActiveOrgId: lockedInvitation.orgId })
             .where(eq(users.id, userId));
 
+          await this.applyPendingRoleGrants(tx, orgId, invitationId, membershipId, lockedInvitation.inviterMembershipId ?? null);
           await this.claimInvitation(tx, invitationId, orgId, membershipId);
           await this.issueMagicLink(tx, userId, autoLoginToken, orgId);
         },
@@ -468,6 +479,7 @@ export class InvitationAcceptanceService {
               );
             }
 
+            await this.applyPendingRoleGrants(tx, orgId, invitationId, membershipId, lockedInvitation.inviterMembershipId ?? null);
             await this.claimInvitation(tx, invitationId, orgId, membershipId);
             await this.issueMagicLink(tx, userId, autoLoginToken, orgId);
           },
@@ -504,6 +516,109 @@ export class InvitationAcceptanceService {
       );
     }
     return userId;
+  }
+
+  private async applyPendingRoleGrants(
+    tx: DbOrTx,
+    orgId: string,
+    invitationId: string,
+    membershipId: number,
+    inviterMembershipId: number | null,
+  ): Promise<void> {
+    const accessRows = await tx
+      .select({
+        moduleKey: invitationModuleAccess.moduleKey,
+        standing: invitationModuleAccess.standing,
+      })
+      .from(invitationModuleAccess)
+      .where(eq(invitationModuleAccess.invitationId, invitationId))
+      .limit(10);
+
+    if (accessRows.length === 0) return;
+
+    const inviterMembership = inviterMembershipId
+      ? await tx.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.id, inviterMembershipId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+          columns: { id: true, userId: true, status: true, isOwner: true },
+        })
+      : null;
+
+    const inviterActive =
+      inviterMembership !== null &&
+      inviterMembership !== undefined &&
+      inviterMembership.status === "ACTIVE";
+
+    const toAssign: number[] = [];
+
+    for (const row of accessRows) {
+      const resolved = await resolveModuleStandingRole(tx, orgId, row.moduleKey, row.standing);
+      if (!resolved) {
+        this.audit.log({
+          action: "user.invitation.module_access_skipped",
+          userId: "system",
+          orgId,
+          targetId: invitationId,
+          targetType: "invitation",
+          metadata: { moduleKey: row.moduleKey, standing: row.standing, reason: "role_no_longer_seeded" },
+        });
+        continue;
+      }
+
+      if (!inviterActive) {
+        this.audit.log({
+          action: "user.invitation.module_access_skipped",
+          userId: "system",
+          orgId,
+          targetId: invitationId,
+          targetType: "invitation",
+          metadata: { moduleKey: row.moduleKey, standing: row.standing, reason: "inviter_not_active", inviterMembershipId },
+        });
+        continue;
+      }
+
+      const inviterCtx: CurrentUserContext = {
+        userId: inviterMembership.userId,
+        orgId,
+        isOrgOwner: inviterMembership.isOwner,
+        role: "MEMBER",
+        sessionId: "",
+        tokenScopes: null,
+        principal: humanSessionPrincipal(0, inviterMembership.isOwner),
+      };
+
+      try {
+        await assertMayAssignRole(this.db, this.access, inviterCtx, resolved);
+        toAssign.push(resolved.id);
+      } catch {
+        this.audit.log({
+          action: "user.invitation.module_access_skipped",
+          userId: "system",
+          orgId,
+          targetId: invitationId,
+          targetType: "invitation",
+          metadata: { moduleKey: row.moduleKey, standing: row.standing, reason: "inviter_lost_authority", inviterMembershipId },
+        });
+      }
+    }
+
+    if (toAssign.length === 0) return;
+
+    await tx
+      .insert(roleAssignments)
+      .values(
+        toAssign.map((roleId) => ({
+          orgId,
+          organizationMembershipId: membershipId,
+          roleId,
+          assignedByMembershipId: null,
+        })),
+      )
+      .onConflictDoNothing();
+
+    await bumpPermissionsVersion(tx, orgId);
   }
 
   async decline(input: DeclineInvitationInput): Promise<{ ok: true }> {

@@ -58,9 +58,27 @@ export const canonicalEmailSchema = z
 
 const inviteEmailSchema = canonicalEmailSchema;
 
+const moduleAccessItemSchema = z.object({
+  moduleKey: z.string().min(1),
+  standing: z.enum(["MEMBER", "ADMIN"]),
+}).strict();
+
+function hasDuplicateModuleKeys(items: ReadonlyArray<{ moduleKey: string }>): boolean {
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.moduleKey)) return true;
+    seen.add(item.moduleKey);
+  }
+  return false;
+}
+
 export const inviteUserSchema = z.object({
   email: inviteEmailSchema,
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
+  moduleAccess: z.array(moduleAccessItemSchema).max(10).optional().refine(
+    (items) => !items || !hasDuplicateModuleKeys(items),
+    { message: "moduleAccess must not contain duplicate moduleKey entries" },
+  ),
 }).strict();
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
