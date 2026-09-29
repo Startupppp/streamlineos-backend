@@ -7,11 +7,13 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { EmailService } from "../../email/email.service";
 import { hashToken } from "../../../common/security/token.util";
-import { invitations } from "../../../db/schema";
+import { invitationEmailOtps, invitations } from "../../../db/schema";
 
 const ORG_ID = "org-order-test";
 const RAW_TOKEN = "d".repeat(64);
+const VALID_OTP = "123456";
 const BASE_INVITATION = {
   id: "inv-order-1",
   email: "invitee@example.com",
@@ -43,6 +45,15 @@ function buildQuery() {
       }),
     },
     invitations: { findFirst: jest.fn().mockResolvedValue(BASE_INVITATION) },
+    invitationEmailOtps: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: 1,
+        codeHash: hashToken(VALID_OTP),
+        expiresAt: new Date(Date.now() + 600_000),
+        usedAt: null,
+        attempts: 0,
+      }),
+    },
   };
 }
 
@@ -100,6 +111,17 @@ function buildMockDb() {
       }),
     }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+    update: jest.fn().mockImplementation((table: unknown) => ({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue(
+            table === invitationEmailOtps ? [{ attempts: 1 }] : [],
+          ),
+          then: (resolve: (value: undefined) => unknown) =>
+            Promise.resolve(undefined).then(resolve),
+        }),
+      }),
+    })),
     transaction: jest.fn().mockImplementation(
       (fn: (tx: typeof universalTx) => Promise<unknown>) => fn(universalTx),
     ),
@@ -138,6 +160,10 @@ describe("InvitationAcceptanceService.accept — assert-before-insert ordering",
           provide: NotificationDispatchService,
           useValue: { emit: jest.fn().mockResolvedValue(undefined) },
         },
+        {
+          provide: EmailService,
+          useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
@@ -149,7 +175,7 @@ describe("InvitationAcceptanceService.accept — assert-before-insert ordering",
     mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
 
-    await svc.accept({ token: RAW_TOKEN });
+    await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
     expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledTimes(1);
     expect(mockDb.universalTx.insert).toHaveBeenCalled();
@@ -162,7 +188,7 @@ describe("InvitationAcceptanceService.accept — assert-before-insert ordering",
     mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
     mockDb.query.users.findFirst.mockResolvedValue(null);
 
-    await svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe" });
+    await svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe", emailOtp: VALID_OTP });
 
     expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledTimes(1);
     expect(mockDb.universalTx.insert).toHaveBeenCalled();
@@ -176,7 +202,7 @@ describe("InvitationAcceptanceService.accept — assert-before-insert ordering",
     mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
 
-    await svc.accept({ token: RAW_TOKEN });
+    await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
     const [orgArg, keyArg, , txArg] = mockPlanLimits.assertWithinLimit.mock.calls[0];
     expect(orgArg).toBe(ORG_ID);

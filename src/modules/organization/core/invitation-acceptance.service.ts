@@ -1,17 +1,20 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
 } from "@nestjs/common";
-import { randomUUID, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { randomUUID, randomBytes, randomInt } from "node:crypto";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { LEGACY_CELL_ID } from "../../../common/region/placement";
 import { addMinutes } from "date-fns";
-import { hashToken } from "../../../common/security/token.util";
+import { digestsMatch, hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import {
   runInNewTenantTransaction,
@@ -29,6 +32,7 @@ import { lockMembersQuota } from "../../billing/core/seat-definition";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import {
   accountOrganizationIndex,
+  invitationEmailOtps,
   invitationEvents,
   invitations,
   magicLinkTokens,
@@ -41,7 +45,12 @@ import type {
   AcceptInvitationInput,
   DeclineInvitationInput,
 } from "./dto/organization.schemas";
-import { invitationTransition, lockPendingInvitation, requireActiveOrg } from "./invitations.helpers";
+import { EmailService } from "../../email/email.service";
+import {
+  invitationTransition,
+  lockPendingInvitation,
+  requireActiveOrg,
+} from "./invitations.helpers";
 import {
   admissionFailure,
   canonicalAdmissionEmail,
@@ -55,15 +64,12 @@ import {
 } from "./invitation-outcome-notifications";
 import { projectAcceptedMembership } from "./invitation-acceptance-projection";
 
-/**
- * Both shapes Postgres can report for a racing account insert on the same
- * address: the declared constraint on `users.email` and the case-insensitive
- * unique index migration 0455 added over `lower(email)`.
- */
 const USERS_EMAIL_UNIQUE_CONSTRAINTS = [
   "users_email_unique",
   "uniq_users_email_ci",
 ];
+
+const INVITATION_OTP_MAX_ATTEMPTS = 5;
 
 const SUSPENDED_ACCOUNT_MESSAGE =
   "This account is suspended. It must be restored before it can join another organization.";
@@ -81,14 +87,9 @@ export class InvitationAcceptanceService {
     private readonly planLimits: PlanLimitsService,
     private readonly seatLedger: SeatLedgerService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly email: EmailService,
   ) {}
 
-  /**
-   * Admission policy is evaluated where the membership is granted, not where the
-   * invitation was issued, so an allowed-domain list tightened after issuance
-   * still bites. Runs under the invitation row lock so it cannot straddle a
-   * concurrent policy edit.
-   */
   private async assertAdmissionPolicy(
     tx: DbOrTx,
     orgId: string,
@@ -126,8 +127,7 @@ export class InvitationAcceptanceService {
       to: "ACCEPTED",
       patch: { acceptedAt: new Date(), acceptedMembershipId: membershipId },
     });
-    if (!claimed)
-      throw new NotFoundException("Invalid or expired invitation");
+    if (!claimed) throw new NotFoundException("Invalid or expired invitation");
     await tx.insert(invitationEvents).values({
       orgId,
       invitationId,
@@ -187,6 +187,94 @@ export class InvitationAcceptanceService {
     );
   }
 
+  async requestInvitationEmailOtp(token: string): Promise<{ ok: true }> {
+    const tokenHash = hashToken(token);
+    const invitation = await this.findPendingByToken(tokenHash);
+    if (!invitation)
+      throw new NotFoundException("Invalid or expired invitation");
+
+    const rawCode = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const codeHash = hashToken(rawCode);
+    const expiresAt = addMinutes(new Date(), 10);
+
+    await this.db
+      .update(invitationEmailOtps)
+      .set({ usedAt: new Date() })
+      .where(
+        and(
+          eq(invitationEmailOtps.invitationId, invitation.id),
+          isNull(invitationEmailOtps.usedAt),
+        ),
+      );
+
+    const [inserted] = await this.db
+      .insert(invitationEmailOtps)
+      .values({ invitationId: invitation.id, codeHash, expiresAt })
+      .returning({ id: invitationEmailOtps.id });
+
+    try {
+      await this.email.sendEmailOtpEmail(invitation.email, rawCode);
+    } catch {
+      if (inserted) {
+        await this.db
+          .update(invitationEmailOtps)
+          .set({ usedAt: new Date() })
+          .where(eq(invitationEmailOtps.id, inserted.id));
+      }
+      throw new ServiceUnavailableException(
+        "Could not send the verification code. Please try again in a moment.",
+      );
+    }
+
+    return { ok: true };
+  }
+
+  private async verifyAndConsumeInvitationOtp(
+    invitationId: string,
+    code: string,
+  ): Promise<void> {
+    const normalizedCode = code.trim();
+
+    const row = await this.db.query.invitationEmailOtps.findFirst({
+      where: and(
+        eq(invitationEmailOtps.invitationId, invitationId),
+        isNull(invitationEmailOtps.usedAt),
+        gt(invitationEmailOtps.expiresAt, sql`now()`),
+      ),
+      orderBy: [
+        desc(invitationEmailOtps.createdAt),
+        desc(invitationEmailOtps.id),
+      ],
+    });
+
+    if (!row)
+      throw new UnauthorizedException("Invalid or expired verification code");
+
+    const [bumped] = await this.db
+      .update(invitationEmailOtps)
+      .set({ attempts: sql`${invitationEmailOtps.attempts} + 1` })
+      .where(
+        and(
+          eq(invitationEmailOtps.id, row.id),
+          isNull(invitationEmailOtps.usedAt),
+        ),
+      )
+      .returning({ attempts: invitationEmailOtps.attempts });
+
+    if (!bumped || bumped.attempts > INVITATION_OTP_MAX_ATTEMPTS) {
+      throw new UnauthorizedException("Invalid or expired verification code");
+    }
+
+    if (!digestsMatch(row.codeHash, hashToken(normalizedCode))) {
+      throw new UnauthorizedException("Invalid or expired verification code");
+    }
+
+    await this.db
+      .update(invitationEmailOtps)
+      .set({ usedAt: new Date() })
+      .where(eq(invitationEmailOtps.id, row.id));
+  }
+
   async accept(
     input: AcceptInvitationInput,
   ): Promise<{ ok: boolean; autoLoginToken?: string }> {
@@ -219,7 +307,10 @@ export class InvitationAcceptanceService {
     );
 
     // Tenant admission never reactivates a globally suspended account (root §8).
-    if (existingUser && (!existingUser.isActive || existingUser.deletedAt !== null))
+    if (
+      existingUser &&
+      (!existingUser.isActive || existingUser.deletedAt !== null)
+    )
       throw new ForbiddenException(SUSPENDED_ACCOUNT_MESSAGE);
 
     if (existingMembership) {
@@ -235,6 +326,13 @@ export class InvitationAcceptanceService {
         "You are already a member of this organization",
       );
     }
+
+    if (!input.emailOtp) {
+      throw new BadRequestException(
+        "An email verification code is required to accept this invitation",
+      );
+    }
+    await this.verifyAndConsumeInvitationOtp(invitation.id, input.emailOtp);
 
     const autoLoginToken = randomBytes(32).toString("hex");
     const joinedUserId = existingUser
@@ -254,7 +352,12 @@ export class InvitationAcceptanceService {
         );
 
     // Index first, then invalidate: the session resolves its org from this projection.
-    await projectAcceptedMembership(this.db, this.logger, invitedOrgId, joinedUserId);
+    await projectAcceptedMembership(
+      this.db,
+      this.logger,
+      invitedOrgId,
+      joinedUserId,
+    );
     await this.invalidateJoinCaches(invitedOrgId, joinedUserId);
 
     await notifyInvitationAccepted(
@@ -372,22 +475,23 @@ export class InvitationAcceptanceService {
         ),
       );
     } catch (err) {
-      // Only the address collision is recoverable. Every other unique violation
-      // used to be reported as "already accepted", which turned an unrelated
-      // concurrent account creation into a dead second invitation; the accepted
-      // and revoked cases are already answered by the row predicates above.
-      if (!isUniqueViolationOn(err, ...USERS_EMAIL_UNIQUE_CONSTRAINTS)) throw err;
-      const recovery = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
-        const inv = await tx.query.invitations.findFirst({
-          where: eq(invitations.id, invitationId),
-          columns: { email: true },
-        });
-        if (!inv) return null;
-        return tx.query.users.findFirst({
-          where: eq(users.email, inv.email),
-          columns: { id: true, isActive: true, deletedAt: true },
-        });
-      });
+      if (!isUniqueViolationOn(err, ...USERS_EMAIL_UNIQUE_CONSTRAINTS))
+        throw err;
+      const recovery = await runInNewTenantTransaction(
+        this.db,
+        orgId,
+        async (tx) => {
+          const inv = await tx.query.invitations.findFirst({
+            where: eq(invitations.id, invitationId),
+            columns: { email: true },
+          });
+          if (!inv) return null;
+          return tx.query.users.findFirst({
+            where: eq(users.email, inv.email),
+            columns: { id: true, isActive: true, deletedAt: true },
+          });
+        },
+      );
       if (!recovery) throw new ConflictException(CONCURRENT_SIGNUP_MESSAGE);
       if (!recovery.isActive || recovery.deletedAt !== null)
         throw new ForbiddenException(SUSPENDED_ACCOUNT_MESSAGE);

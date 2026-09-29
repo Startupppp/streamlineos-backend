@@ -7190,6 +7190,13 @@
       "when": 1803093642725,
       "tag": "1540_build_retention_purge_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 1155,
+      "version": "7",
+      "when": 1803093643725,
+      "tag": "1611_invitation_email_otp",
+      "breakpoints": true
     }
   ]
 }

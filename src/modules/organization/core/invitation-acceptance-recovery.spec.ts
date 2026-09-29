@@ -14,9 +14,11 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { EmailService } from "../../email/email.service";
 import { hashToken } from "../../../common/security/token.util";
 import {
   accountOrganizationIndex,
+  invitationEmailOtps,
   invitationEvents,
   invitations,
   magicLinkTokens,
@@ -29,6 +31,7 @@ import { acceptInvitationSchema } from "./dto/organization.schemas";
 const ORG_ID = "org-p11";
 const OTHER_ORG_ID = "org-p11-second";
 const RAW_TOKEN = "e".repeat(64);
+const VALID_OTP = "123456";
 const TOKEN_HASH = hashToken(RAW_TOKEN);
 const INVITED_EMAIL = "new.joiner@acme.test";
 
@@ -104,6 +107,14 @@ function buildHarness() {
     operations.push({ transaction: activeTransaction, op, table });
   }
 
+  const otpFindFirst = jest.fn<Promise<Row | null>, [unknown?]>().mockResolvedValue({
+    id: 1,
+    codeHash: hashToken(VALID_OTP),
+    expiresAt: new Date(Date.now() + 600_000),
+    usedAt: null,
+    attempts: 0,
+  });
+
   const tx = {
     execute: jest.fn().mockResolvedValue([]),
     query: {
@@ -111,6 +122,7 @@ function buildHarness() {
       organizationMembers: { findFirst: memberFindFirst },
       organizations: { findFirst: orgFindFirst },
       invitations: { findFirst: invitationFindFirst },
+      invitationEmailOtps: { findFirst: otpFindFirst },
     },
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockImplementation(function (this: unknown, table: unknown) {
@@ -181,6 +193,17 @@ function buildHarness() {
       }),
     }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+    update: jest.fn().mockImplementation((table: unknown) => ({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue(
+            table === invitationEmailOtps ? [{ attempts: 1 }] : [],
+          ),
+          then: (resolve: (value: undefined) => unknown) =>
+            Promise.resolve(undefined).then(resolve),
+        }),
+      }),
+    })),
     transaction: jest
       .fn()
       .mockImplementation(async (fn: (handle: typeof tx) => Promise<unknown>) => {
@@ -221,6 +244,7 @@ function buildHarness() {
     userFindFirst,
     memberFindFirst,
     orgFindFirst,
+    otpFindFirst,
     failInsert: (table: unknown, error: unknown) => insertFailures.set(table, error),
     operations: () => operations,
     updatesFor: (table: unknown) =>
@@ -257,6 +281,10 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
           provide: NotificationDispatchService,
           useValue: { emit: jest.fn().mockResolvedValue(undefined) },
         },
+        {
+          provide: EmailService,
+          useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
     svc = moduleRef.get(InvitationAcceptanceService);
@@ -278,7 +306,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
 
   describe("the transactional core", () => {
     it("locks the invitation, claims it and issues the magic link in one transaction", async () => {
-      await svc.accept({ token: RAW_TOKEN, firstName: "Priya" });
+      await svc.accept({ token: RAW_TOKEN, firstName: "Priya", emailOtp: VALID_OTP });
 
       const lock = harness
         .operations()
@@ -300,7 +328,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     });
 
     it("returns a sign-in token only after the membership row was written", async () => {
-      const result = await svc.accept({ token: RAW_TOKEN });
+      const result = await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       expect(result.ok).toBe(true);
       expect(typeof result.autoLoginToken).toBe("string");
@@ -313,7 +341,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("admits a new account while the invited domain is still permitted", async () => {
       harness.domains.value = [{ domain: "acme.test" }];
 
-      await expect(svc.accept({ token: RAW_TOKEN })).resolves.toMatchObject({
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).resolves.toMatchObject({
         ok: true,
       });
     });
@@ -321,7 +349,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("matches the permitted domain regardless of case or padding", async () => {
       harness.domains.value = [{ domain: "  ACME.test " }];
 
-      await expect(svc.accept({ token: RAW_TOKEN })).resolves.toMatchObject({
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).resolves.toMatchObject({
         ok: true,
       });
     });
@@ -329,7 +357,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("refuses an address the current allowed-domain list excludes", async () => {
       harness.domains.value = [{ domain: "corp.example" }];
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         BadRequestException,
       );
     });
@@ -337,7 +365,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("creates no account, membership or sign-in token when the domain is refused", async () => {
       harness.domains.value = [{ domain: "corp.example" }];
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         /Email domain not allowed/,
       );
       expect(harness.tablesFor("insert")).not.toContain(users);
@@ -349,7 +377,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
       harness.domains.value = [{ domain: "corp.example" }];
       existingAccount();
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         BadRequestException,
       );
       expect(harness.tablesFor("insert")).not.toContain(organizationMembers);
@@ -358,7 +386,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("screens the domain inside the transaction holding the invitation lock", async () => {
       harness.domains.value = [{ domain: "acme.test" }];
 
-      await svc.accept({ token: RAW_TOKEN });
+      await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       const lock = harness
         .operations()
@@ -380,7 +408,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
       });
       harness.memberFindFirst.mockResolvedValueOnce(null);
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         ForbiddenException,
       );
       expect(harness.tablesFor("insert")).not.toContain(organizationMembers);
@@ -394,7 +422,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
       });
       harness.memberFindFirst.mockResolvedValueOnce(null);
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(/suspended/i);
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(/suspended/i);
       expect(harness.tablesFor("update")).not.toContain(users);
     });
 
@@ -406,7 +434,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
       });
       harness.memberFindFirst.mockResolvedValueOnce(null);
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         ForbiddenException,
       );
     });
@@ -414,7 +442,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("refuses acceptance into a suspended organization", async () => {
       harness.orgFindFirst.mockResolvedValue({ ...ACTIVE_ORG, status: "SUSPENDED" });
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         BadRequestException,
       );
       expect(harness.tablesFor("insert")).not.toContain(organizationMembers);
@@ -426,7 +454,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         deletedAt: new Date(),
       });
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         BadRequestException,
       );
     });
@@ -436,7 +464,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("reports an expired, revoked or declined token as unusable", async () => {
       harness.invitationFindFirst.mockResolvedValue(null);
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         NotFoundException,
       );
       expect(harness.tablesFor("insert")).toHaveLength(0);
@@ -445,7 +473,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("refuses a token revoked between the public read and the row lock", async () => {
       harness.lockedRows.value = [];
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(harness.tablesFor("insert")).not.toContain(organizationMembers);
@@ -459,7 +487,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
       });
       harness.memberFindFirst.mockResolvedValueOnce({ status: "ACTIVE" });
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         "You are already a member of this organization",
       );
     });
@@ -472,7 +500,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
       });
       harness.memberFindFirst.mockResolvedValueOnce({ status: "SUSPENDED" });
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         /Ask an admin to restore you from Users/,
       );
       expect(harness.tablesFor("insert")).not.toContain(organizationMembers);
@@ -492,8 +520,8 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
       });
 
       const outcomes = await Promise.allSettled([
-        svc.accept({ token: RAW_TOKEN }),
-        svc.accept({ token: RAW_TOKEN }),
+        svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP }),
+        svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP }),
       ]);
 
       expect(outcomes.filter((o) => o.status === "fulfilled")).toHaveLength(1);
@@ -506,7 +534,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("refuses the claim when another writer already flipped the row", async () => {
       harness.claimedRows.value = [];
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -522,7 +550,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         .mockResolvedValueOnce(null)
         .mockResolvedValue({ id: "user-raced", isActive: true, deletedAt: null });
 
-      const result = await svc.accept({ token: RAW_TOKEN });
+      const result = await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       expect(result.ok).toBe(true);
       expect(harness.tablesFor("insert")).toContain(organizationMembers);
@@ -538,7 +566,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         .mockResolvedValueOnce(null)
         .mockResolvedValue({ id: "user-raced", isActive: true, deletedAt: null });
 
-      await expect(svc.accept({ token: RAW_TOKEN })).resolves.toMatchObject({
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).resolves.toMatchObject({
         ok: true,
       });
     });
@@ -550,7 +578,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         .mockResolvedValue({ email: INVITED_EMAIL });
       harness.userFindFirst.mockResolvedValue(null);
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         /Please open the invitation link again/,
       );
     });
@@ -561,7 +589,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         uniqueViolation("magic_link_tokens_pkey", "magic_link_tokens"),
       );
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.not.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.not.toThrow(
         /already been accepted/,
       );
     });
@@ -569,7 +597,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
 
   describe("two organizations inviting the same new address", () => {
     it("leaves the second invitation acceptable once the account exists", async () => {
-      await expect(svc.accept({ token: RAW_TOKEN })).resolves.toMatchObject({
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).resolves.toMatchObject({
         ok: true,
       });
 
@@ -582,7 +610,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
       harness.lockedRows.value = [secondInvitation];
       existingAccount("user-from-first-accept");
 
-      await expect(svc.accept({ token: RAW_TOKEN })).resolves.toMatchObject({
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).resolves.toMatchObject({
         ok: true,
       });
       expect(harness.cache.invalidateForOrg).toHaveBeenCalledWith(
@@ -596,7 +624,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("keeps the membership when the projection write fails", async () => {
       harness.failInsert(accountOrganizationIndex, new Error("projection refused"));
 
-      const result = await svc.accept({ token: RAW_TOKEN });
+      const result = await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       expect(result.ok).toBe(true);
       expect(typeof result.autoLoginToken).toBe("string");
@@ -607,7 +635,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("still invalidates the session and membership caches after a failed projection", async () => {
       harness.failInsert(accountOrganizationIndex, new Error("projection refused"));
 
-      await svc.accept({ token: RAW_TOKEN });
+      await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       expect(harness.cache.invalidate).toHaveBeenCalled();
       expect(harness.cache.invalidateForOrg).toHaveBeenCalledWith(
@@ -619,7 +647,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("reports a thrown projection instead of swallowing it", async () => {
       harness.failInsert(accountOrganizationIndex, new Error("projection refused"));
 
-      await svc.accept({ token: RAW_TOKEN });
+      await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       expect(
         harness
@@ -635,7 +663,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("reports a projection that silently wrote nothing", async () => {
       harness.memberFindFirst.mockResolvedValue(null);
 
-      await svc.accept({ token: RAW_TOKEN });
+      await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       expect(harness.tablesFor("insert")).not.toContain(accountOrganizationIndex);
       expect(
@@ -673,7 +701,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     }
 
     it("selects the invitation only while it is PENDING, unaccepted and unexpired", async () => {
-      await svc.accept({ token: RAW_TOKEN });
+      await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       const bound = boundValues(
         (harness.invitationFindFirst.mock.calls[0]?.[0] as Row | undefined)?.["where"],
@@ -688,7 +716,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("refuses an expired token without disclosing that the invitation exists", async () => {
       harness.invitationFindFirst.mockResolvedValue(null);
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         "Invalid or expired invitation",
       );
       expect(harness.tablesFor("insert")).toEqual([]);
@@ -697,7 +725,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("refuses a revoked token with the same non-disclosing answer", async () => {
       harness.invitationFindFirst.mockResolvedValue(null);
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         "Invalid or expired invitation",
       );
     });
@@ -705,7 +733,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("refuses a token revoked between the public read and the lock", async () => {
       harness.lockedRows.value = [];
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         /already been accepted/,
       );
       expect(harness.tablesFor("insert")).not.toContain(organizationMembers);
@@ -720,7 +748,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         }).success,
       ).toBe(false);
 
-      await svc.accept({ token: RAW_TOKEN });
+      await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       const bound = boundValues(
         (harness.userFindFirst.mock.calls[0]?.[0] as Row | undefined)?.["where"],
@@ -731,14 +759,14 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
     it("admits an account that already belongs to another organization", async () => {
       existingAccount("user-in-other-org");
 
-      await expect(svc.accept({ token: RAW_TOKEN })).resolves.toMatchObject({ ok: true });
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).resolves.toMatchObject({ ok: true });
       expect(harness.tablesFor("insert")).toContain(organizationMembers);
     });
 
     it("never rewrites the global identity of that account", async () => {
       existingAccount("user-in-other-org");
 
-      await svc.accept({ token: RAW_TOKEN });
+      await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
       const userWrites = harness.updatesFor(users);
       expect(harness.tablesFor("insert")).not.toContain(users);
@@ -754,7 +782,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         deletedAt: null,
       });
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         /account is suspended/,
       );
       expect(harness.updatesFor(users)).toEqual([]);
@@ -770,7 +798,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         .mockResolvedValueOnce(null)
         .mockResolvedValue({ id: "user-raced", isActive: false, deletedAt: null });
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         /account is suspended/,
       );
       expect(harness.tablesFor("insert")).not.toContain(organizationMembers);
@@ -785,7 +813,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
         .mockResolvedValueOnce(null)
         .mockResolvedValue({ id: "user-raced", isActive: true, deletedAt: new Date() });
 
-      await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      await expect(svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP })).rejects.toThrow(
         /account is suspended/,
       );
     });
@@ -794,7 +822,7 @@ describe("InvitationAcceptanceService.accept — token acceptance recovery (P11)
   it("never writes the invitation token or the sign-in token into a log line", async () => {
     harness.failInsert(accountOrganizationIndex, new Error("projection refused"));
 
-    const result = await svc.accept({ token: RAW_TOKEN });
+    const result = await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
     const logged = harness.loggedMessages().join("\n");
 
     expect(harness.loggedMessages().length).toBeGreaterThan(0);
