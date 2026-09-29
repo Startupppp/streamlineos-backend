@@ -320,6 +320,16 @@ export async function applyTicketChange(
       actor: actingUserId,
       timestamp: now.toISOString(),
     });
+    if (input.status && input.status !== before.status) {
+      await deps.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.status_changed", {
+        id: ticketId,
+        projectId: ticketProjectId,
+        previousStatus: before.status,
+        newStatus: input.status,
+        actor: actingUserId,
+        timestamp: now.toISOString(),
+      });
+    }
     if (newAssignee !== undefined && (newAssignee ? assigneeMemberships.get(newAssignee) ?? null : null) !== beforeAssigneeMembershipId) {
       await deps.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.assigned", {
         id: ticketId, projectId: ticketProjectId,

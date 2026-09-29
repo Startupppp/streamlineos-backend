@@ -126,6 +126,22 @@ function makeTransfer(sink: Sink): TransferDouble {
   } as unknown as TransferDouble;
 }
 
+function makeWebhooks(sink: Sink) {
+  return {
+    enqueue: jest.fn().mockImplementation(
+      async (
+        _tx: unknown,
+        _orgId: string,
+        _projectId: number,
+        eventName: string,
+        payload: { id: number },
+      ) => {
+        sink.effects.push(`webhook:${eventName}:${payload.id}`);
+      },
+    ),
+  };
+}
+
 function makeAutomation(sink: Sink) {
   return {
     runForTicketEvent: jest.fn().mockImplementation(
@@ -193,7 +209,7 @@ function makeDetailDeps(sink: Sink): ApplyTicketChangeDeps {
     activity: makeActivity(sink) as never,
     query: { authorizeMutation: jest.fn().mockResolvedValue([]) } as never,
     transfer: makeTransfer(sink) as never,
-    webhooksDispatch: { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
+    webhooksDispatch: makeWebhooks(sink) as never,
     automationRunner: makeAutomation(sink) as never,
     cache: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     access: { holds: jest.fn().mockResolvedValue(true) } as never,
@@ -236,7 +252,7 @@ function makeBulkDb(): Db {
 
 function makeBulkEffectDeps(sink: Sink): BulkTicketEffectDeps {
   return {
-    webhooksDispatch: { enqueue: jest.fn().mockResolvedValue(undefined) },
+    webhooksDispatch: makeWebhooks(sink),
     automationRunner: makeAutomation(sink),
     activity: makeActivity(sink),
     dispatch: makeDispatch(sink),
@@ -272,6 +288,7 @@ describe("the same logical change produces the same activity, notification and a
     expect(detail.effects).toContain(
       `notification:build.ticket.review_requested:${TICKET_ID}`,
     );
+    expect(detail.effects).toContain(`webhook:ticket.status_changed:${TICKET_ID}`);
   });
 
   it("an assignee change asks the notifier for the same (ticket, new assignee) pair from both routes", async () => {
