@@ -110,14 +110,19 @@ describe("ProjectsTicketRelationsService — soft-delete filtering (BE-50)", () 
     });
     const from = jest.fn().mockReturnValue({ innerJoin });
     const returning = jest.fn().mockResolvedValue([{ id: 99 }]);
-    const db = {
-      query: { tickets: { findFirst: jest.fn().mockResolvedValue({ id: 8 }) } },
-      select: jest.fn().mockReturnValue({ from }),
+    const tx = {
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
           onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
         }),
       }),
+    };
+    const db = {
+      query: { tickets: { findFirst: jest.fn().mockResolvedValue({ id: 8 }) } },
+      select: jest.fn().mockReturnValue({ from }),
+      transaction: jest
+        .fn()
+        .mockImplementation(async (fn: (t: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
     const svc = new ProjectsTicketRelationsService(db, access);
 
