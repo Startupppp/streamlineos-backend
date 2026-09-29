@@ -18,7 +18,7 @@ const releaseVersionSchema = z
   .trim()
   .max(30, "Version must be 30 characters or fewer")
   .refine(
-    (v) => v.trim().length > 0 && (MEANINGFUL_TEXT_RE.test(v) || VERSION_RE.test(v.trim())),
+    (v) => VERSION_RE.test(v.trim()),
     "Enter a valid version, e.g. 1.4.0 or v2.0.0-beta",
   );
 

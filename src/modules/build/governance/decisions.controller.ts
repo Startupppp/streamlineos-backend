@@ -26,6 +26,7 @@ import {
   type ListDecisionsQuery,
   type UpdateDecisionInput,
 } from "./dto/governance.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -65,6 +66,7 @@ export class DecisionsController {
 
   @Post()
   @HttpCode(201)
+  @Idempotent("build.governance.decision.create")
   @RequirePermission("build:decisions:manage")
   @ResponseSchema(decisionRowSchema)
   @Validate({ body: createDecisionSchema })

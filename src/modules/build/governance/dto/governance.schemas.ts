@@ -8,7 +8,7 @@ import {
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
 
 export const createRiskSchema = z.object({
-  title: z.string().min(1).max(500),
+  title: z.string().trim().min(1, "Title cannot be blank").max(500),
   description: z.string().optional(),
   probability: z.enum(riskProbabilityEnum.enumValues).optional(),
   impact: z.enum(riskImpactEnum.enumValues).optional(),
@@ -19,7 +19,7 @@ export const createRiskSchema = z.object({
 }).strict();
 
 export const updateRiskSchema = z.object({
-  title: z.string().min(1).max(500).optional(),
+  title: z.string().trim().min(1, "Title cannot be blank").max(500).optional(),
   description: z.string().nullish(),
   probability: z.enum(riskProbabilityEnum.enumValues).optional(),
   impact: z.enum(riskImpactEnum.enumValues).optional(),
@@ -39,7 +39,7 @@ export const listRisksQuerySchema = z.object({
 }).strict();
 
 export const createDecisionSchema = z.object({
-  title: z.string().min(1).max(500),
+  title: z.string().trim().min(1, "Title cannot be blank").max(500),
   context: z.string().optional(),
   decision: z.string().optional(),
   optionsConsidered: z.string().optional(),
@@ -48,10 +48,18 @@ export const createDecisionSchema = z.object({
   decidedAt: z.coerce.date().optional(),
   revisitAt: z.coerce.date().optional(),
   linkedTicketId: z.number().int().positive().optional(),
-}).strict();
+}).strict().refine(
+  (d) => {
+    if (d.decidedAt && d.revisitAt) {
+      return d.revisitAt >= d.decidedAt;
+    }
+    return true;
+  },
+  { message: "Revisit date must be on or after the decided date", path: ["revisitAt"] },
+);
 
 export const updateDecisionSchema = z.object({
-  title: z.string().min(1).max(500).optional(),
+  title: z.string().trim().min(1, "Title cannot be blank").max(500).optional(),
   context: z.string().nullish(),
   decision: z.string().nullish(),
   optionsConsidered: z.string().nullish(),
@@ -60,7 +68,15 @@ export const updateDecisionSchema = z.object({
   decidedAt: z.coerce.date().nullish(),
   revisitAt: z.coerce.date().nullish(),
   linkedTicketId: z.number().int().positive().nullish(),
-}).strict();
+}).strict().refine(
+  (d) => {
+    if (d.decidedAt && d.revisitAt) {
+      return d.revisitAt >= d.decidedAt;
+    }
+    return true;
+  },
+  { message: "Revisit date must be on or after the decided date", path: ["revisitAt"] },
+);
 
 export const listDecisionsQuerySchema = z.object({
   status: z.enum(decisionStatusEnum.enumValues).optional(),

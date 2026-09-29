@@ -27,6 +27,7 @@ import {
   type UpdateRiskInput,
 } from "./dto/governance.schemas";
 import { orgListRisksQuerySchema, type OrgListRisksQuery } from "./dto/org-governance.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import {
@@ -92,6 +93,7 @@ export class RisksController {
 
   @Post(":projectId/risks")
   @HttpCode(201)
+  @Idempotent("build.governance.risk.create")
   @RequirePermission("build:risks:manage")
   @ResponseSchema(riskRowSchema)
   @Validate({ body: createRiskSchema })
