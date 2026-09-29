@@ -9,6 +9,7 @@ import { assertProjectAccess } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
 import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
+import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
 
 @Injectable()
 export class BugsService {
@@ -226,9 +227,11 @@ export class BugsService {
         eq(tickets.type, "BUG"),
         isNull(tickets.deletedAt),
       ),
-      columns: { id: true, status: true },
+      columns: { id: true, status: true, version: true },
     });
     if (!existingTicket) throw new NotFoundException("Bug not found");
+    if (input.version !== undefined && input.version !== existingTicket.version)
+      throw new TicketVersionConflictException(existingTicket.version);
     const existingSidecar = await this.db.query.workItemQaDetails.findFirst({
       where: and(eq(workItemQaDetails.orgId, u.orgId), eq(workItemQaDetails.workItemId, bugId)),
       columns: { qaState: true, reopenCount: true },
@@ -265,9 +268,22 @@ export class BugsService {
         ...(resolvedAssigneeMembershipId !== undefined && { assigneeMembershipId: resolvedAssigneeMembershipId }),
         updatedAt: new Date(),
       })
-      .where(and(eq(tickets.id, bugId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)))
+      .where(
+        and(
+          eq(tickets.id, bugId),
+          eq(tickets.orgId, u.orgId),
+          isNull(tickets.deletedAt),
+          input.version !== undefined
+            ? eq(tickets.version, input.version)
+            : undefined,
+        ),
+      )
       .returning();
-    if (!updatedTicket) throw new NotFoundException("Bug not found");
+    if (!updatedTicket) {
+      if (input.version !== undefined)
+        throw new TicketVersionConflictException(existingTicket.version);
+      throw new NotFoundException("Bug not found");
+    }
     const sidecarSet: Record<string, unknown> = { updatedAt: new Date() };
     if (input.status !== undefined) sidecarSet["qaState"] = input.status;
     if (input.severity !== undefined) sidecarSet["severity"] = input.severity;

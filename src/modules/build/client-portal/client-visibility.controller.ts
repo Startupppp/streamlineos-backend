@@ -58,7 +58,7 @@ export class ClientVisibilityController {
     @Body() body: ToggleVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.toggleTicketVisibility(u, projectId, ticketId, body.clientVisible);
+    return this.svc.toggleTicketVisibility(u, projectId, ticketId, body.clientVisible, body.version);
   }
 
   @Patch("milestones/:milestoneId")

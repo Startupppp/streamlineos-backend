@@ -31,6 +31,7 @@ export const createBugSchema = z.object({
 
 export const updateBugSchema = createBugSchema.partial().extend({
   status: z.enum(bugStatusValues).optional(),
+  version: z.number().int().positive().optional(),
 }).strict();
 
 export type BugListQuery = z.infer<typeof bugListQuerySchema>;

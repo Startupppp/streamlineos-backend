@@ -354,13 +354,14 @@ export class ViewsService {
 
   async listViews(orgId: string, userId: string, projectId: number, query: ListViewsQuery = { limit: 25 }) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    const { limit, cursor } = query;
+    const { limit, cursor, search } = query;
     const pos = decodeTupleCursor(cursor, 3);
 
     const conds: (SQL | undefined)[] = [
       eq(projectViews.projectId, projectId),
       eq(projectViews.orgId, orgId),
       or(eq(projectViews.visibility, "shared"), eq(projectViews.createdBy, userId)),
+      search ? sql`${projectViews.name} ILIKE ${`${escapeLike(search)}%`}` : undefined,
     ];
 
     if (pos) {

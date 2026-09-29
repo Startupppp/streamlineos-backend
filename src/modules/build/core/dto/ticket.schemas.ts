@@ -203,6 +203,7 @@ export const bulkUpdateSchema = z
     parentTicketId: z.number().int().positive().nullable().optional(),
     labelIds: z.array(z.number().int().positive()).max(10).optional(),
     archive: z.boolean().optional(),
+    versions: z.record(z.string(), z.number().int().positive()).optional(),
   }).strict()
   .refine(
     (data) =>
@@ -238,6 +239,7 @@ export const rankTicketSchema = z.object({
   beforeTicketId: z.number().int().positive().nullable().optional(),
   afterTicketId: z.number().int().positive().nullable().optional(),
   status: z.string().optional(),
+  version: z.number().int().positive().optional(),
 }).strict();
 
 export const importTicketRowSchema = z.object({

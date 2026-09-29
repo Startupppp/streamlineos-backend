@@ -28,7 +28,7 @@ import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
 import type { TicketsListQuery } from "../dto/projects.schemas";
 import { queryTickets } from "./projects-tickets-read.query";
 import { resolveProjectAccess } from "../project-crud/project-access";
-import { ProjectAccessCache } from "../../reachability/project-access-cache";
+import { ProjectAccessCache, getOrCreateRequestCache } from "../../reachability/project-access-cache";
 
 const TRIGRAM_MIN_TERM_LENGTH = 3;
 
@@ -136,7 +136,7 @@ export class ProjectsTicketsReadService {
     u: CurrentUserContext,
     projectId: number,
     query: TicketsListQuery,
-    cache: ProjectAccessCache = new ProjectAccessCache(),
+    cache: ProjectAccessCache = getOrCreateRequestCache(),
   ) {
     const { hasAccess } = await cache.get(u.orgId, u.userId, projectId, () =>
       resolveProjectAccess(this.db, this.access, u, projectId),
@@ -379,7 +379,7 @@ export class ProjectsTicketsReadService {
     u: CurrentUserContext,
     projectId: number,
     query: TicketsListQuery = { limit: 50, orderBy: "rank" },
-    cache: ProjectAccessCache = new ProjectAccessCache(),
+    cache: ProjectAccessCache = getOrCreateRequestCache(),
   ): Promise<Record<string, number>> {
     const { hasAccess } = await cache.get(u.orgId, u.userId, projectId, () =>
       resolveProjectAccess(this.db, this.access, u, projectId),

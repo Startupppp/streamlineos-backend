@@ -5,6 +5,7 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 export const listViewsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(25),
+  search: z.string().trim().max(200).optional(),
 }).strict();
 export type ListViewsQuery = z.infer<typeof listViewsQuerySchema>;
 

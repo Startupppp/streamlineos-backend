@@ -3,6 +3,7 @@ import {
   ConflictException,
   NotFoundException,
 } from "@nestjs/common";
+import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 import { and, eq, isNull, notInArray, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.types";
 import { tickets } from "../../../../db/schema";
@@ -101,6 +102,8 @@ export async function rankTicket(
     }
     const target = rows.find((row) => row.id === ticketId);
     if (!target) throw new NotFoundException("Ticket not found");
+    if (body.version !== undefined && body.version !== target.version)
+      throw new TicketVersionConflictException(target.version);
     const before = rows.find((row) => row.id === body.beforeTicketId);
     const after = rows.find((row) => row.id === body.afterTicketId);
     const status = body.status ?? target.status;
@@ -168,6 +171,9 @@ export async function rankTicket(
           eq(tickets.projectId, projectId),
           eq(tickets.id, ticketId),
           isNull(tickets.deletedAt),
+          body.version !== undefined
+            ? eq(tickets.version, body.version)
+            : undefined,
         ),
       )
       .returning({
@@ -176,7 +182,11 @@ export async function rankTicket(
         status: tickets.status,
         version: tickets.version,
       });
-    if (!updated) throw new NotFoundException("Ticket not found");
+    if (!updated) {
+      if (body.version !== undefined)
+        throw new TicketVersionConflictException(target.version);
+      throw new NotFoundException("Ticket not found");
+    }
     if (body.status !== undefined)
       await emitBatchStatusChanges(
         tx,

@@ -456,6 +456,8 @@
     "check:transaction-callbacks:self-test": "node src/scripts/check-transaction-callbacks.mjs --self-test",
     "check:build-swallowed-writes": "node src/scripts/check-build-swallowed-writes.mjs",
     "check:build-swallowed-writes:self-test": "node src/scripts/check-build-swallowed-writes.mjs --self-test",
+    "check:build-sql-table-literals": "node src/scripts/check-build-sql-table-literals.mjs",
+    "check:build-sql-table-literals:self-test": "node src/scripts/check-build-sql-table-literals.mjs --self-test",
     "check:authz-deny": "node src/scripts/check-authz-deny.mjs",
     "check:authz-deny:self-test": "node src/scripts/check-authz-deny.mjs --self-test",
     "check:evidence-seal": "node src/scripts/check-evidence-seal.mjs",

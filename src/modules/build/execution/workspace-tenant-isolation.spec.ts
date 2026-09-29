@@ -248,6 +248,34 @@ describe("IntakeService — cross-tenant isolation", () => {
   });
 });
 
+describe("ViewsService — listViews search predicate", () => {
+  function searchDb() {
+    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
+    } as unknown as Db;
+    return { db, where };
+  }
+
+  it("includes the search term in the WHERE condition when search is provided", async () => {
+    const { db, where } = searchDb();
+    await new ViewsService(db).listViews(OWNER_ORG, "u1", 1, { limit: 25, search: "sprint" });
+    expect(where).toHaveBeenCalled();
+    const condition = where.mock.calls[0]?.[0];
+    expect(sqlValues(condition)).toContain("sprint%");
+  });
+
+  it("omits a LIKE pattern from the WHERE condition when search is absent (no-search control)", async () => {
+    const { db, where } = searchDb();
+    await new ViewsService(db).listViews(OWNER_ORG, "u1", 1, { limit: 25 });
+    expect(where).toHaveBeenCalled();
+    const condition = where.mock.calls[0]?.[0];
+    const vals = sqlValues(condition);
+    expect(vals.some((v) => typeof v === "string" && v.includes("%"))).toBe(false);
+  });
+});
+
 describe("ViewsService — cross-tenant isolation", () => {
   it("listViews refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });

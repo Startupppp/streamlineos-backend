@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, gt, isNull } from "drizzle-orm";
+import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
 import { projectMilestones, ticketAttachments, ticketComments, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -83,18 +84,29 @@ export class ClientVisibilityService {
     };
   }
 
-  async toggleTicketVisibility(u: CurrentUserContext, projectId: number, ticketId: number, clientVisible: boolean) {
+  async toggleTicketVisibility(u: CurrentUserContext, projectId: number, ticketId: number, clientVisible: boolean, version?: number) {
     const { orgId, userId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
     const existing = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)),
-      columns: { id: true },
+      columns: { id: true, version: true },
     });
     if (!existing) throw new NotFoundException("Ticket not found");
-    await this.db
+    if (version !== undefined && version !== existing.version)
+      throw new TicketVersionConflictException(existing.version);
+    const [result] = await this.db
       .update(tickets)
       .set({ clientVisible })
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
+      .where(
+        and(
+          eq(tickets.id, ticketId),
+          eq(tickets.orgId, orgId),
+          version !== undefined ? eq(tickets.version, version) : undefined,
+        ),
+      )
+      .returning({ id: tickets.id });
+    if (!result && version !== undefined)
+      throw new TicketVersionConflictException(existing.version);
     this.audit.log({
       action: "client_visibility.changed",
       userId,

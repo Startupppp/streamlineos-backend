@@ -19,6 +19,7 @@ export const createPortalCrSchema = z.object({
 
 export const toggleVisibilitySchema = z.object({
   clientVisible: z.boolean(),
+  version: z.number().int().positive().optional(),
 }).strict();
 
 export type CreatePortalCrInput = z.infer<typeof createPortalCrSchema>;

@@ -1,3 +1,5 @@
+import { getTenantContext } from "../../../common/tenant/tenant-context";
+
 type AsyncResult<T> = Promise<T>;
 
 export class ProjectAccessCache<T = { hasAccess: boolean; role: string | null }> {
@@ -30,4 +32,16 @@ export class ProjectAccessCache<T = { hasAccess: boolean; role: string | null }>
       if (key.endsWith(suffix)) this.store.delete(key);
     }
   }
+}
+
+const requestCaches = new WeakMap<object, ProjectAccessCache>();
+
+export function getOrCreateRequestCache(): ProjectAccessCache {
+  const ctx = getTenantContext();
+  if (!ctx) return new ProjectAccessCache();
+  const existing = requestCaches.get(ctx);
+  if (existing) return existing;
+  const fresh = new ProjectAccessCache();
+  requestCaches.set(ctx, fresh);
+  return fresh;
 }

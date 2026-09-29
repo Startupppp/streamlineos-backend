@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
+import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 import { and, count, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { Db } from "../../../../db/drizzle.types";
@@ -73,6 +74,13 @@ export async function bulkMutateTickets(
     const policy = await authorizeTicketMutation(tx, access, actor, projectId);
     await lockProjectTicketMutation(tx, actor.orgId, projectId);
     const rows = await readMutationTickets(tx, actor, projectId, ids, policy);
+    if (body.versions !== undefined) {
+      for (const row of rows) {
+        const expectedVersion = body.versions[String(row.id)];
+        if (expectedVersion !== undefined && expectedVersion !== row.version)
+          throw new TicketVersionConflictException(row.version);
+      }
+    }
     const now = new Date();
     const update: Partial<typeof tickets.$inferInsert> = { updatedAt: now };
     const assigneeId = resolveAssigneeId(body.assigneeId);

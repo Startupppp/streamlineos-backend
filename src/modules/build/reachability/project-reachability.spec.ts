@@ -3,7 +3,9 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import postgres from "postgres";
 import * as schema from "../../../db/schema";
 import { reachableProjectsSql } from "./project-reachability";
-import { ProjectAccessCache } from "./project-access-cache";
+import { ProjectAccessCache, getOrCreateRequestCache } from "./project-access-cache";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
+import type { TenantTx } from "../../../db/drizzle.types";
 
 const ORG_ID = "org-reach-test";
 const MEMBERSHIP_ID = 99;
@@ -165,5 +167,56 @@ describe("ProjectAccessCache", () => {
     await cache2.get(ORG_ID, "u1", 1, compute2);
     expect(compute1).toHaveBeenCalledTimes(1);
     expect(compute2).toHaveBeenCalledTimes(1);
+  });
+});
+
+const fakeTx = {} as unknown as TenantTx;
+
+describe("getOrCreateRequestCache — request-scoped sharing (A8)", () => {
+  it("returns the same cache instance for two calls within one tenant context so a repeated project-access lookup reuses the cached promise", async () => {
+    const instances: ProjectAccessCache[] = [];
+    await runWithTenantContext({ orgId: "org-1", audience: "INTERNAL", tx: fakeTx }, async () => {
+      instances.push(getOrCreateRequestCache());
+      instances.push(getOrCreateRequestCache());
+    });
+    expect(instances[0]).toBe(instances[1]);
+  });
+
+  it("returns a different cache instance for two separate tenant contexts so access resolved in one request does not bleed into the next", async () => {
+    const instances: ProjectAccessCache[] = [];
+    await runWithTenantContext({ orgId: "org-1", audience: "INTERNAL", tx: fakeTx }, async () => {
+      instances.push(getOrCreateRequestCache());
+    });
+    await runWithTenantContext({ orgId: "org-1", audience: "INTERNAL", tx: fakeTx }, async () => {
+      instances.push(getOrCreateRequestCache());
+    });
+    expect(instances[0]).not.toBe(instances[1]);
+  });
+
+  it("two calls within one tenant context invoke the compute function exactly once so the underlying DB query runs once per request", async () => {
+    const compute = jest.fn().mockResolvedValue({ hasAccess: true, role: "MEMBER" });
+    await runWithTenantContext({ orgId: "org-1", audience: "INTERNAL", tx: fakeTx }, async () => {
+      const c1 = getOrCreateRequestCache();
+      const c2 = getOrCreateRequestCache();
+      await c1.get("org-1", "u1", 1, compute);
+      await c2.get("org-1", "u1", 1, compute);
+    });
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  it("two calls in different tenant contexts invoke the compute function twice so cross-request state does not leak", async () => {
+    const compute = jest.fn().mockResolvedValue({ hasAccess: true, role: "MEMBER" });
+    await runWithTenantContext({ orgId: "org-1", audience: "INTERNAL", tx: fakeTx }, async () => {
+      await getOrCreateRequestCache().get("org-1", "u1", 1, compute);
+    });
+    await runWithTenantContext({ orgId: "org-1", audience: "INTERNAL", tx: fakeTx }, async () => {
+      await getOrCreateRequestCache().get("org-1", "u1", 1, compute);
+    });
+    expect(compute).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a fresh cache when there is no ambient tenant context so unit tests without runWithTenantContext do not throw", () => {
+    const cache = getOrCreateRequestCache();
+    expect(cache).toBeInstanceOf(ProjectAccessCache);
   });
 });
