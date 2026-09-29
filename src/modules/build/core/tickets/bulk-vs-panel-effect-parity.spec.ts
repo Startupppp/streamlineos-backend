@@ -58,10 +58,7 @@ const actor: CurrentUserContext = {
 
 type ActivityDouble = Pick<ProjectsActivityService, "logTicketFieldChanges">;
 type DispatchDouble = Pick<NotificationDispatchService, "emit">;
-type TransferDouble = Pick<
-  ProjectsTicketsTransferService,
-  "notifyNewAssignees" | "notifyAssignedTickets"
->;
+type TransferDouble = Pick<ProjectsTicketsTransferService, "notifyAssignedTickets">;
 
 interface Sink {
   readonly effects: string[];
@@ -101,17 +98,6 @@ function makeDispatch(sink: Sink): DispatchDouble {
 
 function makeTransfer(sink: Sink): TransferDouble {
   return {
-    notifyNewAssignees: jest.fn().mockImplementation(
-      async (
-        _orgId: string,
-        ticketId: number,
-        _actingUserId: string,
-        input: { assigneeId?: string | null },
-      ) => {
-        if (input.assigneeId)
-          sink.assignmentRequests.push(`${ticketId}:${input.assigneeId}`);
-      },
-    ),
     notifyAssignedTickets: jest.fn().mockImplementation(
       async (
         _orgId: string,
