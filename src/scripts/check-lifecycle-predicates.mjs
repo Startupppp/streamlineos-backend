@@ -105,7 +105,12 @@ const MIN_READ_SITES = 500;
  * each gained an `is null` predicate on the product/variant join they had been
  * missing, which is the ratchet doing what it is for.
  */
-const JOIN_CANDIDATE_BASELINE = 83;
+/*
+ * 83 -> 79 on 2026-09-29, arithmetic only: the arm now counts unadjudicated joins
+ * (see the note above `openCandidates`), and 4 of the 83 are sites ACCEPTED rules
+ * on. Subtracting them is a lowering; no join was re-measured to arrive at it.
+ */
+const JOIN_CANDIDATE_BASELINE = 79;
 
 /**
  * Primary reads (`from` / `db.query`) of a lifecycle table with no predicate,
@@ -113,7 +118,12 @@ const JOIN_CANDIDATE_BASELINE = 83;
  * A ratchet on a previously ungated class, not a clean bill: ticket 06 hand-
  * audited 27 of these and found 11 genuine. It may only go down.
  */
-const PRIMARY_CANDIDATE_BASELINE = 68;
+/*
+ * 68 -> 57 on 2026-09-29, same arithmetic: 11 of the 68 are ACCEPTED sites, and the
+ * arm counts the unadjudicated remainder. `readBulkTicketMeta` in
+ * build-ticket-bulk-effects.ts took the raw count 69 -> 68 in the same change.
+ */
+const PRIMARY_CANDIDATE_BASELINE = 57;
 
 /**
  * Read sites ticket 06 opened individually and ruled correct as written, plus the
@@ -124,8 +134,8 @@ const ACCEPTED = [
   { site: "modules/surveys/survey-automation.service.ts::surveyForms", reason: "an archived survey must stay inspectable to be restored (report 06)" },
   { site: "modules/surveys/survey-response-submitted-consumer.service.ts::surveyForms", reason: "a response to an archived survey must still be consumed (report 06)" },
   { site: "modules/ai/core/services/survey-ai.service.ts::surveyForms", reason: "reported by ticket 06, outside its territory" },
-  { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbSources", reason: "erasure deliberately sweeps deleted rows (report 06)" },
-  { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbPages", reason: "erasure deliberately sweeps deleted rows (report 06)" },
+  { site: "modules/kb/core/kb-subject-erasure.ts::kbSources", reason: "erasure deliberately sweeps deleted rows (report 06); moved out of modules/gdpr by 1d7062fec" },
+  { site: "modules/kb/core/kb-subject-erasure.ts::kbPages", reason: "erasure deliberately sweeps deleted rows (report 06); moved out of modules/gdpr by 1d7062fec" },
   { site: "modules/build/client-portal/change-request-number-counter.ts::changeRequests", reason: "number allocator: MAX(cr_number) must see soft-deleted rows or a restored CR collides with a reissued number (Build lifecycle sweep, 02-schemas box 2)" },
   { site: "modules/build/qa/test-runs.service.ts::tickets", reason: "number allocator: MAX(ticket_number) must see soft-deleted rows or a retired ticket number is reused (Build lifecycle sweep)" },
   { site: "modules/build/core/project-crud/projects-templates.service.ts::tickets", reason: "number allocator on a project created in the same transaction, so the count is always zero; filtering would still be wrong in principle (Build lifecycle sweep)" },
@@ -528,8 +538,13 @@ export const auditLogs = pgTable("audit_logs", {
     `at least ${MIN_READ_SITES} read sites are located (found ${real.sites.length})`,
     real.sites.length >= MIN_READ_SITES,
   );
+  const acceptedInSelfTest = new Set(ACCEPTED.map((a) => a.site));
   const primaryCandidates = real.sites.filter(
-    (s) => s.verdict === "CANDIDATE" && s.kind !== "join" && !GLOBAL_IDENTITY_TABLES.has(s.table),
+    (s) =>
+      s.verdict === "CANDIDATE" &&
+      s.kind !== "join" &&
+      !GLOBAL_IDENTITY_TABLES.has(s.table) &&
+      !acceptedInSelfTest.has(`${s.file}::${s.symbol}`),
   ).length;
   assert(
     `the three-way filter keeps the primary-read candidate set actionable — a gate that flags hundreds gets switched off (found ${primaryCandidates})`,
@@ -594,20 +609,50 @@ const globalIdentityJoins = sites.filter(
 );
 const dormant = sites.filter((s) => s.verdict === "DORMANT");
 
+/*
+ * The two ratchets below count UNADJUDICATED candidates, not every candidate.
+ * They used to count every one, including the sites ACCEPTED already rules on with
+ * a stated reason, and that scoping is a defect: an entry added to ACCEPTED left
+ * the count where it was, so the only way to hold a repair was to move the number,
+ * and a site dropping out of the scan for the wrong reason — a renamed file, a
+ * parser regression, a read deleted rather than fixed — made the gate greener with
+ * no repair behind it. Identity does the scoping now: ACCEPTED removes a named site
+ * from the count and a stale entry still fails, so the frozen set cannot grow
+ * without a reason written next to it.
+ *
+ * Both baselines are lowered to the post-exclusion equivalent of the numbers they
+ * replace (68 counted 11 accepted primary sites; 83 counted 4 accepted joins).
+ * Neither is raised: the arithmetic is subtraction, not a re-measurement.
+ */
+const acceptedSites = new Set(ACCEPTED.map((a) => a.site));
+const isAccepted = (s) => acceptedSites.has(`${s.file}::${s.symbol}`);
+const openCandidates = candidates.filter((s) => !isAccepted(s));
+const openJoinCandidates = joinCandidates.filter((s) => !isAccepted(s));
+
+/** Which module owns the open candidates, so a failure is attributable on sight. */
+function byModule(list) {
+  const tally = new Map();
+  for (const s of list) {
+    const key = s.file.split("/").slice(0, 2).join("/");
+    tally.set(key, (tally.get(key) ?? 0) + 1);
+  }
+  return [...tally].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(" · ");
+}
+
 console.log(
   `Tables ${tables.length}  ·  with a lifecycle column ${lifecycleTables.length}  ·  read sites ${sites.length} across ${fileCount} files`,
 );
 console.log(
-  `  predicate in statement ${sites.filter((s) => s.verdict === "OK").length}  ·  built elsewhere in file ${sites.filter((s) => s.verdict === "OK-FILE").length}  ·  dormant column ${dormant.length}  ·  primary-read candidates ${candidates.length}  ·  join candidates ${joinCandidates.length}`,
+  `  predicate in statement ${sites.filter((s) => s.verdict === "OK").length}  ·  built elsewhere in file ${sites.filter((s) => s.verdict === "OK-FILE").length}  ·  dormant column ${dormant.length}  ·  primary-read candidates ${candidates.length} (${openCandidates.length} unadjudicated)  ·  join candidates ${joinCandidates.length} (${openJoinCandidates.length} unadjudicated)`,
 );
 
 if (LIST) {
   console.log("\n-- primary-read candidates --");
   for (const s of candidates.sort((a, b) => a.file.localeCompare(b.file)))
-    console.log(`  ${s.file}:${s.line}  ${s.symbol} (${s.kind})`);
+    console.log(`  ${s.file}:${s.line}  ${s.symbol} (${s.kind})${isAccepted(s) ? "  [accepted]" : ""}`);
   console.log("\n-- join candidates (the class a statement scanner is blind to) --");
   for (const s of joinCandidates.sort((a, b) => a.file.localeCompare(b.file)))
-    console.log(`  ${s.file}:${s.line}  ${s.symbol}`);
+    console.log(`  ${s.file}:${s.line}  ${s.symbol}${isAccepted(s) ? "  [accepted]" : ""}`);
   process.exit(0);
 }
 
@@ -622,7 +667,6 @@ if (
   process.exit(2);
 }
 
-const acceptedSites = new Set(ACCEPTED.map((a) => a.site));
 const seen = new Set();
 for (const c of [...candidates, ...joinCandidates]) {
   const key = `${c.file}::${c.symbol}`;
@@ -653,16 +697,16 @@ if (stale.length > 0) {
   failed = true;
 }
 
-if (candidates.length > PRIMARY_CANDIDATE_BASELINE) {
+if (openCandidates.length > PRIMARY_CANDIDATE_BASELINE) {
   console.error(
-    `\nFAIL — ${candidates.length} primary reads of a lifecycle table carry no predicate, ${candidates.length - PRIMARY_CANDIDATE_BASELINE} above the recorded baseline of ${PRIMARY_CANDIDATE_BASELINE}. Run with --list.`,
+    `\nFAIL — ${openCandidates.length} unadjudicated primary reads of a lifecycle table carry no predicate, ${openCandidates.length - PRIMARY_CANDIDATE_BASELINE} above the recorded baseline of ${PRIMARY_CANDIDATE_BASELINE}. Owners: ${byModule(openCandidates)}. Run with --list.`,
   );
   failed = true;
 }
 
-if (joinCandidates.length > JOIN_CANDIDATE_BASELINE) {
+if (openJoinCandidates.length > JOIN_CANDIDATE_BASELINE) {
   console.error(
-    `\nFAIL — ${joinCandidates.length} joins onto a lifecycle table carry no predicate, ${joinCandidates.length - JOIN_CANDIDATE_BASELINE} above the recorded baseline of ${JOIN_CANDIDATE_BASELINE}. Four of ticket 06's eleven defects were exactly this shape — an ON condition on an aliased self-join, which no statement scanner can see. Run with --list.`,
+    `\nFAIL — ${openJoinCandidates.length} unadjudicated joins onto a lifecycle table carry no predicate, ${openJoinCandidates.length - JOIN_CANDIDATE_BASELINE} above the recorded baseline of ${JOIN_CANDIDATE_BASELINE}. Owners: ${byModule(openJoinCandidates)}. Four of ticket 06's eleven defects were exactly this shape — an ON condition on an aliased self-join, which no statement scanner can see. Run with --list.`,
   );
   failed = true;
 }
@@ -670,7 +714,7 @@ if (joinCandidates.length > JOIN_CANDIDATE_BASELINE) {
 if (failed) process.exit(1);
 
 console.log(
-  `\nOK — primary-read candidates ${candidates.length} (baseline ${PRIMARY_CANDIDATE_BASELINE}) · join candidates ${joinCandidates.length} (baseline ${JOIN_CANDIDATE_BASELINE}).`,
+  `\nOK — unadjudicated primary-read candidates ${openCandidates.length} (baseline ${PRIMARY_CANDIDATE_BASELINE}) · unadjudicated join candidates ${openJoinCandidates.length} (baseline ${JOIN_CANDIDATE_BASELINE}).`,
 );
 console.log(
   "Both numbers are ratchets recording the measured state when this gate was written, not a clean bill of health. They may only go down; a new occurrence of either shape fails immediately.",
