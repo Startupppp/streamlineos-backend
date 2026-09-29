@@ -10,7 +10,6 @@ const projectsQuerySvc = {
   getProject: jest.fn(),
   getProjectLabels: jest.fn(),
   listLabels: jest.fn(),
-  getResourceAllocation: jest.fn(),
   getRoadmap: jest.fn(),
   listTemplates: jest.fn(),
   getAnalytics: jest.fn(),

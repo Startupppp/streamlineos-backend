@@ -4,6 +4,7 @@ import {
   nullableWireDate,
 } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { ticketTypeEnum, ticketPriorityEnum } from "../../../../db/schema";
 
 const userSummarySchema = z
   .object({
@@ -21,9 +22,9 @@ export const ticketRowSchema = z.object({
   orgId: z.string(),
   title: z.string(),
   description: z.string().nullable(),
-  type: z.string(),
+  type: z.enum(ticketTypeEnum.enumValues),
   status: z.string(),
-  priority: z.string(),
+  priority: z.enum(ticketPriorityEnum.enumValues),
   projectId: z.number().int().nullable(),
   ticketNumber: z.number().int(),
   epicId: z.number().int().nullable(),

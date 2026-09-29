@@ -35,6 +35,7 @@ import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { AccessService } from "../../../access/access.service";
 import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
+import { withSavepoint } from "../../../data-quality/savepoint";
 
 @Injectable()
 export class ProjectsTicketsCreateService {
@@ -225,8 +226,8 @@ export class ProjectsTicketsCreateService {
       const ticketKey = buildTicketKey(projectRow?.key, ticket.ticketNumber);
       const ticketLink = buildTicketHref(projectId, ticketKey);
 
-      await this.dispatch
-        .emit({
+      await withSavepoint(() =>
+        this.dispatch.emit({
           eventKey: "build.ticket.assigned",
           orgId: u.orgId,
           actorUserId: u.userId,
@@ -244,9 +245,9 @@ export class ProjectsTicketsCreateService {
             type: ticket.type,
           },
         })
-        .catch((error: unknown) =>
-          logger.error("Failed to dispatch ticket assignment notification", { error }),
-        );
+      ).catch((error: unknown) =>
+        logger.error("Failed to dispatch ticket assignment notification", { error }),
+      );
     }
 
     this.automationRunner.runForTicketEvent(u.orgId, projectId, "ticket.created", {

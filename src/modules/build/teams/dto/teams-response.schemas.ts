@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { projectStatusEnum } from "../../../../db/schema";
 
 export const teamRowSchema = z.object({
   id: z.number().int(),
@@ -67,7 +68,7 @@ export const teamProjectItemSchema = z.object({
   id: z.number().int(),
   name: z.string(),
   key: z.string(),
-  status: z.string(),
+  status: z.enum(projectStatusEnum.enumValues),
   addedAt: wireDate(),
 });
 

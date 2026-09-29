@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 import { wireDate } from "../../../../common/openapi/wire-types";
+import { ticketActivityActionEnum } from "../../../../db/schema";
 
 const projectActivityItemSchema = z.object({
   id: z.number().int(),
-  action: z.string(),
+  action: z.enum(ticketActivityActionEnum.enumValues),
   label: z.string(),
   fromValue: z.string().nullable(),
   toValue: z.string().nullable(),

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   ProjectsForbiddenProjectException,
   ProjectsNotFoundException,
@@ -22,6 +22,8 @@ import { AccessService } from "../../../access/access.service";
 import type { ScopedRead } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../../common/auth/principal";
+import { resolveProjectAccess } from "./project-access";
+import { reachableProjectsSql } from "../../reachability/project-reachability";
 import { resolveProjectsScope } from "./projects-scope";
 import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
 import type { ListProjectsInput } from "../dto/projects.schemas";
@@ -84,28 +86,9 @@ export class ProjectsQueryService {
       domain.push(eq(organizationMembers.userId, managerId));
     }
 
-    const memberOf = this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.membershipId, membershipId ?? -1)));
-    const teamProjectsOf = this.db
-      .select({ projectId: projectTeamAssignments.projectId })
-      .from(projectTeamAssignments)
-      .innerJoin(
-        projectTeamMembers,
-        and(eq(projectTeamMembers.orgId, projectTeamAssignments.orgId), eq(projectTeamMembers.teamId, projectTeamAssignments.teamId)),
-      )
-      .where(
-        and(
-          eq(projectTeamAssignments.orgId, orgId),
-          eq(projectTeamMembers.membershipId, membershipId ?? -1),
-        ),
-      );
-    const ownProjects = sql`${or(
-      membershipId !== null ? eq(projects.managerMembershipId, membershipId) : sql`false`,
-      inArray(projects.id, memberOf),
-      inArray(projects.id, teamProjectsOf),
-    )}`;
+    const ownProjects = membershipId !== null
+      ? reachableProjectsSql(orgId, membershipId)
+      : sql`false`;
 
     if (search?.trim()) {
       const match = or(
@@ -366,79 +349,41 @@ export class ProjectsQueryService {
 
   async getProject(u: CurrentUserContext, projectId: number) {
     const orgId = u.orgId;
-
-    const [perms, project] = await Promise.all([
-      this.access.resolveUserPermissions(u.orgId, u.userId),
-      this.db.query.projects.findFirst({
-        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-        with: {
-          statuses: { orderBy: [asc(projectStatuses.order)] },
-          members: {
-            with: {
-              user: {
-                columns: {
-                  id: true,
-                },
-                with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
+    const access = await resolveProjectAccess(this.db, this.access, u, projectId).catch(
+      (err: unknown) => {
+        if (err instanceof NotFoundException) throw new ProjectsNotFoundException();
+        throw err;
+      },
+    );
+    if (!access.hasAccess) {
+      this.audit.log({
+        action: "project.access_denied",
+        userId: u.userId,
+        orgId,
+        targetId: String(projectId),
+        targetType: "project",
+        metadata: { reason: "NOT_A_MEMBER", projectId },
+        result: "FAILURE",
+      });
+      throw new ProjectsForbiddenProjectException(projectId);
+    }
+    const project = await this.db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
+      with: {
+        statuses: { orderBy: [asc(projectStatuses.order)] },
+        members: {
+          with: {
+            user: {
+              columns: {
+                id: true,
               },
+              with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
             },
           },
         },
-      }),
-    ]);
-
+      },
+    });
     if (!project) throw new ProjectsNotFoundException();
-
-    const isOwnerOrAdmin = perms.has("build:manage");
-
-    if (!isOwnerOrAdmin) {
-      const callerMid = actingMembershipId(u.principal);
-      const isManager =
-        callerMid !== null && project.managerMembershipId === callerMid;
-      if (!isManager) {
-        const memberOf = await this.db
-          .select({ projectId: projectMembers.projectId })
-          .from(projectMembers)
-          .where(
-            and(
-              eq(projectMembers.orgId, u.orgId),
-              eq(projectMembers.membershipId, callerMid ?? -1),
-              eq(projectMembers.projectId, projectId),
-            ),
-          )
-          .limit(1);
-        if (memberOf.length === 0) {
-          const teamAccess = await this.db
-            .select({ id: projectTeamMembers.id })
-            .from(projectTeamAssignments)
-            .innerJoin(
-              projectTeamMembers,
-              and(eq(projectTeamMembers.orgId, projectTeamAssignments.orgId), eq(projectTeamMembers.teamId, projectTeamAssignments.teamId)),
-            )
-            .where(
-              and(
-                eq(projectTeamAssignments.projectId, projectId),
-                eq(projectTeamAssignments.orgId, orgId),
-                eq(projectTeamMembers.membershipId, callerMid ?? -1),
-              ),
-            )
-            .limit(1);
-          if (teamAccess.length === 0) {
-            this.audit.log({
-              action: "project.access_denied",
-              userId: u.userId,
-              orgId,
-              targetId: String(projectId),
-              targetType: "project",
-              metadata: { reason: "NOT_A_MEMBER", projectId },
-              result: "FAILURE",
-            });
-            throw new ProjectsForbiddenProjectException(projectId);
-          }
-        }
-      }
-    }
-
     return project;
   }
 }

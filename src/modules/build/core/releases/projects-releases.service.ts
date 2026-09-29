@@ -168,7 +168,7 @@ export class ProjectsReleasesService {
           organizationId: orgId,
           aggregateType: "release",
           aggregateId: String(releaseId),
-          aggregateVersion: Date.now(),
+          aggregateVersion: row.rowVersion,
           eventType: "build.release.published",
           payload: {
             releaseId,

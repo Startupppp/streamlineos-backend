@@ -6,7 +6,7 @@ import { reachableProjectsSql } from "./project-reachability";
 import { ProjectAccessCache } from "./project-access-cache";
 
 const ORG_ID = "org-reach-test";
-const MEMBERSHIP_ID = 7;
+const MEMBERSHIP_ID = 99;
 
 function makeDb() {
   return drizzle(
@@ -21,6 +21,19 @@ function renderSql(value: unknown): { sql: string; params: unknown[] } {
   const query = dialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]);
   return { sql: query.sql, params: query.params };
 }
+
+describe("reachableProjectsSql — ACTIVE membership gate", () => {
+  const compiled = renderSql(reachableProjectsSql(ORG_ID, MEMBERSHIP_ID));
+  const lower = compiled.sql.toLowerCase();
+
+  it("direct-member branch: joins organization_members so a suspended membership cannot grant direct-member project access", () => {
+    expect(lower).toContain("organization_members");
+  });
+
+  it("binds 'ACTIVE' as a parameter so the organization_members join excludes inactive rows (positive: an active member remains reachable)", () => {
+    expect(compiled.params).toContain("ACTIVE");
+  });
+});
 
 describe("reachableProjectsSql — branch matrix", () => {
   const compiled = renderSql(reachableProjectsSql(ORG_ID, MEMBERSHIP_ID));

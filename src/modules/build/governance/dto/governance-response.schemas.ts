@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { riskProbabilityEnum, riskImpactEnum, riskStatusEnum, decisionStatusEnum } from "../../../../db/schema";
 
 export const riskRowSchema = z.object({
   id: z.number().int(),
@@ -8,9 +9,9 @@ export const riskRowSchema = z.object({
   riskNumber: z.number().int(),
   title: z.string(),
   description: z.string().nullable(),
-  probability: z.string(),
-  impact: z.string(),
-  status: z.string(),
+  probability: z.enum(riskProbabilityEnum.enumValues),
+  impact: z.enum(riskImpactEnum.enumValues),
+  status: z.enum(riskStatusEnum.enumValues),
   ownerId: z.string().nullable(),
   mitigation: z.string().nullable(),
   linkedTicketId: z.number().int().nullable(),
@@ -29,7 +30,7 @@ export const decisionRowSchema = z.object({
   context: z.string().nullable(),
   decision: z.string().nullable(),
   optionsConsidered: z.string().nullable(),
-  status: z.string(),
+  status: z.enum(decisionStatusEnum.enumValues),
   ownerId: z.string().nullable(),
   decidedAt: nullableWireDate(),
   revisitAt: nullableWireDate(),
@@ -47,8 +48,8 @@ export const riskStatsSchema = z.object({
   highCritical: z.number().int(),
   matrix: z.array(
     z.object({
-      probability: z.string(),
-      impact: z.string(),
+      probability: z.enum(riskProbabilityEnum.enumValues),
+      impact: z.enum(riskImpactEnum.enumValues),
       openCount: z.number().int(),
     }),
   ),

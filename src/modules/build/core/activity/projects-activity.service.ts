@@ -465,8 +465,8 @@ export class ProjectsActivityService {
     }
 
     // REG-004: see projects-tickets-create.service.ts.
-    await this.dispatch
-      .emit({
+    await withSavepoint(() =>
+      this.dispatch.emit({
         eventKey: "build.comment.mention",
         orgId: input.orgId,
         targetUserIds: mentioned.map((user) => user.id),
@@ -481,8 +481,8 @@ export class ProjectsActivityService {
           ticketKey: ticketKey ?? null,
         },
       })
-      .catch((error: unknown) =>
-        logger.error("Failed to notify mentioned users", { error }),
-      );
+    ).catch((error: unknown) =>
+      logger.error("Failed to notify mentioned users", { error }),
+    );
   }
 }

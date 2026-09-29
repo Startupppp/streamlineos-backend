@@ -236,9 +236,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
     transaction: txFn,
   } as unknown as Db;
 
-  const mockRead = {
-    checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "MEMBER" }),
-  };
+  const mockRead = {};
   const mockQuery = {
     validateTicketStatus: jest.fn().mockResolvedValue(undefined),
   };

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { meetingTypeEnum, projectMeetingStatusEnum, actionItemStatusEnum } from "../../../../db/schema";
 
 const meetingRowSchema = z.object({
   id: z.number().int(),
@@ -7,8 +8,8 @@ const meetingRowSchema = z.object({
   projectId: z.number().int(),
   meetingNumber: z.number().int(),
   title: z.string(),
-  type: z.string(),
-  status: z.string(),
+  type: z.enum(meetingTypeEnum.enumValues),
+  status: z.enum(projectMeetingStatusEnum.enumValues),
   agenda: z.string().nullable(),
   notes: z.string().nullable(),
   scheduledAt: nullableWireDate(),
@@ -56,7 +57,7 @@ const actionItemRowSchema = z.object({
   description: z.string().nullable(),
   assigneeId: z.string().nullable(),
   dueDate: z.string().nullable(),
-  status: z.string(),
+  status: z.enum(actionItemStatusEnum.enumValues),
   convertedTicketId: z.number().int().nullable(),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),

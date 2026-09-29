@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { refineEndAfterStart } from "./project-core.schemas";
+import { ticketTypeEnum } from "../../../../db/schema";
 
 export const listTemplatesQuerySchema = z.object({
   cursor: z.string().optional(),
@@ -13,7 +14,7 @@ export type ListTemplatesQuery = z.infer<typeof listTemplatesQuerySchema>;
 const templateTicketSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  type: z.string().default("TASK"),
+  type: z.enum(ticketTypeEnum.enumValues).default("TASK"),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
   estimatedHours: z.number().positive().optional(),
   order: z.number().int().default(0),

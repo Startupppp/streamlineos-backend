@@ -77,7 +77,7 @@ function makeHarness(cycleBridgeRows: { id: number }[]) {
     { create: jest.fn() } as never,
     { emit: jest.fn().mockResolvedValue(undefined) } as never,
     { validateTicketStatus: jest.fn().mockResolvedValue(undefined) } as never,
-    { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "MEMBER" }) } as never,
+    {} as never,
     { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
     { runForTicketEvent: jest.fn() } as never,
     { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,

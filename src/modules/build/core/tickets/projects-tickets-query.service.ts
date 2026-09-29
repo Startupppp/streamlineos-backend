@@ -8,7 +8,7 @@ import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { BulkUpdateInput, RankTicketInput } from "../dto/projects.schemas";
-import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils";
+import { rankTicket } from "./projects-tickets-rank-utils";
 import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
 import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "../lib/build-ticket-mutation-policy";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
@@ -50,9 +50,5 @@ export class ProjectsTicketsQueryService {
       webhooksDispatch: this.webhooksDispatch,
       automationRunner: this.automationRunner,
     });
-  }
-
-  async rebalanceProjectRanks(orgId: string, projectId: number): Promise<void> {
-    return rebalanceProjectRanks(this.db, orgId, projectId);
   }
 }

@@ -24,6 +24,7 @@ import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import { isUniqueViolation } from "../../../../common/db/postgres-error";
 import { lockQuota } from "../../../billing/core/seat-definition";
 import { buildProjectHref } from "../lib/build-app-paths";
+import { withSavepoint } from "../../../data-quality/savepoint";
 
 function generateProjectKey(name: string): string {
   const namePart = name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
@@ -139,18 +140,20 @@ export class ProjectsProvisionService {
 
     const notificationMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
     if (notificationMembers.length > 0) {
-      await this.dispatch.emit({
-        eventKey: "build.project.member_added",
-        orgId,
-        actorUserId: creatorUserId,
-        targetUserIds: notificationMembers,
-        entityType: "project",
-        entityId: String(project.id),
-        title: "You were added to a project",
-        message: `You were added to project "${input.name}" (${projectKey}).`,
-        link: buildProjectHref(project.id),
-        variables: { projectName: input.name, projectKey, projectId: project.id },
-      }).catch(logSideEffectFailure("project member notification", { orgId }));
+      await withSavepoint(() =>
+        this.dispatch.emit({
+          eventKey: "build.project.member_added",
+          orgId,
+          actorUserId: creatorUserId,
+          targetUserIds: notificationMembers,
+          entityType: "project",
+          entityId: String(project.id),
+          title: "You were added to a project",
+          message: `You were added to project "${input.name}" (${projectKey}).`,
+          link: buildProjectHref(project.id),
+          variables: { projectName: input.name, projectKey, projectId: project.id },
+        })
+      ).catch(logSideEffectFailure("project member notification", { orgId }));
     }
 
     this.audit.log({

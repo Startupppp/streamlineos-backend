@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { whiteboardShareRoleEnum, whiteboardVisibilityEnum } from "../../../../db/schema";
+import { intakeSourceEnum, intakeStatusEnum } from "../../../../db/schema";
 
 const milestoneOwnerSchema = z.object({
   membershipId: z.number().int(),
@@ -37,8 +39,8 @@ export const intakeItemSchema = z.object({
   orgId: z.string(),
   title: z.string(),
   description: z.unknown(),
-  source: z.string(),
-  status: z.string(),
+  source: z.enum(intakeSourceEnum.enumValues),
+  status: z.enum(intakeStatusEnum.enumValues),
   submitterEmail: z.string().nullable(),
   submitterName: z.string().nullable(),
   priority: z.string().nullable(),
@@ -80,14 +82,14 @@ export const viewPageSchema = cursorPageSchema(viewRowSchema);
 
 const whiteboardShareSchema = z.object({
   userId: z.string(),
-  role: z.string(),
+  role: z.enum(whiteboardShareRoleEnum.enumValues),
   name: z.string().nullable(),
   email: z.string(),
 });
 
 const whiteboardSharingInfoSchema = z.object({
-  visibility: z.string(),
-  publicAccess: z.string().nullable(),
+  visibility: z.enum(whiteboardVisibilityEnum.enumValues),
+  publicAccess: z.enum(whiteboardShareRoleEnum.enumValues).nullable(),
   shareToken: z.string().nullable(),
   linkExpiresAt: nullableWireDate(),
   allowExport: z.boolean(),
@@ -97,7 +99,7 @@ export const whiteboardListItemSchema = z.object({
   id: z.number().int(),
   name: z.string(),
   elementCount: z.number().int(),
-  visibility: z.string(),
+  visibility: z.enum(whiteboardVisibilityEnum.enumValues),
   createdBy: z.string().nullable(),
   updatedAt: wireDate(),
 });
@@ -114,7 +116,7 @@ export const whiteboardDetailSchema = z.object({
   projectId: z.number().int().nullable(),
   name: z.string(),
   data: z.unknown(),
-  visibility: z.string(),
+  visibility: z.enum(whiteboardVisibilityEnum.enumValues),
   access: z.enum(["view", "edit", "manage"]),
   sharing: whiteboardSharingInfoSchema.nullable(),
   shares: z.array(whiteboardShareSchema).nullable(),
@@ -124,8 +126,8 @@ export const whiteboardDetailSchema = z.object({
 });
 
 export const whiteboardSharingUpdateSchema = z.object({
-  visibility: z.string(),
-  publicAccess: z.string().nullable(),
+  visibility: z.enum(whiteboardVisibilityEnum.enumValues),
+  publicAccess: z.enum(whiteboardShareRoleEnum.enumValues).nullable(),
   shareToken: z.string().nullable(),
   linkExpiresAt: nullableWireDate(),
   allowExport: z.boolean(),

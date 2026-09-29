@@ -122,14 +122,29 @@ export class BuildEntityReadsService {
     projectIds: number[],
   ): Promise<Set<number>> {
     if (projectIds.length === 0) return new Set();
+    const activeMembershipId = sql`(SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId} AND status = 'ACTIVE' LIMIT 1)`;
     const rows = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
+      .select({ projectId: projects.id })
+      .from(projects)
       .where(
         and(
-          eq(projectMembers.orgId, orgId),
-          sql`(${projectMembers.membershipId} = (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId} AND status = 'ACTIVE'))`,
-          inArray(projectMembers.projectId, projectIds),
+          eq(projects.orgId, orgId),
+          inArray(projects.id, projectIds),
+          sql`(
+            ${projects.managerMembershipId} = ${activeMembershipId}
+            OR ${projects.id} IN (
+              SELECT project_id FROM project_members
+              WHERE org_id = ${orgId}
+                AND membership_id = ${activeMembershipId}
+            )
+            OR ${projects.id} IN (
+              SELECT pta.project_id FROM project_team_assignments pta
+              INNER JOIN project_team_members ptm
+                ON ptm.team_id = pta.team_id AND ptm.org_id = pta.org_id
+              WHERE pta.org_id = ${orgId}
+                AND ptm.membership_id = ${activeMembershipId}
+            )
+          )`,
         ),
       );
     return new Set(rows.map((row) => row.projectId));

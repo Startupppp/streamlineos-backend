@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { formSubmissionStatusEnum } from "../../../../db/schema";
+import { formSubmissionStatusEnum, formTypeEnum } from "../../../../db/schema";
 
 export const formRowSchema = z.object({
   id: z.number().int(),
@@ -9,7 +9,7 @@ export const formRowSchema = z.object({
   formNumber: z.number().int(),
   name: z.string(),
   description: z.string().nullable(),
-  type: z.string(),
+  type: z.enum(formTypeEnum.enumValues),
   fields: z.unknown(),
   actions: z.unknown(),
   isActive: z.boolean(),

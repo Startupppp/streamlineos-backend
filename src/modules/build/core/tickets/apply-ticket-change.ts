@@ -27,6 +27,7 @@ import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 import type { AccessService } from "../../../access/access.service";
 import { buildTicketBoardHref } from "../lib/build-app-paths";
+import { withSavepoint } from "../../../data-quality/savepoint";
 
 export interface ApplyTicketChangeDeps {
   readonly db: Db;
@@ -330,8 +331,8 @@ export async function applyTicketChange(
       });
     }
   });
-  await deps.activity
-    .logTicketFieldChanges(orgId, ticketId, actingUserId, { ...before, assigneeId: beforeAssigneeId }, {
+  await withSavepoint(() =>
+    deps.activity.logTicketFieldChanges(orgId, ticketId, actingUserId, { ...before, assigneeId: beforeAssigneeId }, {
       title: input.title,
       status: input.status,
       priority: input.priority,
@@ -341,10 +342,10 @@ export async function applyTicketChange(
       type: input.type,
       cycleId: updateData.cycleId,
     })
-    .catch((error) => logger.error("Failed to log ticket activity", { error }));
-  await deps.transfer
-    .notifyNewAssignees(orgId, ticketId, actingUserId, input)
-    .catch((error) => logger.error("Failed to notify ticket assignees", { error }));
+  ).catch((error) => logger.error("Failed to log ticket activity", { error }));
+  await withSavepoint(() =>
+    deps.transfer.notifyNewAssignees(orgId, ticketId, actingUserId, input)
+  ).catch((error) => logger.error("Failed to notify ticket assignees", { error }));
   if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
     const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : newAssignee;
     if (reviewTarget) {
