@@ -86,6 +86,8 @@ import { AutonomySequencesModule } from "../autonomy/sequences/autonomy-sequence
 import { LifecycleTriggersModule } from "../lifecycle/lifecycle-triggers.module";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { CronBuildProjectRetentionService } from "./cron-build-project-retention.service";
+import { CronBuildProjectRetentionController } from "./cron-build-project-retention.controller";
 import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
@@ -178,6 +180,7 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
     CronSupportController,
     CronKbController,
     CronBuildController,
+    CronBuildProjectRetentionController,
     CronInvitationExpiryController,
     CronStorageController,
   ],
@@ -213,6 +216,7 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
     CronCrmForecastService,
     CronIdempotencyService,
     CronBuildRetentionService,
+    CronBuildProjectRetentionService,
     CronHrRetentionService,
     CronBuildSnapshotsService,
     CronKbChunkRetentionService,

@@ -95,6 +95,11 @@ export const MONITORED_SWEEPS = [
     maxAgeMs: 26 * 3_600_000,
   },
   {
+    jobKey: "build-project-retention-purge",
+    label: "Build project retention (closed tickets and attachments purged after each project's configured window past soft delete)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
     jobKey: "gdpr-export-artifact-retention",
     label: "GDPR subject-export artifact retention (72h expiry, object purge, stale-job reclaim)",
     maxAgeMs: 3 * 3_600_000,

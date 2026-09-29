@@ -142,6 +142,7 @@ specific thing that would have to change first.
 | KB trash purge | `POST /cron/kb-trash-purge` | daily | 300s |
 | KB contradictory-claim scan | `POST /cron/kb-contradiction-scan` | daily | 600s |
 | Build webhook delivery retention | `POST /cron/build-retention-prune` | daily | 120s |
+| Build project retention purge (per-project window, `?confirm=destroy` to delete) | `POST /cron/build-project-retention-purge` | daily | 1800s |
 | Feedbucket media retention | `POST /cron/feedbucket-media-retention-sweep` | daily | 1800s |
 | Notification partition detach/drop | `POST /cron/notifications-retention-detach` | daily | 300s |
 | GDPR subject-export artifact retention | `POST /cron/gdpr-export-artifact-retention` | hourly | 900s |

@@ -128,6 +128,14 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     label: "Build webhook delivery retention (completed attempts older than 90 days)",
   },
   {
+    jobKey: "build-project-retention-purge",
+    sweepName: "build-project-retention",
+    leaseSeconds: 1800,
+    intervalMs: DAY_MS,
+    maxAgeMs: DAILY_MAX_AGE_MS,
+    label: "Build project retention (closed tickets and attachments purged after each project's configured window past soft delete)",
+  },
+  {
     jobKey: "gdpr-export-artifact-retention",
     sweepName: "gdpr-export-retention",
     leaseSeconds: 900,
