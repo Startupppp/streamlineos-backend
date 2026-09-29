@@ -21,7 +21,8 @@ import { ProjectsWebhooksDispatchService } from "./webhooks/projects-webhooks-di
 import { BuildAutomationRunnerService } from "./automation/build-automation-runner.service";
 import type { ProjectsTicketsReadService } from "./tickets/projects-tickets-read.service";
 import type { NotificationsService } from "../../notifications/notifications.service";
-import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { ProjectsActivityService } from "./activity/projects-activity.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
@@ -164,6 +165,8 @@ describe("ProjectsTicketsQueryService — cross-tenant isolation", () => {
       { provide: AccessService, useValue: {} },
       { provide: ProjectsWebhooksDispatchService, useValue: {} },
       { provide: BuildAutomationRunnerService, useValue: {} },
+      { provide: ProjectsActivityService, useValue: {} },
+      { provide: NotificationDispatchService, useValue: {} },
     ] }).compile();
     return module.get(ProjectsTicketsQueryService);
   }

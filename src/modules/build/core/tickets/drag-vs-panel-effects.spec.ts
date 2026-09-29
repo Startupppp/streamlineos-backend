@@ -87,11 +87,54 @@ function makeAccess() {
   } as never;
 }
 
-function makeEffectDeps(overrides: { webhooksEnqueue?: jest.Mock; automationRun?: jest.Mock } = {}) {
-  return {
+function makeEffectDeps(overrides: {
+  webhooksEnqueue?: jest.Mock;
+  automationRun?: jest.Mock;
+  activityLog?: jest.Mock;
+  dispatchEmit?: jest.Mock;
+} = {}) {
+  const deps: {
+    webhooksDispatch: { enqueue: jest.Mock };
+    automationRunner: { runForTicketEvent: jest.Mock };
+    activity?: { logTicketFieldChanges: jest.Mock };
+    dispatch?: { emit: jest.Mock };
+  } = {
     webhooksDispatch: { enqueue: overrides.webhooksEnqueue ?? jest.fn().mockResolvedValue(undefined) },
     automationRunner: { runForTicketEvent: overrides.automationRun ?? jest.fn() },
   };
+  if (overrides.activityLog !== undefined) deps.activity = { logTicketFieldChanges: overrides.activityLog };
+  if (overrides.dispatchEmit !== undefined) deps.dispatch = { emit: overrides.dispatchEmit };
+  return deps;
+}
+
+function makeRankTxForReview(statusReturn = "IN_REVIEW") {
+  const limitMock = jest.fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValue([{ reporterId: "reporter-1", title: "My Ticket" }]);
+  return {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: limitMock }),
+      }),
+    }),
+    execute: jest.fn().mockResolvedValue([{ rank: "2000", valid: true }]),
+    update: jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([{ id: 1, rank: "2000", status: statusReturn, version: 2 }]),
+        }),
+      }),
+    }),
+    insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+    delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+  };
+}
+
+function makeRankDbForReview(statusReturn = "IN_REVIEW") {
+  const tx = makeRankTxForReview(statusReturn);
+  return {
+    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+  } as unknown as import("../../../../db/drizzle.types").Db;
 }
 
 function makeBulkDb() {
@@ -225,5 +268,39 @@ describe("bulk route fires the same webhook and automation effects as the detail
     const automationRun = jest.fn();
     await bulkMutateTickets(makeBulkDb(), makeAccess(), actor, 1, { ticketIds: [1], status: "TODO" }, makeEffectDeps({ automationRun }));
     expect(automationRun.mock.calls.filter((c: unknown[]) => c[2] === "ticket.status_changed")).toHaveLength(0);
+  });
+});
+
+describe("rank route fires activity log for a status change (review card B7, ticket-44 box-1)", () => {
+  it("fires activity.logTicketFieldChanges when status changes via rank (positive)", async () => {
+    const activityLog = jest.fn().mockResolvedValue(undefined);
+    await rankTicket(makeRankDb("IN_PROGRESS"), makeCache(), makeAccess(), actor, 1, 1, { status: "IN_PROGRESS" }, makeEffectDeps({ activityLog }));
+    expect(activityLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT fire activity.logTicketFieldChanges when rank carries no status change (negative pair)", async () => {
+    const activityLog = jest.fn().mockResolvedValue(undefined);
+    await rankTicket(makeRankDb(), makeCache(), makeAccess(), actor, 1, 1, {}, makeEffectDeps({ activityLog }));
+    expect(activityLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("rank route fires review notification when status changes to IN_REVIEW (review card B7, ticket-44 box-1)", () => {
+  it("fires dispatch.emit with build.ticket.review_requested when status becomes IN_REVIEW (positive)", async () => {
+    const dispatchEmit = jest.fn().mockResolvedValue(undefined);
+    await rankTicket(makeRankDbForReview("IN_REVIEW"), makeCache(), makeAccess(), actor, 1, 1, { status: "IN_REVIEW" }, makeEffectDeps({ dispatchEmit }));
+    const calls = dispatchEmit.mock.calls.filter(
+      (c: unknown[]) => (c[0] as { eventKey?: string })?.eventKey === "build.ticket.review_requested",
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does NOT fire dispatch.emit review_requested for a non-IN_REVIEW status change (negative pair)", async () => {
+    const dispatchEmit = jest.fn().mockResolvedValue(undefined);
+    await rankTicket(makeRankDb("IN_PROGRESS"), makeCache(), makeAccess(), actor, 1, 1, { status: "IN_PROGRESS" }, makeEffectDeps({ dispatchEmit }));
+    const calls = dispatchEmit.mock.calls.filter(
+      (c: unknown[]) => (c[0] as { eventKey?: string })?.eventKey === "build.ticket.review_requested",
+    );
+    expect(calls).toHaveLength(0);
   });
 });

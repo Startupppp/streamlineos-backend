@@ -22,6 +22,10 @@ import {
   validateBatchTransition,
 } from "./build-ticket-batch-workflow";
 import type { TicketEventPayload } from "../automation/build-automation-runner.service";
+import type { DispatchEventInput } from "../../../notifications/notification.types";
+import { withSavepoint } from "../../../data-quality/savepoint";
+import { logger } from "../../../../common/logger/logger.service";
+import { buildTicketBoardHref } from "../lib/build-app-paths";
 
 export interface RankTicketEffectDeps {
   readonly webhooksDispatch: {
@@ -40,6 +44,27 @@ export interface RankTicketEffectDeps {
       event: string,
       payload: TicketEventPayload,
     ): void;
+  };
+  readonly activity?: {
+    logTicketFieldChanges(
+      orgId: string,
+      ticketId: number,
+      userId: string,
+      before: {
+        title: string;
+        status: string;
+        priority: string;
+        assigneeId: string | null;
+        dueDate: string | null;
+        points: number | null;
+        type: string;
+        cycleId: number | null;
+      },
+      changes: { status?: string },
+    ): Promise<void>;
+  };
+  readonly dispatch?: {
+    emit(input: DispatchEventInput): Promise<unknown>;
   };
 }
 
@@ -79,6 +104,10 @@ export async function rankTicket(
       "Rank neighbours must be distinct from the target and each other",
     );
   let previousStatus: string | undefined;
+  let capturedTarget:
+    | { priority: string | null; dueDate: string | null; points: number | null; cycleId: number | null }
+    | undefined;
+  let capturedReviewData: { reporterId: string | null; title: string } | undefined;
   const result = await db.transaction(async (tx) => {
     const policy = await authorizeTicketMutation(tx, access, actor, projectId);
     await lockProjectTicketMutation(tx, actor.orgId, projectId);
@@ -229,6 +258,27 @@ export async function rankTicket(
         );
       }
     }
+    capturedTarget = {
+      priority: target.priority,
+      dueDate: target.dueDate,
+      points: target.points,
+      cycleId: target.cycleId,
+    };
+    if (
+      effectDeps?.dispatch !== undefined &&
+      body.status === "IN_REVIEW" &&
+      target.status !== "IN_REVIEW"
+    ) {
+      const [reviewRow] = await tx
+        .select({ reporterId: tickets.reporterId, title: tickets.title })
+        .from(tickets)
+        .where(and(eq(tickets.orgId, actor.orgId), eq(tickets.id, ticketId), isNull(tickets.deletedAt)))
+        .limit(1);
+      capturedReviewData = {
+        reporterId: reviewRow?.reporterId ?? null,
+        title: reviewRow?.title ?? "",
+      };
+    }
     previousStatus = target.status;
     return updated;
   });
@@ -254,6 +304,51 @@ export async function rankTicket(
         afterPayload,
       );
     }
+  }
+  const beforeStatus = previousStatus;
+  const ct = capturedTarget;
+  const rankActivity = effectDeps?.activity;
+  if (
+    rankActivity !== undefined &&
+    body.status !== undefined &&
+    beforeStatus !== undefined &&
+    result.status !== beforeStatus &&
+    ct !== undefined
+  ) {
+    await withSavepoint(() =>
+      rankActivity.logTicketFieldChanges(
+        actor.orgId,
+        ticketId,
+        actor.userId,
+        {
+          title: "",
+          status: beforeStatus,
+          priority: ct.priority ?? "MEDIUM",
+          assigneeId: null,
+          dueDate: ct.dueDate ?? null,
+          points: ct.points ?? null,
+          type: "TASK",
+          cycleId: ct.cycleId ?? null,
+        },
+        { status: result.status },
+      )
+    ).catch((error) => logger.error("Failed to log rank ticket activity", { error }));
+  }
+  const rd = capturedReviewData;
+  const rankDispatch = effectDeps?.dispatch;
+  if (rankDispatch !== undefined && rd !== undefined && rd.reporterId !== null) {
+    await rankDispatch.emit({
+      eventKey: "build.ticket.review_requested",
+      orgId: actor.orgId,
+      actorUserId: actor.userId,
+      targetUserIds: [rd.reporterId],
+      entityType: "ticket",
+      entityId: String(ticketId),
+      title: "Ticket ready for review",
+      message: `Ticket "${rd.title}" changed to IN_REVIEW.`,
+      link: buildTicketBoardHref(projectId, ticketId),
+      variables: { ticketId, status: "IN_REVIEW", title: rd.title },
+    });
   }
   await cache.invalidateNamespace(`build:analytics:${actor.orgId}`).catch(
     logSideEffectFailure("analytics cache eviction", {

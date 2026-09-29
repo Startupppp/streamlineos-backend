@@ -9,6 +9,8 @@ import { organizationMembers, projectMembers, projectStatuses, tickets, workflow
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
+import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111", userId: "owner", role: "OWNER",
@@ -55,6 +57,8 @@ async function harness(size = 1, allowed = true, missingProject = false) {
     { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all"), resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
     { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn().mockResolvedValue(undefined) } },
+    { provide: ProjectsActivityService, useValue: { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } },
+    { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   return { module, db, rows, statuses, occupancy, transitions, set, values, service: module.get(ProjectsTicketsQueryService) };
 }

@@ -9,6 +9,8 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 import { bulkUpdateSchema } from "../dto/projects.schemas";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
+import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111",
@@ -87,6 +89,8 @@ async function harness(ticketVersion: number) {
         provide: BuildAutomationRunnerService,
         useValue: { runForTicketEvent: jest.fn().mockResolvedValue(undefined) },
       },
+      { provide: ProjectsActivityService, useValue: { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } },
+      { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
     ],
   }).compile();
   return {

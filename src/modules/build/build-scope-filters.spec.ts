@@ -24,23 +24,25 @@ function makeListDb() {
 }
 
 describe("Build scope filters reach the WHERE clause", () => {
-  it("filters managed products by search term", async () => {
+  it("filters managed products by a trailing-wildcard search term, so the predicate can use an org-led btree index under RLS where a trigram index is dead (BE-49, BE-80)", async () => {
     const { db, where } = makeListDb();
     await new ManagedProductsService(db, audit).listManagedProducts(
       ORG,
       { limit: 20, search: "atlas" } as never,
       MEMBER,
     );
-    expect(renderParams(where.mock.calls[0]?.[0])).toContain("%atlas%");
+    expect(renderParams(where.mock.calls[0]?.[0])).toContain("atlas%");
+    expect(renderParams(where.mock.calls[0]?.[0])).not.toContain("%atlas");
   });
 
-  it("filters teams by search term", async () => {
+  it("filters teams by a trailing-wildcard search term, for the same reason managed products do (BE-49, BE-80)", async () => {
     const { db, where } = makeListDb();
     await new TeamsService(db, audit).listTeams(ORG, {
       pageSize: 50,
       search: "eng",
     } as never, MEMBER);
-    expect(renderParams(where.mock.calls[0]?.[0])).toContain("%eng%");
+    expect(renderParams(where.mock.calls[0]?.[0])).toContain("eng%");
+    expect(renderParams(where.mock.calls[0]?.[0])).not.toContain("%eng");
   });
 
   it("keeps every scoped list bound to the caller's organization", async () => {

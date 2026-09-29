@@ -13,6 +13,8 @@ import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
 import { authorizeTicketMutation, lockProjectTicketMutation, readMutationTickets } from "../lib/build-ticket-mutation-policy";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
+import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 
 @Injectable()
 export class ProjectsTicketsQueryService {
@@ -22,6 +24,8 @@ export class ProjectsTicketsQueryService {
     private readonly access: AccessService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly automationRunner: BuildAutomationRunnerService,
+    private readonly activity: ProjectsActivityService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
@@ -49,6 +53,8 @@ export class ProjectsTicketsQueryService {
     return rankTicket(this.db, this.cache, this.access, actor, projectId, ticketId, body, {
       webhooksDispatch: this.webhooksDispatch,
       automationRunner: this.automationRunner,
+      activity: this.activity,
+      dispatch: this.dispatch,
     });
   }
 }
