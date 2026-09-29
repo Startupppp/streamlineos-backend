@@ -2,7 +2,7 @@
 
 GENERATED FILE. Do not hand-edit. Regenerate with `pnpm check:build-authz-census`; the generator is `scripts/build-authorization-census.mjs`.
 
-Scope: every `*.controller.ts` under `src/modules/build/`. 49 controller files, 325 HTTP handlers.
+Scope: every `*.controller.ts` under `src/modules/build/`. 53 controller files, 342 HTTP handlers.
 
 ## Counts
 
@@ -12,8 +12,8 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 49 controller files, 
 | CLOSED-IN-FLIGHT | 0 |
 | NEEDS-REVIEW | 0 |
 | CLOSED | 42 |
-| VERIFIED | 283 |
-| **total** | **325** |
+| VERIFIED | 300 |
+| **total** | **342** |
 
 ## How to read a verdict
 
@@ -25,39 +25,9 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 49 controller files, 
 
 ## Reviewed findings
 
-### CLOSED — `PATCH /build/:projectId/custom-states/:stateId`
-
-`ProjectResourcesController.updateCustomState` — `src/modules/build/core/project-resources.controller.ts:168`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/custom-states/:stateId. The controller DOES declare @Param("projectId") but binds it to `_` and throws it away; the service finds the state by (id, orgId) alone. The permission check that follows uses the ROW's own projectId, so the caller is re-authorised against whatever project the state really belongs to — the URL segment is decorative.
-
-Blast radius: Intra-tenant. A state belonging to project A is editable through project B's URL by a caller holding build:manage on A.
-
-Evidence:
-
-- `src/modules/build/core/project-resources.controller.ts:173` — bound to the URL project
-- `src/modules/build/core/projects-custom-states.service.ts:171` — bound to the URL project
-
-### CLOSED — `DELETE /build/:projectId/custom-states/:stateId`
-
-`ProjectResourcesController.deleteCustomState` — `src/modules/build/core/project-resources.controller.ts:181`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/custom-states/:stateId. Identical to updateCustomState: @Param("projectId") is bound to `_` and discarded, and the delete resolves the state by (id, orgId).
-
-Blast radius: Intra-tenant cross-project delete.
-
-Evidence:
-
-- `src/modules/build/core/project-resources.controller.ts:187` — bound to the URL project
-- `src/modules/build/core/projects-custom-states.service.ts:307` — bound to the URL project
-
 ### CLOSED — `PATCH /build/:projectId/automations/:automationId`
 
-`ProjectsAutomationsController.update` — `src/modules/build/core/projects-automations.controller.ts:81`
+`ProjectsAutomationsController.update` — `src/modules/build/core/automation/projects-automations.controller.ts:100`
 
 Finding: `parent-binding-missing`
 
@@ -67,14 +37,14 @@ Blast radius: Was intra-tenant cross-project rules-tampering; now closed. orgId 
 
 Evidence:
 
-- `src/modules/build/core/projects-automations.controller.ts:85` — handler binds both projectId and automationId and forwards both to the service
-- `src/modules/build/core/projects-automations.controller.ts:91` — projectId is passed into the service call
-- `src/modules/build/core/projects-automations.service.ts:81` — authorizes the caller against the named projectId only — this can be a project-scoped standing
-- `src/modules/build/core/projects-automations.service.ts:92` — fix: the UPDATE's WHERE now re-binds projectId, so a foreign automationId 404s
+- `src/modules/build/core/automation/projects-automations.controller.ts:107` — handler binds both projectId and automationId and forwards both to the service
+- `src/modules/build/core/automation/projects-automations.controller.ts:113` — projectId is passed into the service call
+- `src/modules/build/core/automation/projects-automations.service.ts:115` — authorizes the caller against the named projectId only — this can be a project-scoped standing
+- `src/modules/build/core/automation/projects-automations.service.ts:60` — fix: the UPDATE's WHERE now re-binds projectId, so a foreign automationId 404s
 
 ### CLOSED — `DELETE /build/:projectId/automations/:automationId`
 
-`ProjectsAutomationsController.delete` — `src/modules/build/core/projects-automations.controller.ts:94`
+`ProjectsAutomationsController.delete` — `src/modules/build/core/automation/projects-automations.controller.ts:116`
 
 Finding: `parent-binding-missing`
 
@@ -84,14 +54,14 @@ Blast radius: Was intra-tenant cross-project deletion, non-recoverable through t
 
 Evidence:
 
-- `src/modules/build/core/projects-automations.controller.ts:99` — handler binds both projectId and automationId and forwards both to the service
-- `src/modules/build/core/projects-automations.controller.ts:104` — projectId is passed into the service call
-- `src/modules/build/core/projects-automations.service.ts:101` — authorizes the caller against the named projectId only — this can be a project-scoped standing
-- `src/modules/build/core/projects-automations.service.ts:108` — fix: the DELETE's WHERE now re-binds projectId, so a foreign automationId 404s
+- `src/modules/build/core/automation/projects-automations.controller.ts:121` — handler binds both projectId and automationId and forwards both to the service
+- `src/modules/build/core/automation/projects-automations.controller.ts:126` — projectId is passed into the service call
+- `src/modules/build/core/automation/projects-automations.service.ts:115` — authorizes the caller against the named projectId only — this can be a project-scoped standing
+- `src/modules/build/core/automation/projects-automations.service.ts:138` — fix: the DELETE's WHERE now re-binds projectId, so a foreign automationId 404s
 
 ### CLOSED — `PATCH /build/:projectId/custom-fields/:fieldId`
 
-`ProjectsCustomFieldsController.updateField` — `src/modules/build/core/projects-custom-fields.controller.ts:60`
+`ProjectsCustomFieldsController.updateField` — `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:60`
 
 Finding: `parent-binding-missing`
 
@@ -101,13 +71,13 @@ Blast radius: Intra-tenant, not cross-tenant: orgId is still bound, so the write
 
 Evidence:
 
-- `src/modules/build/core/projects-custom-fields.controller.ts:65` — bound to the URL project
-- `src/modules/build/core/projects-custom-fields.service.ts:143` — bound to the URL project
-- `src/modules/build/core/projects-custom-fields.service.ts:87` — listFields DOES bind projectId — the control proving the column is usable here
+- `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:65` — bound to the URL project
+- `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:143` — bound to the URL project
+- `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:87` — listFields DOES bind projectId — the control proving the column is usable here
 
 ### CLOSED — `DELETE /build/:projectId/custom-fields/:fieldId`
 
-`ProjectsCustomFieldsController.deleteField` — `src/modules/build/core/projects-custom-fields.controller.ts:73`
+`ProjectsCustomFieldsController.deleteField` — `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:73`
 
 Finding: `parent-binding-missing`
 
@@ -117,12 +87,12 @@ Blast radius: Intra-tenant. orgId is bound, so no cross-tenant delete. Cross-PRO
 
 Evidence:
 
-- `src/modules/build/core/projects-custom-fields.controller.ts:79` — bound to the URL project
-- `src/modules/build/core/projects-custom-fields.service.ts:166` — bound to the URL project
+- `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:79` — bound to the URL project
+- `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:166` — bound to the URL project
 
 ### CLOSED — `GET /build/:projectId/tickets/:ticketId/custom-field-values`
 
-`ProjectsCustomFieldsController.getTicketValues` — `src/modules/build/core/projects-custom-fields.controller.ts:86`
+`ProjectsCustomFieldsController.getTicketValues` — `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:86`
 
 Finding: `ticket-data-scope-missing`
 
@@ -132,15 +102,15 @@ Blast radius: None: an inaccessible or mismatched ticket is rejected before any 
 
 Evidence:
 
-- `src/modules/build/core/projects-custom-fields.controller.ts:90` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-custom-fields.service.ts:174` — the terminal service receives the authenticated actor and route ids
-- `src/modules/build/core/projects-custom-fields.service.ts:175` — canonical ticket authorization runs before the values query
-- `src/modules/build/core/build-ticket-read-access.ts:37` — tenant, project, and ticket are bound in one lookup
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:90` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:174` — the terminal service receives the authenticated actor and route ids
+- `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:175` — canonical ticket authorization runs before the values query
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:37` — tenant, project, and ticket are bound in one lookup
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/custom-field-values`
 
-`ProjectsCustomFieldsController.upsertTicketValues` — `src/modules/build/core/projects-custom-fields.controller.ts:98`
+`ProjectsCustomFieldsController.upsertTicketValues` — `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:98`
 
 Finding: `ticket-data-scope-missing`
 
@@ -150,15 +120,45 @@ Blast radius: None: an inaccessible or mismatched ticket is rejected before vali
 
 Evidence:
 
-- `src/modules/build/core/projects-custom-fields.controller.ts:103` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-custom-fields.service.ts:231` — the terminal service receives the authenticated actor and route ids
-- `src/modules/build/core/projects-custom-fields.service.ts:237` — canonical ticket authorization runs before validation or mutation
-- `src/modules/build/core/projects-custom-fields.service.ts:242` — body field ids are independently bound to the same project
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:103` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:231` — the terminal service receives the authenticated actor and route ids
+- `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:237` — canonical ticket authorization runs before validation or mutation
+- `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:242` — body field ids are independently bound to the same project
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+
+### CLOSED — `PATCH /build/:projectId/custom-states/:stateId`
+
+`ProjectResourcesController.updateCustomState` — `src/modules/build/core/project-crud/project-resources.controller.ts:173`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/custom-states/:stateId. The controller DOES declare @Param("projectId") but binds it to `_` and throws it away; the service finds the state by (id, orgId) alone. The permission check that follows uses the ROW's own projectId, so the caller is re-authorised against whatever project the state really belongs to — the URL segment is decorative.
+
+Blast radius: Intra-tenant. A state belonging to project A is editable through project B's URL by a caller holding build:manage on A.
+
+Evidence:
+
+- `src/modules/build/core/project-crud/project-resources.controller.ts:178` — bound to the URL project
+- `src/modules/build/core/custom-states/projects-custom-states.service.ts:171` — bound to the URL project
+
+### CLOSED — `DELETE /build/:projectId/custom-states/:stateId`
+
+`ProjectResourcesController.deleteCustomState` — `src/modules/build/core/project-crud/project-resources.controller.ts:186`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/custom-states/:stateId. Identical to updateCustomState: @Param("projectId") is bound to `_` and discarded, and the delete resolves the state by (id, orgId).
+
+Blast radius: Intra-tenant cross-project delete.
+
+Evidence:
+
+- `src/modules/build/core/project-crud/project-resources.controller.ts:192` — bound to the URL project
+- `src/modules/build/core/custom-states/projects-custom-states.service.ts:307` — bound to the URL project
 
 ### CLOSED — `PATCH /build/:projectId/releases/:releaseId`
 
-`ProjectsReleasesController.updateRelease` — `src/modules/build/core/projects-releases.controller.ts:62`
+`ProjectsReleasesController.updateRelease` — `src/modules/build/core/releases/projects-releases.controller.ts:78`
 
 Finding: `parent-binding-missing`
 
@@ -168,12 +168,12 @@ Blast radius: Was intra-tenant cross-project write. Closed.
 
 Evidence:
 
-- `src/modules/build/core/projects-releases.service.ts:77` — UPDATE binds id + projectId + orgId
-- `src/modules/build/core/projects-releases.service.ts:105` — ticketCount now bound to the caller's organisation
+- `src/modules/build/core/releases/projects-releases.service.ts:203` — UPDATE binds id + projectId + orgId
+- `src/modules/build/core/releases/projects-releases.service.ts:193` — ticketCount now bound to the caller's organisation
 
 ### CLOSED — `DELETE /build/:projectId/releases/:releaseId`
 
-`ProjectsReleasesController.deleteRelease` — `src/modules/build/core/projects-releases.controller.ts:75`
+`ProjectsReleasesController.deleteRelease` — `src/modules/build/core/releases/projects-releases.controller.ts:91`
 
 Finding: `parent-binding-missing`
 
@@ -183,11 +183,11 @@ Blast radius: Was intra-tenant cross-project delete. Closed.
 
 Evidence:
 
-- `src/modules/build/core/projects-releases.service.ts:115` — soft delete binds id + projectId + orgId
+- `src/modules/build/core/releases/projects-releases.service.ts:203` — soft delete binds id + projectId + orgId
 
 ### CLOSED — `POST /build/:projectId/releases/:releaseId/tickets`
 
-`ProjectsReleasesController.addTicket` — `src/modules/build/core/projects-releases.controller.ts:88`
+`ProjectsReleasesController.addTicket` — `src/modules/build/core/releases/projects-releases.controller.ts:104`
 
 Finding: `parent-binding-missing`
 
@@ -197,12 +197,12 @@ Blast radius: Was intra-tenant cross-project link. Closed.
 
 Evidence:
 
-- `src/modules/build/core/projects-releases.service.ts:125` — release bound to the URL project
-- `src/modules/build/core/projects-releases.service.ts:131` — ticket bound to the URL project
+- `src/modules/build/core/releases/projects-releases.service.ts:147` — release bound to the URL project
+- `src/modules/build/core/releases/projects-releases.service.ts:219` — ticket bound to the URL project
 
 ### CLOSED — `DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId`
 
-`ProjectsReleasesController.removeTicket` — `src/modules/build/core/projects-releases.controller.ts:102`
+`ProjectsReleasesController.removeTicket` — `src/modules/build/core/releases/projects-releases.controller.ts:118`
 
 Finding: `parent-binding-missing`
 
@@ -212,12 +212,12 @@ Blast radius: Was intra-tenant cross-project, and the unqualified join delete wa
 
 Evidence:
 
-- `src/modules/build/core/projects-releases.service.ts:144` — release bound to the URL project
-- `src/modules/build/core/projects-releases.service.ts:150` — join delete now bound to the caller's organisation
+- `src/modules/build/core/releases/projects-releases.service.ts:147` — release bound to the URL project
+- `src/modules/build/core/releases/projects-releases.service.ts:238` — join delete now bound to the caller's organisation
 
 ### CLOSED — `GET /build/:projectId/tickets/:ticketId/subtasks`
 
-`ProjectsTicketAssociationsController.getSubtasks` — `src/modules/build/core/projects-ticket-associations.controller.ts:63`
+`ProjectsTicketAssociationsController.getSubtasks` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:63`
 
 Finding: `parent-binding-missing`
 
@@ -227,14 +227,14 @@ Blast radius: None: a mismatched ticket 404s, while an inaccessible project or t
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-associations.controller.ts:68` — bound to the URL project
-- `src/modules/build/core/projects-ticket-subresources.service.ts:236` — actor-aware ticket authorization runs before the subtask query
-- `src/modules/build/core/build-ticket-read-access.ts:37` — the lookup binds tenant, project, and ticket
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:68` — bound to the URL project
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:237` — actor-aware ticket authorization runs before the subtask query
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:37` — the lookup binds tenant, project, and ticket
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `GET /build/:projectId/tickets/:ticketId/watchers`
 
-`ProjectsTicketAssociationsController.getWatchers` — `src/modules/build/core/projects-ticket-associations.controller.ts:115`
+`ProjectsTicketAssociationsController.getWatchers` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:115`
 
 Finding: `parent-binding-missing`
 
@@ -244,13 +244,13 @@ Blast radius: None: authorization completes before watcher storage is queried.
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-associations.controller.ts:120` — bound to the URL project
-- `src/modules/build/core/projects-ticket-subresources.service.ts:255` — actor-aware authorization runs before the watcher query
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:120` — bound to the URL project
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:256` — actor-aware authorization runs before the watcher query
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/watchers`
 
-`ProjectsTicketAssociationsController.addWatcher` — `src/modules/build/core/projects-ticket-associations.controller.ts:127`
+`ProjectsTicketAssociationsController.addWatcher` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:127`
 
 Finding: `parent-binding-missing`
 
@@ -260,13 +260,13 @@ Blast radius: None: tenant, project membership, route binding, and ticket DataSc
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-associations.controller.ts:133` — bound to the URL project
-- `src/modules/build/core/projects-ticket-subresources.service.ts:294` — authorization precedes member resolution and insertion
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:133` — bound to the URL project
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:295` — authorization precedes member resolution and insertion
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId/watchers`
 
-`ProjectsTicketAssociationsController.removeWatcher` — `src/modules/build/core/projects-ticket-associations.controller.ts:141`
+`ProjectsTicketAssociationsController.removeWatcher` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:141`
 
 Finding: `parent-binding-missing`
 
@@ -276,13 +276,13 @@ Blast radius: None: tenant, project membership, route binding, and ticket DataSc
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-associations.controller.ts:147` — bound to the URL project
-- `src/modules/build/core/projects-ticket-subresources.service.ts:342` — authorization precedes the watcher delete
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:147` — bound to the URL project
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:343` — authorization precedes the watcher delete
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/labels`
 
-`ProjectsTicketAssociationsController.addLabel` — `src/modules/build/core/projects-ticket-associations.controller.ts:154`
+`ProjectsTicketAssociationsController.addLabel` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:154`
 
 Finding: `parent-binding-missing`
 
@@ -292,13 +292,13 @@ Blast radius: None: tenant, project membership, route binding, and ticket DataSc
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-associations.controller.ts:160` — bound to the URL project
-- `src/modules/build/core/projects-ticket-subresources.service.ts:372` — authorization precedes the label mapping insert
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:160` — bound to the URL project
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:373` — authorization precedes the label mapping insert
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/attachments`
 
-`ProjectsTicketAssociationsController.addAttachment` — `src/modules/build/core/projects-ticket-associations.controller.ts:182`
+`ProjectsTicketAssociationsController.addAttachment` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:182`
 
 Finding: `parent-binding-missing`
 
@@ -308,13 +308,13 @@ Blast radius: None: tenant, project membership, route binding, and ticket DataSc
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-associations.controller.ts:188` — bound to the URL project
-- `src/modules/build/core/projects-ticket-subresources.service.ts:428` — authorization precedes the attachment insert
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:188` — bound to the URL project
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:429` — authorization precedes the attachment insert
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `GET /build/:projectId/tickets/:ticketId/related-links`
 
-`ProjectsTicketAssociationsController.listRelatedLinks` — `src/modules/build/core/projects-ticket-associations.controller.ts:208`
+`ProjectsTicketAssociationsController.listRelatedLinks` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:208`
 
 Finding: `project-membership-gate-missing`
 
@@ -324,14 +324,14 @@ Blast radius: Intra-tenant, not cross-tenant: ticketRelatedLinks.orgId was alrea
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-links.service.ts:38` — the fix — the private helper now delegates to the shared gate the sibling already used
-- `src/modules/build/core/build-ticket-read-access.ts:37` — the parent is now bound in SQL, not only compared in JavaScript
-- `src/modules/build/core/build-ticket-read-access.ts:44` — the project-membership assertion that was entirely absent before
-- `src/modules/build/core/projects-ticket-relations.service.ts:61` — the sibling in the same controller whose shape the fix copies
+- `src/modules/build/core/tickets/projects-ticket-links.service.ts:38` — the fix — the private helper now delegates to the shared gate the sibling already used
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:37` — the parent is now bound in SQL, not only compared in JavaScript
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:44` — the project-membership assertion that was entirely absent before
+- `src/modules/build/core/tickets/projects-ticket-relations.service.ts:61` — the sibling in the same controller whose shape the fix copies
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/related-links`
 
-`ProjectsTicketAssociationsController.addRelatedLink` — `src/modules/build/core/projects-ticket-associations.controller.ts:220`
+`ProjectsTicketAssociationsController.addRelatedLink` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:220`
 
 Finding: `project-membership-gate-missing`
 
@@ -341,13 +341,13 @@ Blast radius: Intra-tenant write, not cross-tenant: orgId was and is bound on th
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-links.service.ts:38` — the shared helper both related-link handlers call — now gated
-- `src/modules/build/core/projects-ticket-links.service.ts:151` — org was already bound on the INSERT — the org dimension was never the hole
-- `src/modules/build/core/build-ticket-read-access.ts:50` — the refusal the outsider now hits
+- `src/modules/build/core/tickets/projects-ticket-links.service.ts:38` — the shared helper both related-link handlers call — now gated
+- `src/modules/build/core/tickets/projects-ticket-links.service.ts:151` — org was already bound on the INSERT — the org dimension was never the hole
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — the refusal the outsider now hits
 
 ### CLOSED — `PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId`
 
-`ProjectsTicketChecklistsController.updateChecklist` — `src/modules/build/core/projects-ticket-checklists.controller.ts:70`
+`ProjectsTicketChecklistsController.updateChecklist` — `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:70`
 
 Finding: `parent-binding-missing`
 
@@ -357,12 +357,12 @@ Blast radius: None: tenant, project membership, ticket DataScope, ticket binding
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-subresources.service.ts:502` — project membership and ticket DataScope are enforced in the actor-aware facade
-- `src/modules/build/core/projects-ticket-checklists.service.ts:168` — the checklist is bound to the authorized ticket
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:503` — project membership and ticket DataScope are enforced in the actor-aware facade
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:168` — the checklist is bound to the authorized ticket
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId`
 
-`ProjectsTicketChecklistsController.deleteChecklist` — `src/modules/build/core/projects-ticket-checklists.controller.ts:84`
+`ProjectsTicketChecklistsController.deleteChecklist` — `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:84`
 
 Finding: `parent-binding-missing`
 
@@ -372,12 +372,12 @@ Blast radius: None: tenant, project membership, ticket DataScope, ticket binding
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-subresources.service.ts:518` — project membership and ticket DataScope are enforced in the actor-aware facade
-- `src/modules/build/core/projects-ticket-checklists.service.ts:192` — bound to the URL project
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:519` — project membership and ticket DataScope are enforced in the actor-aware facade
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:192` — bound to the URL project
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items`
 
-`ProjectsTicketChecklistsController.createChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:98`
+`ProjectsTicketChecklistsController.createChecklistItem` — `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:98`
 
 Finding: `parent-binding-missing`
 
@@ -387,12 +387,12 @@ Blast radius: None: tenant, project membership, ticket DataScope, ticket binding
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-subresources.service.ts:539` — project membership and ticket DataScope are enforced in the actor-aware facade
-- `src/modules/build/core/projects-ticket-checklists.service.ts:219` — the checklist is bound to the authorized ticket
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:540` — project membership and ticket DataScope are enforced in the actor-aware facade
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:219` — the checklist is bound to the authorized ticket
 
 ### CLOSED — `PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId`
 
-`ProjectsTicketChecklistsController.updateChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:113`
+`ProjectsTicketChecklistsController.updateChecklistItem` — `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:113`
 
 Finding: `parent-binding-missing`
 
@@ -402,13 +402,13 @@ Blast radius: None: every route parent and the item itself are bound before the 
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-subresources.service.ts:563` — project membership and ticket DataScope are enforced in the actor-aware facade
-- `src/modules/build/core/projects-ticket-checklists.service.ts:250` — the checklist is bound to the authorized ticket
-- `src/modules/build/core/projects-ticket-checklists.service.ts:255` — the item is bound to the URL checklist
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:564` — project membership and ticket DataScope are enforced in the actor-aware facade
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:250` — the checklist is bound to the authorized ticket
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:255` — the item is bound to the URL checklist
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId`
 
-`ProjectsTicketChecklistsController.deleteChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:128`
+`ProjectsTicketChecklistsController.deleteChecklistItem` — `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:128`
 
 Finding: `parent-binding-missing`
 
@@ -418,13 +418,13 @@ Blast radius: None: every route parent and the item itself are bound before dele
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-subresources.service.ts:581` — project membership and ticket DataScope are enforced in the actor-aware facade
-- `src/modules/build/core/projects-ticket-checklists.service.ts:284` — the checklist is bound to the authorized ticket
-- `src/modules/build/core/projects-ticket-checklists.service.ts:289` — the item is bound to the URL checklist
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:582` — project membership and ticket DataScope are enforced in the actor-aware facade
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:284` — the checklist is bound to the authorized ticket
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:289` — the item is bound to the URL checklist
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/comments`
 
-`ProjectsTicketCommentsController.addComment` — `src/modules/build/core/projects-ticket-comments.controller.ts:43`
+`ProjectsTicketCommentsController.addComment` — `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:43`
 
 Finding: `parent-binding-missing`
 
@@ -434,13 +434,13 @@ Blast radius: None: tenant, project membership, route binding, and ticket DataSc
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-comments.controller.ts:54` — the actor and both route ids reach the service
-- `src/modules/build/core/projects-ticket-comments.service.ts:42` — actor-aware authorization runs before ticket and comment storage
-- `src/modules/build/core/projects-ticket-comments.service.ts:46` — the ticket lookup also binds the URL project
+- `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:54` — the actor and both route ids reach the service
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:43` — actor-aware authorization runs before ticket and comment storage
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:47` — the ticket lookup also binds the URL project
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/comments/:commentId/reactions`
 
-`ProjectsTicketCommentsController.addReaction` — `src/modules/build/core/projects-ticket-comments.controller.ts:98`
+`ProjectsTicketCommentsController.addReaction` — `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:98`
 
 Finding: `parent-binding-missing`
 
@@ -450,15 +450,15 @@ Blast radius: None: tenant, project membership, route binding, ticket DataScope,
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-comments.controller.ts:103` — handler declares every route parent
-- `src/modules/build/core/projects-ticket-comments.controller.ts:110` — the actor and route ids are forwarded together
-- `src/modules/build/core/projects-ticket-subresources.service.ts:119` — facade carries the actor and route ids to the terminal service
-- `src/modules/build/core/projects-ticket-comments.service.ts:293` — terminal implementation receives the actor
-- `src/modules/build/core/projects-ticket-comments.service.ts:295` — project membership and ticket DataScope are enforced before the comment lookup
+- `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:103` — handler declares every route parent
+- `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:110` — the actor and route ids are forwarded together
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:120` — facade carries the actor and route ids to the terminal service
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:294` — terminal implementation receives the actor
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:296` — project membership and ticket DataScope are enforced before the comment lookup
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji`
 
-`ProjectsTicketCommentsController.removeReaction` — `src/modules/build/core/projects-ticket-comments.controller.ts:113`
+`ProjectsTicketCommentsController.removeReaction` — `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:113`
 
 Finding: `parent-binding-missing`
 
@@ -468,15 +468,15 @@ Blast radius: None: tenant, project membership, route binding, ticket DataScope,
 
 Evidence:
 
-- `src/modules/build/core/projects-ticket-comments.controller.ts:118` — handler declares every route parent
-- `src/modules/build/core/projects-ticket-comments.controller.ts:125` — the actor and route ids are forwarded together
-- `src/modules/build/core/projects-ticket-subresources.service.ts:129` — facade carries the actor and route ids to the terminal service
-- `src/modules/build/core/projects-ticket-comments.service.ts:316` — terminal implementation receives the actor
-- `src/modules/build/core/projects-ticket-comments.service.ts:318` — project membership and ticket DataScope are enforced before the comment lookup
+- `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:118` — handler declares every route parent
+- `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:125` — the actor and route ids are forwarded together
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:130` — facade carries the actor and route ids to the terminal service
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:317` — terminal implementation receives the actor
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:319` — project membership and ticket DataScope are enforced before the comment lookup
 
 ### CLOSED — `GET /build/:projectId/tickets/:ticketId`
 
-`ProjectsTicketsController.getTicket` — `src/modules/build/core/projects-tickets.controller.ts:215`
+`ProjectsTicketsController.getTicket` — `src/modules/build/core/tickets/projects-tickets.controller.ts:234`
 
 Finding: `parent-binding-missing`
 
@@ -486,28 +486,29 @@ Blast radius: None: tenant, route binding, project membership, and ticket DataSc
 
 Evidence:
 
-- `src/modules/build/core/projects-tickets-detail.service.ts:54` — bound to the URL project
-- `src/modules/build/core/projects-tickets-detail.service.ts:63` — the ticket DataScope is resolved
-- `src/modules/build/core/projects-tickets-detail.service.ts:108` — project membership is checked before the record is returned
+- `src/modules/build/core/tickets/projects-tickets-detail.service.ts:54` — bound to the URL project
+- `src/modules/build/core/tickets/projects-tickets-detail.service.ts:63` — the ticket DataScope is resolved
+- `src/modules/build/core/tickets/projects-tickets-detail.service.ts:108` — project membership is checked before the record is returned
 
 ### CLOSED — `PATCH /build/:projectId/tickets/:ticketId`
 
-`ProjectsTicketsController.updateTicket` — `src/modules/build/core/projects-tickets.controller.ts:227`
+`ProjectsTicketsController.updateTicket` — `src/modules/build/core/tickets/projects-tickets.controller.ts:246`
 
 Finding: `parent-binding-missing`
 
-PATCH /build/:projectId/tickets/:ticketId. Closed: the pre-read binds ticketId+projectId+orgId, project access is checked, and authorizeMutation applies the canonical record-level mutation policy before the transaction updates the ticket.
+PATCH /build/:projectId/tickets/:ticketId. Closed: the pre-read binds ticketId+projectId+orgId, project access is checked, and authorizeMutation applies the canonical record-level mutation policy before the transaction updates the ticket. The body moved to apply-ticket-change.ts, which added a system-job arm: when systemJobCovers(u.principal, "build:tickets:update") the transaction takes lockProjectTicketMutation alone and authorizeMutation does not run. That arm is reachable only by a system-job principal, and resolveProjectAccess still gates it above the transaction; it is recorded here because the claim "authorizeMutation runs before the update" is now true of human actors only.
 
 Blast radius: None: tenant, route binding, project membership, and ticket record scope are enforced before mutation.
 
 Evidence:
 
-- `src/modules/build/core/projects-tickets-update.service.ts:197` — bound to the URL project
-- `src/modules/build/core/projects-tickets-update.service.ts:272` — canonical record-level mutation authorization runs inside the transaction
+- `src/modules/build/core/tickets/apply-ticket-change.ts:206` — bound to the URL project
+- `src/modules/build/core/tickets/apply-ticket-change.ts:257` — a system-job principal takes the lock-only arm and does NOT run authorizeMutation
+- `src/modules/build/core/tickets/apply-ticket-change.ts:260` — for every human actor, canonical record-level mutation authorization runs inside the transaction
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId`
 
-`ProjectsTicketsController.deleteTicket` — `src/modules/build/core/projects-tickets.controller.ts:240`
+`ProjectsTicketsController.deleteTicket` — `src/modules/build/core/tickets/projects-tickets.controller.ts:259`
 
 Finding: `ticket-data-scope-missing`
 
@@ -517,14 +518,14 @@ Blast radius: None: an inaccessible or mismatched ticket is rejected before bloc
 
 Evidence:
 
-- `src/modules/build/core/projects-tickets.controller.ts:251` — the complete authenticated actor reaches the service
-- `src/modules/build/core/projects-tickets.service.ts:115` — the terminal service accepts CurrentUserContext
-- `src/modules/build/core/projects-tickets.service.ts:122` — canonical ticket authorization runs before the pre-read and delete path
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/tickets/projects-tickets.controller.ts:270` — the complete authenticated actor reaches the service
+- `src/modules/build/core/tickets/projects-tickets-delete.service.ts:43` — the terminal service accepts CurrentUserContext
+- `src/modules/build/core/tickets/projects-tickets-delete.service.ts:50` — canonical ticket authorization runs before the pre-read and delete path
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `DELETE /build/:projectId/webhooks/:webhookId`
 
-`ProjectsWebhooksController.deleteWebhook` — `src/modules/build/core/projects-webhooks.controller.ts:59`
+`ProjectsWebhooksController.deleteWebhook` — `src/modules/build/core/webhooks/projects-webhooks.controller.ts:80`
 
 Finding: `parent-binding-missing`
 
@@ -534,13 +535,13 @@ Blast radius: Intra-tenant. orgId is bound. A webhook registered against project
 
 Evidence:
 
-- `src/modules/build/core/projects-webhooks.controller.ts:65` — bound to the URL project
-- `src/modules/build/core/projects-webhooks.service.ts:60` — bound to the URL project
-- `src/modules/build/core/projects-webhooks.service.ts:76` — bound to the URL project
+- `src/modules/build/core/webhooks/projects-webhooks.controller.ts:60` — bound to the URL project
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:48` — bound to the URL project
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:48` — bound to the URL project
 
 ### CLOSED — `GET /build/:projectId/sprints/:sprintId`
 
-`SprintsController.getSprint` — `src/modules/build/execution/iterations.controller.ts:104`
+`SprintsController.getSprint` — `src/modules/build/execution/iterations.controller.ts:107`
 
 Finding: `parent-binding-missing`
 
@@ -555,7 +556,7 @@ Evidence:
 
 ### CLOSED — `PATCH /build/:projectId/sprints/:sprintId`
 
-`SprintsController.updateSprint` — `src/modules/build/execution/iterations.controller.ts:116`
+`SprintsController.updateSprint` — `src/modules/build/execution/iterations.controller.ts:119`
 
 Finding: `parent-binding-missing`
 
@@ -570,7 +571,7 @@ Evidence:
 
 ### CLOSED — `PATCH /build/:projectId/modules/:moduleId`
 
-`ModulesController.updateModule` — `src/modules/build/execution/iterations.controller.ts:239`
+`ModulesController.updateModule` — `src/modules/build/execution/iterations.controller.ts:242`
 
 Finding: `parent-binding-missing`
 
@@ -584,7 +585,7 @@ Evidence:
 
 ### CLOSED — `DELETE /build/:projectId/modules/:moduleId`
 
-`ModulesController.deleteModule` — `src/modules/build/execution/iterations.controller.ts:252`
+`ModulesController.deleteModule` — `src/modules/build/execution/iterations.controller.ts:255`
 
 Finding: `parent-binding-missing`
 
@@ -594,7 +595,7 @@ Blast radius: Intra-tenant cross-project delete, with a side effect on every tic
 
 Evidence:
 
-- `src/modules/build/execution/modules.service.ts:188` — bound to the URL project
+- `src/modules/build/execution/modules.service.ts:205` — bound to the URL project
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/time-entries`
 
@@ -612,7 +613,7 @@ Evidence:
 
 ### CLOSED — `PATCH /build/:projectId/milestones/:milestoneId`
 
-`MilestonesController.updateMilestone` — `src/modules/build/execution/workspace.controller.ts:96`
+`MilestonesController.updateMilestone` — `src/modules/build/execution/workspace.controller.ts:106`
 
 Finding: `parent-binding-missing`
 
@@ -622,11 +623,11 @@ Blast radius: Intra-tenant cross-project write; org-wide permission is sufficien
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:68` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:185` — bound to the URL project
 
 ### CLOSED — `DELETE /build/:projectId/milestones/:milestoneId`
 
-`MilestonesController.deleteMilestone` — `src/modules/build/execution/workspace.controller.ts:109`
+`MilestonesController.deleteMilestone` — `src/modules/build/execution/workspace.controller.ts:119`
 
 Finding: `parent-binding-missing`
 
@@ -636,11 +637,11 @@ Blast radius: Intra-tenant cross-project delete.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:78` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:205` — bound to the URL project
 
 ### CLOSED — `PATCH /build/:projectId/intake/:requestId`
 
-`IntakeController.updateIntake` — `src/modules/build/execution/workspace.controller.ts:154`
+`IntakeController.updateIntake` — `src/modules/build/execution/workspace.controller.ts:164`
 
 Finding: `parent-binding-missing`
 
@@ -650,11 +651,11 @@ Blast radius: Intra-tenant cross-project write.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:154` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:281` — bound to the URL project
 
 ### CLOSED — `PATCH /build/:projectId/views/:viewId`
 
-`ViewsController.updateView` — `src/modules/build/execution/workspace.controller.ts:198`
+`ViewsController.updateView` — `src/modules/build/execution/workspace.controller.ts:209`
 
 Finding: `parent-binding-missing`
 
@@ -664,12 +665,12 @@ Blast radius: Intra-tenant. Private views are additionally user-scoped; SHARED v
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:269` — bound to the URL project
-- `src/modules/build/execution/workspace.service.ts:279` — UPDATE binds id + orgId
+- `src/modules/build/execution/workspace.service.ts:417` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:427` — UPDATE binds id + orgId
 
 ### CLOSED — `DELETE /build/:projectId/views/:viewId`
 
-`ViewsController.deleteView` — `src/modules/build/execution/workspace.controller.ts:211`
+`ViewsController.deleteView` — `src/modules/build/execution/workspace.controller.ts:222`
 
 Finding: `parent-binding-missing`
 
@@ -679,8 +680,8 @@ Blast radius: Intra-tenant; shared views are deletable across projects by any or
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:286` — bound to the URL project
-- `src/modules/build/execution/workspace.service.ts:293` — DELETE binds id + orgId
+- `src/modules/build/execution/workspace.service.ts:417` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:441` — DELETE binds id + orgId
 
 ## Reviewed and cleared
 
@@ -693,7 +694,7 @@ Handlers the static pass may not certify alone, read by hand and found sound. Li
 GET /build/:projectId/approvals/:approvalId. The handler declares both @Param("projectId") and @Param("approvalId") and forwards both into ApprovalsReadService.getApproval(u, projectId, approvalId). That method calls assertProjectAccess(u, projectId) and then the shared loadApproval(db, orgId, projectId, approvalId) helper, whose single WHERE clause binds id=approvalId AND orgId=orgId AND projectId=projectId together and throws NotFoundException when they do not all match. A real approval that belongs to a different project (or a different org) 404s; the URL's :projectId is not decorative.
 
 - `src/modules/build/approvals/approvals.controller.ts:104` — handler binds both projectId and approvalId route params and forwards both
-- `src/modules/build/approvals/approvals-read.service.ts:108` — projectId is passed into loadApproval alongside approvalId and orgId
+- `src/modules/build/approvals/approvals-read.service.ts:137` — projectId is passed into loadApproval alongside approvalId and orgId
 - `src/modules/build/approvals/approval-lookup.ts:6` — shared lookup takes projectId as a required parameter
 - `src/modules/build/approvals/approval-lookup.ts:11` — WHERE clause binds the approval row to the named project; NotFoundException on any mismatch
 
@@ -735,7 +736,7 @@ DELETE /build/:projectId/approvals/:approvalId. ApprovalsService.softDeleteAppro
 GET /build/:projectId/change-requests/:changeRequestId/affected-tickets. ChangeRequestAffectedItemsService.listAffectedTickets opens with ChangeRequestsService.getChangeRequest(u, projectId, changeRequestId), which asserts project access and binds the change request row to id+orgId+projectId, 404 otherwise. Only after that does it query changeRequestAffectedItems, itself filtered by orgId+changeRequestId — a changeRequestId already proven to belong to this exact project.
 
 - `src/modules/build/client-portal/change-request-affected-items.service.ts:68` — binds the change request to id+orgId+projectId; 404 on mismatch
-- `src/modules/build/client-portal/change-requests.service.ts:165` — getChangeRequest's own WHERE re-binds projectId
+- `src/modules/build/client-portal/change-requests.service.ts:166` — getChangeRequest's own WHERE re-binds projectId
 
 ### VERIFIED — `POST /build/:projectId/change-requests/:changeRequestId/affected-tickets`
 
@@ -762,8 +763,8 @@ DELETE /build/:projectId/change-requests/:changeRequestId/affected-tickets/:affe
 GET /build/:projectId/change-requests/:changeRequestId. ChangeRequestsService.getChangeRequest(u, projectId, crId) first calls assertProjectAccess(u, projectId), then SELECTs the row with id=crId AND orgId=u.orgId AND projectId=projectId all in the same WHERE, throwing NotFoundException when no row matches. The :projectId segment is a real predicate on the query, not just a permission check.
 
 - `src/modules/build/client-portal/change-requests.controller.ts:73` — handler binds both projectId and changeRequestId and forwards both
-- `src/modules/build/client-portal/change-requests.service.ts:156` — signature takes projectId
-- `src/modules/build/client-portal/change-requests.service.ts:163` — SELECT WHERE binds id+orgId+projectId together (see surrounding and(...))
+- `src/modules/build/client-portal/change-requests.service.ts:157` — signature takes projectId
+- `src/modules/build/client-portal/change-requests.service.ts:164` — SELECT WHERE binds id+orgId+projectId together (see surrounding and(...))
 
 ### VERIFIED — `PATCH /build/:projectId/change-requests/:changeRequestId`
 
@@ -772,8 +773,8 @@ GET /build/:projectId/change-requests/:changeRequestId. ChangeRequestsService.ge
 PATCH /build/:projectId/change-requests/:changeRequestId. ChangeRequestsService.updateChangeRequest(u, projectId, crId, input) first SELECTs the existing row bound to id+orgId+projectId (404 if it does not match), then the actual UPDATE repeats the identical id+orgId+projectId binding in its own WHERE clause. Both the existence check and the mutation itself are project-scoped, not just the pre-check.
 
 - `src/modules/build/client-portal/change-requests.controller.ts:98` — handler binds both projectId and changeRequestId and forwards both
-- `src/modules/build/client-portal/change-requests.service.ts:246` — existence check binds id+orgId+projectId
-- `src/modules/build/client-portal/change-requests.service.ts:300` — the UPDATE's own WHERE re-binds id+orgId+projectId
+- `src/modules/build/client-portal/change-requests.service.ts:237` — existence check binds id+orgId+projectId
+- `src/modules/build/client-portal/change-requests.service.ts:291` — the UPDATE's own WHERE re-binds id+orgId+projectId
 
 ### VERIFIED — `DELETE /build/:projectId/change-requests/:changeRequestId`
 
@@ -782,254 +783,80 @@ PATCH /build/:projectId/change-requests/:changeRequestId. ChangeRequestsService.
 DELETE /build/:projectId/change-requests/:changeRequestId. Same shape as updateChangeRequest: ChangeRequestsService.deleteChangeRequest(u, projectId, crId) SELECTs the existing row bound to id+orgId+projectId (404 on mismatch), then the soft-delete UPDATE repeats the identical id+orgId+projectId binding.
 
 - `src/modules/build/client-portal/change-requests.controller.ts:112` — handler binds both projectId and changeRequestId and forwards both
-- `src/modules/build/client-portal/change-requests.service.ts:338` — existence check binds id+orgId+projectId
-- `src/modules/build/client-portal/change-requests.service.ts:351` — soft-delete UPDATE re-binds id+orgId+projectId
+- `src/modules/build/client-portal/change-requests.service.ts:329` — existence check binds id+orgId+projectId
+- `src/modules/build/client-portal/change-requests.service.ts:342` — soft-delete UPDATE re-binds id+orgId+projectId
 
 ### VERIFIED — `PATCH /build/:projectId/client-visibility/tickets/:ticketId`
 
-`ClientVisibilityController.toggleTicketVisibility` — `src/modules/build/client-portal/client-visibility.controller.ts:49`
+`ClientVisibilityController.toggleTicketVisibility` — `src/modules/build/client-portal/client-visibility.controller.ts:51`
 
 PATCH /build/:projectId/client-visibility/tickets/:ticketId. ClientVisibilityService.toggleTicketVisibility(orgId, userId, projectId, ticketId, clientVisible) first looks up the ticket bound to id=ticketId AND orgId AND projectId (404 if absent), then the UPDATE is keyed by id+orgId — ticketId is a global PK already proven by the preceding lookup to belong to this exact project, so the UPDATE's narrower key is still safe (verify-then-act-by-PK).
 
-- `src/modules/build/client-portal/client-visibility.controller.ts:53` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/client-portal/client-visibility.service.ts:54` — existence check binds id+orgId+projectId
-- `src/modules/build/client-portal/client-visibility.service.ts:61` — UPDATE keyed by the already-verified PK
+- `src/modules/build/client-portal/client-visibility.controller.ts:55` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/client-portal/client-visibility.service.ts:91` — existence check binds id+orgId+projectId
+- `src/modules/build/client-portal/client-visibility.service.ts:102` — UPDATE keyed by the already-verified PK
+- `src/modules/build/client-portal/client-visibility.service.ts:103` — the UPDATE also binds the tenant
+- `src/modules/build/client-portal/client-visibility.service.ts:104` — an optional optimistic-lock arm was added to the UPDATE; it narrows the key, never widens it
 
 ### VERIFIED — `PATCH /build/:projectId/client-visibility/milestones/:milestoneId`
 
-`ClientVisibilityController.toggleMilestoneVisibility` — `src/modules/build/client-portal/client-visibility.controller.ts:62`
+`ClientVisibilityController.toggleMilestoneVisibility` — `src/modules/build/client-portal/client-visibility.controller.ts:64`
 
 PATCH /build/:projectId/client-visibility/milestones/:milestoneId. Same shape: toggleMilestoneVisibility looks up the milestone bound to id+orgId+projectId (404 if absent) before the UPDATE keyed by the already-verified id+orgId.
 
-- `src/modules/build/client-portal/client-visibility.controller.ts:66` — handler binds both projectId and milestoneId and forwards both
-- `src/modules/build/client-portal/client-visibility.service.ts:78` — existence check binds id+orgId+projectId
-- `src/modules/build/client-portal/client-visibility.service.ts:89` — UPDATE keyed by the already-verified PK
+- `src/modules/build/client-portal/client-visibility.controller.ts:68` — handler binds both projectId and milestoneId and forwards both
+- `src/modules/build/client-portal/client-visibility.service.ts:126` — existence check binds id+orgId+projectId
+- `src/modules/build/client-portal/client-visibility.service.ts:137` — UPDATE keyed by the already-verified PK
 
 ### VERIFIED — `PATCH /build/:projectId/client-visibility/comments/:commentId`
 
-`ClientVisibilityController.toggleCommentVisibility` — `src/modules/build/client-portal/client-visibility.controller.ts:75`
+`ClientVisibilityController.toggleCommentVisibility` — `src/modules/build/client-portal/client-visibility.controller.ts:77`
 
 PATCH /build/:projectId/client-visibility/comments/:commentId. toggleCommentVisibility resolves the comment through an INNER JOIN to tickets that explicitly binds tickets.projectId=projectId AND tickets.orgId=orgId AND ticketComments.id=commentId AND ticketComments.orgId=orgId (404 if no row), before the UPDATE keyed by the already-verified id+orgId. The join is the parent-binding: a comment on a ticket in a different project produces zero rows.
 
-- `src/modules/build/client-portal/client-visibility.controller.ts:79` — handler binds both projectId and commentId and forwards both
-- `src/modules/build/client-portal/client-visibility.service.ts:107` — join binds the comment's ticket to the named project via tickets.projectId
-- `src/modules/build/client-portal/client-visibility.service.ts:119` — UPDATE keyed by the already-verified PK
+- `src/modules/build/client-portal/client-visibility.controller.ts:81` — handler binds both projectId and commentId and forwards both
+- `src/modules/build/client-portal/client-visibility.service.ts:185` — join binds the comment's ticket to the named project via tickets.projectId
+- `src/modules/build/client-portal/client-visibility.service.ts:167` — UPDATE keyed by the already-verified PK
 
 ### VERIFIED — `PATCH /build/:projectId/client-visibility/attachments/:attachmentId`
 
-`ClientVisibilityController.toggleAttachmentVisibility` — `src/modules/build/client-portal/client-visibility.controller.ts:88`
+`ClientVisibilityController.toggleAttachmentVisibility` — `src/modules/build/client-portal/client-visibility.controller.ts:90`
 
 PATCH /build/:projectId/client-visibility/attachments/:attachmentId. Same join-based binding as toggleCommentVisibility: the attachment is resolved through an INNER JOIN to tickets requiring tickets.projectId=projectId AND tickets.orgId=orgId (404 if no row), before the UPDATE keyed by the already-verified id+orgId.
 
-- `src/modules/build/client-portal/client-visibility.controller.ts:92` — handler binds both projectId and attachmentId and forwards both
-- `src/modules/build/client-portal/client-visibility.service.ts:131` — signature carries the authenticated actor and projectId
-- `src/modules/build/client-portal/client-visibility.service.ts:139` — join binds the attachment's ticket to the named project
+- `src/modules/build/client-portal/client-visibility.controller.ts:94` — handler binds both projectId and attachmentId and forwards both
+- `src/modules/build/client-portal/client-visibility.service.ts:179` — signature carries the authenticated actor and projectId
+- `src/modules/build/client-portal/client-visibility.service.ts:187` — join binds the attachment's ticket to the named project
 
 ### VERIFIED — `PATCH /build/:projectId/members/:memberUserId`
 
-`ProjectResourcesController.updateMemberRole` — `src/modules/build/core/project-resources.controller.ts:119`
+`ProjectResourcesController.updateMemberRole` — `src/modules/build/core/project-crud/project-resources.controller.ts:124`
 
 PATCH /build/:projectId/members/:memberUserId. ProjectsMembersService.updateMemberRole(projectId, memberUserId, input, u) calls assertProjectOwnership(orgId, projectId) (404 unless the project belongs to this org) and assertCanManageProject(u, projectId) before resolving memberUserId to a membership via assertOrganizationActor(db, orgId, {userId}), which itself only resolves memberships that belong to orgId. The UPDATE then runs where(projectMembers.projectId=projectId AND projectMembers.membershipId=targetActor.membershipId) — both sides of that predicate are already tenant/project-verified by the time the query runs, and the update 404s (NotFoundException) if the target actor is not actually a member of this specific project.
 
-- `src/modules/build/core/project-resources.controller.ts:123` — handler binds both projectId and memberUserId and forwards both
-- `src/modules/build/core/projects-members.service.ts:359` — confirms projectId belongs to this org, 404 otherwise
-- `src/modules/build/core/projects-members.service.ts:361` — resolves the target membership scoped to this org
-- `src/modules/build/core/projects-members.service.ts:368` — UPDATE's WHERE requires the target membership to belong to this exact project; 404 otherwise
+- `src/modules/build/core/project-crud/project-resources.controller.ts:128` — handler binds both projectId and memberUserId and forwards both
+- `src/modules/build/core/members/projects-members.service.ts:359` — confirms projectId belongs to this org, 404 otherwise
+- `src/modules/build/core/members/projects-members.service.ts:428` — resolves the target membership scoped to this org
+- `src/modules/build/core/members/projects-members.service.ts:371` — UPDATE's WHERE requires the target membership to belong to this exact project; 404 otherwise
 
 ### VERIFIED — `POST /build/:projectId/labels`
 
-`ProjectResourcesController.createProjectLabel` — `src/modules/build/core/project-resources.controller.ts:213`
+`ProjectResourcesController.createProjectLabel` — `src/modules/build/core/project-crud/project-resources.controller.ts:218`
 
 POST /build/:projectId/labels. Org is bound twice. The handler first calls assertCanManageProject, whose project lookup is predicated on the caller's own org at projects-members.service.ts:71, so a foreign :projectId answers 404 before any write. The write itself is an INSERT into ticket_labels and scopes the row by writing orgId into .values({ orgId, ... }) at projects-labels.service.ts:23. The static pass reports PASSED-UNBOUND because its binding detection is syntactic — it looks for eq()/inArray()/a sql interpolation in a predicate — and an INSERT has no predicate; the ES6 shorthand property `orgId,` in a .values() object is invisible to it. The delegation controller -> ProjectsMembersService.createLabel (a one-line re-export at projects-members.service.ts:434) -> ProjectsLabelsService.createLabel also adds a hop. ticket_labels carries no project_id column, so there is no parent dimension to bind; the :projectId segment is verified for addressing only.
 
-- `src/modules/build/core/project-resources.controller.ts:223` — the url project is resolved under the caller's org before the write
-- `src/modules/build/core/projects-members.service.ts:71` — the project lookup that makes a foreign :projectId a 404
-- `src/modules/build/core/projects-labels.service.ts:23` — org is bound as an INSERT column, not a predicate — the form the static pass cannot see
+- `src/modules/build/core/project-crud/project-resources.controller.ts:228` — the url project is resolved under the caller's org before the write
+- `src/modules/build/core/members/projects-members.service.ts:81` — the project lookup that makes a foreign :projectId a 404
+- `src/modules/build/core/lib/projects-labels.service.ts:23` — org is bound as an INSERT column, not a predicate — the form the static pass cannot see
 
 ### VERIFIED — `POST /build/templates`
 
-`ProjectsTemplatesController.createTemplate` — `src/modules/build/core/projects-templates.controller.ts:46`
+`ProjectsTemplatesController.createTemplate` — `src/modules/build/core/project-crud/projects-templates.controller.ts:55`
 
 POST /build/templates. An org-level route with no :projectId, so there is no parent dimension. The controller forwards u.orgId and the service INSERTs into project_templates with orgId as a column of .values() at projects-templates.service.ts:69, and the nested project_template_tickets rows carry the same orgId. The static pass reports PASSED-UNBOUND for the reason its own documentation gives for create endpoints: an INSERT scopes the row by writing orgId into .values({ orgId, ... }), which is not a predicate, so syntactic eq()/inArray() detection finds nothing. The read-back at the end of the method is keyed on the id just returned by the insert, so it cannot reach another org's row.
 
-- `src/modules/build/core/projects-templates.service.ts:67` — the write is an INSERT — no WHERE clause exists for the static pass to inspect
-- `src/modules/build/core/projects-templates.service.ts:69` — org bound as an ES6 shorthand column in .values()
-
-### VERIFIED — `GET /build/:projectId/tickets/:ticketId/relations`
-
-`ProjectsTicketAssociationsController.listRelations` — `src/modules/build/core/projects-ticket-associations.controller.ts:75`
-
-GET /build/:projectId/tickets/:ticketId/relations. ProjectsTicketRelationsService.listRelations(u, projectId, ticketId) opens with assertTicketReadAccess(db, access, u, projectId, ticketId), whose SELECT WHERE binds tickets.orgId=actor.orgId AND tickets.projectId=projectId AND tickets.id=ticketId together and 404s if no row matches, before any relation is queried.
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:79` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-ticket-relations.service.ts:56` — signature
-- `src/modules/build/core/build-ticket-read-access.ts:37` — assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch
-
-### VERIFIED — `POST /build/:projectId/tickets/:ticketId/relations`
-
-`ProjectsTicketAssociationsController.addRelation` — `src/modules/build/core/projects-ticket-associations.controller.ts:87`
-
-POST /build/:projectId/tickets/:ticketId/relations. addRelation(u, projectId, ticketId, body) also opens with assertTicketReadAccess(db, access, u, projectId, ticketId) (id+orgId+projectId bound, 404 on mismatch), and separately re-verifies that body.relatedTicketId belongs to the same projectId+orgId before inserting the relation row.
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:92` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-ticket-relations.service.ts:130` — binds ticketId to this projectId+orgId
-- `src/modules/build/core/projects-ticket-relations.service.ts:139` — relatedTicketId is independently bound to the same project before the relation is created
-
-### VERIFIED — `DELETE /build/:projectId/tickets/:ticketId/relations`
-
-`ProjectsTicketAssociationsController.removeRelation` — `src/modules/build/core/projects-ticket-associations.controller.ts:101`
-
-DELETE /build/:projectId/tickets/:ticketId/relations. removeRelation(u, projectId, ticketId, relatedId) opens with the same assertTicketReadAccess binding (id+orgId+projectId, 404 on mismatch) before deleting the workItemRelations edge, which is itself scoped to orgId and to the (already-verified) ticketId on either side of the edge.
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:106` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-ticket-relations.service.ts:210` — signature
-- `src/modules/build/core/projects-ticket-relations.service.ts:216` — binds ticketId to this projectId+orgId before the delete
-
-### VERIFIED — `DELETE /build/:projectId/tickets/:ticketId/labels/:labelId`
-
-`ProjectsTicketAssociationsController.removeLabel` — `src/modules/build/core/projects-ticket-associations.controller.ts:168`
-
-DELETE /build/:projectId/tickets/:ticketId/labels/:labelId. ProjectsTicketSubresourcesService.removeLabel receives the actor and calls assertTicketReadAccess before deleting the tenant-scoped mapping. The helper binds tenant+project+ticket, verifies project membership, and applies ticket DataScope.
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:173` — handler binds projectId, ticketId and labelId and forwards all three
-- `src/modules/build/core/projects-ticket-subresources.service.ts:389` — actor-aware authorization runs before deletion
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
-
-### VERIFIED — `GET /build/:projectId/tickets/:ticketId/git-links`
-
-`ProjectsTicketAssociationsController.getGitLinks` — `src/modules/build/core/projects-ticket-associations.controller.ts:196`
-
-GET /build/:projectId/tickets/:ticketId/git-links. The actor-aware subresource facade calls assertTicketReadAccess before delegating to ProjectsTicketLinksService, so tenant, project membership, route binding, and ticket DataScope are established before git links are queried.
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:200` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-ticket-subresources.service.ts:596` — actor-aware authorization runs before delegation
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
-
-### VERIFIED — `PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId`
-
-`ProjectsTicketAssociationsController.updateRelatedLink` — `src/modules/build/core/projects-ticket-associations.controller.ts:234`
-
-PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId. ProjectsTicketLinksService.updateRelatedLink(u, projectId, ticketId, linkId, body) opens with assertTicketAccess (which wraps assertTicketReadAccess: id+orgId+projectId bound, 404 on mismatch), then both the SELECT and the UPDATE of ticketRelatedLinks are keyed by orgId+id=linkId+ticketId=ticketId — the already-verified ticketId is repeated in the mutation's own WHERE, not just the pre-check.
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:238` — handler binds projectId, ticketId and linkId and forwards all three
-- `src/modules/build/core/projects-ticket-links.service.ts:163` — signature
-- `src/modules/build/core/projects-ticket-links.service.ts:170` — binds ticketId to this projectId+orgId before any read or write
-
-### VERIFIED — `DELETE /build/:projectId/tickets/:ticketId/related-links/:linkId`
-
-`ProjectsTicketAssociationsController.deleteRelatedLink` — `src/modules/build/core/projects-ticket-associations.controller.ts:248`
-
-DELETE /build/:projectId/tickets/:ticketId/related-links/:linkId. Same shape as updateRelatedLink: deleteRelatedLink(u, projectId, ticketId, linkId) opens with assertTicketAccess (id+orgId+projectId bound, 404 on mismatch), then both the ownership SELECT and the DELETE of ticketRelatedLinks are keyed by orgId+id=linkId+ticketId=ticketId.
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:253` — handler binds projectId, ticketId and linkId and forwards all three
-- `src/modules/build/core/projects-ticket-links.service.ts:205` — signature
-- `src/modules/build/core/projects-ticket-links.service.ts:211` — binds ticketId to this projectId+orgId before any read or write
-
-### VERIFIED — `GET /build/:projectId/tickets/:ticketId/checklists`
-
-`ProjectsTicketChecklistsController.getChecklists` — `src/modules/build/core/projects-ticket-checklists.controller.ts:44`
-
-GET /build/:projectId/tickets/:ticketId/checklists. The actor-aware facade calls assertTicketReadAccess before delegating to ProjectsTicketChecklistsService, which independently binds the ticket to projectId+orgId before reading checklist rows.
-
-- `src/modules/build/core/projects-ticket-checklists.controller.ts:48` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-ticket-subresources.service.ts:476` — actor-aware project and DataScope authorization runs first
-- `src/modules/build/core/projects-ticket-checklists.service.ts:63` — ticket lookup binds id+projectId+orgId; 404 on mismatch
-
-### VERIFIED — `POST /build/:projectId/tickets/:ticketId/checklists`
-
-`ProjectsTicketChecklistsController.createChecklist` — `src/modules/build/core/projects-ticket-checklists.controller.ts:56`
-
-POST /build/:projectId/tickets/:ticketId/checklists. The actor-aware facade calls assertTicketReadAccess, then createChecklist independently binds ticketId to projectId+orgId before inserting the checklist.
-
-- `src/modules/build/core/projects-ticket-checklists.controller.ts:61` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-ticket-subresources.service.ts:486` — actor-aware project and DataScope authorization runs first
-- `src/modules/build/core/projects-ticket-checklists.service.ts:108` — ticket lookup binds id+projectId+orgId; 404 on mismatch
-
-### VERIFIED — `GET /build/:projectId/tickets/:ticketId/comments/:commentId`
-
-`ProjectsTicketCommentsController.getComment` — `src/modules/build/core/projects-ticket-comments.controller.ts:57`
-
-GET /build/:projectId/tickets/:ticketId/comments/:commentId. getComment calls resolveTicketForComment, which applies assertTicketReadAccess before loading the comment by id+ticketId+orgId. Tenant, project membership, route binding, ticket DataScope, and comment-to-ticket binding are all enforced.
-
-- `src/modules/build/core/projects-ticket-comments.controller.ts:61` — handler binds projectId, ticketId and commentId and forwards all three
-- `src/modules/build/core/projects-ticket-comments.service.ts:221` — signature carries the authenticated actor and route parents
-- `src/modules/build/core/projects-ticket-comments.service.ts:222` — actor-aware ticket authorization runs before the comment lookup
-- `src/modules/build/core/projects-ticket-comments.service.ts:111` — the comment lookup binds commentId to ticketId+orgId
-
-### VERIFIED — `PATCH /build/:projectId/tickets/:ticketId/comments/:commentId`
-
-`ProjectsTicketCommentsController.editComment` — `src/modules/build/core/projects-ticket-comments.controller.ts:70`
-
-PATCH /build/:projectId/tickets/:ticketId/comments/:commentId. editComment first applies actor-aware ticket authorization through resolveTicketForComment, then binds the comment to id+ticketId+orgId, verifies author ownership, and updates the already-verified row.
-
-- `src/modules/build/core/projects-ticket-comments.controller.ts:74` — handler binds projectId, ticketId and commentId and forwards all three
-- `src/modules/build/core/projects-ticket-comments.service.ts:228` — signature carries the authenticated actor and route parents
-- `src/modules/build/core/projects-ticket-comments.service.ts:229` — actor-aware ticket authorization runs before the comment lookup
-- `src/modules/build/core/projects-ticket-comments.service.ts:234` — the comment lookup binds commentId to ticketId+orgId
-
-### VERIFIED — `DELETE /build/:projectId/tickets/:ticketId/comments/:commentId`
-
-`ProjectsTicketCommentsController.deleteComment` — `src/modules/build/core/projects-ticket-comments.controller.ts:84`
-
-DELETE /build/:projectId/tickets/:ticketId/comments/:commentId. deleteComment first applies actor-aware ticket authorization through resolveTicketForComment, then binds the comment to id+ticketId+orgId, verifies author ownership, and soft-deletes it and its replies within the tenant.
-
-- `src/modules/build/core/projects-ticket-comments.controller.ts:89` — handler binds projectId, ticketId and commentId and forwards all three
-- `src/modules/build/core/projects-ticket-comments.service.ts:257` — signature carries the authenticated actor and route parents
-- `src/modules/build/core/projects-ticket-comments.service.ts:258` — actor-aware ticket authorization runs before the comment lookup
-- `src/modules/build/core/projects-ticket-comments.service.ts:263` — the comment lookup binds commentId to ticketId+orgId
-
-### VERIFIED — `PATCH /build/:projectId/tickets/:ticketId/rank`
-
-`ProjectsTicketsController.rankTicket` — `src/modules/build/core/projects-tickets.controller.ts:174`
-
-PATCH /build/:projectId/tickets/:ticketId/rank. The controller forwards to ProjectsTicketsService.rankTicket → the standalone rankTicket() helper in projects-tickets-rank-utils.ts. That helper authorizes and locks against the named projectId, reads the mutation candidates via readMutationTickets(tx, actor, projectId, ids, policy), and — decisively — the final UPDATE itself binds `eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.id, ticketId)` all together, throwing NotFoundException if no row matches. The mutation, not just a pre-check, re-asserts the parent binding.
-
-- `src/modules/build/core/projects-tickets.controller.ts:178` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-tickets-rank-utils.ts:26` — signature takes projectId
-- `src/modules/build/core/projects-tickets-rank-utils.ts:70` — the actual UPDATE's WHERE binds orgId+projectId+id together; 404 on mismatch
-
-### VERIFIED — `GET /build/:projectId/tickets/:ticketId/activity`
-
-`ProjectsTicketsController.getActivity` — `src/modules/build/core/projects-tickets.controller.ts:187`
-
-GET /build/:projectId/tickets/:ticketId/activity. The controller forwards the actor and both route ids to getActivity, which calls assertTicketReadAccess before querying activity. The helper binds tenant+project+ticket, verifies project membership, and applies ticket DataScope.
-
-- `src/modules/build/core/projects-tickets.controller.ts:191` — handler binds both projectId and ticketId and forwards both
-- `src/modules/build/core/projects-ticket-subresources.service.ts:143` — signature carries the actor and route ids
-- `src/modules/build/core/build-ticket-read-access.ts:37` — assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch
-- `src/modules/build/core/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
-
-### VERIFIED — `GET /build/:projectId/tickets/key/:ticketNumber`
-
-`ProjectsTicketsController.getTicketByKey` — `src/modules/build/core/projects-tickets.controller.ts:203`
-
-GET /build/:projectId/tickets/key/:ticketNumber. getTicketByKey passes a projectId+ticketNumber selector into readTicket; readTicket adds orgId, resolves ticket DataScope, and verifies project membership before returning the ticket.
-
-- `src/modules/build/core/projects-tickets.controller.ts:207` — handler binds both projectId and ticketNumber and forwards both
-- `src/modules/build/core/projects-tickets-detail.service.ts:35` — signature
-- `src/modules/build/core/projects-tickets-detail.service.ts:44` — selector binds the lookup to the named project
-- `src/modules/build/core/projects-tickets-detail.service.ts:63` — ticket DataScope is resolved
-- `src/modules/build/core/projects-tickets-detail.service.ts:108` — project membership is verified
-
-### VERIFIED — `GET /build/:projectId/webhooks/:webhookId/deliveries`
-
-`ProjectsWebhooksController.listDeliveries` — `src/modules/build/core/projects-webhooks.controller.ts:72`
-
-GET /build/:projectId/webhooks/:webhookId/deliveries. ProjectsWebhooksService.listDeliveries(orgId, projectId, webhookId) opens with assertWebhookOwnership(orgId, projectId, webhookId), whose WHERE binds id=webhookId AND orgId=orgId AND projectId=projectId together and 404s on mismatch, before querying webhookDeliveries filtered by the already-verified webhookId.
-
-- `src/modules/build/core/projects-webhooks.controller.ts:76` — handler binds both projectId and webhookId and forwards both
-- `src/modules/build/core/projects-webhooks.service.ts:83` — signature takes projectId
-- `src/modules/build/core/projects-webhooks.service.ts:68` — ownership check binds id+orgId+projectId; 404 on mismatch
-
-### VERIFIED — `POST /build/:projectId/webhooks/:webhookId/test`
-
-`ProjectsWebhooksController.sendTest` — `src/modules/build/core/projects-webhooks.controller.ts:84`
-
-POST /build/:projectId/webhooks/:webhookId/test. The controller itself calls `await this.webhooks.assertWebhookOwnership(u.orgId, projectId, webhookId)` (id+orgId+projectId bound, 404 on mismatch) BEFORE calling `this.dispatch.sendTest(u.orgId, projectId, webhookId)`. Belt-and-suspenders: sendTest's own SELECT independently re-binds id=webhookId AND orgId=orgId AND projectId=projectId and returns a no-op failure result if the row is absent.
-
-- `src/modules/build/core/projects-webhooks.controller.ts:90` — handler binds both projectId and webhookId
-- `src/modules/build/core/projects-webhooks.controller.ts:95` — controller-level ownership check runs before dispatch.sendTest
-- `src/modules/build/core/projects-webhooks-dispatch.service.ts:328` — signature
+- `src/modules/build/core/project-crud/projects-templates.service.ts:114` — the write is an INSERT — no WHERE clause exists for the static pass to inspect
+- `src/modules/build/core/project-crud/projects-templates.service.ts:116` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `POST /build/labels`
 
@@ -1038,11 +865,200 @@ POST /build/:projectId/webhooks/:webhookId/test. The controller itself calls `aw
 POST /build/labels. An org-level route with no path parameters at all, so there is no parent dimension. The controller passes u.orgId straight through ProjectsMembersService.createLabel (a one-line re-export) to ProjectsLabelsService.createLabel, which INSERTs into ticket_labels with orgId as a column of .values() at projects-labels.service.ts:23. PASSED-UNBOUND is the expected reading for a create endpoint: the binding is an INSERT column, not a predicate, and the static pass only recognises eq()/inArray()/sql interpolation inside a WHERE. ticket_labels is org-scoped by design — it carries no project_id — so this route and #createProjectLabel write the same kind of row.
 
 - `src/modules/build/core/projects.controller.ts:115` — the org passed is the caller's own, taken from the verified context
-- `src/modules/build/core/projects-labels.service.ts:23` — org bound as an INSERT column
+- `src/modules/build/core/lib/projects-labels.service.ts:23` — org bound as an INSERT column
+
+### VERIFIED — `GET /build/:projectId/tickets/:ticketId/relations`
+
+`ProjectsTicketAssociationsController.listRelations` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:75`
+
+GET /build/:projectId/tickets/:ticketId/relations. ProjectsTicketRelationsService.listRelations(u, projectId, ticketId) opens with assertTicketReadAccess(db, access, u, projectId, ticketId), whose SELECT WHERE binds tickets.orgId=actor.orgId AND tickets.projectId=projectId AND tickets.id=ticketId together and 404s if no row matches, before any relation is queried.
+
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:79` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/tickets/projects-ticket-relations.service.ts:56` — signature
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:37` — assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch
+
+### VERIFIED — `POST /build/:projectId/tickets/:ticketId/relations`
+
+`ProjectsTicketAssociationsController.addRelation` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:87`
+
+POST /build/:projectId/tickets/:ticketId/relations. addRelation(u, projectId, ticketId, body) also opens with assertTicketReadAccess(db, access, u, projectId, ticketId) (id+orgId+projectId bound, 404 on mismatch), and separately re-verifies that body.relatedTicketId belongs to the same projectId+orgId before inserting the relation row.
+
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:92` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/tickets/projects-ticket-relations.service.ts:135` — binds ticketId to this projectId+orgId
+- `src/modules/build/core/tickets/projects-ticket-relations.service.ts:144` — relatedTicketId is independently bound to the same project before the relation is created
+
+### VERIFIED — `DELETE /build/:projectId/tickets/:ticketId/relations`
+
+`ProjectsTicketAssociationsController.removeRelation` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:101`
+
+DELETE /build/:projectId/tickets/:ticketId/relations. removeRelation(u, projectId, ticketId, relatedId) opens with the same assertTicketReadAccess binding (id+orgId+projectId, 404 on mismatch) before deleting the workItemRelations edge, which is itself scoped to orgId and to the (already-verified) ticketId on either side of the edge.
+
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:106` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/tickets/projects-ticket-relations.service.ts:216` — signature
+- `src/modules/build/core/tickets/projects-ticket-relations.service.ts:222` — binds ticketId to this projectId+orgId before the delete
+
+### VERIFIED — `DELETE /build/:projectId/tickets/:ticketId/labels/:labelId`
+
+`ProjectsTicketAssociationsController.removeLabel` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:168`
+
+DELETE /build/:projectId/tickets/:ticketId/labels/:labelId. ProjectsTicketSubresourcesService.removeLabel receives the actor and calls assertTicketReadAccess before deleting the tenant-scoped mapping. The helper binds tenant+project+ticket, verifies project membership, and applies ticket DataScope.
+
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:173` — handler binds projectId, ticketId and labelId and forwards all three
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:390` — actor-aware authorization runs before deletion
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+
+### VERIFIED — `GET /build/:projectId/tickets/:ticketId/git-links`
+
+`ProjectsTicketAssociationsController.getGitLinks` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:196`
+
+GET /build/:projectId/tickets/:ticketId/git-links. The actor-aware subresource facade calls assertTicketReadAccess before delegating to ProjectsTicketLinksService, so tenant, project membership, route binding, and ticket DataScope are established before git links are queried.
+
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:200` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:597` — actor-aware authorization runs before delegation
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+
+### VERIFIED — `PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId`
+
+`ProjectsTicketAssociationsController.updateRelatedLink` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:234`
+
+PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId. ProjectsTicketLinksService.updateRelatedLink(u, projectId, ticketId, linkId, body) opens with assertTicketAccess (which wraps assertTicketReadAccess: id+orgId+projectId bound, 404 on mismatch), then both the SELECT and the UPDATE of ticketRelatedLinks are keyed by orgId+id=linkId+ticketId=ticketId — the already-verified ticketId is repeated in the mutation's own WHERE, not just the pre-check.
+
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:238` — handler binds projectId, ticketId and linkId and forwards all three
+- `src/modules/build/core/tickets/projects-ticket-links.service.ts:163` — signature
+- `src/modules/build/core/tickets/projects-ticket-links.service.ts:170` — binds ticketId to this projectId+orgId before any read or write
+
+### VERIFIED — `DELETE /build/:projectId/tickets/:ticketId/related-links/:linkId`
+
+`ProjectsTicketAssociationsController.deleteRelatedLink` — `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:248`
+
+DELETE /build/:projectId/tickets/:ticketId/related-links/:linkId. Same shape as updateRelatedLink: deleteRelatedLink(u, projectId, ticketId, linkId) opens with assertTicketAccess (id+orgId+projectId bound, 404 on mismatch), then both the ownership SELECT and the DELETE of ticketRelatedLinks are keyed by orgId+id=linkId+ticketId=ticketId.
+
+- `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:253` — handler binds projectId, ticketId and linkId and forwards all three
+- `src/modules/build/core/tickets/projects-ticket-links.service.ts:205` — signature
+- `src/modules/build/core/tickets/projects-ticket-links.service.ts:211` — binds ticketId to this projectId+orgId before any read or write
+
+### VERIFIED — `GET /build/:projectId/tickets/:ticketId/checklists`
+
+`ProjectsTicketChecklistsController.getChecklists` — `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:44`
+
+GET /build/:projectId/tickets/:ticketId/checklists. The actor-aware facade calls assertTicketReadAccess before delegating to ProjectsTicketChecklistsService, which independently binds the ticket to projectId+orgId before reading checklist rows.
+
+- `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:48` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:477` — actor-aware project and DataScope authorization runs first
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:63` — ticket lookup binds id+projectId+orgId; 404 on mismatch
+
+### VERIFIED — `POST /build/:projectId/tickets/:ticketId/checklists`
+
+`ProjectsTicketChecklistsController.createChecklist` — `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:56`
+
+POST /build/:projectId/tickets/:ticketId/checklists. The actor-aware facade calls assertTicketReadAccess, then createChecklist independently binds ticketId to projectId+orgId before inserting the checklist.
+
+- `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:61` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:487` — actor-aware project and DataScope authorization runs first
+- `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:108` — ticket lookup binds id+projectId+orgId; 404 on mismatch
+
+### VERIFIED — `GET /build/:projectId/tickets/:ticketId/comments/:commentId`
+
+`ProjectsTicketCommentsController.getComment` — `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:57`
+
+GET /build/:projectId/tickets/:ticketId/comments/:commentId. getComment calls resolveTicketForComment, which applies assertTicketReadAccess before loading the comment by id+ticketId+orgId. Tenant, project membership, route binding, ticket DataScope, and comment-to-ticket binding are all enforced.
+
+- `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:61` — handler binds projectId, ticketId and commentId and forwards all three
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:222` — signature carries the authenticated actor and route parents
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:223` — actor-aware ticket authorization runs before the comment lookup
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:112` — the comment lookup binds commentId to ticketId+orgId
+
+### VERIFIED — `PATCH /build/:projectId/tickets/:ticketId/comments/:commentId`
+
+`ProjectsTicketCommentsController.editComment` — `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:70`
+
+PATCH /build/:projectId/tickets/:ticketId/comments/:commentId. editComment first applies actor-aware ticket authorization through resolveTicketForComment, then binds the comment to id+ticketId+orgId, verifies author ownership, and updates the already-verified row.
+
+- `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:74` — handler binds projectId, ticketId and commentId and forwards all three
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:229` — signature carries the authenticated actor and route parents
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:230` — actor-aware ticket authorization runs before the comment lookup
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:235` — the comment lookup binds commentId to ticketId+orgId
+
+### VERIFIED — `DELETE /build/:projectId/tickets/:ticketId/comments/:commentId`
+
+`ProjectsTicketCommentsController.deleteComment` — `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:84`
+
+DELETE /build/:projectId/tickets/:ticketId/comments/:commentId. deleteComment first applies actor-aware ticket authorization through resolveTicketForComment, then binds the comment to id+ticketId+orgId, verifies author ownership, and soft-deletes it and its replies within the tenant.
+
+- `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:89` — handler binds projectId, ticketId and commentId and forwards all three
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:258` — signature carries the authenticated actor and route parents
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:259` — actor-aware ticket authorization runs before the comment lookup
+- `src/modules/build/core/tickets/projects-ticket-comments.service.ts:264` — the comment lookup binds commentId to ticketId+orgId
+
+### VERIFIED — `PATCH /build/:projectId/tickets/:ticketId/rank`
+
+`ProjectsTicketsController.rankTicket` — `src/modules/build/core/tickets/projects-tickets.controller.ts:193`
+
+PATCH /build/:projectId/tickets/:ticketId/rank. The controller forwards to ProjectsTicketsService.rankTicket → the standalone rankTicket() helper in projects-tickets-rank-utils.ts. That helper authorizes and locks against the named projectId, reads the mutation candidates via readMutationTickets(tx, actor, projectId, ids, policy), and — decisively — the final UPDATE itself binds `eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.id, ticketId)` all together, throwing NotFoundException if no row matches. The mutation, not just a pre-check, re-asserts the parent binding.
+
+- `src/modules/build/core/tickets/projects-tickets.controller.ts:197` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/tickets/projects-tickets-rank-utils.ts:88` — signature takes projectId
+- `src/modules/build/core/tickets/projects-tickets-rank-utils.ts:196` — this is the mutation, not a pre-check
+- `src/modules/build/core/tickets/projects-tickets-rank-utils.ts:199` — the actual UPDATE's WHERE binds orgId+projectId+id together; 404 on mismatch
+
+### VERIFIED — `GET /build/:projectId/tickets/:ticketId/activity`
+
+`ProjectsTicketsController.getActivity` — `src/modules/build/core/tickets/projects-tickets.controller.ts:206`
+
+GET /build/:projectId/tickets/:ticketId/activity. The controller forwards the actor and both route ids to getActivity, which calls assertTicketReadAccess before querying activity. The helper binds tenant+project+ticket, verifies project membership, and applies ticket DataScope.
+
+- `src/modules/build/core/tickets/projects-tickets.controller.ts:210` — handler binds both projectId and ticketId and forwards both
+- `src/modules/build/core/tickets/projects-ticket-subresources.service.ts:144` — signature carries the actor and route ids
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:37` — assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch
+- `src/modules/build/core/tickets/build-ticket-read-access.ts:50` — project membership and ticket DataScope are both enforced
+
+### VERIFIED — `GET /build/:projectId/tickets/key/:ticketNumber`
+
+`ProjectsTicketsController.getTicketByKey` — `src/modules/build/core/tickets/projects-tickets.controller.ts:222`
+
+GET /build/:projectId/tickets/key/:ticketNumber. getTicketByKey passes a projectId+ticketNumber selector into readTicket; readTicket adds orgId, resolves ticket DataScope, and verifies project membership before returning the ticket.
+
+- `src/modules/build/core/tickets/projects-tickets.controller.ts:226` — handler binds both projectId and ticketNumber and forwards both
+- `src/modules/build/core/tickets/projects-tickets-detail.service.ts:35` — signature
+- `src/modules/build/core/tickets/projects-tickets-detail.service.ts:44` — selector binds the lookup to the named project
+- `src/modules/build/core/tickets/projects-tickets-detail.service.ts:63` — ticket DataScope is resolved
+- `src/modules/build/core/tickets/projects-tickets-detail.service.ts:108` — project membership is verified
+
+### VERIFIED — `PATCH /build/:projectId/webhooks/:webhookId`
+
+`ProjectsWebhooksController.updateWebhook` — `src/modules/build/core/webhooks/projects-webhooks.controller.ts:67`
+
+PATCH /build/:projectId/webhooks/:webhookId. Query-enforced, the strongest of the six read in this pass: the service hoists one `tenantMatch` conjunction binding orgId and projectId and applies it to the pre-read SELECT, to the UPDATE itself, and to the optimistic-concurrency re-read. The parent binding is therefore inside the mutating statement rather than in a preceding assert, so it survives the deletion of any helper. A valid webhookId under a foreign projectId 404s. orgId comes from u.orgId and is never read from the body.
+
+- `src/modules/build/core/webhooks/projects-webhooks.controller.ts:77` — the controller supplies the tenant from the authenticated actor
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:192` — one conjunction is reused by every statement in the method
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:194` — the tenant is a predicate, not a written value
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:195` — the URL project is bound in the same conjunction
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:223` — the UPDATE itself carries the binding, so it is not assert-dependent
+
+### VERIFIED — `GET /build/:projectId/webhooks/:webhookId/deliveries`
+
+`ProjectsWebhooksController.listDeliveries` — `src/modules/build/core/webhooks/projects-webhooks.controller.ts:93`
+
+GET /build/:projectId/webhooks/:webhookId/deliveries. ProjectsWebhooksService.listDeliveries(orgId, projectId, webhookId) opens with assertWebhookOwnership(orgId, projectId, webhookId), whose WHERE binds id=webhookId AND orgId=orgId AND projectId=projectId together and 404s on mismatch, before querying webhookDeliveries filtered by the already-verified webhookId.
+
+- `src/modules/build/core/webhooks/projects-webhooks.controller.ts:97` — handler binds both projectId and webhookId and forwards both
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:277` — signature takes projectId
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:258` — ownership check binds id+orgId+projectId; 404 on mismatch
+
+### VERIFIED — `POST /build/:projectId/webhooks/:webhookId/test`
+
+`ProjectsWebhooksController.sendTest` — `src/modules/build/core/webhooks/projects-webhooks.controller.ts:105`
+
+POST /build/:projectId/webhooks/:webhookId/test. The controller itself calls `await this.webhooks.assertWebhookOwnership(u.orgId, projectId, webhookId)` (id+orgId+projectId bound, 404 on mismatch) BEFORE calling `this.dispatch.sendTest(u.orgId, projectId, webhookId)`. Belt-and-suspenders: sendTest's own SELECT independently re-binds id=webhookId AND orgId=orgId AND projectId=projectId and returns a no-op failure result if the row is absent.
+
+- `src/modules/build/core/webhooks/projects-webhooks.controller.ts:111` — handler binds both projectId and webhookId
+- `src/modules/build/core/webhooks/projects-webhooks.controller.ts:116` — controller-level ownership check runs before dispatch.sendTest
+- `src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts:328` — signature
 
 ### VERIFIED — `GET /build/:projectId/sprints`
 
-`SprintsController.listSprints` — `src/modules/build/execution/iterations.controller.ts:79`
+`SprintsController.listSprints` — `src/modules/build/execution/iterations.controller.ts:82`
 
 GET /build/:projectId/sprints. The lead is vacuous: there is no query to bind. The sprints table was dropped when Build cut over to the Cycle model, and SprintsService is a tombstone — every method, listSprints included, throws GoneException with the FROZEN message declared at sprints.service.ts:7 and never touches the database. The static pass follows the handler into a service method that accepts _orgId and _projectId and never uses them, which is exactly the shape of PASSED-UNBOUND; it cannot tell a 410 stub from an unbound query. The live route is /build/:projectId/cycles.
 
@@ -1051,7 +1067,7 @@ GET /build/:projectId/sprints. The lead is vacuous: there is no query to bind. T
 
 ### VERIFIED — `POST /build/:projectId/sprints`
 
-`SprintsController.createSprint` — `src/modules/build/execution/iterations.controller.ts:90`
+`SprintsController.createSprint` — `src/modules/build/execution/iterations.controller.ts:93`
 
 POST /build/:projectId/sprints. Same tombstone as listSprints: createSprint's entire body is a GoneException throw at sprints.service.ts:21, so no INSERT exists and the orgId and projectId the controller forwards are discarded parameters (_orgId, _projectId). The static pass reads unused forwarded parameters as PASSED-UNBOUND. Cycle creation, the live replacement, is POST /build/:projectId/cycles on CyclesController.
 
@@ -1059,7 +1075,7 @@ POST /build/:projectId/sprints. Same tombstone as listSprints: createSprint's en
 
 ### VERIFIED — `DELETE /build/:projectId/sprints/:sprintId`
 
-`SprintsController.deleteSprint` — `src/modules/build/execution/iterations.controller.ts:135`
+`SprintsController.deleteSprint` — `src/modules/build/execution/iterations.controller.ts:138`
 
 DELETE /build/:projectId/sprints/:sprintId. Flagged on BOTH org and parent scoping, and both leads are vacuous for the same reason: deleteSprint's body is a single GoneException throw at sprints.service.ts:39. No DELETE statement exists, so neither orgId nor projectId can appear in a predicate. The static pass sees three forwarded-and-unused parameters and reports each unbound dimension.
 
@@ -1068,43 +1084,55 @@ DELETE /build/:projectId/sprints/:sprintId. Flagged on BOTH org and parent scopi
 
 ### VERIFIED — `PATCH /build/:projectId/cycles/:cycleId`
 
-`CyclesController.updateCycle` — `src/modules/build/execution/iterations.controller.ts:181`
+`CyclesController.updateCycle` — `src/modules/build/execution/iterations.controller.ts:184`
 
 PATCH /build/:projectId/cycles/:cycleId. CyclesService.updateCycle(orgId, projectId, cycleId, input) confirms the project exists in this org, then the actual UPDATE's WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly — the mutation itself, not just a pre-check, requires the cycle to belong to the named project.
 
-- `src/modules/build/execution/iterations.controller.ts:185` — handler binds both projectId and cycleId and forwards both
-- `src/modules/build/execution/cycles.service.ts:116` — signature takes projectId
-- `src/modules/build/execution/cycles.service.ts:134` — UPDATE's own WHERE binds id+projectId+orgId
+- `src/modules/build/execution/iterations.controller.ts:188` — handler binds both projectId and cycleId and forwards both
+- `src/modules/build/execution/cycles.service.ts:202` — signature takes projectId
+- `src/modules/build/execution/cycles.service.ts:247` — UPDATE's own WHERE binds id+projectId+orgId
 
 ### VERIFIED — `DELETE /build/:projectId/cycles/:cycleId`
 
-`CyclesController.deleteCycle` — `src/modules/build/execution/iterations.controller.ts:194`
+`CyclesController.deleteCycle` — `src/modules/build/execution/iterations.controller.ts:197`
 
 DELETE /build/:projectId/cycles/:cycleId. Same shape as updateCycle: CyclesService.deleteCycle(orgId, projectId, cycleId) confirms the project exists in this org, then the DELETE's own WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly, 404ing if zero rows are removed.
 
-- `src/modules/build/execution/iterations.controller.ts:199` — handler binds both projectId and cycleId and forwards both
-- `src/modules/build/execution/cycles.service.ts:141` — signature takes projectId
-- `src/modules/build/execution/cycles.service.ts:147` — DELETE's own WHERE binds id+projectId+orgId
+- `src/modules/build/execution/iterations.controller.ts:202` — handler binds both projectId and cycleId and forwards both
+- `src/modules/build/execution/cycles.service.ts:281` — signature takes projectId
+- `src/modules/build/execution/cycles.service.ts:290` — DELETE's own WHERE binds id+projectId+orgId
+
+### VERIFIED — `POST /build/:projectId/epics`
+
+`EpicsController.createEpic` — `src/modules/build/execution/iterations.controller.ts:287`
+
+POST /build/:projectId/epics. Assert-enforced with the weaker assert. The INSERT stamps orgId as a value; the predicate form lives in assertProjectInOrg, which binds project id AND org id on one row and 404s a soft-deleted or foreign project before any write. reporterId is taken from the authenticated actor, so authorship cannot be forged. Tenant isolation holds. What does NOT hold is intra-org project scope: assertProjectInOrg checks that the project belongs to the caller's org, not that the caller belongs to the project, so any holder of build:tickets:create in the org can create an epic in any project in that org.
+
+- `src/modules/build/execution/iterations.controller.ts:297` — the tenant and actor come from the authenticated context
+- `src/modules/build/execution/epics.service.ts:104` — the service takes orgId and projectId, never a client-supplied tenant
+- `src/modules/build/execution/epics.service.ts:113` — the INSERT writes the tenant as a value, which constrains nothing on its own
+- `src/modules/build/core/project-crud/project-access.ts:24` — assertProjectInOrg binds the project id
+- `src/modules/build/core/project-crud/project-access.ts:25` — and the tenant, in the same conjunction — this is the decisive predicate
 
 ### VERIFIED — `PATCH /build/:projectId/epics/:epicId`
 
-`EpicsController.updateEpic` — `src/modules/build/execution/iterations.controller.ts:296`
+`EpicsController.updateEpic` — `src/modules/build/execution/iterations.controller.ts:300`
 
 PATCH /build/:projectId/epics/:epicId. EpicsService.updateEpic(orgId, projectId, epicId, input) runs the UPDATE directly with WHERE `eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, "EPIC")` — the mutation itself binds the epic to the named project, no separate pre-check needed.
 
-- `src/modules/build/execution/iterations.controller.ts:300` — handler binds both projectId and epicId and forwards both
-- `src/modules/build/execution/epics.service.ts:61` — signature takes projectId
-- `src/modules/build/execution/epics.service.ts:67` — UPDATE's own WHERE binds id+orgId+projectId+type
+- `src/modules/build/execution/iterations.controller.ts:304` — handler binds both projectId and epicId and forwards both
+- `src/modules/build/execution/epics.service.ts:133` — signature takes projectId
+- `src/modules/build/execution/epics.service.ts:135` — UPDATE's own WHERE binds id+orgId+projectId+type
 
 ### VERIFIED — `DELETE /build/:projectId/epics/:epicId`
 
-`EpicsController.deleteEpic` — `src/modules/build/execution/iterations.controller.ts:309`
+`EpicsController.deleteEpic` — `src/modules/build/execution/iterations.controller.ts:313`
 
 DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).
 
-- `src/modules/build/execution/iterations.controller.ts:314` — handler binds both projectId and epicId and forwards both
-- `src/modules/build/execution/epics.service.ts:78` — signature takes projectId
-- `src/modules/build/execution/epics.service.ts:81` — existence check binds id+orgId+projectId+type; 404 on mismatch
+- `src/modules/build/execution/iterations.controller.ts:318` — handler binds both projectId and epicId and forwards both
+- `src/modules/build/execution/epics.service.ts:163` — signature takes projectId
+- `src/modules/build/execution/epics.service.ts:135` — existence check binds id+orgId+projectId+type; 404 on mismatch
 
 ### VERIFIED — `GET /build/:projectId/tickets/:ticketId/time-entries`
 
@@ -1125,7 +1153,7 @@ PATCH /build/:projectId/whiteboards/:whiteboardId/sharing. WhiteboardSharingServ
 
 - `src/modules/build/execution/whiteboard-sharing.controller.ts:61` — handler binds both projectId and whiteboardId and forwards both
 - `src/modules/build/execution/whiteboard-sharing.service.ts:46` — binds whiteboardId to this projectId+orgId before any mutation
-- `src/modules/build/execution/whiteboard-board-helpers.ts:46` — signature takes projectId; its WHERE (a few lines below) binds id+projectId+orgId, 404 on mismatch
+- `src/modules/build/execution/whiteboard-board-helpers.ts:48` — signature takes projectId; its WHERE (a few lines below) binds id+projectId+orgId, 404 on mismatch
 
 ### VERIFIED — `POST /build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token`
 
@@ -1172,44 +1200,79 @@ PATCH /public/whiteboard-links/:token. An unauthenticated write, and correctly b
 - `src/modules/build/execution/whiteboard-sharing.service.ts:237` — view-only links rejected
 - `src/modules/build/execution/whiteboard-sharing.service.ts:253` — the UPDATE re-asserts the predicate — TOCTOU-safe
 
+### VERIFIED — `POST /build/:projectId/intake`
+
+`IntakeController.createIntake` — `src/modules/build/execution/workspace.controller.ts:151`
+
+POST /build/:projectId/intake. Assert-enforced with the weaker assert, and the only one of the six that was once actually unsafe: the service's own record states that listIntake resolved the project while this path did not, so a cross-tenant :projectId reached the INSERT and the composite tenant foreign key refused it with an uncaught 23503 — a corrupted write prevented, but not an authorization decision. assertProjectInOrg now runs first and 404s. As with createEpic, intra-org project membership is not checked. Also worth a reader's attention though not a defect of this route: submitterEmail is caller-supplied with no tie to u.userId, so the recorded submitter is unauthenticated data on a route that is itself permission-gated.
+
+- `src/modules/build/execution/workspace.controller.ts:161` — the tenant comes from the authenticated context
+- `src/modules/build/execution/workspace.service.ts:256` — the terminal service signature
+- `src/modules/build/execution/workspace.service.ts:261` — the write whose tenant binding is values-only
+- `src/modules/build/core/project-crud/project-access.ts:25` — the predicate that makes the write safe, reached through assertProjectInOrg
+- `src/modules/build/core/project-crud/project-access.ts:30` — a foreign or soft-deleted project 404s before the INSERT
+
+### VERIFIED — `POST /build/:projectId/views`
+
+`ViewsController.createView` — `src/modules/build/execution/workspace.controller.ts:196`
+
+POST /build/:projectId/views. Assert-enforced with the weaker assert and no read to filter, so the tenant appears only as an INSERT value plus assertProjectInOrg's predicate plus a composite (org_id, project_id) foreign key. Tenant isolation holds on all three. The intra-org gap is the widest of the six and is worth its own ticket rather than a census row: createView takes (orgId, userId) and so discards the CurrentUserContext that assertProjectAccess needs, which is why the weaker assert is used. Closing it is a signature change at the service and controller, shared with three sibling call sites in the same file.
+
+- `src/modules/build/execution/workspace.controller.ts:206` — the tenant and actor come from the authenticated context
+- `src/modules/build/execution/workspace.service.ts:392` — the signature that discards CurrentUserContext and so forces the weaker assert
+- `src/modules/build/core/project-crud/project-access.ts:25` — the decisive tenant predicate, reached through assertProjectInOrg
+- `src/db/schema/build/members.ts:66` — a composite tenant foreign key backstops the row
+
 ### VERIFIED — `POST /build/views`
 
-`WorkspaceViewsController.createWorkspaceView` — `src/modules/build/execution/workspace.controller.ts:238`
+`WorkspaceViewsController.createWorkspaceView` — `src/modules/build/execution/workspace.controller.ts:249`
 
 POST on the workspace views controller. An org-level route with no :projectId, and the row is deliberately project-less: the INSERT into project_views sets projectId: null and scope: 'workspace' explicitly (workspace.service.ts:316) and binds the tenant by writing orgId as a column at :317. PASSED-UNBOUND is the documented false reading for create endpoints — the binding is an INSERT column, not a predicate. The sibling readers and mutators of the same table (listWorkspaceViews, updateWorkspaceView, deleteWorkspaceView) all bind eq(projectViews.orgId, orgId) in their WHERE clauses and additionally refuse a private view the caller does not own.
 
-- `src/modules/build/execution/workspace.service.ts:316` — the row is intentionally project-less, so there is no parent dimension
-- `src/modules/build/execution/workspace.service.ts:317` — org bound as an ES6 shorthand column in .values()
+- `src/modules/build/execution/workspace.service.ts:464` — the row is intentionally project-less, so there is no parent dimension
+- `src/modules/build/execution/workspace.service.ts:399` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `GET /build/:projectId/whiteboards/:whiteboardId`
 
-`WhiteboardsController.getWhiteboard` — `src/modules/build/execution/workspace.controller.ts:319`
+`WhiteboardsController.getWhiteboard` — `src/modules/build/execution/workspace.controller.ts:331`
 
 GET /build/:projectId/whiteboards/:whiteboardId. WhiteboardsService.getWhiteboard(u, projectId, whiteboardId) confirms the project exists in this org, then loadBoardWithAccess's SELECT WHERE binds `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)` together and throws NotFoundException on mismatch, before the DTO is built.
 
-- `src/modules/build/execution/workspace.controller.ts:323` — handler binds both projectId and whiteboardId and forwards both
-- `src/modules/build/execution/whiteboards.service.ts:202` — signature takes projectId
-- `src/modules/build/execution/whiteboards.service.ts:64` — private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch
+- `src/modules/build/execution/workspace.controller.ts:335` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboards.service.ts:235` — signature takes projectId
+- `src/modules/build/execution/whiteboards.service.ts:67` — private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch
 
 ### VERIFIED — `PATCH /build/:projectId/whiteboards/:whiteboardId`
 
-`WhiteboardsController.updateWhiteboard` — `src/modules/build/execution/workspace.controller.ts:331`
+`WhiteboardsController.updateWhiteboard` — `src/modules/build/execution/workspace.controller.ts:343`
 
 PATCH /build/:projectId/whiteboards/:whiteboardId. WhiteboardsService.updateWhiteboard(u, projectId, whiteboardId, input) calls loadBoardWithAccess (id+projectId+orgId, 404 on mismatch) for the access-level check, and the subsequent UPDATE independently repeats the identical binding in its own WHERE: `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)`.
 
-- `src/modules/build/execution/workspace.controller.ts:335` — handler binds both projectId and whiteboardId and forwards both
-- `src/modules/build/execution/whiteboards.service.ts:229` — signature
-- `src/modules/build/execution/whiteboards.service.ts:253` — the UPDATE's own WHERE re-binds id+projectId+orgId
+- `src/modules/build/execution/workspace.controller.ts:347` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboards.service.ts:262` — signature
+- `src/modules/build/execution/whiteboards.service.ts:286` — the UPDATE's own WHERE re-binds id+projectId+orgId
 
 ### VERIFIED — `DELETE /build/:projectId/whiteboards/:whiteboardId`
 
-`WhiteboardsController.deleteWhiteboard` — `src/modules/build/execution/workspace.controller.ts:344`
+`WhiteboardsController.deleteWhiteboard` — `src/modules/build/execution/workspace.controller.ts:356`
 
 DELETE /build/:projectId/whiteboards/:whiteboardId. Same shape as updateWhiteboard: deleteWhiteboard(u, projectId, whiteboardId) calls loadBoardWithAccess (id+projectId+orgId, 404 on mismatch), and the soft-delete UPDATE independently repeats the identical id+projectId+orgId binding in its own WHERE.
 
-- `src/modules/build/execution/workspace.controller.ts:349` — handler binds both projectId and whiteboardId and forwards both
-- `src/modules/build/execution/whiteboards.service.ts:266` — signature takes projectId
-- `src/modules/build/execution/whiteboards.service.ts:280` — the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId
+- `src/modules/build/execution/workspace.controller.ts:361` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboards.service.ts:299` — signature takes projectId
+- `src/modules/build/execution/whiteboards.service.ts:313` — the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId
+
+### VERIFIED — `POST /build/:projectId/files`
+
+`FilesController.uploadFile` — `src/modules/build/files/files.controller.ts:60`
+
+POST /build/:projectId/files. Assert-enforced, with the strong assert. The INSERT's tenant binding is values-only and constrains nothing on its own, but assertProjectAccess runs first and resolves through resolveProjectAccess, whose predicate binds eq(projects.orgId, u.orgId): a foreign org 404s and a same-org project the caller is not on 403s. Storage keys are org-prefixed from the same actor, so there is no cross-org object path either, and a composite (org_id, project_id) foreign key backstops the row.
+
+- `src/modules/build/files/files.controller.ts:70` — the complete authenticated actor reaches the service
+- `src/modules/build/files/files.service.ts:115` — the terminal service accepts CurrentUserContext
+- `src/modules/build/files/files.service.ts:143` — the INSERT writes the tenant from the actor; this is a value, not a predicate
+- `src/modules/build/core/project-crud/project-access.ts:92` — resolveProjectAccess supplies the predicate form the INSERT cannot
+- `src/db/schema/build/project-attachments.ts:27` — a composite tenant foreign key backstops the row
 
 ### VERIFIED — `GET /build/:projectId/files/:fileId/url`
 
@@ -1238,7 +1301,7 @@ DELETE /build/:projectId/files/:fileId. FilesService.softDeleteFile(u, projectId
 GET /build/:projectId/forms/:formId. FormsService.getForm(u, projectId, formId) delegates directly to loadForm(orgId, projectId, formId), whose WHERE binds id=formId AND orgId=orgId AND projectId=projectId together and throws NotFoundException on mismatch.
 
 - `src/modules/build/forms/forms.controller.ts:58` — handler binds both projectId and formId and forwards both
-- `src/modules/build/forms/forms.service.ts:98` — signature takes projectId
+- `src/modules/build/forms/forms.service.ts:101` — signature takes projectId
 - `src/modules/build/forms/forms.service.ts:39` — loadForm's WHERE (a few lines below) binds id+orgId+projectId together; 404 on mismatch
 
 ### VERIFIED — `PATCH /build/:projectId/forms/:formId`
@@ -1248,8 +1311,8 @@ GET /build/:projectId/forms/:formId. FormsService.getForm(u, projectId, formId) 
 PATCH /build/:projectId/forms/:formId. FormsService.updateForm(u, projectId, formId, input) opens with loadForm(orgId, projectId, formId) (id+orgId+projectId bound, 404 on mismatch) before building the patch and running the UPDATE keyed by the now-verified id+orgId (formId is a global PK already proven to belong to this exact project — verify-then-act-by-PK).
 
 - `src/modules/build/forms/forms.controller.ts:83` — handler binds both projectId and formId and forwards both
-- `src/modules/build/forms/forms.service.ts:140` — signature takes projectId
-- `src/modules/build/forms/forms.service.ts:142` — binds id+orgId+projectId; 404 on mismatch before any patch logic runs
+- `src/modules/build/forms/forms.service.ts:143` — signature takes projectId
+- `src/modules/build/forms/forms.service.ts:145` — binds id+orgId+projectId; 404 on mismatch before any patch logic runs
 
 ### VERIFIED — `DELETE /build/:projectId/forms/:formId`
 
@@ -1258,8 +1321,8 @@ PATCH /build/:projectId/forms/:formId. FormsService.updateForm(u, projectId, for
 DELETE /build/:projectId/forms/:formId. Same shape as updateForm: FormsService.deleteForm(u, projectId, formId) opens with loadForm(orgId, projectId, formId) (id+orgId+projectId bound, 404 on mismatch) before the soft-delete UPDATE keyed by the now-verified id+orgId.
 
 - `src/modules/build/forms/forms.controller.ts:97` — handler binds both projectId and formId and forwards both
-- `src/modules/build/forms/forms.service.ts:179` — signature takes projectId
-- `src/modules/build/forms/forms.service.ts:181` — binds id+orgId+projectId; 404 on mismatch before the delete
+- `src/modules/build/forms/forms.service.ts:182` — signature takes projectId
+- `src/modules/build/forms/forms.service.ts:184` — binds id+orgId+projectId; 404 on mismatch before the delete
 
 ### VERIFIED — `GET /build/:projectId/forms/:formId/submissions`
 
@@ -1268,9 +1331,9 @@ DELETE /build/:projectId/forms/:formId. Same shape as updateForm: FormsService.d
 GET /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUserContext, listSubmissions asserts project membership, and loadForm binds formId+orgId+projectId before the tenant/form-scoped submissions query runs.
 
 - `src/modules/build/forms/submissions.controller.ts:68` — route handler forwards the actor and path params
-- `src/modules/build/forms/submissions.service.ts:169` — project membership is enforced
-- `src/modules/build/forms/submissions.service.ts:170` — listSubmissions binds via loadForm before querying
-- `src/modules/build/forms/submissions.service.ts:54` — loadForm's WHERE binds formId to projectId and orgId together
+- `src/modules/build/forms/submissions.service.ts:168` — project membership is enforced
+- `src/modules/build/forms/submissions.service.ts:169` — listSubmissions binds via loadForm before querying
+- `src/modules/build/forms/submissions.service.ts:53` — loadForm's WHERE binds formId to projectId and orgId together
 
 ### VERIFIED — `POST /build/:projectId/forms/:formId/submissions`
 
@@ -1279,9 +1342,9 @@ GET /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUse
 POST /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUserContext, createSubmission asserts project membership, and loadForm binds formId+orgId+projectId. runSubmission derives every insert key from that validated form row.
 
 - `src/modules/build/forms/submissions.controller.ts:82` — route handler forwards the actor and path params
-- `src/modules/build/forms/submissions.service.ts:212` — project membership is enforced
-- `src/modules/build/forms/submissions.service.ts:213` — createSubmission binds via loadForm before running the submission
-- `src/modules/build/forms/submissions.service.ts:93` — runSubmission derives tenant and parent ids from the validated row
+- `src/modules/build/forms/submissions.service.ts:211` — project membership is enforced
+- `src/modules/build/forms/submissions.service.ts:212` — createSubmission binds via loadForm before running the submission
+- `src/modules/build/forms/submissions.service.ts:92` — runSubmission derives tenant and parent ids from the validated row
 
 ### VERIFIED — `PATCH /build/:projectId/forms/:formId/submissions/:submissionId`
 
@@ -1290,10 +1353,10 @@ POST /build/:projectId/forms/:formId/submissions. The handler forwards CurrentUs
 PATCH /build/:projectId/forms/:formId/submissions/:submissionId. The handler forwards CurrentUserContext, updateSubmission asserts project membership, loadForm binds the form to project+tenant, loadSubmission binds the submission to form+tenant, and the UPDATE repeats id+orgId+formId.
 
 - `src/modules/build/forms/submissions.controller.ts:96` — route handler forwards the actor and all path params
-- `src/modules/build/forms/submissions.service.ts:265` — project membership is enforced
-- `src/modules/build/forms/submissions.service.ts:266` — binds formId to projectId
-- `src/modules/build/forms/submissions.service.ts:267` — binds submissionId to formId
-- `src/modules/build/forms/submissions.service.ts:274` — UPDATE WHERE clause re-binds formId
+- `src/modules/build/forms/submissions.service.ts:264` — project membership is enforced
+- `src/modules/build/forms/submissions.service.ts:265` — binds formId to projectId
+- `src/modules/build/forms/submissions.service.ts:266` — binds submissionId to formId
+- `src/modules/build/forms/submissions.service.ts:273` — UPDATE WHERE clause re-binds formId
 
 ### VERIFIED — `POST /public/build-forms/:publicToken/submissions`
 
@@ -1301,10 +1364,10 @@ PATCH /build/:projectId/forms/:formId/submissions/:submissionId. The handler for
 
 POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and IP rate-limited. One withPublicToken transaction resolves the active public form and performs capacity reservation, ticket allocation/inserts, and the submission insert under the same token-scoped RLS context. orgId and projectId come only from the resolved form row. The plaintext token comparison remains a storage hardening opportunity, not an access-control defect.
 
-- `src/modules/build/forms/submissions.service.ts:65` — resolved by token inside withPublicToken; orgId derived from the row
-- `src/modules/build/forms/submissions.service.ts:66` — non-public forms are not reachable through this route
-- `src/modules/build/forms/submissions.service.ts:231` — lookup and every write share one token-scoped transaction
-- `src/modules/build/forms/submissions.service.ts:233` — the existing token transaction is passed into the write path
+- `src/modules/build/forms/submissions.service.ts:64` — resolved by token inside withPublicToken; orgId derived from the row
+- `src/modules/build/forms/submissions.service.ts:65` — non-public forms are not reachable through this route
+- `src/modules/build/forms/submissions.service.ts:230` — lookup and every write share one token-scoped transaction
+- `src/modules/build/forms/submissions.service.ts:232` — the existing token transaction is passed into the write path
 
 ### VERIFIED — `GET /build/:projectId/decisions/:decisionId`
 
@@ -1313,7 +1376,7 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 GET /build/:projectId/decisions/:decisionId. getDecision calls assertProjectAccess(projectId) (404 if the project isn't in the caller's org) then loadDecision(orgId, projectId, decisionId), whose WHERE binds id=decisionId AND orgId AND projectId together. A decisionId belonging to another project 404s.
 
 - `src/modules/build/governance/decisions.controller.ts:63` — route handler passes raw path params straight to the service
-- `src/modules/build/governance/decisions.service.ts:72` — getDecision delegates to loadDecision
+- `src/modules/build/governance/decisions.service.ts:76` — getDecision delegates to loadDecision
 - `src/modules/build/governance/decisions.service.ts:41` — loadDecision's WHERE binds decisionId to projectId and orgId together
 
 ### VERIFIED — `PATCH /build/:projectId/decisions/:decisionId`
@@ -1323,8 +1386,8 @@ GET /build/:projectId/decisions/:decisionId. getDecision calls assertProjectAcce
 PATCH /build/:projectId/decisions/:decisionId. updateDecision calls assertProjectAccess(projectId), then loadDecision(orgId, projectId, decisionId) (404 on mismatch), then the UPDATE's own WHERE independently re-binds id+orgId+projectId. Both the pre-check and the write itself scope the row to the named project.
 
 - `src/modules/build/governance/decisions.controller.ts:89` — route handler passes raw path params straight to the service
-- `src/modules/build/governance/decisions.service.ts:122` — binds decisionId to projectId via loadDecision before patching
-- `src/modules/build/governance/decisions.service.ts:137` — UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/governance/decisions.service.ts:126` — binds decisionId to projectId via loadDecision before patching
+- `src/modules/build/governance/decisions.service.ts:141` — UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `DELETE /build/:projectId/decisions/:decisionId`
 
@@ -1333,38 +1396,51 @@ PATCH /build/:projectId/decisions/:decisionId. updateDecision calls assertProjec
 DELETE /build/:projectId/decisions/:decisionId (soft delete). Same binding as updateDecision: assertProjectAccess + loadDecision(orgId, projectId, decisionId) 404s a foreign decisionId, and the soft-delete UPDATE's own WHERE independently repeats id+orgId+projectId.
 
 - `src/modules/build/governance/decisions.controller.ts:102` — route handler passes raw path params straight to the service
-- `src/modules/build/governance/decisions.service.ts:154` — binds decisionId to projectId via loadDecision before deleting
-- `src/modules/build/governance/decisions.service.ts:158` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/governance/decisions.service.ts:158` — binds decisionId to projectId via loadDecision before deleting
+- `src/modules/build/governance/decisions.service.ts:162` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `GET /build/:projectId/risks/:riskId`
 
-`RisksController.getRisk` — `src/modules/build/governance/risks.controller.ts:72`
+`RisksController.getRisk` — `src/modules/build/governance/risks.controller.ts:81`
 
 GET /build/:projectId/risks/:riskId. getRisk calls assertProjectAccess(projectId) then loadRisk(orgId, projectId, riskId), whose WHERE binds id=riskId AND orgId AND projectId. A riskId from another project 404s.
 
-- `src/modules/build/governance/risks.controller.ts:81` — route handler passes raw path params straight to the service
-- `src/modules/build/governance/risks.service.ts:125` — getRisk delegates to loadRisk
-- `src/modules/build/governance/risks.service.ts:33` — loadRisk's WHERE binds riskId to projectId and orgId together
+- `src/modules/build/governance/risks.controller.ts:90` — route handler passes raw path params straight to the service
+- `src/modules/build/governance/risks.service.ts:150` — getRisk delegates to loadRisk
+- `src/modules/build/governance/risks.service.ts:34` — loadRisk's WHERE binds riskId to projectId and orgId together
 
 ### VERIFIED — `PATCH /build/:projectId/risks/:riskId`
 
-`RisksController.updateRisk` — `src/modules/build/governance/risks.controller.ts:97`
+`RisksController.updateRisk` — `src/modules/build/governance/risks.controller.ts:106`
 
 PATCH /build/:projectId/risks/:riskId. updateRisk calls assertProjectAccess(projectId) then loadRisk(orgId, projectId, riskId) before patching, and the UPDATE's own WHERE independently re-binds id+orgId+projectId.
 
-- `src/modules/build/governance/risks.controller.ts:107` — route handler passes raw path params straight to the service
-- `src/modules/build/governance/risks.service.ts:174` — binds riskId to projectId via loadRisk before patching
-- `src/modules/build/governance/risks.service.ts:188` — UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/governance/risks.controller.ts:116` — route handler passes raw path params straight to the service
+- `src/modules/build/governance/risks.service.ts:199` — binds riskId to projectId via loadRisk before patching
+- `src/modules/build/governance/risks.service.ts:213` — UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `DELETE /build/:projectId/risks/:riskId`
 
-`RisksController.softDeleteRisk` — `src/modules/build/governance/risks.controller.ts:110`
+`RisksController.softDeleteRisk` — `src/modules/build/governance/risks.controller.ts:119`
 
 DELETE /build/:projectId/risks/:riskId (soft delete). Same binding as updateRisk: assertProjectAccess + loadRisk(orgId, projectId, riskId) 404s a foreign riskId, and the soft-delete UPDATE's own WHERE independently repeats id+orgId+projectId.
 
-- `src/modules/build/governance/risks.controller.ts:120` — route handler passes raw path params straight to the service
-- `src/modules/build/governance/risks.service.ts:205` — binds riskId to projectId via loadRisk before deleting
-- `src/modules/build/governance/risks.service.ts:209` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/governance/risks.controller.ts:129` — route handler passes raw path params straight to the service
+- `src/modules/build/governance/risks.service.ts:230` — binds riskId to projectId via loadRisk before deleting
+- `src/modules/build/governance/risks.service.ts:234` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
+
+### VERIFIED — `GET /build/:projectId/import-export/tickets/export`
+
+`TicketImportExportController.exportTickets` — `src/modules/build/import-export/ticket-import-export.controller.ts:74`
+
+GET /build/:projectId/import-export/tickets/export. An export is the highest-value target here and it is the best-bound handler of the six. The tenant predicate is not written by this service at all: ScopedRead mints an unforgeable where-token whose first clause is eq(tickets.orgId, actor.orgId), and the token class is unexported with a private field so no call site can hand-roll a where that omits it. The URL project is AND-ed into the same token, the caller's DataScope narrows further, a `none` scope short-circuits to an empty array, and the read is capped. The permission key on the route matches the key the row scope resolves.
+
+- `src/modules/build/import-export/ticket-import-export.controller.ts:83` — the complete authenticated actor reaches the service
+- `src/modules/build/import-export/ticket-export.service.ts:53` — project membership is enforced before the read
+- `src/modules/build/import-export/ticket-export.service.ts:59` — the tenant column is declared to ScopedRead rather than filtered by hand
+- `src/modules/build/import-export/ticket-export.service.ts:62` — the URL project is a predicate on the exported rows
+- `src/modules/build/import-export/ticket-export.service.ts:86` — the query consumes the token wholesale; it cannot drop a clause
+- `src/modules/access/scoped-read.ts:101` — the tenant clause is prepended by the token, not by the caller
 
 ### VERIFIED — `GET /build/:projectId/incidents/:incidentId`
 
@@ -1373,7 +1449,7 @@ DELETE /build/:projectId/risks/:riskId (soft delete). Same binding as updateRisk
 GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the bounded child-resource queries run.
 
 - `src/modules/build/incidents/incidents.controller.ts:97` — route handler passes both path params and the validated child query to the service
-- `src/modules/build/incidents/incidents.service.ts:148` — getIncident binds via loadIncident before reading child resources
+- `src/modules/build/incidents/incidents.service.ts:151` — getIncident binds via loadIncident before reading child resources
 - `src/modules/build/incidents/incidents.service.ts:68` — loadIncident's WHERE binds incidentId to projectId and orgId together
 
 ### VERIFIED — `PATCH /build/:projectId/incidents/:incidentId`
@@ -1383,9 +1459,9 @@ GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAcce
 PATCH /build/:projectId/incidents/:incidentId. updateIncident calls assertProjectAccess(projectId), then binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId), and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction.
 
 - `src/modules/build/incidents/incidents.controller.ts:123` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:199` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:200` — binds incidentId to projectId via loadIncident before patching
-- `src/modules/build/incidents/incidents.service.ts:240` — UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.service.ts:202` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:203` — binds incidentId to projectId via loadIncident before patching
+- `src/modules/build/incidents/incidents.service.ts:243` — UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `DELETE /build/:projectId/incidents/:incidentId`
 
@@ -1394,9 +1470,9 @@ PATCH /build/:projectId/incidents/:incidentId. updateIncident calls assertProjec
 DELETE /build/:projectId/incidents/:incidentId (soft delete). deleteIncident calls assertProjectAccess(projectId), then loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.
 
 - `src/modules/build/incidents/incidents.controller.ts:136` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:300` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:301` — binds incidentId to projectId via loadIncident before deleting
-- `src/modules/build/incidents/incidents.service.ts:309` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.service.ts:303` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:304` — binds incidentId to projectId via loadIncident before deleting
+- `src/modules/build/incidents/incidents.service.ts:312` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/updates`
 
@@ -1405,8 +1481,8 @@ DELETE /build/:projectId/incidents/:incidentId (soft delete). deleteIncident cal
 POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.
 
 - `src/modules/build/incidents/incidents.controller.ts:150` — route handler passes raw path params straight to the service
-- `src/modules/build/incidents/incidents.service.ts:329` — binds incidentId to projectId via loadIncident before writing
-- `src/modules/build/incidents/incidents.service.ts:360` — in-transaction status UPDATE independently re-binds id+orgId+projectId
+- `src/modules/build/incidents/incidents.service.ts:332` — binds incidentId to projectId via loadIncident before writing
+- `src/modules/build/incidents/incidents.service.ts:363` — in-transaction status UPDATE independently re-binds id+orgId+projectId
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/decisions`
 
@@ -1414,8 +1490,8 @@ POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProj
 
 POST /build/:projectId/incidents/:incidentId/decisions. addDecision calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) — the same helper proven elsewhere in this file to bind id+orgId+projectId together, 404 on mismatch — before inserting the decision row, which is itself scoped to the now-confirmed incidentId+orgId.
 
-- `src/modules/build/incidents/incidents.service.ts:399` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:400` — binds incidentId to projectId via loadIncident before writing
+- `src/modules/build/incidents/incidents.service.ts:402` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:403` — binds incidentId to projectId via loadIncident before writing
 
 ### VERIFIED — `POST /build/:projectId/incidents/:incidentId/follow-ups`
 
@@ -1423,8 +1499,8 @@ POST /build/:projectId/incidents/:incidentId/decisions. addDecision calls assert
 
 POST /build/:projectId/incidents/:incidentId/follow-ups. Same binding shape as addDecision: assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) before inserting the follow-up-action row.
 
-- `src/modules/build/incidents/incidents.service.ts:430` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:431` — binds incidentId to projectId via loadIncident before writing
+- `src/modules/build/incidents/incidents.service.ts:433` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:434` — binds incidentId to projectId via loadIncident before writing
 
 ### VERIFIED — `PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId`
 
@@ -1432,18 +1508,18 @@ POST /build/:projectId/incidents/:incidentId/follow-ups. Same binding shape as a
 
 PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId. assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) bind the parent incident to this project; the UPDATE's own WHERE independently re-binds id=followUpActionId AND orgId AND incidentId, so a foreign followUpActionId (even one belonging to a different incident in the same org) 404s rather than matching.
 
-- `src/modules/build/incidents/incidents.service.ts:464` — project-membership gate
-- `src/modules/build/incidents/incidents.service.ts:465` — binds incidentId to projectId via loadIncident before updating
-- `src/modules/build/incidents/incidents.service.ts:481` — UPDATE WHERE independently re-binds id+orgId+incidentId
+- `src/modules/build/incidents/incidents.service.ts:467` — project-membership gate
+- `src/modules/build/incidents/incidents.service.ts:468` — binds incidentId to projectId via loadIncident before updating
+- `src/modules/build/incidents/incidents.service.ts:484` — UPDATE WHERE independently re-binds id+orgId+incidentId
 
 ### VERIFIED — `POST /build/managed-products`
 
-`ManagedProductsController.createManagedProduct` — `src/modules/build/managed-products/managed-products.controller.ts:65`
+`ManagedProductsController.createManagedProduct` — `src/modules/build/managed-products/managed-products.controller.ts:81`
 
 POST /build/managed-products. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into managed_products with orgId as a column of .values() at managed-products.service.ts:83; the unique-key conflict it catches is the per-org key constraint, which is itself evidence the row is org-scoped. PASSED-UNBOUND is the expected static reading because an INSERT carries no predicate for eq() detection. The sibling updateManagedProduct binds eq(managedProducts.orgId, orgId) in its WHERE, so the table's org column is genuinely the tenant key.
 
-- `src/modules/build/managed-products/managed-products.service.ts:113` — an INSERT — no WHERE clause exists to carry a predicate
-- `src/modules/build/managed-products/managed-products.service.ts:115` — org bound as an ES6 shorthand column in .values()
+- `src/modules/build/managed-products/managed-products.service.ts:190` — an INSERT — no WHERE clause exists to carry a predicate
+- `src/modules/build/managed-products/managed-products.service.ts:192` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `POST /build/:projectId/meetings/:meetingId/action-items`
 
@@ -1495,7 +1571,7 @@ POST /build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task.
 GET /build/:projectId/meetings/:meetingId. getMeeting calls assertProjectAccess(projectId) then loadMeeting(orgId, projectId, meetingId), whose WHERE binds id=meetingId AND orgId AND projectId. The attendees/action-items/standup queries that follow are filtered by meetingId+orgId, which is safe because meetingId was already proven to belong to this project.
 
 - `src/modules/build/meetings/meetings.controller.ts:76` — route handler passes raw path params straight to the service
-- `src/modules/build/meetings/meetings.service.ts:173` — getMeeting binds via loadMeeting before reading child rows
+- `src/modules/build/meetings/meetings.service.ts:208` — getMeeting binds via loadMeeting before reading child rows
 - `src/modules/build/meetings/meetings.service.ts:57` — loadMeeting's WHERE binds meetingId to projectId and orgId together
 
 ### VERIFIED — `PATCH /build/:projectId/meetings/:meetingId`
@@ -1505,8 +1581,8 @@ GET /build/:projectId/meetings/:meetingId. getMeeting calls assertProjectAccess(
 PATCH /build/:projectId/meetings/:meetingId. updateMeeting binds via loadMeeting(orgId, projectId, meetingId) (404 on a foreign meetingId) before the UPDATE, which targets the row by primary key id + orgId — safe because meetingId was already proven bound to this project. NOTE: like updateIncident/deleteIncident, this handler does not call assertProjectAccess (unlike getMeeting/listMeetings/createMeeting in the same file); that is a project-membership-scoping asymmetry, not a parent-binding gap — the object itself is still correctly scoped and a cross-project meetingId still 404s.
 
 - `src/modules/build/meetings/meetings.controller.ts:102` — route handler passes raw path params straight to the service
-- `src/modules/build/meetings/meetings.service.ts:283` — binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it
-- `src/modules/build/meetings/meetings.service.ts:299` — UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/meetings/meetings.service.ts:318` — binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it
+- `src/modules/build/meetings/meetings.service.ts:334` — UPDATE targets the already-verified row by primary key id + orgId
 
 ### VERIFIED — `DELETE /build/:projectId/meetings/:meetingId`
 
@@ -1515,8 +1591,8 @@ PATCH /build/:projectId/meetings/:meetingId. updateMeeting binds via loadMeeting
 DELETE /build/:projectId/meetings/:meetingId (soft delete). Same shape as updateMeeting: loadMeeting(orgId, projectId, meetingId) 404s a foreign meetingId, and the soft-delete UPDATE targets the already-verified row by primary key. Also skips assertProjectAccess like updateMeeting (see that entry's note).
 
 - `src/modules/build/meetings/meetings.controller.ts:115` — route handler passes raw path params straight to the service
-- `src/modules/build/meetings/meetings.service.ts:314` — binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it
-- `src/modules/build/meetings/meetings.service.ts:318` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/meetings/meetings.service.ts:349` — binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it
+- `src/modules/build/meetings/meetings.service.ts:353` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
 
 ### VERIFIED — `POST /build/:projectId/meetings/:meetingId/attendees`
 
@@ -1525,8 +1601,8 @@ DELETE /build/:projectId/meetings/:meetingId (soft delete). Same shape as update
 POST /build/:projectId/meetings/:meetingId/attendees. addAttendee binds via loadMeeting(orgId, projectId, meetingId) (404 on a foreign meetingId), then additionally resolves the target user to a project member of this exact projectId (a project-membership subquery scoped by orgId) before inserting the attendee row — so both the meeting and the attendee being added are independently proven to belong to this project/org.
 
 - `src/modules/build/meetings/meetings.controller.ts:129` — route handler passes raw path params straight to the service
-- `src/modules/build/meetings/meetings.service.ts:330` — binds meetingId to projectId via loadMeeting
-- `src/modules/build/meetings/meetings.service.ts:334` — resolves the attendee to a member of this exact projectId, scoped by orgId, before inserting
+- `src/modules/build/meetings/meetings.service.ts:365` — binds meetingId to projectId via loadMeeting
+- `src/modules/build/meetings/meetings.service.ts:369` — resolves the attendee to a member of this exact projectId, scoped by orgId, before inserting
 
 ### VERIFIED — `DELETE /build/:projectId/meetings/:meetingId/attendees/:attendeeUserId`
 
@@ -1535,8 +1611,8 @@ POST /build/:projectId/meetings/:meetingId/attendees. addAttendee binds via load
 DELETE /build/:projectId/meetings/:meetingId/attendees/:attendeeUserId. removeAttendee binds via loadMeeting(orgId, projectId, meetingId) (404 on a foreign meetingId), then the DELETE's WHERE scopes to meetingId + a membership subquery filtered by orgId + the named attendeeUserId — meetingId was already proven to belong to the named project.
 
 - `src/modules/build/meetings/meetings.controller.ts:143` — route handler passes all three raw path params straight to the service
-- `src/modules/build/meetings/meetings.service.ts:349` — binds meetingId to projectId via loadMeeting
-- `src/modules/build/meetings/meetings.service.ts:356` — DELETE WHERE clause re-binds orgId alongside meetingId
+- `src/modules/build/meetings/meetings.service.ts:384` — binds meetingId to projectId via loadMeeting
+- `src/modules/build/meetings/meetings.service.ts:391` — DELETE WHERE clause re-binds orgId alongside meetingId
 
 ### VERIFIED — `PUT /build/:projectId/meetings/:meetingId/standup`
 
@@ -1545,7 +1621,7 @@ DELETE /build/:projectId/meetings/:meetingId/attendees/:attendeeUserId. removeAt
 PUT /build/:projectId/meetings/:meetingId/standup. upsertStandup binds via loadMeeting(orgId, projectId, meetingId) (404 on a foreign meetingId) before the insert/onConflictDoUpdate, whose conflict target is (meetingId, userId) — meetingId was already proven to belong to this project, so the upsert can only ever touch a standup entry scoped to this meeting.
 
 - `src/modules/build/meetings/meetings.controller.ts:156` — route handler passes raw path params straight to the service
-- `src/modules/build/meetings/meetings.service.ts:362` — binds meetingId to projectId via loadMeeting before the upsert
+- `src/modules/build/meetings/meetings.service.ts:397` — binds meetingId to projectId via loadMeeting before the upsert
 
 ### VERIFIED — `POST /build/portfolios`
 
@@ -1553,8 +1629,8 @@ PUT /build/:projectId/meetings/:meetingId/standup. upsertStandup binds via loadM
 
 POST /build/portfolios. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into project_portfolios with orgId as a column of .values() and records createdBy from the verified context. PASSED-UNBOUND is the documented create-endpoint reading: the binding is an INSERT column and the static pass only recognises predicates. The sibling updatePortfolio binds eq(projectPortfolios.orgId, orgId) in its WHERE, confirming the column is the tenant key.
 
-- `src/modules/build/portfolios/portfolios.service.ts:247` — an INSERT — no WHERE clause exists to carry a predicate
-- `src/modules/build/portfolios/portfolios.service.ts:249` — org bound as an ES6 shorthand column in .values()
+- `src/modules/build/portfolios/portfolios.service.ts:248` — an INSERT — no WHERE clause exists to carry a predicate
+- `src/modules/build/portfolios/portfolios.service.ts:250` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `DELETE /build/portfolios/:portfolioId/projects/:projectId`
 
@@ -1563,8 +1639,8 @@ POST /build/portfolios. An org-level route with no path parameters, so no parent
 DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls loadPortfolio(orgId, portfolioId) first, whose WHERE binds id=portfolioId AND orgId (404 on a foreign portfolioId), then deletes the link row scoped by portfolioId+projectId+orgId. Because portfolioId is already proven to belong to this org, and orgId is repeated on the delete, a projectId belonging to another org's portfolio simply matches zero rows — it can never unlink a link row outside the caller's own org, and cannot affect the project row itself (only the join-table association).
 
 - `src/modules/build/portfolios/portfolios.controller.ts:134` — route handler passes both raw path params straight to the service
-- `src/modules/build/portfolios/portfolios.service.ts:359` — binds portfolioId to orgId via loadPortfolio before the delete
-- `src/modules/build/portfolios/portfolios.service.ts:366` — DELETE WHERE clause scopes to portfolioId + projectId + orgId together
+- `src/modules/build/portfolios/portfolios.service.ts:360` — binds portfolioId to orgId via loadPortfolio before the delete
+- `src/modules/build/portfolios/portfolios.service.ts:367` — DELETE WHERE clause scopes to portfolioId + projectId + orgId together
 
 ### VERIFIED — `DELETE /build/programs/:programId/projects/:projectId`
 
@@ -1583,7 +1659,7 @@ DELETE /build/programs/:programId/projects/:projectId. Structurally identical to
 GET /build/:projectId/bugs/:bugId. getBug calls assertProjectAccess(projectId) then selects the ticket WHERE id=bugId AND orgId AND projectId AND type='BUG' (not deleted), throwing NotFoundException on zero rows. A bugId belonging to another project 404s.
 
 - `src/modules/build/qa/bugs.controller.ts:68` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/bugs.service.ts:118` — SELECT WHERE clause binds bugId to projectId and orgId together
+- `src/modules/build/qa/bugs.service.ts:119` — SELECT WHERE clause binds bugId to projectId and orgId together
 
 ### VERIFIED — `PATCH /build/:projectId/bugs/:bugId`
 
@@ -1592,8 +1668,8 @@ GET /build/:projectId/bugs/:bugId. getBug calls assertProjectAccess(projectId) t
 PATCH /build/:projectId/bugs/:bugId. updateBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before touching anything. The subsequent tickets UPDATE and workItemQaDetails UPDATE both target the row by primary key (bugId/workItemId) + orgId — safe because bugId was already proven bound to this project.
 
 - `src/modules/build/qa/bugs.controller.ts:94` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/bugs.service.ts:225` — existence check binds bugId to projectId and orgId before patching
-- `src/modules/build/qa/bugs.service.ts:268` — tickets UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/qa/bugs.service.ts:226` — existence check binds bugId to projectId and orgId before patching
+- `src/modules/build/qa/bugs.service.ts:350` — tickets UPDATE targets the already-verified row by primary key id + orgId
 
 ### VERIFIED — `DELETE /build/:projectId/bugs/:bugId`
 
@@ -1602,8 +1678,8 @@ PATCH /build/:projectId/bugs/:bugId. updateBug calls assertProjectAccess(project
 DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before the soft-delete UPDATE, which targets the row by primary key id + orgId.
 
 - `src/modules/build/qa/bugs.controller.ts:107` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/bugs.service.ts:324` — existence check binds bugId to projectId and orgId before deleting
-- `src/modules/build/qa/bugs.service.ts:334` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/qa/bugs.service.ts:340` — existence check binds bugId to projectId and orgId before deleting
+- `src/modules/build/qa/bugs.service.ts:350` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
 
 ### VERIFIED — `GET /build/:projectId/test-cases/:caseId`
 
@@ -1650,7 +1726,7 @@ GET /build/:projectId/test-runs/:runId. getRun calls assertProjectAccess(project
 GET /build/:projectId/test-runs/:runId/results. listRunResults calls assertProjectAccess(projectId) then an explicit existence check WHERE id=runId AND orgId AND projectId (404 otherwise) before listing results filtered by runId+orgId — safe because runId was already proven bound to this project.
 
 - `src/modules/build/qa/test-runs.controller.ts:104` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/test-runs.service.ts:149` — existence check binds runId to projectId and orgId before listing results
+- `src/modules/build/qa/test-runs.service.ts:153` — existence check binds runId to projectId and orgId before listing results
 
 ### VERIFIED — `PATCH /build/:projectId/test-runs/:runId`
 
@@ -1659,8 +1735,8 @@ GET /build/:projectId/test-runs/:runId/results. listRunResults calls assertProje
 PATCH /build/:projectId/test-runs/:runId. updateRun calls assertProjectAccess(projectId) then an existence check WHERE id=runId AND orgId AND projectId (404 otherwise), and the UPDATE's own WHERE independently re-binds id+orgId+projectId.
 
 - `src/modules/build/qa/test-runs.controller.ts:130` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/test-runs.service.ts:281` — existence check binds runId to projectId and orgId before patching
-- `src/modules/build/qa/test-runs.service.ts:303` — UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/qa/test-runs.service.ts:285` — existence check binds runId to projectId and orgId before patching
+- `src/modules/build/qa/test-runs.service.ts:307` — UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `DELETE /build/:projectId/test-runs/:runId`
 
@@ -1669,8 +1745,8 @@ PATCH /build/:projectId/test-runs/:runId. updateRun calls assertProjectAccess(pr
 DELETE /build/:projectId/test-runs/:runId (soft delete). deleteRun calls assertProjectAccess(projectId) then an existence check WHERE id=runId AND orgId AND projectId (404 otherwise), and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.
 
 - `src/modules/build/qa/test-runs.controller.ts:143` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/test-runs.service.ts:325` — existence check binds runId to projectId and orgId before deleting
-- `src/modules/build/qa/test-runs.service.ts:334` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/qa/test-runs.service.ts:329` — existence check binds runId to projectId and orgId before deleting
+- `src/modules/build/qa/test-runs.service.ts:338` — soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `PATCH /build/:projectId/test-runs/:runId/results/:resultId`
 
@@ -1679,8 +1755,8 @@ DELETE /build/:projectId/test-runs/:runId (soft delete). deleteRun calls assertP
 PATCH /build/:projectId/test-runs/:runId/results/:resultId — three route params. updateResult calls assertProjectAccess(projectId) then an existence check whose WHERE binds ALL of id=resultId, runId, orgId AND projectId in one query (404 if any mismatch), and the subsequent UPDATE's WHERE re-binds id+orgId+projectId, targeting the row already proven to belong to the named run.
 
 - `src/modules/build/qa/test-runs.controller.ts:157` — route handler passes all three raw path params straight to the service
-- `src/modules/build/qa/test-runs.service.ts:351` — existence check binds resultId to runId, orgId, and projectId together in one WHERE
-- `src/modules/build/qa/test-runs.service.ts:370` — UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/qa/test-runs.service.ts:355` — existence check binds resultId to runId, orgId, and projectId together in one WHERE
+- `src/modules/build/qa/test-runs.service.ts:374` — UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `POST /build/:projectId/test-runs/:runId/results/:resultId/bug`
 
@@ -1689,8 +1765,8 @@ PATCH /build/:projectId/test-runs/:runId/results/:resultId — three route param
 POST /build/:projectId/test-runs/:runId/results/:resultId/bug. createBugFromResultConsolidated calls assertProjectAccess(projectId) then binds resultId to runId+orgId+projectId in one WHERE (404 otherwise). The linked test case is then looked up by the *result row's own* testCaseId (a trusted DB value, not a client-supplied param) scoped to orgId. The final testRunResults UPDATE (linking the new ticket) targets the row by primary key id + orgId — safe because resultId was already proven bound to this run/project.
 
 - `src/modules/build/qa/test-runs.controller.ts:172` — route handler passes all three raw path params straight to the service
-- `src/modules/build/qa/test-runs.service.ts:390` — existence check binds resultId to runId, orgId, and projectId together in one WHERE
-- `src/modules/build/qa/test-runs.service.ts:396` — linked test case is resolved from the already-validated result row's own testCaseId, not a client param
+- `src/modules/build/qa/test-runs.service.ts:394` — existence check binds resultId to runId, orgId, and projectId together in one WHERE
+- `src/modules/build/qa/test-runs.service.ts:400` — linked test case is resolved from the already-validated result row's own testCaseId, not a client param
 
 ### VERIFIED — `PATCH /build/:projectId/test-suites/:suiteId`
 
@@ -1718,8 +1794,8 @@ DELETE /build/:projectId/test-suites/:suiteId (soft delete). deleteSuite calls a
 
 POST /build/teams. An org-level route with no path parameters, so no parent dimension exists. The service INSERTs into project_teams with orgId as a column of .values() at teams.service.ts:135, and the unique-violation branch it catches reports the key clash as per-organisation, which is what the org-scoped unique index enforces. PASSED-UNBOUND is the expected reading for a create endpoint. The sibling updateTeam binds eq(projectTeams.orgId, orgId) in its WHERE.
 
-- `src/modules/build/teams/teams.service.ts:133` — an INSERT — no WHERE clause exists to carry a predicate
-- `src/modules/build/teams/teams.service.ts:135` — org bound as an ES6 shorthand column in .values()
+- `src/modules/build/teams/teams.service.ts:152` — an INSERT — no WHERE clause exists to carry a predicate
+- `src/modules/build/teams/teams.service.ts:154` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `PATCH /build/teams/:teamId/members/:memberUserId`
 
@@ -1728,8 +1804,8 @@ POST /build/teams. An org-level route with no path parameters, so no parent dime
 PATCH /build/teams/:teamId/members/:memberUserId. updateMemberRole calls teams.loadTeam(orgId, teamId) (WHERE id=teamId AND orgId, 404 otherwise), then resolves memberUserId to a membership via assertOrganizationActor(db, orgId, ...) — which itself queries organizationMembers scoped to that exact orgId and throws if the user isn't a member of this org. The UPDATE's WHERE then binds teamId + that org-scoped membershipId + orgId together.
 
 - `src/modules/build/teams/teams.controller.ts:161` — route handler passes teamId and memberUserId straight to the service
-- `src/modules/build/teams/team-members.service.ts:166` — binds teamId to orgId via loadTeam before updating
-- `src/modules/build/teams/team-members.service.ts:175` — memberUserId is resolved to a membership scoped to this exact orgId via assertOrganizationActor
+- `src/modules/build/teams/team-members.service.ts:184` — binds teamId to orgId via loadTeam before updating
+- `src/modules/build/teams/team-members.service.ts:193` — memberUserId is resolved to a membership scoped to this exact orgId via assertOrganizationActor
 
 ### VERIFIED — `DELETE /build/teams/:teamId/members/:memberId`
 
@@ -1738,8 +1814,8 @@ PATCH /build/teams/:teamId/members/:memberUserId. updateMemberRole calls teams.l
 DELETE /build/teams/:teamId/members/:memberId. Same binding shape as updateMemberRole: teams.loadTeam(orgId, teamId) binds teamId to orgId (404 otherwise), and memberId is resolved to an org-scoped membership via assertOrganizationActor before the DELETE's WHERE binds teamId + membershipId + orgId together.
 
 - `src/modules/build/teams/teams.controller.ts:180` — route handler passes teamId and memberId straight to the service
-- `src/modules/build/teams/team-members.service.ts:136` — binds teamId to orgId via loadTeam before deleting
-- `src/modules/build/teams/team-members.service.ts:144` — memberId is resolved to a membership scoped to this exact orgId via assertOrganizationActor
+- `src/modules/build/teams/team-members.service.ts:154` — binds teamId to orgId via loadTeam before deleting
+- `src/modules/build/teams/team-members.service.ts:162` — memberId is resolved to a membership scoped to this exact orgId via assertOrganizationActor
 
 ### VERIFIED — `DELETE /build/teams/:teamId/projects/:projectId`
 
@@ -1758,8 +1834,8 @@ DELETE /build/teams/:teamId/projects/:projectId. removeProject calls teams.loadT
 PATCH /build/:projectId/updates/:updateId. editUpdate calls assertProjectAccess(projectId) then loadUpdate(orgId, projectId, updateId), whose WHERE binds id=updateId AND orgId AND projectId (not deleted) — 404 on a foreign updateId — followed by an authorship/permission check, and the UPDATE's own WHERE independently re-binds id+orgId+projectId.
 
 - `src/modules/build/updates/updates.controller.ts:81` — route handler passes raw path params straight to the service
-- `src/modules/build/updates/updates.service.ts:117` — binds updateId to projectId via loadUpdate before patching
-- `src/modules/build/updates/updates.service.ts:131` — UPDATE WHERE clause independently re-binds id+orgId+projectId
+- `src/modules/build/updates/updates.service.ts:184` — binds updateId to projectId via loadUpdate before patching
+- `src/modules/build/updates/updates.service.ts:204` — UPDATE WHERE clause independently re-binds id+orgId+projectId
 
 ### VERIFIED — `DELETE /build/:projectId/updates/:updateId`
 
@@ -1768,8 +1844,8 @@ PATCH /build/:projectId/updates/:updateId. editUpdate calls assertProjectAccess(
 DELETE /build/:projectId/updates/:updateId (soft delete). softDeleteUpdate calls assertProjectAccess(projectId) then loadUpdate(orgId, projectId, updateId) (404 on a foreign updateId) followed by an authorship/permission check, then the soft-delete UPDATE targets the row by primary key id + orgId — safe because updateId was already proven bound to this project.
 
 - `src/modules/build/updates/updates.controller.ts:94` — route handler passes raw path params straight to the service
-- `src/modules/build/updates/updates.service.ts:150` — binds updateId to projectId via loadUpdate before deleting
-- `src/modules/build/updates/updates.service.ts:160` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/updates/updates.service.ts:223` — binds updateId to projectId via loadUpdate before deleting
+- `src/modules/build/updates/updates.service.ts:233` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
 
 ### VERIFIED — `PATCH /build/:projectId/workflow/transitions/:transitionId`
 
@@ -1814,48 +1890,48 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 
 | verdict | verb | route | controller:line | method | classification | module | guard chain | org scoping | parent scoping | @Validate params | @Idempotent |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| CLOSED | PATCH | `/build/:projectId/custom-states/:stateId` | `src/modules/build/core/project-resources.controller.ts:168` | `updateCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, stateId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/custom-states/:stateId` | `src/modules/build/core/project-resources.controller.ts:181` | `deleteCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, stateId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/automations/:automationId` | `src/modules/build/core/projects-automations.controller.ts:81` | `update` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, automationId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/automations/:automationId` | `src/modules/build/core/projects-automations.controller.ts:94` | `delete` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, automationId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/projects-custom-fields.controller.ts:60` | `updateField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fieldId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/projects-custom-fields.controller.ts:73` | `deleteField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fieldId] | NO (mutating) |
-| CLOSED | GET | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/projects-custom-fields.controller.ts:86` | `getTicketValues` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| CLOSED | POST | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/projects-custom-fields.controller.ts:98` | `upsertTicketValues` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:62` | `updateRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:75` | `deleteRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
-| CLOSED | POST | `/build/:projectId/releases/:releaseId/tickets` | `src/modules/build/core/projects-releases.controller.ts:88` | `addTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/releases/:releaseId/tickets/:ticketId` | `src/modules/build/core/projects-releases.controller.ts:102` | `removeTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId, ticketId] | NO (mutating) |
-| CLOSED | GET | `/build/:projectId/tickets/:ticketId/subtasks` | `src/modules/build/core/projects-ticket-associations.controller.ts:63` | `getSubtasks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| CLOSED | GET | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:115` | `getWatchers` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| CLOSED | POST | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:127` | `addWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:141` | `removeWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | POST | `/build/:projectId/tickets/:ticketId/labels` | `src/modules/build/core/projects-ticket-associations.controller.ts:154` | `addLabel` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | POST | `/build/:projectId/tickets/:ticketId/attachments` | `src/modules/build/core/projects-ticket-associations.controller.ts:182` | `addAttachment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | GET | `/build/:projectId/tickets/:ticketId/related-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:208` | `listRelatedLinks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| CLOSED | POST | `/build/:projectId/tickets/:ticketId/related-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:220` | `addRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId/checklists/:checklistId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:70` | `updateChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/checklists/:checklistId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:84` | `deleteChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
-| CLOSED | POST | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items` | `src/modules/build/core/projects-ticket-checklists.controller.ts:98` | `createChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:113` | `updateChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId, itemId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:128` | `deleteChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId, itemId] | NO (mutating) |
-| CLOSED | POST | `/build/:projectId/tickets/:ticketId/comments` | `src/modules/build/core/projects-ticket-comments.controller.ts:43` | `addComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | POST | `/build/:projectId/tickets/:ticketId/comments/:commentId/reactions` | `src/modules/build/core/projects-ticket-comments.controller.ts:98` | `addReaction` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji` | `src/modules/build/core/projects-ticket-comments.controller.ts:113` | `removeReaction` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId, emoji] | NO (mutating) |
-| CLOSED | GET | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:215` | `getTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:227` | `updateTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:240` | `deleteTicket` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/projects-webhooks.controller.ts:59` | `deleteWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
-| CLOSED | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:104` | `getSprint` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | n/a |
-| CLOSED | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:116` | `updateSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:239` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:252` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/automations/:automationId` | `src/modules/build/core/automation/projects-automations.controller.ts:100` | `update` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, automationId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/automations/:automationId` | `src/modules/build/core/automation/projects-automations.controller.ts:116` | `delete` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, automationId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:60` | `updateField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fieldId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:73` | `deleteField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fieldId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:86` | `getTicketValues` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | complete [projectId, ticketId] | n/a |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:98` | `upsertTicketValues` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/custom-states/:stateId` | `src/modules/build/core/project-crud/project-resources.controller.ts:173` | `updateCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, stateId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/custom-states/:stateId` | `src/modules/build/core/project-crud/project-resources.controller.ts:186` | `deleteCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, stateId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/releases/projects-releases.controller.ts:78` | `updateRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/releases/projects-releases.controller.ts:91` | `deleteRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/releases/:releaseId/tickets` | `src/modules/build/core/releases/projects-releases.controller.ts:104` | `addTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/releases/:releaseId/tickets/:ticketId` | `src/modules/build/core/releases/projects-releases.controller.ts:118` | `removeTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId, ticketId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/tickets/:ticketId/subtasks` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:63` | `getSubtasks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| CLOSED | GET | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:115` | `getWatchers` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:127` | `addWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:141` | `removeWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/labels` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:154` | `addLabel` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/attachments` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:182` | `addAttachment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/tickets/:ticketId/related-links` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:208` | `listRelatedLinks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/related-links` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:220` | `addRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId/checklists/:checklistId` | `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:70` | `updateChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/checklists/:checklistId` | `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:84` | `deleteChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items` | `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:98` | `createChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId` | `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:113` | `updateChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId, itemId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId` | `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:128` | `deleteChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId, itemId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/comments` | `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:43` | `addComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/comments/:commentId/reactions` | `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:98` | `addReaction` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji` | `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:113` | `removeReaction` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId, emoji] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/tickets/projects-tickets.controller.ts:234` | `getTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/tickets/projects-tickets.controller.ts:246` | `updateTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/tickets/projects-tickets.controller.ts:259` | `deleteTicket` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:80` | `deleteWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:107` | `getSprint` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | n/a |
+| CLOSED | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:119` | `updateSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:242` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:255` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
 | CLOSED | POST | `/build/:projectId/tickets/:ticketId/time-entries` | `src/modules/build/execution/timesheets.controller.ts:183` | `logTicketTime` | @RequirePermission("build:timesheets:create") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:96` | `updateMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:109` | `deleteMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/intake/:requestId` | `src/modules/build/execution/workspace.controller.ts:154` | `updateIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, requestId] | NO (mutating) |
-| CLOSED | PATCH | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:198` | `updateView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, viewId] | NO (mutating) |
-| CLOSED | DELETE | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:211` | `deleteView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, viewId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:106` | `updateMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:119` | `deleteMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/intake/:requestId` | `src/modules/build/execution/workspace.controller.ts:164` | `updateIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, requestId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:209` | `updateView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, viewId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:222` | `deleteView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, viewId] | NO (mutating) |
 | VERIFIED | GET | `/build/agent-pulse/top-signal` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:27` | `getTopSignal` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/agent-pulse/badge` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:36` | `badge` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | POST | `/build/agent-pulse/proposals/:draftId/apply` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:44` | `applyDraft` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [draftId] | NO (mutating) |
@@ -1875,15 +1951,19 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/:projectId/change-requests` | `src/modules/build/client-portal/change-requests.controller.ts:81` | `createChangeRequest` | @RequirePermission("build:changerequests:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | PATCH | `/build/:projectId/change-requests/:changeRequestId` | `src/modules/build/client-portal/change-requests.controller.ts:94` | `updateChangeRequest` | @RequirePermission("build:changerequests:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, changeRequestId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/:projectId/change-requests/:changeRequestId` | `src/modules/build/client-portal/change-requests.controller.ts:107` | `deleteChangeRequest` | @RequirePermission("build:changerequests:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, changeRequestId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/client-portal/settings` | `src/modules/build/client-portal/client-portal-management.controller.ts:38` | `getSettings` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/client-portal/publish` | `src/modules/build/client-portal/client-portal-management.controller.ts:49` | `publishPortal` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | POST | `/build/:projectId/client-portal/unpublish` | `src/modules/build/client-portal/client-portal-management.controller.ts:63` | `unpublishPortal` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/client-portal/preview` | `src/modules/build/client-portal/client-portal-management.controller.ts:76` | `getPreview` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/portal/projects` | `src/modules/build/client-portal/client-portal.controller.ts:38` | `listPortalProjects` | @RequirePermission("build:portal:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | GET | `/build/portal/projects/:projectId/overview` | `src/modules/build/client-portal/client-portal.controller.ts:47` | `getProjectOverview` | @RequirePermission("build:portal:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/portal/projects/:projectId/change-requests` | `src/modules/build/client-portal/client-portal.controller.ts:58` | `listPortalChangeRequests` | @RequirePermission("build:changerequests:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/portal/projects/:projectId/change-requests` | `src/modules/build/client-portal/client-portal.controller.ts:69` | `createPortalChangeRequest` | @RequirePermission("build:changerequests:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/client-visibility` | `src/modules/build/client-portal/client-visibility.controller.ts:38` | `getVisibilitySummary` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | PATCH | `/build/:projectId/client-visibility/tickets/:ticketId` | `src/modules/build/client-portal/client-visibility.controller.ts:49` | `toggleTicketVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/client-visibility/milestones/:milestoneId` | `src/modules/build/client-portal/client-visibility.controller.ts:62` | `toggleMilestoneVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/client-visibility/comments/:commentId` | `src/modules/build/client-portal/client-visibility.controller.ts:75` | `toggleCommentVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, commentId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/client-visibility/attachments/:attachmentId` | `src/modules/build/client-portal/client-visibility.controller.ts:88` | `toggleAttachmentVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, attachmentId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/client-visibility` | `src/modules/build/client-portal/client-visibility.controller.ts:39` | `getVisibilitySummary` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/client-visibility/tickets/:ticketId` | `src/modules/build/client-portal/client-visibility.controller.ts:51` | `toggleTicketVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/client-visibility/milestones/:milestoneId` | `src/modules/build/client-portal/client-visibility.controller.ts:64` | `toggleMilestoneVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/client-visibility/comments/:commentId` | `src/modules/build/client-portal/client-visibility.controller.ts:77` | `toggleCommentVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, commentId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/client-visibility/attachments/:attachmentId` | `src/modules/build/client-portal/client-visibility.controller.ts:90` | `toggleAttachmentVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, attachmentId] | NO (mutating) |
 | VERIFIED | GET | `/build/comment-drafts/mine` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:52` | `listMine` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | PUT | `/build/comment-drafts/tickets/:ticketId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:59` | `upsert` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [ticketId] | NO (mutating) |
 | VERIFIED | POST | `/build/comment-drafts/tickets/:ticketId/generate-draft` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:71` | `generateDraft` | @RequirePermission("build:ai:use") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [ticketId] | NO (mutating) |
@@ -1891,88 +1971,45 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | DELETE | `/build/comment-drafts/mine` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:108` | `deleteAll` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | NO (mutating) |
 | VERIFIED | DELETE | `/build/comment-drafts/tickets/:ticketId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:116` | `deleteByTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [ticketId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/comment-drafts/:draftId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:128` | `deleteOne` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [draftId] | NO (mutating) |
-| VERIFIED | GET | `/build/members` | `src/modules/build/core/build-members.controller.ts:41` | `list` | @RequirePermission("build:members:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | POST | `/build/members` | `src/modules/build/core/build-members.controller.ts:52` | `add` | @RequirePermission("build:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | DELETE | `/build/members/:userId` | `src/modules/build/core/build-members.controller.ts:64` | `remove` | @RequirePermission("build:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [userId] | NO (mutating) |
-| VERIFIED | GET | `/build/org-custom-states` | `src/modules/build/core/project-resources.controller.ts:62` | `listOrgCustomStates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | GET | `/build/:projectId/members` | `src/modules/build/core/project-resources.controller.ts:71` | `listMembers` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/roster` | `src/modules/build/core/project-resources.controller.ts:82` | `getRoster` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/members` | `src/modules/build/core/project-resources.controller.ts:93` | `addMember` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/members` | `src/modules/build/core/project-resources.controller.ts:106` | `removeMember` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/members/:memberUserId` | `src/modules/build/core/project-resources.controller.ts:119` | `updateMemberRole` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, memberUserId] | NO (mutating) |
-| VERIFIED | PUT | `/build/:projectId/custom-states` | `src/modules/build/core/project-resources.controller.ts:132` | `bulkReorderCustomStates` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/custom-states` | `src/modules/build/core/project-resources.controller.ts:144` | `listCustomStates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/custom-states` | `src/modules/build/core/project-resources.controller.ts:155` | `createCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/labels` | `src/modules/build/core/project-resources.controller.ts:201` | `listProjectLabels` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/labels` | `src/modules/build/core/project-resources.controller.ts:213` | `createProjectLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/automations` | `src/modules/build/core/projects-automations.controller.ts:39` | `list` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/automations/runs` | `src/modules/build/core/projects-automations.controller.ts:56` | `listRuns` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/automations` | `src/modules/build/core/projects-automations.controller.ts:68` | `create` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/budget` | `src/modules/build/core/projects-budget.controller.ts:31` | `getBudget` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | PATCH | `/build/:projectId/budget` | `src/modules/build/core/projects-budget.controller.ts:42` | `updateBudget` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId` | `src/modules/build/core/projects-by-id.controller.ts:42` | `getProject` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | PATCH | `/build/:projectId` | `src/modules/build/core/projects-by-id.controller.ts:53` | `updateProject` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId` | `src/modules/build/core/projects-by-id.controller.ts:65` | `deleteProject` | @RequirePermission("build:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/managed-product` | `src/modules/build/core/projects-by-id.controller.ts:77` | `linkManagedProduct` | @RequirePermission("build:managed-products:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/custom-fields` | `src/modules/build/core/projects-custom-fields.controller.ts:36` | `listFields` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/custom-fields` | `src/modules/build/core/projects-custom-fields.controller.ts:47` | `createField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/customers` | `src/modules/build/core/projects-customers.controller.ts:23` | `list` | @RequirePermission("build:customers:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/:projectId/releases` | `src/modules/build/core/projects-releases.controller.ts:37` | `listReleases` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/releases` | `src/modules/build/core/projects-releases.controller.ts:48` | `createRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | GET | `/build/resource-allocation` | `src/modules/build/core/projects-reports.controller.ts:60` | `resourceAllocation` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/:projectId/analytics` | `src/modules/build/core/projects-reports.controller.ts:72` | `getAnalytics` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/burnup` | `src/modules/build/core/projects-reports.controller.ts:84` | `burnup` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/cfd` | `src/modules/build/core/projects-reports.controller.ts:96` | `cfd` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/critical-path` | `src/modules/build/core/projects-reports.controller.ts:108` | `criticalPath` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/velocity` | `src/modules/build/core/projects-reports.controller.ts:119` | `velocity` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/cycle-time` | `src/modules/build/core/projects-reports.controller.ts:143` | `getCycleTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/reports/lead-time` | `src/modules/build/core/projects-reports.controller.ts:154` | `getLeadTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/reports/snapshot` | `src/modules/build/core/projects-reports.controller.ts:165` | `snapshot` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/roadmap` | `src/modules/build/core/projects-roadmap.controller.ts:65` | `listRoadmap` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/roadmap/:itemId/signals` | `src/modules/build/core/projects-roadmap.controller.ts:76` | `getRoadmapSignals` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | n/a |
-| VERIFIED | POST | `/build/roadmap` | `src/modules/build/core/projects-roadmap.controller.ts:87` | `createRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/roadmap/:itemId` | `src/modules/build/core/projects-roadmap.controller.ts:99` | `updateRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/roadmap/:itemId` | `src/modules/build/core/projects-roadmap.controller.ts:111` | `deleteRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | NO (mutating) |
-| VERIFIED | GET | `/build/feedback` | `src/modules/build/core/projects-roadmap.controller.ts:123` | `listFeedback` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | POST | `/build/feedback` | `src/modules/build/core/projects-roadmap.controller.ts:134` | `createFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/feedback/:postId` | `src/modules/build/core/projects-roadmap.controller.ts:146` | `updateFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
-| VERIFIED | POST | `/build/feedback/:postId/merge` | `src/modules/build/core/projects-roadmap.controller.ts:158` | `mergeFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/feedback/:postId` | `src/modules/build/core/projects-roadmap.controller.ts:170` | `deleteFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
-| VERIFIED | GET | `/build/changelog` | `src/modules/build/core/projects-roadmap.controller.ts:182` | `listChangelog` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | POST | `/build/changelog` | `src/modules/build/core/projects-roadmap.controller.ts:193` | `createChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/changelog/:entryId` | `src/modules/build/core/projects-roadmap.controller.ts:205` | `updateChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/changelog/:entryId` | `src/modules/build/core/projects-roadmap.controller.ts:217` | `deleteChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | NO (mutating) |
-| VERIFIED | GET | `/build/templates` | `src/modules/build/core/projects-templates.controller.ts:39` | `listTemplates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | POST | `/build/templates` | `src/modules/build/core/projects-templates.controller.ts:46` | `createTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | DELETE | `/build/templates/:templateId` | `src/modules/build/core/projects-templates.controller.ts:58` | `deleteTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [templateId] | NO (mutating) |
-| VERIFIED | POST | `/build/templates/:templateId/apply` | `src/modules/build/core/projects-templates.controller.ts:70` | `applyTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [templateId] | yes |
-| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:75` | `listRelations` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| VERIFIED | POST | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:87` | `addRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:101` | `removeRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/labels/:labelId` | `src/modules/build/core/projects-ticket-associations.controller.ts:168` | `removeLabel` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, labelId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/git-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:196` | `getGitLinks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| VERIFIED | PATCH | `/build/:projectId/tickets/:ticketId/related-links/:linkId` | `src/modules/build/core/projects-ticket-associations.controller.ts:234` | `updateRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, linkId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/related-links/:linkId` | `src/modules/build/core/projects-ticket-associations.controller.ts:248` | `deleteRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, linkId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/checklists` | `src/modules/build/core/projects-ticket-checklists.controller.ts:44` | `getChecklists` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| VERIFIED | POST | `/build/:projectId/tickets/:ticketId/checklists` | `src/modules/build/core/projects-ticket-checklists.controller.ts:56` | `createChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:57` | `getComment` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | n/a |
-| VERIFIED | PATCH | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:70` | `editComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:84` | `deleteComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
-| VERIFIED | GET | `/build/all-work` | `src/modules/build/core/projects-tickets.controller.ts:75` | `getAllWork` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/search/tickets` | `src/modules/build/core/projects-tickets.controller.ts:86` | `searchTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/:projectId/tickets/column-counts` | `src/modules/build/core/projects-tickets.controller.ts:97` | `getColumnCounts` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/tickets/export` | `src/modules/build/core/projects-tickets.controller.ts:109` | `exportTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/tickets/import` | `src/modules/build/core/projects-tickets.controller.ts:120` | `importTickets` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | GET | `/build/:projectId/tickets` | `src/modules/build/core/projects-tickets.controller.ts:134` | `listTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/tickets` | `src/modules/build/core/projects-tickets.controller.ts:146` | `createTicket` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | POST | `/build/:projectId/tickets/bulk` | `src/modules/build/core/projects-tickets.controller.ts:160` | `bulkUpdate` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | PATCH | `/build/:projectId/tickets/:ticketId/rank` | `src/modules/build/core/projects-tickets.controller.ts:174` | `rankTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/activity` | `src/modules/build/core/projects-tickets.controller.ts:187` | `getActivity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| VERIFIED | GET | `/build/:projectId/tickets/key/:ticketNumber` | `src/modules/build/core/projects-tickets.controller.ts:203` | `getTicketByKey` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketNumber] | n/a |
-| VERIFIED | GET | `/build/:projectId/webhooks` | `src/modules/build/core/projects-webhooks.controller.ts:34` | `listWebhooks` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/webhooks` | `src/modules/build/core/projects-webhooks.controller.ts:45` | `createWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | GET | `/build/:projectId/webhooks/:webhookId/deliveries` | `src/modules/build/core/projects-webhooks.controller.ts:72` | `listDeliveries` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | n/a |
-| VERIFIED | POST | `/build/:projectId/webhooks/:webhookId/test` | `src/modules/build/core/projects-webhooks.controller.ts:84` | `sendTest` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/activity` | `src/modules/build/core/activity/projects-activity-feed.controller.ts:31` | `getProjectActivity` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/analytics` | `src/modules/build/core/analytics/projects-reports.controller.ts:59` | `getAnalytics` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/burnup` | `src/modules/build/core/analytics/projects-reports.controller.ts:72` | `burnup` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/cfd` | `src/modules/build/core/analytics/projects-reports.controller.ts:84` | `cfd` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/critical-path` | `src/modules/build/core/analytics/projects-reports.controller.ts:96` | `criticalPath` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/velocity` | `src/modules/build/core/analytics/projects-reports.controller.ts:107` | `velocity` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/cycle-time` | `src/modules/build/core/analytics/projects-reports.controller.ts:131` | `getCycleTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/reports/lead-time` | `src/modules/build/core/analytics/projects-reports.controller.ts:142` | `getLeadTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/reports/snapshot` | `src/modules/build/core/analytics/projects-reports.controller.ts:153` | `snapshot` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/automations` | `src/modules/build/core/automation/projects-automations.controller.ts:63` | `list` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/automations/runs` | `src/modules/build/core/automation/projects-automations.controller.ts:75` | `listRuns` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/automations` | `src/modules/build/core/automation/projects-automations.controller.ts:87` | `create` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/budget` | `src/modules/build/core/budget/projects-budget.controller.ts:31` | `getBudget` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/budget` | `src/modules/build/core/budget/projects-budget.controller.ts:42` | `updateBudget` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/custom-fields` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:36` | `listFields` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/custom-fields` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:47` | `createField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/customers` | `src/modules/build/core/customers/projects-customers.controller.ts:23` | `list` | @RequirePermission("build:customers:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/members` | `src/modules/build/core/members/build-members.controller.ts:41` | `list` | @RequirePermission("build:members:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | POST | `/build/members` | `src/modules/build/core/members/build-members.controller.ts:52` | `add` | @RequirePermission("build:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | DELETE | `/build/members/:userId` | `src/modules/build/core/members/build-members.controller.ts:64` | `remove` | @RequirePermission("build:members:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [userId] | NO (mutating) |
+| VERIFIED | GET | `/build/org-custom-states` | `src/modules/build/core/project-crud/project-resources.controller.ts:66` | `listOrgCustomStates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
+| VERIFIED | GET | `/build/:projectId/members` | `src/modules/build/core/project-crud/project-resources.controller.ts:75` | `listMembers` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/roster` | `src/modules/build/core/project-crud/project-resources.controller.ts:87` | `getRoster` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/members` | `src/modules/build/core/project-crud/project-resources.controller.ts:98` | `addMember` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/members` | `src/modules/build/core/project-crud/project-resources.controller.ts:111` | `removeMember` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/members/:memberUserId` | `src/modules/build/core/project-crud/project-resources.controller.ts:124` | `updateMemberRole` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, memberUserId] | NO (mutating) |
+| VERIFIED | PUT | `/build/:projectId/custom-states` | `src/modules/build/core/project-crud/project-resources.controller.ts:137` | `bulkReorderCustomStates` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/custom-states` | `src/modules/build/core/project-crud/project-resources.controller.ts:149` | `listCustomStates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/custom-states` | `src/modules/build/core/project-crud/project-resources.controller.ts:160` | `createCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/labels` | `src/modules/build/core/project-crud/project-resources.controller.ts:206` | `listProjectLabels` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/labels` | `src/modules/build/core/project-crud/project-resources.controller.ts:218` | `createProjectLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:42` | `getProject` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:53` | `updateProject` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:65` | `deleteProject` | @RequirePermission("build:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/managed-product` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:77` | `linkManagedProduct` | @RequirePermission("build:managed-products:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/templates` | `src/modules/build/core/project-crud/projects-templates.controller.ts:44` | `listTemplates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | POST | `/build/templates` | `src/modules/build/core/project-crud/projects-templates.controller.ts:55` | `createTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | DELETE | `/build/templates/:templateId` | `src/modules/build/core/project-crud/projects-templates.controller.ts:67` | `deleteTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [templateId] | NO (mutating) |
+| VERIFIED | POST | `/build/templates/:templateId/apply` | `src/modules/build/core/project-crud/projects-templates.controller.ts:79` | `applyTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [templateId] | yes |
 | VERIFIED | GET | `/build` | `src/modules/build/core/projects.controller.ts:62` | `listProjects` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | POST | `/build` | `src/modules/build/core/projects.controller.ts:73` | `createProject` | @RequirePermission("build:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | yes |
 | VERIFIED | POST | `/build/from-deal` | `src/modules/build/core/projects.controller.ts:86` | `createFromDeal` | @RequirePermission("build:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | yes |
@@ -1981,19 +2018,73 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | PATCH | `/build/labels/:labelId` | `src/modules/build/core/projects.controller.ts:118` | `updateLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [labelId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/invoice-line-detail` | `src/modules/build/core/projects.controller.ts:130` | `getInvoiceLineDetail` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | DELETE | `/build/labels/:labelId` | `src/modules/build/core/projects.controller.ts:141` | `deleteLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [labelId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:79` | `listSprints` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:90` | `createSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:135` | `deleteSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:155` | `listCycles` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:167` | `createCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:181` | `updateCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:194` | `deleteCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:214` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:226` | `createModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:272` | `listEpics` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:283` | `createEpic` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:296` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:309` | `deleteEpic` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
+| VERIFIED | GET | `/build/releases` | `src/modules/build/core/releases/projects-releases.controller.ts:41` | `listOrgReleases` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/:projectId/releases` | `src/modules/build/core/releases/projects-releases.controller.ts:52` | `listReleases` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/releases` | `src/modules/build/core/releases/projects-releases.controller.ts:64` | `createRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | GET | `/build/roadmap` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:77` | `listRoadmap` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/roadmap/:itemId/signals` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:88` | `getRoadmapSignals` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | n/a |
+| VERIFIED | POST | `/build/roadmap` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:99` | `createRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/roadmap/:itemId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:111` | `updateRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/roadmap/:itemId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:123` | `deleteRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | NO (mutating) |
+| VERIFIED | GET | `/build/roadmap-publication` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:135` | `readRoadmapPublication` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
+| VERIFIED | POST | `/build/roadmap-publication` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:142` | `publishRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | yes |
+| VERIFIED | POST | `/build/roadmap-publication/rotate` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:151` | `rotateRoadmapPublicationToken` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | yes |
+| VERIFIED | DELETE | `/build/roadmap-publication` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:160` | `unpublishRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | NO (mutating) |
+| VERIFIED | GET | `/build/feedback` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:168` | `listFeedback` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | POST | `/build/feedback` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:179` | `createFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/feedback/:postId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:191` | `updateFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
+| VERIFIED | POST | `/build/feedback/:postId/merge` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:203` | `mergeFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/feedback/:postId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:215` | `deleteFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
+| VERIFIED | GET | `/build/changelog` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:227` | `listChangelog` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | POST | `/build/changelog` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:238` | `createChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/changelog/:entryId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:250` | `updateChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/changelog/:entryId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:262` | `deleteChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/settings/retention` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:37` | `getSettings` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/settings/retention` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:48` | `updatePolicy` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/settings/retention/legal-hold` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:60` | `setLegalHold` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/settings/iterations` | `src/modules/build/core/settings/projects-settings-iterations.controller.ts:36` | `getSettings` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/settings/iterations` | `src/modules/build/core/settings/projects-settings-iterations.controller.ts:47` | `updateSettings` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:75` | `listRelations` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| VERIFIED | POST | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:87` | `addRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:101` | `removeRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/labels/:labelId` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:168` | `removeLabel` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, labelId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/git-links` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:196` | `getGitLinks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/tickets/:ticketId/related-links/:linkId` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:234` | `updateRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, linkId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/related-links/:linkId` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:248` | `deleteRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, linkId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/checklists` | `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:44` | `getChecklists` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| VERIFIED | POST | `/build/:projectId/tickets/:ticketId/checklists` | `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:56` | `createChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:57` | `getComment` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:70` | `editComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/tickets/projects-ticket-comments.controller.ts:84` | `deleteComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
+| VERIFIED | GET | `/build/all-work` | `src/modules/build/core/tickets/projects-tickets.controller.ts:93` | `getAllWork` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/search/tickets` | `src/modules/build/core/tickets/projects-tickets.controller.ts:104` | `searchTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/:projectId/tickets/column-counts` | `src/modules/build/core/tickets/projects-tickets.controller.ts:115` | `getColumnCounts` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/tickets/export` | `src/modules/build/core/tickets/projects-tickets.controller.ts:127` | `exportTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/tickets/import` | `src/modules/build/core/tickets/projects-tickets.controller.ts:139` | `importTickets` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | GET | `/build/:projectId/tickets` | `src/modules/build/core/tickets/projects-tickets.controller.ts:153` | `listTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/tickets` | `src/modules/build/core/tickets/projects-tickets.controller.ts:165` | `createTicket` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | POST | `/build/:projectId/tickets/bulk` | `src/modules/build/core/tickets/projects-tickets.controller.ts:179` | `bulkUpdate` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | PATCH | `/build/:projectId/tickets/:ticketId/rank` | `src/modules/build/core/tickets/projects-tickets.controller.ts:193` | `rankTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/tickets/:ticketId/activity` | `src/modules/build/core/tickets/projects-tickets.controller.ts:206` | `getActivity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| VERIFIED | GET | `/build/:projectId/tickets/key/:ticketNumber` | `src/modules/build/core/tickets/projects-tickets.controller.ts:222` | `getTicketByKey` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketNumber] | n/a |
+| VERIFIED | GET | `/build/:projectId/webhooks` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:41` | `listWebhooks` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/webhooks` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:53` | `createWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | PATCH | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:67` | `updateWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/webhooks/:webhookId/deliveries` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:93` | `listDeliveries` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | n/a |
+| VERIFIED | POST | `/build/:projectId/webhooks/:webhookId/test` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:105` | `sendTest` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:82` | `listSprints` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:93` | `createSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:138` | `deleteSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:158` | `listCycles` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:170` | `createCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:184` | `updateCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:197` | `deleteCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:217` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:229` | `createModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:275` | `listEpics` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:287` | `createEpic` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:300` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:313` | `deleteEpic` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
 | VERIFIED | GET | `/build/time-entries` | `src/modules/build/execution/timesheets.controller.ts:61` | `listTimeEntries` | @RequirePermission("build:timesheets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/time-entries/team` | `src/modules/build/execution/timesheets.controller.ts:72` | `teamTimesheets` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | PATCH | `/build/time-entries/:entryId/approve` | `src/modules/build/execution/timesheets.controller.ts:83` | `approveEntry` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | yes |
@@ -2008,25 +2099,25 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | DELETE | `/build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId` | `src/modules/build/execution/whiteboard-sharing.controller.ts:97` | `removeShare` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId, targetUserId] | NO (mutating) |
 | VERIFIED | GET | `/public/whiteboard-links/:token` | `src/modules/build/execution/whiteboard-sharing.controller.ts:120` | `getByToken` | @Public | — | OK | N/A (@Public) | N/A (not nested) | complete [token] | n/a |
 | VERIFIED | PATCH | `/public/whiteboard-links/:token` | `src/modules/build/execution/whiteboard-sharing.controller.ts:134` | `updateByToken` | @Public | — | OK | N/A (@Public) | N/A (not nested) | complete [token] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/workload/capacity` | `src/modules/build/execution/workload-capacity.controller.ts:39` | `capacity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/:projectId/milestones` | `src/modules/build/execution/workspace.controller.ts:72` | `listMilestones` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/milestones` | `src/modules/build/execution/workspace.controller.ts:83` | `createMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/intake` | `src/modules/build/execution/workspace.controller.ts:129` | `listIntake` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/intake` | `src/modules/build/execution/workspace.controller.ts:141` | `createIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/views` | `src/modules/build/execution/workspace.controller.ts:174` | `listViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/views` | `src/modules/build/execution/workspace.controller.ts:185` | `createView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/views` | `src/modules/build/execution/workspace.controller.ts:231` | `listWorkspaceViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | POST | `/build/views` | `src/modules/build/execution/workspace.controller.ts:238` | `createWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:250` | `updateWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [viewId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:262` | `deleteWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [viewId] | NO (mutating) |
-| VERIFIED | GET | `/build/whiteboards` | `src/modules/build/execution/workspace.controller.ts:281` | `listAllWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | GET | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:295` | `listWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:306` | `createWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:319` | `getWhiteboard` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | n/a |
-| VERIFIED | PATCH | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:331` | `updateWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:344` | `deleteWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/workload/capacity` | `src/modules/build/execution/workload-capacity.controller.ts:40` | `capacity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/milestones` | `src/modules/build/execution/workspace.controller.ts:81` | `listMilestones` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/milestones` | `src/modules/build/execution/workspace.controller.ts:93` | `createMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/intake` | `src/modules/build/execution/workspace.controller.ts:139` | `listIntake` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/intake` | `src/modules/build/execution/workspace.controller.ts:151` | `createIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/views` | `src/modules/build/execution/workspace.controller.ts:184` | `listViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/views` | `src/modules/build/execution/workspace.controller.ts:196` | `createView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/views` | `src/modules/build/execution/workspace.controller.ts:242` | `listWorkspaceViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
+| VERIFIED | POST | `/build/views` | `src/modules/build/execution/workspace.controller.ts:249` | `createWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:261` | `updateWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [viewId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:273` | `deleteWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [viewId] | NO (mutating) |
+| VERIFIED | GET | `/build/whiteboards` | `src/modules/build/execution/workspace.controller.ts:292` | `listAllWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
+| VERIFIED | GET | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:306` | `listWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:318` | `createWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:331` | `getWhiteboard` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:343` | `updateWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:356` | `deleteWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/files` | `src/modules/build/files/files.controller.ts:48` | `listFiles` | @RequirePermission("build:files:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | POST | `/build/:projectId/files` | `src/modules/build/files/files.controller.ts:60` | `uploadFile` | @RequirePermission("build:files:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/files` | `src/modules/build/files/files.controller.ts:60` | `uploadFile` | @RequirePermission("build:files:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/files/:fileId/url` | `src/modules/build/files/files.controller.ts:73` | `getSignedUrl` | @RequirePermission("build:files:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fileId] | n/a |
 | VERIFIED | DELETE | `/build/:projectId/files/:fileId` | `src/modules/build/files/files.controller.ts:85` | `softDeleteFile` | @RequirePermission("build:files:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fileId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/forms` | `src/modules/build/forms/forms.controller.ts:42` | `listForms` | @RequirePermission("build:forms:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
@@ -2043,15 +2134,16 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/:projectId/decisions` | `src/modules/build/governance/decisions.controller.ts:66` | `createDecision` | @RequirePermission("build:decisions:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
 | VERIFIED | PATCH | `/build/:projectId/decisions/:decisionId` | `src/modules/build/governance/decisions.controller.ts:79` | `updateDecision` | @RequirePermission("build:decisions:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, decisionId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/:projectId/decisions/:decisionId` | `src/modules/build/governance/decisions.controller.ts:92` | `softDeleteDecision` | @RequirePermission("build:decisions:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, decisionId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/risks` | `src/modules/build/governance/risks.controller.ts:50` | `listRisks` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/:projectId/risks/stats` | `src/modules/build/governance/risks.controller.ts:62` | `getRiskStats` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ABSENT (route has params) | n/a |
-| VERIFIED | GET | `/build/:projectId/risks/:riskId` | `src/modules/build/governance/risks.controller.ts:72` | `getRisk` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, riskId] | n/a |
-| VERIFIED | POST | `/build/:projectId/risks` | `src/modules/build/governance/risks.controller.ts:84` | `createRisk` | @RequirePermission("build:risks:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/:projectId/risks/:riskId` | `src/modules/build/governance/risks.controller.ts:97` | `updateRisk` | @RequirePermission("build:risks:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, riskId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/:projectId/risks/:riskId` | `src/modules/build/governance/risks.controller.ts:110` | `softDeleteRisk` | @RequirePermission("build:risks:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, riskId] | NO (mutating) |
+| VERIFIED | GET | `/build/risks` | `src/modules/build/governance/risks.controller.ts:51` | `listOrgRisks` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/:projectId/risks` | `src/modules/build/governance/risks.controller.ts:59` | `listRisks` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/:projectId/risks/stats` | `src/modules/build/governance/risks.controller.ts:71` | `getRiskStats` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ABSENT (route has params) | n/a |
+| VERIFIED | GET | `/build/:projectId/risks/:riskId` | `src/modules/build/governance/risks.controller.ts:81` | `getRisk` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, riskId] | n/a |
+| VERIFIED | POST | `/build/:projectId/risks` | `src/modules/build/governance/risks.controller.ts:93` | `createRisk` | @RequirePermission("build:risks:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/risks/:riskId` | `src/modules/build/governance/risks.controller.ts:106` | `updateRisk` | @RequirePermission("build:risks:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, riskId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/risks/:riskId` | `src/modules/build/governance/risks.controller.ts:119` | `softDeleteRisk` | @RequirePermission("build:risks:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, riskId] | NO (mutating) |
 | VERIFIED | POST | `/build/:projectId/import-export/tickets/preview` | `src/modules/build/import-export/ticket-import-export.controller.ts:47` | `previewImport` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | POST | `/build/:projectId/import-export/tickets` | `src/modules/build/import-export/ticket-import-export.controller.ts:60` | `commitImport` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/import-export/tickets/export` | `src/modules/build/import-export/ticket-import-export.controller.ts:74` | `exportTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/:projectId/import-export/tickets/export` | `src/modules/build/import-export/ticket-import-export.controller.ts:74` | `exportTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:75` | `listIncidents` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/:projectId/incidents/:incidentId` | `src/modules/build/incidents/incidents.controller.ts:87` | `getIncident` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | n/a |
 | VERIFIED | POST | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:100` | `createIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
@@ -2061,12 +2153,13 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/:projectId/incidents/:incidentId/decisions` | `src/modules/build/incidents/incidents.controller.ts:153` | `addDecision` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
 | VERIFIED | POST | `/build/:projectId/incidents/:incidentId/follow-ups` | `src/modules/build/incidents/incidents.controller.ts:167` | `addFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId] | NO (mutating) |
 | VERIFIED | PATCH | `/build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId` | `src/modules/build/incidents/incidents.controller.ts:181` | `updateFollowUpAction` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, incidentId, followUpActionId] | NO (mutating) |
-| VERIFIED | GET | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:43` | `listManagedProducts` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | GET | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:54` | `getManagedProduct` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | n/a |
-| VERIFIED | POST | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:65` | `createManagedProduct` | @RequirePermission("build:managed-products:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:77` | `updateManagedProduct` | @RequirePermission("build:managed-products:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | NO (mutating) |
-| VERIFIED | GET | `/build/managed-products/:managedProductId/insights` | `src/modules/build/managed-products/managed-products.controller.ts:89` | `getProductInsights` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | n/a |
-| VERIFIED | DELETE | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:100` | `deleteManagedProduct` | @RequirePermission("build:managed-products:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | NO (mutating) |
+| VERIFIED | GET | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:47` | `listManagedProducts` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | POST | `/build/managed-products/bulk` | `src/modules/build/managed-products/managed-products.controller.ts:58` | `bulkUpdateManagedProducts` | @RequirePermission("build:managed-products:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | GET | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:70` | `getManagedProduct` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | n/a |
+| VERIFIED | POST | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:81` | `createManagedProduct` | @RequirePermission("build:managed-products:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:93` | `updateManagedProduct` | @RequirePermission("build:managed-products:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | NO (mutating) |
+| VERIFIED | GET | `/build/managed-products/:managedProductId/insights` | `src/modules/build/managed-products/managed-products.controller.ts:105` | `getProductInsights` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | n/a |
+| VERIFIED | DELETE | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:117` | `deleteManagedProduct` | @RequirePermission("build:managed-products:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [managedProductId] | NO (mutating) |
 | VERIFIED | POST | `/build/:projectId/meetings/:meetingId/action-items` | `src/modules/build/meetings/action-items.controller.ts:39` | `createItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId] | NO (mutating) |
 | VERIFIED | PATCH | `/build/:projectId/meetings/:meetingId/action-items/:itemId` | `src/modules/build/meetings/action-items.controller.ts:53` | `updateItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId, itemId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/:projectId/meetings/:meetingId/action-items/:itemId` | `src/modules/build/meetings/action-items.controller.ts:67` | `deleteItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, meetingId, itemId] | NO (mutating) |
@@ -2146,7 +2239,7 @@ A note is recorded because the census must record it, but does not on its own ma
 
 | note | handlers |
 | --- | --- |
-| mutating verb without @Idempotent | 192 |
+| mutating verb without @Idempotent | 199 |
 | route params unvalidated (@Validate has no params key) | 23 |
 | route params unvalidated (no @Validate) | 2 |
 

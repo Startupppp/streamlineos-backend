@@ -168,8 +168,8 @@ export default [
       "None: a commentId whose parent ticket belongs to a different project 404s at the join before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 81, anchor: /toggleCommentVisibility\(/, note: "handler binds both projectId and commentId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 179, anchor: /\.innerJoin\(tickets, and\(/, note: "join binds the comment's ticket to the named project via tickets.projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 179, anchor: /\.where\(and\(eq\(ticketComments\.id, commentId\), eq\(ticketComments\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 185, anchor: /\.innerJoin\(tickets, and\(/, note: "join binds the comment's ticket to the named project via tickets.projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 185, anchor: /\.where\(and\(eq\(ticketComments\.id, commentId\), eq\(ticketComments\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
     ],
   },
   {
@@ -182,7 +182,7 @@ export default [
       "None: an attachmentId whose parent ticket belongs to a different project 404s at the join before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 94, anchor: /toggleAttachmentVisibility\(/, note: "handler binds both projectId and attachmentId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 179, anchor: /async toggleAttachmentVisibility\(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean\) \{/, note: "signature carries the authenticated actor and projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 185, anchor: /async toggleAttachmentVisibility\(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean\) \{/, note: "signature carries the authenticated actor and projectId" },
       { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 187, anchor: /eq\(tickets\.projectId, projectId\),/, note: "join binds the attachment's ticket to the named project" },
     ],
   },
