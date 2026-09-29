@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -32,6 +33,8 @@ import type {
   DecideApprovalInput,
   UpdateApprovalInput,
 } from "./dto/approvals.schemas";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { BUILD_APPROVAL_REQUESTED_EVENT } from "./build-approval-requested-consumer.service";
 
 type ApprovalPatch = Partial<
   Pick<typeof projectApprovals.$inferInsert, "approverMembershipId" | "dueAt" | "status">
@@ -108,23 +111,44 @@ export class ApprovalsService {
       );
     }
 
-    const [approval] = await this.db
-      .insert(projectApprovals)
-      .values({
-        orgId,
-        projectId,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        title: input.title,
-        reason: input.reason ?? null,
-        approverMembershipId: approverActor.membershipId,
-        dueAt: input.dueAt ?? null,
-        level: input.level ?? 1,
-        requestedById: userId,
-        status: "pending",
-        createdBy: userId,
-      })
-      .returning();
+    const approval = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(projectApprovals)
+        .values({
+          orgId,
+          projectId,
+          entityType: input.entityType,
+          entityId: input.entityId,
+          title: input.title,
+          reason: input.reason ?? null,
+          approverMembershipId: approverActor.membershipId,
+          dueAt: input.dueAt ?? null,
+          level: input.level ?? 1,
+          requestedById: userId,
+          status: "pending",
+          createdBy: userId,
+        })
+        .returning();
+      if (!row) return null;
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "project_approval",
+        aggregateId: String(row.id),
+        aggregateVersion: 1,
+        eventType: BUILD_APPROVAL_REQUESTED_EVENT,
+        occurredAt: new Date(),
+        payload: {
+          approvalId: row.id,
+          projectId,
+          orgId,
+          approverUserId: input.approverId,
+          requestedByUserId: userId,
+          title: row.title,
+        },
+      });
+      return row;
+    });
     if (!approval) throw new NotFoundException("Failed to create approval");
     this.audit.log({
       action: "approval.requested",
