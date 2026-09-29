@@ -152,20 +152,28 @@ const salaryTemplateNameSchema = z
   .refine((v) => /[a-zA-Z0-9]/.test(v), "Name must contain at least one letter or digit")
   .transform((v) => v.replace(/\s+/g, " ").trim());
 
-const decimalStringSchema = z.string().refine(
-  (v) => v === "" || !isNaN(parseFloat(v)),
-  "Must be a valid number",
+const decimalStringSchema = z
+  .string()
+  .refine((v) => v === "" || !isNaN(parseFloat(v)), "Must be a valid number")
+  .refine(
+    (v) => v === "" || parseFloat(v) >= 0,
+    "Must be zero or more — a salary component cannot be negative",
+  );
+
+const percentStringSchema = decimalStringSchema.refine(
+  (v) => v === "" || parseFloat(v) <= 100,
+  "Must be a percentage between 0 and 100",
 );
 
 export const createSalaryStructureTemplateSchema = z.object({
   name: salaryTemplateNameSchema,
   basicSalary: decimalStringSchema.refine((v) => v.length > 0, "Basic salary is required"),
-  hraPercent: decimalStringSchema,
+  hraPercent: percentStringSchema,
   specialAllowance: decimalStringSchema.nullable().optional(),
   medicalAllowance: decimalStringSchema.nullable().optional(),
   travelAllowance: decimalStringSchema.nullable().optional(),
   otherAllowances: decimalStringSchema.nullable().optional(),
-  pfDeductionPercent: decimalStringSchema.nullable().optional(),
+  pfDeductionPercent: percentStringSchema.nullable().optional(),
   professionalTax: decimalStringSchema.nullable().optional(),
   effectiveFrom: z.string().min(1, "Effective from is required"),
   effectiveTo: z.string().nullable().optional(),

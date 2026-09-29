@@ -56,7 +56,7 @@ export const policyScopeSchema = z
 
 export const createPolicySchema = z.object({
   policyType: z.enum(HR_POLICY_TYPES),
-  name: z.string().min(1).max(200),
+  name: z.string().trim().min(1).max(200),
   description: z.string().max(2000).optional(),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   effectiveTo: z
@@ -71,7 +71,7 @@ export const createPolicySchema = z.object({
 export type CreatePolicyInput = z.infer<typeof createPolicySchema>;
 
 export const updatePolicySchema = z.object({
-  name: z.string().min(1).max(200).optional(),
+  name: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
   effectiveFrom: z
     .string()
