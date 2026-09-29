@@ -24,12 +24,14 @@ import {
   listGrantsQuerySchema,
   createGrantSchema,
   updateGrantSchema,
+  inviteClientSchema,
   type ListMembershipsQuery,
   type CreateMembershipInput,
   type UpdateMembershipStatusInput,
   type ListGrantsQuery,
   type CreateGrantInput,
   type UpdateGrantInput,
+  type InviteClientInput,
 } from "./dto/portal-access.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -100,6 +102,19 @@ export class PortalAccessController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listGrants(u.orgId, query);
+  }
+
+  @Post("invite-client")
+  @HttpCode(201)
+  @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(membershipRowSchema_)
+  @Idempotent("portal.inviteClient")
+  @Validate({ body: inviteClientSchema })
+  inviteClient(
+    @Body() body: InviteClientInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.inviteClient(u.orgId, u.userId, body);
   }
 
   @Post("grants")

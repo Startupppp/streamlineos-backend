@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { portalMemberships } from "../../../db/schema/portal-access/portal-memberships";
 import { partyContacts } from "../../../db/schema";
@@ -7,8 +13,12 @@ import { type Db } from "../../../db/drizzle.module";
 import { type PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { AuditService } from "../../../common/audit/audit.service";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
 import { keysetBeforeUuid } from "../../../common/pagination/keyset";
+import { PartyService } from "../../party/party.service";
 import type {
   ListMembershipsQuery,
   CreateMembershipInput,
@@ -16,6 +26,7 @@ import type {
   ListGrantsQuery,
   CreateGrantInput,
   UpdateGrantInput,
+  InviteClientInput,
 } from "./dto/portal-access.schemas";
 import {
   createGrant,
@@ -26,24 +37,6 @@ import {
   type ProjectClientGrantDeps,
 } from "./lib/project-client-grants";
 
-/**
- * Portal access, which is two questions rather than one.
- *
- * A **membership** answers "does this contact have a portal login at all", and
- * lives here. A **grant** answers "and which project may they open once they
- * are in", and lives in `lib/project-client-grants.ts` — a different table, a
- * different DTO family and a different audit resource type. The dependency runs
- * one way only: creating a grant reads a membership to confirm it is ACTIVE,
- * and nothing here ever reads a grant. `loadMembership` is handed across that
- * line as a bound closure so it stays private and org-scoped.
- *
- * Both surfaces are external-facing: every route on `PortalAccessController`
- * sits behind `build:clientvisibility:manage` (or `build:portal:view` to read),
- * and every read here is filtered by `organizationId` in SQL rather than
- * trusting the caller's id — `portal-access-tenant-isolation.spec.ts` is what
- * holds that.
- */
-
 type MembershipRow = typeof portalMemberships.$inferSelect;
 
 @Injectable()
@@ -51,6 +44,7 @@ export class PortalAccessService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly partyService: PartyService,
   ) {}
 
   private get grantDeps(): ProjectClientGrantDeps {
@@ -62,7 +56,10 @@ export class PortalAccessService {
     };
   }
 
-  private async loadMembership(organizationId: string, portalMembershipId: string): Promise<MembershipRow> {
+  private async loadMembership(
+    organizationId: string,
+    portalMembershipId: string,
+  ): Promise<MembershipRow> {
     const [row] = await this.db
       .select()
       .from(portalMemberships)
@@ -81,50 +78,67 @@ export class PortalAccessService {
   async listMemberships(organizationId: string, query: ListMembershipsQuery) {
     const { limit, cursor, status } = query;
     const position = cursor === undefined ? undefined : decodeCursor(cursor);
-    if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
+    if (cursor !== undefined && !position)
+      throw new BadRequestException("Invalid pagination cursor");
 
     const conditions = and(
       eq(portalMemberships.organizationId, organizationId),
       isNull(portalMemberships.deletedAt),
       status ? eq(portalMemberships.status, status) : undefined,
-      position ? keysetBeforeUuid(portalMemberships.createdAt, portalMemberships.portalMembershipId, position) : undefined,
+      position
+        ? keysetBeforeUuid(
+            portalMemberships.createdAt,
+            portalMemberships.portalMembershipId,
+            position,
+          )
+        : undefined,
     );
 
     const rows = await this.db
-        .select({
-          portalMembershipId: portalMemberships.portalMembershipId,
-          organizationId: portalMemberships.organizationId,
-          audience: portalMemberships.audience,
-          partyContactId: portalMemberships.partyContactId,
-          userMembershipId: portalMemberships.userMembershipId,
-          status: portalMemberships.status,
-          sessionEpoch: portalMemberships.sessionEpoch,
-          deletedAt: portalMemberships.deletedAt,
-          createdAt: portalMemberships.createdAt,
-          updatedAt: portalMemberships.updatedAt,
-          contactFirstName: partyContacts.firstName,
-          contactLastName: partyContacts.lastName,
-        })
-        .from(portalMemberships)
-        .leftJoin(
-          partyContacts,
-          and(
-            eq(partyContacts.partyContactId, portalMemberships.partyContactId),
-            eq(partyContacts.organizationId, portalMemberships.organizationId),
-            isNull(partyContacts.deletedAt),
-          ),
-        )
-        .where(conditions)
-        .orderBy(desc(portalMemberships.createdAt), desc(portalMemberships.portalMembershipId))
-        .limit(limit + 1);
-    return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt.toISOString(), id: row.portalMembershipId }));
+      .select({
+        portalMembershipId: portalMemberships.portalMembershipId,
+        organizationId: portalMemberships.organizationId,
+        audience: portalMemberships.audience,
+        partyContactId: portalMemberships.partyContactId,
+        userMembershipId: portalMemberships.userMembershipId,
+        status: portalMemberships.status,
+        sessionEpoch: portalMemberships.sessionEpoch,
+        deletedAt: portalMemberships.deletedAt,
+        createdAt: portalMemberships.createdAt,
+        updatedAt: portalMemberships.updatedAt,
+        contactFirstName: partyContacts.firstName,
+        contactLastName: partyContacts.lastName,
+      })
+      .from(portalMemberships)
+      .leftJoin(
+        partyContacts,
+        and(
+          eq(partyContacts.partyContactId, portalMemberships.partyContactId),
+          eq(partyContacts.organizationId, portalMemberships.organizationId),
+          isNull(partyContacts.deletedAt),
+        ),
+      )
+      .where(conditions)
+      .orderBy(
+        desc(portalMemberships.createdAt),
+        desc(portalMemberships.portalMembershipId),
+      )
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.portalMembershipId,
+    }));
   }
 
   async getMembership(organizationId: string, portalMembershipId: string) {
     return this.loadMembership(organizationId, portalMembershipId);
   }
 
-  async createMembership(organizationId: string, userId: string, input: CreateMembershipInput) {
+  async createMembership(
+    organizationId: string,
+    userId: string,
+    input: CreateMembershipInput,
+  ) {
     const [contact] = await this.db
       .select({ partyContactId: partyContacts.partyContactId })
       .from(partyContacts)
@@ -137,7 +151,9 @@ export class PortalAccessService {
       )
       .limit(1);
     if (!contact) {
-      throw new NotFoundException("Party contact not found in this organization");
+      throw new NotFoundException(
+        "Party contact not found in this organization",
+      );
     }
 
     const [row] = await this.db
@@ -151,7 +167,9 @@ export class PortalAccessService {
       .returning()
       .catch((err: unknown) => {
         if (isUniqueViolation(err)) {
-          throw new ConflictException("Contact already has portal access in this organization.");
+          throw new ConflictException(
+            "Contact already has portal access in this organization.",
+          );
         }
         throw err;
       });
@@ -162,7 +180,65 @@ export class PortalAccessService {
       orgId: organizationId,
       resourceType: "portal_membership",
       resourceId: row.portalMembershipId,
-      metadata: { portalMembershipId: row.portalMembershipId, partyContactId: row.partyContactId },
+      metadata: {
+        portalMembershipId: row.portalMembershipId,
+        partyContactId: row.partyContactId,
+      },
+    });
+    return row;
+  }
+
+  async inviteClient(
+    organizationId: string,
+    userId: string,
+    input: InviteClientInput,
+  ) {
+    const fullName = [input.firstName, input.lastName]
+      .filter(Boolean)
+      .join(" ");
+    const party = await this.partyService.createParty(organizationId, userId, {
+      name: fullName,
+      partyKind: "PERSON",
+      partyType: "CUSTOMER",
+    });
+    const contact = await this.partyService.createContact(
+      organizationId,
+      userId,
+      {
+        partyId: party.partyId,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email,
+        isPrimary: true,
+      },
+    );
+    const [row] = await this.db
+      .insert(portalMemberships)
+      .values({
+        organizationId,
+        partyContactId: contact.partyContactId,
+        status: "ACTIVE",
+      })
+      .returning()
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(
+            "Contact already has portal access in this organization.",
+          );
+        }
+        throw err;
+      });
+    if (!row) throw new NotFoundException("Failed to create portal membership");
+    this.audit.log({
+      action: "portal_access.membership.invited",
+      userId,
+      orgId: organizationId,
+      resourceType: "portal_membership",
+      resourceId: row.portalMembershipId,
+      metadata: {
+        portalMembershipId: row.portalMembershipId,
+        partyContactId: row.partyContactId,
+      },
     });
     return row;
   }
@@ -213,7 +289,11 @@ export class PortalAccessService {
     return loadGrant(this.grantDeps, organizationId, projectClientGrantId);
   }
 
-  async createGrant(organizationId: string, userId: string, input: CreateGrantInput) {
+  async createGrant(
+    organizationId: string,
+    userId: string,
+    input: CreateGrantInput,
+  ) {
     return createGrant(this.grantDeps, organizationId, userId, input);
   }
 
@@ -223,10 +303,25 @@ export class PortalAccessService {
     projectClientGrantId: string,
     input: UpdateGrantInput,
   ) {
-    return updateGrant(this.grantDeps, organizationId, userId, projectClientGrantId, input);
+    return updateGrant(
+      this.grantDeps,
+      organizationId,
+      userId,
+      projectClientGrantId,
+      input,
+    );
   }
 
-  async revokeGrant(organizationId: string, userId: string, projectClientGrantId: string) {
-    return revokeGrant(this.grantDeps, organizationId, userId, projectClientGrantId);
+  async revokeGrant(
+    organizationId: string,
+    userId: string,
+    projectClientGrantId: string,
+  ) {
+    return revokeGrant(
+      this.grantDeps,
+      organizationId,
+      userId,
+      projectClientGrantId,
+    );
   }
 }

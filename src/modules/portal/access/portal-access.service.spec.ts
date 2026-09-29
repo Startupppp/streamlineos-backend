@@ -2,6 +2,8 @@ import { ConflictException, ForbiddenException, NotFoundException } from "@nestj
 import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 import { PortalAccessService } from "./portal-access.service";
 
+const NO_PARTY_SERVICE = undefined as never;
+
 describe("PortalAccessService.createGrant", () => {
   const organizationId = "org-1";
   const actorUserId = "admin-1";
@@ -43,7 +45,7 @@ describe("PortalAccessService.createGrant", () => {
       }),
     };
     const audit = { log: jest.fn() };
-    return new PortalAccessService(db as never, audit as never);
+    return new PortalAccessService(db as never, audit as never, NO_PARTY_SERVICE);
   }
 
   it("rejects grant when portal membership is not active", async () => {
@@ -73,9 +75,6 @@ describe("PortalAccessService.createGrant", () => {
   });
 
   it("answers 409 when the grant insert hits a unique violation", async () => {
-    // Inert today: the only unique on project_client_grants is (organization_id,
-    // project_client_grant_id), a generated id, so no (membership, project) duplicate
-    // raises 23505. This holds the read, not the index.
     const service = createService({
       membership: { partyContactId: "contact-1", status: "ACTIVE" },
       project: { id: 10 },
@@ -109,11 +108,10 @@ describe("PortalAccessService.createMembership", () => {
         }),
       }),
     };
-    return new PortalAccessService(db as never, { log: jest.fn() } as never);
+    return new PortalAccessService(db as never, { log: jest.fn() } as never, NO_PARTY_SERVICE);
   }
 
   it("answers 409 when the contact already has a live membership", async () => {
-    // uniq_portal_memberships_org_contact_audience (migration 0307), as drizzle surfaces it.
     const service = createService(
       drizzleUniqueViolation("uniq_portal_memberships_org_contact_audience"),
     );
@@ -128,5 +126,85 @@ describe("PortalAccessService.createMembership", () => {
     await expect(
       service.createMembership(organizationId, actorUserId, { partyContactId: "contact-1" }),
     ).rejects.toBe(fkViolation);
+  });
+});
+
+describe("PortalAccessService.inviteClient", () => {
+  const organizationId = "org-1";
+  const actorUserId = "admin-1";
+
+  const createdParty = { partyId: "party-1", organizationId };
+  const createdContact = { partyContactId: "contact-1", partyId: "party-1", organizationId };
+  const createdMembership = {
+    portalMembershipId: "pm-1",
+    organizationId,
+    partyContactId: "contact-1",
+    status: "ACTIVE",
+    sessionEpoch: 0,
+    deletedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  function createService(options: { insertError?: Error } = {}) {
+    const returning = options.insertError
+      ? jest.fn().mockRejectedValue(options.insertError)
+      : jest.fn().mockResolvedValue([createdMembership]);
+    const db = {
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({ returning }),
+      }),
+    };
+    const audit = { log: jest.fn() };
+    const partyService = {
+      createParty: jest.fn().mockResolvedValue(createdParty),
+      createContact: jest.fn().mockResolvedValue(createdContact),
+    };
+    return {
+      service: new PortalAccessService(db as never, audit as never, partyService as never),
+      db,
+      audit,
+      partyService,
+    };
+  }
+
+  it("creates a party, contact, and ACTIVE portal membership in sequence", async () => {
+    const { service, partyService, db } = createService();
+    const result = await service.inviteClient(organizationId, actorUserId, {
+      firstName: "Jane",
+      lastName: "Smith",
+      email: "jane@example.com",
+    });
+    expect(partyService.createParty).toHaveBeenCalledWith(
+      organizationId,
+      actorUserId,
+      expect.objectContaining({ name: "Jane Smith", partyKind: "PERSON" }),
+    );
+    expect(partyService.createContact).toHaveBeenCalledWith(
+      organizationId,
+      actorUserId,
+      expect.objectContaining({ partyId: "party-1", firstName: "Jane" }),
+    );
+    expect(db.insert).toHaveBeenCalled();
+    expect(result.status).toBe("ACTIVE");
+    expect(result.partyContactId).toBe("contact-1");
+  });
+
+  it("returns the membership row so the caller can select it in the grant form without a second round-trip", async () => {
+    const { service } = createService();
+    const result = await service.inviteClient(organizationId, actorUserId, {
+      firstName: "Alice",
+    });
+    expect(result.portalMembershipId).toBe("pm-1");
+    expect(result.status).toBe("ACTIVE");
+  });
+
+  it("answers 409 when the contact already has a portal membership", async () => {
+    const { service } = createService({
+      insertError: drizzleUniqueViolation("uniq_portal_memberships_org_contact_audience"),
+    });
+    await expect(
+      service.inviteClient(organizationId, actorUserId, { firstName: "Bob" }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

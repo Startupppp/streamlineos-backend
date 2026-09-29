@@ -71,9 +71,16 @@ export const updateGrantSchema = z.object({
   expiresAt: z.string().datetime().nullish(),
 }).strict();
 
+export const inviteClientSchema = z.object({
+  firstName: z.string().min(1).max(255),
+  lastName: z.string().max(255).optional(),
+  email: z.string().email().optional(),
+}).strict();
+
 export type ListMembershipsQuery = z.infer<typeof listMembershipsQuerySchema>;
 export type CreateMembershipInput = z.infer<typeof createMembershipSchema>;
 export type UpdateMembershipStatusInput = z.infer<typeof updateMembershipStatusSchema>;
 export type ListGrantsQuery = z.infer<typeof listGrantsQuerySchema>;
 export type CreateGrantInput = z.infer<typeof createGrantSchema>;
 export type UpdateGrantInput = z.infer<typeof updateGrantSchema>;
+export type InviteClientInput = z.infer<typeof inviteClientSchema>;
