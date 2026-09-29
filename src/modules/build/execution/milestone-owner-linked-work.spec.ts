@@ -142,10 +142,11 @@ describe("MilestonesService — ownerId filter narrows the WHERE predicate", () 
 
 describe("MilestonesService — createMilestone owner cross-tenant isolation", () => {
   function makeDb(memberRow: unknown, milestoneRow: unknown) {
-    return {
+    const orgMemberFindFirst = jest.fn().mockResolvedValue(memberRow);
+    const db = {
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-        organizationMembers: { findFirst: jest.fn().mockResolvedValue(memberRow) },
+        organizationMembers: { findFirst: orgMemberFindFirst },
       },
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
@@ -153,6 +154,7 @@ describe("MilestonesService — createMilestone owner cross-tenant isolation", (
         }),
       }),
     } as unknown as Db;
+    return { db, orgMemberFindFirst };
   }
 
   const STUB_MILESTONE = {
@@ -163,7 +165,7 @@ describe("MilestonesService — createMilestone owner cross-tenant isolation", (
   };
 
   it("createMilestone rejects an ownerMembershipId from another org with BadRequestException so cross-tenant IDs never reach the INSERT", async () => {
-    const db = makeDb(undefined, null);
+    const { db } = makeDb(undefined, null);
     const svc = new MilestonesService(db, mockAccess);
     await expect(
       svc.createMilestone(makeU(), PROJECT_ID, { name: "M", targetDate: "2026-06-01", status: "PENDING", ownerMembershipId: 99 }),
@@ -171,7 +173,7 @@ describe("MilestonesService — createMilestone owner cross-tenant isolation", (
   });
 
   it("createMilestone succeeds when ownerMembershipId belongs to the actor org and returns owner stub", async () => {
-    const db = makeDb({ id: 7 }, STUB_MILESTONE);
+    const { db } = makeDb({ id: 7 }, STUB_MILESTONE);
     const svc = new MilestonesService(db, mockAccess);
     const result = await svc.createMilestone(makeU(), PROJECT_ID, { name: "M", targetDate: "2026-06-01", status: "PENDING", ownerMembershipId: 7 });
     expect(result.ownerMembershipId).toBe(7);
@@ -180,13 +182,12 @@ describe("MilestonesService — createMilestone owner cross-tenant isolation", (
   });
 
   it("createMilestone with no ownerMembershipId skips the org check and returns owner null", async () => {
-    const db = makeDb(undefined, { ...STUB_MILESTONE, ownerMembershipId: null });
+    const { db, orgMemberFindFirst } = makeDb(undefined, { ...STUB_MILESTONE, ownerMembershipId: null });
     const svc = new MilestonesService(db, mockAccess);
     const result = await svc.createMilestone(makeU(), PROJECT_ID, { name: "M", targetDate: "2026-06-01", status: "PENDING" });
     expect(result.owner).toBeNull();
     expect(result.linkedTicketCount).toBe(0);
-    const orgMemberSpy = (db.query as { organizationMembers: { findFirst: jest.Mock } }).organizationMembers.findFirst;
-    expect(orgMemberSpy).not.toHaveBeenCalled();
+    expect(orgMemberFindFirst).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,6 @@
 import postgres from "postgres";
-import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
-import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../test/helpers/probe-org";
+import { requireApprovedDatabaseUrl } from "../../src/test/db-spec-guard";
+import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "./probe-org";
 
 export interface ProbePerson {
   userId: string;
