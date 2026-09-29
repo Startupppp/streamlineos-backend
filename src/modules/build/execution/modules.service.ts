@@ -8,6 +8,7 @@ import {
 import { and, asc, count, eq, gt, ilike, isNull, or, sql } from "drizzle-orm";
 import { escapeLike } from "../core";
 import { modules, tickets } from "../../../db/schema";
+import { sqlstateOf } from "../../../common/observability/error-classification";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
@@ -142,20 +143,29 @@ export class ModulesService {
         `A module named "${existing.name}" already exists in this project.`,
       );
 
-    const [mod] = await this.db
-      .insert(modules)
-      .values({
-        projectId,
-        orgId,
-        name: input.name,
-        description: input.description,
-        status: input.status,
-        leadId: input.leadId,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        createdBy: userId,
-      })
-      .returning();
+    let mod: typeof modules.$inferSelect | undefined;
+    try {
+      [mod] = await this.db
+        .insert(modules)
+        .values({
+          projectId,
+          orgId,
+          name: input.name,
+          description: input.description,
+          status: input.status,
+          leadId: input.leadId,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          createdBy: userId,
+        })
+        .returning();
+    } catch (error: unknown) {
+      if (sqlstateOf(error) === "23505")
+        throw new ConflictException(
+          `A module named "${input.name.trim()}" already exists in this project.`,
+        );
+      throw error;
+    }
 
     return mod;
   }

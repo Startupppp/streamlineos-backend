@@ -1,5 +1,23 @@
 import { z } from "zod";
 
+const calendarDate = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be an ISO calendar date (YYYY-MM-DD)");
+
+const optionalCalendarDate = z
+  .literal("")
+  .or(calendarDate)
+  .optional()
+  .transform((v) => (v === "" ? undefined : v));
+
+const clearableCalendarDate = z
+  .literal("")
+  .or(calendarDate)
+  .nullable()
+  .optional()
+  .transform((v) => (v === "" ? null : v));
+
 const sprintNameSchema = z
   .string()
   .transform((v) => v.trim())
@@ -17,8 +35,8 @@ const sprintNameSchema = z
 export const createSprintSchema = z
   .object({
     name: sprintNameSchema,
-    startDate: z.string().min(1, "Start date is required"),
-    endDate: z.string().min(1, "End date is required"),
+    startDate: calendarDate,
+    endDate: calendarDate,
     goal: z.string().optional(),
   })
   .strict()
@@ -35,8 +53,8 @@ export const createSprintSchema = z
 export const updateSprintSchema = z
   .object({
     name: sprintNameSchema.optional(),
-    startDate: z.string().optional(),
-    endDate: z.string().optional(),
+    startDate: optionalCalendarDate,
+    endDate: optionalCalendarDate,
     goal: z.string().optional(),
     status: z.enum(["PLANNED", "ACTIVE", "COMPLETED"]).optional(),
   })
@@ -69,8 +87,8 @@ export const createCycleSchema = z
       .string()
       .max(500, "Description must be 500 characters or fewer")
       .optional(),
-    startDate: z.string().min(1, "Start date is required"),
-    endDate: z.string().min(1, "End date is required"),
+    startDate: calendarDate,
+    endDate: calendarDate,
     capacity: z.number().int().min(0).optional(),
   })
   .strict()
@@ -98,8 +116,8 @@ export const updateCycleSchema = z
       .optional(),
     capacity: z.number().int().min(0).nullable().optional(),
     status: z.enum(["draft", "active", "completed"]).optional(),
-    startDate: z.string().optional(),
-    endDate: z.string().optional(),
+    startDate: optionalCalendarDate,
+    endDate: optionalCalendarDate,
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -174,8 +192,8 @@ export const createModuleSchema = z
       ])
       .default("backlog"),
     leadId: z.string().optional(),
-    startDate: z.string().optional(),
-    endDate: z.string().optional(),
+    startDate: optionalCalendarDate,
+    endDate: optionalCalendarDate,
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -207,8 +225,8 @@ export const updateModuleSchema = z
       ])
       .optional(),
     leadId: z.string().nullable().optional(),
-    startDate: z.string().nullable().optional(),
-    endDate: z.string().nullable().optional(),
+    startDate: clearableCalendarDate,
+    endDate: clearableCalendarDate,
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -226,8 +244,8 @@ export const createEpicSchema = z
     title: z.string().min(1),
     description: z.string().optional(),
     priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
-    startDate: z.string().optional(),
-    dueDate: z.string().optional(),
+    startDate: optionalCalendarDate,
+    dueDate: optionalCalendarDate,
     points: z.number().optional(),
   })
   .strict();
@@ -240,8 +258,8 @@ export const updateEpicSchema = z
     priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
     assigneeId: z.string().nullable().optional(),
     health: z.enum(["on_track", "at_risk", "off_track"]).nullable().optional(),
-    startDate: z.string().nullable().optional(),
-    dueDate: z.string().nullable().optional(),
+    startDate: clearableCalendarDate,
+    dueDate: clearableCalendarDate,
     points: z.number().nullable().optional(),
   })
   .strict();

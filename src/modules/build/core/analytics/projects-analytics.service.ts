@@ -195,6 +195,27 @@ export class ProjectsAnalyticsService {
     const overdueCount = Number(overdueResult[0]?.count ?? 0);
     const onTimeRate = openTickets > 0 ? 1 - overdueCount / openTickets : 1;
 
+    if (totalTickets === 0) {
+      return {
+        stateDistribution: [],
+        priorityBreakdown,
+        assigneeCompletion,
+        volumeOverTime,
+        cycleVelocity,
+        estimateVsActual,
+        healthScore: 100,
+        healthStatus: "NOT_STARTED",
+        healthBreakdown: {
+          completionPct: 0,
+          onTimePct: 100,
+          velocityScore: 100,
+          overdueTickets: 0,
+          totalTickets: 0,
+          openTickets: 0,
+        },
+      };
+    }
+
     const velocities = cycleVelocity.map((c) => Number(c.completedPoints));
     const avgVelocity = velocities.length > 0 ? velocities.reduce((a, b) => a + b, 0) / velocities.length : 0;
     const latestVelocity = velocities.length > 0 ? velocities[velocities.length - 1] : 0;
@@ -226,6 +247,7 @@ export class ProjectsAnalyticsService {
         velocityScore: Math.round(velocityScore * 100),
         overdueTickets: overdueCount,
         totalTickets,
+        openTickets,
       },
     };
   }
