@@ -10,6 +10,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
+import { lifecycleAuditDouble } from "./lifecycle/audit-double";
 
 const EXECUTE_ROWS: Record<string, unknown>[] = [
   { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: "3", completed: "1" },
@@ -56,7 +57,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
   };
 
   const cases: Array<[string, (db: Db) => Promise<unknown>]> = [
-    ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess).listReleases(releasesU, 1, listReleasesQuerySchema.parse({}))],
+    ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess, lifecycleAuditDouble()).listReleases(releasesU, 1, listReleasesQuerySchema.parse({}))],
     ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db).listWebhooks(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/epics", (db) => new EpicsService(db).listEpics(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/cycles", (db) => new CyclesService(db).listCycles(ATTACKER_ORG, 1, {} as never)],

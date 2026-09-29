@@ -4,6 +4,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 const dialect = new PgDialect();
 
@@ -48,7 +49,7 @@ const mockAccess = {} as AccessService;
 describe("TestManagementService.listCases — search predicate shape (BE-49)", () => {
   it("uses a trailing-wildcard pattern, not a leading wildcard, so the test case title column can use a prefix index rather than a full scan over the suite", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new TestManagementService(buildDb(captured), mockAccess);
+    const svc = new TestManagementService(buildDb(captured), mockAccess, lifecycleAuditDouble());
     await svc.listCases(makeOwner("org-1"), 1, { q: "login" });
     const { sql, params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).toContain("ilike");
@@ -59,7 +60,7 @@ describe("TestManagementService.listCases — search predicate shape (BE-49)", (
 
   it("appends a trailing % so a search for 'login' finds 'Login with SSO' — the title starts with the typed term", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new TestManagementService(buildDb(captured), mockAccess);
+    const svc = new TestManagementService(buildDb(captured), mockAccess, lifecycleAuditDouble());
     await svc.listCases(makeOwner("org-1"), 1, { q: "login" });
     const { params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     const likeParam = params.find((p): p is string => typeof p === "string" && p.endsWith("%"));
@@ -68,7 +69,7 @@ describe("TestManagementService.listCases — search predicate shape (BE-49)", (
 
   it("omits the ilike predicate when no q is given so all test cases in the project are returned", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new TestManagementService(buildDb(captured), mockAccess);
+    const svc = new TestManagementService(buildDb(captured), mockAccess, lifecycleAuditDouble());
     await svc.listCases(makeOwner("org-1"), 1, {});
     const { sql } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).not.toContain("ilike");

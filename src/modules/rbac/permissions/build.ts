@@ -53,6 +53,12 @@ export const QA_BUGS_PERMISSIONS: Permission[] = [
     description: "Record test results in QA test runs",
   },
   {
+    name: "build:qa:restore",
+    resource: "build:qa",
+    action: "restore",
+    description: "Restore soft-deleted test suites, test cases and test runs",
+  },
+  {
     name: "build:bugs:view",
     resource: "build:bugs",
     action: "view",

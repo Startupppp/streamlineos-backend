@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { WhiteboardsService } from "./whiteboards.service";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
   const ORG_ID = "org-wb-test";
@@ -41,7 +42,7 @@ describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
   it("returns hasMore:true and nextCursor when the page is full and more rows exist", async () => {
     const overflow = Array.from({ length: 21 }, (_, i) => makeRow(21 - i));
     const db = makeDb({ id: PROJECT_ID }, overflow);
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const result = await svc.listWhiteboards(makeU(ORG_ID), PROJECT_ID, { limit: 20 });
 
     expect(result.pagination.hasMore).toBe(true);
@@ -52,7 +53,7 @@ describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
   it("trims the sentinel row so data.length equals limit", async () => {
     const overflow = Array.from({ length: 21 }, (_, i) => makeRow(21 - i));
     const db = makeDb({ id: PROJECT_ID }, overflow);
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const result = await svc.listWhiteboards(makeU(ORG_ID), PROJECT_ID, { limit: 20 });
 
     expect(result.data).toHaveLength(20);
@@ -62,7 +63,7 @@ describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
   it("returns hasMore:false and nextCursor:null when rows fit in one page", async () => {
     const rows = Array.from({ length: 5 }, (_, i) => makeRow(5 - i));
     const db = makeDb({ id: PROJECT_ID }, rows);
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const result = await svc.listWhiteboards(makeU(ORG_ID), PROJECT_ID, { limit: 20 });
 
     expect(result.pagination.hasMore).toBe(false);
@@ -73,7 +74,7 @@ describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
   it("returns elementCount from data.elements.length", async () => {
     const row = makeRow(1);
     const db = makeDb({ id: PROJECT_ID }, [row]);
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const result = await svc.listWhiteboards(makeU(ORG_ID), PROJECT_ID, { limit: 20 });
 
     expect(result.data[0]?.elementCount).toBe(1);
@@ -81,7 +82,7 @@ describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
 
   it("throws NotFoundException when project is not found — assertProject gate", async () => {
     const db = makeDb(null, []);
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     await expect(
       svc.listWhiteboards(makeU(ORG_ID), PROJECT_ID, { limit: 20 }),
     ).rejects.toThrow(NotFoundException);
@@ -98,7 +99,7 @@ describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
       query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }) } },
       select: jest.fn().mockReturnValue({ from }),
     } as unknown as Db;
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     await svc.listWhiteboards(makeU(ORG_ID), PROJECT_ID, { limit: 20 });
 
     expect(limitFn).toHaveBeenCalledWith(21);

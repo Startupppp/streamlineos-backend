@@ -13,6 +13,7 @@ import {
   gt,
   ilike,
   inArray,
+  isNotNull,
   isNull,
   lt,
   or,
@@ -27,6 +28,11 @@ import {
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
+import { AuditService } from "../../../../common/audit/audit.service";
+import {
+  assertRestorable,
+  clearingLifecycle,
+} from "../../lifecycle/lifecycle-restore";
 import type {
   CreateRoadmapInput,
   RoadmapListQuery,
@@ -239,7 +245,10 @@ function withPrioritization<T extends RiceInputs>(
 
 @Injectable()
 export class ProjectsRoadmapService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
 
   searchFallbackCondition(term: string): SQL {
     const like = `%${term}%`;
@@ -509,7 +518,7 @@ export class ProjectsRoadmapService {
     };
   }
 
-  async deleteRoadmap(orgId: string, itemId: number) {
+  async deleteRoadmap(orgId: string, userId: string, itemId: number) {
     const [deleted] = await this.db
       .update(roadmapItems)
       .set({ deletedAt: new Date() })
@@ -522,6 +531,45 @@ export class ProjectsRoadmapService {
       )
       .returning({ id: roadmapItems.id });
     if (!deleted) throw new NotFoundException("Roadmap item not found");
+    this.audit.log({
+      action: "build.roadmap_item.deleted",
+      userId,
+      orgId,
+      resourceType: "roadmap_item",
+      resourceId: String(itemId),
+      metadata: { itemId },
+    });
+    return { success: true };
+  }
+
+  async restoreRoadmap(orgId: string, userId: string, itemId: number) {
+    const existing = await this.db.query.roadmapItems.findFirst({
+      where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId)),
+      columns: { deletedAt: true },
+    });
+    assertRestorable(existing, "Roadmap item");
+    const [restored] = await clearingLifecycle("Roadmap item", () =>
+      this.db
+        .update(roadmapItems)
+        .set({ deletedAt: null })
+        .where(
+          and(
+            eq(roadmapItems.id, itemId),
+            eq(roadmapItems.orgId, orgId),
+            isNotNull(roadmapItems.deletedAt),
+          ),
+        )
+        .returning({ id: roadmapItems.id }),
+    );
+    if (!restored) throw new NotFoundException("Roadmap item not found");
+    this.audit.log({
+      action: "build.roadmap_item.restored",
+      userId,
+      orgId,
+      resourceType: "roadmap_item",
+      resourceId: String(itemId),
+      metadata: { itemId },
+    });
     return { success: true };
   }
 

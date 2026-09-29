@@ -8,6 +8,7 @@ import {
   loadRoadmapDemandSignals,
   DELIVERY_PROGRESS_PERCENT_SCALE,
 } from "./roadmap-delivery";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 const ORG = "org-signals";
 const OTHER_ORG = "org-intruder";
@@ -77,7 +78,7 @@ function makeService(parts: {
     update: parts.update ?? jest.fn(),
     select: selectChain(parts),
   } as unknown as Db;
-  return new ProjectsRoadmapService(db);
+  return new ProjectsRoadmapService(db, lifecycleAuditDouble());
 }
 
 function insertCapture(returned: RoadmapRowShape) {

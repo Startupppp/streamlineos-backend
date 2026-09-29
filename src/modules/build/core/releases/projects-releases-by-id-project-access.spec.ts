@@ -4,6 +4,7 @@ import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ProjectsReleasesService } from "./projects-releases.service";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 const MEMBERSHIP_ID = 7;
 const ORG = "org-1";
@@ -103,7 +104,7 @@ function memberSelect(bodyChains: Array<() => unknown>) {
 describe("ProjectsReleasesService — by-id routes gate on project membership, not only orgId", () => {
   it("refuses updateRelease for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update, transaction } = makeNonMemberDb();
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "hijacked", rowVersion: 1 })).rejects.toThrow(
       ForbiddenException,
@@ -143,7 +144,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
         .mockImplementationOnce(countChain),
       transaction,
     } as unknown as Db;
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "v2", rowVersion: 1 })).resolves.toMatchObject({
       id: 5,
@@ -154,7 +155,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
 
   it("refuses deleteRelease for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update } = makeNonMemberDb();
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.deleteRelease(makeU(), PROJECT_ID, 5)).rejects.toThrow(ForbiddenException);
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -174,7 +175,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
       select: memberSelect([]),
       update,
     } as unknown as Db;
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.deleteRelease(makeU(), PROJECT_ID, 5)).resolves.toEqual({ success: true });
     expect(update).toHaveBeenCalledTimes(1);
@@ -182,7 +183,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
 
   it("refuses addTicketToRelease for an in-tenant non-member of the project before it reads the release", async () => {
     const { db, rowFindFirst, insert } = makeNonMemberDb();
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.addTicketToRelease(makeU(), PROJECT_ID, 5, 99)).rejects.toThrow(
       ForbiddenException,
@@ -214,7 +215,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
       select: memberSelect([]),
       insert,
     } as unknown as Db;
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.addTicketToRelease(makeU(), PROJECT_ID, 5, 99)).resolves.toEqual({
       success: true,
@@ -224,7 +225,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
 
   it("refuses removeTicketFromRelease for an in-tenant non-member of the project before it reads the release", async () => {
     const { db, rowFindFirst, dbDelete } = makeNonMemberDb();
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.removeTicketFromRelease(makeU(), PROJECT_ID, 5, 99)).rejects.toThrow(
       ForbiddenException,
@@ -249,7 +250,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
       select: memberSelect([]),
       delete: dbDelete,
     } as unknown as Db;
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.removeTicketFromRelease(makeU(), PROJECT_ID, 5, 99)).resolves.toEqual({
       success: true,
@@ -259,7 +260,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
 
   it("refuses createRelease for an in-tenant non-member of the project before it inserts", async () => {
     const { db, rowFindFirst, insert } = makeNonMemberDb();
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.createRelease(makeU(), PROJECT_ID, { name: "hijacked release", version: "1.0.0", status: "draft" })).rejects.toThrow(
       ForbiddenException,
@@ -282,7 +283,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
       select: memberSelect([]),
       insert,
     } as unknown as Db;
-    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage());
+    const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.createRelease(makeU(), PROJECT_ID, { name: "release v1", version: "1.0.0", status: "draft" })).resolves.toMatchObject({
       id: 10,

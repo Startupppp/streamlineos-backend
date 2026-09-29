@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { TicketVersionConflictException, reserveTicketCapacity } from "../core/tickets";
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   intakeItems,
   organizationMembers,
@@ -13,6 +13,11 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import {
+  assertRestorable,
+  clearingLifecycle,
+} from "../lifecycle/lifecycle-restore";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess, allocateTicketNumbers, escapeLike, assertProjectInOrg } from "../core";
 import { buildCursorPage, buildTupleCursorPage, decodeCursor, decodeIntegerCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
@@ -34,6 +39,7 @@ export class MilestonesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   async listMilestones(u: CurrentUserContext, projectId: number, query: ListMilestonesQuery) {
@@ -198,13 +204,58 @@ export class MilestonesService {
     };
   }
 
-  async deleteMilestone(orgId: string, projectId: number, milestoneId: number) {
+  async deleteMilestone(orgId: string, userId: string, projectId: number, milestoneId: number) {
     const [stamped] = await this.db
       .update(projectMilestones)
       .set({ deletedAt: new Date() })
       .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
       .returning({ id: projectMilestones.id });
     if (!stamped) throw new NotFoundException("Milestone not found");
+    this.audit.log({
+      action: "build.milestone.deleted",
+      userId,
+      orgId,
+      resourceType: "project_milestone",
+      resourceId: String(milestoneId),
+      metadata: { milestoneId, projectId },
+    });
+    return { success: true };
+  }
+
+  async restoreMilestone(orgId: string, userId: string, projectId: number, milestoneId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
+    const existing = await this.db.query.projectMilestones.findFirst({
+      where: and(
+        eq(projectMilestones.id, milestoneId),
+        eq(projectMilestones.projectId, projectId),
+        eq(projectMilestones.orgId, orgId),
+      ),
+      columns: { deletedAt: true },
+    });
+    assertRestorable(existing, "Milestone");
+    const [restored] = await clearingLifecycle("Milestone", () =>
+      this.db
+        .update(projectMilestones)
+        .set({ deletedAt: null })
+        .where(
+          and(
+            eq(projectMilestones.id, milestoneId),
+            eq(projectMilestones.projectId, projectId),
+            eq(projectMilestones.orgId, orgId),
+            isNotNull(projectMilestones.deletedAt),
+          ),
+        )
+        .returning({ id: projectMilestones.id }),
+    );
+    if (!restored) throw new NotFoundException("Milestone not found");
+    this.audit.log({
+      action: "build.milestone.restored",
+      userId,
+      orgId,
+      resourceType: "project_milestone",
+      resourceId: String(milestoneId),
+      metadata: { milestoneId, projectId },
+    });
     return { success: true };
   }
 }
@@ -254,8 +305,6 @@ export class IntakeService {
   }
 
   async createIntake(orgId: string, projectId: number, input: CreateIntakeInput) {
-    // `listIntake` above resolves the project; this did not, so a cross-tenant `:projectId`
-    // reached the INSERT and the composite tenant FK refused it with an uncaught 23503.
     await assertProjectInOrg(this.db, orgId, projectId);
     const [item] = await this.db
       .insert(intakeItems)

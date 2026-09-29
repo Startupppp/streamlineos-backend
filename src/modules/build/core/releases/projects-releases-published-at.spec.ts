@@ -12,6 +12,7 @@ import {
   projects,
 } from "../../../../db/schema";
 import { ProjectsReleasesService } from "./projects-releases.service";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 const ORG = "org-pub-1";
 const MEMBERSHIP_ID = 5;
@@ -218,7 +219,7 @@ function makeAccess(): AccessService {
 
 function makeService(store: Store) {
   const fixture = makeDb(store);
-  return { ...fixture, svc: new ProjectsReleasesService(fixture.db, makeAccess()) };
+  return { ...fixture, svc: new ProjectsReleasesService(fixture.db, makeAccess(), lifecycleAuditDouble()) };
 }
 
 describe("ProjectsReleasesService — publishedAt writer", () => {

@@ -13,6 +13,7 @@ import {
 import { SprintsService } from "./sprints.service";
 import { ModulesService } from "./modules.service";
 import { IntakeService, MilestonesService, ViewsService } from "./workspace.service";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 jest.mock("../core/lib/allocate-ticket-number", () => ({
   allocateTicketNumbers: jest.fn(async () => 1),
@@ -344,7 +345,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never).updateMilestone(ORG, PROJECT_A, MILESTONE_B, { name: "hijacked", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_A, MILESTONE_B, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_B)?.name).toBe("milestone-b");
   });
@@ -354,7 +355,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never).updateMilestone(ORG, PROJECT_A, MILESTONE_A, { name: "milestone-a-v2", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_A, MILESTONE_A, { name: "milestone-a-v2", version: 1 }),
     ).resolves.toMatchObject({ id: MILESTONE_A, name: "milestone-a-v2" });
   });
 
@@ -363,7 +364,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never).updateMilestone(OTHER_ORG, PROJECT_A, MILESTONE_A, { name: "hijacked", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(OTHER_ORG, PROJECT_A, MILESTONE_A, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_A)?.name).toBe("milestone-a");
   });
@@ -373,7 +374,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never).deleteMilestone(ORG, PROJECT_A, MILESTONE_B),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(ORG, "user-1", PROJECT_A, MILESTONE_B),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_B)?.deletedAt).toBeNull();
   });
@@ -383,7 +384,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never).deleteMilestone(ORG, PROJECT_A, MILESTONE_A),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(ORG, "user-1", PROJECT_A, MILESTONE_A),
     ).resolves.toEqual({ success: true });
     expect(store.milestones.find((row) => row.id === MILESTONE_A)?.deletedAt).toBeInstanceOf(Date);
   });

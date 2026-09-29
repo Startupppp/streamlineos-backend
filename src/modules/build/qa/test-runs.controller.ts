@@ -33,8 +33,10 @@ import {
   type UpdateTestRunInput,
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
 import {
+  BodylessAction,
   NoContentResponse,
   ResponseSchema,
 } from "../../../common/openapi/zod-operation-contracts";
@@ -141,6 +143,19 @@ export class TestRunsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.deleteRun(u, projectId, runId);
+  }
+
+  @Post(":runId/restore")
+  @RequirePermission("build:qa:restore")
+  @BodylessAction()
+  @ResponseSchema(successSchema)
+  @Validate({ params: runIdParams })
+  restoreRun(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("runId", ParseIntPipe) runId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.restoreRun(u, projectId, runId);
   }
 
   @Patch(":runId/results/:resultId")

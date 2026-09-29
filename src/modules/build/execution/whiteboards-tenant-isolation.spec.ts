@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { WhiteboardsService } from "./whiteboards.service";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 describe("WhiteboardsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -28,7 +29,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
   it("throws NotFoundException for getWhiteboard when board not in org (cross-tenant isolation)", async () => {
     const project = { id: 1 };
     const db = makeDb(project, []);
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
     await expect(svc.getWhiteboard(u, 1, 99)).rejects.toThrow(NotFoundException);
   });
@@ -37,7 +38,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     const project = { id: 1 };
     const board = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "B", visibility: "private", createdBy: "u1", deletedAt: null, data: {} };
     const db = makeDb(project, [{ board, shareRole: null }]);
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     const result = await svc.getWhiteboard(u, 1, 1);
     expect(result).toBeDefined();
@@ -47,7 +48,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     const project = { id: 1 };
     const board = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "B", visibility: "private", createdBy: "u1", deletedAt: null, data: { elements: [] }, shareToken: "abc123hash", publicAccess: "viewer", linkExpiresAt: null, allowExport: true, createdAt: new Date(), updatedAt: new Date() };
     const db = makeDb(project, [{ board, shareRole: null }]);
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     const result = await svc.getWhiteboard(u, 1, 1);
     expect(result.sharing).not.toBeNull();
@@ -68,7 +69,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
       update: dbUpdate,
     } as unknown as Db;
 
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     await expect(
       svc.updateWhiteboard(u, 1, 1, { name: "New Name" }),
@@ -94,7 +95,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     (db as unknown as { select: jest.Mock }).select = jest.fn().mockReturnValue({ from: fromMock });
     void originalSelect;
 
-    const svc = new WhiteboardsService(db, access);
+    const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     await svc.listWhiteboards(u, 1, { limit: 20 });
     expect(capturedLimit).toBe(21);

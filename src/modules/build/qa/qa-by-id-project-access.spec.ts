@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestManagementService } from "./test-management.service";
 import { TestRunsService } from "./test-runs.service";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 const MEMBERSHIP_ID = 7;
 const ORG = "org-1";
@@ -100,7 +101,7 @@ function memberSelect(bodyChains: Array<() => unknown>) {
 describe("TestManagementService — by-id routes gate on project membership, not only orgId", () => {
   it("refuses getCase for an in-tenant non-member of the project before it reads the row", async () => {
     const { db, rowFindFirst } = makeNonMemberDb();
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.getCase(makeU(), PROJECT_ID, 42)).rejects.toThrow(ForbiddenException);
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -119,14 +120,14 @@ describe("TestManagementService — by-id routes gate on project membership, not
       },
       select: memberSelect([]),
     } as unknown as Db;
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.getCase(makeU(), PROJECT_ID, 42)).resolves.toMatchObject({ id: 42 });
   });
 
   it("refuses updateCase for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update } = makeNonMemberDb();
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(
       svc.updateCase(makeU(), PROJECT_ID, 42, { title: "hijacked" }),
@@ -149,7 +150,7 @@ describe("TestManagementService — by-id routes gate on project membership, not
       select: memberSelect([]),
       update,
     } as unknown as Db;
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.updateCase(makeU(), PROJECT_ID, 42, { title: "renamed" })).resolves.toMatchObject({
       id: 42,
@@ -160,7 +161,7 @@ describe("TestManagementService — by-id routes gate on project membership, not
 
   it("refuses deleteCase for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update } = makeNonMemberDb();
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.deleteCase(makeU(), PROJECT_ID, 42)).rejects.toThrow(ForbiddenException);
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -181,7 +182,7 @@ describe("TestManagementService — by-id routes gate on project membership, not
       select: memberSelect([]),
       update,
     } as unknown as Db;
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.deleteCase(makeU(), PROJECT_ID, 42)).resolves.toEqual({ success: true });
     expect(update).toHaveBeenCalledTimes(1);
@@ -189,7 +190,7 @@ describe("TestManagementService — by-id routes gate on project membership, not
 
   it("refuses updateSuite for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update } = makeNonMemberDb();
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(
       svc.updateSuite(makeU(), PROJECT_ID, 11, { name: "hijacked" }),
@@ -212,7 +213,7 @@ describe("TestManagementService — by-id routes gate on project membership, not
       select: memberSelect([]),
       update,
     } as unknown as Db;
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.updateSuite(makeU(), PROJECT_ID, 11, { name: "renamed" })).resolves.toMatchObject({
       id: 11,
@@ -223,7 +224,7 @@ describe("TestManagementService — by-id routes gate on project membership, not
 
   it("refuses deleteSuite for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update } = makeNonMemberDb();
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.deleteSuite(makeU(), PROJECT_ID, 11)).rejects.toThrow(ForbiddenException);
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -244,7 +245,7 @@ describe("TestManagementService — by-id routes gate on project membership, not
       select: memberSelect([]),
       update,
     } as unknown as Db;
-    const svc = new TestManagementService(db, makeAccessWithoutBuildManage());
+    const svc = new TestManagementService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
     await expect(svc.deleteSuite(makeU(), PROJECT_ID, 11)).resolves.toEqual({ success: true });
     expect(update).toHaveBeenCalledTimes(1);

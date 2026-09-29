@@ -27,8 +27,9 @@ import {
   type UpdateTestSuiteInput,
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { testSuiteWithCaseCountSchema } from "./dto/qa-response.schemas";
 
 export const suiteIdParams = z.object({ projectId: z.coerce.number().int().positive(), suiteId: z.coerce.number().int().positive() }).strict();
@@ -88,5 +89,18 @@ export class TestSuitesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.deleteSuite(u, projectId, suiteId);
+  }
+
+  @Post(":suiteId/restore")
+  @RequirePermission("build:qa:restore")
+  @BodylessAction()
+  @ResponseSchema(successSchema)
+  @Validate({ params: suiteIdParams })
+  restoreSuite(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("suiteId", ParseIntPipe) suiteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.restoreSuite(u, projectId, suiteId);
   }
 }

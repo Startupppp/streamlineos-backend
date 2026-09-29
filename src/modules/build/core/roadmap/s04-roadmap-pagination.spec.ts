@@ -3,6 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../../db/drizzle.module";
 import { decodeTupleCursor } from "../../../../common/pagination/cursor";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 const dialect = new PgDialect();
 const ORG = "org-s04";
@@ -17,7 +18,7 @@ interface RoadmapRow {
 
 function makeService(findMany: jest.Mock) {
   const db = { query: { roadmapItems: { findMany } } } as unknown as Db;
-  return new ProjectsRoadmapService(db);
+  return new ProjectsRoadmapService(db, lifecycleAuditDouble());
 }
 
 function queryParams(findMany: jest.Mock, callIndex: number): unknown[] {

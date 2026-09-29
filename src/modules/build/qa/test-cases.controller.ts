@@ -27,8 +27,9 @@ import {
   type UpdateTestCaseInput,
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { testCaseRowSchema, testCasePageSchema } from "./dto/qa-response.schemas";
 
 export const caseIdParams = z.object({ projectId: z.coerce.number().int().positive(), caseId: z.coerce.number().int().positive() }).strict();
@@ -100,5 +101,18 @@ export class TestCasesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.deleteCase(u, projectId, caseId);
+  }
+
+  @Post(":caseId/restore")
+  @RequirePermission("build:qa:restore")
+  @BodylessAction()
+  @ResponseSchema(successSchema)
+  @Validate({ params: caseIdParams })
+  restoreCase(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.restoreCase(u, projectId, caseId);
   }
 }

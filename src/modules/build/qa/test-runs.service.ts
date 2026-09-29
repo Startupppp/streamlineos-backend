@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { cycles, testCases, testRunResults, testRuns, tickets, workItemQaDetails, projectStatuses } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -7,6 +7,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
+import {
+  assertRestorable,
+  clearingLifecycle,
+} from "../lifecycle/lifecycle-restore";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type {
   CreateBugFromResultInput,
@@ -336,6 +340,52 @@ export class TestRunsService {
       .update(testRuns)
       .set({ deletedAt: new Date() })
       .where(and(eq(testRuns.id, runId), eq(testRuns.orgId, orgId), eq(testRuns.projectId, projectId)));
+    this.audit.log({
+      action: "build.test_run.deleted",
+      userId: u.userId,
+      orgId,
+      resourceType: "test_run",
+      resourceId: String(runId),
+      metadata: { runId, projectId },
+    });
+    return { success: true };
+  }
+
+  async restoreRun(u: CurrentUserContext, projectId: number, runId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const existing = await this.db.query.testRuns.findFirst({
+      where: and(
+        eq(testRuns.id, runId),
+        eq(testRuns.orgId, orgId),
+        eq(testRuns.projectId, projectId),
+      ),
+      columns: { deletedAt: true },
+    });
+    assertRestorable(existing, "Test run");
+    const [restored] = await clearingLifecycle("Test run", () =>
+      this.db
+        .update(testRuns)
+        .set({ deletedAt: null })
+        .where(
+          and(
+            eq(testRuns.id, runId),
+            eq(testRuns.orgId, orgId),
+            eq(testRuns.projectId, projectId),
+            isNotNull(testRuns.deletedAt),
+          ),
+        )
+        .returning({ id: testRuns.id }),
+    );
+    if (!restored) throw new NotFoundException("Test run not found");
+    this.audit.log({
+      action: "build.test_run.restored",
+      userId: u.userId,
+      orgId,
+      resourceType: "test_run",
+      resourceId: String(runId),
+      metadata: { runId, projectId },
+    });
     return { success: true };
   }
 

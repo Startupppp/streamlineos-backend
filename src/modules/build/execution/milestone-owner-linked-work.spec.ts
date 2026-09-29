@@ -6,6 +6,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService } from "./workspace.service";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 const ORG = "org-1";
 const PROJECT_ID = 1;
@@ -126,7 +127,7 @@ describe("MilestonesService — ownerId filter narrows the WHERE predicate", () 
     } as unknown as Db;
 
     const query = listMilestonesQuerySchema.parse({ ownerId: "5" });
-    await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, query);
+    await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, query);
 
     expect(whereSpy).toHaveBeenCalled();
     const condition = whereSpy.mock.calls[0]?.[0];
@@ -166,7 +167,7 @@ describe("MilestonesService — createMilestone owner cross-tenant isolation", (
 
   it("createMilestone rejects an ownerMembershipId from another org with BadRequestException so cross-tenant IDs never reach the INSERT", async () => {
     const { db } = makeDb(undefined, null);
-    const svc = new MilestonesService(db, mockAccess);
+    const svc = new MilestonesService(db, mockAccess, lifecycleAuditDouble());
     await expect(
       svc.createMilestone(makeU(), PROJECT_ID, { name: "M", targetDate: "2026-06-01", status: "PENDING", ownerMembershipId: 99 }),
     ).rejects.toThrow(BadRequestException);
@@ -174,7 +175,7 @@ describe("MilestonesService — createMilestone owner cross-tenant isolation", (
 
   it("createMilestone succeeds when ownerMembershipId belongs to the actor org and returns owner stub", async () => {
     const { db } = makeDb({ id: 7 }, STUB_MILESTONE);
-    const svc = new MilestonesService(db, mockAccess);
+    const svc = new MilestonesService(db, mockAccess, lifecycleAuditDouble());
     const result = await svc.createMilestone(makeU(), PROJECT_ID, { name: "M", targetDate: "2026-06-01", status: "PENDING", ownerMembershipId: 7 });
     expect(result.ownerMembershipId).toBe(7);
     expect(result.owner).not.toBeNull();
@@ -183,7 +184,7 @@ describe("MilestonesService — createMilestone owner cross-tenant isolation", (
 
   it("createMilestone with no ownerMembershipId skips the org check and returns owner null", async () => {
     const { db, orgMemberFindFirst } = makeDb(undefined, { ...STUB_MILESTONE, ownerMembershipId: null });
-    const svc = new MilestonesService(db, mockAccess);
+    const svc = new MilestonesService(db, mockAccess, lifecycleAuditDouble());
     const result = await svc.createMilestone(makeU(), PROJECT_ID, { name: "M", targetDate: "2026-06-01", status: "PENDING" });
     expect(result.owner).toBeNull();
     expect(result.linkedTicketCount).toBe(0);
@@ -209,27 +210,27 @@ describe("MilestonesService — linked ticket count uses one aggregate query reg
   it("db.select is called exactly twice for a 3-milestone page — one milestone query and one batch count, never N counts", async () => {
     const db = makeListDb([M1, M2, M3], []);
     const selectSpy = db.select as jest.Mock;
-    await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     expect(selectSpy).toHaveBeenCalledTimes(2);
   });
 
   it("db.select is called exactly twice for a 1-milestone page confirming the count does not grow with milestone count", async () => {
     const db = makeListDb([M1], []);
     const selectSpy = db.select as jest.Mock;
-    await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     expect(selectSpy).toHaveBeenCalledTimes(2);
   });
 
   it("db.select is called exactly once for an empty page because the ticket count query is skipped", async () => {
     const db = makeListDb([], []);
     const selectSpy = db.select as jest.Mock;
-    await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     expect(selectSpy).toHaveBeenCalledTimes(1);
   });
 
   it("milestone with four linked tickets gets linkedTicketCount four and milestone with no tickets gets zero", async () => {
     const db = makeListDb([M1, M2], [{ milestoneId: 1, linked: 4, completed: 1 }]);
-    const result = await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     const row1 = result.data.find((r) => r.id === 1);
     const row2 = result.data.find((r) => r.id === 2);
     expect(row1?.linkedTicketCount).toBe(4);
@@ -239,7 +240,7 @@ describe("MilestonesService — linked ticket count uses one aggregate query reg
   it("completedTicketCount comes from the same aggregate row so progress needs no extra query", async () => {
     const db = makeListDb([M1, M2], [{ milestoneId: 1, linked: 4, completed: 3 }]);
     const selectSpy = db.select as jest.Mock;
-    const result = await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     expect(result.data.find((r) => r.id === 1)?.completedTicketCount).toBe(3);
     expect(result.data.find((r) => r.id === 2)?.completedTicketCount).toBe(0);
     expect(selectSpy).toHaveBeenCalledTimes(2);
@@ -247,7 +248,7 @@ describe("MilestonesService — linked ticket count uses one aggregate query reg
 
   it("the completed aggregate is filtered by the project status type, not by a hardcoded status name", async () => {
     const db = makeListDb([M1], []);
-    await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     const countSelect = (db.select as jest.Mock).mock.calls[1]?.[0] as Record<string, unknown>;
     expect(sqlValues(countSelect.completed).join("")).toMatch(/FILTER \(WHERE .* = 'completed'\)/);
   });
@@ -255,7 +256,7 @@ describe("MilestonesService — linked ticket count uses one aggregate query reg
   it("owner is populated from joined user columns when ownerMembershipId is set", async () => {
     const milestoneWithOwner = { id: 5, orgId: ORG, name: "M5", targetDate: "2026-05-01", ownerMembershipId: 7, ownerFirstName: "Alice", ownerLastName: "Smith", ownerImage: null };
     const db = makeListDb([milestoneWithOwner], []);
-    const result = await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     const row = result.data[0];
     expect(row?.owner).toEqual({ membershipId: 7, firstName: "Alice", lastName: "Smith", image: null });
   });
@@ -263,7 +264,7 @@ describe("MilestonesService — linked ticket count uses one aggregate query reg
   it("owner is null when ownerMembershipId is null so no phantom owner object leaks to the client", async () => {
     const milestoneNoOwner = { id: 6, orgId: ORG, name: "M6", targetDate: "2026-06-01", ownerMembershipId: null };
     const db = makeListDb([milestoneNoOwner], []);
-    const result = await new MilestonesService(db, mockAccess).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
     expect(result.data[0]?.owner).toBeNull();
   });
 });
@@ -291,14 +292,14 @@ describe("MilestonesService — updateMilestone projects the real counts, so a c
 
   it("returns the milestone's four linked and three completed tickets instead of the zero the previous projection hardcoded", async () => {
     const db = makeUpdateDb([{ milestoneId: 1, linked: 4, completed: 3 }]);
-    const result = await new MilestonesService(db, mockAccess).updateMilestone(ORG, PROJECT_ID, 1, { version: 1, name: "M1" });
+    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_ID, 1, { version: 1, name: "M1" });
     expect(result.linkedTicketCount).toBe(4);
     expect(result.completedTicketCount).toBe(3);
   });
 
   it("returns zero counts for a milestone the aggregate returned no row for", async () => {
     const db = makeUpdateDb([]);
-    const result = await new MilestonesService(db, mockAccess).updateMilestone(ORG, PROJECT_ID, 1, { version: 1, name: "M1" });
+    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_ID, 1, { version: 1, name: "M1" });
     expect(result.linkedTicketCount).toBe(0);
     expect(result.completedTicketCount).toBe(0);
   });

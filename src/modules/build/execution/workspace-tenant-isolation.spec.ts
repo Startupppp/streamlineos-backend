@@ -5,6 +5,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService, IntakeService, ViewsService } from "./workspace.service";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 const EMPTY_MILESTONES_QUERY = listMilestonesQuerySchema.parse({});
 
@@ -97,7 +98,7 @@ describe("MilestonesService — cross-tenant isolation", () => {
         })
         .mockReturnValue(chain),
     } as unknown as Db;
-    const svc = new MilestonesService(db, mockAccess);
+    const svc = new MilestonesService(db, mockAccess, lifecycleAuditDouble());
 
     const result = await svc.listMilestones(makeU(ATTACKER_ORG), 1, EMPTY_MILESTONES_QUERY);
 
@@ -115,7 +116,7 @@ describe("MilestonesService — cross-tenant isolation", () => {
       query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 999 }) } },
       select: jest.fn().mockReturnValue(chain),
     } as unknown as Db;
-    const svc = new MilestonesService(db, mockAccess);
+    const svc = new MilestonesService(db, mockAccess, lifecycleAuditDouble());
 
     const result = await svc.listMilestones(makeU(OWNER_ORG, true), 1, EMPTY_MILESTONES_QUERY);
     expect(result.data).toHaveLength(1);
@@ -129,7 +130,7 @@ describe("MilestonesService — cross-tenant isolation", () => {
       },
       select: jest.fn(),
     } as unknown as Db;
-    const svc = new MilestonesService(db, mockAccess);
+    const svc = new MilestonesService(db, mockAccess, lifecycleAuditDouble());
 
     await expect(svc.listMilestones(makeU(ATTACKER_ORG), 9999, EMPTY_MILESTONES_QUERY)).rejects.toThrow(NotFoundException);
   });
@@ -196,13 +197,13 @@ describe("MilestonesService — project membership gate (BOLA fix)", () => {
 
   it("rejects non-member with ForbiddenException on listMilestones", async () => {
     const db = makeNonMemberDb();
-    const svc = new MilestonesService(db, gateAccess);
+    const svc = new MilestonesService(db, gateAccess, lifecycleAuditDouble());
     await expect(svc.listMilestones(u, 1, EMPTY_MILESTONES_QUERY)).rejects.toThrow(ForbiddenException);
   });
 
   it("allows direct project member on listMilestones", async () => {
     const db = makeMemberDb();
-    const svc = new MilestonesService(db, gateAccess);
+    const svc = new MilestonesService(db, gateAccess, lifecycleAuditDouble());
     await expect(svc.listMilestones(u, 1, EMPTY_MILESTONES_QUERY)).resolves.toBeDefined();
   });
 });

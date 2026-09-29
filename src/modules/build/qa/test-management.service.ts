@@ -1,10 +1,15 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, gt, ilike, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, eq, gt, ilike, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { testCases, testSuites } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import {
+  assertRestorable,
+  clearingLifecycle,
+} from "../lifecycle/lifecycle-restore";
 import { assertProjectAccess, escapeLike } from "../core";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type {
@@ -24,6 +29,7 @@ export class TestManagementService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   async listSuites(u: CurrentUserContext, projectId: number, query: TestSuiteListQuery = {}) {
@@ -147,6 +153,52 @@ export class TestManagementService {
       .update(testSuites)
       .set({ deletedAt: new Date() })
       .where(and(eq(testSuites.id, suiteId), eq(testSuites.orgId, orgId), eq(testSuites.projectId, projectId)));
+    this.audit.log({
+      action: "build.test_suite.deleted",
+      userId: u.userId,
+      orgId,
+      resourceType: "test_suite",
+      resourceId: String(suiteId),
+      metadata: { suiteId, projectId },
+    });
+    return { success: true };
+  }
+
+  async restoreSuite(u: CurrentUserContext, projectId: number, suiteId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const existing = await this.db.query.testSuites.findFirst({
+      where: and(
+        eq(testSuites.id, suiteId),
+        eq(testSuites.orgId, orgId),
+        eq(testSuites.projectId, projectId),
+      ),
+      columns: { deletedAt: true },
+    });
+    assertRestorable(existing, "Test suite");
+    const [restored] = await clearingLifecycle("Test suite", () =>
+      this.db
+        .update(testSuites)
+        .set({ deletedAt: null })
+        .where(
+          and(
+            eq(testSuites.id, suiteId),
+            eq(testSuites.orgId, orgId),
+            eq(testSuites.projectId, projectId),
+            isNotNull(testSuites.deletedAt),
+          ),
+        )
+        .returning({ id: testSuites.id }),
+    );
+    if (!restored) throw new NotFoundException("Test suite not found");
+    this.audit.log({
+      action: "build.test_suite.restored",
+      userId: u.userId,
+      orgId,
+      resourceType: "test_suite",
+      resourceId: String(suiteId),
+      metadata: { suiteId, projectId },
+    });
     return { success: true };
   }
 
@@ -271,6 +323,52 @@ export class TestManagementService {
       .update(testCases)
       .set({ deletedAt: new Date() })
       .where(and(eq(testCases.id, caseId), eq(testCases.orgId, orgId), eq(testCases.projectId, projectId)));
+    this.audit.log({
+      action: "build.test_case.deleted",
+      userId: u.userId,
+      orgId,
+      resourceType: "test_case",
+      resourceId: String(caseId),
+      metadata: { caseId, projectId },
+    });
+    return { success: true };
+  }
+
+  async restoreCase(u: CurrentUserContext, projectId: number, caseId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const existing = await this.db.query.testCases.findFirst({
+      where: and(
+        eq(testCases.id, caseId),
+        eq(testCases.orgId, orgId),
+        eq(testCases.projectId, projectId),
+      ),
+      columns: { deletedAt: true },
+    });
+    assertRestorable(existing, "Test case");
+    const [restored] = await clearingLifecycle("Test case", () =>
+      this.db
+        .update(testCases)
+        .set({ deletedAt: null })
+        .where(
+          and(
+            eq(testCases.id, caseId),
+            eq(testCases.orgId, orgId),
+            eq(testCases.projectId, projectId),
+            isNotNull(testCases.deletedAt),
+          ),
+        )
+        .returning({ id: testCases.id }),
+    );
+    if (!restored) throw new NotFoundException("Test case not found");
+    this.audit.log({
+      action: "build.test_case.restored",
+      userId: u.userId,
+      orgId,
+      resourceType: "test_case",
+      resourceId: String(caseId),
+      metadata: { caseId, projectId },
+    });
     return { success: true };
   }
 }

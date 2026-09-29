@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestManagementService } from "./test-management.service";
 import { createTestCaseSchema } from "./dto/qa.schemas";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 const MEMBERSHIP_ID = 7;
 
@@ -65,7 +66,7 @@ describe("TestManagementService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for listSuites when project not in org (cross-tenant isolation)", async () => {
     const db = makeDb(null, []);
-    const svc = new TestManagementService(db, makeAccessEmpty());
+    const svc = new TestManagementService(db, makeAccessEmpty(), lifecycleAuditDouble());
     await expect(svc.listSuites(makeU(ATTACKER_ORG), 99, {})).rejects.toThrow(NotFoundException);
   });
 
@@ -73,7 +74,7 @@ describe("TestManagementService — cross-tenant isolation", () => {
     const project = { id: 1, orgId: OWNER_ORG, managerMembershipId: null };
     const suite = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "Suite A" };
     const db = makeDb(project, [suite]);
-    const svc = new TestManagementService(db, makeAccessGranted());
+    const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
     const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
     expect(result).toHaveLength(1);
   });
@@ -136,14 +137,14 @@ describe("TestManagementService — project membership gate (assertProjectAccess
   it("rejects a non-member with ForbiddenException", async () => {
     const db = makeNonMemberDb();
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
-    const svc = new TestManagementService(db, access);
+    const svc = new TestManagementService(db, access, lifecycleAuditDouble());
     await expect(svc.listSuites(makeU("org-1"), 1, {})).rejects.toThrow(ForbiddenException);
   });
 
   it("allows a direct project member through the gate", async () => {
     const db = makeMemberDb();
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
-    const svc = new TestManagementService(db, access);
+    const svc = new TestManagementService(db, access, lifecycleAuditDouble());
     await expect(svc.listSuites(makeU("org-1"), 1, {})).resolves.toEqual([]);
   });
 });
@@ -182,7 +183,7 @@ describe("TestManagementService — listSuites grouped case counts", () => {
       }),
     } as unknown as Db;
 
-    const svc = new TestManagementService(db, makeAccessGranted());
+    const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
     const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
 
     expect(result).toHaveLength(1);
@@ -221,7 +222,7 @@ describe("TestManagementService — listSuites grouped case counts", () => {
       }),
     } as unknown as Db;
 
-    const svc = new TestManagementService(db, makeAccessGranted());
+    const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
     const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
 
     expect(result).toHaveLength(1);
@@ -247,7 +248,7 @@ describe("TestManagementService — listSuites grouped case counts", () => {
       select: jest.fn().mockReturnValue(suiteChain),
     } as unknown as Db;
 
-    const svc = new TestManagementService(db, makeAccessGranted());
+    const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
     const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
 
     expect(result).toHaveLength(0);
@@ -289,7 +290,7 @@ describe("TestManagementService — listSuites cursor pagination", () => {
       }),
     } as unknown as Db;
 
-    const svc = new TestManagementService(db, makeAccessGranted());
+    const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
     const result = await svc.listSuites(makeU(OWNER_ORG), 1, { cursor: 5 });
 
     expect(result).toHaveLength(1);
@@ -345,7 +346,7 @@ describe("TestManagementService — createSuite parent FK validation", () => {
       },
     } as unknown as Db;
 
-    const svc = new TestManagementService(db, makeAccessGranted());
+    const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
     await expect(
       svc.createSuite(makeU(OWNER_ORG), 1, { name: "Child Suite", parentId: 99 }),
     ).rejects.toThrow(NotFoundException);

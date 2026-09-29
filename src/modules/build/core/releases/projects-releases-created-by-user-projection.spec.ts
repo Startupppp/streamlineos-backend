@@ -10,6 +10,7 @@ import {
   projectReleaseListItemSchema,
   projectReleaseRowSchema,
 } from "../dto/build-core-response.schemas";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 jest.mock("../project-crud/project-access", () => ({
   assertProjectAccess: jest.fn(async () => undefined),
@@ -81,7 +82,7 @@ function makeAccess(): AccessService {
 
 function makeService() {
   const capture: Capture = { projection: undefined, joins: [] };
-  return { capture, svc: new ProjectsReleasesService(makeDb(capture), makeAccess()) };
+  return { capture, svc: new ProjectsReleasesService(makeDb(capture), makeAccess(), lifecycleAuditDouble()) };
 }
 
 function createdByUserProjection(capture: Capture): Record<string, unknown> {

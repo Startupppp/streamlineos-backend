@@ -21,7 +21,7 @@ import { RequireModule } from "../../../../common/rbac/require-module.decorator"
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../../common/openapi/response-envelopes";
 import {
   projectReleaseListPageSchema,
@@ -99,6 +99,19 @@ export class ProjectsReleasesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.releases.deleteRelease(u, projectId, releaseId);
+  }
+
+  @Post(":projectId/releases/:releaseId/restore")
+  @RequirePermission("build:releases:restore")
+  @BodylessAction()
+  @ResponseSchema(successSchema)
+  @Validate({ params: projectIdreleaseIdParams })
+  restoreRelease(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("releaseId", ParseIntPipe) releaseId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.releases.restoreRelease(u, projectId, releaseId);
   }
 
   @Post(":projectId/releases/:releaseId/tickets")

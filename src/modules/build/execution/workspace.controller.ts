@@ -51,7 +51,8 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 import {
   milestonePageSchema,
   milestoneRowSchema,
@@ -126,7 +127,20 @@ export class MilestonesController {
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.deleteMilestone(u.orgId, projectId, milestoneId);
+    return this.milestones.deleteMilestone(u.orgId, u.userId, projectId, milestoneId);
+  }
+
+  @Post(":milestoneId/restore")
+  @RequirePermission("build:workspace:restore")
+  @BodylessAction()
+  @ResponseSchema(successSchema)
+  @Validate({ params: projectAndMilestoneIdParams })
+  restoreMilestone(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("milestoneId", ParseIntPipe) milestoneId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.milestones.restoreMilestone(u.orgId, u.userId, projectId, milestoneId);
   }
 }
 
@@ -364,5 +378,18 @@ export class WhiteboardsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.whiteboards.deleteWhiteboard(u, projectId, whiteboardId);
+  }
+
+  @Post(":whiteboardId/restore")
+  @RequirePermission("build:whiteboards:restore")
+  @BodylessAction()
+  @ResponseSchema(successSchema)
+  @Validate({ params: projectAndWhiteboardIdParams })
+  restoreWhiteboard(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.whiteboards.restoreWhiteboard(u, projectId, whiteboardId);
   }
 }

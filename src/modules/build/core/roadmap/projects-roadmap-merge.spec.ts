@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ProjectsFeedbackService } from "../feedback/projects-feedback.service";
 import type { Db } from "../../../../db/drizzle.module";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 const ORG_ID = "org-1";
 
@@ -41,7 +42,7 @@ describe("ProjectsFeedbackService — mergeFeedback", () => {
     const db = {
       transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(makeTx())),
     } as unknown as Db;
-    svc = new ProjectsFeedbackService(db);
+    svc = new ProjectsFeedbackService(db, lifecycleAuditDouble());
   });
 
   it("rejects merging a post into itself", async () => {

@@ -13,6 +13,11 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import {
+  assertRestorable,
+  clearingLifecycle,
+} from "../lifecycle/lifecycle-restore";
 import { resolveWhiteboardAccess, type WhiteboardAccessLevel } from "./whiteboard-access";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
@@ -29,6 +34,7 @@ export class WhiteboardsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   async hasManagePermission(user: CurrentUserContext): Promise<boolean> {
@@ -316,6 +322,59 @@ export class WhiteboardsService {
           isNull(projectWhiteboards.deletedAt),
         ),
       );
+    this.audit.log({
+      action: "build.whiteboard.deleted",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "project_whiteboard",
+      resourceId: String(whiteboardId),
+      metadata: { whiteboardId, projectId },
+    });
+    return { success: true };
+  }
+
+  async restoreWhiteboard(u: CurrentUserContext, projectId: number, whiteboardId: number) {
+    await assertProject(this.db, u.orgId, projectId);
+    const existing = await this.db.query.projectWhiteboards.findFirst({
+      where: and(
+        eq(projectWhiteboards.id, whiteboardId),
+        eq(projectWhiteboards.projectId, projectId),
+        eq(projectWhiteboards.orgId, u.orgId),
+      ),
+      columns: { deletedAt: true, createdBy: true, visibility: true },
+    });
+    assertRestorable(existing, "Whiteboard");
+    const access = resolveWhiteboardAccess({
+      board: { createdBy: existing?.createdBy ?? null, visibility: existing?.visibility ?? "private" },
+      shareRole: null,
+      user: { userId: u.userId, isOrgOwner: u.isOrgOwner },
+      hasManagePermission: await this.hasManagePermission(u),
+    });
+    if (access !== "manage")
+      throw new ForbiddenException("Only board managers can restore whiteboards");
+    const [restored] = await clearingLifecycle("Whiteboard", () =>
+      this.db
+        .update(projectWhiteboards)
+        .set({ deletedAt: null })
+        .where(
+          and(
+            eq(projectWhiteboards.id, whiteboardId),
+            eq(projectWhiteboards.projectId, projectId),
+            eq(projectWhiteboards.orgId, u.orgId),
+            isNotNull(projectWhiteboards.deletedAt),
+          ),
+        )
+        .returning({ id: projectWhiteboards.id }),
+    );
+    if (!restored) throw new NotFoundException("Whiteboard not found");
+    this.audit.log({
+      action: "build.whiteboard.restored",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "project_whiteboard",
+      resourceId: String(whiteboardId),
+      metadata: { whiteboardId, projectId },
+    });
     return { success: true };
   }
 }

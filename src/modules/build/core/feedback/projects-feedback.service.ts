@@ -1,8 +1,13 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { feedbackPosts, feedbackVotes } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
+import { AuditService } from "../../../../common/audit/audit.service";
+import {
+  assertRestorable,
+  clearingLifecycle,
+} from "../../lifecycle/lifecycle-restore";
 import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
 import { assertLinkedRoadmapItemInOrg } from "../roadmap/roadmap-references";
 import { loadCrmAccountSnapshot } from "../roadmap/roadmap-accounts";
@@ -16,7 +21,10 @@ import type {
 
 @Injectable()
 export class ProjectsFeedbackService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
 
   async listFeedback(orgId: string, query: FeedbackListQuery) {
     const { cursor, limit: rawLimit } = query;
@@ -188,13 +196,52 @@ export class ProjectsFeedbackService {
     });
   }
 
-  async deleteFeedback(orgId: string, postId: number) {
+  async deleteFeedback(orgId: string, userId: string, postId: number) {
     const [deleted] = await this.db
       .update(feedbackPosts)
       .set({ deletedAt: new Date() })
       .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)))
       .returning({ id: feedbackPosts.id });
     if (!deleted) throw new NotFoundException("Feedback post not found");
+    this.audit.log({
+      action: "build.feedback_post.deleted",
+      userId,
+      orgId,
+      resourceType: "feedback_post",
+      resourceId: String(postId),
+      metadata: { postId },
+    });
+    return { success: true };
+  }
+
+  async restoreFeedback(orgId: string, userId: string, postId: number) {
+    const existing = await this.db.query.feedbackPosts.findFirst({
+      where: and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)),
+      columns: { deletedAt: true },
+    });
+    assertRestorable(existing, "Feedback post");
+    const [restored] = await clearingLifecycle("Feedback post", () =>
+      this.db
+        .update(feedbackPosts)
+        .set({ deletedAt: null })
+        .where(
+          and(
+            eq(feedbackPosts.id, postId),
+            eq(feedbackPosts.orgId, orgId),
+            isNotNull(feedbackPosts.deletedAt),
+          ),
+        )
+        .returning({ id: feedbackPosts.id }),
+    );
+    if (!restored) throw new NotFoundException("Feedback post not found");
+    this.audit.log({
+      action: "build.feedback_post.restored",
+      userId,
+      orgId,
+      resourceType: "feedback_post",
+      resourceId: String(postId),
+      metadata: { postId },
+    });
     return { success: true };
   }
 }

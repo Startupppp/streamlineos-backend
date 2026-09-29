@@ -114,6 +114,8 @@ export const BUILD_ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "build:restore",
       "build:roadmap:view",
       "build:roadmap:manage",
+      "build:roadmap:restore",
+      "build:releases:restore",
       "build:tickets:delete",
       "build:tickets:restore",
       "build:members:view",

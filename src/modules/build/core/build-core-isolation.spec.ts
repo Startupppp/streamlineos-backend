@@ -15,6 +15,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 function makeNotFoundDb(): Db {
   return {
@@ -104,14 +105,14 @@ function makeNoPermAccess(): AccessService {
 describe("ProjectsReleasesService — cross-tenant isolation (BOLA)", () => {
   it("throws NotFoundException when release belongs to a different org", async () => {
     const db = makeNotFoundDb();
-    const svc = new ProjectsReleasesService(db, makeNoPermAccess());
+    const svc = new ProjectsReleasesService(db, makeNoPermAccess(), lifecycleAuditDouble());
 
     await expect(svc.updateRelease(makeAttackerU(), 99, 999, { name: "v2", rowVersion: 1 })).rejects.toThrow(NotFoundException);
   });
 
   it("throws NotFoundException when adding ticket to a cross-org release", async () => {
     const db = makeNotFoundDb();
-    const svc = new ProjectsReleasesService(db, makeNoPermAccess());
+    const svc = new ProjectsReleasesService(db, makeNoPermAccess(), lifecycleAuditDouble());
 
     await expect(svc.addTicketToRelease(makeAttackerU(), 99, 999, 1)).rejects.toThrow(NotFoundException);
   });

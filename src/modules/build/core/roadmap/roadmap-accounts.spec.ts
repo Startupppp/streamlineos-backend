@@ -13,6 +13,7 @@ import {
   type RoadmapAccountTierSummary,
 } from "./roadmap-accounts";
 import { computeRoadmapPrioritization } from "./roadmap-prioritization";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 const dialect = new PgDialect();
 const queryBuilder = new QueryBuilder();
@@ -72,7 +73,7 @@ function makeRoadmapService(rows: unknown[], tierRows: unknown[]) {
     insert: jest.fn(),
     update: jest.fn(),
   } as unknown as Db;
-  return { service: new ProjectsRoadmapService(db), select };
+  return { service: new ProjectsRoadmapService(db, lifecycleAuditDouble()), select };
 }
 
 function listRow(id: number, scored: boolean) {

@@ -5,6 +5,7 @@ import {
   createFeedbackSchema,
   updateFeedbackSchema,
 } from "../dto/roadmap.schemas";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 const ORG = "org-feedback";
 const OTHER_ORG = "org-intruder";
@@ -50,7 +51,7 @@ function makeService(parts: {
     update: parts.update ?? jest.fn(),
     query: { feedbackPosts: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) } },
   } as unknown as Db;
-  return { service: new ProjectsFeedbackService(db), select };
+  return { service: new ProjectsFeedbackService(db, lifecycleAuditDouble()), select };
 }
 
 function insertCapture(returned: FeedbackRowShape) {

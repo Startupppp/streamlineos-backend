@@ -50,7 +50,7 @@ import {
   NoContentResponse,
   ResponseSchema,
 } from "../../../../common/openapi/zod-operation-contracts";
-import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
 import {
   roadmapScoredItemSchema,
   roadmapScoredPageSchema,
@@ -129,7 +129,19 @@ export class ProjectsRoadmapController {
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.deleteRoadmap(u.orgId, itemId);
+    return this.roadmap.deleteRoadmap(u.orgId, u.userId, itemId);
+  }
+
+  @Post("roadmap/:itemId/restore")
+  @RequirePermission("build:roadmap:restore")
+  @BodylessAction()
+  @ResponseSchema(successSchema)
+  @Validate({ params: itemIdParams })
+  restoreRoadmap(
+    @Param("itemId", ParseIntPipe) itemId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roadmap.restoreRoadmap(u.orgId, u.userId, itemId);
   }
 
   @Get("roadmap-publication")
@@ -221,7 +233,19 @@ export class ProjectsRoadmapController {
     @Param("postId", ParseIntPipe) postId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.feedback.deleteFeedback(u.orgId, postId);
+    return this.feedback.deleteFeedback(u.orgId, u.userId, postId);
+  }
+
+  @Post("feedback/:postId/restore")
+  @RequirePermission("build:roadmap:restore")
+  @BodylessAction()
+  @ResponseSchema(successSchema)
+  @Validate({ params: postIdParams })
+  restoreFeedback(
+    @Param("postId", ParseIntPipe) postId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.feedback.restoreFeedback(u.orgId, u.userId, postId);
   }
 
   @Get("changelog")

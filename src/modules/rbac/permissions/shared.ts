@@ -150,16 +150,40 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "Manage roadmap items, feedback, and changelog entries",
   },
   {
+    name: "build:roadmap:restore",
+    resource: "build:roadmap",
+    action: "restore",
+    description: "Restore soft-deleted roadmap items and feedback posts",
+  },
+  {
+    name: "build:releases:restore",
+    resource: "build:releases",
+    action: "restore",
+    description: "Restore soft-deleted project releases",
+  },
+  {
     name: "build:whiteboards:manage",
     resource: "build:whiteboards",
     action: "manage",
     description: "Create, edit, share and delete project whiteboards",
   },
   {
+    name: "build:whiteboards:restore",
+    resource: "build:whiteboards",
+    action: "restore",
+    description: "Restore soft-deleted project whiteboards",
+  },
+  {
     name: "build:workspace:manage",
     resource: "build:workspace",
     action: "manage",
     description: "Manage project milestones, views, pages and intake requests",
+  },
+  {
+    name: "build:workspace:restore",
+    resource: "build:workspace",
+    action: "restore",
+    description: "Restore soft-deleted project milestones",
   },
   {
     name: "reports:view",

@@ -14,6 +14,7 @@ import {
   tickets,
 } from "../../../../db/schema";
 import { ProjectsReleasesService } from "./projects-releases.service";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
 const ORG = "org-1";
 const OTHER_ORG = "org-2";
@@ -243,7 +244,7 @@ function makeAccess(): AccessService {
 
 function makeService(store: Store) {
   const fixture = makeDb(store);
-  return { ...fixture, svc: new ProjectsReleasesService(fixture.db, makeAccess()) };
+  return { ...fixture, svc: new ProjectsReleasesService(fixture.db, makeAccess(), lifecycleAuditDouble()) };
 }
 
 describe("ProjectsReleasesService — nested release and ticket lookups bind to the URL project", () => {

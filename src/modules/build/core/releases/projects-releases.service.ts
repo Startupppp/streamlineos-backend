@@ -1,7 +1,7 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { TicketVersionConflictException } from "../tickets";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
@@ -16,6 +16,11 @@ import { assertProjectAccess } from "../project-crud/project-access";
 import { escapeLike } from "../lib/escape-like";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
+import { AuditService } from "../../../../common/audit/audit.service";
+import {
+  assertRestorable,
+  clearingLifecycle,
+} from "../../lifecycle/lifecycle-restore";
 import { buildCursorPage, decodeIntegerCursor } from "../../../../common/pagination/cursor";
 
 type ReleaseRow = typeof projectReleases.$inferSelect;
@@ -29,6 +34,7 @@ export class ProjectsReleasesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   async listOrgReleases(u: CurrentUserContext, query: OrgListReleasesQuery) {
@@ -203,6 +209,52 @@ export class ProjectsReleasesService {
       .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
       .returning({ id: projectReleases.id });
     if (!stamped) throw new NotFoundException("Release not found");
+    this.audit.log({
+      action: "build.release.deleted",
+      userId: u.userId,
+      orgId,
+      resourceType: "project_release",
+      resourceId: String(releaseId),
+      metadata: { releaseId, projectId },
+    });
+    return { success: true };
+  }
+
+  async restoreRelease(u: CurrentUserContext, projectId: number, releaseId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const existing = await this.db.query.projectReleases.findFirst({
+      where: and(
+        eq(projectReleases.id, releaseId),
+        eq(projectReleases.projectId, projectId),
+        eq(projectReleases.orgId, orgId),
+      ),
+      columns: { deletedAt: true },
+    });
+    assertRestorable(existing, "Release");
+    const [restored] = await clearingLifecycle("Release", () =>
+      this.db
+        .update(projectReleases)
+        .set({ deletedAt: null })
+        .where(
+          and(
+            eq(projectReleases.id, releaseId),
+            eq(projectReleases.projectId, projectId),
+            eq(projectReleases.orgId, orgId),
+            isNotNull(projectReleases.deletedAt),
+          ),
+        )
+        .returning({ id: projectReleases.id }),
+    );
+    if (!restored) throw new NotFoundException("Release not found");
+    this.audit.log({
+      action: "build.release.restored",
+      userId: u.userId,
+      orgId,
+      resourceType: "project_release",
+      resourceId: String(releaseId),
+      metadata: { releaseId, projectId },
+    });
     return { success: true };
   }
 
