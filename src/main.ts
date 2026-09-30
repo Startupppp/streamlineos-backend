@@ -9,7 +9,7 @@ import helmet from "helmet";
 import compression from "compression";
 import { httpCompressionOptions } from "./common/http/compression.config";
 import { corsOptions } from "./common/http/cors.config";
-import { trustProxySetting } from "./common/http/trust-proxy";
+import { trustProxySetting, trustProxyWarning } from "./common/http/trust-proxy";
 import { SwaggerModule } from "@nestjs/swagger";
 import { buildOpenApiDocument } from "./common/openapi/build-openapi-document";
 import { configureApiVersioning } from "./common/openapi/configure-api-versioning";
@@ -94,6 +94,8 @@ async function bootstrap(): Promise<void> {
   // CLIENT writes. Express counts trusted hops from the RIGHT, so with this set the header
   // can no longer move `req.ip`, and with no hops declared it is ignored entirely.
   app.set("trust proxy", trustProxySetting());
+  const proxyWarning = trustProxyWarning();
+  if (proxyWarning) logger.error(proxyWarning);
 
   // FIRST, before anything that can answer on its own. Express runs `app.use` in order, so the
   // shutdown gate's 503 (and any other early refusal) left without Access-Control-Allow-Origin

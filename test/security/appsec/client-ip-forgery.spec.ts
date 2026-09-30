@@ -35,7 +35,7 @@ import type { ExecutionContext } from "@nestjs/common";
 import type { Reflector } from "@nestjs/core";
 import { RateLimitGuard } from "../../../src/common/ratelimit/rate-limit.guard";
 import { RateLimitService, effectiveRateLimit } from "../../../src/common/ratelimit/rate-limit.service";
-import { trustProxyHops, trustProxySetting } from "../../../src/common/http/trust-proxy";
+import { trustProxyHops, trustProxySetting, trustProxyWarning } from "../../../src/common/http/trust-proxy";
 import { resolveClientIp } from "../../../src/common/http/client-ip";
 
 const BACKEND_ROOT = resolve(__dirname, "../../..");
@@ -154,6 +154,12 @@ describe("client ip cannot be forged by the caller", () => {
         .set("X-Forwarded-For", "1.1.1.1, 2.2.2.2, 203.0.113.5");
       expect(honest.body.ip).toBe("203.0.113.5");
       expect(forged.body.ip).toBe("203.0.113.5");
+    });
+
+    it("says so at boot when production declares no hops (SEC-HRMS-002)", () => {
+      expect(trustProxyWarning({ NODE_ENV: "production" } as unknown as NodeJS.ProcessEnv)).toMatch(/TRUST_PROXY_HOPS/);
+      expect(trustProxyWarning({ NODE_ENV: "production", TRUST_PROXY_HOPS: "2" } as unknown as NodeJS.ProcessEnv)).toBeNull();
+      expect(trustProxyWarning({ NODE_ENV: "development" } as unknown as NodeJS.ProcessEnv)).toBeNull();
     });
 
     it("reads the hop count from the environment and refuses a value it cannot trust", () => {

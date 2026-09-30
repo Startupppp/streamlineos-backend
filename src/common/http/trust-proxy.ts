@@ -36,3 +36,16 @@ export function trustProxySetting(env: NodeJS.ProcessEnv = process.env): number 
   const hops = trustProxyHops(env);
   return hops === 0 ? false : hops;
 }
+
+/**
+ * Production with no declared hops. Safe for spoofing, and still wrong: behind Cloudflare and
+ * Railway's edge the socket peer is the platform proxy, so `req.ip` is `::ffff:100.64.0.x` for
+ * every caller. Audit rows then record the proxy (SEC-HRMS-002), and every unauthenticated rate
+ * limit — sign-in, magic link, invitation validate/OTP/accept — becomes ONE bucket shared by
+ * every visitor, which a single client can exhaust for everyone. Loud at boot, because nothing
+ * else ever says so.
+ */
+export function trustProxyWarning(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (env.NODE_ENV !== "production" || trustProxyHops(env) > 0) return null;
+  return "TRUST_PROXY_HOPS is unset in production: req.ip is the platform proxy for every caller, so audit logs record the proxy address and unauthenticated rate limits share one bucket. Set it to the number of proxies in front of this process (Cloudflare + Railway edge = 2).";
+}
