@@ -95,6 +95,10 @@ async function bootstrap(): Promise<void> {
   // can no longer move `req.ip`, and with no hops declared it is ignored entirely.
   app.set("trust proxy", trustProxySetting());
 
+  // FIRST, before anything that can answer on its own. Express runs `app.use` in order, so the
+  // shutdown gate's 503 (and any other early refusal) left without Access-Control-Allow-Origin
+  // and the browser reported a CORS/network failure instead of a retryable 503 (CHAT-011).
+  app.enableCors(corsOptions({ origins: config.corsOrigins, isDevelopment }));
   app.use(helmet());
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader(
@@ -112,8 +116,6 @@ async function bootstrap(): Promise<void> {
   // `beforeApplicationShutdown` can wait for it.
   app.use(shutdownGate);
   app.use(correlationIdMiddleware);
-
-  app.enableCors(corsOptions({ origins: config.corsOrigins, isDevelopment }));
 
   const admission = resolveAdmissionConfig(process.env);
 
