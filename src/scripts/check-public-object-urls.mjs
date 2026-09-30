@@ -67,6 +67,10 @@ export const MINT_ALLOWLIST = new Map([
     "declares the env vars; a Zod schema entry cannot build a URL",
   ],
   [
+    "src/config/env-schema-providers.ts",
+    "the provider half of the env schema after env.validation.ts was split across env-schema-*.ts; same reasoning as that entry — NEXT_PUBLIC_R2_PUBLIC_URL and R2_KB_PUBLIC_URL appear as Zod field declarations, and a schema entry cannot build a URL",
+  ],
+  [
     "src/common/region/region.config.ts",
     "reads the per-region public bases into the region binding; no key is ever concatenated onto them here",
   ],
@@ -89,6 +93,10 @@ export const MINT_ALLOWLIST = new Map([
   [
     "src/scripts/legal-hold-drill-observations.ts",
     "INERT_STORAGE_CONFIG pins every storage field to an unreachable placeholder (endpoint and public base are both http://127.0.0.1:1, a closed port) so the legal-hold drill cannot reach an object store at all; the field is a constant, never concatenated with a key",
+  ],
+  [
+    "src/modules/hr/recruitment/boards/job-board-adapters.ts",
+    "readPosting READS record.publicUrl out of a job board vendor's JSON response — the vendor's own posting page, chosen among record.url/publicUrl/jobUrl. It is a token collision with the storage public base: no R2 base is in scope in this file and no object key is concatenated onto anything",
   ],
   [
     "src/modules/kb/wiki/kb-public-pages.controller.ts",
