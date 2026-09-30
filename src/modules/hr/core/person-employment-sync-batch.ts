@@ -123,6 +123,7 @@ export async function ensureManyFromUsers(
           designation: pending.input.designation ?? null,
           joiningDate: pending.input.joiningDate ?? null,
           departmentId: pending.input.departmentId ?? null,
+          locationId: pending.input.locationId ?? null,
           isPrimary: true,
         })),
       )

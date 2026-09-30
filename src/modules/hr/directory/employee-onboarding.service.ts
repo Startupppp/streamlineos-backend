@@ -14,6 +14,7 @@ import {
   hrEmployments,
   hrPeople,
   magicLinkTokens,
+  orgUnits,
   organizationMembers,
   organizations,
   users,
@@ -119,6 +120,8 @@ export class EmployeeOnboardingService {
         email: body.email,
       }) ?? body.email;
 
+    if (body.locationId !== undefined) await this.assertOrgLocation(actor.orgId, body.locationId);
+
     const salaryCurrency =
       body.monthlySalary === undefined
         ? null
@@ -209,6 +212,8 @@ export class EmployeeOnboardingService {
               joiningDate,
               designation: body.designation ?? null,
               phone: body.phone ?? null,
+              locationId: body.locationId ?? null,
+              workerType: body.workerType,
               lifecycleStatus: "ONBOARDING",
             },
             tx,
@@ -580,6 +585,22 @@ export class EmployeeOnboardingService {
     if (!outcome) throw new InternalServerErrorException(`Admission did not complete for ${email}.`);
     if (outcome.kind !== "admitted") throw admissionFailure(outcome);
     return { userId: outcome.userId, createdUser: outcome.createdUser, attached: false };
+  }
+
+  /**
+   * BUG-HRMS-006. The composite FK on (org_id, location_id) accepts ANY org unit
+   * of the org, so a department id would file the hire under a department in the
+   * location slot without complaint. The kind is checked here instead.
+   */
+  private async assertOrgLocation(orgId: string, locationId: string): Promise<void> {
+    const [unit] = await this.db
+      .select({ kind: orgUnits.kind })
+      .from(orgUnits)
+      .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.id, locationId)))
+      .limit(1);
+    if (!unit) throw new BadRequestException("That work location does not exist in your organization.");
+    if (unit.kind !== "LOCATION")
+      throw new BadRequestException("That organization unit is not a work location.");
   }
 
   private async invalidateHrDashboardCache(orgId: string): Promise<void> {

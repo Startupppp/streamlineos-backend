@@ -18,6 +18,7 @@ import {
   type BulkOnboardEmployeeRow,
 } from "../dto/hr-directory.schemas";
 import type { DepartmentCatalog } from "./bulk-onboarding-departments";
+import { resolveLocation, type LocationCatalog } from "./bulk-onboarding-locations";
 import type { BulkOnboardPlan } from "./bulk-onboarding.types";
 import { findManagerCycles, type ManagerEdge } from "./bulk-onboarding-graph";
 
@@ -87,6 +88,7 @@ export function planBulkOnboarding(
   employeeNumberOwner: ReadonlyMap<string, string | null>,
   roleErrors: Map<string, string>,
   globallyInactiveUserIds: ReadonlySet<string>,
+  locations: LocationCatalog = { byKey: new Map(), activeIds: new Set() },
 ): BulkOnboardPlan {
   const plan: BulkOnboardPlan = { accepted: [], rejected: [] };
   const claimedNumbers = new Map(
@@ -112,6 +114,14 @@ export function planBulkOnboarding(
     const department = resolveDepartment(source, catalog);
     if ("error" in department) {
       plan.rejected.push({ row, email, success: false, error: department.error });
+      continue;
+    }
+
+    // BUG-HRMS-006. A named location that does not exist is one row's reason,
+    // never the whole file's, and never an implicitly created office.
+    const location = resolveLocation(source, locations);
+    if ("error" in location) {
+      plan.rejected.push({ row, email, success: false, error: location.error });
       continue;
     }
 
@@ -184,6 +194,7 @@ export function planBulkOnboarding(
       clearance: screen,
       role,
       departmentId: department.departmentId,
+      locationId: location.locationId,
       employeeNumber,
       firstName: source.firstName.trim(),
       lastName: source.lastName.trim(),

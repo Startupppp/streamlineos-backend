@@ -353,6 +353,7 @@ export class PersonEmploymentSyncService {
         workerType: input.workerType ?? "FULL_TIME",
         designation: input.designation ?? null,
         joiningDate: input.joiningDate ?? null,
+        locationId: input.locationId ?? null,
         isPrimary: true,
       })
       .returning({ id: hrEmployments.id });

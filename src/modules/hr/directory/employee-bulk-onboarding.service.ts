@@ -33,6 +33,10 @@ import {
   previewDepartments,
 } from "./bulk-onboarding/bulk-onboarding-departments";
 import {
+  loadLocationCatalog,
+  type LocationCatalog,
+} from "./bulk-onboarding/bulk-onboarding-locations";
+import {
   distinctRoles,
   planBulkOnboarding,
   preloadEmployeeNumbers,
@@ -49,6 +53,8 @@ import { orgBusinessDate } from "../time/attendance-business-date";
 import { normaliseManagerColumns } from "./reporting-manager-columns";
 import { invalidateReportingReads } from "../../directory/reporting-line-cache";
 import type { BulkOnboardCommitResult, BulkOnboardPreview } from "./dto/reporting-lines-bulk.schemas";
+
+const EMPTY_LOCATION_CATALOG: LocationCatalog = { byKey: new Map(), activeIds: new Set() };
 
 @Injectable()
 export class EmployeeBulkOnboardingService {
@@ -242,7 +248,13 @@ export class EmployeeBulkOnboardingService {
       for (const row of inactive) globallyInactiveUserIds.add(row.id);
     }
 
-    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors, globallyInactiveUserIds);
+    // BUG-HRMS-006. Only drained when the file actually names a location, so a
+    // file that names none costs exactly what it did before.
+    const locations = rows.some((row) => row.locationId != null || row.location != null)
+      ? await loadLocationCatalog(this.db, actor.orgId)
+      : EMPTY_LOCATION_CATALOG;
+
+    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors, globallyInactiveUserIds, locations);
     await assignBulkManagers(this.db, this.fallback, this.reportingLines, actor, rows, normalised, plan);
     return { plan: rejectCyclesAndOrphans(plan), catalog, departmentsToCreate, legacyHeaderRows };
   }

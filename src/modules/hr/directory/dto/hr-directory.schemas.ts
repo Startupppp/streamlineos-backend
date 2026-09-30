@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { genderEnum } from "../../../../db/schema";
+import { genderEnum, hrWorkerTypeEnum } from "../../../../db/schema";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { canonicalEmailSchema } from "../../../users/dto/users.schemas";
 import { normalizePersonNamePart } from "../../../../common/organization/person-display-name";
@@ -333,6 +333,18 @@ export const onboardEmployeeFieldsSchema = z.object({
     .min(1, "Designation is required")
     .max(200, "Designation must be at most 200 characters"),
   departmentId: z.string().optional(),
+  /**
+   * BUG-HRMS-006 / BUG-HRMS-007. `hr_employments` has carried `location_id` and
+   * `worker_type` all along; onboarding simply never offered them, so every hire
+   * landed at no location and as FULL_TIME whatever they actually were, and a
+   * contractor or an intern could only be recorded in the designation text.
+   *
+   * `locationId` must name an org unit of kind LOCATION in the caller's org —
+   * checked in the service, because a department id would otherwise satisfy the
+   * composite FK and file the person under the wrong kind of unit.
+   */
+  locationId: z.string().trim().min(1).max(128).optional(),
+  workerType: z.enum(hrWorkerTypeEnum.enumValues).optional(),
   role: z.string().optional(),
   employeeId: z.string().optional(),
   attachToExistingMember: z.boolean().optional(),
@@ -397,6 +409,8 @@ export const bulkOnboardEmployeeRowSchema = onboardEmployeeFieldsSchema
   .omit({ attachToExistingMember: true, secondaryManagers: true })
   .extend({
     department: z.string().trim().min(1).optional(),
+    /** BUG-HRMS-006: a CSV names an office, it does not carry its uuid. */
+    location: z.string().trim().min(1).max(200).optional(),
     /** Read-only legacy alias of `primaryManagerEmail` for one release (PRD §7.3). */
     reportingManagerEmail: canonicalEmailSchema.optional(),
     primaryManagerEmail: canonicalEmailSchema.optional(),

@@ -13,6 +13,13 @@ export type EnsurePersonEmploymentInput = {
     | "ACTIVE"
     | "PROBATION"
     | "CONFIRMED";
+  /**
+   * BUG-HRMS-006: the org can hold locations, and the onboarding wizard had no
+   * field for one, so every hire landed with `location_id` null however many
+   * locations the org had configured. The column and its composite FK to
+   * `org_units` already existed.
+   */
+  locationId?: string | null;
   workerType?:
     | "FULL_TIME"
     | "PART_TIME"

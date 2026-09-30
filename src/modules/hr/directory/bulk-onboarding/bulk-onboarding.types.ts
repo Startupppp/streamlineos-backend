@@ -37,6 +37,8 @@ export interface PlannedEmployee {
   clearance: AdmissionClearance;
   role: string;
   departmentId: string | null;
+  /** BUG-HRMS-006. Resolved from the row's `locationId` or `location` name. */
+  locationId: string | null;
   employeeNumber: string;
   firstName: string;
   lastName: string;
