@@ -20,6 +20,14 @@ import { invitations as invitationsTable } from "../../../db/schema";
 const ORG_ID = "org-abc";
 const ACTOR_ID = "user-xyz";
 const RAW_TOKEN = "c".repeat(64);
+/**
+ * Accept has required an email verification code since the invitation link
+ * stopped being accepted as proof of who holds it. Every accept in this file
+ * carries one, because a call without it is refused before it reaches the plan
+ * limit these tests are about — which is why they all errored silently once the
+ * requirement landed.
+ */
+const OTP_CODE = "123456";
 const BASE_INVITATION = {
   id: "inv-limit-1",
   email: "invitee@example.com",
@@ -60,6 +68,14 @@ function buildQuery(): MockQuery {
       }),
     },
     invitations: { findFirst: jest.fn().mockResolvedValue(BASE_INVITATION) },
+    invitationEmailOtps: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: 1,
+        invitationId: BASE_INVITATION.id,
+        codeHash: hashToken(OTP_CODE),
+        attempts: 0,
+      }),
+    },
   };
 }
 
@@ -112,6 +128,17 @@ function buildMockDb() {
       }),
     }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+    // `verifyAndConsumeInvitationOtp` runs on the db handle, not the tenant tx:
+    // it bumps the attempt counter, then marks the code used.
+    update: jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([{ attempts: 1 }]),
+          then: (resolve: (value: undefined) => unknown) =>
+            Promise.resolve(undefined).then(resolve),
+        }),
+      }),
+    }),
     transaction: jest.fn().mockImplementation((fn: (tx: typeof universalTx) => Promise<unknown>) =>
       fn(universalTx),
     ),
@@ -228,10 +255,34 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
         { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
         { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined) } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        // Added when the invitation OTP landed. Without it Nest cannot construct
+        // the service, and every accept test in this file errored before it ran
+        // an assertion — which is how the whole accept surface went untested
+        // through the release that broke it.
+        { provide: EmailService, useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
     svc = module.get(InvitationAcceptanceService);
+  });
+
+  /**
+   * BUG-HRMS-010. The requirement applies to EVERY accept, including an invitee
+   * who already holds a StreamlineOS account: `accept` is a public route with no
+   * session, so a signed-in caller is indistinguishable from anyone else holding
+   * the link, and the code is the only proof of the mailbox. A client that offers
+   * an existing-account invitee a one-click "Accept & join" without first
+   * requesting a code cannot succeed — which is what the frontend was doing.
+   */
+  it("refuses an accept that carries no verification code, existing account included", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+
+    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      "An email verification code is required to accept this invitation",
+    );
+    expect(mockPlanLimits.assertWithinLimit).not.toHaveBeenCalled();
   });
 
   it("rejects existing-user accept with invitee-friendly message when org is at member limit", async () => {
@@ -242,7 +293,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
       new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
     );
 
-    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toThrow(
       "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
     );
   });
@@ -255,7 +306,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
       new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
     );
 
-    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("rejects new-user accept with invitee-friendly message when org is at member limit", async () => {
@@ -265,7 +316,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
       new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
     );
 
-    await expect(svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe" })).rejects.toThrow(
+    await expect(svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe", emailOtp: OTP_CODE })).rejects.toThrow(
       "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
     );
   });
@@ -275,7 +326,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
     mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
 
-    const result = await svc.accept({ token: RAW_TOKEN });
+    const result = await svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE });
 
     expect(result.ok).toBe(true);
     expect(result.autoLoginToken).toBeDefined();
@@ -291,7 +342,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
     mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
     mockDb.query.users.findFirst.mockResolvedValue(null);
 
-    const result = await svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe" });
+    const result = await svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe", emailOtp: OTP_CODE });
 
     expect(result.ok).toBe(true);
     expect(result.autoLoginToken).toBeDefined();
@@ -308,7 +359,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
     mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
     mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
 
-    await svc.accept({ token: RAW_TOKEN });
+    await svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE });
 
     const call = mockPlanLimits.assertWithinLimit.mock.calls[0];
     expect(call[2]).toBe(0);
@@ -327,7 +378,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
       new ForbiddenException("limit exceeded"),
     );
 
-    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("never accepts an invitation without an accepted membership id", async () => {
@@ -343,7 +394,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
       }),
     }));
 
-    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toBeInstanceOf(
       ConflictException,
     );
   });
@@ -353,7 +404,7 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
     mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
     mockDb.universalTx.limit.mockResolvedValue([]);
 
-    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toBeInstanceOf(
       ConflictException,
     );
 

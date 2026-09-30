@@ -11,6 +11,7 @@ import {
   seatCount,
   type SeatEventType,
 } from "../../billing/core/seat-definition";
+import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
@@ -133,6 +134,10 @@ describe("seat release on decline — live authority versus the event ledger", (
             },
           },
           { provide: NotificationDispatchService, useValue: { emit } },
+          // Added to the service when the invitation OTP landed; without it Nest
+          // cannot construct it and every decline test here errored before
+          // asserting anything.
+          { provide: EmailService, useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) } },
         ],
       }).compile();
 

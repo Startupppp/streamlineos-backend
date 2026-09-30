@@ -4,6 +4,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
+import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 
@@ -80,6 +81,10 @@ describe("InvitationAcceptanceService.decline", () => {
           },
         },
         { provide: NotificationDispatchService, useValue: { emit } },
+        // Added to the service when the invitation OTP landed; without it Nest
+          // cannot construct it and every decline test here errored before
+          // asserting anything.
+        { provide: EmailService, useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
