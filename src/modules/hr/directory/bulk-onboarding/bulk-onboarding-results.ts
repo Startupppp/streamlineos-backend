@@ -30,13 +30,26 @@ export function onboardingWarnings(employee: PlannedEmployee, departmentsToCreat
   return { codes, messages };
 }
 
+/** BUG-HRMS-002: the code a row carries when the plan has no seat left for it. */
+export const SEAT_LIMIT_CODE = "SEAT_LIMIT";
+
+export function seatLimitMessage(available: number, limit: number | null): string {
+  const ceiling = limit === null ? "" : ` of your ${limit}`;
+  if (available === 0)
+    return `No seats are free${ceiling}. Cancel a pending invitation, remove a member, or add seats before creating this employee.`;
+  return `Only ${available}${ceiling} seats are free, and earlier rows in this file take them. This row is not created.`;
+}
+
 export function buildOnboardingPreview(
   rows: readonly BulkOnboardEmployeeRow[],
   planned: { plan: BulkOnboardPlan; departmentsToCreate: readonly string[] },
+  seats: { limit: number | null; available: number | null; used: number },
 ): BulkOnboardPreview {
   const accepted = new Map(planned.plan.accepted.map((employee) => [employee.row, employee]));
   const rejected = new Map(planned.plan.rejected.map((entry) => [entry.row, entry]));
   const counts = { ready: 0, warning: 0, error: 0, skipped: 0 };
+  let seatsRequired = 0;
+  let seatsBlocked = 0;
   const previewRows = rows.map((source, index) => {
     const row = index + 1;
     const employee = accepted.get(row);
@@ -57,6 +70,23 @@ export function buildOnboardingPreview(
       };
     }
     const warnings = onboardingWarnings(employee, planned.departmentsToCreate);
+    // Seats are spent in row order, the same order the commit admits them in, so
+    // the row the preview blocks is the row the commit would have refused.
+    seatsRequired += 1;
+    if (seats.available !== null && seatsRequired > seats.available) {
+      seatsBlocked += 1;
+      counts.error += 1;
+      return {
+        row,
+        email,
+        status: "ERROR" as const,
+        codes: [...warnings.codes, SEAT_LIMIT_CODE],
+        messages: [...warnings.messages, seatLimitMessage(seats.available, seats.limit)],
+        primaryManager: primaryManagerOf(employee),
+        secondaryManagers: employee.secondaryManagers.map((manager) => ({ name: manager.name ?? manager.email, email: manager.email })),
+        dependsOnRow: employee.primaryManager?.dependsOnRow ?? null,
+      };
+    }
     counts[warnings.codes.length > 0 ? "warning" : "ready"] += 1;
     return {
       row,
@@ -69,5 +99,15 @@ export function buildOnboardingPreview(
       dependsOnRow: employee.primaryManager?.dependsOnRow ?? null,
     };
   });
-  return { rows: previewRows, counts };
+  return {
+    rows: previewRows,
+    counts,
+    seats: {
+      limit: seats.limit,
+      used: seats.used,
+      available: seats.available,
+      required: seatsRequired,
+      blocked: seatsBlocked,
+    },
+  };
 }

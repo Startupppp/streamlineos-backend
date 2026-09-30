@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
-import { users } from "../../../db/schema";
+import { and, eq, gt, inArray, isNull } from "drizzle-orm";
+import { invitations, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -17,6 +17,7 @@ import {
   runInTenantTransaction,
 } from "../../../common/tenant/run-in-tenant-transaction";
 import { AccessService } from "../../access/access.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import {
   MembershipAdmissionService,
   canonicalAdmissionEmail,
@@ -57,6 +58,7 @@ export class EmployeeBulkOnboardingService {
     private readonly hierarchyCache: OrgHierarchyCacheService,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    private readonly planLimits: PlanLimitsService,
     private readonly admission: MembershipAdmissionService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
@@ -69,7 +71,51 @@ export class EmployeeBulkOnboardingService {
 
   /** HRM-15 §4.20: the same plan the commit runs, returned per row, with nothing written. */
   async previewEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]): Promise<BulkOnboardPreview> {
-    return buildOnboardingPreview(rows, await this.planRows(actor, rows, "preview"));
+    const [planned, seats] = await Promise.all([
+      this.planRows(actor, rows, "preview"),
+      this.previewSeatHeadroom(actor.orgId, rows),
+    ]);
+    return buildOnboardingPreview(rows, planned, seats);
+  }
+
+  /**
+   * BUG-HRMS-002. Seats free at commit time, not merely seats free now.
+   *
+   * An onboard admits an organization member, so every created row spends a
+   * seat. `admitMany` cancels any PENDING invitation for a candidate's own email
+   * BEFORE it asks `assertWithinLimit`, so those invitations are not really in
+   * the way of this file — counting them as occupied would make the preview
+   * refuse rows the commit accepts. They are credited back here for the same
+   * emails, and only those.
+   */
+  private async previewSeatHeadroom(
+    orgId: string,
+    rows: readonly BulkOnboardEmployeeRow[],
+  ): Promise<{ limit: number | null; used: number; available: number | null }> {
+    const headroom = await this.planLimits.headroomFor(orgId, "members");
+    if (headroom.available === null) return headroom;
+
+    const emails = [...new Set(rows.map((row) => canonicalAdmissionEmail(row.email)))];
+    if (emails.length === 0) return headroom;
+
+    const supersedable = await this.db
+      .select({ email: invitations.email })
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.orgId, orgId),
+          eq(invitations.status, "PENDING"),
+          isNull(invitations.acceptedAt),
+          gt(invitations.expiresAt, new Date()),
+          inArray(invitations.email, emails),
+        ),
+      );
+    const credited = supersedable.length;
+    return {
+      limit: headroom.limit,
+      used: Math.max(0, headroom.used - credited),
+      available: headroom.available + credited,
+    };
   }
 
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]): Promise<BulkOnboardCommitResult> {
