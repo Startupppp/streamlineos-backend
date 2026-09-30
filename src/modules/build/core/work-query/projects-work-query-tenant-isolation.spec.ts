@@ -65,4 +65,11 @@ describe("ProjectsSearchService — cross-tenant isolation and boundedness", () 
     expect(lowered).toContain('"tickets"."deleted_at" is null');
     expect(compiled.sql).toMatch(/"tickets"\."org_id"\s*=\s*\$\d+/);
   });
+
+  it("ranks an exact ticket key first, so a key typed in chat resolves past ACP-520..529", () => {
+    const exact = compile("org-1", "u1", "ACP-52", 20);
+    const orderBy = exact.sql.slice(exact.sql.toLowerCase().lastIndexOf("order by"));
+    expect(orderBy).toMatch(/^order by case when upper\(concat\((?:"build"\.)?"projects"\."key", '-', cast\((?:"build"\.)?"tickets"\."ticket_number" as text\)\)\) = upper\(\$\d+\) then 0 else 1 end, (?:"build"\.)?"tickets"\."updated_at" desc/i);
+    expect(exact.params).toContain("ACP-52");
+  });
 });

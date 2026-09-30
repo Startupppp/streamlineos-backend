@@ -87,7 +87,12 @@ export function orgTicketSearchQuery(
           : undefined,
       ),
     )
-    .orderBy(sql`${tickets.updatedAt} DESC`)
+    // An exact key ("ACP-52") ranks first, so a chat key link resolves even when
+    // ACP-520..529 and title matches would otherwise fill the page.
+    .orderBy(
+      sql`CASE WHEN UPPER(CONCAT(${projects.key}, '-', CAST(${tickets.ticketNumber} AS TEXT))) = UPPER(${q}) THEN 0 ELSE 1 END`,
+      sql`${tickets.updatedAt} DESC`,
+    )
     .limit(limit);
 }
 

@@ -385,6 +385,41 @@ export class ChatMessagesService {
     return row?.content ?? null;
   }
 
+  /**
+   * Appends a record reference to a message's `metadata.entities`, so the message
+   * carries a pill for the record made from it (convert-to-task). Only `{type, id}`
+   * is stored and published — each reader's own read path resolves the card, the
+   * same stripping `sendSystemMessage` applies. Open windows refetch on the
+   * `message:updated` frame, which is published after the request commits.
+   */
+  async attachEntity(
+    messageId: number,
+    channelId: number,
+    orgId: string,
+    entity: { type: string; id: string },
+  ): Promise<void> {
+    await this.db
+      .update(chatMessages)
+      .set({
+        metadata: sql`jsonb_set(coalesce(${chatMessages.metadata}, '{}'::jsonb), '{entities}', coalesce(${chatMessages.metadata}->'entities', '[]'::jsonb) || ${JSON.stringify([entity])}::jsonb)`,
+      })
+      .where(
+        and(
+          eq(chatMessages.orgId, orgId),
+          eq(chatMessages.id, messageId),
+          eq(chatMessages.channelId, channelId),
+        ),
+      );
+
+    const publish = () =>
+      this.ably.publishChatEvent(orgId, channelId, "message:updated", {
+        id: messageId,
+        channelId,
+        entities: [entity],
+      });
+    if (!registerAfterCommit(publish)) void publish();
+  }
+
   async sendSystemMessage(
     channelId: number,
     senderId: string,

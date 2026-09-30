@@ -1,6 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { type Db } from "../../../db/drizzle.module";
-import { projects, tickets } from "../../../db/schema";
+import { projects, ticketActivityLog, ticketRelatedLinks, tickets } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   EntityActionResult,
@@ -9,12 +9,28 @@ import type {
 import { isProjectMember, text } from "./build-entity-action-helpers";
 import { reserveTicketCapacity } from "../core/tickets";
 import { allocateTicketNumbers } from "../core";
+import { appUrl } from "../../email/app-url";
 
 const TICKET_TYPES = ["TASK", "BUG"] as const;
 type TicketType = (typeof TICKET_TYPES)[number];
 
 function isTicketType(value: string): value is TicketType {
   return TICKET_TYPES.some((ticketType) => ticketType === value);
+}
+
+function positiveInt(input: Record<string, unknown>, name: string): number | null {
+  const value = input[name];
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/** Built here from two ids, never taken from input, so a caller cannot plant an arbitrary URL. */
+function chatMessageUrl(channelId: number, messageId: number): string {
+  const path = `/chat?channel=${channelId}&message=${messageId}`;
+  try {
+    return `${appUrl()}${path}`;
+  } catch {
+    return path;
+  }
 }
 
 export async function createTicketFromAction(
@@ -42,6 +58,8 @@ export async function createTicketFromAction(
 
   const description = text(input, "description") ?? "";
   const title = (text(input, "title") ?? description.slice(0, 80)).trim() || "Untitled";
+  const sourceChannelId = positiveInt(input, "sourceChannelId");
+  const sourceMessageId = positiveInt(input, "sourceMessageId");
 
   const created = await db.transaction(async (tx) => {
     await reserveTicketCapacity(tx, actor.orgId, projectId, [{ status: "TODO", count: 1 }]);
@@ -61,6 +79,26 @@ export async function createTicketFromAction(
         reporterId: actor.userId,
       })
       .returning();
+
+    // The backlink to the chat message this ticket was converted from.
+    if (row && sourceChannelId !== null && sourceMessageId !== null) {
+      await tx.insert(ticketRelatedLinks).values({
+        orgId: actor.orgId,
+        ticketId: row.id,
+        url: chatMessageUrl(sourceChannelId, sourceMessageId),
+        label: "Chat message",
+        createdBy: actor.userId,
+        createdByMembershipId: actor.membershipId ?? null,
+      });
+      await tx.insert(ticketActivityLog).values({
+        orgId: actor.orgId,
+        ticketId: row.id,
+        projectId,
+        userMembershipId: actor.membershipId ?? null,
+        action: "created",
+        toValue: "From a chat message",
+      });
+    }
 
     return row;
   });

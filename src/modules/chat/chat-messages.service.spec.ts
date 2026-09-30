@@ -96,6 +96,23 @@ describe("ChatMessagesService", () => {
     service = module.get(ChatMessagesService);
   });
 
+  describe("attachEntity", () => {
+    it("appends the reference to the message metadata and tells open windows", async () => {
+      await service.attachEntity(42, 7, "org1", { type: "ticket", id: "99" });
+
+      expect(mockDb.update).toHaveBeenCalledTimes(1);
+      const [{ metadata }] = mockDb.set.mock.calls[0] as [{ metadata: SQL }];
+      const compiled = new PgDialect().sqlToQuery(metadata);
+      expect(compiled.sql).toContain("jsonb_set");
+      expect(compiled.params).toContain(JSON.stringify([{ type: "ticket", id: "99" }]));
+      expect(mockAbly.publishChatEvent).toHaveBeenCalledWith("org1", 7, "message:updated", {
+        id: 42,
+        channelId: 7,
+        entities: [{ type: "ticket", id: "99" }],
+      });
+    });
+  });
+
   describe("send", () => {
     it("DENY: a member of a record channel who has lost the record cannot post into it", async () => {
       mockDb.query.chatChannels.findFirst.mockResolvedValue({

@@ -22,6 +22,7 @@ const members = {
 const messages = {
   readMessageContent: jest.fn().mockResolvedValue("the original message"),
   sendSystemMessage: jest.fn().mockResolvedValue(undefined),
+  attachEntity: jest.fn().mockResolvedValue(undefined),
 };
 
 const entities = {
@@ -146,6 +147,28 @@ describe("ChatActions auth (e2e, no DB required)", () => {
       "create-ticket",
       expect.objectContaining({ description: "the original message" }),
     );
+  });
+
+  it("records the new ticket on the source message and the message on the ticket", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+
+    const res = await request(app.getHttpServer())
+      .post("/chat/actions/create-task-from-message")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-records-backlinks")
+      .send(BODY);
+
+    expect(res.status).toBe(201);
+    expect(entities.submitAction).toHaveBeenCalledWith(
+      expect.anything(),
+      { type: "project", id: "3" },
+      "create-ticket",
+      expect.objectContaining({ sourceChannelId: 1, sourceMessageId: 2 }),
+    );
+    expect(messages.attachEntity).toHaveBeenCalledWith(2, 1, expect.any(String), {
+      type: "ticket",
+      id: "5",
+    });
   });
 
   const retired: ReadonlyArray<string> = [

@@ -56,14 +56,27 @@ export class ChatActionsController {
       actorOf(u),
       { type: "project", id: String(body.projectId) },
       "create-ticket",
-      { type: body.type, title: body.title, description: source },
+      {
+        type: body.type,
+        title: body.title,
+        description: source,
+        sourceChannelId: body.channelId,
+        sourceMessageId: body.messageId,
+      },
     );
     const data = this.unwrap(result);
     const ticketId = Number(data["ticketId"]);
     const ticketNumber = Number(data["ticketNumber"]);
 
+    await this.chatMessages.attachEntity(body.messageId, body.channelId, u.orgId, {
+      type: "ticket",
+      id: String(ticketId),
+    });
+
+    // Awaited, not `void`: a detached call keeps using this request's transaction
+    // after it commits, where its queries never settle and nothing is logged.
     if (result.ok && result.message)
-      void this.chatMessages
+      await this.chatMessages
         .sendSystemMessage(body.channelId, u.userId, u.orgId, result.message, {
           entities: [{ type: "ticket", id: String(ticketId) }],
         })
