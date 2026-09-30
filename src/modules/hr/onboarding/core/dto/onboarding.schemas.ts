@@ -139,7 +139,14 @@ export const personalDetailsSchema = z
   });
 
 export const initiateSchema = z.object({
-  userId: z.string().min(1),
+  /**
+   * `.trim()` before `.min(1)`, or a whitespace-only selection reaches the
+   * service and answers 404 "User not found in this organization" — a lookup
+   * miss where the caller sent no user at all. BUG-003's frontend half already
+   * trims; this is its backend half, which the 2026-09-29 pass recorded as
+   * shipped and did not ship.
+   */
+  userId: z.string().trim().min(1),
 }).strict();
 
 const BANK_NAME_REGEX = /^[A-Za-z][A-Za-z0-9.,'&()\-\s]*$/;

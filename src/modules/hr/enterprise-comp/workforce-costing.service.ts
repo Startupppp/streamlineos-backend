@@ -43,6 +43,13 @@ export class WorkforceCostingService {
     }));
   }
 
+  /**
+   * `hr_employments` has no `user_id` column; a person is reached through
+   * `hr_people`. Joining `he.user_id` raised 42703 "column he.user_id does not
+   * exist" on every call, which is what made `/hr/workforce-cost` report a
+   * whole-module failure. `is_primary` keeps a person holding a second
+   * employment row from counting their salary twice.
+   */
   async costByLocation(orgId: string) {
     const rows = await this.db.execute(sql`
       SELECT
@@ -50,7 +57,9 @@ export class WorkforceCostingService {
         COUNT(DISTINCT esp.user_id) AS headcount,
         SUM(ROUND(esp.annual_ctc * 100 / 12))::BIGINT AS monthly_cost_cents
       FROM employee_salary_profiles esp
-      JOIN hr_employments he ON he.user_id = esp.user_id AND he.org_id = ${orgId} AND he.deleted_at IS NULL
+      JOIN hr_people hp ON hp.org_id = ${orgId} AND hp.user_id = esp.user_id AND hp.deleted_at IS NULL
+      JOIN hr_employments he ON he.org_id = ${orgId} AND he.person_id = hp.id
+        AND he.is_primary = TRUE AND he.deleted_at IS NULL
       WHERE esp.org_id = ${orgId}
         AND esp.status = 'ACTIVE'
       GROUP BY he.location_id
