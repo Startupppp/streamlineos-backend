@@ -11,6 +11,10 @@ export const RESERVED_ROUTES: readonly ReservedRoute[] = [
   { prefix: "auth", workClass: "authentication" },
   { prefix: "sessions", workClass: "authorization-revocation" },
   { prefix: "access", workClass: "authorization-revocation" },
+  // The access snapshot every authenticated page waits on. Shed as an ordinary
+  // write, one 503 walled the whole app behind "Syncing organization"
+  // (BUG-HRMS-014); it is the read that carries a revocation to the client.
+  { prefix: "me/access", workClass: "authorization-revocation" },
   { prefix: "module-access", workClass: "authorization-revocation" },
   { prefix: "ownership", workClass: "ownership" },
   { prefix: "billing", workClass: "billing-ledger" },

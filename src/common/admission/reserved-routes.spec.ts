@@ -152,3 +152,16 @@ describe("the URI version prefix does not defeat reserved classification", () =>
     expect(reservedClassForPath("/v1/../auth/login")).toBe("authentication");
   });
 });
+
+describe("the access snapshot", () => {
+  it.each(["/me/access", "/v1/me/access", "/me/access?refresh=1"])(
+    "%s is reserved, so the read every page gates on is never shed",
+    (path) => {
+      expect(reservedClassForPath(path)).toBe("authorization-revocation");
+    },
+  );
+
+  it("does not reserve the rest of /me", () => {
+    expect(reservedClassForPath("/me/preferences")).toBeUndefined();
+  });
+});
