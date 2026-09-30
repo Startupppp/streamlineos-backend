@@ -119,4 +119,29 @@ describe("PayslipDownloadService — cross-tenant isolation", () => {
 
     await expect(svc.downloadPdf(3, makeCaller(ATTACKER_ORG, ATTACKER_USER))).rejects.toBeInstanceOf(Error);
   });
+
+  // Same org, different employee. A 403 here told a colleague which publication ids exist.
+  it("answers a same-org colleague without payroll:payslips:view with 404, not 403", async () => {
+    const colleaguePublication = {
+      id: 4, orgId: ATTACKER_ORG, userId: VICTIM_USER, userMembershipId: 2, workerId: null,
+      runId: 13, runEmployeeId: 23, snapshotHash: "h", payslipTemplateId: null, status: "PUBLISHED",
+    };
+    const svc = new PayslipDownloadService(makeDb(colleaguePublication), access, efService);
+
+    const error = await svc.downloadPdf(4, makeCaller(ATTACKER_ORG, ATTACKER_USER)).catch((e: unknown) => e);
+
+    expect((error as Error).constructor.name).toBe("NotFoundException");
+  });
+
+  it("does not hand an employee their own payslip before it is published", async () => {
+    const pendingOwn = {
+      id: 5, orgId: ATTACKER_ORG, userId: ATTACKER_USER, userMembershipId: 1, workerId: null,
+      runId: 14, runEmployeeId: 24, snapshotHash: "h", payslipTemplateId: null, status: "PENDING",
+    };
+    const svc = new PayslipDownloadService(makeDb(pendingOwn), access, efService);
+
+    const error = await svc.downloadPdf(5, makeCaller(ATTACKER_ORG, ATTACKER_USER)).catch((e: unknown) => e);
+
+    expect((error as Error).constructor.name).toBe("NotFoundException");
+  });
 });

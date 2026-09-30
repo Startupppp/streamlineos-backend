@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -128,7 +128,7 @@ describe("PayrollAiExplainService", () => {
     const gateway = makeGateway();
     const svc = await buildService(makeDb(), gateway);
     await expect(svc.streamExplainPayslip("org-A", "user-EVIL", 1, new AbortController().signal))
-      .rejects.toThrow(ForbiddenException);
+      .rejects.toThrow(NotFoundException);
     expect(gateway.streamTextWithUsage).not.toHaveBeenCalled();
   });
 
@@ -185,18 +185,19 @@ describe("PayrollAiExplainService", () => {
     expect(call.prompt.user).toContain('"grossEarnings": "60000.00"');
   });
 
-  it("throws ForbiddenException when a different-org user attempts access (BOLA check)", async () => {
+  it("throws NotFoundException when a different-org user attempts access (BOLA check)", async () => {
     const dbWithNoRow = makeDb(null);
     const svcB = await buildService(dbWithNoRow, makeGateway());
     await expect(svcB.explainPayslip("org-B", "user-B", 1)).rejects.toThrow(NotFoundException);
   });
 
-  it("throws ForbiddenException when the user does not own the payslip", async () => {
+  // 404, not 403: a colleague's publication must answer like a missing one (SEC-HRMS-009).
+  it("throws NotFoundException when the user does not own the payslip", async () => {
     const db = makeDb();
     const gateway = makeGateway();
     const svc = await buildService(db, gateway);
 
-    await expect(svc.explainPayslip("org-A", "user-EVIL", 1)).rejects.toThrow(ForbiddenException);
+    await expect(svc.explainPayslip("org-A", "user-EVIL", 1)).rejects.toThrow(NotFoundException);
     expect(gateway.invokeTextWithUsage).not.toHaveBeenCalled();
   });
 
