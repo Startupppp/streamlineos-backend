@@ -101,7 +101,6 @@ export class RolePermissionService {
     return {
       db: this.db,
       cache: this.cache,
-      audit: this.audit,
       access: this.access,
       getRole: (orgId, roleId) => this.getRole(orgId, roleId),
     };

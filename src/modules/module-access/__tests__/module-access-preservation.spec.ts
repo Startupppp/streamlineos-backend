@@ -11,15 +11,15 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 
 const txDeletes: number[] = [];
 const txInserted: Record<string, unknown>[] = [];
 let txVersionBumped = 0;
 const txHandles: { write: unknown; bump: unknown } = { write: null, bump: null };
 
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockImplementation((tx: unknown) => {
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockImplementation((tx: unknown) => {
     txVersionBumped += 1;
     txHandles.bump = tx;
     return Promise.resolve();
@@ -115,7 +115,7 @@ beforeEach(() => {
   txVersionBumped = 0;
   txHandles.write = null;
   txHandles.bump = null;
-  (bumpPermissionsVersion as jest.Mock).mockClear();
+  (commitAccessChange as jest.Mock).mockClear();
 });
 
 describe("Condition 1 — module standing gate bites for isOrgOwner=false with no module standing", () => {

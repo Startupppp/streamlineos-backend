@@ -16,12 +16,11 @@ import type { Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { AccessService } from "../access/access.service";
-import { AuditService } from "../../common/audit/audit.service";
 import type {
   CreateDelegationInput,
   ListDelegationsQuery,
@@ -47,7 +46,6 @@ export class DelegationsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
-    private readonly audit: AuditService,
   ) {}
 
   private get listingDeps(): DelegationListingDeps {
@@ -141,20 +139,20 @@ export class DelegationsService {
             permissionKey,
           })),
         );
-        await bumpPermissionsVersion(tx, actor.orgId);
-        await this.audit.logCritical({
-          action: "delegation.created",
-          userId: actor.userId,
-          orgId: actor.orgId,
-          targetId: created.id,
-          targetType: "user_delegation",
-          metadata: {
-            delegatorId: actor.userId,
-            delegateeId: body.delegateeId,
-            permissions: body.permissions,
-            startsAt: startsAt.toISOString(),
-            endsAt: endsAt.toISOString(),
-            reason: body.reason ?? null,
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "delegation.created",
+            userId: actor.userId,
+            targetId: created.id,
+            targetType: "user_delegation",
+            metadata: {
+              delegatorId: actor.userId,
+              delegateeId: body.delegateeId,
+              permissions: body.permissions,
+              startsAt: startsAt.toISOString(),
+              endsAt: endsAt.toISOString(),
+              reason: body.reason ?? null,
+            },
           },
         });
         return {
@@ -240,17 +238,17 @@ export class DelegationsService {
             ),
           )
           .returning();
-        await bumpPermissionsVersion(tx, orgId);
-        await this.audit.logCritical({
-          action: "delegation.revoked",
-          userId: actor.userId,
-          orgId,
-          targetId: id,
-          targetType: "user_delegation",
-          metadata: {
-            delegatorId: delegatorUserId,
-            delegateeId: delegateeUserId,
-            permissions: permissionRows.map((row) => row.permissionKey),
+        await commitAccessChange(tx, orgId, {
+          audit: {
+            action: "delegation.revoked",
+            userId: actor.userId,
+            targetId: id,
+            targetType: "user_delegation",
+            metadata: {
+              delegatorId: delegatorUserId,
+              delegateeId: delegateeUserId,
+              permissions: permissionRows.map((row) => row.permissionKey),
+            },
           },
         });
         return {

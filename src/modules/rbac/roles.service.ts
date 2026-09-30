@@ -58,7 +58,7 @@ export class RolesService {
   ) {}
 
   private get mutationDeps(): RoleMutationDeps {
-    return { db: this.db, audit: this.audit, access: this.access };
+    return { db: this.db, access: this.access };
   }
 
   updateRole(

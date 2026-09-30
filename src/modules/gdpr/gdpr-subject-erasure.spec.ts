@@ -8,8 +8,8 @@ import type { SubjectFileKey } from "../storage/storage-key-catalog";
 import type { TenantTx } from "../../db/drizzle.types";
 import { gdprExportJobs, organizationMembers, users } from "../../db/schema";
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../common/auth/membership-state.service", () => ({
@@ -32,7 +32,7 @@ jest.mock("../../common/tenant/with-identity", () => ({
   withIdentity: jest.fn(),
 }));
 
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { withIdentity } from "../../common/tenant/with-identity";
 
@@ -435,13 +435,13 @@ describe("GdprSubjectErasureService — immutable records are not touched", () =
 // ─── Cache invalidation ───────────────────────────────────────────────────────
 
 describe("GdprSubjectErasureService — cache invalidation", () => {
-  it("calls bumpPermissionsVersion inside the transaction after anonymising data", async () => {
+  it("calls commitAccessChange inside the transaction after anonymising data", async () => {
     const { db, txMocks } = makeDb({});
     const svc = buildService(db);
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMocks.tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(txMocks.tx, ORG);
   });
 
   it("calls bustMembershipStatusCache after the transaction commits", async () => {
@@ -456,15 +456,15 @@ describe("GdprSubjectErasureService — cache invalidation", () => {
     );
   });
 
-  it("(bite proof) skipping the transaction means bumpPermissionsVersion is never called — test catches it", async () => {
-    // Mechanism: db.transaction calls fn(tx), so bumpPermissionsVersion IS called.
+  it("(bite proof) skipping the transaction means commitAccessChange is never called — test catches it", async () => {
+    // Mechanism: db.transaction calls fn(tx), so commitAccessChange IS called.
     // Neuter: replace db.transaction with jest.fn().mockResolvedValue(undefined) (callback never called).
-    // Then expect(bumpPermissionsVersion).toHaveBeenCalled() → FAILS.
+    // Then expect(commitAccessChange).toHaveBeenCalled() → FAILS.
     // This test is the positive assertion — verify it DOES get called when transaction works:
     const { db } = makeDb({});
     const svc = buildService(db);
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
-    expect(bumpPermissionsVersion).toHaveBeenCalledTimes(1);
+    expect(commitAccessChange).toHaveBeenCalledTimes(1);
   });
 
   it("does not call cache invalidation when a legal hold blocks erasure", async () => {
@@ -473,7 +473,7 @@ describe("GdprSubjectErasureService — cache invalidation", () => {
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(bumpPermissionsVersion).not.toHaveBeenCalled();
+    expect(commitAccessChange).not.toHaveBeenCalled();
     expect(bustMembershipStatusCache).not.toHaveBeenCalled();
   });
 
@@ -483,7 +483,7 @@ describe("GdprSubjectErasureService — cache invalidation", () => {
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: true });
 
-    expect(bumpPermissionsVersion).not.toHaveBeenCalled();
+    expect(commitAccessChange).not.toHaveBeenCalled();
     expect(bustMembershipStatusCache).not.toHaveBeenCalled();
   });
 });

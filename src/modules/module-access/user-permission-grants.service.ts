@@ -10,8 +10,7 @@ import { userPermissionGrants } from "../../db/schema";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
-import { AuditService } from "../../common/audit/audit.service";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -40,7 +39,6 @@ export class UserPermissionGrantsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly moduleAccess: ModuleAccessService,
     private readonly access: AccessService,
-    private readonly audit: AuditService,
     private readonly cache: CacheService,
   ) {}
 
@@ -85,7 +83,6 @@ export class UserPermissionGrantsService {
     return {
       db: this.db,
       cache: this.cache,
-      audit: this.audit,
       access: this.access,
       moduleAccess: this.moduleAccess,
       moduleKeys,
@@ -120,16 +117,15 @@ export class UserPermissionGrantsService {
             inArray(userPermissionGrants.permissionKey, [permissionKey]),
           ),
         );
-      await bumpPermissionsVersion(tx, actor.orgId);
-    });
-
-    this.audit.log({
-      action: "access.user_permission_grant_removed",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      resourceType: "organization_member",
-      resourceId: String(membershipId),
-      metadata: { moduleKey, targetUserId: target.userId, permissionKey },
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "access.user_permission_grant_removed",
+          userId: actor.userId,
+          resourceType: "organization_member",
+          resourceId: String(membershipId),
+          metadata: { moduleKey, targetUserId: target.userId, permissionKey },
+        },
+      });
     });
 
     await this.cache.invalidate(CACHE_KEYS.userSession(target.userId));

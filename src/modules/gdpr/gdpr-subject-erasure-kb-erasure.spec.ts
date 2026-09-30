@@ -7,8 +7,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { supportArticlePredicate } from "../kb/help-centre/kb-article-page-scope";
 import { subjectAuthoredDocument } from "../kb/core/kb-subject-erasure";
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../common/auth/membership-state.service", () => ({

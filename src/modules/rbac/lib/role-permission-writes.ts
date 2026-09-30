@@ -9,8 +9,7 @@ import {
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { AuditService } from "../../../common/audit/audit.service";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
@@ -54,7 +53,6 @@ export type RoleRow = typeof roles.$inferSelect;
 export interface RoleWriteDeps {
   readonly db: Db;
   readonly cache: CacheService;
-  readonly audit: AuditService;
   readonly access: AccessService;
   readonly getRole: (orgId: string, roleId: number) => Promise<RoleRow>;
 }
@@ -185,20 +183,19 @@ export async function setRolePermissions(
       );
     }
 
-    await bumpPermissionsVersion(tx, actor.orgId);
+    await commitAccessChange(tx, actor.orgId, {
+      audit: {
+        action: "role.permissions.set",
+        userId: actor.userId,
+        targetId: String(roleId),
+        targetType: "role",
+        metadata: { count: deduped.size },
+      },
+    });
   }, { orgId: actor.orgId });
 
   await deps.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
   await invalidateRoleHolderSessions(deps, actor.orgId, roleId);
-
-  deps.audit.log({
-    action: "role.permissions.set",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    targetId: String(roleId),
-    targetType: "role",
-    metadata: { count: deduped.size },
-  });
 
   return { success: true, version: nextVersion };
 }

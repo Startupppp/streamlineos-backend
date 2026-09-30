@@ -13,8 +13,8 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
     (db: unknown, work: (tx: unknown) => Promise<unknown>) => work(db),
   ),
 }));
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../../common/rbac/is-structural-org-admin", () => ({
   isStructuralOrgAdmin: jest.fn(),

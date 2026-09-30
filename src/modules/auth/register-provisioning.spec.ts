@@ -52,8 +52,8 @@ jest.mock("../../common/org/provision-employee-self-service", () => ({
   provisionEmployeeSelfService: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 import { bootstrapCellOrganization } from "../organization/core/bootstrap-cell-organization";

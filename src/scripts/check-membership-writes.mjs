@@ -113,6 +113,40 @@ const PRIMITIVES = [
   "bustMembershipStatusCacheMany",
 ];
 
+// ─── access-bump ratchet ──────────────────────────────────────────────────────
+// `bumpPermissionsVersion` is a private primitive. The only production caller is
+// `access-mutation-commit.ts`; every other direct import is a by-pass that lets a
+// caller bump the version without writing the audit row or scheduling revocation.
+
+const BUMP_PRIMITIVE = "bumpPermissionsVersion";
+const BUMP_COMMIT_OWNER = "src/common/rbac/access-mutation-commit.ts";
+const BUMP_DECLARATION = "src/common/rbac/access-invalidate.ts";
+
+/**
+ * Files permitted to import `bumpPermissionsVersion` directly.
+ * Spec files are excluded from the walk so they don't need entries here.
+ */
+export const BUMP_EXEMPT = new Map([
+  [BUMP_COMMIT_OWNER, "the sole authorised caller that wraps every side-effect"],
+  [BUMP_DECLARATION, "declares bumpPermissionsVersion"],
+]);
+
+export function findBumpImports(source) {
+  const out = [];
+  const importRe = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+  for (const match of source.matchAll(importRe)) {
+    const clause = match[1] ?? "";
+    if (!new RegExp(`\\b${BUMP_PRIMITIVE}\\b`).test(clause)) continue;
+    out.push({
+      line: lineOf(source, match.index ?? 0),
+      text: `${BUMP_PRIMITIVE} from "${match[2] ?? ""}"`,
+    });
+  }
+  return out;
+}
+
+// ─── end access-bump ratchet ──────────────────────────────────────────────────
+
 const DRIZZLE_WRITE_RE = /\.(insert|update|delete)\(\s*organizationMembers\b/g;
 const RAW_WRITE_RE =
   /\b(?:insert\s+into|update|delete\s+from)\s+["`]?organization_members\b/gi;
@@ -276,6 +310,22 @@ if (RUN_DIRECTLY && process.argv.includes("--self-test")) {
     0,
   );
 
+  check(
+    "direct bumpPermissionsVersion import is detected",
+    findBumpImports('import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";').length,
+    1,
+  );
+  check(
+    "commitAccessChange import is not detected",
+    findBumpImports('import { commitAccessChange } from "../../common/rbac/access-mutation-commit";').length,
+    0,
+  );
+  check(
+    "type-only bumpPermissionsVersion import is detected",
+    findBumpImports('import type { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";').length,
+    1,
+  );
+
   if (failures.length > 0) {
     console.error("SELF-TEST FAILED:");
     for (const failure of failures) console.error(`  ${failure}`);
@@ -328,6 +378,16 @@ function scanRepository() {
           fix: "Use a named operation: a MembershipMutations method, or revokeMembershipAccessCaches / bustMembershipsAfterOrgTeardown / bustMembershipAfterIdentityErasure / bustMembershipAfterOwnershipChange.",
         });
 
+    if (!BUMP_EXEMPT.has(rel))
+      for (const hit of findBumpImports(source))
+        violations.push({
+          rel,
+          line: hit.line,
+          kind: "DIRECT BUMP PRIMITIVE",
+          text: hit.text,
+          fix: "Call commitAccessChange(tx, orgId, opts?) from common/rbac/access-mutation-commit instead — it is the sole authorised entry point that writes the audit row and schedules revocation atomically.",
+        });
+
     if (rel !== OWNER_WRITES)
       for (const hit of findConstructions(source))
         violations.push({
@@ -352,11 +412,12 @@ function scanRepository() {
   if (process.argv.includes("--list")) {
     for (const [rel, why] of WRITE_EXEMPT) console.log(`  WRITE EXEMPT      ${rel} — ${why}`);
     for (const [rel, why] of PRIMITIVE_EXEMPT) console.log(`  PRIMITIVE EXEMPT  ${rel} — ${why}`);
+    for (const [rel, why] of BUMP_EXEMPT) console.log(`  BUMP EXEMPT       ${rel} — ${why}`);
     process.exit(0);
   }
 
   console.log(
-    `exemptions                ${WRITE_EXEMPT.size} write, ${PRIMITIVE_EXEMPT.size} primitive`,
+    `exemptions                ${WRITE_EXEMPT.size} write, ${PRIMITIVE_EXEMPT.size} primitive, ${BUMP_EXEMPT.size} bump`,
   );
   for (const [rel, why] of WRITE_EXEMPT) console.log(`  SKIP  ${rel} — ${why}`);
   console.log("");

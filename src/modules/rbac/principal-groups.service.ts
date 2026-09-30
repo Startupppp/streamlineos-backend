@@ -17,7 +17,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { isUniqueViolation } from "../../common/db/postgres-error";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 // NOT `import type`: TypeScript erases a type-only import, so emitDecoratorMetadata
@@ -207,7 +207,7 @@ export class PrincipalGroupsService {
             organizationMembershipId: input.membershipId,
           })
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId);
       },
       { orgId: actor.orgId },
     );
@@ -234,7 +234,7 @@ export class PrincipalGroupsService {
               eq(principalGroupMembers.organizationMembershipId, membershipId),
             ),
           );
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId);
       },
       { orgId: actor.orgId },
     );
@@ -295,7 +295,7 @@ export class PrincipalGroupsService {
             roleId: input.roleId,
           })
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId);
       },
       { orgId: actor.orgId },
     );
@@ -322,7 +322,7 @@ export class PrincipalGroupsService {
               eq(groupRoleAssignments.roleId, roleId),
             ),
           );
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId);
       },
       { orgId: actor.orgId },
     );

@@ -18,7 +18,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { markRoleAdministered } from "./mark-role-administered";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
@@ -165,7 +165,7 @@ export class RbacService {
           set: { scope: input.scope },
         });
       await markRoleAdministered(tx, actor.orgId, input.roleId);
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId);
     }, { orgId: actor.orgId });
 
     return { success: true };
@@ -197,7 +197,7 @@ export class RbacService {
           ),
         );
       await markRoleAdministered(tx, actor.orgId, input.roleId);
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId);
     }, { orgId: actor.orgId });
 
     return { success: true };

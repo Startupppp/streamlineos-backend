@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { organizationMembers } from "../../db/schema";
 import type { CacheService } from "../cache/cache.service";
-import { bumpPermissionsVersion, type DbOrTx } from "../rbac/access-invalidate";
+import { commitAccessChange, type DbOrTx } from "../rbac/access-mutation-commit";
 import {
   syncStructuralRoleAssignment,
   syncStructuralRoleAssignments,
@@ -212,7 +212,7 @@ export class MembershipMutations {
           eq(organizationMembers.orgId, input.orgId),
         ),
       );
-    await bumpPermissionsVersion(tx, input.orgId);
+    await commitAccessChange(tx, input.orgId);
     this.record(input.userId, input.orgId);
   }
 
@@ -295,7 +295,7 @@ export class MembershipMutations {
           eq(organizationMembers.userId, input.userId),
         ),
       );
-    await bumpPermissionsVersion(tx, input.orgId);
+    await commitAccessChange(tx, input.orgId);
     this.record(input.userId, input.orgId);
   }
 

@@ -16,8 +16,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {

@@ -11,7 +11,7 @@ import {
   ownershipTransfers,
 } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import type { CacheService } from "../../common/cache/cache.service";
@@ -104,7 +104,7 @@ export async function applyOrgTransfer(
           "Transfer is no longer pending; a concurrent response committed first",
         );
 
-      await bumpPermissionsVersion(tx, orgId);
+      await commitAccessChange(tx, orgId);
       return fromMember.userId;
     }),
   );
@@ -202,7 +202,7 @@ export async function applyModuleTransfer(
         "Transfer is no longer pending; a concurrent response committed first",
       );
 
-    await bumpPermissionsVersion(tx, orgId);
+    await commitAccessChange(tx, orgId);
     return fromMember.userId;
   });
 }

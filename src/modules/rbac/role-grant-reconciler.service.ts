@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../common/tenant/with-tenant";
 import { forEachOrg } from "../../common/tenant/for-each-org";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { rolePermissionGrants, roles } from "../../db/schema";
 import { ROLE_TEMPLATES } from "./role-templates.constants";
 import {
@@ -168,7 +168,7 @@ export class RoleGrantReconcilerService {
       inserted += rows.length;
     }
 
-    if (inserted > 0) await bumpPermissionsVersion(tx, orgId);
+    if (inserted > 0) await commitAccessChange(tx, orgId);
 
     return {
       rolesReconciled: touchedRoles.size,

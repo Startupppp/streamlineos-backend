@@ -11,8 +11,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 
 jest.mock("../../../common/rbac/resolve-actor-rank");
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 const runInTenantTransactionMock = jest.fn();

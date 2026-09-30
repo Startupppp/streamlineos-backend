@@ -12,8 +12,8 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { OutboxWakeSignal } from "../../../../common/outbox/outbox-wake.signal";
 
-jest.mock("../../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 // The real withIdentity runs fn inside a transaction carrying only the user GUC. The mock must

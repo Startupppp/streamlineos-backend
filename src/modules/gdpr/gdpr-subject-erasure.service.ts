@@ -11,7 +11,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { bustMembershipAfterIdentityErasure } from "../../common/org/membership-bust";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { SessionsService } from "../sessions/sessions.service";
 import { anonymiseSubjectSupportTickets } from "../support/core/support-ticket-erasure";
@@ -249,7 +249,7 @@ export class GdprSubjectErasureService {
         isPlatformEvent: false,
       });
 
-      await bumpPermissionsVersion(tx, orgId);
+      await commitAccessChange(tx, orgId);
     });
 
     await bustMembershipAfterIdentityErasure(this.cache, subjectUserId);

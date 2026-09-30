@@ -23,7 +23,7 @@ import {
   moduleIdFromStored,
 } from "../../common/rbac/module-registry";
 import { moduleAvailabilityResolver, type ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
 import { isUndefinedTable } from "../../common/db/postgres-error";
@@ -235,7 +235,7 @@ export class EntitlementsService implements OnModuleInit {
         }
       }
 
-      await bumpPermissionsVersion(tx, orgId);
+      await commitAccessChange(tx, orgId);
     }, { orgId });
 
     this.moduleMapCache.delete(orgId);

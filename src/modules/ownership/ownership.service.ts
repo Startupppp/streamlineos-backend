@@ -14,10 +14,9 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { assertModuleOwnerRoleAssigned, revokeModuleOwnerRole } from "./module-owner-role.helper";
 import { fetchMembershipById, resolveMembershipUserIds } from "./ownership-members.helper";
@@ -27,7 +26,6 @@ import type { SetModuleOwnerInput } from "./dto/ownership.schemas";
 export class OwnershipService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
@@ -167,7 +165,15 @@ export class OwnershipService {
       }
       await assertModuleOwnerRoleAssigned(tx, orgId, moduleKey, input.ownerMembershipId);
 
-      await bumpPermissionsVersion(tx, orgId);
+      await commitAccessChange(tx, orgId, {
+        audit: {
+          action: "ownership.module_owner_forced",
+          userId: actorUserId,
+          targetId: String(input.ownerMembershipId),
+          targetType: "membership",
+          metadata: { moduleKey, ownerMembershipId: input.ownerMembershipId },
+        },
+      });
       return prevOwnership?.ownerMembershipId ?? null;
     });
 
@@ -177,15 +183,6 @@ export class OwnershipService {
       this.cache.invalidateForOrg(orgId, `module-access:ownership:${moduleKey}`),
       this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
     ]);
-
-    this.audit.log({
-      action: "ownership.module_owner_forced",
-      userId: actorUserId,
-      orgId,
-      targetId: String(input.ownerMembershipId),
-      targetType: "membership",
-      metadata: { moduleKey, ownerMembershipId: input.ownerMembershipId },
-    });
 
     await this.notifyModuleOwnerChanged(
       orgId,

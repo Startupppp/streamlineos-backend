@@ -10,10 +10,9 @@ import { and, asc, count, eq, ilike, inArray, ne, sql } from "drizzle-orm";
 import { roleAssignments, rolePermissionGrants, roles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { assertPermissionsGrantable, ROLE_RANK, toGrantableSet } from "../../common/rbac/grantability";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -36,7 +35,6 @@ export class ModuleAccessGroupCrudService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly cache: CacheService,
-    private readonly audit: AuditService,
     private readonly groupPolicy: ModuleAccessGroupPolicyService,
   ) {}
 
@@ -146,7 +144,15 @@ export class ModuleAccessGroupCrudService {
     const row = await runInTenantTransaction(this.db, async (tx) => {
       const [created] = await tx.insert(roles).values({ name: input.name, slug, orgId: actor.orgId, isSystem: false, moduleKey, rank: ROLE_RANK.MODULE_CUSTOM }).returning({ id: roles.id, name: roles.name, isSystem: roles.isSystem, version: roles.version });
       if (!created) throw new BadRequestException("Failed to create group");
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "module_access.group_created",
+          userId: actor.userId,
+          targetId: String(created.id),
+          targetType: "role",
+          metadata: { moduleKey, name: created.name },
+        },
+      });
       return created;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
       /*
@@ -159,7 +165,6 @@ export class ModuleAccessGroupCrudService {
       throw error;
     });
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    this.audit.log({ action: "module_access.group_created", userId: actor.userId, orgId: actor.orgId, targetId: String(row.id), targetType: "role", metadata: { moduleKey, name: row.name } });
     return { id: row.id, name: row.name, isSystem: row.isSystem, version: row.version, memberCount: 0, permissions: [] };
   }
 
@@ -171,7 +176,18 @@ export class ModuleAccessGroupCrudService {
     if (nameConflict) throw new ConflictException(`A group named "${input.name}" already exists in this module`);
     const [row] = await runInTenantTransaction(this.db, async (tx) => {
       const updated = await tx.update(roles).set({ name: input.name, updatedAt: new Date() }).where(and(eq(roles.id, groupId), eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey))).returning({ id: roles.id, name: roles.name, isSystem: roles.isSystem, version: roles.version });
-      await bumpPermissionsVersion(tx, actor.orgId);
+      const renamed = updated[0];
+      if (renamed) {
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "module_access.group_renamed",
+            userId: actor.userId,
+            targetId: String(groupId),
+            targetType: "role",
+            metadata: { moduleKey, oldName: existing.name, newName: renamed.name },
+          },
+        });
+      }
       return updated;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
       /*
@@ -185,7 +201,6 @@ export class ModuleAccessGroupCrudService {
     });
     if (!row) throw new BadRequestException("Failed to rename group");
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    this.audit.log({ action: "module_access.group_renamed", userId: actor.userId, orgId: actor.orgId, targetId: String(groupId), targetType: "role", metadata: { moduleKey, oldName: existing.name, newName: row.name } });
     const refreshed = await this.fetchSingleGroup(actor.orgId, moduleKey, row.id);
     if (!refreshed) throw new NotFoundException("Group not found");
     return refreshed;
@@ -200,10 +215,17 @@ export class ModuleAccessGroupCrudService {
     await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       await tx.delete(rolePermissionGrants).where(and(eq(rolePermissionGrants.orgId, actor.orgId), eq(rolePermissionGrants.roleId, groupId)));
       await tx.delete(roles).where(and(eq(roles.id, groupId), eq(roles.orgId, actor.orgId)));
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "module_access.group_deleted",
+          userId: actor.userId,
+          targetId: String(groupId),
+          targetType: "role",
+          metadata: { moduleKey, name: existing.name },
+        },
+      });
     }, { orgId: actor.orgId });
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    this.audit.log({ action: "module_access.group_deleted", userId: actor.userId, orgId: actor.orgId, targetId: String(groupId), targetType: "role", metadata: { moduleKey, name: existing.name } });
     return { success: true };
   }
 }

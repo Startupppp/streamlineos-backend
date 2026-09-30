@@ -10,8 +10,8 @@ import {
   users,
 } from "../../db/schema";
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../common/auth/membership-state.service", () => ({

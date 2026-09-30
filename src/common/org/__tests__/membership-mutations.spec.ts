@@ -2,7 +2,7 @@ jest.mock("../../auth/membership-state.service", () => ({
   bustMembershipStatusCache: jest.fn(),
   bustMembershipStatusCacheMany: jest.fn(),
 }));
-jest.mock("../../rbac/access-invalidate", () => ({ bumpPermissionsVersion: jest.fn() }));
+jest.mock("../../rbac/access-mutation-commit", () => ({ commitAccessChange: jest.fn() }));
 jest.mock("../../rbac/sync-structural-role", () => ({
   syncStructuralRoleAssignment: jest.fn(),
   syncStructuralRoleAssignments: jest.fn(),
@@ -23,14 +23,14 @@ import {
   bustMembershipStatusCache,
   bustMembershipStatusCacheMany,
 } from "../../auth/membership-state.service";
-import { bumpPermissionsVersion } from "../../rbac/access-invalidate";
+import { commitAccessChange } from "../../rbac/access-mutation-commit";
 import {
   syncStructuralRoleAssignment,
   syncStructuralRoleAssignments,
 } from "../../rbac/sync-structural-role";
 import { runWithTenantContext } from "../../tenant/tenant-context";
 import type { AfterCommitHook } from "../../tenant/tenant-context";
-import type { DbOrTx } from "../../rbac/access-invalidate";
+import type { DbOrTx } from "../../rbac/access-mutation-commit";
 import type { CacheService } from "../../cache/cache.service";
 import { CACHE_KEYS } from "../../cache/cache-keys";
 
@@ -63,7 +63,7 @@ beforeEach(() => {
   jest.resetAllMocks();
   jest.mocked(bustMembershipStatusCache).mockResolvedValue(undefined);
   jest.mocked(bustMembershipStatusCacheMany).mockResolvedValue(undefined);
-  jest.mocked(bumpPermissionsVersion).mockResolvedValue(undefined);
+  jest.mocked(commitAccessChange).mockResolvedValue(undefined);
   jest.mocked(syncStructuralRoleAssignment).mockResolvedValue(undefined);
   jest.mocked(syncStructuralRoleAssignments).mockResolvedValue(undefined);
 });
@@ -186,7 +186,7 @@ describe("setLifecycleStatus", () => {
       USER,
       ORG,
     ]);
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
   });
 
@@ -229,7 +229,7 @@ describe("deleteMembership", () => {
     );
 
     expect(statementsOn(captured, 'delete from "organization_members"')).toHaveLength(1);
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
   });
 
@@ -248,7 +248,7 @@ describe("deleteMembership", () => {
     const deletes = statementsOn(captured, 'delete from "organization_members"');
     expect(deletes).toHaveLength(1);
     expect(deletes[0]?.params).toEqual(expect.arrayContaining([ORG, 3, 4]));
-    expect(bumpPermissionsVersion).not.toHaveBeenCalled();
+    expect(commitAccessChange).not.toHaveBeenCalled();
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
   });
 });

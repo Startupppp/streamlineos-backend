@@ -20,8 +20,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { AuditService } from "../../common/audit/audit.service";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -33,7 +32,6 @@ export class RoleMemberService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
-    private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
     private readonly access: AccessService,
   ) {}
@@ -222,7 +220,15 @@ export class RoleMemberService {
             assignedByMembershipId: null,
           })
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "role.member.added",
+            userId: actor.userId,
+            targetId: String(roleId),
+            targetType: "role",
+            metadata: { principalType: input.principalType, principalId: input.principalId },
+          },
+        });
       }, { orgId: actor.orgId });
     } else {
       const group = await this.db.query.principalGroups.findFirst({
@@ -246,24 +252,20 @@ export class RoleMemberService {
             roleId,
           })
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "role.member.added",
+            userId: actor.userId,
+            targetId: String(roleId),
+            targetType: "role",
+            metadata: { principalType: input.principalType, principalId: input.principalId },
+          },
+        });
       }, { orgId: actor.orgId });
     }
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     await this.invalidateRoleHolderSessions(actor.orgId, roleId);
-
-    this.audit.log({
-      action: "role.member.added",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(roleId),
-      targetType: "role",
-      metadata: {
-        principalType: input.principalType,
-        principalId: input.principalId,
-      },
-    });
 
     if (input.principalType === "user") {
       await this.dispatch.emit({
@@ -323,23 +325,19 @@ export class RoleMemberService {
             ),
           );
       }
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "role.member.removed",
+          userId: actor.userId,
+          targetId: String(roleId),
+          targetType: "role",
+          metadata: { principalType: input.principalType, principalId: input.principalId },
+        },
+      });
     }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     await this.invalidateRoleHolderSessions(actor.orgId, roleId);
-
-    this.audit.log({
-      action: "role.member.removed",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(roleId),
-      targetType: "role",
-      metadata: {
-        principalType: input.principalType,
-        principalId: input.principalId,
-      },
-    });
 
     if (input.principalType === "user") {
       await this.dispatch.emit({

@@ -7,11 +7,11 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AccessService } from "../access/access.service";
 import { RoleMemberService } from "./role-member.service";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 describe("RoleMemberService active membership enforcement", () => {
@@ -171,8 +171,8 @@ describe("RoleMemberService — the version bump shares the writer's transaction
   };
 
   beforeEach(() => {
-    jest.mocked(bumpPermissionsVersion).mockClear();
-    jest.mocked(bumpPermissionsVersion).mockResolvedValue(undefined);
+    jest.mocked(commitAccessChange).mockClear();
+    jest.mocked(commitAccessChange).mockResolvedValue(undefined);
   });
 
   it("addRoleMember bumps the version on the same handle the assignment was inserted on", async () => {
@@ -186,7 +186,7 @@ describe("RoleMemberService — the version bump shares the writer's transaction
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.insert).toHaveBeenCalledTimes(1);
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
   });
 
   it("removeRoleMember bumps the version on the same handle the assignment was deleted on", async () => {
@@ -200,6 +200,6 @@ describe("RoleMemberService — the version bump shares the writer's transaction
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.delete).toHaveBeenCalledTimes(1);
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
   });
 });

@@ -14,7 +14,7 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import {
   ADMINISTRABLE_MODULES,
 } from "../../common/rbac/module-vocabulary";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { EntitlementsService } from "./entitlements.service";
 import { MANAGEABLE_MODULE_SET } from "./access-policy";
 import { AccessVersionCache } from "./access-version-cache";
@@ -152,7 +152,7 @@ export class UserModuleAccessService {
             ],
             set: { enabled, updatedBy },
           });
-        await bumpPermissionsVersion(tx, orgId);
+        await commitAccessChange(tx, orgId);
       },
       { orgId },
     );

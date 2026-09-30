@@ -11,8 +11,7 @@ import {
   roles,
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
-import type { AuditService } from "../../../common/audit/audit.service";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   assertKnownPermissionKeys,
@@ -52,7 +51,6 @@ const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
  */
 export interface RoleMutationDeps {
   readonly db: Db;
-  readonly audit: AuditService;
   readonly access: AccessService;
 }
 
@@ -147,19 +145,18 @@ export async function updateRole(
         }
       }
 
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "role.changed",
+          userId: actor.userId,
+          targetId: String(roleId),
+          targetType: "role",
+          metadata: { name: input.name, permissionsUpdated: !!input.permissions },
+        },
+      });
     },
     { orgId: actor.orgId },
   );
-
-  deps.audit.log({
-    action: "role.changed",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    targetId: String(roleId),
-    targetType: "role",
-    metadata: { name: input.name, permissionsUpdated: !!input.permissions },
-  });
 
   return { success: true };
 }
@@ -212,7 +209,14 @@ export async function deleteRole(
       await tx
         .delete(roles)
         .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "role.deleted",
+          userId: actor.userId,
+          targetId: String(roleId),
+          targetType: "role",
+        },
+      });
     },
     { orgId: actor.orgId },
   );

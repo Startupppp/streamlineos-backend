@@ -12,10 +12,9 @@ import {
   roles,
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
-import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import {
   assertPermissionsGrantable,
   buildPermissionAdministeringModuleMap,
@@ -80,7 +79,6 @@ interface ModuleRolePermissionsDeps {
   db: Db;
   access: AccessService;
   cache: CacheService;
-  audit: AuditService;
 }
 
 export async function setModuleRolePermissions(
@@ -201,7 +199,21 @@ export async function setModuleRolePermissions(
           Array.from(base, ([permissionKey, scope]) => ({ orgId: actor.orgId, roleId, permissionKey, scope })),
         );
       }
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "module_access.role_permissions_set",
+          userId: actor.userId,
+          targetId: String(roleId),
+          targetType: "role",
+          metadata: {
+            moduleKey,
+            roleName: role.name,
+            added: permDiff.added,
+            removed: permDiff.removed,
+            truncated: permDiff.truncated,
+          },
+        },
+      });
     },
     { orgId: actor.orgId },
   );
@@ -233,19 +245,5 @@ export async function setModuleRolePermissions(
       ),
     { orgId: actor.orgId },
   );
-  deps.audit.log({
-    action: "module_access.role_permissions_set",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    targetId: String(roleId),
-    targetType: "role",
-    metadata: {
-      moduleKey,
-      roleName: role.name,
-      added: permDiff.added,
-      removed: permDiff.removed,
-      truncated: permDiff.truncated,
-    },
-  });
   return { success: true, version: nextVersion };
 }

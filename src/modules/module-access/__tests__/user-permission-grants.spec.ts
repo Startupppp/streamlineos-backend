@@ -45,8 +45,8 @@ jest.mock("../module-access.helpers", () => ({
   resolveActorRankContext: () => Promise.resolve(rankContextHolder.value),
 }));
 
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: (tx: unknown) => {
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: (tx: unknown) => {
     txCalls.versionBumped += 1;
     txCalls.bumpTx = tx;
     return Promise.resolve();

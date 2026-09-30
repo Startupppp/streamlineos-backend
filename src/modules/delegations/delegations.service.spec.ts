@@ -2,7 +2,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import type { CacheService } from "../../common/cache/cache.service";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import {
   userDelegationPermissions,
@@ -10,7 +10,6 @@ import {
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import type { AccessService } from "../access/access.service";
-import type { AuditService } from "../../common/audit/audit.service";
 import { DelegationsService } from "./delegations.service";
 
 jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
@@ -18,8 +17,8 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
     (_db: unknown, work: (tx: unknown) => Promise<unknown>) => work(_db),
   ),
 }));
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../common/tenant/tenant-context", () => ({
   registerAfterCommit: jest.fn().mockReturnValue(true),
@@ -75,12 +74,10 @@ describe("DelegationsService normalized permission grants", () => {
     const access = {
       resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
     };
-    const audit = { logCritical: jest.fn().mockResolvedValue(undefined) };
     const service = new DelegationsService(
       db as unknown as Db,
       cache as unknown as CacheService,
       access as unknown as AccessService,
-      audit as unknown as AuditService,
     );
 
     const result = await service.create(actor, {
@@ -113,7 +110,7 @@ describe("DelegationsService normalized permission grants", () => {
       delegateeId: "delegatee-1",
       permissions: ["hr:employees:view", "hr:employees:manage"],
     });
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(db, actor.orgId);
+    expect(commitAccessChange).toHaveBeenCalledWith(db, actor.orgId, expect.any(Object));
     expect(cache.invalidate).toHaveBeenCalledWith(
       CACHE_KEYS.userSession("delegatee-1"),
     );
@@ -203,7 +200,6 @@ describe("DelegationsService normalized permission grants", () => {
       db as unknown as Db,
       {} as CacheService,
       {} as AccessService,
-      { logCritical: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService,
     );
 
     await expect(

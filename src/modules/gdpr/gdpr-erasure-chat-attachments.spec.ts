@@ -10,8 +10,8 @@ import {
 import { ERASURE_ID_PAGE } from "./gdpr-subject-erasure-paging";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../common/auth/membership-state.service", () => ({
