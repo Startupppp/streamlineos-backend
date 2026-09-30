@@ -221,7 +221,12 @@ const TIERS: Record<string, Tier> = {
   "public:nps-view": { limit: 30, windowSecs: 60 },
   "public:form-view": { limit: 30, windowSecs: 60 },
   "public:lead-form-view": { limit: 30, windowSecs: 60 },
-  "blog:public-read": { limit: 60, windowSecs: 60 },
+  // Public blog pages are server-rendered, so most of this traffic arrives from the web tier's
+  // egress addresses, not the reader's: 60/min per IP throttled the whole site at a few readers.
+  "blog:public-read": { limit: 600, windowSecs: 60 },
+  "blog:public-search": { limit: 120, windowSecs: 60 },
+  // The blog admin's signed publish notification; a real publisher bursts on bulk edits.
+  "blog:invalidate": { limit: 600, windowSecs: 60 },
   // Build Phase 5: automation runner has no HTTP entry point of its own — it fires
   // from ticket-write call sites via `runForTicketEvent` — so `BuildAutomationRunnerService`
   // calls `RateLimitService.check` directly rather than through `@UseRateLimit`.
