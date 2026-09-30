@@ -3,6 +3,8 @@
 -- the published projection, so the public site keeps serving what was last published.
 SET lock_timeout = '5s';
 --> statement-breakpoint
+DROP INDEX IF EXISTS "idx_blog_posts_owner_editor";
+--> statement-breakpoint
 DROP INDEX IF EXISTS "idx_blog_posts_scheduled";
 --> statement-breakpoint
 DROP INDEX IF EXISTS "idx_blog_posts_tags";
@@ -16,12 +18,14 @@ DROP INDEX IF EXISTS "uq_blog_authors_slug";
 ALTER TABLE "blog_authors" DROP CONSTRAINT IF EXISTS "chk_blog_authors_slug_not_null";
 --> statement-breakpoint
 ALTER TABLE "blog_posts"
+  DROP CONSTRAINT IF EXISTS "fk_blog_posts_owner_editor",
   DROP CONSTRAINT IF EXISTS "chk_blog_posts_schedule_pair",
   DROP CONSTRAINT IF EXISTS "fk_blog_posts_scheduled_revision",
   DROP CONSTRAINT IF EXISTS "fk_blog_posts_published_revision",
   DROP CONSTRAINT IF EXISTS "fk_blog_posts_working_revision";
 --> statement-breakpoint
 ALTER TABLE "blog_posts"
+  DROP COLUMN IF EXISTS "owner_editor_id",
   DROP COLUMN IF EXISTS "cta_key",
   DROP COLUMN IF EXISTS "social_image",
   DROP COLUMN IF EXISTS "cover",

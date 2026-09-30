@@ -267,7 +267,26 @@ ALTER TABLE "blog_posts"
   ADD COLUMN IF NOT EXISTS "search_text"           TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS "cover"                 JSONB,
   ADD COLUMN IF NOT EXISTS "social_image"          TEXT,
-  ADD COLUMN IF NOT EXISTS "cta_key"               VARCHAR(64);
+  ADD COLUMN IF NOT EXISTS "cta_key"               VARCHAR(64),
+  ADD COLUMN IF NOT EXISTS "owner_editor_id"       UUID;
+--> statement-breakpoint
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_blog_posts_owner_editor') THEN
+    ALTER TABLE "blog_posts"
+      ADD CONSTRAINT "fk_blog_posts_owner_editor"
+      FOREIGN KEY ("owner_editor_id") REFERENCES "blog_editors"("id") ON DELETE SET NULL
+      NOT VALID;
+  END IF;
+END $$;
+--> statement-breakpoint
+
+ALTER TABLE "blog_posts" VALIDATE CONSTRAINT "fk_blog_posts_owner_editor";
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS "idx_blog_posts_owner_editor"
+  ON "blog_posts" ("owner_editor_id") WHERE "owner_editor_id" IS NOT NULL;
 --> statement-breakpoint
 
 DO $$

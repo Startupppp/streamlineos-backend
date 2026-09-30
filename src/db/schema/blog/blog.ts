@@ -100,6 +100,7 @@ export const blogPosts = pgTable(
     cover: jsonb("cover").$type<BlogCoverProjection>(),
     socialImage: text("social_image"),
     ctaKey: varchar("cta_key", { length: 64 }),
+    ownerEditorId: uuid("owner_editor_id"),
   },
   (table) => [
     index("idx_blog_posts_category").on(table.categoryId),
