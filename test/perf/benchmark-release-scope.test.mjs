@@ -29,6 +29,13 @@ test("release exclusions leave the full inclusive catalog covered", () => {
   assert.equal(scope.included.some((entry) => entry.id === "search-tickets-sdf"), true);
 });
 
+test("Build aggregate read-cost budgets belong to the Build benchmark module", () => {
+  const build = MODULES.find((module) => module.id === "build");
+  assert.ok(build);
+  assert.ok(build.readCostBudgets["build-org-project-health-summary"]);
+  assert.ok(build.readCostBudgets["build-resource-allocation"]);
+});
+
 test("dropping an excluded measurement still fails global coverage", () => {
   const manifest = manifestFixture();
   manifest.modules = manifest.modules.filter((module) => module.id !== "crm");
