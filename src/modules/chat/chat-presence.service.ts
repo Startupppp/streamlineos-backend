@@ -266,7 +266,11 @@ export class ChatPresenceService {
       .from(users)
       .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
       .where(
-        and(eq(users.isActive, true), eq(organizationMembers.orgId, orgId)),
+        and(
+          eq(users.isActive, true),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
       )
       .limit(500);
   }

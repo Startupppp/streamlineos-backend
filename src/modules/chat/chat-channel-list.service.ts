@@ -137,6 +137,9 @@ export class ChatChannelListService {
           ...(options?.includeArchived === true ? [] : [eq(chatChannels.isArchived, false)]),
         ),
       )
+      // Past the cap the grant keeps the most recently active channels, not whatever the
+      // scan reached first; the id tiebreak makes the cut deterministic.
+      .orderBy(desc(chatChannels.lastMessageAt), desc(chatChannels.id))
       .limit(MAX_CAPABILITY_CHANNELS + 1);
     if (rows.length > MAX_CAPABILITY_CHANNELS)
       logger.warn("chat: member channel capability list truncated", {

@@ -3,6 +3,7 @@ import { Inject } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { InboxConsumer } from "../../common/outbox/inbox-consumer";
+import { logger } from "../../common/logger/logger.service";
 import {
   OutboxConsumerRegistry,
   type OutboxEventConsumer,
@@ -66,8 +67,18 @@ export class ChatFanoutOutboxConsumer implements OutboxEventConsumer, OnModuleIn
       producerEventId: event.eventId,
       idempotencyKey: `outbox:${event.eventId}:${messageFanoutIdempotencyKey(input)}`,
     };
+    // Realtime is a backstop here: the send path already published it after commit, under
+    // the same effect key. Its failure (Ably unconfigured, say) must not block or
+    // dead-letter push / DM / mention delivery, so only deferred failures reach the retry.
+    await this.fanout.dispatchRealtime(input, context).catch((error: unknown) => {
+      logger.error("chat: outbox realtime backstop failed", {
+        orgId: input.orgId,
+        channelId: input.channelId,
+        messageId: input.message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     try {
-      await this.fanout.dispatchRealtime(input, context);
       await this.fanout.dispatchDeferred(input, context);
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED");
     } catch (error: unknown) {

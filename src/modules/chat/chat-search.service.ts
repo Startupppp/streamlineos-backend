@@ -10,7 +10,7 @@ import {
   SENDER_MEMBERSHIP_WITH_USER,
   flattenMessageSender,
 } from "./chat-message-sender-shape";
-import { chatMessageContentMatch } from "./chat-message-content-match";
+import { chatMessageContentMatch, escapeLike } from "./chat-message-content-match";
 import { filterByEntityAccess } from "./chat-channel-authorization";
 import { ChatChannelListService } from "./chat-channel-list.service";
 
@@ -85,22 +85,21 @@ export class ChatSearchService {
       });
       return { results, nextCursor };
     } catch (error) {
-      // Log the error but return empty results instead of crashing the chat interface.
-      // This handles cases where the search function fails (e.g., missing tenant GUC,
-      // database errors, or malformed search terms).
+      // Rethrown, not swallowed: an empty result for a failed query told the user
+      // "no matches" when the search never ran.
       logger.error("[chat.searchMessages] Search failed", {
         error: error instanceof Error ? error.message : String(error),
         query: term,
         orgId,
       });
-      return { results: [], nextCursor: undefined };
+      throw error;
     }
   }
 
   async searchChannels(actor: EntityActor, query: string) {
     const { orgId } = actor;
     if (!query.trim()) return [];
-    const q = `%${query.trim()}%`;
+    const q = `%${escapeLike(query.trim())}%`;
 
     const memberChannelIdList = await this.channelList.listMemberChannelIds(actor, {
       includeArchived: true,
@@ -157,7 +156,7 @@ export class ChatSearchService {
 
   async searchUsers(orgId: string, query: string) {
     if (!query.trim()) return [];
-    const q = `%${query.trim()}%`;
+    const q = `%${escapeLike(query.trim())}%`;
     return this.db
       .select({ id: users.id, name: users.name, email: users.email, image: users.image })
       .from(users)
@@ -165,6 +164,7 @@ export class ChatSearchService {
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
           or(ilike(users.name, q), ilike(users.email, q)),
         ),
       )

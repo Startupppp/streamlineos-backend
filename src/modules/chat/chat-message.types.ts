@@ -7,6 +7,7 @@ export type PersistedMessage = {
   replyToId: number | null;
   metadata: Record<string, unknown> | null;
   messageType: "text" | "lead_submission" | "system";
+  clientKey?: string | null;
 };
 
 export type { ChatAttachmentPayload } from "../realtime/dto/realtime.schemas";

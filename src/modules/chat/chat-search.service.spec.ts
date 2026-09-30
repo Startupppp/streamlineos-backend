@@ -1,4 +1,7 @@
 import { Test } from "@nestjs/testing";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { chatMessageContentMatch, escapeLike } from "./chat-message-content-match";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { ChatSearchService } from "./chat-search.service";
 import { ChatChannelListService } from "./chat-channel-list.service";
@@ -112,5 +115,40 @@ describe("ChatSearchService.searchChannels — membership read is bounded", () =
     const results = await service.searchChannels(actor, "announcements");
 
     expect(results.find((r) => r.id === channelId)?.isMember).toBe(false);
+  });
+});
+
+describe("ChatSearchService — search terms and failures", () => {
+  const dialect = new PgDialect();
+
+  it("escapes LIKE wildcards so `%` and `_` match themselves", () => {
+    expect(escapeLike("50%_off\\x")).toBe("50\\%\\_off\\\\x");
+  });
+
+  it("hands the escaped term to the trigram helper", async () => {
+    const execute = jest.fn().mockResolvedValue([]);
+    await chatMessageContentMatch({ execute } as never, "100%");
+    expect(dialect.sqlToQuery(execute.mock.calls[0][0]).params).toContain("100\\%");
+  });
+
+  it("surfaces a failed message search instead of answering no matches", async () => {
+    const db = { execute: jest.fn().mockRejectedValue(new Error("db down")) };
+    const { service } = await buildService(db);
+    await expect(service.searchMessages(actor, "hello")).rejects.toThrow("db down");
+  });
+
+  it("offers only ACTIVE organization members as users", async () => {
+    let where: SQL | undefined;
+    const chain = {
+      from: () => chain,
+      innerJoin: () => chain,
+      where: (w: SQL) => ((where = w), chain),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const { service } = await buildService({ select: () => chain });
+    await service.searchUsers(ORG, "ann");
+    const compiled = dialect.sqlToQuery(where as SQL);
+    expect(compiled.sql).toContain('"organization_members"."status" = ');
+    expect(compiled.params).toContain("ACTIVE");
   });
 });

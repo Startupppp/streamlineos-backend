@@ -77,6 +77,7 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
           metadata: strippedMetadata,
           messageType: message.messageType,
           attachments,
+          clientKey: message.clientKey ?? null,
           idempotencyKey:
             context?.idempotencyKey ?? messageFanoutIdempotencyKey(input),
         },

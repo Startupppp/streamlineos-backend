@@ -74,3 +74,28 @@ describe("ChatTypingService", () => {
     await expect(service.setTyping(12, "org-1", "user-2")).rejects.toThrow(NotFoundException);
   });
 });
+
+describe("ChatTypingService without Upstash", () => {
+  it("keeps typing state in-process so a single instance still shows typers", async () => {
+    const module = await Test.createTestingModule({
+      providers: [
+        ChatTypingService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: REDIS, useValue: null },
+      ],
+    }).compile();
+    const service = module.get(ChatTypingService);
+    db.query.chatChannels.findFirst.mockResolvedValue({ id: 12, isPrivate: false });
+    db.query.organizationMembers.findFirst.mockResolvedValue({ id: 1 });
+    db.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 1 });
+    db.query.users.findFirst.mockResolvedValue({ name: "Ann" });
+
+    await service.setTyping(12, "org-1", "user-1");
+
+    await expect(service.getTyping(12, "org-1", "user-2")).resolves.toEqual([{ userId: "user-1", name: "Ann" }]);
+    await expect(service.getTyping(12, "org-1", "user-1")).resolves.toEqual([]);
+    jest.spyOn(Date, "now").mockReturnValue(Date.now() + 5_000);
+    await expect(service.getTyping(12, "org-1", "user-2")).resolves.toEqual([]);
+    jest.restoreAllMocks();
+  });
+});

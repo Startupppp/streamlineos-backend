@@ -11,6 +11,7 @@ import {
   isEncryptedSecret,
 } from "../../common/security/secret-encryption.util";
 import type { ChatInviteLinkMintOptions } from "./dto/chat-invite-link-mint.schema";
+import { channelHighWaterMark } from "./chat-channel-member-state";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -211,6 +212,7 @@ export class ChatInviteLinksService {
             channelId: channel.id,
             membershipId: joinerOrgMember.id,
             role: "MEMBER",
+            lastReadPosition: channelHighWaterMark(channel.id, channel.orgId),
           })
           .onConflictDoNothing()
           .returning({ id: chatChannelMembers.id });

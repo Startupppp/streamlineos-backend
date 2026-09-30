@@ -378,6 +378,42 @@ describe("BuildEntityActions", () => {
       expect(mockTx.insert).toHaveBeenCalledTimes(1);
     });
 
+    it("links the ticket back to the chat message it was converted from", async () => {
+      mockDb.query.projects.findFirst.mockResolvedValue(STUB_PROJECT);
+
+      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", {
+        type: "TASK",
+        description: "from chat",
+        sourceChannelId: 3,
+        sourceMessageId: 9,
+      });
+
+      expect(result).toMatchObject({ ok: true });
+      expect(mockTx.insert).toHaveBeenCalledTimes(3);
+      expect(mockTx.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ticketId: 99,
+          url: expect.stringMatching(/\/chat\?channel=3&message=9$/),
+          label: "Chat message",
+        }),
+      );
+      expect(mockTx.values).toHaveBeenCalledWith(
+        expect.objectContaining({ ticketId: 99, action: "created", toValue: "From a chat message" }),
+      );
+    });
+
+    it("writes no backlink when the source ids are not positive integers", async () => {
+      mockDb.query.projects.findFirst.mockResolvedValue(STUB_PROJECT);
+
+      await service.run(ACTOR, PROJECT_REF, "create-ticket", {
+        type: "TASK",
+        sourceChannelId: "https://evil.example",
+        sourceMessageId: 9,
+      });
+
+      expect(mockTx.insert).toHaveBeenCalledTimes(1);
+    });
+
     it("uses description as title fallback when title is absent", async () => {
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockDb.query.projects.findFirst.mockResolvedValue(STUB_PROJECT);

@@ -39,14 +39,15 @@ export const channelListItemSchema = z.object({
   lastMessage: channelLastMessageSchema.nullable(),
 });
 
+/** Exactly what `ChatChannelListService.listPublicChannels` selects, plus its two derived fields. */
 export const channelPublicListItemSchema = z.object({
   id: z.number().int(),
   name: z.string(),
   type: z.string(),
+  description: z.string().nullable(),
   avatarUrl: z.string().nullable(),
-  isArchived: z.boolean(),
-  entityType: z.string().nullable(),
-  entityId: z.string().nullable(),
+  createdAt: wireDate(),
+  lastMessageAt: wireDate(),
   memberCount: z.number().int(),
   isMember: z.boolean(),
 });

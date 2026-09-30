@@ -362,6 +362,7 @@ describe("record channel — the realtime capability is minted from the record A
       from: () => chain,
       innerJoin: () => chain,
       where: () => chain,
+      orderBy: () => chain,
       limit: () => Promise.resolve(rows),
     };
     return {

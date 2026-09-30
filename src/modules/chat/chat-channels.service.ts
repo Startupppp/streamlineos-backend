@@ -19,6 +19,7 @@ import {
 } from "./chat-channel-member-shape";
 import { CHAT_ENTITY_CHANNEL_CONFLICT } from "./chat-entity-channel-conflict-target";
 import { assertChannelMember } from "./chat-channel-authorization";
+import { channelHighWaterMark } from "./chat-channel-member-state";
 
 export { entityChannelFallbackName } from "./chat-channel-list.service";
 
@@ -99,59 +100,64 @@ export class ChatChannelsService {
         : (await this.listService.getMembershipId(orgId, targetUserId));
       if (targetMembershipId === null) throw new NotFoundException("User not found in this organization");
 
-      const creatorM = alias(chatChannelMembers, "creator_m");
-      const targetM = alias(chatChannelMembers, "target_m");
-      const [dmRow] = isSelfDm
-        ? await this.db
-            .select({ id: chatChannels.id })
-            .from(chatChannels)
-            .innerJoin(creatorM, and(
-              eq(creatorM.channelId, chatChannels.id),
-              eq(creatorM.orgId, orgId),
-              eq(creatorM.membershipId, creatorMembershipId),
-            ))
-            .where(
-              and(
-                eq(chatChannels.orgId, orgId),
-                eq(chatChannels.type, "DIRECT"),
-                sql`NOT EXISTS (
-                  SELECT 1 FROM "chat_channel_members" other_m
-                  WHERE other_m.channel_id = ${chatChannels.id}
-                    AND other_m.org_id = ${orgId}
-                    AND other_m.membership_id != ${creatorMembershipId}
-                )`,
-              ),
-            )
-            .limit(1)
-        : await this.db
-            .select({ id: chatChannels.id })
-            .from(chatChannels)
-            .innerJoin(creatorM, and(
-              eq(creatorM.channelId, chatChannels.id),
-              eq(creatorM.orgId, orgId),
-              eq(creatorM.membershipId, creatorMembershipId),
-            ))
-            .innerJoin(targetM, and(
-              eq(targetM.channelId, chatChannels.id),
-              eq(targetM.orgId, orgId),
-              eq(targetM.membershipId, targetMembershipId),
-            ))
-            .where(and(eq(chatChannels.orgId, orgId), eq(chatChannels.type, "DIRECT")))
-            .limit(1);
-      if (dmRow)
-        return { channel: await this.loadChannelDetail(this.db, dmRow.id, orgId), created: false };
+      // Select-then-insert with nothing behind it let two concurrent opens both miss the
+      // lookup and create two DMs for one pair. The advisory lock, keyed on the org and the
+      // sorted pair and held to the end of the transaction, serializes lookup and insert.
+      const pairKey = [creatorMembershipId, targetMembershipId].sort((a, b) => a - b).join(":");
+      return this.db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`chat-dm:${orgId}:${pairKey}`}, 0))`);
+        const creatorM = alias(chatChannelMembers, "creator_m");
+        const targetM = alias(chatChannelMembers, "target_m");
+        const [dmRow] = isSelfDm
+          ? await tx
+              .select({ id: chatChannels.id })
+              .from(chatChannels)
+              .innerJoin(creatorM, and(
+                eq(creatorM.channelId, chatChannels.id),
+                eq(creatorM.orgId, orgId),
+                eq(creatorM.membershipId, creatorMembershipId),
+              ))
+              .where(
+                and(
+                  eq(chatChannels.orgId, orgId),
+                  eq(chatChannels.type, "DIRECT"),
+                  sql`NOT EXISTS (
+                    SELECT 1 FROM "chat_channel_members" other_m
+                    WHERE other_m.channel_id = ${chatChannels.id}
+                      AND other_m.org_id = ${orgId}
+                      AND other_m.membership_id != ${creatorMembershipId}
+                  )`,
+                ),
+              )
+              .limit(1)
+          : await tx
+              .select({ id: chatChannels.id })
+              .from(chatChannels)
+              .innerJoin(creatorM, and(
+                eq(creatorM.channelId, chatChannels.id),
+                eq(creatorM.orgId, orgId),
+                eq(creatorM.membershipId, creatorMembershipId),
+              ))
+              .innerJoin(targetM, and(
+                eq(targetM.channelId, chatChannels.id),
+                eq(targetM.orgId, orgId),
+                eq(targetM.membershipId, targetMembershipId),
+              ))
+              .where(and(eq(chatChannels.orgId, orgId), eq(chatChannels.type, "DIRECT")))
+              .limit(1);
+        if (dmRow)
+          return { channel: await this.loadChannelDetail(tx, dmRow.id, orgId), created: false };
 
-      const [targetUser, currentUser] = await Promise.all([
-        this.db.query.users.findFirst({
-          where: eq(users.id, targetUserId),
-          columns: { name: true },
-        }),
-        this.db.query.users.findFirst({
-          where: eq(users.id, userId),
-          columns: { name: true },
-        }),
-      ]);
-      const channel = await this.db.transaction(async (tx) => {
+        const [targetUser, currentUser] = await Promise.all([
+          tx.query.users.findFirst({
+            where: eq(users.id, targetUserId),
+            columns: { name: true },
+          }),
+          tx.query.users.findFirst({
+            where: eq(users.id, userId),
+            columns: { name: true },
+          }),
+        ]);
         const [created] = await tx
           .insert(chatChannels)
           .values({
@@ -174,10 +180,8 @@ export class ChatChannelsService {
               ],
         );
 
-        return this.loadChannelDetail(tx, created.id, orgId);
+        return { channel: await this.loadChannelDetail(tx, created.id, orgId), created: true };
       });
-
-      return { channel, created: true };
     }
 
     const { name, description, avatarUrl, memberIds } = body;
@@ -277,6 +281,7 @@ export class ChatChannelsService {
             membershipId: actorMembershipId,
             role: "MEMBER",
             notificationPreference: "DEFAULT",
+            lastReadPosition: channelHighWaterMark(existing.id, actor.orgId),
           })
           .onConflictDoNothing();
         const joined = await this.loadEntityChannel(entityType, entityId, actor);
