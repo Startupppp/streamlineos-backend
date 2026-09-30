@@ -17,11 +17,13 @@ const googleMeetEventSchema = z
 export const HUDDLE_MEETING_UNCONFIGURED =
   "Huddles need a Google Workspace connection, and this deployment has no Composio integration configured. Ask your platform administrator to configure it.";
 
+// There is no org-level Settings → Integrations page, and `resolveToolkitConnection` prefers the
+// starter's OWN Google Calendar connection, which any member may add (CHAT-009).
 export const HUDDLE_MEETING_NO_CONNECTION =
-  "Huddles need a connected Google account and this organization has none. An organization owner or admin can connect one under Settings → Integrations.";
+  "Huddles run on Google Meet, so they need a connected Google Calendar account. Connect yours in Calendar → Calendar accounts (any member can), or ask an organization admin to connect a shared one, then start the huddle again.";
 
 export const HUDDLE_MEETING_NEEDS_REAUTH =
-  "The Google account this organization uses for huddles needs to be reconnected. An organization owner or admin can reconnect it under Settings → Integrations.";
+  "The Google Calendar account huddles use needs to be reconnected. Reconnect it in Calendar → Calendar accounts (an organization admin reconnects a shared one), then start the huddle again.";
 
 export const HUDDLE_MEETING_PROVIDER_FAILED =
   "Google could not create a meeting for this huddle. Nothing was started — please try again.";

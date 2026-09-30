@@ -55,7 +55,7 @@ export class ChatHuddlesController {
   @ApiResponse({
     status: 412,
     description:
-      "Organization precondition an owner or admin must fix, never a retry: no Google account is connected, or the connected one needs reconnecting.",
+      "Precondition, never a retry: no usable Google Calendar connection — the starter connects their own in Calendar, or an admin connects or reconnects a shared one.",
   })
   @ApiResponse({
     status: 503,
