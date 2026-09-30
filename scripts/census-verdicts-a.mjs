@@ -16,8 +16,8 @@ export default [
       },
       {
         file: "src/modules/build/core/members/projects-members.service.ts",
-        line: 81,
-        anchor: /where: and\(eq\(projects\.id, projectId\), eq\(projects\.orgId, u\.orgId\), isNull\(projects\.deletedAt\)\),/,
+        line: 76,
+        anchor: /const \{ hasAccess, role \} = await resolveProjectAccess\(/,
         note: "the project lookup that makes a foreign :projectId a 404",
       },
       {
@@ -69,14 +69,14 @@ export default [
         note: "the fix — the private helper now delegates to the shared gate the sibling already used",
       },
       {
-        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
-        line: 37,
+        file: "src/modules/build/core/project-crud/project-access.ts",
+        line: 282,
         anchor: /eq\(tickets\.projectId, projectId\),/,
         note: "the parent is now bound in SQL, not only compared in JavaScript",
       },
       {
-        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
-        line: 44,
+        file: "src/modules/build/core/project-crud/project-access.ts",
+        line: 289,
         anchor: /const projectAccess = await resolveProjectAccess\(/,
         note: "the project-membership assertion that was entirely absent before",
       },
@@ -111,8 +111,8 @@ export default [
         note: "org was already bound on the INSERT — the org dimension was never the hole",
       },
       {
-        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
-        line: 50,
+        file: "src/modules/build/core/project-crud/project-access.ts",
+        line: 291,
         anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/,
         note: "the refusal the outsider now hits",
       },

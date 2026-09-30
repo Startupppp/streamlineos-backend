@@ -198,7 +198,7 @@ export default [
       "None cross-tenant, and none cross-project either: the UPDATE's own WHERE requires the target membership to be a member of this exact :projectId, so a memberUserId who is only a member of a different project in the same org gets 404, not a role change.",
     evidence: [
       { file: "src/modules/build/core/project-crud/project-resources.controller.ts", line: 128, anchor: /updateMemberRole\(/, note: "handler binds both projectId and memberUserId and forwards both" },
-      { file: "src/modules/build/core/members/projects-members.service.ts", line: 359, anchor: /await assertProjectOwnership\(this\.db, orgId, projectId\);/, note: "confirms projectId belongs to this org, 404 otherwise" },
+      { file: "src/modules/build/core/members/projects-members.service.ts", line: 362, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "confirms projectId belongs to this org, 404 otherwise" },
       { file: "src/modules/build/core/members/projects-members.service.ts", line: 428, anchor: /const targetActor = await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberUserId \}\);/, note: "resolves the target membership scoped to this org" },
       { file: "src/modules/build/core/members/projects-members.service.ts", line: 371, anchor: /eq\(projectMembers\.projectId, projectId\),/, note: "UPDATE's WHERE requires the target membership to belong to this exact project; 404 otherwise" },
     ],
@@ -249,8 +249,8 @@ export default [
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.controller.ts", line: 90, anchor: /getTicketValues\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 174, anchor: /async getTicketValues\(u: CurrentUserContext, projectId: number, ticketId: number\) \{/, note: "the terminal service receives the authenticated actor and route ids" },
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 175, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before the values query" },
-      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 37, anchor: /eq\(tickets\.projectId, projectId\),/, note: "tenant, project, and ticket are bound in one lookup" },
-      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 282, anchor: /eq\(tickets\.projectId, projectId\),/, note: "tenant, project, and ticket are bound in one lookup" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 291, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -266,7 +266,7 @@ export default [
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 231, anchor: /async upsertTicketValues\(/, note: "the terminal service receives the authenticated actor and route ids" },
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 237, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before validation or mutation" },
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 242, anchor: /await this\.assertFieldDefinitionsInProject\(/, note: "body field ids are independently bound to the same project" },
-      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 291, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
 
@@ -282,7 +282,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 79, anchor: /listRelations\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 56, anchor: /async listRelations\(/, note: "signature" },
-      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 37, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 282, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch" },
     ],
   },
   {
@@ -324,7 +324,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 173, anchor: /removeLabel\(/, note: "handler binds projectId, ticketId and labelId and forwards all three" },
       { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 390, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before deletion" },
-      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 291, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -338,7 +338,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 200, anchor: /getGitLinks\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 597, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before delegation" },
-      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 291, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -490,7 +490,7 @@ export default [
       "None: a ticketId belonging to a different project 404s directly at the final UPDATE's WHERE clause, which independently requires projectId=projectId.",
     evidence: [
       { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 197, anchor: /rankTicket\(/, note: "handler binds both projectId and ticketId and forwards both" },
-      { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 88, anchor: /export async function rankTicket\(db: Db, cache: CacheService, access: AccessService, actor: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput, effectDeps\?: RankTicketEffectDeps,\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 50, anchor: /export async function rankTicket\(/, note: "signature takes projectId" },
       { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 196, anchor: /\.set\(\{ rank: rankValue, status, updatedAt: now \}\)/, note: "this is the mutation, not a pre-check" },
       { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 199, anchor: /eq\(tickets\.orgId, actor\.orgId\), eq\(tickets\.projectId, projectId\), eq\(tickets\.id, ticketId\), isNull\(tickets\.deletedAt\),/, note: "the actual UPDATE's WHERE binds orgId+projectId+id together; 404 on mismatch" },
     ],
@@ -506,8 +506,8 @@ export default [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 210, anchor: /getActivity\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/tickets/projects-ticket-subresources.service.ts", line: 144, anchor: /async getActivity\(/, note: "signature carries the actor and route ids" },
-      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 37, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch" },
-      { file: "src/modules/build/core/tickets/build-ticket-read-access.ts", line: 50, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 282, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 291, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
