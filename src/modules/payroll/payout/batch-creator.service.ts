@@ -23,7 +23,7 @@ import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
-import { defaultFormatFromCurrency, csvHeader, csvRow } from "./lib/payout-csv";
+import { defaultFormatFromCurrency, csvHeader, csvRow, isSafeBankToken } from "./lib/payout-csv";
 import { toPaise, fromPaise } from "../runs/lib/money";
 import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postgres-error";
@@ -116,6 +116,7 @@ export class BatchCreatorService {
       const payee = payeeByRunEmployee.get(e.id);
       const bank = payee?.bankDetails ?? null;
       if (!bank?.accountNumber) return false;
+      if (!isSafeBankToken(bank.accountNumber) || !isSafeBankToken(bank.ifsc ?? "")) return false;
       return toPaise(e.netPayoutCurrency ?? e.net) > 0;
     });
 

@@ -21,6 +21,23 @@ export function csvHeader(format: PayoutBatchFormat): string {
   }
 }
 
+/**
+ * A bank file cell that can only ever hold letters, digits and spaces (IBANs are often stored
+ * grouped in fours; a space cannot end a cell or start a formula). Account numbers and bank codes
+ * are pasted into the file inside quotes, so one `"` or newline in either closes the cell and
+ * writes a second payee row into the file the bank executes (SEC-HRMS-008: an account number
+ * of `1","X\n2,"Mallory","99999999",...` did exactly that). Payees failing this are not
+ * eligible for a batch; `payout-validation` reports them as an error.
+ */
+export function isSafeBankToken(value: string): boolean {
+  return /^[A-Za-z0-9 ]*$/.test(value);
+}
+
+/** Quotes and line breaks end the cell; a leading `= + - @` makes a spreadsheet run it. */
+function safePayeeName(name: string): string {
+  return name.replace(/["\r\n]/g, " ").replace(/^[=+\-@\t\s]+/, "");
+}
+
 export function csvRow(
   format: PayoutBatchFormat,
   idx: number,
@@ -31,7 +48,9 @@ export function csvRow(
   amountPaise: number,
   narration: string,
 ): string {
-  const safeName = name.replace(/"/g, "");
+  if (!isSafeBankToken(accountNumber) || !isSafeBankToken(bankCode))
+    throw new Error("Refusing to write a bank file cell outside [A-Za-z0-9 ]");
+  const safeName = safePayeeName(name);
   const amt = (amountPaise / 100).toFixed(2);
   switch (format) {
     case "NEFT_CSV":
