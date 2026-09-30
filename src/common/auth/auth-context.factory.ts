@@ -27,7 +27,8 @@ export class AuthContextFactory {
       moduleAvailability: (user, moduleKey) =>
         moduleAccess.moduleAvailability(user, moduleKey),
       membershipState: (userId, orgId) => membership.resolve(userId, orgId),
-      mfaState: (orgId, userId) => mfaPolicy.resolve(orgId, userId),
+      mfaState: (orgId, userId, session) =>
+        mfaPolicy.resolve(orgId, userId, session),
     };
   }
 

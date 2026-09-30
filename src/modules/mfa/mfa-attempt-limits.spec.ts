@@ -35,7 +35,9 @@ describe("MfaController attempt limits", () => {
     await controller.verify({ token: "123456" }, actor);
 
     expect(check).toHaveBeenCalledWith("auth:mfa-verify", actor.userId);
-    expect(mfa.verify).toHaveBeenCalledWith(actor.userId, { token: "123456" });
+    expect(mfa.verify).toHaveBeenCalledWith(actor.userId, actor.sessionId, {
+      token: "123456",
+    });
   });
 
   it("refuses a verify attempt once the limit is exhausted, without reaching the service", async () => {

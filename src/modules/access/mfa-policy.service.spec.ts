@@ -31,7 +31,12 @@ describe("MfaPolicyService", () => {
     }).compile();
     const service = moduleRef.get(MfaPolicyService);
 
-    await expect(service.resolve("org-1", "user-1")).resolves.toEqual({
+    await expect(
+      service.resolve("org-1", "user-1", {
+        sessionId: "session-1",
+        interactive: true,
+      }),
+    ).resolves.toEqual({
       enforced: true,
       satisfied: false,
     });

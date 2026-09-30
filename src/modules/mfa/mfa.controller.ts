@@ -24,15 +24,18 @@ import { MfaService } from "./mfa.service";
 import {
   mfaSetupResponseSchema,
   mfaVerifyResponseSchema,
+  mfaChallengeResponseSchema,
   mfaDisableResponseSchema,
   mfaStatusResponseSchema,
   mfaResetResponseSchema,
 } from "./dto/mfa-response.schemas";
 import {
   verifyMfaSchema,
+  challengeMfaSchema,
   disableMfaSchema,
   resetMfaSchema,
   type VerifyMfaInput,
+  type ChallengeMfaInput,
   type DisableMfaInput,
   type ResetMfaInput,
 } from "./dto/mfa.schemas";
@@ -82,7 +85,20 @@ export class MfaController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.enforceAttemptLimit("auth:mfa-verify", u.userId);
-    return this.mfa.verify(u.userId, body);
+    return this.mfa.verify(u.userId, u.sessionId, body);
+  }
+
+  @Post("challenge")
+  @ResponseSchema(mfaChallengeResponseSchema)
+  @Universal()
+  @HttpCode(200)
+  @Validate({ body: challengeMfaSchema })
+  async challenge(
+    @Body() body: ChallengeMfaInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.enforceAttemptLimit("auth:mfa-challenge", u.userId);
+    return this.mfa.challenge(u.userId, u.sessionId, body);
   }
 
   @Post("disable")

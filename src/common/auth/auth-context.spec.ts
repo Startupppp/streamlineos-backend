@@ -169,7 +169,10 @@ describe("createAuthContext — MFA", () => {
     await ctx.mfa();
 
     expect(lookups.mfaState).toHaveBeenCalledTimes(1);
-    expect(lookups.mfaState).toHaveBeenCalledWith("org-1", "user-1");
+    expect(lookups.mfaState).toHaveBeenCalledWith("org-1", "user-1", {
+      sessionId: "session-1",
+      interactive: true,
+    });
   });
 
   it("reads no MFA policy for an actor with no organization, exactly as membership() reads no membership row", async () => {

@@ -1,6 +1,7 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import type { AuthContext } from "../../common/auth/auth-context";
+import { mfaSessionRefFor } from "../../common/auth/mfa-policy.token";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 import { moduleAvailability } from "../../common/rbac/module-availability";
 import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
@@ -49,7 +50,13 @@ export class AccessSnapshotResolver {
   ): Promise<AccessSnapshot> {
     const [version, mfa] = await Promise.all([
       this.getPermissionsVersion(orgId),
-      ctx ? ctx.mfa() : this.mfaPolicy.resolve(orgId, userId),
+      ctx
+        ? ctx.mfa()
+        : this.mfaPolicy.resolve(
+            orgId,
+            userId,
+            mfaSessionRefFor(currentUserContext),
+          ),
     ]);
 
     const tokenScopes = currentUserContext.tokenScopes;

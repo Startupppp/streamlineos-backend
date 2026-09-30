@@ -4,13 +4,17 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypt
 import { generateSecret, generateURI, verifySync } from "otplib";
 import QRCode from "qrcode";
 import bcrypt from "bcryptjs";
-import { users, mfaBackupCodes, organizationMembers } from "../../db/schema";
+import { users, mfaBackupCodes, organizationMembers, userSessions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { MfaPolicyService } from "../access/mfa-policy.service";
-import type { VerifyMfaInput, DisableMfaInput } from "./dto/mfa.schemas";
+import type {
+  VerifyMfaInput,
+  ChallengeMfaInput,
+  DisableMfaInput,
+} from "./dto/mfa.schemas";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -117,12 +121,16 @@ export class MfaService {
     return { qrDataUrl, secret, manualEntryKey: secret, backupCodes: plainCodes };
   }
 
-  async verify(userId: string, body: VerifyMfaInput) {
+  private async consumeProof(
+    userId: string,
+    body: VerifyMfaInput | ChallengeMfaInput,
+    requireEnabled: boolean,
+  ): Promise<void> {
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: { totpSecret: true, totpEnabled: true },
     });
-    if (!user || !user.totpSecret) {
+    if (!user || !user.totpSecret || (requireEnabled && !user.totpEnabled)) {
       throw new BadRequestException("MFA not set up");
     }
 
@@ -131,36 +139,61 @@ export class MfaService {
     if ("token" in body) {
       const valid = verifyTotpToken(body.token, decryptedSecret);
       if (!valid) throw new BadRequestException("Invalid token");
-    } else {
-      const codes = await this.db.query.mfaBackupCodes.findMany({
-        where: and(eq(mfaBackupCodes.userId, userId), isNull(mfaBackupCodes.usedAt)),
-        columns: { id: true, codeHash: true },
-      });
-
-      let matchedId: number | null = null;
-      for (const code of codes) {
-        const matches = await verifyBackupCode(body.backupCode, code.codeHash);
-        if (matches) {
-          matchedId = code.id;
-          break;
-        }
-      }
-
-      if (matchedId === null) throw new BadRequestException("Invalid backup code");
-
-      await this.db
-        .update(mfaBackupCodes)
-        .set({ usedAt: new Date() })
-        .where(eq(mfaBackupCodes.id, matchedId));
+      return;
     }
+
+    const codes = await this.db.query.mfaBackupCodes.findMany({
+      where: and(eq(mfaBackupCodes.userId, userId), isNull(mfaBackupCodes.usedAt)),
+      columns: { id: true, codeHash: true },
+    });
+
+    let matchedId: number | null = null;
+    for (const code of codes) {
+      const matches = await verifyBackupCode(body.backupCode, code.codeHash);
+      if (matches) {
+        matchedId = code.id;
+        break;
+      }
+    }
+
+    if (matchedId === null) throw new BadRequestException("Invalid backup code");
+
+    await this.db
+      .update(mfaBackupCodes)
+      .set({ usedAt: new Date() })
+      .where(eq(mfaBackupCodes.id, matchedId));
+  }
+
+  private async stampSession(sessionId: string): Promise<void> {
+    if (!sessionId) return;
+    await this.db
+      .update(userSessions)
+      .set({ mfaSatisfiedAt: new Date() })
+      .where(eq(userSessions.id, sessionId));
+  }
+
+  async verify(userId: string, sessionId: string, body: VerifyMfaInput) {
+    await this.consumeProof(userId, body, false);
 
     await this.db
       .update(users)
       .set({ totpEnabled: true })
       .where(eq(users.id, userId));
+    await this.stampSession(sessionId);
     await this.mfaPolicy.invalidateUser(userId);
 
     return { enabled: true };
+  }
+
+  async challenge(
+    userId: string,
+    sessionId: string,
+    body: ChallengeMfaInput,
+  ) {
+    await this.consumeProof(userId, body, true);
+    await this.stampSession(sessionId);
+
+    return { satisfied: true };
   }
 
   async disable(userId: string, orgId: string, body: DisableMfaInput) {

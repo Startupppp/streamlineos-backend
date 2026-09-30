@@ -26,6 +26,11 @@ export const mfaVerifyResponseSchema = z.object({
   enabled: z.literal(true),
 });
 
+/** `MfaService.challenge` — confirms this session has now passed a second factor. */
+export const mfaChallengeResponseSchema = z.object({
+  satisfied: z.literal(true),
+});
+
 /** `MfaService.disable` — confirms MFA is now disabled. */
 export const mfaDisableResponseSchema = z.object({
   disabled: z.literal(true),
