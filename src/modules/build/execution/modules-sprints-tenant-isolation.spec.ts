@@ -1,5 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
-import { BadRequestException, GoneException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, GoneException, NotFoundException } from "@nestjs/common";
 import { ModulesService } from "./modules.service";
 import { SprintsService } from "./sprints.service";
 
@@ -65,6 +65,64 @@ describe("ModulesService — cross-tenant isolation", () => {
 
     await expect(svc.listModules(OWNER_ORG, 1, { cursor: "not-a-cursor" })).rejects.toThrow(BadRequestException);
     expect(db.select).not.toHaveBeenCalled();
+  });
+});
+
+describe("ModulesService — createModule", () => {
+  it("a DB 23505 on INSERT becomes ConflictException so a race-condition duplicate never surfaces as a 500", async () => {
+    const uniqueViolation = new Error("duplicate key value violates unique constraint");
+    Object.assign(uniqueViolation, { code: "23505" });
+
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockRejectedValue(uniqueViolation),
+        }),
+      }),
+    } as unknown as Db;
+
+    const svc = new ModulesService(db);
+
+    await expect(
+      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it("propagates non-23505 DB errors unchanged so they reach AllExceptionsFilter as 500 (control)", async () => {
+    const otherError = new Error("connection refused");
+
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockRejectedValue(otherError),
+        }),
+      }),
+    } as unknown as Db;
+
+    const svc = new ModulesService(db);
+
+    await expect(
+      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+    ).rejects.toThrow(otherError);
+    await expect(
+      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+    ).rejects.not.toThrow(ConflictException);
   });
 });
 

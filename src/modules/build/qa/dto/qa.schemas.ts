@@ -12,7 +12,7 @@ export const testSuiteListQuerySchema = z.object({
 }).strict();
 
 export const createTestSuiteSchema = z.object({
-  name: z.string().min(1).max(255),
+  name: z.string().trim().min(1, "Name cannot be blank").max(255),
   description: z.string().optional(),
   parentId: z.number().int().positive().optional(),
 }).strict();
@@ -29,7 +29,7 @@ export const testCaseListQuerySchema = z.object({
 
 export const createTestCaseSchema = z.object({
   suiteId: z.number().int().positive().optional(),
-  title: z.string().min(1).max(500),
+  title: z.string().trim().min(1, "Title cannot be blank").max(500),
   preconditions: z.string().optional(),
   steps: z.array(testCaseStepSchema).max(200).optional(),
   expectedResult: z.string().optional(),
@@ -47,7 +47,7 @@ export const testRunListQuerySchema = z.object({
 }).strict();
 
 export const createTestRunSchema = z.object({
-  name: z.string().min(1).max(500),
+  name: z.string().trim().min(1, "Name cannot be blank").max(500),
   cycleId: z.number().int().positive().optional(),
   releaseId: z.number().int().positive().optional(),
   environment: z.string().optional(),
@@ -58,7 +58,7 @@ export const createTestRunSchema = z.object({
 }).strict();
 
 export const updateTestRunSchema = z.object({
-  name: z.string().min(1).max(500).optional(),
+  name: z.string().trim().min(1, "Name cannot be blank").max(500).optional(),
   status: z.enum(["not_started", "in_progress", "completed", "aborted"]).optional(),
   environment: z.string().optional(),
   browserDevice: z.string().optional(),

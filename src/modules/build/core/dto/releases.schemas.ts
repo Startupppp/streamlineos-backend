@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { clearableCalendarDate } from "../../../../common/validation/calendar-date.schema";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const MEANINGFUL_TEXT_RE = /[a-zA-Z0-9À-ɏЀ-ӿ一-鿿]/;
@@ -18,7 +19,7 @@ const releaseVersionSchema = z
   .trim()
   .max(30, "Version must be 30 characters or fewer")
   .refine(
-    (v) => v.trim().length > 0 && (MEANINGFUL_TEXT_RE.test(v) || VERSION_RE.test(v.trim())),
+    (v) => VERSION_RE.test(v.trim()),
     "Enter a valid version, e.g. 1.4.0 or v2.0.0-beta",
   );
 
@@ -27,7 +28,7 @@ export const createReleaseSchema = z.object({
   version: releaseVersionSchema,
   description: z.string().max(10000, "Release notes must be 10,000 characters or fewer").optional().nullable(),
   status: z.enum(["draft", "released", "archived"]).default("draft"),
-  releaseDate: z.string().optional().nullable(),
+  releaseDate: clearableCalendarDate,
 }).strict();
 
 export const updateReleaseSchema = z.object({
@@ -36,7 +37,7 @@ export const updateReleaseSchema = z.object({
   version: releaseVersionSchema.optional(),
   description: z.string().max(10000, "Release notes must be 10,000 characters or fewer").optional().nullable(),
   status: z.enum(["draft", "released", "archived"]).optional(),
-  releaseDate: z.string().optional().nullable(),
+  releaseDate: clearableCalendarDate,
 }).strict();
 
 export const addReleaseTicketSchema = z.object({

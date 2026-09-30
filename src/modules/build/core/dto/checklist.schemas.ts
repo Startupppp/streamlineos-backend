@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { clearableCalendarDate } from "../../../../common/validation/calendar-date.schema";
 
 export const createChecklistSchema = z.object({
   title: z.string().min(1).max(200).default("Checklist"),
@@ -11,7 +12,7 @@ export const updateChecklistSchema = z.object({
 export const createChecklistItemSchema = z.object({
   text: z.string().min(1).max(500),
   assigneeId: z.string().optional(),
-  dueDate: z.string().optional().nullable(),
+  dueDate: clearableCalendarDate,
   order: z.number().int().default(0),
 }).strict();
 
@@ -19,7 +20,7 @@ export const updateChecklistItemSchema = z.object({
   text: z.string().min(1).max(500).optional(),
   isCompleted: z.boolean().optional(),
   assigneeId: z.string().optional().nullable(),
-  dueDate: z.string().optional().nullable(),
+  dueDate: clearableCalendarDate,
   order: z.number().int().optional(),
 }).strict();
 

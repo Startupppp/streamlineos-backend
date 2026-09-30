@@ -159,6 +159,7 @@ export class ProjectsTicketsReadService {
       health,
       dueDateFrom,
       dueDateTo,
+      unscheduled,
       orderBy,
       orderDir,
     } = query;
@@ -244,6 +245,7 @@ export class ProjectsTicketsReadService {
       filterConditions.push(inArray(tickets.health, health));
     if (dueDateFrom) filterConditions.push(gte(tickets.dueDate, dueDateFrom));
     if (dueDateTo) filterConditions.push(lte(tickets.dueDate, dueDateTo));
+    if (unscheduled) filterConditions.push(isNull(tickets.cycleId));
 
     const where = read.compose(
       {
@@ -456,6 +458,7 @@ export class ProjectsTicketsReadService {
       filterConditions.push(gte(tickets.dueDate, query.dueDateFrom));
     if (query.dueDateTo)
       filterConditions.push(lte(tickets.dueDate, query.dueDateTo));
+    if (query.unscheduled) filterConditions.push(isNull(tickets.cycleId));
 
     const scopeSpec = {
       tenant: tickets.orgId,

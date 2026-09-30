@@ -77,6 +77,7 @@ export const ticketsListQuerySchema = baseListQuerySchema
     health: csvToHealthArray,
     dueDateFrom: z.iso.date().optional(),
     dueDateTo: z.iso.date().optional(),
+    unscheduled: z.coerce.boolean().optional(),
     orderBy: z
       .enum(["created", "updated", "priority", "dueDate", "rank"])
       .default("rank"),

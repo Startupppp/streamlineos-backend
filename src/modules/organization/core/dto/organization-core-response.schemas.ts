@@ -137,6 +137,11 @@ export const orgSettingsResponseSchema = z.object({
 /** `OrganizationSettingsService.updateSettings` / `updateSecuritySettings` */
 export const updateOrgSettingsResponseSchema = successResponseSchema;
 
+/** `InvitationAcceptanceService.requestInvitationEmailOtp` */
+export const requestInvitationOtpResponseSchema = z.object({
+  ok: z.literal(true),
+});
+
 /** `InvitationAcceptanceService.accept` */
 export const acceptInvitationResponseSchema = z.object({
   ok: z.literal(true),

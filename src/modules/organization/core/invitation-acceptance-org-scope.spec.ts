@@ -7,8 +7,10 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { EmailService } from "../../email/email.service";
 import { hashToken } from "../../../common/security/token.util";
 import {
+  invitationEmailOtps,
   invitations,
   magicLinkTokens,
   organizationAllowedEmailDomains,
@@ -19,6 +21,7 @@ import {
 const ORG_ID = "org-accept-scope";
 const OTHER_ORG_ID = "org-accept-other";
 const RAW_TOKEN = "f".repeat(64);
+const VALID_OTP = "123456";
 const TOKEN_HASH = hashToken(RAW_TOKEN);
 const INVITED_EMAIL = "joiner@scope.test";
 
@@ -59,6 +62,15 @@ function buildHarness(orgId: string = ORG_ID) {
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       organizations: { findFirst: jest.fn().mockResolvedValue(ACTIVE_ORG) },
       invitations: { findFirst: jest.fn().mockResolvedValue(invitation) },
+      invitationEmailOtps: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 1,
+          codeHash: hashToken(VALID_OTP),
+          expiresAt: new Date(Date.now() + 600_000),
+          usedAt: null,
+          attempts: 0,
+        }),
+      },
     },
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockImplementation(function (this: unknown, table: unknown) {
@@ -124,6 +136,17 @@ function buildHarness(orgId: string = ORG_ID) {
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockResolvedValue([]),
     }),
+    update: jest.fn().mockImplementation((table: unknown) => ({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue(
+            table === invitationEmailOtps ? [{ attempts: 1 }] : [],
+          ),
+          then: (resolve: (value: undefined) => unknown) =>
+            Promise.resolve(undefined).then(resolve),
+        }),
+      }),
+    })),
     transaction: jest
       .fn()
       .mockImplementation(async (fn: (handle: typeof tx) => Promise<unknown>) =>
@@ -164,6 +187,10 @@ describe("InvitationAcceptanceService.accept — magic link token carries the in
           provide: NotificationDispatchService,
           useValue: { emit: jest.fn().mockResolvedValue(undefined) },
         },
+        {
+          provide: EmailService,
+          useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
     return { harness: built, svc: moduleRef.get(InvitationAcceptanceService) };
@@ -188,13 +215,17 @@ describe("InvitationAcceptanceService.accept — magic link token carries the in
           provide: NotificationDispatchService,
           useValue: { emit: jest.fn().mockResolvedValue(undefined) },
         },
+        {
+          provide: EmailService,
+          useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
     svc = moduleRef.get(InvitationAcceptanceService);
   });
 
   it("stamps the invitation org onto the auto-login token so the link cannot redeem into a different org", async () => {
-    const result = await svc.accept({ token: RAW_TOKEN });
+    const result = await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
     const magicLinkInsert = harness.inserts.find((op) => op.table === magicLinkTokens);
     expect(magicLinkInsert).toBeDefined();
@@ -205,14 +236,14 @@ describe("InvitationAcceptanceService.accept — magic link token carries the in
   it("follows the inviting tenant rather than a constant when a second org's invitation is accepted", async () => {
     const other = await buildFor(OTHER_ORG_ID);
 
-    await other.svc.accept({ token: RAW_TOKEN });
+    await other.svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
     const magicLinkInsert = other.harness.inserts.find((op) => op.table === magicLinkTokens);
     expect((magicLinkInsert!.values as Record<string, unknown>).orgId).toBe(OTHER_ORG_ID);
   });
 
   it("returns an auto-login token alongside the org-stamped magic link", async () => {
-    const result = await svc.accept({ token: RAW_TOKEN });
+    const result = await svc.accept({ token: RAW_TOKEN, emailOtp: VALID_OTP });
 
     expect(result.ok).toBe(true);
     expect(typeof result.autoLoginToken).toBe("string");

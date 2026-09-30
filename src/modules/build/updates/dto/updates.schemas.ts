@@ -6,6 +6,8 @@ export const createUpdateSchema = z.object({
   risks: z.string().max(10000).nullable().optional(),
   next: z.string().max(10000).nullable().optional(),
   citations: z.string().max(10000).nullable().optional(),
+  status: z.enum(["draft", "published"]).optional(),
+  audience: z.enum(["internal", "client"]).optional(),
 }).strict();
 
 export const editUpdateSchema = z.object({

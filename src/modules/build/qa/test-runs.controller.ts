@@ -32,6 +32,7 @@ import {
   type UpdateTestResultInput,
   type UpdateTestRunInput,
 } from "./dto/qa.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
@@ -108,6 +109,7 @@ export class TestRunsController {
 
   @Post()
   @HttpCode(201)
+  @Idempotent("build.qa.test-run.create")
   @RequirePermission("build:qa:manage")
   @ResponseSchema(testRunRowSchema)
   @Validate({ body: createTestRunSchema })

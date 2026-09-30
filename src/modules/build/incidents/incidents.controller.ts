@@ -37,6 +37,7 @@ import {
   type UpdateIncidentInput,
 } from "./dto/incidents.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { z } from "zod";
 import {
   NoContentResponse,
@@ -101,6 +102,7 @@ export class IncidentsController {
   @HttpCode(201)
   @RequirePermission("build:incidents:manage")
   @ResponseSchema(incidentRowSchema)
+  @Idempotent("build.incident.create")
   @Validate({ body: createIncidentSchema })
   createIncident(
     @Param("projectId", ParseIntPipe) projectId: number,

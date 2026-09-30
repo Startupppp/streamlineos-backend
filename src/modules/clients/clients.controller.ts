@@ -39,6 +39,7 @@ import {
   patchOnboardingItemSchema,
   createTemplateSchema,
   updateClientStatusSchema,
+  createDirectClientSchema,
   type ListAccountsInput,
   type HealthQueryInput,
   type CreateActivityInput,
@@ -51,6 +52,7 @@ import {
   type PatchOnboardingItemInput,
   type CreateTemplateInput,
   type UpdateClientStatusInput,
+  type CreateDirectClientInput,
 } from "./dto/clients.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
@@ -60,6 +62,7 @@ import { BodylessAction, ResponseSchema, NoContentResponse } from "../../common/
 import {
   clientAccountsListSchema,
   clientListSchema,
+  clientCreatedSchema,
   exportCsvSchema,
   clientHealthSchema,
   churnAlertsSchema,
@@ -117,6 +120,18 @@ export class ClientsController {
   async listClients(@CurrentUser() u: CurrentUserContext) {
     const read = await resolveClientsReadScope(this.access, u);
     return this.clients.listClients(read);
+  }
+
+  @Post()
+  @HttpCode(201)
+  @RequirePermission("crm:clients:update")
+  @ResponseSchema(clientCreatedSchema)
+  @Validate({ body: createDirectClientSchema })
+  async createClient(
+    @Body() body: CreateDirectClientInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.clients.createClient(u.orgId, body.name);
   }
 
   @Get("export")

@@ -8,7 +8,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "./auth";
+import { invitations, organizations, users } from "./auth";
 
 export const mfaBackupCodes = pgTable(
   "mfa_backup_codes",
@@ -85,6 +85,24 @@ export const userApiTokens = pgTable(
     uniqueIndex("uniq_user_api_tokens_hash").on(table.tokenHash),
     index("idx_user_api_tokens_user").on(table.userId),
     index("idx_user_api_tokens_legacy_lookup").on(table.prefix, table.hashAlg),
+  ],
+);
+
+export const invitationEmailOtps = pgTable(
+  "invitation_email_otps",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    invitationId: text("invitation_id")
+      .references(() => invitations.id, { onDelete: "cascade" })
+      .notNull(),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    attempts: integer("attempts").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_invitation_email_otps_inv_expires").on(table.invitationId, table.expiresAt),
   ],
 );
 

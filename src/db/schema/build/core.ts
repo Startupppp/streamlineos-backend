@@ -37,6 +37,7 @@ export const projects = build.table(
     description: text("description"),
     key: text("key").notNull(),
     clientMembershipId: integer("client_membership_id"),
+    crmClientId: integer("crm_client_id"),
     managerMembershipId: integer("manager_membership_id"),
     startDate: timestamp("start_date"),
     endDate: timestamp("end_date"),

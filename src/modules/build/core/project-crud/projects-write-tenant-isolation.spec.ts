@@ -26,14 +26,16 @@ describe("ProjectsWriteService — cross-tenant isolation", () => {
 
   it("deletes project for the owning org (same-tenant control)", async () => {
     const project = { id: 10, orgId: OWNER_ORG, status: "active" };
+    const deleteFn = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
     const txFn = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn() }) }),
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-      delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      delete: deleteFn,
     }));
     const db = { query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } }, transaction: txFn } as unknown as Db;
     const svc = new ProjectsWriteService(db, audit, access, projectsQuery);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     await expect(svc.deleteProject(u, 10)).resolves.not.toThrow();
+    expect(deleteFn).not.toHaveBeenCalled();
   });
 });

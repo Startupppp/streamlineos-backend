@@ -384,6 +384,19 @@ export class ProjectsQueryService {
       },
     });
     if (!project) throw new ProjectsNotFoundException();
-    return project;
+
+    const crmRows = await this.db.execute(
+      sql`SELECT cpm.client_id, bp.name AS client_name
+          FROM client_party_map cpm
+          JOIN business_parties bp ON bp.id = cpm.party_id
+          JOIN build.projects p ON p.crm_client_id = cpm.client_id
+          WHERE p.id = ${projectId} AND p.org_id = ${orgId}`,
+    );
+    const crmRow = crmRows[0];
+    const crmClient = crmRow
+      ? { id: Number(crmRow["client_id"]), name: (crmRow["client_name"] ?? null) as string | null }
+      : null;
+
+    return { ...project, crmClient };
   }
 }

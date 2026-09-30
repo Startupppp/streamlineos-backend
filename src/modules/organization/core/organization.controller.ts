@@ -36,6 +36,7 @@ import {
   acceptInvitationSchema,
   declineInvitationSchema,
   createOrganizationSchema,
+  requestInvitationOtpSchema,
   securitySettingsSchema,
   switchOrgSchema,
   updateOrgSettingsSchema,
@@ -43,6 +44,7 @@ import {
   type AcceptInvitationInput,
   type DeclineInvitationInput,
   type CreateOrganizationInput,
+  type RequestInvitationOtpInput,
   type SecuritySettingsInput,
   type SwitchOrgInput,
   type UpdateOrgSettingsInput,
@@ -57,6 +59,7 @@ import {
   switchOrgResponseSchema,
   orgSettingsResponseSchema,
   updateOrgSettingsResponseSchema,
+  requestInvitationOtpResponseSchema,
   acceptInvitationResponseSchema,
   declineInvitationResponseSchema,
 } from "./dto/organization-core-response.schemas";
@@ -184,6 +187,19 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateSecuritySettings(u.orgId, u.userId, body);
+  }
+
+  @Public()
+  @Post("invitations/request-otp")
+  @ResponseSchema(requestInvitationOtpResponseSchema)
+  @HttpCode(200)
+  @Validate({ body: requestInvitationOtpSchema })
+  async requestInvitationOtp(
+    @Body() body: RequestInvitationOtpInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("invite:request-otp", this.getIp(req));
+    return this.invitationAcceptance.requestInvitationEmailOtp(body.token);
   }
 
   @Public()

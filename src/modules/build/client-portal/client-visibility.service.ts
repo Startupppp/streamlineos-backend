@@ -54,6 +54,7 @@ export class ClientVisibilityService {
           title: tickets.title,
           type: tickets.type,
           clientVisible: tickets.clientVisible,
+          version: tickets.version,
         })
         .from(tickets)
         .where(and(...ticketConds))

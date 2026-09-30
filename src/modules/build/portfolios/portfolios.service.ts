@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   portfolioProjects,
@@ -77,7 +77,7 @@ export class PortfoliosService {
 
   async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
     const portfolio = alias(projectPortfolios, "portfolio");
-    const { cursor, limit, q, status } = query;
+    const { cursor, limit, q, status, sort } = query;
     const pos = decodeCursor(cursor);
     if (cursor !== undefined && pos === null) {
       throw new BadRequestException("Invalid pagination cursor");
@@ -88,7 +88,20 @@ export class PortfoliosService {
       q ? ilike(portfolio.name, `${escapeLike(q)}%`) : undefined,
       status ? eq(portfolio.status, status) : undefined,
     ];
-    if (pos) conds.push(keysetBeforeId(portfolio.createdAt, portfolio.id, pos));
+    if (pos) {
+      if (sort === "name") {
+        conds.push(keysetBeforeId(portfolio.updatedAt, portfolio.id, pos));
+      } else {
+        conds.push(keysetBeforeId(portfolio.createdAt, portfolio.id, pos));
+      }
+    }
+
+    const orderBy =
+      sort === "updatedAt"
+        ? [desc(portfolio.updatedAt), desc(portfolio.id)]
+        : sort === "name"
+          ? [asc(portfolio.name), asc(portfolio.id)]
+          : [desc(portfolio.createdAt), desc(portfolio.id)];
 
     const rows = await this.db
       .select({
@@ -115,7 +128,7 @@ export class PortfoliosService {
       })
       .from(portfolio)
       .where(and(...conds))
-      .orderBy(desc(portfolio.createdAt), desc(portfolio.id))
+      .orderBy(...orderBy)
       .limit(limit + 1);
 
     return buildCursorPage(rows, limit, (r) => ({

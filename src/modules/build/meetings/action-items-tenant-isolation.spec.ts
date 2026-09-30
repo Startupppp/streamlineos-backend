@@ -1,6 +1,22 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { ActionItemsService } from "./action-items.service";
+import { createActionItemSchema } from "./dto/meetings.schemas";
+
+describe("createActionItemSchema — strict() rejects status field sent by frontend in BUG-049", () => {
+  it("rejects a payload that includes status because create schema has no status key and .strict() disallows extras", () => {
+    const result = createActionItemSchema.safeParse({
+      title: "Review PR",
+      status: "open",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a valid create payload without status confirming the create path still succeeds after frontend fix", () => {
+    const result = createActionItemSchema.safeParse({ title: "Review PR" });
+    expect(result.success).toBe(true);
+  });
+});
 
 describe("ActionItemsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";

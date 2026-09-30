@@ -26,6 +26,7 @@ import {
   type TestSuiteListQuery,
   type UpdateTestSuiteInput,
 } from "./dto/qa.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
@@ -54,6 +55,7 @@ export class TestSuitesController {
 
   @Post()
   @HttpCode(201)
+  @Idempotent("build.qa.test-suite.create")
   @RequirePermission("build:qa:manage")
   @ResponseSchema(testSuiteWithCaseCountSchema)
   @Validate({ body: createTestSuiteSchema })

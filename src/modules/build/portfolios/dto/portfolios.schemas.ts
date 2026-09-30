@@ -7,6 +7,7 @@ export const listPortfoliosQuerySchema = z.object({
   limit: pageSizeField(20),
   q: z.string().trim().min(1).max(120).optional(),
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
+  sort: z.enum(["createdAt", "updatedAt", "name"]).optional(),
 }).strict();
 
 export const createPortfolioSchema = z.object({

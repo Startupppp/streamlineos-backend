@@ -153,6 +153,7 @@ export class UpdatesService {
     if (membershipId === null)
       throw new ForbiddenException("No active membership found");
 
+    const isPublished = input.status === "published";
     const [inserted] = await this.db
       .insert(projectUpdates)
       .values({
@@ -164,6 +165,9 @@ export class UpdatesService {
         risks: input.risks ?? null,
         next: input.next ?? null,
         citations: input.citations ?? null,
+        status: isPublished ? "published" : "draft",
+        audience: input.audience ?? "internal",
+        publishedAt: isPublished ? new Date() : null,
       })
       .returning({ id: projectUpdates.id });
     if (!inserted) throw new NotFoundException("Failed to create update");

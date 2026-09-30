@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   deals,
   managedProducts,
@@ -74,7 +74,6 @@ export class ProjectsProvisionService {
       creatorUserId,
       requestedManagerId,
       ...additionalMembers,
-      ...(input.clientId !== undefined ? [input.clientId] : []),
     ]);
     const creator = actors.get(creatorUserId);
     const manager = actors.get(requestedManagerId);
@@ -94,7 +93,6 @@ export class ProjectsProvisionService {
           name: input.name,
           description: input.description,
           managerMembershipId: manager.membershipId,
-          clientMembershipId: input.clientId !== undefined ? (actors.get(input.clientId)?.membershipId ?? null) : undefined,
           startDate: input.startDate ? new Date(input.startDate) : undefined,
           endDate: input.endDate ? new Date(input.endDate) : undefined,
           status: "ACTIVE",
@@ -107,6 +105,15 @@ export class ProjectsProvisionService {
           },
         })
         .returning();
+
+      if (input.clientId !== undefined) {
+        const crmClientId = parseInt(input.clientId, 10);
+        if (!isNaN(crmClientId) && crmClientId > 0) {
+          await tx.execute(
+            sql`UPDATE build.projects SET crm_client_id = ${crmClientId} WHERE id = ${created.id}`,
+          );
+        }
+      }
 
       await tx.insert(projectStatuses).values(
         DEFAULT_PROJECT_STATUSES.map((s) => ({

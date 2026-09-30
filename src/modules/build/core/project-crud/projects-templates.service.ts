@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -102,10 +102,49 @@ export class ProjectsTemplatesService {
       .orderBy(...orderBy)
       .limit(PAGE_SIZE_CAP + 1);
 
-    return buildCursorPage(rows, PAGE_SIZE_CAP, (r) => {
+    const page = buildCursorPage(rows, PAGE_SIZE_CAP, (r) => {
       if (sort === "name") return { sortValue: r.name, id: String(r.id) };
       return { sortValue: (r.createdAt ?? new Date(0)).toISOString(), id: String(r.id) };
     });
+
+    if (page.data.length === 0) return page;
+
+    const templateIds = page.data.map((r) => r.id);
+    const templateTickets = await this.db
+      .select({
+        id: projectTemplateTickets.id,
+        templateId: projectTemplateTickets.templateId,
+        title: projectTemplateTickets.title,
+        description: projectTemplateTickets.description,
+        type: projectTemplateTickets.type,
+        priority: projectTemplateTickets.priority,
+        estimatedHours: projectTemplateTickets.estimatedHours,
+        order: projectTemplateTickets.order,
+        phase: projectTemplateTickets.phase,
+      })
+      .from(projectTemplateTickets)
+      .where(
+        and(
+          inArray(projectTemplateTickets.templateId, templateIds),
+          eq(projectTemplateTickets.orgId, orgId),
+        ),
+      )
+      .orderBy(asc(projectTemplateTickets.order));
+
+    const ticketsByTemplateId = new Map<number, typeof templateTickets>();
+    for (const ticket of templateTickets) {
+      const list = ticketsByTemplateId.get(ticket.templateId) ?? [];
+      list.push(ticket);
+      ticketsByTemplateId.set(ticket.templateId, list);
+    }
+
+    return {
+      ...page,
+      data: page.data.map((r) => ({
+        ...r,
+        tickets: ticketsByTemplateId.get(r.id) ?? [],
+      })),
+    };
   }
 
   async createTemplate(

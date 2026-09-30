@@ -76,6 +76,7 @@ const TIERS: Record<string, Tier> = {
   "whiteboard:public-edit": { limit: 30, windowSecs: 60 },
   "organization:create": { limit: 5, windowSecs: 3600 },
   "invite:validate": { limit: 30, windowSecs: 60 },
+  "invite:request-otp": { limit: 6, windowSecs: 300 },
   "invite:accept": { limit: 10, windowSecs: 60 },
   "portal:accept-invitation": { limit: 10, windowSecs: 60 },
   "invite:reissue-link": { limit: 10, windowSecs: 300 },

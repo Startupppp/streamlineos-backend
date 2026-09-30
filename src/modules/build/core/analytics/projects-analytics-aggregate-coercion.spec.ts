@@ -89,4 +89,23 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
   it("leaves a raw string unconverted when no decoder is attached, proving these assertions can fail", () => {
     expect(decode({}, "40")).toBe("40");
   });
+
+  it("returns NOT_STARTED health when a project has no tickets so an empty project is never flagged AT_RISK (BUG-003)", async () => {
+    const { db } = captureSelections();
+
+    const result = await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);
+
+    expect(result.healthStatus).toBe("NOT_STARTED");
+    expect(result.healthScore).toBe(100);
+  });
+
+  it("healthBreakdown includes openTickets so the project overview reads the open count from one definition, excluding Done (BUG-036)", async () => {
+    const { db } = captureSelections();
+
+    const result = await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);
+
+    expect(result.healthBreakdown).toBeDefined();
+    expect(result.healthBreakdown).toHaveProperty("openTickets");
+    expect(typeof result.healthBreakdown?.openTickets).toBe("number");
+  });
 });

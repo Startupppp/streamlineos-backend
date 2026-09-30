@@ -7190,6 +7190,20 @@
       "when": 1803093642725,
       "tag": "1540_build_retention_purge_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 1155,
+      "version": "7",
+      "when": 1803093643725,
+      "tag": "1611_invitation_email_otp",
+      "breakpoints": true
+    },
+    {
+      "idx": 1156,
+      "version": "7",
+      "when": 1803093644725,
+      "tag": "1701_build_project_crm_client",
+      "breakpoints": true
     }
   ]
 }

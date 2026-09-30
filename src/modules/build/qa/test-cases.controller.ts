@@ -26,6 +26,7 @@ import {
   type TestCaseListQuery,
   type UpdateTestCaseInput,
 } from "./dto/qa.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
@@ -66,6 +67,7 @@ export class TestCasesController {
 
   @Post()
   @HttpCode(201)
+  @Idempotent("build.qa.test-case.create")
   @RequirePermission("build:qa:manage")
   @ResponseSchema(testCaseRowSchema)
   @Validate({ body: createTestCaseSchema })
