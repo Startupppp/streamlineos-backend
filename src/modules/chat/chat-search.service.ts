@@ -11,6 +11,7 @@ import {
   flattenMessageSender,
 } from "./chat-message-sender-shape";
 import { chatMessageContentMatch, escapeLike } from "./chat-message-content-match";
+import { MESSAGE_REACTIONS_WITH, foldReactions } from "./chat-message-reaction-shape";
 import { filterByEntityAccess } from "./chat-channel-authorization";
 import { ChatChannelListService } from "./chat-channel-list.service";
 
@@ -60,6 +61,10 @@ export class ChatSearchService {
           channel: {
             columns: { id: true, name: true, type: true, entityType: true, entityId: true },
           },
+          // `chatSearchMessagesResponseSchema` declares both; the client rejected
+          // every non-empty result page while they were never loaded.
+          attachments: true,
+          reactions: MESSAGE_REACTIONS_WITH,
         },
       });
 
@@ -74,10 +79,12 @@ export class ChatSearchService {
       );
       const resolved = await this.entities.withResolvedReferences(actor, visible);
       const results = resolved.map((row) => {
-        const flattened = flattenMessageSender(row);
+        const { reactions, ...message } = row;
+        const flattened = flattenMessageSender(message);
         const { channel } = flattened;
         return {
           ...flattened,
+          reactions: foldReactions(reactions),
           channel: channel
             ? { id: channel.id, name: channel.name, type: channel.type }
             : channel,
