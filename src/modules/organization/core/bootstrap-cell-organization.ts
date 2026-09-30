@@ -38,6 +38,9 @@ export interface BootstrapCellOrganizationInput {
   name: string;
   slug: string;
   billingEmail?: string | null;
+  /** BUG-HRMS-009. Undefined or null leaves the column default in place. */
+  country?: string | null;
+  timezone?: string | null;
   onboardingCompletedAt?: Date | null;
   ownerActivatedAt?: Date | null;
   moduleKeys?: readonly string[];
@@ -70,6 +73,10 @@ export async function bootstrapCellOrganization(
         name: input.name,
         slug: input.slug,
         billingEmail: input.billingEmail ?? null,
+        // Spread so an absent value keeps the column default rather than
+        // overwriting `Asia/Kolkata` with null on a NOT NULL column.
+        ...(input.country ? { country: input.country } : {}),
+        ...(input.timezone ? { timezone: input.timezone } : {}),
         ownerMembershipId,
         onboardingCompletedAt: input.onboardingCompletedAt ?? null,
       });

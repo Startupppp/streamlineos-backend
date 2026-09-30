@@ -37,6 +37,9 @@ interface OrganizationCreationInput {
   name: string;
   slug?: string;
   billingEmail: string | null;
+  /** BUG-HRMS-009. Null keeps the column defaults (`Asia/Kolkata`, no country). */
+  country?: string | null;
+  timezone?: string | null;
   onboardingCompletedAt: Date | null;
   ownerActivatedAt: Date | null;
   moduleKeys?: readonly string[];
@@ -56,6 +59,8 @@ export class OrganizationCreationService {
     name: string;
     slug: string;
     billingEmail: string | null;
+    country?: string | null;
+    timezone?: string | null;
   }): Promise<CreatedOrganization> {
     const activatedAt = new Date();
     const requestKey = await this.resolveProfileRequestKey(
@@ -207,6 +212,8 @@ export class OrganizationCreationService {
               name: input.name,
               slug,
               billingEmail: input.billingEmail,
+              country: input.country,
+              timezone: input.timezone,
               onboardingCompletedAt: input.onboardingCompletedAt,
               ownerActivatedAt: input.ownerActivatedAt,
               moduleKeys: input.moduleKeys,
