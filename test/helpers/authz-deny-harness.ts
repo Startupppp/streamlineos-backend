@@ -5,7 +5,7 @@ import type {
   INestApplication,
   Type,
 } from "@nestjs/common";
-import { APP_GUARD, Reflector } from "@nestjs/core";
+import { APP_GUARD, DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
 import { AccessService } from "src/modules/access/access.service";
 import { PermissionGuard } from "src/modules/access/permission.guard";
 import { ModuleGuard } from "src/common/rbac/module.guard";
@@ -145,6 +145,21 @@ export async function createAuthzHarness(
     getModuleState: async (): Promise<boolean> => true,
   };
 
+  /*
+   * `PermissionGuard.onApplicationBootstrap` sweeps all registered controllers
+   * via `DiscoveryService.getControllers()` to assert every @RequirePermission
+   * handler is also guarded.  The auto-mocker leaves `getControllers` returning
+   * undefined, which is not iterable.  An explicit stub that returns an empty
+   * iterable satisfies the sweep without registering real controller metadata.
+   */
+  const discoveryStub = {
+    getControllers: (): Iterable<{ instance: unknown }> => [],
+    getProviders: (): Iterable<{ instance: unknown }> => [],
+  };
+  const scannerStub = {
+    getAllMethodNames: (_proto: object): Iterable<string> => [],
+  };
+
   const moduleRef: TestingModule = await Test.createTestingModule({
     controllers: [...controllers] as Type<unknown>[],
     providers: [
@@ -160,6 +175,8 @@ export async function createAuthzHarness(
        */
       { provide: APP_GUARD, useValue: authGuard },
       { provide: AccessService, useValue: access },
+      { provide: DiscoveryService, useValue: discoveryStub },
+      { provide: MetadataScanner, useValue: scannerStub },
       ...((options.providers ?? []) as never[]),
     ],
   })
