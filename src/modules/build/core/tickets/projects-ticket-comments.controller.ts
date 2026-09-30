@@ -15,7 +15,7 @@ import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 import { ProjectsTicketsRestoreService } from "./projects-tickets-restore.service";
 import {
   addReactionSchema,
@@ -41,7 +41,7 @@ const projectIdticketIdcommentIdemojiParams = z.object({ projectId: z.coerce.num
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsTicketCommentsController {
   constructor(
-    private readonly subresources: ProjectsTicketSubresourcesService,
+    private readonly comments: ProjectsTicketCommentsService,
     private readonly restore: ProjectsTicketsRestoreService,
   ) {}
 
@@ -56,7 +56,7 @@ export class ProjectsTicketCommentsController {
     @Body() body: CommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addComment(u, projectId, ticketId, body);
+    return this.comments.addComment(u, projectId, ticketId, body);
   }
 
   @Get(":projectId/tickets/:ticketId/comments/:commentId")
@@ -69,7 +69,7 @@ export class ProjectsTicketCommentsController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getComment(u, projectId, ticketId, commentId);
+    return this.comments.getComment(u, projectId, ticketId, commentId);
   }
 
   @Patch(":projectId/tickets/:ticketId/comments/:commentId")
@@ -83,7 +83,7 @@ export class ProjectsTicketCommentsController {
     @Body() body: UpdateCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.editComment(u, projectId, ticketId, commentId, body.content);
+    return this.comments.editComment(u, projectId, ticketId, commentId, body.content);
   }
 
   @Delete(":projectId/tickets/:ticketId/comments/:commentId")
@@ -97,7 +97,7 @@ export class ProjectsTicketCommentsController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.deleteComment(u, projectId, ticketId, commentId);
+    return this.comments.deleteComment(u, projectId, ticketId, commentId);
   }
 
   @Post(":projectId/tickets/:ticketId/comments/:commentId/restore")
@@ -127,7 +127,7 @@ export class ProjectsTicketCommentsController {
     @Body() body: AddReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addReaction(u, projectId, ticketId, commentId, body.emoji);
+    return this.comments.addReaction(u, projectId, ticketId, commentId, body.emoji);
   }
 
   @Delete(":projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji")
@@ -142,6 +142,6 @@ export class ProjectsTicketCommentsController {
     @Param("emoji") emoji: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeReaction(u, projectId, ticketId, commentId, decodeURIComponent(emoji));
+    return this.comments.removeReaction(u, projectId, ticketId, commentId, decodeURIComponent(emoji));
   }
 }

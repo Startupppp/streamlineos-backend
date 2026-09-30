@@ -1,12 +1,17 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   ticketChecklistItems,
   ticketChecklists,
-  tickets,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { AccessService } from "../../../access/access.service";
+import {
+  assertTicketReadAccess,
+  type TicketReadAccess,
+} from "./build-ticket-read-access";
 
 const CHECKLIST_ITEM_LIMIT = 200;
 
@@ -26,7 +31,10 @@ export function toChecklistItemRow(item: typeof ticketChecklistItems.$inferSelec
 
 @Injectable()
 export class ProjectsTicketChecklistsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(AccessService) private readonly access: TicketReadAccess,
+  ) {}
 
   private async loadChecklistRow(orgId: string, checklistId: number) {
     const [row] = await this.db
@@ -37,17 +45,14 @@ export class ProjectsTicketChecklistsService {
         title: ticketChecklists.title,
         createdAt: ticketChecklists.createdAt,
         updatedAt: ticketChecklists.updatedAt,
-        projectId: tickets.projectId,
       })
       .from(ticketChecklists)
-      .leftJoin(tickets, eq(tickets.id, ticketChecklists.ticketId))
       .where(and(eq(ticketChecklists.id, checklistId), eq(ticketChecklists.orgId, orgId)))
       .limit(1);
     if (!row) return null;
     return {
       id: row.id,
       orgId: row.orgId,
-      projectId: row.projectId ?? 0,
       ticketId: row.ticketId,
       title: row.title,
       position: 0,
@@ -56,22 +61,39 @@ export class ProjectsTicketChecklistsService {
     };
   }
 
-  async getChecklists(orgId: string, projectId: number, ticketId: number) {
-    const ticket = await this.db.query.tickets.findFirst({
+  private async requireTicketAccess(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+  ): Promise<void> {
+    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+  }
+
+  private async requireChecklistInTicket(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
+  ): Promise<void> {
+    await this.requireTicketAccess(u, projectId, ticketId);
+    const checklist = await this.db.query.ticketChecklists.findFirst({
       where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
+        eq(ticketChecklists.id, checklistId),
+        eq(ticketChecklists.ticketId, ticketId),
+        eq(ticketChecklists.orgId, u.orgId),
       ),
       columns: { id: true },
     });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    if (!checklist) throw new NotFoundException("Checklist not found");
+  }
+
+  async getChecklists(u: CurrentUserContext, projectId: number, ticketId: number) {
+    await this.requireTicketAccess(u, projectId, ticketId);
 
     const checklists = await this.db.query.ticketChecklists.findMany({
       where: and(
         eq(ticketChecklists.ticketId, ticketId),
-        eq(ticketChecklists.orgId, orgId),
+        eq(ticketChecklists.orgId, u.orgId),
       ),
       with: {
         items: {
@@ -97,75 +119,31 @@ export class ProjectsTicketChecklistsService {
   }
 
   async createChecklist(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     data: { title: string },
   ) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    await this.requireTicketAccess(u, projectId, ticketId);
 
     const [checklist] = await this.db
       .insert(ticketChecklists)
-      .values({ orgId, ticketId, title: data.title })
+      .values({ orgId: u.orgId, ticketId, title: data.title })
       .returning({ id: ticketChecklists.id });
     if (!checklist) throw new NotFoundException("Checklist not found after creation");
-    const loaded = await this.loadChecklistRow(orgId, checklist.id);
+    const loaded = await this.loadChecklistRow(u.orgId, checklist.id);
     if (!loaded) throw new NotFoundException("Checklist not found after creation");
-    return loaded;
-  }
-
-  private async requireTicketInProject(
-    orgId: string,
-    projectId: number,
-    ticketId: number,
-  ): Promise<void> {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-  }
-
-  private async requireChecklistInTicket(
-    orgId: string,
-    projectId: number,
-    ticketId: number,
-    checklistId: number,
-  ): Promise<void> {
-    await this.requireTicketInProject(orgId, projectId, ticketId);
-    const checklist = await this.db.query.ticketChecklists.findFirst({
-      where: and(
-        eq(ticketChecklists.id, checklistId),
-        eq(ticketChecklists.ticketId, ticketId),
-        eq(ticketChecklists.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (!checklist) throw new NotFoundException("Checklist not found");
+    return { ...loaded, projectId };
   }
 
   async updateChecklist(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
     data: { title: string },
   ) {
-    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
+    await this.requireChecklistInTicket(u, projectId, ticketId, checklistId);
     const [updated] = await this.db
       .update(ticketChecklists)
       .set({ title: data.title })
@@ -173,30 +151,30 @@ export class ProjectsTicketChecklistsService {
         and(
           eq(ticketChecklists.id, checklistId),
           eq(ticketChecklists.ticketId, ticketId),
-          eq(ticketChecklists.orgId, orgId),
+          eq(ticketChecklists.orgId, u.orgId),
         ),
       )
       .returning({ id: ticketChecklists.id });
     if (!updated) throw new NotFoundException("Checklist not found");
-    const loaded = await this.loadChecklistRow(orgId, updated.id);
+    const loaded = await this.loadChecklistRow(u.orgId, updated.id);
     if (!loaded) throw new NotFoundException("Checklist not found");
-    return loaded;
+    return { ...loaded, projectId };
   }
 
   async deleteChecklist(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
   ) {
-    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
+    await this.requireChecklistInTicket(u, projectId, ticketId, checklistId);
     const [deleted] = await this.db
       .delete(ticketChecklists)
       .where(
         and(
           eq(ticketChecklists.id, checklistId),
           eq(ticketChecklists.ticketId, ticketId),
-          eq(ticketChecklists.orgId, orgId),
+          eq(ticketChecklists.orgId, u.orgId),
         ),
       )
       .returning();
@@ -205,7 +183,7 @@ export class ProjectsTicketChecklistsService {
   }
 
   async createChecklistItem(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
@@ -216,12 +194,12 @@ export class ProjectsTicketChecklistsService {
       order: number;
     },
   ) {
-    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
+    await this.requireChecklistInTicket(u, projectId, ticketId, checklistId);
 
     const [item] = await this.db
       .insert(ticketChecklistItems)
       .values({
-        orgId,
+        orgId: u.orgId,
         checklistId,
         text: data.text,
         assigneeId: data.assigneeId,
@@ -234,7 +212,7 @@ export class ProjectsTicketChecklistsService {
   }
 
   async updateChecklistItem(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
@@ -247,13 +225,13 @@ export class ProjectsTicketChecklistsService {
       order?: number;
     },
   ) {
-    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
+    await this.requireChecklistInTicket(u, projectId, ticketId, checklistId);
 
     const existing = await this.db.query.ticketChecklistItems.findFirst({
       where: and(
         eq(ticketChecklistItems.id, itemId),
         eq(ticketChecklistItems.checklistId, checklistId),
-        eq(ticketChecklistItems.orgId, orgId),
+        eq(ticketChecklistItems.orgId, u.orgId),
       ),
       columns: { id: true, checklistId: true },
     });
@@ -264,7 +242,7 @@ export class ProjectsTicketChecklistsService {
       .set(data)
       .where(
         and(
-          eq(ticketChecklistItems.orgId, orgId),
+          eq(ticketChecklistItems.orgId, u.orgId),
           eq(ticketChecklistItems.checklistId, checklistId),
           eq(ticketChecklistItems.id, itemId),
         ),
@@ -275,19 +253,19 @@ export class ProjectsTicketChecklistsService {
   }
 
   async deleteChecklistItem(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     ticketId: number,
     checklistId: number,
     itemId: number,
   ) {
-    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
+    await this.requireChecklistInTicket(u, projectId, ticketId, checklistId);
 
     const existing = await this.db.query.ticketChecklistItems.findFirst({
       where: and(
         eq(ticketChecklistItems.id, itemId),
         eq(ticketChecklistItems.checklistId, checklistId),
-        eq(ticketChecklistItems.orgId, orgId),
+        eq(ticketChecklistItems.orgId, u.orgId),
       ),
       columns: { id: true, checklistId: true },
     });
@@ -297,7 +275,7 @@ export class ProjectsTicketChecklistsService {
       .delete(ticketChecklistItems)
       .where(
         and(
-          eq(ticketChecklistItems.orgId, orgId),
+          eq(ticketChecklistItems.orgId, u.orgId),
           eq(ticketChecklistItems.checklistId, checklistId),
           eq(ticketChecklistItems.id, itemId),
         ),
