@@ -231,6 +231,7 @@ export class AuthService {
 
   private async resolvePreferredOrg(
     userId: string,
+    orgId?: string,
   ): Promise<{ orgId: string; cellId: string } | null> {
     const rows = await withIdentity(this.db, userId, (tx) =>
       tx
@@ -239,7 +240,12 @@ export class AuthService {
           cellId: accountOrganizationIndex.cellId,
         })
         .from(accountOrganizationIndex)
-        .where(eq(accountOrganizationIndex.userId, userId))
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, userId),
+            orgId ? eq(accountOrganizationIndex.orgId, orgId) : undefined,
+          ),
+        )
         .orderBy(
           sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
           desc(accountOrganizationIndex.joinedAt),
@@ -251,115 +257,133 @@ export class AuthService {
     return { orgId: row.orgId, cellId: row.cellId };
   }
 
-  async getSessionData(userId: string): Promise<AuthSessionData> {
-    return this.cache.cached(
+  /**
+   * `sessionOrgId` is the org THIS browser session selected (NextAuth `token.orgId`). Without it
+   * the answer is the account-wide most-recently-activated org, so a switch, org creation or
+   * invite acceptance in any other tab or device moved this session to that org on its next
+   * reload (CHAT-008: `/chat?channel=37` reloaded into another org and 404'd). The requested org
+   * is honoured only while the membership resolver still accepts it; otherwise the default wins.
+   */
+  async getSessionData(userId: string, sessionOrgId?: string): Promise<AuthSessionData> {
+    const lastActivated = await this.cache.cached(
       CACHE_KEYS.userSession(userId),
-      async () => {
-        const [user, preferred] = await Promise.all([
-          this.db.query.users
-            .findFirst({
-              where: eq(users.id, userId),
-              columns: {
-                id: true,
-                email: true,
-                firstName: true,
-                lastName: true,
-                name: true,
-                image: true,
-                isActive: true,
-                onboardingCompletedAt: true,
-                lastActiveOrgId: true,
-              },
-            })
-            .catch(() => {
-              throw new HttpException(
-                "Service temporarily unavailable",
-                HttpStatus.SERVICE_UNAVAILABLE,
-              );
-            }),
-          this.resolvePreferredOrg(userId).catch(() => null),
-        ]);
-
-        if (!user) throw new NotFoundException("User not found");
-
-        const preferredOrgId = preferred?.orgId ?? user.lastActiveOrgId ?? null;
-
-        const membership =
-          await this.membershipResolver.resolveActiveMembership(
-            userId,
-            preferredOrgId,
-            { honorSuspendedPreference: true },
-          );
-        const suspendedMembership = membership
-          ? null
-          : await this.membershipResolver.resolveSuspendedMembership(
-              userId,
-              preferredOrgId,
-            );
-
-        let enabledModules: string[] = [];
-        let orgOnboardingCompletedAt: string | null = null;
-        let plan: EffectivePlan | null = null;
-
-        const resolvedOrgId = membership?.orgId ?? null;
-        const isOrgOwner = membership?.isOwner ?? false;
-
-        if (membership) {
-          orgOnboardingCompletedAt =
-            membership.orgOnboardingCompletedAt?.toISOString() ?? null;
-
-          await runInTenantTransaction(
-            this.db,
-            async (tx) => {
-              const [sub, moduleStatuses] = await Promise.all([
-                tx.query.subscriptions.findFirst({
-                  where: eq(subscriptions.orgId, membership.orgId),
-                  columns: { plan: true, status: true },
-                }),
-                this.entitlements.listModules(membership.orgId).catch(() => []),
-              ]);
-
-              if (sub) {
-                plan =
-                  sub.status === "ACTIVE" || sub.status === "TRIAL"
-                    ? sub.plan
-                    : "FREE";
-              }
-              enabledModules = moduleStatuses
-                .filter((m) => m.enabled)
-                .map((m) => m.moduleKey);
-            },
-            { orgId: membership.orgId },
-          );
-        }
-
-        return {
-          userId: user.id,
-          email: user.email,
-          firstName: user.firstName ?? null,
-          lastName: user.lastName ?? null,
-          name: user.name ?? null,
-          image: user.image ?? null,
-          role: membership?.role ?? null,
-          isActive: user.isActive,
-          orgId: resolvedOrgId,
-          cellId: resolvedOrgId ? (preferred?.cellId ?? null) : null,
-          isOrgOwner,
-          enabledModules,
-          orgOnboardingCompletedAt,
-          userOnboardingCompletedAt:
-            membership?.memberOnboardingCompletedAt?.toISOString() ?? null,
-          plan,
-          organizationAccess: membership
-            ? "active"
-            : suspendedMembership
-              ? "suspended"
-              : "none",
-          suspendedOrganizationName: suspendedMembership?.orgName ?? null,
-          isPlatformAdmin: isPlatformAdmin(userId),
-        };
-      },
+      () => this.loadSessionData(userId),
       60,
     );
+    if (!sessionOrgId || lastActivated.orgId === sessionOrgId) return lastActivated;
+    // ponytail: uncached while the session sits in a non-default org; key the cache by org if
+    // session-data load shows up in profiles (the web tier already caches it for 15s).
+    const scoped = await this.loadSessionData(userId, sessionOrgId);
+    return scoped.orgId === sessionOrgId ? scoped : lastActivated;
+  }
+
+  private async loadSessionData(
+    userId: string,
+    sessionOrgId?: string,
+  ): Promise<AuthSessionData> {
+    const [user, preferred] = await Promise.all([
+      this.db.query.users
+        .findFirst({
+          where: eq(users.id, userId),
+          columns: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            name: true,
+            image: true,
+            isActive: true,
+            onboardingCompletedAt: true,
+            lastActiveOrgId: true,
+          },
+        })
+        .catch(() => {
+          throw new HttpException(
+            "Service temporarily unavailable",
+            HttpStatus.SERVICE_UNAVAILABLE,
+          );
+        }),
+      this.resolvePreferredOrg(userId, sessionOrgId).catch(() => null),
+    ]);
+
+    if (!user) throw new NotFoundException("User not found");
+
+    const preferredOrgId =
+      sessionOrgId ?? preferred?.orgId ?? user.lastActiveOrgId ?? null;
+
+    const membership =
+      await this.membershipResolver.resolveActiveMembership(
+        userId,
+        preferredOrgId,
+        { honorSuspendedPreference: true },
+      );
+    const suspendedMembership = membership
+      ? null
+      : await this.membershipResolver.resolveSuspendedMembership(
+          userId,
+          preferredOrgId,
+        );
+
+    let enabledModules: string[] = [];
+    let orgOnboardingCompletedAt: string | null = null;
+    let plan: EffectivePlan | null = null;
+
+    const resolvedOrgId = membership?.orgId ?? null;
+    const isOrgOwner = membership?.isOwner ?? false;
+
+    if (membership) {
+      orgOnboardingCompletedAt =
+        membership.orgOnboardingCompletedAt?.toISOString() ?? null;
+
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const [sub, moduleStatuses] = await Promise.all([
+            tx.query.subscriptions.findFirst({
+              where: eq(subscriptions.orgId, membership.orgId),
+              columns: { plan: true, status: true },
+            }),
+            this.entitlements.listModules(membership.orgId).catch(() => []),
+          ]);
+
+          if (sub) {
+            plan =
+              sub.status === "ACTIVE" || sub.status === "TRIAL"
+                ? sub.plan
+                : "FREE";
+          }
+          enabledModules = moduleStatuses
+            .filter((m) => m.enabled)
+            .map((m) => m.moduleKey);
+        },
+        { orgId: membership.orgId },
+      );
+    }
+
+    return {
+      userId: user.id,
+      email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      name: user.name ?? null,
+      image: user.image ?? null,
+      role: membership?.role ?? null,
+      isActive: user.isActive,
+      orgId: resolvedOrgId,
+      cellId: resolvedOrgId ? (preferred?.cellId ?? null) : null,
+      isOrgOwner,
+      enabledModules,
+      orgOnboardingCompletedAt,
+      userOnboardingCompletedAt:
+        membership?.memberOnboardingCompletedAt?.toISOString() ?? null,
+      plan,
+      organizationAccess: membership
+        ? "active"
+        : suspendedMembership
+          ? "suspended"
+          : "none",
+      suspendedOrganizationName: suspendedMembership?.orgName ?? null,
+      isPlatformAdmin: isPlatformAdmin(userId),
+    };
   }
 }

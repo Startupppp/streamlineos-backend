@@ -10,6 +10,7 @@ import {
   Optional,
   Param,
   Post,
+  Query,
   Request,
   UseGuards,
 } from "@nestjs/common";
@@ -74,6 +75,8 @@ import { eq } from "drizzle-orm";
 import { userSessions } from "../../db/schema";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
+// The org this browser session selected; honoured only while the user is still an active member.
+const sessionDataQuery = z.object({ orgId: z.string().min(1).optional() }).strict();
 
 @Controller("auth")
 @UseGuards(JwtAuthGuard)
@@ -232,16 +235,17 @@ export class AuthController {
   @Get("session-data/:userId")
   @ResponseSchema(authSessionDataResponseSchema)
   @HttpCode(200)
-  @Validate({ params: userIdParams })
+  @Validate({ params: userIdParams, query: sessionDataQuery })
   async getSessionData(
     @Param("userId") userId: string,
     @Request() req: { headers: Record<string, string> },
+    @Query() query: z.infer<typeof sessionDataQuery> = {},
   ) {
     if (!internalSecretMatches(process.env.INTERNAL_API_SECRET, req.headers["x-internal-secret"])) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
     await this.enforceRateLimit("auth:session-data", userId);
-    return this.authService.getSessionData(userId);
+    return this.authService.getSessionData(userId, query.orgId);
   }
 
   @Post("magic-link")
