@@ -20,6 +20,7 @@ import type {
   UpdateTestRunInput,
 } from "./dto/qa.schemas";
 import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
+import { BuildTicketCreationService } from "../core/tickets";
 
 const RUN_PAGE = 50;
 
@@ -29,6 +30,7 @@ export class TestRunsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly audit: AuditService,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
   private async resolveCycleBinding(
@@ -465,28 +467,22 @@ export class TestRunsService {
         ? tc.steps.map((s, i) => `${i + 1}. ${s.action} → Expected: ${s.expected}`).join("\n")
         : undefined;
 
+    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
     const ticket = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-      const [maxRow] = await tx
-        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-        .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-      const nextTicketNumber = (maxRow?.maxNum ?? 0) + 1;
-
-      const [created] = await tx
-        .insert(tickets)
-        .values({
-          orgId,
-          projectId,
-          ticketNumber: nextTicketNumber,
+      createdResult = await this.ticketCreation.createInTransaction(tx, {
+        orgId,
+        projectId,
+        actor: { userId, membershipId: null },
+        drafts: [{
           title: input.title ?? `Failed: ${tc.title}`,
           description: input.description,
           type: "BUG",
           status: ticketStatus,
           priority: ticketPriority,
           reporterId: userId,
-        })
-        .returning();
+        }],
+      });
+      const created = createdResult.tickets[0]!;
 
       await tx.insert(workItemQaDetails).values({
         orgId,
@@ -509,6 +505,7 @@ export class TestRunsService {
 
       return created;
     });
+    this.ticketCreation.publish(createdResult!);
 
     this.audit.log({
       action: "bug.created_from_result_consolidated",

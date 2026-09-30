@@ -1,0 +1,4 @@
+[
+  "src/modules/cron/cron-projects.service.ts",
+  "src/modules/leads/lead-conversion.service.ts"
+]

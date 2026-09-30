@@ -21,8 +21,7 @@ import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
 import type { ScopedWhere } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { ImportTicketsInput } from "../dto/projects.schemas";
-import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
-import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
+import { BuildTicketCreationService, type CreatedBuildTickets } from "./build-ticket-creation.service";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { buildTicketHref, buildTicketKey } from "../lib/build-app-paths";
 
@@ -38,6 +37,7 @@ export class ProjectsTicketsTransferService {
     private readonly notifications: NotificationsService,
     private readonly dispatch: NotificationDispatchService,
     private readonly cache: CacheService,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
   async exportTickets(u: CurrentUserContext, projectId: number, ticketIds?: number[]) {
@@ -183,21 +183,19 @@ export class ProjectsTicketsTransferService {
 
     const CHUNK_SIZE = 100;
     let createdCount = 0;
+    const creations: CreatedBuildTickets[] = [];
 
     await this.db.transaction(async (tx) => {
-      await reserveTicketCapacity(tx, u.orgId, projectId, toCreate.map(row => ({ status: row.status ?? "TODO", count: 1 })));
-      let nextNum = await allocateTicketNumbers(tx, u.orgId, projectId, toCreate.length);
-
-      const rowsWithNumbers = toCreate.map((item) => {
-        const ticketNumber = nextNum++;
-        const { rowIndex, ...values } = item;
-        return { values: { ...values, ticketNumber }, rowIndex };
-      });
-
-      for (let i = 0; i < rowsWithNumbers.length; i += CHUNK_SIZE) {
-        const chunk = rowsWithNumbers.slice(i, i + CHUNK_SIZE);
+      for (let i = 0; i < toCreate.length; i += CHUNK_SIZE) {
+        const chunk = toCreate.slice(i, i + CHUNK_SIZE);
         const n = await tx.transaction(async (sp) => {
-          await sp.insert(tickets).values(chunk.map((r) => r.values));
+          const creation = await this.ticketCreation.createInTransaction(sp, {
+            orgId: u.orgId,
+            projectId,
+            actor: { userId: u.userId, membershipId: null },
+            drafts: chunk.map(({ rowIndex: _rowIndex, orgId: _orgId, projectId: _projectId, ticketNumber: _ticketNumber, ...draft }) => draft),
+          });
+          creations.push(creation);
           return chunk.length;
         }).catch((error: unknown) => {
           const msg = error instanceof Error ? error.message : "Unknown error";
@@ -209,6 +207,7 @@ export class ProjectsTicketsTransferService {
         createdCount += n;
       }
     });
+    for (const creation of creations) this.ticketCreation.publish(creation);
 
     await this.cache
       .invalidateNamespace(`build:analytics:${u.orgId}`)

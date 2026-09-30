@@ -32,9 +32,11 @@ interface Harness {
   service: InvitationCreateService;
   email: {
     queueInvitationEmail: jest.Mock;
+    queueInvitationEmails: jest.Mock;
     sendInvitationEmail: jest.Mock;
   };
   screen: jest.Mock;
+  screenMany: jest.Mock;
   written: Record<string, unknown>[];
   txCallbackRuns: number;
 }
@@ -62,9 +64,16 @@ function buildHarness(options: { writeRejectsWith?: Error } = {}): Harness {
           })),
         })),
         insert: jest.fn(() => ({
-          values: jest.fn((row: Record<string, unknown>) => {
-            written.push(row);
-            return Promise.resolve(undefined);
+          values: jest.fn((input: Record<string, unknown> | Record<string, unknown>[]) => {
+            const rows = Array.isArray(input) ? input : [input];
+            written.push(...rows);
+            const returned = rows.map((row) => ({ id: row.id, email: row.email }));
+            return {
+              then: (resolve: (value: unknown) => unknown) => Promise.resolve(undefined).then(resolve),
+              onConflictDoNothing: jest.fn(() => ({
+                returning: jest.fn(() => Promise.resolve(returned)),
+              })),
+            };
           }),
         })),
       };
@@ -87,26 +96,40 @@ function buildHarness(options: { writeRejectsWith?: Error } = {}): Harness {
 
   const email = {
     queueInvitationEmail: jest.fn(() => Promise.resolve()),
+    queueInvitationEmails: jest.fn(() => Promise.resolve([])),
     sendInvitationEmail: jest.fn(() => Promise.resolve()),
   };
 
   const screen = jest.fn(() => Promise.resolve({ kind: "clear", userId: null }));
+  const screenMany = jest.fn(
+    (_executor: unknown, input: { emails: string[] }) =>
+      Promise.resolve(
+        new Map(input.emails.map((email) => [email, { kind: "clear", userId: null }])),
+      ),
+  );
 
   const service = new InvitationCreateService(
     db,
-    { log: jest.fn() } as unknown as AuditService,
+    { log: jest.fn(), logMany: jest.fn() } as unknown as AuditService,
     { invalidateForOrg: jest.fn(() => Promise.resolve()) } as unknown as CacheService,
     email as unknown as EmailService,
-    { assertWithinLimit: jest.fn(() => Promise.resolve()) } as unknown as PlanLimitsService,
-    { recordSeatEvent: jest.fn(() => Promise.resolve()) } as unknown as SeatLedgerService,
+    {
+      assertWithinLimit: jest.fn(() => Promise.resolve()),
+      headroomFor: jest.fn(() => Promise.resolve({ limit: 100, used: 0, available: 100 })),
+    } as unknown as PlanLimitsService,
+    {
+      recordSeatEvent: jest.fn(() => Promise.resolve()),
+      recordSeatEvents: jest.fn(() => Promise.resolve()),
+    } as unknown as SeatLedgerService,
     {} as unknown as AccessService,
-    { screen } as unknown as MembershipAdmissionService,
+    { screen, screenMany } as unknown as MembershipAdmissionService,
   );
 
   return {
     service,
     email,
     screen,
+    screenMany,
     written,
     get txCallbackRuns() {
       return state.txCallbackRuns;
@@ -167,7 +190,7 @@ describe("invitation delivery is ordered behind the durable write", () => {
       "enqueue",
     );
 
-    expect(harness.email.queueInvitationEmail).toHaveBeenCalledTimes(1);
+    expect(harness.email.queueInvitationEmails).toHaveBeenCalledTimes(1);
     expect(harness.email.sendInvitationEmail).not.toHaveBeenCalled();
     expect(mockRegisterAfterCommit).not.toHaveBeenCalled();
   });
@@ -220,11 +243,16 @@ describe("the setup batch boundary when the wizard UI is bypassed", () => {
 
   it("returns a per-recipient outcome for a refused row and still delivers the rest", async () => {
     const harness = buildHarness();
-    harness.screen.mockImplementation((_executor: unknown, input: { email: string }) =>
+    harness.screenMany.mockImplementation((_executor: unknown, input: { emails: string[] }) =>
       Promise.resolve(
-        input.email === "member@example.com"
-          ? { kind: "conflict", reason: "already-member", message: "Already a member" }
-          : { kind: "clear", userId: null },
+        new Map(
+          input.emails.map((email) => [
+            email,
+            email === "member@example.com"
+              ? { kind: "conflict", reason: "already-member", message: "Already a member" }
+              : { kind: "clear", userId: null },
+          ]),
+        ),
       ),
     );
 
@@ -242,21 +270,29 @@ describe("the setup batch boundary when the wizard UI is bypassed", () => {
     expect(refused?.success).toBe(false);
     expect(refused?.error).toBeTruthy();
     expect(results.find((row) => row.email === "fresh@example.com")?.success).toBe(true);
-    expect(harness.email.queueInvitationEmail).toHaveBeenCalledTimes(1);
-    expect(harness.email.queueInvitationEmail).toHaveBeenCalledWith(
-      "fresh@example.com",
-      expect.any(String),
-      "Acme",
-    );
+    expect(harness.email.queueInvitationEmails).toHaveBeenCalledTimes(1);
+    expect(harness.email.queueInvitationEmails).toHaveBeenCalledWith([
+      expect.objectContaining({
+        email: "fresh@example.com",
+        token: expect.any(String),
+        organizationName: "Acme",
+        organizationId: ORG_ID,
+      }),
+    ]);
   });
 
   it("never delivers an invitation to an address that already holds a membership", async () => {
     const harness = buildHarness();
-    harness.screen.mockResolvedValue({
-      kind: "conflict",
-      reason: "already-member",
-      message: "Already a member",
-    });
+    harness.screenMany.mockImplementation((_executor: unknown, input: { emails: string[] }) =>
+      Promise.resolve(
+        new Map(
+          input.emails.map((email) => [
+            email,
+            { kind: "conflict", reason: "already-member", message: "Already a member" },
+          ]),
+        ),
+      ),
+    );
 
     const { results } = await harness.service.bulkInvite(
       ORG_ID,
@@ -267,7 +303,7 @@ describe("the setup batch boundary when the wizard UI is bypassed", () => {
     );
 
     expect(results[0]?.success).toBe(false);
-    expect(harness.email.queueInvitationEmail).not.toHaveBeenCalled();
+    expect(harness.email.queueInvitationEmails).not.toHaveBeenCalled();
     expect(harness.email.sendInvitationEmail).not.toHaveBeenCalled();
     expect(harness.written).toHaveLength(0);
   });

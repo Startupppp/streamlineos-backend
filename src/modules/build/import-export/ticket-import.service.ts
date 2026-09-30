@@ -32,6 +32,7 @@ import {
 } from "./ticket-import-reads";
 import { insertTicketBatch, type ImportActor } from "./ticket-import-batches";
 import { IMPORT_BATCH_SIZE } from "./import-export.constants";
+import { BuildTicketCreationService, type CreatedBuildTickets } from "../core/tickets";
 import {
   skippedRows,
   summarize,
@@ -61,6 +62,7 @@ export class TicketImportService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     @Inject(COMMAND_FENCE_STORE) private readonly fences: CommandFenceStore,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
   async previewImport(
@@ -199,15 +201,17 @@ export class TicketImportService {
     all: readonly ImportPreviewRow[],
   ): Promise<ImportRowResult[]> {
     try {
-      return await this.db.transaction(async (tx) => {
+      const creations: CreatedBuildTickets[] = [];
+      const written = await this.db.transaction(async (tx) => {
         await lockProjectTicketMutation(tx as Db, actor.orgId, projectId);
         let number = await nextTicketNumber(tx, actor.orgId, projectId);
         const written: ImportRowResult[] = [];
         for (let offset = 0; offset < all.length; offset += IMPORT_BATCH_SIZE) {
           const batch = all.slice(offset, offset + IMPORT_BATCH_SIZE);
-          const inserted = await insertTicketBatch(tx, actor, projectId, number, batch);
+          const inserted = await insertTicketBatch(tx, this.ticketCreation, actor, projectId, number, batch);
+          creations.push(inserted.creation);
           number += batch.length;
-          for (const row of inserted)
+          for (const row of inserted.rows)
             written.push({
               rowNumber: row.rowNumber,
               outcome: "IMPORTED",
@@ -217,6 +221,8 @@ export class TicketImportService {
         }
         return written;
       });
+      for (const creation of creations) this.ticketCreation.publish(creation);
+      return written;
     } catch (error) {
       const message = failureMessage(error);
       return all.map((row) => ({
@@ -240,9 +246,10 @@ export class TicketImportService {
         const inserted = await this.db.transaction(async (tx) => {
           await lockProjectTicketMutation(tx as Db, actor.orgId, projectId);
           const number = await nextTicketNumber(tx, actor.orgId, projectId);
-          return insertTicketBatch(tx, actor, projectId, number, batch);
+          return insertTicketBatch(tx, this.ticketCreation, actor, projectId, number, batch);
         });
-        for (const row of inserted)
+        this.ticketCreation.publish(inserted.creation);
+        for (const row of inserted.rows)
           written.push({
             rowNumber: row.rowNumber,
             outcome: "IMPORTED",

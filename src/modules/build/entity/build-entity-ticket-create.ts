@@ -1,14 +1,13 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { type Db } from "../../../db/drizzle.module";
-import { projects, ticketActivityLog, ticketRelatedLinks, tickets } from "../../../db/schema";
+import { projects, ticketRelatedLinks } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   EntityActionResult,
   EntityActor,
 } from "../../entity-reference/entity-reference.types";
 import { isProjectMember, text } from "./build-entity-action-helpers";
-import { reserveTicketCapacity } from "../core/tickets";
-import { allocateTicketNumbers } from "../core";
+import { BuildTicketCreationService } from "../core/tickets";
 import { appUrl } from "../../email/app-url";
 
 const TICKET_TYPES = ["TASK", "BUG"] as const;
@@ -36,6 +35,7 @@ function chatMessageUrl(channelId: number, messageId: number): string {
 export async function createTicketFromAction(
   db: Db,
   audit: AuditService,
+  ticketCreation: BuildTicketCreationService,
   actor: EntityActor,
   projectId: number,
   input: Record<string, unknown>,
@@ -61,24 +61,24 @@ export async function createTicketFromAction(
   const sourceChannelId = positiveInt(input, "sourceChannelId");
   const sourceMessageId = positiveInt(input, "sourceMessageId");
 
+  let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
   const created = await db.transaction(async (tx) => {
-    await reserveTicketCapacity(tx, actor.orgId, projectId, [{ status: "TODO", count: 1 }]);
-    const ticketNumber = await allocateTicketNumbers(tx, actor.orgId, projectId);
-
-    const [row] = await tx
-      .insert(tickets)
-      .values({
-        orgId: actor.orgId,
-        projectId,
-        ticketNumber,
+    createdResult = await ticketCreation.createInTransaction(tx, {
+      orgId: actor.orgId,
+      projectId,
+      actor: { userId: actor.userId, membershipId: actor.membershipId ?? null },
+      drafts: [{
         title,
         description: description || null,
         type,
         status: "TODO",
         priority: "MEDIUM",
         reporterId: actor.userId,
-      })
-      .returning();
+        activityToValue:
+          sourceChannelId !== null && sourceMessageId !== null ? "From a chat message" : null,
+      }],
+    });
+    const row = createdResult.tickets[0];
 
     // The backlink to the chat message this ticket was converted from.
     if (row && sourceChannelId !== null && sourceMessageId !== null) {
@@ -90,18 +90,11 @@ export async function createTicketFromAction(
         createdBy: actor.userId,
         createdByMembershipId: actor.membershipId ?? null,
       });
-      await tx.insert(ticketActivityLog).values({
-        orgId: actor.orgId,
-        ticketId: row.id,
-        projectId,
-        userMembershipId: actor.membershipId ?? null,
-        action: "created",
-        toValue: "From a chat message",
-      });
     }
 
     return row;
   });
+  ticketCreation.publish(createdResult!);
 
   if (!created) return { ok: false, reason: "invalid" };
 

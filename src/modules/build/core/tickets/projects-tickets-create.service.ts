@@ -18,7 +18,6 @@ import {
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
-import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import { CacheService } from "../../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NotificationsService } from "../../../notifications/notifications.service";
@@ -31,11 +30,10 @@ import type { CreateTicketInput } from "../dto/projects.schemas";
 import { computeNextRunAt } from "../lib/projects-recurrence.util";
 import { buildTicketHref, buildTicketKey } from "../lib/build-app-paths";
 import { normalizeTicketType } from "./tickets-helpers";
-import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
-import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { AccessService } from "../../../access/access.service";
 import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
 import { withSavepoint } from "../../../data-quality/savepoint";
+import { BuildTicketCreationService } from "./build-ticket-creation.service";
 
 @Injectable()
 export class ProjectsTicketsCreateService {
@@ -125,9 +123,14 @@ export class ProjectsTicketsCreateService {
       : null;
     const reporterMembershipId = actorMap.get(reporterUserId)?.membershipId ?? null;
 
-    const [ticket] = await this.db.transaction(async (tx) => {
-      await reserveTicketCapacity(tx, u.orgId, projectId, [{ status: body.status ?? "TODO", count: 1 }]);
-      const nextTicketNumber = await allocateTicketNumbers(tx, u.orgId, projectId);
+    const creator = new BuildTicketCreationService(
+      this.db,
+      this.webhooksDispatch,
+      this.automationRunner,
+      this.cache,
+    );
+    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
+    const ticket = await this.db.transaction(async (tx) => {
 
       const isRecurring =
         body.isRecurring === true && body.recurrenceRule != null;
@@ -136,12 +139,11 @@ export class ProjectsTicketsCreateService {
           ? computeNextRunAt(body.recurrenceRule)
           : undefined;
 
-      const [created] = await tx
-        .insert(tickets)
-        .values({
-          orgId: u.orgId,
-          projectId,
-          ticketNumber: nextTicketNumber,
+      createdResult = await creator.createInTransaction(tx, {
+        orgId: u.orgId,
+        projectId,
+        actor: { userId: u.userId, membershipId: actorMap.get(u.userId)?.membershipId ?? null },
+        drafts: [{
           title: body.title,
           description: body.description,
           type: normalizeTicketType(body.type),
@@ -159,8 +161,10 @@ export class ProjectsTicketsCreateService {
           isRecurring,
           recurrenceRule: isRecurring ? body.recurrenceRule : undefined,
           recurrenceNextRunAt,
-        })
-        .returning();
+          automationAssigneeUserId: body.assigneeId ?? null,
+        }],
+      });
+      const created = createdResult.tickets[0]!;
 
       if (allAssigneeIds.size > 0) {
         await tx.insert(ticketAssignees).values(
@@ -185,28 +189,9 @@ export class ProjectsTicketsCreateService {
         })),
       );
 
-      await tx.insert(ticketActivityLog).values({
-        orgId: u.orgId,
-        ticketId: created.id,
-        projectId,
-        userMembershipId: actorMap.get(u.userId)?.membershipId ?? null,
-        action: "created",
-      });
-
-      await this.webhooksDispatch.enqueue(tx, u.orgId, projectId, "ticket.created", {
-        id: created.id,
-        projectId,
-        title: created.title,
-        status: created.status,
-        type: created.type,
-        priority: created.priority,
-        assigneeMembershipId: created.assigneeMembershipId ?? null,
-        actor: u.userId,
-        timestamp: new Date().toISOString(),
-      });
-
-      return [created];
+      return created;
     });
+    creator.publish(createdResult!);
 
     const allNotifyIds = new Set<string>();
     if (body.assigneeId) allNotifyIds.add(body.assigneeId);
@@ -250,21 +235,6 @@ export class ProjectsTicketsCreateService {
       );
     }
 
-    this.automationRunner.runForTicketEvent(u.orgId, projectId, "ticket.created", {
-      ticketId: ticket.id,
-      projectId,
-      orgId: u.orgId,
-      title: ticket.title,
-      status: ticket.status,
-      priority: ticket.priority,
-      assigneeId: body.assigneeId ?? null,
-      type: ticket.type,
-    });
-
-    void this.cache
-      .invalidateNamespace(`build:analytics:${u.orgId}`)
-      .catch(logSideEffectFailure("analytics cache eviction", { orgId: u.orgId, projectId }));
-
     return ticket;
   }
 
@@ -276,16 +246,14 @@ export class ProjectsTicketsCreateService {
   ): Promise<{ id: number }> {
     const feedbackActorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [actingUserId]);
     const feedbackActorMembershipId = feedbackActorMap.get(actingUserId)?.membershipId ?? null;
-    const [ticket] = await this.db.transaction(async (tx) => {
-      await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: 1 }]);
-      const nextNum = await allocateTicketNumbers(tx, orgId, projectId);
-
-      const [created] = await tx
-        .insert(tickets)
-        .values({
-          orgId,
-          projectId,
-          ticketNumber: nextNum,
+    const creator = new BuildTicketCreationService(this.db, this.webhooksDispatch, this.automationRunner, this.cache);
+    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
+    const ticket = await this.db.transaction(async (tx) => {
+      createdResult = await creator.createInTransaction(tx, {
+        orgId,
+        projectId,
+        actor: { userId: actingUserId, membershipId: feedbackActorMembershipId },
+        drafts: [{
           title: input.title,
           description: input.description,
           type: normalizeTicketType(input.type ?? "BUG"),
@@ -293,26 +261,16 @@ export class ProjectsTicketsCreateService {
           reporterId: actingUserId,
           status: "TODO",
           assigneeMembershipId: input.assigneeMembershipId ?? null,
-        })
-        .returning({ id: tickets.id });
+        }],
+      });
+      const created = createdResult.tickets[0]!;
 
       await tx
         .insert(ticketWatchers)
         .values({ orgId, ticketId: created.id, membershipId: feedbackActorMembershipId! });
-      await tx.insert(ticketActivityLog).values({
-        orgId,
-        ticketId: created.id,
-        projectId,
-        userMembershipId: feedbackActorMembershipId,
-        action: "created",
-      });
-
-      return [created];
+      return created;
     });
-
-    await this.cache
-      .invalidateNamespace(`build:analytics:${orgId}`)
-      .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId }));
+    creator.publish(createdResult!);
 
     return ticket;
   }

@@ -39,9 +39,10 @@ const ATTACKER = "org-attacker";
 const OWNER = "org-owner";
 
 describe("ClientOnboardingService — cross-tenant isolation", () => {
+  const audit = { log: jest.fn() };
   it("listItems: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = new ClientOnboardingService(db);
+    const svc = new ClientOnboardingService(db, audit as never);
     const result = await svc.listItems(ATTACKER, 1);
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -51,7 +52,7 @@ describe("ClientOnboardingService — cross-tenant isolation", () => {
   it("listItems: returns rows for the owning org (control)", async () => {
     const row = { id: 1, orgId: OWNER, clientId: 1, task: "Send contract" };
     const { db } = makeDb([row]);
-    const svc = new ClientOnboardingService(db);
+    const svc = new ClientOnboardingService(db, audit as never);
     const result = await svc.listItems(OWNER, 1);
     expect(result).toHaveLength(1);
   });
@@ -83,7 +84,7 @@ describe("ClientsService — cross-tenant isolation", () => {
       cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
       invalidateNamespace: jest.fn().mockResolvedValue(undefined),
     };
-    return new ClientsService(db, cache as never);
+    return new ClientsService(db, cache as never, { startForClient: jest.fn() } as never);
   }
 
   it("listClients: queries scoped to attacker org (deny)", async () => {

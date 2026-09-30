@@ -90,14 +90,23 @@ function buildUniversalTx(query: MockQuery) {
     }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
     insert: jest.fn().mockImplementation(() => ({
-      values: jest.fn().mockReturnValue({
+      values: jest.fn().mockImplementation((input: unknown) => {
+        const values = Array.isArray(input) ? input : [input];
+        const returned = values.map((row, index) => {
+          const record = row as { id?: string; email?: string };
+          return record.email
+            ? { id: record.id ?? `invite-${index}`, email: record.email }
+            : { id: 42 };
+        });
+        return {
         onConflictDoNothing: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([{ id: 42 }]),
+          returning: jest.fn().mockResolvedValue(returned),
         }),
         onConflictDoUpdate: jest.fn().mockReturnValue({
           returning: jest.fn().mockResolvedValue([{ id: 42 }]),
         }),
         returning: jest.fn().mockResolvedValue([{ id: 42 }]),
+        };
       }),
     })),
   };
@@ -133,12 +142,15 @@ function buildMockDb() {
 describe("InvitationCreateService.invite — plan limit enforcement", () => {
   let svc: InvitationCreateService;
   let mockDb: ReturnType<typeof buildMockDb>;
-  let mockPlanLimits: { assertWithinLimit: jest.Mock };
+  let mockPlanLimits: { assertWithinLimit: jest.Mock; headroomFor: jest.Mock };
 
   beforeEach(async () => {
     jest.resetAllMocks();
     mockDb = buildMockDb();
-    mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+    mockPlanLimits = {
+      assertWithinLimit: jest.fn().mockResolvedValue(undefined),
+      headroomFor: jest.fn().mockResolvedValue({ limit: 100, used: 0, available: 100 }),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -149,10 +161,10 @@ describe("InvitationCreateService.invite — plan limit enforcement", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
 
-        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
-        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined), recordSeatEvents: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn(), logMany: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined) } },
-        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined), queueInvitationEmails: jest.fn().mockResolvedValue([]) } },
         {
           provide: AccessService,
           useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
@@ -194,22 +206,16 @@ describe("InvitationCreateService.invite — plan limit enforcement", () => {
     expect(mockPlanLimits.assertWithinLimit).not.toHaveBeenCalled();
   });
 
-  it("pending invitations from a bulkInvite are counted on each subsequent invite call", async () => {
-    let callCount = 0;
-    mockPlanLimits.assertWithinLimit.mockImplementation(() => {
-      callCount++;
-      if (callCount > 1) {
-        return Promise.reject(new ForbiddenException("limit exceeded"));
-      }
-      return Promise.resolve();
-    });
+  it("uses locked headroom once and returns a per-row quota refusal", async () => {
+    mockPlanLimits.headroomFor.mockResolvedValue({ limit: 1, used: 0, available: 1 });
 
     const results = await svc.bulkInvite(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, ["a@example.com", "b@example.com"], "MEMBER");
 
     expect(results.results[0].success).toBe(true);
     expect(results.results[1].success).toBe(false);
-    expect(results.results[1].error).toContain("limit exceeded");
-    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledTimes(2);
+    expect(results.results[1].error).toContain("member limit");
+    expect(mockPlanLimits.headroomFor).toHaveBeenCalledTimes(1);
+    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -10,6 +10,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
 import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
 import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
+import { BuildTicketCreationService } from "../core/tickets";
 
 @Injectable()
 export class BugsService {
@@ -17,6 +18,7 @@ export class BugsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly audit: AuditService,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
   async listBugs(u: CurrentUserContext, projectId: number, query: BugListQuery) {
@@ -128,13 +130,8 @@ export class BugsService {
 
   async createBug(u: CurrentUserContext, projectId: number, input: CreateBugInput) {
     await assertProjectAccess(this.db, this.access, u, projectId);
+    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
     const result = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-      const [maxRow] = await tx
-        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-        .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, u.orgId)));
-      const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       const assigneeMembershipId = input.assigneeId
         ? (await tx.query.organizationMembers.findFirst({
             where: and(
@@ -151,12 +148,11 @@ export class BugsService {
         .where(and(eq(projectStatuses.orgId, u.orgId), eq(projectStatuses.projectId, projectId)));
       const ticketStatus = resolveWorkItemStatus("new", availableStatuses);
       const ticketPriority = resolveTicketPriority(input.priority);
-      const [ticket] = await tx
-        .insert(tickets)
-        .values({
-          orgId: u.orgId,
-          projectId,
-          ticketNumber: nextNumber,
+      createdResult = await this.ticketCreation.createInTransaction(tx, {
+        orgId: u.orgId,
+        projectId,
+        actor: { userId: u.userId, membershipId: null },
+        drafts: [{
           title: input.title,
           description: input.description,
           type: "BUG",
@@ -164,8 +160,10 @@ export class BugsService {
           priority: ticketPriority,
           assigneeMembershipId,
           reporterId: u.userId,
-        })
-        .returning();
+          automationAssigneeUserId: input.assigneeId ?? null,
+        }],
+      });
+      const ticket = createdResult.tickets[0]!;
       await tx.insert(workItemQaDetails).values({
         orgId: u.orgId,
         workItemId: ticket!.id,
@@ -201,6 +199,7 @@ export class BugsService {
         createdByUserId: u.userId,
       };
     });
+    this.ticketCreation.publish(createdResult!);
     this.audit.log({
       action: "bug.created",
       userId: u.userId,

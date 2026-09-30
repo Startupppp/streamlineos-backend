@@ -15,7 +15,7 @@ import type {
   EntityActor,
   EntityReference,
 } from "../../entity-reference/entity-reference.types";
-import { resolveValidTicketStatuses, reserveTicketCapacity } from "../core/tickets";
+import { BuildTicketCreationService, resolveValidTicketStatuses, reserveTicketCapacity } from "../core/tickets";
 import { isProjectMember, text } from "./build-entity-action-helpers";
 import { createTicketFromAction } from "./build-entity-ticket-create";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -32,6 +32,7 @@ export class BuildEntityActions {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
   async run(
@@ -44,12 +45,7 @@ export class BuildEntityActions {
     if (!Number.isInteger(id) || id <= 0) return { ok: false, reason: "not-found" };
 
     if (reference.type === "project" && actionId === "create-ticket") {
-      const result = await createTicketFromAction(this.db, this.audit, actor, id, input);
-      if (result.ok)
-        await this.cache
-          .invalidateNamespace(`build:analytics:${actor.orgId}`)
-          .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId: id }));
-      return result;
+      return createTicketFromAction(this.db, this.audit, this.ticketCreation, actor, id, input);
     }
 
     if (reference.type !== "ticket") return { ok: false, reason: "invalid" };

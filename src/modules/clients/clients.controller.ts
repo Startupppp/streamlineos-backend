@@ -19,6 +19,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { accountableMembershipId } from "../../common/auth/principal";
 import { AccessService } from "../access/access.service";
 import { ClientAccountsService } from "./client-accounts.service";
 import { ClientsService } from "./clients.service";
@@ -131,7 +132,10 @@ export class ClientsController {
     @Body() body: CreateDirectClientInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.clients.createClient(u.orgId, body.name);
+    return this.clients.createClient(u.orgId, body.name, {
+      userId: u.userId,
+      membershipId: accountableMembershipId(u.principal),
+    });
   }
 
   @Get("export")
@@ -279,7 +283,10 @@ export class ClientsController {
     @Body() body: CreateOnboardingItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboarding.createItem(u.orgId, body);
+    return this.onboarding.createItem(u.orgId, {
+      userId: u.userId,
+      membershipId: accountableMembershipId(u.principal),
+    }, body);
   }
 
   @Patch("onboarding/items/:itemId")
@@ -291,7 +298,10 @@ export class ClientsController {
     @Body() body: PatchOnboardingItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.onboarding.updateItem(u.orgId, u.userId, itemId, body);
+    const updated = await this.onboarding.updateItem(u.orgId, {
+      userId: u.userId,
+      membershipId: accountableMembershipId(u.principal),
+    }, itemId, body);
     if (!updated) throw new NotFoundException("Not found");
     return updated;
   }
@@ -305,7 +315,10 @@ export class ClientsController {
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.onboarding.deleteItem(u.orgId, itemId);
+    const result = await this.onboarding.archiveItem(u.orgId, itemId, {
+      userId: u.userId,
+      membershipId: accountableMembershipId(u.principal),
+    });
     if (!result) throw new NotFoundException("Not found");
   }
 
@@ -325,7 +338,10 @@ export class ClientsController {
     @Body() body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboarding.createTemplate(u.orgId, u.userId, body);
+    return this.onboarding.createTemplate(u.orgId, {
+      userId: u.userId,
+      membershipId: accountableMembershipId(u.principal),
+    }, body);
   }
 
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })

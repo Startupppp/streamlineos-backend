@@ -7211,6 +7211,13 @@
       "when": 1803093645725,
       "tag": "1702_invitation_module_access",
       "breakpoints": true
+    },
+    {
+      "idx": 1158,
+      "version": "7",
+      "when": 1803093646725,
+      "tag": "1703_client_onboarding_lifecycle",
+      "breakpoints": true
     }
   ]
 }
