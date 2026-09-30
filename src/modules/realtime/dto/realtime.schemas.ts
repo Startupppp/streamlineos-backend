@@ -48,6 +48,8 @@ export const chatMessagePayloadSchema = z.object({
   attachments: z.array(chatAttachmentPayloadSchema).optional(),
   /** Stable client-side deduplication identity for a replayed durable fan-out. */
   idempotencyKey: z.string().min(1).optional(),
+  /** The sender's client-minted send key, so the sender's client can replace its optimistic copy. */
+  clientKey: z.string().nullable().optional(),
 });
 
 export type ChatAttachmentPayload = z.infer<typeof chatAttachmentPayloadSchema>;

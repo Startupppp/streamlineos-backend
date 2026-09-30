@@ -193,6 +193,20 @@ describe("ChatInviteLinksService", () => {
       expect(result).toEqual({ ok: true, channelId: CHANNEL_ID });
     });
 
+    it("starts the joiner's read cursor at the channel's high-water mark, not at 0", async () => {
+      mockDb.query.chatChannelInviteLinks.findFirst.mockResolvedValueOnce({ id: LINK_ID, channelId: CHANNEL_ID });
+      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ id: CHANNEL_ID, orgId: ORG_ID, isArchived: false });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce(undefined);
+      const insertChain = makeInsertChain();
+      mockDb.insert.mockReturnValueOnce(insertChain);
+
+      await service.joinViaInviteLink("tok", USER_ID, ORG_ID);
+
+      const row = insertChain.values.mock.calls[0]?.[0] as { lastReadPosition?: SQL };
+      expect(row.lastReadPosition).toBeDefined();
+      expect(new PgDialect().sqlToQuery(row.lastReadPosition as SQL).sql).toContain('"message_count"');
+    });
+
     it("does NOT insert a duplicate membership or increment use_count when the user already belongs", async () => {
       mockDb.query.chatChannelInviteLinks.findFirst.mockResolvedValueOnce({ id: LINK_ID, channelId: CHANNEL_ID });
       mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ id: CHANNEL_ID, orgId: ORG_ID, isArchived: false });

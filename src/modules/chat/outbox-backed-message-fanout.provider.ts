@@ -14,8 +14,10 @@ import { ChatMessageFanoutService } from "./chat-message-fanout.service";
  * therefore does not enqueue, publish, or retry anything itself. Its deferred
  * method is called only after the outbox worker has claimed a durable row, and
  * a thrown error is intentionally returned to that worker for retry/dead-letter
- * handling. Realtime is a separate method because it is published once by the
- * post-commit send hook; the outbox consumer must never call it.
+ * handling. Realtime is a separate method because the post-commit send hook
+ * publishes it first; the outbox consumer repeats it only as a best-effort
+ * backstop (deduplicated by the effect ledger key) whose failure is logged and
+ * never blocks or retries the deferred delivery.
  *
  * Keeping this as a concrete adapter makes the queued choice visible at the
  * Nest seam and leaves the delivery implementation swappable without moving

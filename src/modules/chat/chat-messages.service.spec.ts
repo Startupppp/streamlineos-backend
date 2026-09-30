@@ -1,4 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChatMessagesService } from "./chat-messages.service";
 import { ChatMessageModerationService } from "./chat-message-moderation.service";
@@ -151,24 +153,37 @@ describe("ChatMessagesService", () => {
       expect(mockDb.query.chatChannelMembers.findFirst).not.toHaveBeenCalled();
     });
 
-    it("sanitizes XSS content before persisting", async () => {
+    it("stores angle brackets verbatim; clients render text and the email sink escapes", async () => {
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1" });
       mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1 });
       mockDb.query.users.findFirst.mockResolvedValue({ id: "user1", name: "Alice" });
 
-      const maliciousContent = "<script>alert('xss')</script>hello";
-      await expect(
-        service.send(1, "user1", "org1", { content: maliciousContent, attachments: [] }),
-      ).resolves.toBeDefined();
+      await service.send(1, "user1", "org1", { content: "if a<b and c>d then ok", attachments: [] });
+      await service.send(1, "user1", "org1", { content: "<name>", attachments: [] });
 
-      expect(mockDb.values).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ content: expect.stringContaining("hello") }),
+      expect(mockDb.values).toHaveBeenCalledWith(
+        expect.objectContaining({ content: "if a<b and c>d then ok" }),
       );
-      expect(mockDb.values).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ content: expect.not.stringMatching(/<\/?script/i) }),
-      );
+      expect(mockDb.values).toHaveBeenCalledWith(expect.objectContaining({ content: "<name>" }));
+    });
+
+    it("refuses a post into an archived channel", async () => {
+      mockDb.limit.mockResolvedValueOnce([{ id: 1, type: "PUBLIC", isArchived: true }]);
+
+      await expect(
+        service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockDb.insert).not.toHaveBeenCalled();
+    });
+
+    it("advances the sender's own read cursor, monotonically, in the send transaction", async () => {
+      await service.send(1, "user1", "org1", { content: "hello", attachments: [] });
+
+      const cursorWrite = mockDb.set.mock.calls
+        .map(([values]: [Record<string, unknown>]) => values)
+        .find((values) => "lastReadPosition" in values);
+      expect(cursorWrite).toBeDefined();
+      expect(new PgDialect().sqlToQuery(cursorWrite?.lastReadPosition as SQL).sql).toContain("GREATEST(");
     });
 
     it("rejects an attachment larger than the org's configured max size", async () => {

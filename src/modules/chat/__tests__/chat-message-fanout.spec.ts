@@ -199,6 +199,15 @@ describe("ChatMessageFanoutService", () => {
     expect(payload).toMatchObject({ senderName: "Alice", senderImage: "https://cdn.example.com/alice.jpg" });
   });
 
+  it("carries the sender's clientKey so the sender's client can replace its optimistic copy", async () => {
+    const { service, ably } = makeFanout();
+    await service.dispatch({ ...input, message: { ...message, clientKey: "ck-1" } } as never);
+    await service.dispatch(input as never);
+    const payloads = ably.publishChatMessage.mock.calls.map((call) => (call as unknown[])[2]);
+    expect(payloads[0]).toMatchObject({ clientKey: "ck-1" });
+    expect(payloads[1]).toMatchObject({ clientKey: null });
+  });
+
   it("uses a deterministic effect key for every deferred adapter on replay", async () => {
     const { service, webPush, notifications } = makeFanout();
     await service.dispatchDeferred({ ...input, channelType: "DIRECT" } as never);

@@ -19,6 +19,12 @@ import type { Db } from "../../db/drizzle.module";
  * answer available for those. That floor applies equally to BOTH routes and always has.
  */
 export const CHAT_SEARCH_ID_CAP = 1000;
+
+/** `%`, `_` and `\` in a user's term are literals, not ILIKE wildcards (default ESCAPE is `\`). */
+export function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, "\\$&");
+}
+
 export const TRIGRAM_MIN_TERM_LENGTH = 3;
 
 /**
@@ -27,10 +33,13 @@ export const TRIGRAM_MIN_TERM_LENGTH = 3;
  * is the cost this cap exists to avoid.
  */
 export async function chatMessageContentMatch(db: Db, term: string): Promise<SQL<unknown>> {
-  const like = sql`${chatMessages.content} ILIKE ${"%" + term + "%"}`;
+  // The helper interpolates its argument into `ILIKE '%' || p_q || '%'`, so it gets the
+  // escaped term too.
+  const pattern = escapeLike(term);
+  const like = sql`${chatMessages.content} ILIKE ${"%" + pattern + "%"}`;
   if (term.length < TRIGRAM_MIN_TERM_LENGTH) return like;
   const idRows = await db.execute(
-    sql`SELECT app.search_chat_message_ids(${term}, ${CHAT_SEARCH_ID_CAP + 1}) AS id`,
+    sql`SELECT app.search_chat_message_ids(${pattern}, ${CHAT_SEARCH_ID_CAP + 1}) AS id`,
   );
   if (idRows.length > CHAT_SEARCH_ID_CAP) return like;
   const ids = idRows.map((row) => Number(row["id"]));

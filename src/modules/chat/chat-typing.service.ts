@@ -21,6 +21,10 @@ export class ChatTypingService {
     @Inject(REDIS) private readonly redis: Redis | null,
   ) {}
 
+  // ponytail: in-process fallback when Upstash is absent — typers are visible only to
+  // requests served by the same instance. Configure REDIS for multi-instance deployments.
+  private readonly local = new Map<string, { entries: Record<string, TypingEntry>; expiresAt: number }>();
+
   private key(channelId: number): string {
     return `chat:typing:${channelId}`;
   }
@@ -73,7 +77,6 @@ export class ChatTypingService {
 
   async setTyping(channelId: number, orgId: string, userId: string): Promise<void> {
     await this.assertChannelMember(channelId, orgId, userId);
-    if (!this.redis) return;
 
     const me = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
@@ -86,6 +89,13 @@ export class ChatTypingService {
     };
 
     const key = this.key(channelId);
+    if (!this.redis) {
+      const now = Date.now();
+      for (const [k, v] of this.local) if (v.expiresAt <= now) this.local.delete(k);
+      const entries = { ...this.local.get(key)?.entries, [userId]: entry };
+      this.local.set(key, { entries, expiresAt: now + KEY_TTL_SECONDS * 1_000 });
+      return;
+    }
     try {
       await this.redis.hset(key, { [userId]: entry });
       await this.redis.expire(key, KEY_TTL_SECONDS);
@@ -96,11 +106,12 @@ export class ChatTypingService {
 
   async getTyping(channelId: number, orgId: string, currentUserId: string) {
     await this.assertChannelMember(channelId, orgId, currentUserId);
-    if (!this.redis) return [];
 
     let state: Record<string, TypingEntry> | null;
     try {
-      state = await this.redis.hgetall<Record<string, TypingEntry>>(this.key(channelId));
+      state = this.redis
+        ? await this.redis.hgetall<Record<string, TypingEntry>>(this.key(channelId))
+        : (this.local.get(this.key(channelId))?.entries ?? null);
     } catch {
       return [];
     }

@@ -1,5 +1,7 @@
 import "reflect-metadata";
 import { Test, type TestingModule } from "@nestjs/testing";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelListService } from "./chat-channel-list.service";
@@ -278,6 +280,9 @@ describe("entity channel — create is race-safe and quota-admitted", () => {
     expect(result.channel).toMatchObject({ id: 7, entityId: "42" });
     expect(h.insert).toHaveBeenCalledTimes(1);
     expect(h.transaction).not.toHaveBeenCalled();
+    // A joiner starts caught up: without a cursor the whole history counted as unread.
+    const joined = h.insert.mock.results[0]?.value.values.mock.calls[0]?.[0] as { lastReadPosition?: SQL };
+    expect(new PgDialect().sqlToQuery(joined.lastReadPosition as SQL).sql).toContain('"message_count"');
   });
 
   it("charges the same chatChannels plan limit ordinary channel creation uses", async () => {

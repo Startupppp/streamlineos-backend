@@ -14,7 +14,9 @@
  * the truncation the consumer performs stays observable here.
  */
 import { Test } from "@nestjs/testing";
+import { desc } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { chatChannels } from "../../db/schema";
 import { ChatChannelListService } from "./chat-channel-list.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { MAX_CAPABILITY_CHANNELS } from "../realtime/ably.service";
@@ -37,6 +39,7 @@ function makeDb(channelRows: Array<{ channelId: number }>) {
     from: jest.fn().mockReturnThis(),
     innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn((n: unknown) => {
       limits.push(n);
       return Promise.resolve(channelRows);
@@ -68,6 +71,15 @@ describe("PRD-C145 — the Ably token channel lookup is bounded at the database"
     await service.listMemberChannelIds(boundedActor);
 
     expect(limits).toEqual([MAX_CAPABILITY_CHANNELS + 1]);
+  });
+
+  it("keeps the most recently active channels when the grant truncates", async () => {
+    const { db } = makeDb(rows(3));
+    const service = await buildService(db);
+
+    await service.listMemberChannelIds(boundedActor);
+
+    expect(db.orderBy).toHaveBeenCalledWith(desc(chatChannels.lastMessageAt), desc(chatChannels.id));
   });
 
   it("never returns more rows than the grant plus its truncation probe", async () => {

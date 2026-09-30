@@ -148,19 +148,23 @@ describe("ChatFanoutOutboxConsumer", () => {
     );
   });
 
-  it("propagates a realtime failure so the durable relay can retry the whole event", async () => {
+  it("still delivers push / DM / mentions and completes when the realtime backstop fails", async () => {
     const db = makeDb();
+    const dispatchDeferred = jest.fn().mockResolvedValue(undefined);
     const consumer = new ChatFanoutOutboxConsumer(
       db as never,
       {
-        dispatchRealtime: jest.fn().mockRejectedValue(new Error("realtime unavailable")),
-        dispatchDeferred: jest.fn().mockResolvedValue(undefined),
+        dispatchRealtime: jest.fn().mockRejectedValue(new Error("Ably is not configured")),
+        dispatchDeferred,
       } as never,
       new OutboxConsumerRegistry(),
     );
 
-    await expect(consumer.handle(makeEvent())).rejects.toThrow("realtime unavailable");
-    expect(db.update).toHaveBeenCalled();
+    await expect(consumer.handle(makeEvent())).resolves.toBeUndefined();
+    expect(dispatchDeferred).toHaveBeenCalledTimes(1);
+    expect(db.update.mock.results[0]?.value.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "COMPLETED" }),
+    );
   });
 
   it("reuses the same idempotency key when a worker crashes before inbox completion", async () => {

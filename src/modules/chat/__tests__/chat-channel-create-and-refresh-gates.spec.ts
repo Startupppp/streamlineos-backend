@@ -280,6 +280,7 @@ interface DmHarness {
   service: ChatChannelsService;
   inserts: InsertCall[];
   existingDmLookup: () => SQL;
+  events: string[];
 }
 
 const MEMBERSHIP_BY_USER = new Map<string, number>([
@@ -308,6 +309,7 @@ function membersOf(existingDMs: readonly ExistingDm[], channelId: number): { mem
 
 async function buildDmHarness(existingDMs: readonly ExistingDm[], dmLookupResult?: ExistingDm): Promise<DmHarness> {
   const inserts: InsertCall[] = [];
+  const events: string[] = [];
   let dmLookupWhere: SQL | undefined;
 
   const detailFindFirst = (config: { where?: SQL }) => {
@@ -373,6 +375,7 @@ async function buildDmHarness(existingDMs: readonly ExistingDm[], dmLookupResult
     const lookupChain: Record<string, unknown> = {};
     lookupChain.innerJoin = jest.fn(() => lookupChain);
     lookupChain.where = jest.fn((w: SQL) => {
+      events.push("lookup");
       dmLookupWhere = w;
       return {
         limit: jest.fn(() =>
@@ -387,8 +390,24 @@ async function buildDmHarness(existingDMs: readonly ExistingDm[], dmLookupResult
     query,
     select,
     insert,
-    transaction: jest.fn((run: (tx: { insert: typeof insert; query: typeof query }) => Promise<unknown>) =>
-      run({ insert, query }),
+    transaction: jest.fn(
+      (
+        run: (tx: {
+          insert: typeof insert;
+          query: typeof query;
+          select: typeof select;
+          execute: jest.Mock;
+        }) => Promise<unknown>,
+      ) =>
+        run({
+          insert,
+          query,
+          select,
+          execute: jest.fn((statement: SQL) => {
+            events.push(`lock:${String(dialect.sqlToQuery(statement).params[0])}`);
+            return Promise.resolve([]);
+          }),
+        }),
     ),
   } as unknown as Db;
 
@@ -417,6 +436,7 @@ async function buildDmHarness(existingDMs: readonly ExistingDm[], dmLookupResult
       if (!dmLookupWhere) throw new Error("the existing-DM lookup never ran");
       return dmLookupWhere;
     },
+    events,
   };
 }
 
@@ -443,6 +463,17 @@ describe("POST /chat/channels type=DIRECT — a second conversation with the sam
     expect(result.created).toBe(false);
     expect(result.channel.id).toBe(PAIR_DM.id);
     expect(harness.inserts).toHaveLength(0);
+  });
+
+  it("takes one pair-keyed advisory lock before the lookup, whichever side opens the DM", async () => {
+    const forward = await buildDmHarness([]);
+    const reverse = await buildDmHarness([]);
+
+    await forward.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
+    await reverse.service.createChannel(ORG, OTHER_USER, directBody(ACTOR_USER));
+
+    expect(forward.events).toEqual([`lock:chat-dm:${ORG}:${ACTOR_MEMBERSHIP}:${OTHER_MEMBERSHIP}`, "lookup"]);
+    expect(reverse.events).toEqual(forward.events);
   });
 
   it("CONTROL: with no DM on record it creates one channel and two membership rows", async () => {

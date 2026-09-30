@@ -270,6 +270,7 @@ interface SelectChain {
   from(): SelectChain;
   innerJoin(): SelectChain;
   where(condition: SQL): SelectChain;
+  orderBy(): SelectChain;
   limit(count: number): Promise<Array<{ channelId: number }>>;
 }
 
@@ -288,6 +289,7 @@ async function buildCapabilityHarness(world: CapabilityWorld): Promise<Capabilit
       captured = condition;
       return chain;
     },
+    orderBy: () => chain,
     limit: (count) => {
       if (!captured) throw new Error("the capability read issued no WHERE clause");
       const orgId = bound(captured, "chat_channels", "org_id", "=");

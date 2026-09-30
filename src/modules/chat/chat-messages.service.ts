@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -113,9 +114,9 @@ export class ChatMessagesService {
       if (replayed) return replayed;
     }
 
-    const sanitizedContent = body.content
-      ? body.content.replace(/<[^>]+>/g, "").slice(0, 10000)
-      : null;
+    // Stored verbatim: clients render it as text, and the one HTML sink (the reply
+    // reminder email) escapes it. A tag strip here turned "a<b and c>d" into "ad".
+    const sanitizedContent = body.content ? body.content.slice(0, 10000) : null;
 
     if (!sanitizedContent?.trim() && (!body.attachments || body.attachments.length === 0))
       throw new BadRequestException("Message must have content or attachments");
@@ -151,12 +152,13 @@ export class ChatMessagesService {
     try {
       sendResult = await this.db.transaction(async (tx) => {
         const [channel] = await tx
-          .select({ id: chatChannels.id, type: chatChannels.type })
+          .select({ id: chatChannels.id, type: chatChannels.type, isArchived: chatChannels.isArchived })
           .from(chatChannels)
           .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
           .limit(1);
 
         if (!channel) throw new NotFoundException("Channel not found");
+        if (channel.isArchived) throw new ForbiddenException("Channel is archived");
 
         if (body.replyToId !== undefined)
           await this.requireReplyTargetInChannel(tx, orgId, channelId, body.replyToId);
@@ -197,6 +199,21 @@ export class ChatMessagesService {
         // Two retries racing past the pre-check both reach here; the partial unique lets
         // exactly one insert and the loser replays the winner's row.
         if (!created) throw new DuplicateSendError();
+
+        // The sender has read what they just posted. GREATEST so a slower concurrent send
+        // committing later cannot rewind the cursor.
+        await tx
+          .update(chatChannelMembers)
+          .set({
+            lastReadPosition: sql`GREATEST(${chatChannelMembers.lastReadPosition}, ${channelPosition})`,
+          })
+          .where(
+            and(
+              eq(chatChannelMembers.orgId, orgId),
+              eq(chatChannelMembers.channelId, channelId),
+              eq(chatChannelMembers.membershipId, senderMembershipId),
+            ),
+          );
 
         let attachmentRows: ChatAttachmentPayload[] = [];
         if (body.attachments && body.attachments.length > 0) {
