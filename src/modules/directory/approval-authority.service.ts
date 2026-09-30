@@ -184,6 +184,7 @@ export class ApprovalAuthorityService {
       slaHours: policy.slaHours,
       dueAt,
       escalation,
+      ownerSelfApproval: ownerSelf,
       explanation,
     };
   }

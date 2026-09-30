@@ -29,6 +29,7 @@ import { openingEntitlementOf } from "./leave-entitlement";
 import type { TenantTx } from "../../../db/drizzle.types";
 import type { ApproveLeaveInput, RejectLeaveInput, UpdateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveDecisionEffectsService } from "./leave-decision-effects.service";
+import { ApprovalAuthorityService } from "../../directory/approval-authority.service";
 
 @Injectable()
 export class LeavesApprovalService {
@@ -38,7 +39,32 @@ export class LeavesApprovalService {
     private readonly access: AccessService,
     private readonly ledger: LeaveLedgerService,
     private readonly effects: LeaveDecisionEffectsService,
+    private readonly approvals: ApprovalAuthorityService,
   ) {}
+
+  /**
+   * BUG-HRMS-017. Whether this decider may act on a request they raised.
+   *
+   * Normally not: deciding your own leave is the segregation-of-duties control
+   * this refusal exists for, and it stays. But `ApprovalAuthorityService` already
+   * routes a sole founder's request back to themselves on purpose — "no rung and
+   * no queue member remains, so dead-ending them is worse" — and this path then
+   * refused the route its own router had chosen. A one-person organisation could
+   * raise leave and never close it: the request sat PENDING for ever, balances
+   * frozen, with the UI saying only "Cannot approve own request" and offering no
+   * alternate approver.
+   *
+   * Asking the router, rather than re-deriving the rule here, is what keeps the
+   * two halves from disagreeing again. The hatch opens only when the router says
+   * nobody else can decide, so any org with a second approver is unaffected.
+   */
+  private async mayDecideOwnRequest(
+    orgId: string,
+    subjectUserId: string,
+  ): Promise<boolean> {
+    const route = await this.approvals.resolve(orgId, subjectUserId, "leave");
+    return route.ownerSelfApproval && route.approver?.userId === subjectUserId;
+  }
 
   private countWorkdays(startDate: string, endDate: string): number {
     let count = 0;
@@ -152,7 +178,10 @@ export class LeavesApprovalService {
         .limit(1)
         .for("update");
       if (!current) return null;
-      if (current.userId === currentUser.userId) {
+      if (
+        current.userId === currentUser.userId &&
+        !(await this.mayDecideOwnRequest(currentUser.orgId, current.userId))
+      ) {
         throw new ForbiddenException("You cannot approve or reject your own leave request.");
       }
       if (current.status === "PENDING") return { existing: current, changed: false };
@@ -320,8 +349,13 @@ export class LeavesApprovalService {
       if (current.status !== "PENDING") {
         throw new ConflictException(`Cannot approve a request with status: ${current.status}.`);
       }
-      if (current.userId === currentUser.userId) {
-        throw new ForbiddenException("You cannot approve your own leave request.");
+      if (
+        current.userId === currentUser.userId &&
+        !(await this.mayDecideOwnRequest(currentUser.orgId, current.userId))
+      ) {
+        throw new ForbiddenException(
+          "You cannot approve your own leave request. Ask another approver, or have an administrator assign you a reporting manager.",
+        );
       }
 
       const changed = await tx
@@ -495,8 +529,13 @@ export class LeavesApprovalService {
       if (current.status !== "PENDING") {
         throw new ConflictException(`Cannot reject a request with status: ${current.status}.`);
       }
-      if (current.userId === currentUser.userId) {
-        throw new ForbiddenException("You cannot reject your own leave request.");
+      if (
+        current.userId === currentUser.userId &&
+        !(await this.mayDecideOwnRequest(currentUser.orgId, current.userId))
+      ) {
+        throw new ForbiddenException(
+          "You cannot reject your own leave request. Ask another approver, or have an administrator assign you a reporting manager.",
+        );
       }
 
       const changed = await tx
